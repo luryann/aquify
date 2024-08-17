@@ -23,6 +23,7 @@ import AuditLog from './pages/Admin/AuditLog';
 import Login from './pages/Login';
 import NotFound from './pages/NotFound';
 import NotAuthorized from './pages/NotAuthorized';
+import SwimGroupsManagement from './pages/Admin/SwimGroupsManagement';
 
 const App: React.FC = () => {
   const { isAuthenticated, isLoading } = useAuth0();
@@ -62,6 +63,7 @@ const App: React.FC = () => {
             <Route path="event-creator" element={<EventCreator />} />
             <Route path="user-list" element={<UserList />} />
             <Route path="audit-log" element={<AuditLog />} />
+	    <Route path="SwimGroupsManagement" element={<SwimGroupsManagement />} />
             <Route path="*" element={<NotFound />} /> {/* Catch-all route for 404 */}
           </Route>
           <Route path="/not-authorized" element={<NotAuthorized />} />

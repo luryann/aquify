@@ -16,7 +16,8 @@ const items = [
   { key: '2', icon: <NotificationOutlined />, label: <Link to="/admin/announcement-creator">Announcements</Link> },
   { key: '3', icon: <SendOutlined />, label: <Link to="/admin/mass-email">Mass Email</Link> },
   { key: '4', icon: <FormOutlined />, label: <Link to="/admin/event-creator">Event Creator</Link> },
-  { key: '5', icon: <UsergroupAddOutlined />, label: <Link to="/admin/user-list">User List</Link> }
+  { key: '5', icon: <UsergroupAddOutlined />, label: <Link to="/admin/user-list">User List</Link> },
+  { key: '6', label: <Link to="/admin/audit-log">Audit Log</Link> },
 ];
 
 const AdminSidebar: React.FC = () => {

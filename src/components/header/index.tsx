@@ -43,7 +43,7 @@ const Header: React.FC<{ onToggleSidebar: () => void }> = ({ onToggleSidebar }) 
     <AntHeader className="header" style={{ background: '#fff', padding: 0, height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
       <div style={{ display: 'flex', alignItems: 'center', paddingLeft: '24px' }}>
         <MenuUnfoldOutlined style={{ fontSize: '18px', marginRight: '16px' }} onClick={onToggleSidebar} />
-        <Title level={4} style={{ margin: 0, marginRight: '16px' }}> aquify 
+        <Title level={4} style={{ margin: 0, marginRight: '16px' }}> managementEditorVersion2 
 	<span style={{ fontFamily: 'monospace', fontSize: '14px' }}>  v0.01</span>
         </Title>
         <Input
