@@ -1,0 +1,208 @@
+
+- Root: `.editorconfig`, `.gitignore`, `.pre-commit-config.yaml`, `README.md`, `CONTRIBUTING.md`, `Makefile`, `.env.example`
+- Local infra: `docker-compose.yml`, `.env.local.example`, `scripts/wait-for-db.sh`
+- Local infra make targets use `.env.local` for compose variable resolution and DB readiness script environment.
+- API scaffold: `server/go.mod`, `server/cmd/api/main.go`, and `server/internal/app/**` router/middleware/handler packages
+- API routes added in STEP 4: `/api/v1/health/live`, `/api/v1/health/ready`, `/api/v1/openapi`, and stub-protected `/api/v1/authz/ping`
+- Admin scaffold: `admin/` Next.js TypeScript app skeleton (`app/`, `package.json`, `tsconfig.json`, `next.config.ts`, `.eslintrc.json`)
+- Planning trace: `docs/planning/STEP1-implementation-notes.md`, `docs/planning/STEP2-implementation-notes.md`
+- Migration trace: `docs/planning/STEP3-implementation-notes.md`
+- API skeleton trace: `docs/planning/STEP4-implementation-notes.md`
+- Auth/RBAC trace: `docs/planning/STEP5-implementation-notes.md`
+- Membership trace: `docs/planning/STEP6-implementation-notes.md`
+- Groups/eligibility/registrations trace: `docs/planning/STEP7-implementation-notes.md`
+- Audit artifact: `failed/STEP2-audit-failure.md` documenting runtime verification gap when Docker is unavailable.
+- Audit artifact: `failed/STEP3-post-implementation-audit-failure.md` documenting post-implementation issues and verification gaps found in STEP 3 review.
+- DB migration assets: `db/migrations/20260315000100_init_extensions.sql` through `db/migrations/20260315000700_harden_user_roles_uniqueness.sql`
+- DB migration asset: `db/migrations/20260315000800_seed_default_roles.sql`
+- DB migration assets: `db/migrations/20260315000900_create_households.sql` through `db/migrations/20260315001300_add_swimmer_uniqueness_constraints.sql`
+- DB migration assets: `db/migrations/20260315001400_create_groups.sql` through `db/migrations/20260315001700_create_waiver_acceptances.sql`
+- Make targets: `make db-up`, `make db-down`, `make db-status` now run Goose migrations using `DATABASE_URL` from local env files.
+- Auth service package: `server/internal/app/authn/service.go`
+- Membership service package: `server/internal/app/members/service.go`
+- Auth endpoints: `/api/v1/auth/oidc/callback`, `/api/v1/auth/sessions/issue`, `/api/v1/auth/sessions/refresh`, `/api/v1/auth/sessions/revoke`, `/api/v1/auth/mfa/enroll`, `/api/v1/auth/mfa/challenge`, `/api/v1/auth/roles/assign`
+- Membership endpoints: `/api/v1/members/households` (create), `/api/v1/members/households/{householdID}` (update), `/api/v1/members/households/{householdID}/contacts` (add contact), `/api/v1/members/swimmers` (create/list), `/api/v1/members/swimmers/{swimmerID}` (update), `/api/v1/members/swimmers/{swimmerID}/groups` (assign)
+- Groups service package: `server/internal/app/groups/service.go`
+- Groups endpoints: `/api/v1/groups` (create/list), `/api/v1/groups/{groupID}` (get/update), `/api/v1/groups/{groupID}/eligibility-rules` (attach rule), `/api/v1/groups/{groupID}/eligibility/{swimmerID}` (evaluate), `/api/v1/registrations` (create), `/api/v1/registrations/{registrationID}/transition` (status change), `/api/v1/registrations/{registrationID}/waivers` (accept waiver)
+- Security documentation: `docs/security/api-key-secret-storage-strategy.md`
+- Hardening planning artifact: `docs/planning/STEP5-stub-retirement-hardening-plan.md`
+- Meet setup/commitments trace: `docs/planning/STEP8-implementation-notes.md`
+- DB migration assets: `db/migrations/20260315001800_create_meets.sql` through `db/migrations/20260315002300_create_entry_legs.sql`
+- Meets service package: `server/internal/app/meets/service.go`
+- Meet endpoints: `/api/v1/meets` (create/list), `/api/v1/meets/{meetID}` (get), `/api/v1/meets/{meetID}/sessions` (create), `/api/v1/meets/{meetID}/events` (create/list), `/api/v1/meets/{meetID}/transition` (lifecycle), `/api/v1/meets/{meetID}/commitment-request` (publish), `/api/v1/meets/{meetID}/commitments` (list), `/api/v1/meets/{meetID}/commitments/{commitmentID}/respond` (parent yes/no), `/api/v1/meets/{meetID}/commitments/{commitmentID}/event-selections` (parent select/list/remove), `/api/v1/meets/{meetID}/lock-commitments` (lock), `/api/v1/meets/{meetID}/entries` (propose/list), `/api/v1/meets/{meetID}/entries/{entryID}/override` (coach override with audit), `/api/v1/meets/{meetID}/entries/{entryID}/approve` (approve)
+- File interoperability trace: `docs/planning/STEP9-implementation-notes.md`
+- DB migration assets: `db/migrations/20260315002500_create_file_imports.sql` through `db/migrations/20260315002900_create_file_exports.sql`
+- Object storage client wrapper: `server/internal/storage/client.go` (`ObjectStorage` interface + `StubStorage` stub)
+- Imports service package: `server/internal/app/imports/service.go`
+- Import endpoints: `/api/v1/imports/upload-url` (request presigned upload URL), `/api/v1/imports/{importID}/finalize` (finalize upload), `/api/v1/imports` (list), `/api/v1/imports/{importID}` (get), `/api/v1/imports/{importID}/conflicts` (list conflicts), `/api/v1/imports/{importID}/conflicts/{conflictID}/resolve` (resolve — admin/owner only), `/api/v1/imports/{importID}/report` (download report)
+- Storage config env vars: `STORAGE_ENDPOINT`, `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY`, `STORAGE_BUCKET`, `STORAGE_USE_SSL`
+- File parsing library: `internal/meetfiles/` — standalone Go module `github.com/dareaquatics/aquify/meetfiles`
+- SDIF parser: `internal/meetfiles/sdif/` — SD3/SDIF v3 fixed-width line parser (records A0/B1/C1/D0/E0/F0/G0/Z0)
+- CL2 parser scaffold: `internal/meetfiles/cl2/` — best-effort scaffold (proprietary format; extend when samples available)
+- Swimmer matching: `internal/meetfiles/matcher.go` — USS# primary, name+DOB+gender fallback
+- Conflict queue: `internal/meetfiles/conflicts.go` — unknown_athlete, ambiguous_match, bad_event_code, duplicate_row classification
+- Import report writer: `internal/meetfiles/report.go` — deterministic (sorted by line number)
+- File type detector: `internal/meetfiles/detector.go` — extension + magic bytes (sd3, cl2, zip, hy3)
+- ZIP reader: `internal/meetfiles/zip.go` — extracts .sd3/.cl2 entries from archives
+- HY3 reader: `internal/meetfiles/hy3.go` — HY3 container-only ZIP ingest with deterministic SD3>CL2 payload selection and HY3-specific error codes (hy3_empty_archive, hy3_no_parseable_payload, hy3_ambiguous_payload)
+- HY3 format decision: `docs/decisions/2026-03-15-hy3-format-handling.md` — container-only ZIP handling locked for v1
+- Parsing trace: `docs/planning/STEP10-implementation-notes.md`
+- SD3 exporter: `internal/meetfiles/sdif/exporter.go` — Standard SD3, Extended SD3, SDIF roster export + ImportSDIFRoster for round-trip
+- Export service package: `server/internal/app/exports/service.go` — in-memory SD3/SDIF export job management with inline formatter
+- Export endpoints: `/api/v1/meets/{meetID}/exports` (generate), `/api/v1/meets/{meetID}/exports` (list), `/api/v1/exports/{exportID}` (get), `/api/v1/exports/{exportID}/download` (download file)
+- HY3 export decision: `docs/decisions/2026-03-15-hy3-export-v1.md` — HY3 export explicitly out of scope for v1; SD3 is sufficient
+- Export trace: `docs/planning/STEP11-implementation-notes.md`
+- Makefile updated: `make test` and `make lint` now also run `internal/meetfiles` tests and vet
+- Performance trace: `docs/planning/STEP12-implementation-plan.md`
+- DB migration assets: `db/migrations/20260315003000_create_results.sql` through `db/migrations/20260315003300_create_time_standards.sql`
+- Performance service package: `server/internal/app/performance/service.go` — in-memory results, best times, time standards, cut qualification
+- Performance endpoints: `/api/v1/results` (upsert), `/api/v1/swimmers/{swimmerID}/best-times` (list), `/api/v1/swimmers/{swimmerID}/best-times/override` (manual override with audit), `/api/v1/swimmers/{swimmerID}/progression` (timeline), `/api/v1/swimmers/{swimmerID}/cut-qualification` (evaluate cut), `/api/v1/time-standards` (CRUD), `/api/v1/time-standards/{standardID}` (get/update/delete)
+- Performance server wiring: `NewRouterWithServices` now accepts a 9th `*performance.Service` parameter
+- Billing trace: `docs/planning/STEP13-implementation-plan.md`
+- DB migration assets: `db/migrations/20260315003500_create_invoices.sql` through `db/migrations/20260315004000_create_webhook_events.sql`
+- Billing service package: `server/internal/app/billing/service.go` — in-memory invoices, items, payments, refunds, append-only ledger
+- Billing endpoints: `/api/v1/invoices` (create/get), `/api/v1/invoices/{invoiceID}/items` (add/remove/list), `/api/v1/invoices/{invoiceID}/issue` (draft→issued), `/api/v1/invoices/{invoiceID}/void` (issued→voided), `/api/v1/invoices/{invoiceID}/write-off` (admin only), `/api/v1/invoices/{invoiceID}/payments` (record/list), `/api/v1/invoices/{invoiceID}/refunds` (create/list), `/api/v1/households/{householdID}/invoices` (list), `/api/v1/ledger-events` (list — admin/billing only)
+- Billing server wiring: `NewRouterWithServices` now accepts a 10th `*billing.Service` parameter
+- Invoice state machine: `draft → issued → partially_paid → paid → refunded_partial | refunded_full → voided | written_off`
+- Ledger writes on: invoice_issued (+total), payment_succeeded (-amount), refund_processed (+amount), invoice_voided (-total), invoice_written_off (-remaining)
+- Role checks: create/issue/void invoice (owner/admin/billing); write-off (owner/admin only); record payment (owner/admin/billing); create refund (owner/admin/billing); read invoices (owner/admin/billing/parent); read ledger (owner/admin/billing)
+- Stripe trace: `docs/planning/STEP14-implementation-plan.md`
+- Stripe client interface + stub: `server/internal/stripe/client.go` — `Client` interface, `StubClient`, `VerifyStripeSignature` (HMAC-SHA256), no external SDK dependency
+- Stripe config env vars: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_CURRENCY` (default: usd), `STRIPE_RECONCILIATION_ALERT_THRESHOLD_CENTS` (default: 100)
+- Stripe endpoints: `POST /api/v1/stripe/payment-intents` (create PI), `POST /api/v1/stripe/checkout-sessions` (create CS), `GET /api/v1/stripe/reconciliation` (on-demand reconcile), `GET /api/v1/stripe/webhook-events` (list webhook deliveries)
+- Stripe webhook endpoint: `POST /api/v1/webhooks/stripe` — **public** (no auth), HMAC-verified, idempotent dedup via `WebhookEventRecord` store
+- Webhook events handled idempotently: `payment_intent.succeeded` → RecordPayment, `payment_intent.payment_failed` → mark payment failed, `charge.refunded` → CreateRefund
+- Billing service extended: `WebhookEventRecord` type, `stripeIntentIndex` secondary index, `HandleStripePaymentIntentSucceeded`, `HandleStripePaymentIntentFailed`, `HandleStripeChargeRefunded`, `GetReconciliationReport`
+- Stripe server wiring: `NewRouterWithServices` now accepts an 11th `stripelib.Client` parameter (nil → uses StubClient)
+- Reconciliation report: compares sum of `payment_succeeded` ledger events (method=stripe) vs `FetchBalanceCents()` from client; sets `alert_triggered=true` when mismatch > threshold
+- Communications trace: `docs/planning/STEP15-implementation-plan.md`
+- DB migration assets: `db/migrations/20260315004100_create_announcements.sql` through `db/migrations/20260315004400_create_suppression_list.sql`
+- Postmark client package: `server/internal/postmark/client.go` — `Client` interface, `StubClient`, real `HTTPClient` (no external SDK); config env vars: `POSTMARK_SERVER_TOKEN`, `POSTMARK_FROM_NAME`, `POSTMARK_FROM_EMAIL`
+- Comms service package: `server/internal/app/comms/service.go` — in-memory announcements, email campaigns, delivery tracking, suppression list
+- Comms endpoints: `POST /api/v1/announcements` (create), `GET /api/v1/announcements` (list), `GET /api/v1/announcements/{id}` (get), `POST /api/v1/announcements/{id}/publish` (draft→published), `POST /api/v1/announcements/{id}/archive` (→archived), `POST /api/v1/email-campaigns` (create draft), `GET /api/v1/email-campaigns` (list), `GET /api/v1/email-campaigns/{id}` (get), `POST /api/v1/email-campaigns/{id}/send` (send with suppression enforcement), `GET /api/v1/email-campaigns/{id}/deliveries` (delivery stats), `POST /api/v1/suppression` (add), `GET /api/v1/suppression` (list), `DELETE /api/v1/suppression/{id}` (remove)
+- Comms server wiring: `NewRouterWithServices` now accepts a 12th `*comms.Service` parameter (nil → auto-wires Postmark real or stub client based on `POSTMARK_SERVER_TOKEN`)
+- Suppression enforcement: at send time, suppressed recipients get delivery records with status=suppressed; remaining are sent via Postmark; campaign tracks sent_count/failed_count/suppressed_count/total_recipients
+- Announcement state machine: `draft → published → archived`; archiving from any non-archived state is allowed
+- Campaign state machine: `draft → sending → sent | failed`; re-send of non-draft campaign returns 409
+- Audit/compliance trace: `docs/planning/STEP16-implementation-plan.md`
+- DB migration assets: `db/migrations/20260316000100_create_audit_events.sql` (immutable), `db/migrations/20260316000200_create_data_export_requests.sql`, `db/migrations/20260316000300_create_data_deletion_requests.sql`
+- Audit service package: `server/internal/app/audit/service.go` — in-memory append-only audit log with `Append`, `Query` (filterable), and `Diff` (before/after JSON diff helper)
+- Compliance service package: `server/internal/app/compliance/service.go` — data export request and data deletion request skeletons (async job processing wired in STEP 17)
+- Audit endpoints: `GET /api/v1/audit-events` (owner/admin only; filterable by actor, action, resource, time range; cursor-paginated)
+- Compliance endpoints: `POST /api/v1/compliance/data-export-requests`, `GET /api/v1/compliance/data-export-requests`, `GET /api/v1/compliance/data-export-requests/{requestID}`, `POST /api/v1/compliance/data-deletion-requests`, `GET /api/v1/compliance/data-deletion-requests`, `GET /api/v1/compliance/data-deletion-requests/{requestID}`
+- Audit wiring: `NewRouterWithServices` now accepts 13th `*audit.Service` and 14th `*compliance.Service` parameters; audit service is initialized first and injected into AuthHandlers, MembershipHandlers, MeetsHandlers, ImportsHandlers, PerformanceHandlers, BillingHandlers, and ComplianceHandlers
+- Privileged actions audited: `auth.role.assign`, `billing.invoice.issue`, `billing.invoice.void`, `billing.invoice.write_off`, `billing.refund.create`, `meet.entry.override`, `meet.entry.approve`, `meet.commitments.lock`, `performance.best_time.override`, `import.conflict.resolve`, `members.swimmer.update`, `compliance.data_export.request`, `compliance.data_deletion.request`
+- Retention config env vars: `AUDIT_RETENTION_DAYS` (default 2555 ≈ 7 years), `COMPLIANCE_EXPORT_TTL_DAYS` (default 30), `COMPLIANCE_DELETION_REVIEW_DAYS` (default 30)
+- Compliance runbook: `docs/compliance/breach-response-runbook.md` — P0/P1/P2/P3 severity classification, detection → containment → investigation → notification → recovery → post-incident review phases, GDPR/CCPA notification obligations
+- Background jobs trace: `docs/planning/STEP17-implementation-plan.md`
+- API contract trace: `docs/planning/STEP18-implementation-plan.md`
+- OpenAPI 3.1 spec: `docs/api/openapi.yaml` — full spec covering all `/api/v1` endpoints: auth, members, groups, registrations, meets, commitments, entries, imports, exports, performance, billing, Stripe, comms, audit, compliance, jobs
+- OpenAPI lint config: `docs/api/.spectral.yaml` — Spectral ruleset (extends spectral:oas)
+- OpenAPI serve endpoint: `GET /api/v1/openapi` — now serves the real `docs/api/openapi.yaml` file (YAML content-type)
+- Makefile updated: `make lint-openapi` validates the spec with Spectral (gracefully skips if not installed); `make lint` depends on `lint-openapi`
+- Workers package: `server/internal/workers/` — `Queue` interface, `Server` (in-memory goroutine pool), `Scheduler` (periodic jobs), `JobMetrics` (counters + rolling execution history)
+- Job handlers package: `server/internal/workers/jobhandlers/` — concrete handlers for each task type; scaffold implementations with production wiring stubs
+- Queue names: `imports`, `billing`, `email`, `reconcile`, `default`
+- Task types: `imports:parse`, `exports:generate`, `email:campaign_batch`, `billing:reconcile`, `integrity:nightly`, `cleanup:purge_expired`, `compliance:data_export`, `compliance:data_deletion`
+- Retry policies per queue: imports (5 retries, exponential backoff up to 2h), billing (3, up to 1h), email (3, up to 30m), reconcile (2, up to 30m), default (3, up to 30m)
+- Dead-letter queue: tasks exceeding max retries move to DLQ; visible and re-tryable via admin endpoints
+- Scheduled jobs: `billing:reconcile` (24h), `integrity:nightly` (24h), `cleanup:purge_expired` (6h) — intervals configurable via env vars
+- Worker config env vars: `WORKER_CONCURRENCY_PER_QUEUE` (default 2), `WORKER_RECONCILE_INTERVAL` (default 24h), `WORKER_INTEGRITY_INTERVAL` (default 24h), `WORKER_CLEANUP_INTERVAL` (default 6h)
+- Jobs admin endpoints: `GET /api/v1/jobs` (list all tasks, filterable by queue/status), `GET /api/v1/jobs/queues` (per-queue stats), `GET /api/v1/jobs/metrics` (type counters + recent executions), `GET /api/v1/jobs/dlq` (dead-letter queue), `POST /api/v1/jobs/dlq/{taskID}/retry` (re-enqueue), `DELETE /api/v1/jobs/dlq/{taskID}` (remove from DLQ)
+- Jobs admin access: owner/admin only
+- Worker wiring: `NewRouterWithServices` now accepts a 15th `*workers.Server` parameter (nil → auto-wires in-memory server with all handlers and scheduler)
+- Production Asynq path: `workers.Server` satisfies `workers.Queue` interface; replace with `github.com/hibiken/asynq` adapter when Redis is available — all handler functions are unchanged
+- Admin UI foundation trace: `docs/planning/STEP19-implementation-plan.md`
+- Admin UI dependencies: `react-hook-form@^7.54`, `@hookform/resolvers@^3.9`, `zod@^3.24` added to `admin/package.json`
+- Design system: dark-first (data-theme="dark" on root html), CSS variables in `admin/app/globals.css`, design tokens match design-language-guide.html
+- Session state: `admin/lib/session.tsx` — `SessionProvider` + `useSession`, localStorage-backed, dev stub auto-seeds `stub-owner` in development
+- API client: `admin/lib/api.ts` — `createApiClient(getToken)` factory, typed `ApiError` class, `buildQuery` helper
+- Role system: `admin/lib/roles.ts` — `Role` type, `NAV_ITEMS`, `filterNavItems`, `groupNavItems`, `canAccess`, `hasRole` utilities
+- UI primitives: `admin/components/ui/icons.tsx` (SVG icon set), `admin/components/ui/Toast.tsx` (context + container), `admin/components/ui/Skeleton.tsx` (shimmer shapes), `admin/components/ui/EmptyState.tsx` (empty/error/loading states), `admin/components/ui/Table.tsx` (sortable + paginated data table)
+- Form system: `admin/components/forms/FormWrapper.tsx` — React Hook Form + Zod integration; exports `FormWrapper`, `Field`, `TextField`, `TextareaField`, `SelectField`, `CheckboxField`, `SubmitButton`, `FormRow`, `FormSection`
+- Layout components: `admin/components/layout/Sidebar.tsx` (collapsible, role-filtered, active-state, staggered reveal), `admin/components/layout/Topbar.tsx` (breadcrumb + status indicator)
+- Auth guard: `admin/components/auth/AuthGuard.tsx` — session-based route protection with loading splash and forbidden screen
+- Providers: `admin/app/providers.tsx` — `SessionProvider` + `ToastProvider` (client wrapper for root layout)
+- Admin shell: `admin/app/(admin)/layout.tsx` — route group with `AuthGuard` + `Sidebar` + `Topbar`
+- Dashboard: `admin/app/(admin)/dashboard/page.tsx` — stat grid, recent activity feed, system status panel
+- Root page (`/`) preserved as the temporary API dev console
+- STEP 20(0.1) admin screens: plan at `docs/planning/STEP20-implementation-plan.md`
+- Shared Tabs component: `admin/components/ui/Tabs.tsx` — client-side tab navigation with count badges
+- Table.tsx updated: `ColumnDef.render` signature changed to `(row: T, index: number) => ReactNode` (row-first); `Column<T>` convenience alias exported
+- nav paths updated in `admin/lib/roles.ts`: Members section uses `/members/` prefix; Competition entries nav replaced with `/meets` (commitments)
+- Households list: `admin/app/(admin)/members/households/page.tsx` (search, status filter, stats strip, sortable table)
+- Household detail: `admin/app/(admin)/members/households/[id]/page.tsx` (tabs: Overview, Swimmers, Contacts, Invoices)
+- Swimmers list: `admin/app/(admin)/members/swimmers/page.tsx` (search, status/gender/group filter, best time column)
+- Swimmer detail: `admin/app/(admin)/members/swimmers/[id]/page.tsx` (tabs: Profile, Performance, Groups, History)
+- Groups list: `admin/app/(admin)/members/groups/page.tsx` (type filter, swimmer counts, coach column)
+- Group detail: `admin/app/(admin)/members/groups/[id]/page.tsx` (tabs: Members, Eligibility Rules, Settings)
+- Registrations list: `admin/app/(admin)/members/registrations/page.tsx` (season + status filters, waiver status column)
+- Meets list: `admin/app/(admin)/meets/page.tsx` (view tabs: upcoming/past/all, course filter, commitment/entry counts)
+- Meet detail: `admin/app/(admin)/meets/[id]/page.tsx` (tabs: Overview, Sessions, Events, Commitments, Entries; lifecycle action buttons; SD3 export button)
+- STEP 20A admin screens: complete (Imports, Exports, Invoices)
+- Imports list: `admin/app/(admin)/imports/page.tsx` (file type + status filter, conflict count callouts, stats strip)
+- Import detail: `admin/app/(admin)/imports/[id]/page.tsx` (tabs: Overview, Rows, Conflicts, Report; interactive conflict resolution with candidate matching; accept/reject; match progress bar)
+- Exports list: `admin/app/(admin)/exports/page.tsx` (status filter, expiry warnings, download/retry actions, stats strip)
+- Invoices list: `admin/app/(admin)/invoices/page.tsx` (status + search filter, open balance/collected/overdue stats, overdue badges)
+- Invoice detail: `admin/app/(admin)/invoices/[id]/page.tsx` (tabs: Overview, Line Items, Payments, Refunds, Ledger; payment progress bar; lifecycle actions per status)
+- STEP 20B admin screens: complete (Ledger, Announcements, Email Campaigns, Audit Log, Background Jobs, Reports)
+- Ledger: `admin/app/(admin)/ledger/page.tsx` (append-only event log; type/date/search filters; credit/debit/net stats; immutability notice)
+- Announcements list: `admin/app/(admin)/announcements/page.tsx` (status filter; pinned callout; stats strip; create button)
+- Announcement detail: `admin/app/(admin)/announcements/[id]/page.tsx` (tabs: Content, Settings; publish/archive actions; audience + notification toggles)
+- Campaigns list: `admin/app/(admin)/campaigns/page.tsx` (status filter; delivery rate progress bars; open rate stats)
+- Campaign detail: `admin/app/(admin)/campaigns/[id]/page.tsx` (tabs: Overview, Deliveries, Preview; delivery progress bar; send action for drafts; per-recipient status table)
+- Audit log: `admin/app/(admin)/audit/page.tsx` (action prefix/resource type/date filters; expandable rows with metadata; immutability notice; CSV export button)
+- Background jobs: `admin/app/(admin)/jobs/page.tsx` (tabs: Queues, Dead-Letter Queue, Metrics; queue health cards; DLQ retry/delete; task counters + recent executions)
+- Reports: `admin/app/(admin)/reports/page.tsx` (9 report types in category-filtered grid; format badges; generate action with spinner; generated reports history with download/expiry)
+- STEP 20C parent portal: complete (route group, layout, shell, nav, dashboard, household profile)
+- Parent portal route group: `admin/app/(portal)/layout.tsx` — `AuthGuard` with `['parent', 'owner', 'admin']` + `PortalShell` + `DevRoleSwitcher`
+- Parent portal shell: `admin/components/portal/PortalShell.tsx` — light-mode wrapper (`data-theme="light"`), warm ivory background (`#F7F4F0`), gradient wash, max-width content area
+- Parent portal nav: `admin/components/portal/PortalNav.tsx` — frosted-glass sticky top nav; links: Home, Meets, Billing, Documents, Communications, Calendar; user avatar dropdown with household profile + sign out
+- Parent dashboard: `admin/app/(portal)/portal/dashboard/page.tsx` — greeting with time-of-day, alert cards (unpaid invoice/commitment deadline/missing doc with urgency colors), swimmer quick-view cards (gradient avatars, pending commit badges), upcoming meets table (commitment status chips + respond CTA)
+- Parent household profile: `admin/app/(portal)/portal/household/page.tsx` — household header with avatar; tabs: Overview (contact info, address, membership stats), Contacts (primary/secondary/emergency contact cards + add CTA), Swimmers (swimmer profile cards with USS#, registration status, DOB)
+- Portal aesthetic: light, warm ivory tones contrasting with the dark admin; Instrument Serif display font; card-based layouts; color-coded urgency; staggered slide-up animations
+- STEP 20D parent portal features: complete
+- Swimmer profile management: `admin/app/(portal)/portal/household/swimmers/[id]/page.tsx` — tabs: Profile (read-only club fields + editable fields: preferred name, jersey size, emergency notes), Performance (best times table SCY/SCM/LCM), History (activity timeline)
+- Registration center: `admin/app/(portal)/portal/registrations/page.tsx` — per-swimmer enrollment cards with waiver status per document, accordion expand, USS status, past seasons table, pending waiver alert banner
+- Meets inbox: `admin/app/(portal)/portal/meets/page.tsx` — needs-action section with urgency deadline countdown (red ≤3 days, amber ≤7 days), per-swimmer commitment status chips (requested/yes/no/open/closed), past meets list
+- Meet commitment detail: `admin/app/(portal)/portal/meets/[id]/page.tsx` — swimmer tabs, Step 1 yes/no commitment, Step 2 event selection per swimmer (checkbox grid with best times, cut eligibility hints), coach override notice, estimated fee summary, deadline urgency block
+- Billing overview: `admin/app/(portal)/portal/billing/page.tsx` — outstanding balance banner with pay CTA, stats strip (paid/open/credit), invoices table with status chips, recent payments list
+- Invoice detail: `admin/app/(portal)/portal/billing/invoices/[id]/page.tsx` — payment progress bar, Stripe checkout CTA, tabs: Line Items, Payments, Receipt History (PDF download per receipt)
+- Document center: `admin/app/(portal)/portal/documents/page.tsx` — action-needed alert, stats strip, documents grouped by category (waivers/medical/insurance/releases/registrations), per-doc status chip + sign/upload CTA, expiry warnings, filter: all/needs-action
+- Icons added to `admin/components/ui/icons.tsx`: `map-pin`, `edit`, `x-circle`, `check`, `credit-card`
+- STEP 20E parent + swimmer portal: complete
+- Parent communications: `admin/app/(portal)/portal/communications/page.tsx` — tabs: Inbox (announcements with read/unread, category filter, expand, mark-read actions), Notifications (per-event-type email/push toggles with save); PortalNav updated to replace "Announcements" with "Communications" and add "Calendar"
+- Parent calendar: `admin/app/(portal)/portal/calendar/page.tsx` — month/week view toggle, type filter (meet/practice/deadline/event/holiday), color-coded day cells with event chips, clickable day selection, upcoming-events sidebar, prev/next month nav
+- Swimmer portal: `admin/app/(swimmer)/` route group — `AuthGuard` with `['swimmer','owner','admin']` + `SwimmerShell` (feature-flag gated)
+- Swimmer shell: `admin/components/swimmer/SwimmerShell.tsx` — deep navy theme (#061623), teal accent (#00D4AA), dot-grid background, radial gradient wash; shows "Portal Disabled" screen if `NEXT_PUBLIC_SWIMMER_PORTAL_ENABLED !== 'true'`
+- Swimmer nav: `admin/components/swimmer/SwimmerNav.tsx` — dark frosted-glass sticky nav with wave SVG wordmark, teal active states; links: Dashboard, Performance, Schedule, Profile
+- Swimmer dashboard: `admin/app/(swimmer)/swim/page.tsx` — greeting + avatar, stat strip (events/next meet/best time/registration), upcoming meets cards (event chips, commitment status), best times preview table (SCY/SCM/LCM), announcements sidebar
+- Swimmer performance: `admin/app/(swimmer)/swim/performance/page.tsx` — tabs: Best Times (course-filtered table with standard badges), Cut Qualification (per-meet/standard with proximity bars), Progression (bar chart + history table)
+- Swimmer profile: `admin/app/(swimmer)/swim/profile/page.tsx` — read-only notice, club info + personal info fields, bio textarea (editable), preferred events sidebar, equipment sidebar
+- Swimmer schedule: `admin/app/(swimmer)/swim/schedule/page.tsx` — chronological sections, type filter (practice/meet/optional/deadline), date+event card layout, expandable event detail with my-events chips
+- Feature flag utility: `admin/lib/featureFlags.ts` — `SWIMMER_PORTAL_ENABLED` (env: `NEXT_PUBLIC_SWIMMER_PORTAL_ENABLED`), `DEV_STUB_TOKENS_ENABLED`
+- E2E test stubs: `docs/testing/e2e-parent-flows.md` — Playwright test stubs for registration/commitment/payment without swimmer login + policy acceptance tests
+- Mobile QA checklist: `docs/testing/mobile-qa-checklist.md` — 375px/390px/412px breakpoint checks for all parent critical flows
+- STEP 20E gap closure: all missing pages from SuggestedPageStructure.md built; plan at `docs/planning/STEP20E-gap-closure-plan.md`
+- Auth routes: `admin/app/auth/callback/page.tsx` (OIDC callback with progress steps), `admin/app/mfa/page.tsx` (TOTP/backup-code with digit inputs), `admin/app/logout/page.tsx` (revoke + redirect), `admin/app/unauthorized/page.tsx` (403 with floating 403 typography)
+- Login page: `admin/app/login/page.tsx` — production-ready split-screen design; left visual panel (massive DARE italic wordmark, feature list, atmospheric lane-stripe + dual teal/orange glow); right form panel (email input, SSO CTA → `/api/v1/auth/oidc/authorize`, dev stub role picker with all 7 roles, staggered reveal animations); redirects authenticated users to their role-appropriate destination
+- Register page: `admin/app/register/page.tsx` — "Request Access" form; fields: first/last name, email, role chips (Parent/Coach/Staff), optional club code + admin note; client-side validation; success state with confirmation; submits to POST /api/v1/auth/access-requests (stub in place)
+- Root page: `admin/app/page.tsx` — server redirect to `/login` (replaced the temporary API dev console)
+- Admin Performance section: `admin/app/(admin)/performance/time-standards/page.tsx` (searchable/filterable table, create modal, cut-type badges), `admin/app/(admin)/performance/best-times/page.tsx` (swimmer-picker + per-course best times + manual override with audit reason)
+- Admin Billing: `admin/app/(admin)/billing/page.tsx` (overview dashboard: KPIs, reconciliation banner, recent payments, overdue invoices, state distribution bar), `admin/app/(admin)/billing/stripe/page.tsx` (reconciliation tab, webhook event log with payload expand, config env vars)
+- Admin Comms: `admin/app/(admin)/comms/suppression/page.tsx` (suppression list: reason filter, add/remove, Postmark enforcement notice)
+- Admin Compliance: `admin/app/(admin)/compliance/data-exports/page.tsx` (GDPR export requests queue, status filter, download link, TTL display), `admin/app/(admin)/compliance/data-deletions/page.tsx` (deletion review queue, approve/reject modal with notes, flags for active invoices/registrations)
+- Admin Settings: `admin/app/(admin)/settings/page.tsx` (category sidebar, env var viewer/editor, production warning), `admin/app/(admin)/settings/roles/page.tsx` (user→role table, MFA compliance alerts, assign role modal)
+- Admin Meets: `admin/app/(admin)/meets/new/page.tsx` (4-step wizard: Basic Info → Schedule → Entry Rules → Review)
+- Parent Portal: `admin/app/(portal)/portal/registrations/new/page.tsx` (4-step wizard: Select Program → Select Swimmers → Review Waivers → Confirm)
+- Nav updated in `admin/lib/roles.ts`: added Performance section (time-standards, best-times), Billing overview + stripe, Suppression list, Compliance section, Settings + roles to System section; new icons added to icons.tsx (dollar-sign, slash, zap, arrow-left, arrow-right)
+- STEP 21 frontend enhancements: plan at `docs/planning/STEP21-frontend-enhancements-plan.md`
+- Light/dark mode toggle: `admin/components/layout/Topbar.tsx` — `ThemeToggle` component with sun/moon SVG icons; writes `data-theme` to `<html>` + persists to `localStorage('dare-theme')`; `AdminShell.tsx` restores saved theme on mount
+- Admin CSS additions: `admin/app/globals.css` — `.input` class (styled form inputs with focus ring), `--r-md: 8px` and `--r-2xl: 20px` CSS radius variables
+- Meet detail overhaul: `admin/app/(admin)/meets/[id]/page.tsx` — Sessions tab groups by day section (e.g. "Day 1 — Saturday") via `groupBy()`; Overview tab adds swimmer self-signup toggle flag + editable description + drag-drop file attachment upload zone; Entries tab adds per-row Approve button + edit modal (seed time override + audit reason) + "Add Entry for Swimmer" modal (coach/admin can add events even after commitment); EntriesTab includes stats strip (Total/Submitted/Approved/Override) + status/swimmer filters
+- Practice scheduler: `admin/app/(admin)/practices/page.tsx` — calendar + list view toggle, month grid with practice chips, `CreateModal` (title/date/time/pool/group multi-select/recurring/notes), `PracticeCard` (left-border colored by group), group + pool filters, stats strip; nav item added: `{ id: 'practices', label: 'Practice Scheduler', path: '/practices', section: 'Competition' }`
+- Performance visualization: `admin/app/(admin)/performance/visualization/page.tsx` — 4 tabs: Overview (top improvers, event coverage heatmap, recent PBs, group comparison), Comparison (per-event swimmer comparison with horizontal bars), Trends (monthly PB counts + improvement %, meet participation blocks), Event analytics (fastest/avg/top swimmer per event); filters: course/group/gender; nav item added: `{ id: 'visualization', label: 'Visualization', path: '/performance/visualization', section: 'Performance' }`
+- Parent calendar enlarged: `admin/app/(portal)/portal/calendar/page.tsx` — day cell `minHeight` increased from 90px → 140px, week view from 200px → 340px, sidebar width from 300px → 340px
+- Swimmer performance advanced progression: `admin/app/(swimmer)/swim/performance/page.tsx` — `PROGRESSION_BY_EVENT` per-event time series, `GOAL_CUT_TIMES` next cut standards; progression tab has event picker, view mode toggle (chart/table/monthly), 4-stat strip (current best/total drop/my goal/next cut), inline goal editor, chart with goal dashed line + projection, table with drop column (green/red), monthly best-per-month + range + swim count
+- Swimmer schedule My Entries tab: `admin/app/(swimmer)/swim/schedule/page.tsx` — `EntriesView` component grouped by meet, entry cards with status left-border, heat/lane display when approved, tab switcher with entry count badge
+- Billing Autopay tab: `admin/app/(portal)/portal/billing/page.tsx` — `AutopayTab` component with enable/disable toggle (CSS pill switch), payment method selector, trigger timing selector (on due date / 3 days early / 7 days early), scheduled payments list, "New" badge on tab

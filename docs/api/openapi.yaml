@@ -1,0 +1,3937 @@
+openapi: 3.1.0
+info:
+  title: DARE Platform API
+  description: |
+    Full-stack swim club operations platform covering member/household management,
+    meet scheduling and entries, file interoperability (CL2/SD3/ZIP/HY3),
+    performance tracking, billing (Stripe), communications, and admin reporting.
+  version: "1.0.0"
+  contact:
+    name: DARE Aquatics Engineering
+
+servers:
+  - url: /api/v1
+    description: Versioned API root
+
+security:
+  - BearerAuth: []
+    OrgScope: []
+
+tags:
+  - name: Health
+  - name: Auth
+  - name: Members
+  - name: Groups
+  - name: Registrations
+  - name: Meets
+  - name: Commitments
+  - name: Entries
+  - name: Imports
+  - name: Exports
+  - name: Performance
+  - name: Billing
+  - name: Stripe
+  - name: Communications
+  - name: Audit
+  - name: Compliance
+  - name: Jobs
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PATHS
+# ─────────────────────────────────────────────────────────────────────────────
+paths:
+
+  # ── Health ──────────────────────────────────────────────────────────────────
+
+  /health/live:
+    get:
+      tags: [Health]
+      summary: Liveness probe
+      description: Returns 200 when the process is alive.
+      security: []
+      operationId: healthLive
+      responses:
+        "200":
+          description: Process is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+
+  /health/ready:
+    get:
+      tags: [Health]
+      summary: Readiness probe
+      description: Returns 200 when all dependencies (DB, etc.) are reachable.
+      security: []
+      operationId: healthReady
+      responses:
+        "200":
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+        "503":
+          description: Not ready
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /openapi:
+    get:
+      tags: [Health]
+      summary: OpenAPI spec
+      description: Serves this OpenAPI 3.1 document.
+      security: []
+      operationId: getOpenAPI
+      responses:
+        "200":
+          description: OpenAPI YAML document
+          content:
+            application/yaml:
+              schema: { type: string }
+
+  # ── Auth ────────────────────────────────────────────────────────────────────
+
+  /auth/oidc/callback:
+    post:
+      tags: [Auth]
+      summary: OIDC callback — exchange code for session
+      description: Exchanges an OIDC authorization code for a platform session. Validates state signature, nonce, and audience.
+      security: []
+      operationId: oidcCallback
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OIDCCallbackRequest" }
+      responses:
+        "200":
+          description: Session issued
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OIDCCallbackResponse" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /auth/sessions/issue:
+    post:
+      tags: [Auth]
+      summary: Issue session token
+      description: Directly issues a session for a known user (used in dev/internal flows).
+      security: []
+      operationId: issueSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/IssueSessionRequest" }
+      responses:
+        "201":
+          description: Session issued
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionResponse" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /auth/sessions/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh session token
+      security: []
+      operationId: refreshSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        "200":
+          description: Session refreshed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionResponse" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /auth/sessions/revoke:
+    post:
+      tags: [Auth]
+      summary: Revoke session
+      security: []
+      operationId: revokeSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        "204":
+          description: Session revoked
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /auth/mfa/enroll:
+    post:
+      tags: [Auth]
+      summary: Enroll MFA factor
+      security:
+        - BearerAuth: []
+          OrgScope: []
+      operationId: enrollMFA
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [factor_type]
+              properties:
+                factor_type:
+                  type: string
+                  enum: [totp, backup_code]
+                label: { type: string }
+      responses:
+        "201":
+          description: MFA factor enrolled
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MFAEnrollResponse" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /auth/mfa/challenge:
+    post:
+      tags: [Auth]
+      summary: Complete MFA challenge
+      security:
+        - BearerAuth: []
+          OrgScope: []
+      operationId: challengeMFA
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [factor_id, challenge_code]
+              properties:
+                factor_id: { type: string }
+                challenge_code: { type: string }
+      responses:
+        "200":
+          description: MFA verified — step-up session returned
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionResponse" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /auth/roles/assign:
+    post:
+      tags: [Auth]
+      summary: Assign role to user (owner/admin + MFA)
+      security:
+        - BearerAuth: []
+          OrgScope: []
+      operationId: assignRole
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssignRoleRequest" }
+      responses:
+        "201":
+          description: Role assigned
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AssignRoleResponse" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /authz/ping:
+    get:
+      tags: [Auth]
+      summary: Authorization ping (RBAC smoke test)
+      description: Returns 200 when the caller is authenticated and holds at least one valid role.
+      operationId: authzPing
+      responses:
+        "200":
+          description: Caller is authenticated and authorised
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  # ── Members ─────────────────────────────────────────────────────────────────
+
+  /members/households:
+    post:
+      tags: [Members]
+      summary: Create household
+      operationId: createHousehold
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateHouseholdRequest" }
+      responses:
+        "201":
+          description: Household created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HouseholdResponse" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /members/households/{householdID}:
+    patch:
+      tags: [Members]
+      summary: Update household
+      operationId: updateHousehold
+      parameters:
+        - $ref: "#/components/parameters/HouseholdID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateHouseholdRequest" }
+      responses:
+        "200":
+          description: Household updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HouseholdResponse" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /members/households/{householdID}/contacts:
+    post:
+      tags: [Members]
+      summary: Add contact to household
+      operationId: addContact
+      parameters:
+        - $ref: "#/components/parameters/HouseholdID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AddContactRequest" }
+      responses:
+        "201":
+          description: Contact added
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: created }
+                  contact: { $ref: "#/components/schemas/Contact" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /members/swimmers:
+    get:
+      tags: [Members]
+      summary: List swimmers
+      operationId: listSwimmers
+      parameters:
+        - name: household_id
+          in: query
+          schema: { type: string }
+        - name: group_code
+          in: query
+          schema: { type: string }
+        - name: registration_status
+          in: query
+          schema: { type: string, enum: [pending, active, inactive, archived] }
+        - name: include_medical
+          in: query
+          schema: { type: boolean }
+      responses:
+        "200":
+          description: Swimmer list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  count: { type: integer }
+                  swimmers:
+                    type: array
+                    items: { $ref: "#/components/schemas/Swimmer" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [Members]
+      summary: Create swimmer profile
+      operationId: createSwimmer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateSwimmerRequest" }
+      responses:
+        "201":
+          description: Swimmer created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SwimmerResponse" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /members/swimmers/{swimmerID}:
+    patch:
+      tags: [Members]
+      summary: Update swimmer profile
+      operationId: updateSwimmer
+      parameters:
+        - $ref: "#/components/parameters/SwimmerID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateSwimmerRequest" }
+      responses:
+        "200":
+          description: Swimmer updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SwimmerResponse" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /members/swimmers/{swimmerID}/groups:
+    post:
+      tags: [Members]
+      summary: Assign swimmer to group
+      operationId: assignSwimmerGroup
+      parameters:
+        - $ref: "#/components/parameters/SwimmerID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [group_code]
+              properties:
+                group_code: { type: string }
+                is_primary: { type: boolean }
+      responses:
+        "201":
+          description: Group assignment created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  assignment: { type: object }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Groups ───────────────────────────────────────────────────────────────────
+
+  /groups:
+    get:
+      tags: [Groups]
+      summary: List groups
+      operationId: listGroups
+      parameters:
+        - name: active_only
+          in: query
+          schema: { type: boolean }
+      responses:
+        "200":
+          description: Group list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  count: { type: integer }
+                  groups:
+                    type: array
+                    items: { $ref: "#/components/schemas/Group" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [Groups]
+      summary: Create group
+      operationId: createGroup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateGroupRequest" }
+      responses:
+        "201":
+          description: Group created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  group: { $ref: "#/components/schemas/Group" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /groups/{groupID}:
+    get:
+      tags: [Groups]
+      summary: Get group
+      operationId: getGroup
+      parameters:
+        - $ref: "#/components/parameters/GroupID"
+      responses:
+        "200":
+          description: Group detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  group: { $ref: "#/components/schemas/Group" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [Groups]
+      summary: Update group
+      operationId: updateGroup
+      parameters:
+        - $ref: "#/components/parameters/GroupID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateGroupRequest" }
+      responses:
+        "200":
+          description: Group updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  group: { $ref: "#/components/schemas/Group" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /groups/{groupID}/eligibility-rules:
+    post:
+      tags: [Groups]
+      summary: Attach eligibility rule to group
+      operationId: attachEligibilityRule
+      parameters:
+        - $ref: "#/components/parameters/GroupID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rule_type]
+              properties:
+                rule_type:
+                  type: string
+                  enum: [age_range, gender, registration_status]
+                parameters:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "201":
+          description: Rule attached
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  rule: { type: object }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /groups/{groupID}/eligibility/{swimmerID}:
+    get:
+      tags: [Groups]
+      summary: Evaluate swimmer eligibility for group
+      operationId: evaluateEligibility
+      parameters:
+        - $ref: "#/components/parameters/GroupID"
+        - $ref: "#/components/parameters/SwimmerID"
+      responses:
+        "200":
+          description: Eligibility result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  result: { type: object }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Registrations ─────────────────────────────────────────────────────────
+
+  /registrations:
+    post:
+      tags: [Registrations]
+      summary: Create registration
+      operationId: createRegistration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateRegistrationRequest" }
+      responses:
+        "201":
+          description: Registration created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  registration: { $ref: "#/components/schemas/Registration" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /registrations/{registrationID}/transition:
+    post:
+      tags: [Registrations]
+      summary: Transition registration status
+      operationId: transitionRegistration
+      parameters:
+        - $ref: "#/components/parameters/RegistrationID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [active, inactive, withdrawn]
+      responses:
+        "200":
+          description: Registration updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  registration: { $ref: "#/components/schemas/Registration" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /registrations/{registrationID}/waivers:
+    post:
+      tags: [Registrations]
+      summary: Accept waiver for registration
+      operationId: acceptWaiver
+      parameters:
+        - $ref: "#/components/parameters/RegistrationID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [waiver_type]
+              properties:
+                waiver_type: { type: string }
+                ip_address: { type: string }
+      responses:
+        "201":
+          description: Waiver accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  waiver: { type: object }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  # ── Meets ────────────────────────────────────────────────────────────────────
+
+  /meets:
+    get:
+      tags: [Meets]
+      summary: List meets
+      operationId: listMeets
+      responses:
+        "200":
+          description: Meet list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  count: { type: integer }
+                  meets:
+                    type: array
+                    items: { $ref: "#/components/schemas/Meet" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [Meets]
+      summary: Create meet
+      operationId: createMeet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateMeetRequest" }
+      responses:
+        "201":
+          description: Meet created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  meet: { $ref: "#/components/schemas/Meet" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /meets/{meetID}:
+    get:
+      tags: [Meets]
+      summary: Get meet
+      operationId: getMeet
+      parameters:
+        - $ref: "#/components/parameters/MeetID"
+      responses:
+        "200":
+          description: Meet detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  meet: { $ref: "#/components/schemas/Meet" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /meets/{meetID}/transition:
+    post:
+      tags: [Meets]
+      summary: Transition meet lifecycle status
+      operationId: transitionMeet
+      parameters:
+        - $ref: "#/components/parameters/MeetID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [draft, published, commitment_open, commitment_closed, entry_finalized, completed, archived]
+      responses:
+        "200":
+          description: Meet status updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  meet: { $ref: "#/components/schemas/Meet" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /meets/{meetID}/sessions:
+    get:
+      tags: [Meets]
+      summary: List meet sessions
+      operationId: listMeetSessions
+      parameters:
+        - $ref: "#/components/parameters/MeetID"
+      responses:
+        "200":
+          description: Session list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  count: { type: integer }
+                  sessions:
+                    type: array
+                    items: { $ref: "#/components/schemas/MeetSession" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [Meets]
+      summary: Create meet session
+      operationId: createMeetSession
+      parameters:
+        - $ref: "#/components/parameters/MeetID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateMeetSessionRequest" }
+      responses:
+        "201":
+          description: Session created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  session: { $ref: "#/components/schemas/MeetSession" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /meets/{meetID}/events:
+    get:
+      tags: [Meets]
+      summary: List meet events
+      operationId: listMeetEvents
+      parameters:
+        - $ref: "#/components/parameters/MeetID"
+      responses:
+        "200":
+          description: Event list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  count: { type: integer }
+                  events:
+                    type: array
+                    items: { $ref: "#/components/schemas/MeetEvent" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [Meets]
+      summary: Create meet event
+      operationId: createMeetEvent
+      parameters:
+        - $ref: "#/components/parameters/MeetID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateMeetEventRequest" }
+      responses:
+        "201":
+          description: Event created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  event: { $ref: "#/components/schemas/MeetEvent" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /meets/{meetID}/commitment-request:
+    post:
+      tags: [Commitments]
+      summary: Publish commitment request to all active swimmers
+      operationId: publishCommitmentRequest
+      parameters:
+        - $ref: "#/components/parameters/MeetID"
+      responses:
+        "200":
+          description: Commitment requests published
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  meet: { $ref: "#/components/schemas/Meet" }
+                  commitments:
+                    type: array
+                    items: { $ref: "#/components/schemas/Commitment" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /meets/{meetID}/commitments:
+    get:
+      tags: [Commitments]
+      summary: List commitments for meet
+      operationId: listCommitments
+      parameters:
+        - $ref: "#/components/parameters/MeetID"
+      responses:
+        "200":
+          description: Commitment list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  count: { type: integer }
+                  commitments:
+                    type: array
+                    items: { $ref: "#/components/schemas/Commitment" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /meets/{meetID}/commitments/{commitmentID}/respond:
+    post:
+      tags: [Commitments]
+      summary: Parent responds to commitment (yes/no)
+      operationId: respondToCommitment
+      parameters:
+        - $ref: "#/components/parameters/MeetID"
+        - $ref: "#/components/parameters/CommitmentID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [response]
+              properties:
+                response:
+                  type: string
+                  enum: [committed_yes, committed_no]
+                notes: { type: string }
+      responses:
+        "200":
+          description: Commitment updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  commitment: { $ref: "#/components/schemas/Commitment" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /meets/{meetID}/commitments/{commitmentID}/event-selections:
+    get:
+      tags: [Commitments]
+      summary: List event selections for commitment
+      operationId: listCommitmentEventSelections
+      parameters:
+        - $ref: "#/components/parameters/MeetID"
+        - $ref: "#/components/parameters/CommitmentID"
+      responses:
+        "200":
+          description: Event selection list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  count: { type: integer }
+                  selections:
+                    type: array
+                    items: { $ref: "#/components/schemas/EventSelection" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [Commitments]
+      summary: Select event for commitment
+      operationId: selectCommitmentEvent
+      parameters:
+        - $ref: "#/components/parameters/MeetID"
+        - $ref: "#/components/parameters/CommitmentID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [meet_event_id]
+              properties:
+                meet_event_id: { type: string, format: uuid }
+                seed_time_ms: { type: [integer, "null"] }
+      responses:
+        "201":
+          description: Event selected
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  selection: { $ref: "#/components/schemas/EventSelection" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /meets/{meetID}/commitments/{commitmentID}/event-selections/{selectionID}:
+    delete:
+      tags: [Commitments]
+      summary: Remove event selection
+      operationId: removeCommitmentEventSelection
+      parameters:
+        - $ref: "#/components/parameters/MeetID"
+        - $ref: "#/components/parameters/CommitmentID"
+        - name: selectionID
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Selection removed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: removed }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /meets/{meetID}/lock-commitments:
+    post:
+      tags: [Commitments]
+      summary: Lock all commitments for meet (coach/admin)
+      operationId: lockCommitments
+      parameters:
+        - $ref: "#/components/parameters/MeetID"
+      responses:
+        "200":
+          description: Commitments locked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  meet: { $ref: "#/components/schemas/Meet" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /meets/{meetID}/entries:
+    get:
+      tags: [Entries]
+      summary: List entries for meet
+      operationId: listEntries
+      parameters:
+        - $ref: "#/components/parameters/MeetID"
+      responses:
+        "200":
+          description: Entry list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  count: { type: integer }
+                  entries:
+                    type: array
+                    items: { $ref: "#/components/schemas/Entry" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [Entries]
+      summary: Propose entry
+      operationId: proposeEntry
+      parameters:
+        - $ref: "#/components/parameters/MeetID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProposeEntryRequest" }
+      responses:
+        "201":
+          description: Entry proposed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  entry: { $ref: "#/components/schemas/Entry" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /meets/{meetID}/entries/{entryID}/override:
+    post:
+      tags: [Entries]
+      summary: Coach override — reassign swimmer event (requires reason, audited)
+      operationId: overrideEntry
+      parameters:
+        - $ref: "#/components/parameters/MeetID"
+        - $ref: "#/components/parameters/EntryID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [new_meet_event_id, reason]
+              properties:
+                new_meet_event_id: { type: string, format: uuid }
+                seed_time_ms: { type: [integer, "null"] }
+                reason: { type: string }
+      responses:
+        "200":
+          description: Entry overridden
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  entry: { $ref: "#/components/schemas/Entry" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /meets/{meetID}/entries/{entryID}/approve:
+    post:
+      tags: [Entries]
+      summary: Approve entry (coach/admin)
+      operationId: approveEntry
+      parameters:
+        - $ref: "#/components/parameters/MeetID"
+        - $ref: "#/components/parameters/EntryID"
+      responses:
+        "200":
+          description: Entry approved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  entry: { $ref: "#/components/schemas/Entry" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  # ── Exports (meet-scoped) ─────────────────────────────────────────────────
+
+  /meets/{meetID}/exports:
+    get:
+      tags: [Exports]
+      summary: List exports for meet
+      operationId: listMeetExports
+      parameters:
+        - $ref: "#/components/parameters/MeetID"
+      responses:
+        "200":
+          description: Export list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: { type: integer }
+                  exports:
+                    type: array
+                    items: { $ref: "#/components/schemas/FileExport" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [Exports]
+      summary: Generate SD3/SDIF export for meet
+      operationId: generateExport
+      parameters:
+        - $ref: "#/components/parameters/MeetID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GenerateExportRequest" }
+      responses:
+        "201":
+          description: Export job created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  export: { $ref: "#/components/schemas/FileExport" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  # ── Imports ──────────────────────────────────────────────────────────────────
+
+  /imports/upload-url:
+    post:
+      tags: [Imports]
+      summary: Request presigned upload URL for meet file
+      operationId: requestImportUploadURL
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [filename]
+              properties:
+                filename: { type: string }
+                file_type:
+                  type: string
+                  enum: [cl2, sd3, zip, hy3]
+                meet_id: { type: string, format: uuid }
+      responses:
+        "201":
+          description: Import record and presigned upload URL created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  import: { $ref: "#/components/schemas/FileImport" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /imports:
+    get:
+      tags: [Imports]
+      summary: List import jobs
+      operationId: listImports
+      responses:
+        "200":
+          description: Import list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: { type: integer }
+                  imports:
+                    type: array
+                    items: { $ref: "#/components/schemas/FileImport" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /imports/{importID}:
+    get:
+      tags: [Imports]
+      summary: Get import job detail
+      operationId: getImport
+      parameters:
+        - $ref: "#/components/parameters/ImportID"
+      responses:
+        "200":
+          description: Import detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  import: { $ref: "#/components/schemas/FileImport" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /imports/{importID}/finalize:
+    post:
+      tags: [Imports]
+      summary: Finalize upload and begin parsing
+      operationId: finalizeImport
+      parameters:
+        - $ref: "#/components/parameters/ImportID"
+      responses:
+        "200":
+          description: Import finalized
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  import: { $ref: "#/components/schemas/FileImport" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /imports/{importID}/conflicts:
+    get:
+      tags: [Imports]
+      summary: List match conflicts for import
+      operationId: listImportConflicts
+      parameters:
+        - $ref: "#/components/parameters/ImportID"
+      responses:
+        "200":
+          description: Conflict list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: { type: integer }
+                  conflicts:
+                    type: array
+                    items: { $ref: "#/components/schemas/MatchConflict" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /imports/{importID}/conflicts/{conflictID}/resolve:
+    post:
+      tags: [Imports]
+      summary: Resolve match conflict (admin/owner only, audited)
+      operationId: resolveImportConflict
+      parameters:
+        - $ref: "#/components/parameters/ImportID"
+        - name: conflictID
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [resolved_swimmer_id]
+              properties:
+                resolved_swimmer_id: { type: string, format: uuid }
+                resolution_note: { type: string }
+      responses:
+        "200":
+          description: Conflict resolved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conflict: { $ref: "#/components/schemas/MatchConflict" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /imports/{importID}/report:
+    get:
+      tags: [Imports]
+      summary: Download deterministic import report
+      operationId: getImportReport
+      parameters:
+        - $ref: "#/components/parameters/ImportID"
+      responses:
+        "200":
+          description: Import report
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  import: { $ref: "#/components/schemas/FileImport" }
+                  report: { type: object }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Exports (standalone) ─────────────────────────────────────────────────
+
+  /exports/{exportID}:
+    get:
+      tags: [Exports]
+      summary: Get export job detail
+      operationId: getExport
+      parameters:
+        - $ref: "#/components/parameters/ExportID"
+      responses:
+        "200":
+          description: Export detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  export: { $ref: "#/components/schemas/FileExport" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /exports/{exportID}/download:
+    get:
+      tags: [Exports]
+      summary: Download generated export file
+      operationId: downloadExport
+      parameters:
+        - $ref: "#/components/parameters/ExportID"
+      responses:
+        "200":
+          description: File content (SD3/SDIF)
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Export not yet ready
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  # ── Performance ──────────────────────────────────────────────────────────────
+
+  /results:
+    post:
+      tags: [Performance]
+      summary: Upsert swimmer result record
+      operationId: upsertResult
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpsertResultRequest" }
+      responses:
+        "201":
+          description: Result upserted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result: { $ref: "#/components/schemas/Result" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /swimmers/{swimmerID}/best-times:
+    get:
+      tags: [Performance]
+      summary: List swimmer best times
+      operationId: listBestTimes
+      parameters:
+        - $ref: "#/components/parameters/SwimmerID"
+        - name: course
+          in: query
+          schema: { type: string, enum: [SCY, SCM, LCM] }
+        - name: stroke
+          in: query
+          schema: { type: string, enum: [free, back, breast, fly, im, free_relay, medley_relay] }
+      responses:
+        "200":
+          description: Best times list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  swimmer_id: { type: string }
+                  count: { type: integer }
+                  best_times:
+                    type: array
+                    items: { $ref: "#/components/schemas/BestTime" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /swimmers/{swimmerID}/best-times/override:
+    post:
+      tags: [Performance]
+      summary: Manual best-time override (admin/coach, audited)
+      operationId: overrideBestTime
+      parameters:
+        - $ref: "#/components/parameters/SwimmerID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OverrideBestTimeRequest" }
+      responses:
+        "200":
+          description: Best time overridden
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  best_time: { $ref: "#/components/schemas/BestTime" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /swimmers/{swimmerID}/progression:
+    get:
+      tags: [Performance]
+      summary: Swimmer performance progression timeline
+      operationId: getSwimmerProgression
+      parameters:
+        - $ref: "#/components/parameters/SwimmerID"
+        - name: distance
+          in: query
+          schema: { type: integer }
+        - name: stroke
+          in: query
+          schema: { type: string }
+        - name: course
+          in: query
+          schema: { type: string, enum: [SCY, SCM, LCM] }
+      responses:
+        "200":
+          description: Progression results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  swimmer_id: { type: string }
+                  count: { type: integer }
+                  results:
+                    type: array
+                    items: { $ref: "#/components/schemas/Result" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /swimmers/{swimmerID}/cut-qualification:
+    get:
+      tags: [Performance]
+      summary: Evaluate swimmer cut qualification against a time standard
+      operationId: evaluateCutQualification
+      parameters:
+        - $ref: "#/components/parameters/SwimmerID"
+        - name: standard_id
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Qualification result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  qualification: { type: object }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /time-standards:
+    get:
+      tags: [Performance]
+      summary: List time standards
+      operationId: listTimeStandards
+      parameters:
+        - name: season_year
+          in: query
+          schema: { type: integer }
+        - name: standard_code
+          in: query
+          schema: { type: string }
+        - name: event_distance
+          in: query
+          schema: { type: integer }
+        - name: stroke
+          in: query
+          schema: { type: string }
+        - name: course
+          in: query
+          schema: { type: string, enum: [SCY, SCM, LCM] }
+        - name: gender
+          in: query
+          schema: { type: string, enum: [M, F, X] }
+        - name: active_only
+          in: query
+          schema: { type: boolean }
+      responses:
+        "200":
+          description: Time standards list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: { type: integer }
+                  time_standards:
+                    type: array
+                    items: { $ref: "#/components/schemas/TimeStandard" }
+    post:
+      tags: [Performance]
+      summary: Create time standard
+      operationId: createTimeStandard
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateTimeStandardRequest" }
+      responses:
+        "201":
+          description: Time standard created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  time_standard: { $ref: "#/components/schemas/TimeStandard" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /time-standards/{standardID}:
+    get:
+      tags: [Performance]
+      summary: Get time standard
+      operationId: getTimeStandard
+      parameters:
+        - $ref: "#/components/parameters/StandardID"
+      responses:
+        "200":
+          description: Time standard detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  time_standard: { $ref: "#/components/schemas/TimeStandard" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [Performance]
+      summary: Update time standard
+      operationId: updateTimeStandard
+      parameters:
+        - $ref: "#/components/parameters/StandardID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                description: { type: string }
+                time_ms: { type: integer }
+                is_active: { type: boolean }
+      responses:
+        "200":
+          description: Time standard updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  time_standard: { $ref: "#/components/schemas/TimeStandard" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Performance]
+      summary: Delete time standard
+      operationId: deleteTimeStandard
+      parameters:
+        - $ref: "#/components/parameters/StandardID"
+      responses:
+        "200":
+          description: Time standard deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted: { type: boolean }
+                  id: { type: string }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Billing ──────────────────────────────────────────────────────────────────
+
+  /invoices:
+    post:
+      tags: [Billing]
+      summary: Create invoice (draft)
+      operationId: createInvoice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateInvoiceRequest" }
+      responses:
+        "201":
+          description: Invoice created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invoice: { $ref: "#/components/schemas/Invoice" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /invoices/{invoiceID}:
+    get:
+      tags: [Billing]
+      summary: Get invoice
+      operationId: getInvoice
+      parameters:
+        - $ref: "#/components/parameters/InvoiceID"
+      responses:
+        "200":
+          description: Invoice detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invoice: { $ref: "#/components/schemas/Invoice" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /invoices/{invoiceID}/items:
+    get:
+      tags: [Billing]
+      summary: List invoice line items
+      operationId: listInvoiceItems
+      parameters:
+        - $ref: "#/components/parameters/InvoiceID"
+      responses:
+        "200":
+          description: Line item list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invoice_id: { type: string }
+                  count: { type: integer }
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/InvoiceItem" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [Billing]
+      summary: Add line item to invoice
+      operationId: addInvoiceItem
+      parameters:
+        - $ref: "#/components/parameters/InvoiceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AddInvoiceItemRequest" }
+      responses:
+        "201":
+          description: Item added
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item: { $ref: "#/components/schemas/InvoiceItem" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /invoices/{invoiceID}/items/{itemID}:
+    delete:
+      tags: [Billing]
+      summary: Remove line item from invoice
+      operationId: removeInvoiceItem
+      parameters:
+        - $ref: "#/components/parameters/InvoiceID"
+        - name: itemID
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Item removed
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /invoices/{invoiceID}/issue:
+    post:
+      tags: [Billing]
+      summary: Issue invoice (draft → issued, audited)
+      operationId: issueInvoice
+      parameters:
+        - $ref: "#/components/parameters/InvoiceID"
+      responses:
+        "200":
+          description: Invoice issued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invoice: { $ref: "#/components/schemas/Invoice" }
+                  ledger_event: { $ref: "#/components/schemas/LedgerEvent" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /invoices/{invoiceID}/void:
+    post:
+      tags: [Billing]
+      summary: Void issued invoice (audited)
+      operationId: voidInvoice
+      parameters:
+        - $ref: "#/components/parameters/InvoiceID"
+      responses:
+        "200":
+          description: Invoice voided
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invoice: { $ref: "#/components/schemas/Invoice" }
+                  ledger_event: { $ref: "#/components/schemas/LedgerEvent" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /invoices/{invoiceID}/write-off:
+    post:
+      tags: [Billing]
+      summary: Write off invoice (owner/admin only, audited)
+      operationId: writeOffInvoice
+      parameters:
+        - $ref: "#/components/parameters/InvoiceID"
+      responses:
+        "200":
+          description: Invoice written off
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invoice: { $ref: "#/components/schemas/Invoice" }
+                  ledger_event: { $ref: "#/components/schemas/LedgerEvent" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /invoices/{invoiceID}/payments:
+    get:
+      tags: [Billing]
+      summary: List payments for invoice
+      operationId: listPayments
+      parameters:
+        - $ref: "#/components/parameters/InvoiceID"
+      responses:
+        "200":
+          description: Payment list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invoice_id: { type: string }
+                  count: { type: integer }
+                  payments:
+                    type: array
+                    items: { $ref: "#/components/schemas/Payment" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [Billing]
+      summary: Record external payment (audited)
+      operationId: recordPayment
+      parameters:
+        - $ref: "#/components/parameters/InvoiceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RecordPaymentRequest" }
+      responses:
+        "201":
+          description: Payment recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  payment: { $ref: "#/components/schemas/Payment" }
+                  ledger_event: { $ref: "#/components/schemas/LedgerEvent" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /invoices/{invoiceID}/refunds:
+    get:
+      tags: [Billing]
+      summary: List refunds for invoice
+      operationId: listRefunds
+      parameters:
+        - $ref: "#/components/parameters/InvoiceID"
+      responses:
+        "200":
+          description: Refund list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invoice_id: { type: string }
+                  count: { type: integer }
+                  refunds:
+                    type: array
+                    items: { $ref: "#/components/schemas/Refund" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [Billing]
+      summary: Create refund (audited)
+      operationId: createRefund
+      parameters:
+        - $ref: "#/components/parameters/InvoiceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateRefundRequest" }
+      responses:
+        "201":
+          description: Refund created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  refund: { $ref: "#/components/schemas/Refund" }
+                  ledger_event: { $ref: "#/components/schemas/LedgerEvent" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /households/{householdID}/invoices:
+    get:
+      tags: [Billing]
+      summary: List invoices for household
+      operationId: listHouseholdInvoices
+      parameters:
+        - $ref: "#/components/parameters/HouseholdID"
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [draft, issued, partially_paid, paid, refunded_partial, refunded_full, voided, written_off]
+      responses:
+        "200":
+          description: Invoice list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  household_id: { type: string }
+                  count: { type: integer }
+                  invoices:
+                    type: array
+                    items: { $ref: "#/components/schemas/Invoice" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /ledger-events:
+    get:
+      tags: [Billing]
+      summary: List ledger events (admin/billing only)
+      operationId: listLedgerEvents
+      parameters:
+        - name: invoice_id
+          in: query
+          schema: { type: string }
+        - name: event_type
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Ledger event list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: { type: integer }
+                  events:
+                    type: array
+                    items: { $ref: "#/components/schemas/LedgerEvent" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  # ── Stripe ───────────────────────────────────────────────────────────────────
+
+  /stripe/payment-intents:
+    post:
+      tags: [Stripe]
+      summary: Create Stripe payment intent
+      operationId: createPaymentIntent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreatePaymentIntentRequest" }
+      responses:
+        "201":
+          description: Payment intent created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  payment_intent: { type: object }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "502":
+          description: Stripe API error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /stripe/checkout-sessions:
+    post:
+      tags: [Stripe]
+      summary: Create Stripe checkout session
+      operationId: createCheckoutSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateCheckoutSessionRequest" }
+      responses:
+        "201":
+          description: Checkout session created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  checkout_session: { type: object }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /stripe/webhook-events:
+    get:
+      tags: [Stripe]
+      summary: List Stripe webhook delivery records
+      operationId: listWebhookEvents
+      responses:
+        "200":
+          description: Webhook event list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: { type: integer }
+                  events: { type: array, items: { type: object } }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /stripe/reconciliation:
+    get:
+      tags: [Stripe]
+      summary: On-demand Stripe reconciliation report
+      operationId: getReconciliation
+      responses:
+        "200":
+          description: Reconciliation report
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reconciliation: { type: object }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /webhooks/stripe:
+    post:
+      tags: [Stripe]
+      summary: Stripe webhook receiver (public, HMAC-verified)
+      description: |
+        Public endpoint — no auth required. Verifies Stripe-Signature header
+        via HMAC-SHA256. Idempotent: duplicate events are de-duplicated by event ID.
+        Handled events: payment_intent.succeeded, payment_intent.payment_failed, charge.refunded.
+      security: []
+      operationId: stripeWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "200":
+          description: Event processed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          description: Invalid Stripe signature
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  # ── Communications ───────────────────────────────────────────────────────────
+
+  /announcements:
+    get:
+      tags: [Communications]
+      summary: List announcements
+      operationId: listAnnouncements
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [draft, published, archived] }
+      responses:
+        "200":
+          description: Announcement list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  announcements:
+                    type: array
+                    items: { $ref: "#/components/schemas/Announcement" }
+    post:
+      tags: [Communications]
+      summary: Create announcement draft
+      operationId: createAnnouncement
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateAnnouncementRequest" }
+      responses:
+        "201":
+          description: Announcement created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Announcement" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /announcements/{announcementID}:
+    get:
+      tags: [Communications]
+      summary: Get announcement
+      operationId: getAnnouncement
+      parameters:
+        - $ref: "#/components/parameters/AnnouncementID"
+      responses:
+        "200":
+          description: Announcement detail
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Announcement" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /announcements/{announcementID}/publish:
+    post:
+      tags: [Communications]
+      summary: Publish announcement (draft → published)
+      operationId: publishAnnouncement
+      parameters:
+        - $ref: "#/components/parameters/AnnouncementID"
+      responses:
+        "200":
+          description: Announcement published
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Announcement" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /announcements/{announcementID}/archive:
+    post:
+      tags: [Communications]
+      summary: Archive announcement
+      operationId: archiveAnnouncement
+      parameters:
+        - $ref: "#/components/parameters/AnnouncementID"
+      responses:
+        "200":
+          description: Announcement archived
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Announcement" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /email-campaigns:
+    get:
+      tags: [Communications]
+      summary: List email campaigns
+      operationId: listEmailCampaigns
+      responses:
+        "200":
+          description: Campaign list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  campaigns:
+                    type: array
+                    items: { $ref: "#/components/schemas/EmailCampaign" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [Communications]
+      summary: Create email campaign draft
+      operationId: createEmailCampaign
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateEmailCampaignRequest" }
+      responses:
+        "201":
+          description: Campaign created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmailCampaign" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /email-campaigns/{campaignID}:
+    get:
+      tags: [Communications]
+      summary: Get email campaign
+      operationId: getEmailCampaign
+      parameters:
+        - $ref: "#/components/parameters/CampaignID"
+      responses:
+        "200":
+          description: Campaign detail
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmailCampaign" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /email-campaigns/{campaignID}/send:
+    post:
+      tags: [Communications]
+      summary: Send email campaign to recipients
+      operationId: sendEmailCampaign
+      parameters:
+        - $ref: "#/components/parameters/CampaignID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [recipients]
+              properties:
+                recipients:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [email]
+                    properties:
+                      email: { type: string, format: email }
+                      user_id: { type: string }
+      responses:
+        "200":
+          description: Campaign send initiated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmailCampaign" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Campaign is not in draft state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /email-campaigns/{campaignID}/deliveries:
+    get:
+      tags: [Communications]
+      summary: Get campaign delivery stats
+      operationId: getCampaignDeliveries
+      parameters:
+        - $ref: "#/components/parameters/CampaignID"
+      responses:
+        "200":
+          description: Delivery statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deliveries: { type: array, items: { type: object } }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /suppression:
+    get:
+      tags: [Communications]
+      summary: List suppression list entries
+      operationId: listSuppressionEntries
+      responses:
+        "200":
+          description: Suppression entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  suppression:
+                    type: array
+                    items: { $ref: "#/components/schemas/SuppressionEntry" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [Communications]
+      summary: Add email to suppression list
+      operationId: addSuppressionEntry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, reason]
+              properties:
+                email: { type: string, format: email }
+                reason:
+                  type: string
+                  enum: [bounce, complaint, manual]
+      responses:
+        "201":
+          description: Suppression entry added
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuppressionEntry" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /suppression/{suppressionID}:
+    delete:
+      tags: [Communications]
+      summary: Remove suppression entry
+      operationId: removeSuppressionEntry
+      parameters:
+        - name: suppressionID
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Entry removed
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Audit ────────────────────────────────────────────────────────────────────
+
+  /audit-events:
+    get:
+      tags: [Audit]
+      summary: Query audit events (owner/admin only)
+      operationId: listAuditEvents
+      parameters:
+        - name: actor_id
+          in: query
+          schema: { type: string }
+        - name: action
+          in: query
+          schema: { type: string }
+        - name: resource_type
+          in: query
+          schema: { type: string }
+        - name: resource_id
+          in: query
+          schema: { type: string }
+        - name: from
+          in: query
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50, maximum: 200 }
+        - name: cursor
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Audit event page
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    items: { $ref: "#/components/schemas/AuditEvent" }
+                  next_cursor: { type: [string, "null"] }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  # ── Compliance ──────────────────────────────────────────────────────────────
+
+  /compliance/data-export-requests:
+    get:
+      tags: [Compliance]
+      summary: List data export requests
+      operationId: listDataExportRequests
+      parameters:
+        - name: household_id
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Request list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  requests: { type: array, items: { type: object } }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [Compliance]
+      summary: Request household data export (GDPR/CCPA, audited)
+      operationId: createDataExportRequest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [household_id]
+              properties:
+                household_id: { type: string, format: uuid }
+      responses:
+        "201":
+          description: Export request created
+          content:
+            application/json:
+              schema: { type: object }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /compliance/data-export-requests/{requestID}:
+    get:
+      tags: [Compliance]
+      summary: Get data export request
+      operationId: getDataExportRequest
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+      responses:
+        "200":
+          description: Export request detail
+          content:
+            application/json:
+              schema: { type: object }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /compliance/data-deletion-requests:
+    get:
+      tags: [Compliance]
+      summary: List data deletion requests
+      operationId: listDataDeletionRequests
+      parameters:
+        - name: household_id
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Request list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  requests: { type: array, items: { type: object } }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [Compliance]
+      summary: Request household data deletion (GDPR/CCPA, audited)
+      operationId: createDataDeletionRequest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [household_id]
+              properties:
+                household_id: { type: string, format: uuid }
+                reason: { type: string }
+      responses:
+        "201":
+          description: Deletion request created
+          content:
+            application/json:
+              schema: { type: object }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /compliance/data-deletion-requests/{requestID}:
+    get:
+      tags: [Compliance]
+      summary: Get data deletion request
+      operationId: getDataDeletionRequest
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+      responses:
+        "200":
+          description: Deletion request detail
+          content:
+            application/json:
+              schema: { type: object }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Jobs Admin ───────────────────────────────────────────────────────────────
+
+  /jobs:
+    get:
+      tags: [Jobs]
+      summary: List background tasks (owner/admin only)
+      operationId: listJobs
+      parameters:
+        - name: queue
+          in: query
+          schema: { type: string, enum: [imports, billing, email, reconcile, default] }
+        - name: status
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Task list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tasks: { type: array, items: { type: object } }
+                  count: { type: integer }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /jobs/queues:
+    get:
+      tags: [Jobs]
+      summary: Per-queue stats
+      operationId: getQueueStats
+      responses:
+        "200":
+          description: Queue statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  queues: { type: object }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /jobs/metrics:
+    get:
+      tags: [Jobs]
+      summary: Job execution metrics
+      operationId: getJobMetrics
+      responses:
+        "200":
+          description: Job metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  by_type: { type: object }
+                  recent_executions: { type: array, items: { type: object } }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /jobs/dlq:
+    get:
+      tags: [Jobs]
+      summary: List dead-letter queue tasks
+      operationId: listDLQ
+      responses:
+        "200":
+          description: DLQ task list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dead_letter_tasks: { type: array, items: { type: object } }
+                  count: { type: integer }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /jobs/dlq/{taskID}/retry:
+    post:
+      tags: [Jobs]
+      summary: Re-enqueue DLQ task
+      operationId: retryDLQTask
+      parameters:
+        - $ref: "#/components/parameters/TaskID"
+      responses:
+        "200":
+          description: Task re-enqueued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  task_id: { type: string }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /jobs/dlq/{taskID}:
+    delete:
+      tags: [Jobs]
+      summary: Remove task from DLQ
+      operationId: deleteDLQTask
+      parameters:
+        - $ref: "#/components/parameters/TaskID"
+      responses:
+        "204":
+          description: Task removed
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# COMPONENTS
+# ─────────────────────────────────────────────────────────────────────────────
+components:
+
+  # ── Security Schemes ────────────────────────────────────────────────────────
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT access token issued by the platform (via OIDC callback or session issue endpoint).
+        Pass in the Authorization header: `Authorization: Bearer <token>`
+    OrgScope:
+      type: apiKey
+      in: header
+      name: X-Org-Id
+      description: |
+        Organisation identifier for multi-tenant scoping.
+        Required on all protected endpoints.
+
+  # ── Reusable Parameters ─────────────────────────────────────────────────────
+  parameters:
+    HouseholdID:
+      name: householdID
+      in: path
+      required: true
+      schema: { type: string }
+    SwimmerID:
+      name: swimmerID
+      in: path
+      required: true
+      schema: { type: string }
+    GroupID:
+      name: groupID
+      in: path
+      required: true
+      schema: { type: string }
+    RegistrationID:
+      name: registrationID
+      in: path
+      required: true
+      schema: { type: string }
+    MeetID:
+      name: meetID
+      in: path
+      required: true
+      schema: { type: string }
+    CommitmentID:
+      name: commitmentID
+      in: path
+      required: true
+      schema: { type: string }
+    EntryID:
+      name: entryID
+      in: path
+      required: true
+      schema: { type: string }
+    ImportID:
+      name: importID
+      in: path
+      required: true
+      schema: { type: string }
+    ExportID:
+      name: exportID
+      in: path
+      required: true
+      schema: { type: string }
+    InvoiceID:
+      name: invoiceID
+      in: path
+      required: true
+      schema: { type: string }
+    StandardID:
+      name: standardID
+      in: path
+      required: true
+      schema: { type: string }
+    AnnouncementID:
+      name: announcementID
+      in: path
+      required: true
+      schema: { type: string }
+    CampaignID:
+      name: campaignID
+      in: path
+      required: true
+      schema: { type: string }
+    TaskID:
+      name: taskID
+      in: path
+      required: true
+      schema: { type: string }
+    RequestID:
+      name: requestID
+      in: path
+      required: true
+      schema: { type: string }
+
+  # ── Reusable Responses ──────────────────────────────────────────────────────
+  responses:
+    BadRequest:
+      description: Bad request — validation failure or malformed body
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+          example:
+            error:
+              code: validation_failed
+              message: One or more request fields are invalid.
+    Unauthorized:
+      description: Missing or invalid authentication
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+          example:
+            error:
+              code: unauthorized
+              message: Authentication context is missing.
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+          example:
+            error:
+              code: forbidden
+              message: You are not allowed to perform this action.
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+          example:
+            error:
+              code: not_found
+              message: The requested resource was not found.
+    Conflict:
+      description: State conflict or duplicate resource
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    UnprocessableEntity:
+      description: Invalid state transition or business rule violation
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    ServiceUnavailable:
+      description: Dependency unavailable (e.g. OIDC not configured)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  # ── Schemas ─────────────────────────────────────────────────────────────────
+  schemas:
+
+    # Common ───────────────────────────────────────────────────────────────────
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details:
+              type: [object, "null"]
+              additionalProperties: true
+
+    AuditMeta:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        created_by: { type: string }
+        updated_by: { type: string }
+
+    # Auth ─────────────────────────────────────────────────────────────────────
+    OIDCCallbackRequest:
+      type: object
+      required: [code, state]
+      properties:
+        code: { type: string }
+        state: { type: string }
+        org_id: { type: string }
+
+    OIDCCallbackResponse:
+      type: object
+      properties:
+        status: { type: string, example: ok }
+        user:
+          type: object
+          properties:
+            user_id: { type: string }
+            org_id: { type: string }
+            roles: { type: array, items: { type: string } }
+        session: { $ref: "#/components/schemas/SessionTokens" }
+
+    IssueSessionRequest:
+      type: object
+      required: [user_id, org_id, roles]
+      properties:
+        user_id: { type: string }
+        org_id: { type: string }
+        household_id: { type: string }
+        roles:
+          type: array
+          minItems: 1
+          items: { type: string }
+        mfa_authenticated: { type: boolean, default: false }
+
+    SessionResponse:
+      type: object
+      properties:
+        status: { type: string }
+        session: { $ref: "#/components/schemas/SessionTokens" }
+
+    SessionTokens:
+      type: object
+      properties:
+        access_token: { type: string }
+        refresh_token: { type: string }
+        expires_at: { type: string, format: date-time }
+        token_type: { type: string, example: Bearer }
+
+    MFAEnrollResponse:
+      type: object
+      properties:
+        status: { type: string, example: enrolled }
+        factor:
+          type: object
+          properties:
+            factor_id: { type: string }
+            factor_type: { type: string, enum: [totp, backup_code] }
+            label: { type: string }
+        next: { type: string }
+
+    AssignRoleRequest:
+      type: object
+      required: [org_id, target_user_id, role, reason]
+      properties:
+        org_id: { type: string }
+        target_user_id: { type: string }
+        role:
+          type: string
+          enum: [owner, admin, coach, parent, swimmer, billing, read_only]
+        scope_type: { type: string }
+        scope_id: { type: string }
+        reason: { type: string }
+
+    AssignRoleResponse:
+      type: object
+      properties:
+        status: { type: string }
+        assignment: { type: object }
+
+    # Members ──────────────────────────────────────────────────────────────────
+    Household:
+      allOf:
+        - $ref: "#/components/schemas/AuditMeta"
+        - type: object
+          properties:
+            org_id: { type: string, format: uuid }
+            household_name: { type: string }
+            primary_email: { type: string, format: email }
+            primary_phone_e164: { type: string }
+            status:
+              type: string
+              enum: [active, inactive, archived]
+            notes: { type: string }
+
+    HouseholdResponse:
+      type: object
+      properties:
+        status: { type: string }
+        household: { $ref: "#/components/schemas/Household" }
+
+    CreateHouseholdRequest:
+      type: object
+      required: [org_id, household_name]
+      properties:
+        org_id: { type: string }
+        household_name: { type: string }
+        primary_email: { type: string, format: email }
+        primary_phone_e164: { type: string }
+        status:
+          type: string
+          enum: [active, inactive, archived]
+          default: active
+        notes: { type: string }
+
+    UpdateHouseholdRequest:
+      type: object
+      properties:
+        household_name: { type: string }
+        primary_email: { type: string, format: email }
+        primary_phone_e164: { type: string }
+        status:
+          type: string
+          enum: [active, inactive, archived]
+        notes: { type: string }
+
+    Contact:
+      allOf:
+        - $ref: "#/components/schemas/AuditMeta"
+        - type: object
+          properties:
+            household_id: { type: string }
+            relationship: { type: string }
+            first_name: { type: string }
+            last_name: { type: string }
+            email: { type: string, format: email }
+            phone_e164: { type: string }
+            is_primary: { type: boolean }
+            is_emergency_contact: { type: boolean }
+            can_pick_up: { type: boolean }
+            emergency_priority: { type: [integer, "null"] }
+            notes: { type: string }
+
+    AddContactRequest:
+      type: object
+      required: [relationship, first_name, last_name]
+      properties:
+        relationship: { type: string }
+        first_name: { type: string }
+        last_name: { type: string }
+        email: { type: string, format: email }
+        phone_e164: { type: string }
+        is_primary: { type: boolean }
+        is_emergency_contact: { type: boolean }
+        can_pick_up: { type: boolean }
+        emergency_priority: { type: [integer, "null"] }
+        notes: { type: string }
+
+    Swimmer:
+      allOf:
+        - $ref: "#/components/schemas/AuditMeta"
+        - type: object
+          properties:
+            org_id: { type: string }
+            household_id: { type: string }
+            first_name: { type: string }
+            last_name: { type: string }
+            preferred_name: { type: string }
+            date_of_birth: { type: string, format: date }
+            gender:
+              type: string
+              enum: [female, male, non_binary, undisclosed]
+            swimmer_external_id: { type: string }
+            registration_status:
+              type: string
+              enum: [pending, active, inactive, archived]
+            medical_flags:
+              type: array
+              items: { type: string }
+            notes: { type: string }
+
+    SwimmerResponse:
+      type: object
+      properties:
+        status: { type: string }
+        swimmer: { $ref: "#/components/schemas/Swimmer" }
+
+    CreateSwimmerRequest:
+      type: object
+      required: [org_id, household_id, first_name, last_name, date_of_birth, gender]
+      properties:
+        org_id: { type: string }
+        household_id: { type: string }
+        first_name: { type: string }
+        last_name: { type: string }
+        preferred_name: { type: string }
+        date_of_birth: { type: string, format: date }
+        gender:
+          type: string
+          enum: [female, male, non_binary, undisclosed]
+        swimmer_external_id: { type: string }
+        registration_status:
+          type: string
+          enum: [pending, active, inactive, archived]
+        medical_flags:
+          type: array
+          items: { type: string }
+        notes: { type: string }
+
+    UpdateSwimmerRequest:
+      type: object
+      properties:
+        first_name: { type: string }
+        last_name: { type: string }
+        preferred_name: { type: string }
+        date_of_birth: { type: string, format: date }
+        gender:
+          type: string
+          enum: [female, male, non_binary, undisclosed]
+        swimmer_external_id: { type: string }
+        registration_status:
+          type: string
+          enum: [pending, active, inactive, archived]
+        medical_flags:
+          type: [array, "null"]
+          items: { type: string }
+        notes: { type: string }
+
+    # Groups ───────────────────────────────────────────────────────────────────
+    Group:
+      allOf:
+        - $ref: "#/components/schemas/AuditMeta"
+        - type: object
+          properties:
+            org_id: { type: string }
+            code: { type: string }
+            name: { type: string }
+            description: { type: string }
+            type:
+              type: string
+              enum: [competitive, recreational, developmental, masters, other]
+            min_age: { type: [integer, "null"] }
+            max_age: { type: [integer, "null"] }
+            coach_user_id: { type: string }
+            is_active: { type: boolean }
+
+    CreateGroupRequest:
+      type: object
+      required: [code, name]
+      properties:
+        code: { type: string }
+        name: { type: string }
+        description: { type: string }
+        type:
+          type: string
+          enum: [competitive, recreational, developmental, masters, other]
+        min_age: { type: [integer, "null"] }
+        max_age: { type: [integer, "null"] }
+        coach_user_id: { type: string }
+
+    UpdateGroupRequest:
+      type: object
+      properties:
+        name: { type: string }
+        description: { type: string }
+        type:
+          type: string
+          enum: [competitive, recreational, developmental, masters, other]
+        min_age: { type: [integer, "null"] }
+        max_age: { type: [integer, "null"] }
+        coach_user_id: { type: string }
+        is_active: { type: boolean }
+
+    Registration:
+      allOf:
+        - $ref: "#/components/schemas/AuditMeta"
+        - type: object
+          properties:
+            org_id: { type: string }
+            household_id: { type: string }
+            swimmer_id: { type: string }
+            group_id: { type: string }
+            season: { type: string }
+            registration_date: { type: string, format: date }
+            status:
+              type: string
+              enum: [pending, active, inactive, withdrawn]
+            notes: { type: string }
+
+    CreateRegistrationRequest:
+      type: object
+      required: [household_id, swimmer_id, group_id, season]
+      properties:
+        household_id: { type: string }
+        swimmer_id: { type: string }
+        group_id: { type: string }
+        season: { type: string }
+        registration_date: { type: string, format: date }
+        notes: { type: string }
+
+    # Meets ────────────────────────────────────────────────────────────────────
+    Meet:
+      allOf:
+        - $ref: "#/components/schemas/AuditMeta"
+        - type: object
+          properties:
+            org_id: { type: string }
+            name: { type: string }
+            meet_type:
+              type: string
+              enum: [invitational, dual_meet, time_trial, championship, other]
+            course:
+              type: string
+              enum: [SCY, SCM, LCM]
+            status:
+              type: string
+              enum: [draft, published, commitment_open, commitment_closed, entry_finalized, completed, archived]
+            start_date: { type: string, format: date }
+            end_date: { type: string, format: date }
+            entry_deadline: { type: string, format: date-time }
+            commitment_deadline: { type: string, format: date-time }
+            host_org: { type: string }
+            location: { type: string }
+
+    CreateMeetRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        meet_type:
+          type: string
+          enum: [invitational, dual_meet, time_trial, championship, other]
+        course:
+          type: string
+          enum: [SCY, SCM, LCM]
+        start_date: { type: string, format: date }
+        end_date: { type: string, format: date }
+        entry_deadline: { type: string, format: date-time }
+        commitment_deadline: { type: string, format: date-time }
+        host_org: { type: string }
+        location: { type: string }
+
+    MeetSession:
+      allOf:
+        - $ref: "#/components/schemas/AuditMeta"
+        - type: object
+          properties:
+            meet_id: { type: string }
+            session_number: { type: integer }
+            name: { type: string }
+            session_date: { type: string, format: date }
+            warmup_time: { type: string }
+            start_time: { type: string }
+            notes: { type: string }
+
+    CreateMeetSessionRequest:
+      type: object
+      required: [session_number, name]
+      properties:
+        session_number: { type: integer, minimum: 1 }
+        name: { type: string }
+        session_date: { type: string, format: date }
+        warmup_time: { type: string }
+        start_time: { type: string }
+        notes: { type: string }
+
+    MeetEvent:
+      allOf:
+        - $ref: "#/components/schemas/AuditMeta"
+        - type: object
+          properties:
+            meet_id: { type: string }
+            session_id: { type: string }
+            event_number: { type: string }
+            stroke:
+              type: string
+              enum: [freestyle, backstroke, breaststroke, butterfly, individual_medley, medley_relay, freestyle_relay, other]
+            distance: { type: integer }
+            course:
+              type: string
+              enum: [SCY, SCM, LCM]
+            gender:
+              type: string
+              enum: [M, F, X, O]
+            min_age: { type: [integer, "null"] }
+            max_age: { type: [integer, "null"] }
+            entry_fee_cents: { type: integer }
+            is_relay: { type: boolean }
+
+    CreateMeetEventRequest:
+      type: object
+      required: [event_number, stroke, distance]
+      properties:
+        session_id: { type: string }
+        event_number: { type: string }
+        stroke:
+          type: string
+          enum: [freestyle, backstroke, breaststroke, butterfly, individual_medley, medley_relay, freestyle_relay, other]
+        distance: { type: integer, minimum: 1 }
+        course:
+          type: string
+          enum: [SCY, SCM, LCM]
+        gender:
+          type: string
+          enum: [M, F, X, O]
+        min_age: { type: [integer, "null"] }
+        max_age: { type: [integer, "null"] }
+        entry_fee_cents: { type: integer, default: 0 }
+        is_relay: { type: boolean, default: false }
+
+    Commitment:
+      allOf:
+        - $ref: "#/components/schemas/AuditMeta"
+        - type: object
+          properties:
+            meet_id: { type: string }
+            swimmer_id: { type: string }
+            household_id: { type: string }
+            status:
+              type: string
+              enum: [invited, committed_yes, committed_no, coach_reviewed, locked]
+            notes: { type: string }
+
+    EventSelection:
+      allOf:
+        - $ref: "#/components/schemas/AuditMeta"
+        - type: object
+          properties:
+            commitment_id: { type: string }
+            meet_event_id: { type: string }
+            seed_time_ms: { type: [integer, "null"] }
+
+    Entry:
+      allOf:
+        - $ref: "#/components/schemas/AuditMeta"
+        - type: object
+          properties:
+            meet_id: { type: string }
+            swimmer_id: { type: string }
+            meet_event_id: { type: string }
+            commitment_id: { type: string }
+            status:
+              type: string
+              enum: [draft, submitted, approved, exported, updated_from_results, archived]
+            seed_time_ms: { type: [integer, "null"] }
+            is_relay: { type: boolean }
+
+    ProposeEntryRequest:
+      type: object
+      required: [swimmer_id, meet_event_id]
+      properties:
+        swimmer_id: { type: string }
+        meet_event_id: { type: string }
+        commitment_id: { type: string }
+        seed_time_ms: { type: [integer, "null"] }
+        is_relay: { type: boolean, default: false }
+
+    # Imports ──────────────────────────────────────────────────────────────────
+    FileImport:
+      allOf:
+        - $ref: "#/components/schemas/AuditMeta"
+        - type: object
+          properties:
+            org_id: { type: string }
+            meet_id: { type: string }
+            filename: { type: string }
+            file_type:
+              type: string
+              enum: [cl2, sd3, zip, hy3]
+            status:
+              type: string
+              enum: [uploaded, scanning, parsing, matching, conflicts_pending, applied, failed, archived]
+            upload_url: { type: [string, "null"] }
+            conflict_count: { type: integer }
+            error_count: { type: integer }
+            row_count: { type: integer }
+
+    MatchConflict:
+      allOf:
+        - $ref: "#/components/schemas/AuditMeta"
+        - type: object
+          properties:
+            import_id: { type: string }
+            conflict_type:
+              type: string
+              enum: [unknown_athlete, ambiguous_match, bad_event_code, duplicate_row]
+            status:
+              type: string
+              enum: [open, resolved_manual, resolved_auto, rejected, closed]
+            raw_data: { type: object }
+            resolved_swimmer_id: { type: [string, "null"] }
+            resolution_note: { type: string }
+
+    # Exports ──────────────────────────────────────────────────────────────────
+    FileExport:
+      allOf:
+        - $ref: "#/components/schemas/AuditMeta"
+        - type: object
+          properties:
+            meet_id: { type: string }
+            export_type:
+              type: string
+              enum: [standard_sd3, extended_sd3, sdif_roster]
+            status:
+              type: string
+              enum: [pending, generating, ready, failed, expired]
+            filename: { type: string }
+            download_url: { type: [string, "null"] }
+            entry_count: { type: integer }
+
+    GenerateExportRequest:
+      type: object
+      required: [export_type, meet_name, entries]
+      properties:
+        export_type:
+          type: string
+          enum: [standard_sd3, extended_sd3, sdif_roster]
+        meet_name: { type: string }
+        meet_start_date: { type: string, format: date }
+        meet_end_date: { type: string, format: date }
+        course:
+          type: string
+          enum: [SCY, SCM, LCM]
+        host_team_code: { type: string }
+        host_team_name: { type: string }
+        entries:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [swimmer, event_number, distance, stroke]
+            properties:
+              swimmer:
+                type: object
+                required: [last_name]
+                properties:
+                  last_name: { type: string }
+                  first_name: { type: string }
+                  uss_number: { type: string }
+                  dob: { type: string, description: "MMDDYYYY format" }
+                  gender: { type: string, enum: [M, F] }
+                  team_code: { type: string }
+              event_number: { type: string }
+              distance: { type: integer, minimum: 1 }
+              stroke:
+                type: string
+                enum: [free, back, breast, fly, im, free_relay, medley_relay]
+              event_gender: { type: string, enum: [M, F, X] }
+              age_group: { type: string }
+              course: { type: string, enum: [SCY, SCM, LCM] }
+              seed_time_ms: { type: integer }
+              heat: { type: integer }
+              lane: { type: integer }
+
+    # Performance ──────────────────────────────────────────────────────────────
+    Result:
+      allOf:
+        - $ref: "#/components/schemas/AuditMeta"
+        - type: object
+          properties:
+            swimmer_id: { type: string }
+            meet_id: { type: string }
+            meet_event_id: { type: string }
+            import_id: { type: string }
+            event_number: { type: string }
+            distance: { type: integer }
+            stroke:
+              type: string
+              enum: [free, back, breast, fly, im, free_relay, medley_relay]
+            course:
+              type: string
+              enum: [SCY, SCM, LCM]
+            gender: { type: string, enum: [M, F, X] }
+            heat: { type: [integer, "null"] }
+            lane: { type: [integer, "null"] }
+            place: { type: [integer, "null"] }
+            seed_time_ms: { type: [integer, "null"] }
+            fin_time_ms: { type: [integer, "null"] }
+            dq: { type: boolean }
+            dq_code: { type: string }
+            is_official: { type: boolean }
+
+    UpsertResultRequest:
+      type: object
+      required: [swimmer_id, distance, stroke, course, gender]
+      properties:
+        swimmer_id: { type: string }
+        meet_id: { type: string }
+        meet_event_id: { type: string }
+        import_id: { type: string }
+        event_number: { type: string }
+        distance: { type: integer, minimum: 1 }
+        stroke:
+          type: string
+          enum: [free, back, breast, fly, im, free_relay, medley_relay]
+        course:
+          type: string
+          enum: [SCY, SCM, LCM]
+        gender: { type: string, enum: [M, F, X] }
+        heat: { type: [integer, "null"] }
+        lane: { type: [integer, "null"] }
+        place: { type: [integer, "null"] }
+        seed_time_ms: { type: [integer, "null"] }
+        fin_time_ms: { type: [integer, "null"] }
+        dq: { type: boolean, default: false }
+        dq_code: { type: string }
+        dq_note: { type: string }
+        is_official: { type: boolean, default: true }
+        splits:
+          type: array
+          items:
+            type: object
+            required: [split_number, split_distance]
+            properties:
+              split_number: { type: integer, minimum: 1 }
+              split_distance: { type: integer, minimum: 1 }
+              split_time_ms: { type: integer, minimum: 0 }
+              cumulative_time_ms: { type: integer, minimum: 0 }
+
+    BestTime:
+      type: object
+      properties:
+        swimmer_id: { type: string }
+        distance: { type: integer }
+        stroke: { type: string }
+        course: { type: string, enum: [SCY, SCM, LCM] }
+        fin_time_ms: { type: integer }
+        is_override: { type: boolean }
+        recorded_at: { type: string, format: date-time }
+        result_id: { type: [string, "null"] }
+
+    OverrideBestTimeRequest:
+      type: object
+      required: [event_distance, stroke, course, reason]
+      properties:
+        event_distance: { type: integer, minimum: 1 }
+        stroke:
+          type: string
+          enum: [free, back, breast, fly, im]
+        course:
+          type: string
+          enum: [SCY, SCM, LCM]
+        best_time_ms: { type: [integer, "null"] }
+        reason: { type: string }
+        recorded_at: { type: string, format: date-time }
+
+    TimeStandard:
+      allOf:
+        - $ref: "#/components/schemas/AuditMeta"
+        - type: object
+          properties:
+            name: { type: string }
+            season_year: { type: integer }
+            standard_code: { type: string }
+            description: { type: string }
+            event_distance: { type: integer }
+            stroke: { type: string }
+            course: { type: string, enum: [SCY, SCM, LCM] }
+            gender: { type: string, enum: [M, F, X] }
+            age_min: { type: [integer, "null"] }
+            age_max: { type: [integer, "null"] }
+            time_ms: { type: integer }
+            is_active: { type: boolean }
+
+    CreateTimeStandardRequest:
+      type: object
+      required: [name, season_year, standard_code, event_distance, stroke, course, gender, time_ms]
+      properties:
+        name: { type: string }
+        season_year: { type: integer, minimum: 2001 }
+        standard_code: { type: string }
+        description: { type: string }
+        event_distance: { type: integer, minimum: 1 }
+        stroke:
+          type: string
+          enum: [free, back, breast, fly, im]
+        course:
+          type: string
+          enum: [SCY, SCM, LCM]
+        gender:
+          type: string
+          enum: [M, F, X]
+        age_min: { type: [integer, "null"] }
+        age_max: { type: [integer, "null"] }
+        time_ms: { type: integer, minimum: 1 }
+        is_active: { type: boolean, default: true }
+
+    # Billing ──────────────────────────────────────────────────────────────────
+    Invoice:
+      allOf:
+        - $ref: "#/components/schemas/AuditMeta"
+        - type: object
+          properties:
+            org_id: { type: string }
+            household_id: { type: string }
+            invoice_number: { type: string }
+            status:
+              type: string
+              enum: [draft, issued, partially_paid, paid, refunded_partial, refunded_full, voided, written_off]
+            total_cents: { type: integer }
+            paid_cents: { type: integer }
+            refunded_cents: { type: integer }
+            due_date: { type: string, format: date }
+            notes: { type: string }
+            external_ref: { type: string }
+
+    CreateInvoiceRequest:
+      type: object
+      required: [invoice_number]
+      properties:
+        household_id: { type: string }
+        invoice_number: { type: string }
+        due_date: { type: string, format: date }
+        notes: { type: string }
+        external_ref: { type: string }
+
+    InvoiceItem:
+      allOf:
+        - $ref: "#/components/schemas/AuditMeta"
+        - type: object
+          properties:
+            invoice_id: { type: string }
+            description: { type: string }
+            quantity: { type: integer }
+            unit_amount_cents: { type: integer }
+            total_cents: { type: integer }
+            category:
+              type: string
+              enum: [program_fee, meet_fee, equipment, manual, late_fee, credit]
+            swimmer_id: { type: string }
+            meet_id: { type: string }
+
+    AddInvoiceItemRequest:
+      type: object
+      required: [description, quantity, unit_amount_cents, category]
+      properties:
+        description: { type: string }
+        quantity: { type: integer, minimum: 1 }
+        unit_amount_cents: { type: integer, minimum: 1 }
+        category:
+          type: string
+          enum: [program_fee, meet_fee, equipment, manual, late_fee, credit]
+        swimmer_id: { type: string }
+        meet_id: { type: string }
+
+    Payment:
+      allOf:
+        - $ref: "#/components/schemas/AuditMeta"
+        - type: object
+          properties:
+            invoice_id: { type: string }
+            amount_cents: { type: integer }
+            method:
+              type: string
+              enum: [stripe, check, cash, ach, other]
+            status:
+              type: string
+              enum: [pending, succeeded, failed]
+            stripe_payment_intent_id: { type: string }
+            external_ref: { type: string }
+            notes: { type: string }
+
+    RecordPaymentRequest:
+      type: object
+      required: [amount_cents, method]
+      properties:
+        amount_cents: { type: integer, minimum: 1 }
+        method:
+          type: string
+          enum: [stripe, check, cash, ach, other]
+        stripe_payment_intent_id: { type: string }
+        external_ref: { type: string }
+        notes: { type: string }
+
+    Refund:
+      allOf:
+        - $ref: "#/components/schemas/AuditMeta"
+        - type: object
+          properties:
+            invoice_id: { type: string }
+            payment_id: { type: string }
+            amount_cents: { type: integer }
+            reason: { type: string }
+            status:
+              type: string
+              enum: [pending, processed, failed]
+
+    CreateRefundRequest:
+      type: object
+      required: [payment_id, amount_cents, reason]
+      properties:
+        payment_id: { type: string }
+        amount_cents: { type: integer, minimum: 1 }
+        reason: { type: string }
+
+    LedgerEvent:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        org_id: { type: string }
+        invoice_id: { type: string }
+        event_type: { type: string }
+        amount_cents: { type: integer }
+        running_balance_cents: { type: integer }
+        actor_id: { type: string }
+        created_at: { type: string, format: date-time }
+
+    # Stripe ───────────────────────────────────────────────────────────────────
+    CreatePaymentIntentRequest:
+      type: object
+      required: [invoice_id, amount_cents]
+      properties:
+        invoice_id: { type: string }
+        amount_cents: { type: integer, minimum: 1 }
+        description: { type: string }
+        metadata:
+          type: object
+          additionalProperties: { type: string }
+
+    CreateCheckoutSessionRequest:
+      type: object
+      required: [invoice_id, amount_cents, success_url, cancel_url]
+      properties:
+        invoice_id: { type: string }
+        amount_cents: { type: integer, minimum: 1 }
+        description: { type: string }
+        success_url: { type: string, format: uri }
+        cancel_url: { type: string, format: uri }
+        metadata:
+          type: object
+          additionalProperties: { type: string }
+
+    # Communications ───────────────────────────────────────────────────────────
+    Announcement:
+      allOf:
+        - $ref: "#/components/schemas/AuditMeta"
+        - type: object
+          properties:
+            org_id: { type: string }
+            title: { type: string }
+            body: { type: string }
+            audience:
+              type: string
+              enum: [all, group]
+            group_id: { type: string }
+            status:
+              type: string
+              enum: [draft, published, archived]
+            published_at: { type: [string, "null"], format: date-time }
+
+    CreateAnnouncementRequest:
+      type: object
+      required: [title, body, audience]
+      properties:
+        title: { type: string, maxLength: 255 }
+        body: { type: string }
+        audience:
+          type: string
+          enum: [all, group]
+        group_id: { type: string }
+
+    EmailCampaign:
+      allOf:
+        - $ref: "#/components/schemas/AuditMeta"
+        - type: object
+          properties:
+            org_id: { type: string }
+            name: { type: string }
+            subject: { type: string }
+            body_html: { type: string }
+            body_text: { type: string }
+            from_name: { type: string }
+            from_email: { type: string, format: email }
+            audience:
+              type: string
+              enum: [all, group]
+            group_id: { type: string }
+            status:
+              type: string
+              enum: [draft, sending, sent, failed]
+            sent_count: { type: integer }
+            failed_count: { type: integer }
+            suppressed_count: { type: integer }
+            total_recipients: { type: integer }
+
+    CreateEmailCampaignRequest:
+      type: object
+      required: [name, subject, body_html, from_name, from_email, audience]
+      properties:
+        name: { type: string, maxLength: 255 }
+        subject: { type: string, maxLength: 255 }
+        body_html: { type: string }
+        body_text: { type: string }
+        from_name: { type: string }
+        from_email: { type: string, format: email }
+        audience:
+          type: string
+          enum: [all, group]
+        group_id: { type: string }
+
+    SuppressionEntry:
+      allOf:
+        - $ref: "#/components/schemas/AuditMeta"
+        - type: object
+          properties:
+            email: { type: string, format: email }
+            reason:
+              type: string
+              enum: [bounce, complaint, manual]
+
+    # Audit ────────────────────────────────────────────────────────────────────
+    AuditEvent:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        org_id: { type: string }
+        actor_user_id: { type: string }
+        actor_roles:
+          type: array
+          items: { type: string }
+        action: { type: string }
+        resource_type: { type: string }
+        resource_id: { type: string }
+        before:
+          type: [object, "null"]
+          additionalProperties: true
+        after:
+          type: [object, "null"]
+          additionalProperties: true
+        metadata:
+          type: object
+          additionalProperties: { type: string }
+        created_at: { type: string, format: date-time }

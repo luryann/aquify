@@ -1,0 +1,2060 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DARE Aquatics — Design Language Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* =========================================================
+   DARE AQUATICS — DESIGN LANGUAGE GUIDE
+   ========================================================= */
+
+/* ── Core Tokens ── */
+:root {
+  /* Brand */
+  --color-accent:        #eb5d1e;
+  --color-accent-hover:  #d44f14;
+  --color-accent-subtle: rgba(235, 93, 30, 0.12);
+
+  /* Light mode surfaces */
+  --color-bg:            #FAFAF8;
+  --color-bg-surface:    #F0EDEA;
+  --color-bg-elevated:   #ffffff;
+  --color-text:          #111111;
+  --color-text-subtle:   #6B6866;
+  --color-border:        rgba(0, 0, 0, 0.08);
+  --color-shadow:        rgba(0, 0, 0, 0.06);
+
+  /* Navigation */
+  --nav-bg-scrolled:     rgba(250, 250, 248, 0.85);
+  --nav-backdrop:        blur(20px) saturate(180%);
+  --nav-height:          68px;
+
+  /* Drawer */
+  --drawer-bg:               rgba(250, 250, 248, 0.94);
+  --drawer-border:           rgba(0, 0, 0, 0.1);
+  --drawer-shadow:           -8px 0 40px rgba(0, 0, 0, 0.2);
+  --drawer-link-active-bg:   rgba(235, 93, 30, 0.12);
+  --drawer-link-border-hover:rgba(235, 93, 30, 0.5);
+
+  /* Loading */
+  --loading-bg:     #FAFAF8;
+  --loader-bg-end:  #F3EFEA;
+  --loader-text:    rgba(235, 93, 30, 0.88);
+  --loader-line:    rgba(235, 93, 30, 0.28);
+  --loader-sheen:   rgba(235, 93, 30, 0.68);
+
+  /* Typography */
+  --font-display: 'Instrument Serif', Georgia, serif;
+  --font-body:    'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-mono:    'JetBrains Mono', 'Courier New', monospace;
+
+  /* Fluid type scale */
+  --text-hero:     clamp(3.5rem, 9vw, 7.5rem);
+  --text-wordmark: clamp(5rem, 14vw, 12rem);
+
+  /* Layout */
+  --container-max:     1200px;
+  --container-narrow:  760px;
+  --container-wide:    1400px;
+  --container-padding: clamp(1.25rem, 4vw, 2rem);
+
+  /* Motion */
+  --ease-out:       cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-reveal:900ms;
+  --reveal-distance:32px;
+}
+
+[data-theme="dark"] {
+  --color-bg:          #0A0A0B;
+  --color-bg-surface:  #1A1A1C;
+  --color-bg-elevated: #242426;
+  --color-text:        #F5F5F5;
+  --color-text-subtle: #9A9693;
+  --color-border:      rgba(255, 255, 255, 0.08);
+  --color-shadow:      rgba(0, 0, 0, 0.35);
+  --nav-bg-scrolled:   rgba(10, 10, 11, 0.88);
+  --drawer-bg:         rgba(10, 10, 11, 0.92);
+  --drawer-border:     rgba(255, 255, 255, 0.08);
+  --drawer-shadow:     -8px 0 40px rgba(0, 0, 0, 0.45);
+  --loading-bg:        #0A0A0B;
+  --loader-bg-end:     #1A1A1C;
+  --loader-text:       rgba(235, 93, 30, 0.92);
+  --loader-line:       rgba(235, 93, 30, 0.32);
+  --loader-sheen:      rgba(235, 93, 30, 0.76);
+}
+
+/* ── Reset ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: var(--font-body);
+  background: var(--color-bg);
+  color: var(--color-text);
+  line-height: 1.6;
+  transition: background 0.25s, color 0.25s;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Guide Layout ── */
+.guide-nav {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: var(--nav-bg-scrolled);
+  backdrop-filter: var(--nav-backdrop);
+  -webkit-backdrop-filter: var(--nav-backdrop);
+  border-bottom: 1px solid var(--color-border);
+  padding: 0 var(--container-padding);
+  height: var(--nav-height);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.guide-nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  text-decoration: none;
+}
+.guide-nav-wordmark {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  color: var(--color-text);
+}
+.guide-nav-badge {
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+  background: var(--color-accent-subtle);
+  padding: 0.2rem 0.5rem;
+  border-radius: 20px;
+}
+.guide-nav-links {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  list-style: none;
+  flex-wrap: wrap;
+}
+.guide-nav-links a {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--color-text-subtle);
+  text-decoration: none;
+  padding: 0.3rem 0.6rem;
+  border-radius: 6px;
+  transition: color 0.2s, background 0.2s;
+}
+.guide-nav-links a:hover {
+  color: var(--color-text);
+  background: var(--color-bg-surface);
+}
+.theme-toggle {
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  font-family: var(--font-body);
+  color: var(--color-text);
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.theme-toggle:hover { background: var(--color-bg-elevated); }
+
+.guide-hero {
+  padding: 7rem var(--container-padding) 5rem;
+  max-width: var(--container-max);
+  margin: 0 auto;
+  border-bottom: 1px solid var(--color-border);
+}
+.guide-hero-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+  margin-bottom: 1.25rem;
+}
+.guide-hero-title {
+  font-family: var(--font-display);
+  font-size: clamp(3rem, 7vw, 5.5rem);
+  font-weight: 400;
+  line-height: 1.05;
+  margin-bottom: 1.5rem;
+}
+.guide-hero-title em {
+  font-style: italic;
+  color: var(--color-accent);
+}
+.guide-hero-desc {
+  font-size: 1.125rem;
+  color: var(--color-text-subtle);
+  max-width: 54ch;
+  line-height: 1.7;
+}
+
+.guide-body {
+  max-width: var(--container-max);
+  margin: 0 auto;
+  padding: 0 var(--container-padding);
+}
+
+.guide-section {
+  padding: 5rem 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.guide-section:last-child { border-bottom: none; }
+
+.section-header {
+  margin-bottom: 3rem;
+}
+.section-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+  margin-bottom: 0.5rem;
+}
+.section-title {
+  font-family: var(--font-display);
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+  font-weight: 400;
+  line-height: 1.1;
+}
+.section-desc {
+  font-size: 0.9375rem;
+  color: var(--color-text-subtle);
+  margin-top: 0.75rem;
+  max-width: 60ch;
+}
+
+/* ── Token Grid ── */
+.token-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1rem;
+}
+.token-card {
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.token-swatch {
+  height: 72px;
+  width: 100%;
+}
+.token-info {
+  padding: 0.875rem 1rem;
+}
+.token-name {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+.token-value {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--color-text-subtle);
+}
+.token-var {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--color-accent);
+  margin-top: 0.25rem;
+  display: block;
+}
+
+/* ── Color Groups ── */
+.color-group { margin-bottom: 2.5rem; }
+.color-group-title {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-subtle);
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* ── Typography Showcase ── */
+.type-specimen {
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  padding: 2rem;
+  margin-bottom: 1rem;
+}
+.type-specimen + .type-specimen { margin-top: 1rem; }
+.type-label {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--color-text-subtle);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 0.75rem;
+  display: block;
+}
+.type-hero-demo {
+  font-family: var(--font-display);
+  font-size: var(--text-hero);
+  font-weight: 400;
+  line-height: 1.0;
+}
+.type-display-demo {
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 5vw, 3.5rem);
+  font-weight: 400;
+  line-height: 1.1;
+}
+.type-display-italic-demo {
+  font-family: var(--font-display);
+  font-size: clamp(1.75rem, 4vw, 2.75rem);
+  font-style: italic;
+  font-weight: 400;
+  line-height: 1.15;
+}
+.type-heading-demo {
+  font-family: var(--font-body);
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.type-body-demo {
+  font-size: 0.9375rem;
+  font-weight: 400;
+  line-height: 1.75;
+  color: var(--color-text-subtle);
+  max-width: 60ch;
+}
+.type-label-demo {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+.type-mono-demo {
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  color: var(--color-accent);
+}
+
+.font-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+@media (max-width: 600px) { .font-pair { grid-template-columns: 1fr; } }
+
+/* ── Spacing ── */
+.spacing-row {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 0.875rem 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.spacing-row:first-child { padding-top: 0; }
+.spacing-row:last-child { border-bottom: none; }
+.spacing-bar-wrap {
+  flex: 0 0 200px;
+}
+.spacing-bar {
+  background: var(--color-accent-subtle);
+  border: 1px solid rgba(235, 93, 30, 0.3);
+  border-radius: 3px;
+  height: 20px;
+}
+.spacing-meta {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+}
+.spacing-px {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--color-text);
+  min-width: 50px;
+}
+.spacing-rem {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--color-text-subtle);
+  min-width: 60px;
+}
+.spacing-use {
+  font-size: 0.8125rem;
+  color: var(--color-text-subtle);
+}
+
+/* ── Buttons ── */
+.component-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+  padding: 2rem;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  margin-bottom: 1rem;
+}
+.component-row-dark {
+  background: #1A1A1C;
+  border-color: rgba(255,255,255,0.08);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.625rem 1.375rem;
+  border-radius: 8px;
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  border: 1.5px solid transparent;
+  transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.1s ease;
+  white-space: nowrap;
+}
+.btn:active { transform: scale(0.97); }
+.btn--primary {
+  background: var(--color-accent);
+  color: #fff;
+  border-color: var(--color-accent);
+}
+.btn--primary:hover {
+  background: var(--color-accent-hover);
+  box-shadow: 0 4px 18px rgba(235, 93, 30, 0.35);
+}
+.btn--ghost {
+  background: transparent;
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+.btn--ghost:hover {
+  background: var(--color-bg-surface);
+  border-color: rgba(0,0,0,0.15);
+}
+.btn--secondary {
+  background: var(--color-bg-surface);
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+.btn--secondary:hover { background: var(--color-bg-elevated); }
+.btn--nav-signin {
+  background: var(--color-accent);
+  color: #fff;
+  border-color: var(--color-accent);
+  font-size: 0.875rem;
+  padding: 0.4rem 1rem;
+  border-radius: 7px;
+}
+.btn--nav-signin:hover {
+  background: var(--color-accent-hover);
+  box-shadow: 0 4px 14px rgba(235, 93, 30, 0.3);
+}
+.btn--sm {
+  font-size: 0.875rem;
+  padding: 0.4rem 0.875rem;
+}
+.btn--lg {
+  font-size: 1.0625rem;
+  padding: 0.8rem 1.75rem;
+}
+
+/* ── Badges / Pills ── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.25rem 0.625rem;
+  border-radius: 20px;
+}
+.badge--accent {
+  background: var(--color-accent-subtle);
+  color: var(--color-accent);
+}
+.badge--surface {
+  background: var(--color-bg-surface);
+  color: var(--color-text-subtle);
+  border: 1px solid var(--color-border);
+}
+.badge--success {
+  background: rgba(46, 204, 113, 0.12);
+  color: #2ecc71;
+}
+.badge--warning {
+  background: rgba(243, 156, 18, 0.12);
+  color: #f39c12;
+}
+.badge--error {
+  background: rgba(231, 76, 60, 0.12);
+  color: #e74c3c;
+}
+.badge--info {
+  background: rgba(52, 152, 219, 0.12);
+  color: #3498db;
+}
+
+/* ── Cards ── */
+.cards-demo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.card {
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  padding: 1.625rem;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
+}
+.card:hover {
+  border-color: rgba(235, 93, 30, 0.3);
+  box-shadow: 0 4px 24px var(--color-shadow);
+  transform: translateY(-2px);
+}
+.card-image {
+  width: 100%;
+  aspect-ratio: 4/3;
+  border-radius: 10px;
+  object-fit: cover;
+  margin-bottom: 1.25rem;
+  background: var(--color-bg-surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-subtle);
+  font-size: 0.8125rem;
+}
+.card-badge { margin-bottom: 0.875rem; }
+.card-title {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 400;
+  line-height: 1.25;
+  margin-bottom: 0.5rem;
+}
+.card-body {
+  font-size: 0.875rem;
+  color: var(--color-text-subtle);
+  line-height: 1.65;
+  margin-bottom: 1.25rem;
+}
+.card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--color-border);
+}
+.card-meta {
+  font-size: 0.8125rem;
+  color: var(--color-text-subtle);
+}
+
+.value-panel {
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  padding: 2.25rem 2rem;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
+}
+.value-panel:hover {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent), 0 8px 32px rgba(235, 93, 30, 0.1);
+  transform: translateY(-2px);
+}
+.value-panel-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: var(--color-accent-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1.25rem;
+  font-size: 1.25rem;
+}
+.value-panel-title {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 400;
+  margin-bottom: 0.625rem;
+}
+.value-panel-body {
+  font-size: 0.875rem;
+  color: var(--color-text-subtle);
+  line-height: 1.65;
+}
+
+/* ── Stat ── */
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2rem;
+}
+@media (max-width: 600px) { .stats-row { grid-template-columns: 1fr; } }
+.stat-item { text-align: center; }
+.stat-number {
+  font-family: var(--font-display);
+  font-size: clamp(3rem, 7vw, 5.5rem);
+  font-weight: 400;
+  line-height: 1.0;
+  color: var(--color-accent);
+}
+.stat-label {
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--color-text-subtle);
+  margin-top: 0.375rem;
+}
+
+/* ── Motion Demos ── */
+.motion-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+}
+.motion-demo {
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+  text-align: center;
+}
+.motion-demo-label {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--color-text-subtle);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.motion-target {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  background: var(--color-accent-subtle);
+  border: 1.5px solid rgba(235, 93, 30, 0.3);
+  cursor: pointer;
+  transition: all var(--ease-out);
+}
+.motion-demo:hover .motion-target-hover-scale { transform: scale(1.1); }
+.motion-demo:hover .motion-target-hover-lift  { transform: translateY(-6px); box-shadow: 0 8px 20px rgba(235,93,30,0.25); }
+.motion-demo:hover .motion-target-hover-fill  { background: var(--color-accent); border-color: var(--color-accent); }
+.motion-demo:hover .motion-target-hover-glow  { box-shadow: 0 0 0 6px rgba(235,93,30,0.18), 0 4px 16px rgba(235,93,30,0.25); }
+.motion-pulse { animation: motionPulse 2s var(--ease-out) infinite; }
+@keyframes motionPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(0.92); opacity: 0.7; }
+}
+.motion-spin { animation: motionSpin 1.6s linear infinite; border-radius: 50%; border-top: 2px solid var(--color-accent); background: transparent; }
+@keyframes motionSpin { to { transform: rotate(360deg); } }
+
+/* ── Easing Visualizer ── */
+.easing-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+}
+.easing-item {
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 1.25rem;
+  overflow: hidden;
+}
+.easing-name {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-accent);
+  margin-bottom: 0.375rem;
+}
+.easing-value {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--color-text-subtle);
+  margin-bottom: 1rem;
+}
+.easing-track {
+  height: 4px;
+  background: var(--color-bg-surface);
+  border-radius: 2px;
+  position: relative;
+  overflow: hidden;
+}
+.easing-ball {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  position: absolute;
+  top: -4px;
+  left: -6px;
+}
+.easing-item:hover .easing-ball { animation: easingRun 0.9s var(--ease-out) forwards; }
+@keyframes easingRun { to { left: calc(100% + 6px); } }
+
+/* ── Form Elements ── */
+.form-demo {
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  padding: 2rem;
+  max-width: 480px;
+}
+.form-group { margin-bottom: 1.25rem; }
+.form-label {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  margin-bottom: 0.4rem;
+  color: var(--color-text);
+}
+.form-input, .form-select, .form-textarea {
+  display: block;
+  width: 100%;
+  padding: 0.625rem 0.875rem;
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  background: var(--color-bg);
+  color: var(--color-text);
+  border: 1.5px solid var(--color-border);
+  border-radius: 8px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  outline: none;
+  appearance: none;
+}
+.form-input:focus, .form-select:focus, .form-textarea:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(235, 93, 30, 0.12);
+}
+.form-textarea { resize: vertical; min-height: 100px; line-height: 1.6; }
+.form-hint {
+  font-size: 0.75rem;
+  color: var(--color-text-subtle);
+  margin-top: 0.3rem;
+}
+
+/* ── Nav Component Demo ── */
+.nav-demo {
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.nav-demo-bar {
+  background: rgba(250, 250, 248, 0.85);
+  backdrop-filter: blur(20px) saturate(180%);
+  padding: 0 1.5rem;
+  height: 68px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid rgba(0,0,0,0.08);
+}
+[data-theme="dark"] .nav-demo-bar {
+  background: rgba(10, 10, 11, 0.88);
+  border-bottom-color: rgba(255,255,255,0.08);
+}
+.nav-demo-logo {
+  font-family: var(--font-display);
+  font-size: 1.125rem;
+  color: var(--color-text);
+}
+.nav-demo-links {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  list-style: none;
+}
+.nav-demo-links a {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-text-subtle);
+  text-decoration: none;
+  padding: 0.375rem 0.625rem;
+  border-radius: 6px;
+  transition: color 0.2s, background 0.2s;
+}
+.nav-demo-links a:hover, .nav-demo-links a.active {
+  color: var(--color-accent);
+  background: var(--color-accent-subtle);
+}
+.nav-demo-content {
+  padding: 2.5rem;
+  background: var(--color-bg);
+  min-height: 80px;
+  display: flex;
+  align-items: center;
+}
+.nav-demo-content p {
+  font-size: 0.9375rem;
+  color: var(--color-text-subtle);
+}
+
+/* ── Announcement Demo ── */
+.announcement {
+  border-radius: 10px;
+  padding: 0.875rem 1.125rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.875rem;
+}
+.announcement-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.875rem;
+  flex-shrink: 0;
+}
+.announcement-body { flex: 1; line-height: 1.5; }
+.announcement-title { font-weight: 600; margin-bottom: 0.2rem; }
+.announcement--info    { background: rgba(52,152,219,0.1); border: 1px solid rgba(52,152,219,0.25); color: var(--color-text); }
+.announcement--success { background: rgba(46,204,113,0.1); border: 1px solid rgba(46,204,113,0.25); color: var(--color-text); }
+.announcement--warning { background: rgba(243,156,18,0.1); border: 1px solid rgba(243,156,18,0.25);  color: var(--color-text); }
+.announcement--error   { background: rgba(231,76,60,0.1);  border: 1px solid rgba(231,76,60,0.25);   color: var(--color-text); }
+.announcement--info    .announcement-icon { background: rgba(52,152,219,0.15); color: #3498db; }
+.announcement--success .announcement-icon { background: rgba(46,204,113,0.15); color: #2ecc71; }
+.announcement--warning .announcement-icon { background: rgba(243,156,18,0.15); color: #f39c12; }
+.announcement--error   .announcement-icon { background: rgba(231,76,60,0.15);  color: #e74c3c; }
+
+/* ── Code Token Display ── */
+.code-block {
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.75;
+  overflow-x: auto;
+  color: var(--color-text);
+  tab-size: 2;
+}
+.code-comment { color: var(--color-text-subtle); }
+.code-property { color: var(--color-accent); }
+.code-value { color: var(--color-text); }
+.code-string { color: #2ecc71; }
+code {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  background: var(--color-bg-surface);
+  padding: 0.1em 0.4em;
+  border-radius: 4px;
+  color: var(--color-accent);
+}
+
+/* ── Shadow Showcase ── */
+.shadow-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1.5rem;
+}
+.shadow-demo {
+  background: var(--color-bg-elevated);
+  border-radius: 12px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-subtle);
+  text-align: center;
+  padding: 0.5rem;
+}
+.shadow-sm    { box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.shadow-md    { box-shadow: 0 4px 24px var(--color-shadow); }
+.shadow-lg    { box-shadow: 0 6px 28px var(--color-shadow); }
+.shadow-xl    { box-shadow: 0 8px 32px rgba(235,93,30,0.1); }
+.shadow-glow  { box-shadow: 0 4px 18px rgba(235,93,30,0.35); }
+.shadow-ring  { box-shadow: 0 0 0 3px rgba(235,93,30,0.12); }
+
+/* ── Border Radius Showcase ── */
+.radius-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  align-items: flex-end;
+}
+.radius-demo {
+  background: var(--color-accent-subtle);
+  border: 1.5px solid rgba(235,93,30,0.25);
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--color-accent);
+  text-align: center;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+/* ── Responsive Breakpoints ── */
+.breakpoint-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.breakpoint-row {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0.875rem 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.breakpoint-row:last-child { border-bottom: none; }
+.bp-value {
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-accent);
+  min-width: 80px;
+}
+.bp-bar-wrap { flex: 1; height: 6px; background: var(--color-bg-surface); border-radius: 3px; overflow: hidden; }
+.bp-bar { height: 100%; background: var(--color-accent); border-radius: 3px; opacity: 0.6; }
+.bp-desc { font-size: 0.875rem; color: var(--color-text-subtle); min-width: 220px; }
+
+/* ── Utility ── */
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+@media (max-width: 768px) { .two-col { grid-template-columns: 1fr; } }
+.three-col { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+@media (max-width: 768px) { .three-col { grid-template-columns: 1fr; } }
+.divider { height: 1px; background: var(--color-border); margin: 2rem 0; }
+.text-accent { color: var(--color-accent); }
+.text-subtle { color: var(--color-text-subtle); }
+.font-display { font-family: var(--font-display); }
+.visually-hidden {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0,0,0,0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* ── Footer ── */
+.guide-footer {
+  background: linear-gradient(180deg, #262322 0%, #171615 55%, #0f0f10 100%);
+  padding: 4rem var(--container-padding);
+  text-align: center;
+}
+.guide-footer-logo {
+  font-family: var(--font-display);
+  font-size: 2rem;
+  color: #F5F5F5;
+  margin-bottom: 0.5rem;
+}
+.guide-footer-sub {
+  font-size: 0.8125rem;
+  color: #9A9693;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 2rem;
+}
+.guide-footer-note {
+  font-size: 0.8125rem;
+  color: rgba(255,255,255,0.3);
+}
+
+@media (max-width: 900px) {
+  .guide-nav-links { display: none; }
+}
+@media (max-width: 600px) {
+  .guide-hero { padding: 4rem var(--container-padding) 3rem; }
+  .guide-section { padding: 3.5rem 0; }
+  .stats-row { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- ── Sticky Nav ── -->
+<nav class="guide-nav">
+  <a class="guide-nav-brand" href="#">
+    <span class="guide-nav-wordmark">DARE</span>
+    <span class="guide-nav-badge">Design System</span>
+  </a>
+  <ul class="guide-nav-links">
+    <li><a href="#colors">Colors</a></li>
+    <li><a href="#typography">Typography</a></li>
+    <li><a href="#spacing">Spacing</a></li>
+    <li><a href="#components">Components</a></li>
+    <li><a href="#motion">Motion</a></li>
+    <li><a href="#patterns">Patterns</a></li>
+    <li><a href="#tokens">Token Index</a></li>
+  </ul>
+  <button class="theme-toggle" id="themeToggle">Dark mode</button>
+</nav>
+
+<!-- ── Hero ── -->
+<header class="guide-hero">
+  <p class="guide-hero-label">Version 1.0 · March 2026</p>
+  <h1 class="guide-hero-title">DARE Aquatics<br><em>Design Language</em></h1>
+  <p class="guide-hero-desc">The complete visual language for all DARE Aquatics digital products. Every token, component, and pattern documented so every app looks and feels like one unified system.</p>
+</header>
+
+<div class="guide-body">
+
+  <!-- ══════════════════════════════════
+       01 · COLORS
+  ══════════════════════════════════ -->
+  <section class="guide-section" id="colors">
+    <div class="section-header">
+      <p class="section-label">01</p>
+      <h2 class="section-title">Color System</h2>
+      <p class="section-desc">Built on a warm off-white base with a single vibrant orange accent. The palette works in both light and dark modes — always use CSS custom properties, never hardcode hex values in components.</p>
+    </div>
+
+    <div class="color-group">
+      <p class="color-group-title">Brand / Accent</p>
+      <div class="token-grid">
+        <div class="token-card">
+          <div class="token-swatch" style="background:#eb5d1e;"></div>
+          <div class="token-info">
+            <div class="token-name">Accent</div>
+            <div class="token-value">#eb5d1e</div>
+            <span class="token-var">--color-accent</span>
+          </div>
+        </div>
+        <div class="token-card">
+          <div class="token-swatch" style="background:#d44f14;"></div>
+          <div class="token-info">
+            <div class="token-name">Accent Hover</div>
+            <div class="token-value">#d44f14</div>
+            <span class="token-var">--color-accent-hover</span>
+          </div>
+        </div>
+        <div class="token-card">
+          <div class="token-swatch" style="background:rgba(235,93,30,0.12); border-bottom: 1px solid var(--color-border);"></div>
+          <div class="token-info">
+            <div class="token-name">Accent Subtle</div>
+            <div class="token-value">rgba(235,93,30,0.12)</div>
+            <span class="token-var">--color-accent-subtle</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="color-group">
+      <p class="color-group-title">Light Mode Surfaces</p>
+      <div class="token-grid">
+        <div class="token-card">
+          <div class="token-swatch" style="background:#FAFAF8; border-bottom:1px solid #e5e3df;"></div>
+          <div class="token-info">
+            <div class="token-name">Background</div>
+            <div class="token-value">#FAFAF8 (warm off-white)</div>
+            <span class="token-var">--color-bg</span>
+          </div>
+        </div>
+        <div class="token-card">
+          <div class="token-swatch" style="background:#F0EDEA;"></div>
+          <div class="token-info">
+            <div class="token-name">Surface</div>
+            <div class="token-value">#F0EDEA</div>
+            <span class="token-var">--color-bg-surface</span>
+          </div>
+        </div>
+        <div class="token-card">
+          <div class="token-swatch" style="background:#ffffff; border-bottom:1px solid #e5e3df;"></div>
+          <div class="token-info">
+            <div class="token-name">Elevated</div>
+            <div class="token-value">#ffffff (cards, modals)</div>
+            <span class="token-var">--color-bg-elevated</span>
+          </div>
+        </div>
+        <div class="token-card">
+          <div class="token-swatch" style="background:#111111;"></div>
+          <div class="token-info">
+            <div class="token-name">Text</div>
+            <div class="token-value">#111111</div>
+            <span class="token-var">--color-text</span>
+          </div>
+        </div>
+        <div class="token-card">
+          <div class="token-swatch" style="background:#6B6866;"></div>
+          <div class="token-info">
+            <div class="token-name">Text Subtle</div>
+            <div class="token-value">#6B6866</div>
+            <span class="token-var">--color-text-subtle</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="color-group">
+      <p class="color-group-title">Dark Mode Surfaces</p>
+      <div class="token-grid">
+        <div class="token-card">
+          <div class="token-swatch" style="background:#0A0A0B;"></div>
+          <div class="token-info">
+            <div class="token-name">Background</div>
+            <div class="token-value">#0A0A0B</div>
+            <span class="token-var">--color-bg (dark)</span>
+          </div>
+        </div>
+        <div class="token-card">
+          <div class="token-swatch" style="background:#1A1A1C;"></div>
+          <div class="token-info">
+            <div class="token-name">Surface</div>
+            <div class="token-value">#1A1A1C</div>
+            <span class="token-var">--color-bg-surface (dark)</span>
+          </div>
+        </div>
+        <div class="token-card">
+          <div class="token-swatch" style="background:#242426;"></div>
+          <div class="token-info">
+            <div class="token-name">Elevated</div>
+            <div class="token-value">#242426</div>
+            <span class="token-var">--color-bg-elevated (dark)</span>
+          </div>
+        </div>
+        <div class="token-card">
+          <div class="token-swatch" style="background:#F5F5F5;"></div>
+          <div class="token-info">
+            <div class="token-name">Text</div>
+            <div class="token-value">#F5F5F5</div>
+            <span class="token-var">--color-text (dark)</span>
+          </div>
+        </div>
+        <div class="token-card">
+          <div class="token-swatch" style="background:#9A9693;"></div>
+          <div class="token-info">
+            <div class="token-name">Text Subtle</div>
+            <div class="token-value">#9A9693</div>
+            <span class="token-var">--color-text-subtle (dark)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="color-group">
+      <p class="color-group-title">Status / Semantic</p>
+      <div class="token-grid">
+        <div class="token-card">
+          <div class="token-swatch" style="background:#3498db;"></div>
+          <div class="token-info"><div class="token-name">Info</div><div class="token-value">#3498db</div></div>
+        </div>
+        <div class="token-card">
+          <div class="token-swatch" style="background:#2ecc71;"></div>
+          <div class="token-info"><div class="token-name">Success</div><div class="token-value">#2ecc71</div></div>
+        </div>
+        <div class="token-card">
+          <div class="token-swatch" style="background:#f39c12;"></div>
+          <div class="token-info"><div class="token-name">Warning</div><div class="token-value">#f39c12</div></div>
+        </div>
+        <div class="token-card">
+          <div class="token-swatch" style="background:#e74c3c;"></div>
+          <div class="token-info"><div class="token-name">Error</div><div class="token-value">#e74c3c</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="color-group">
+      <p class="color-group-title">Homepage Pool Gradient</p>
+      <div class="token-card" style="max-width: 480px;">
+        <div class="token-swatch" style="background: linear-gradient(170deg, #14b8d4 0%, #0891b2 28%, #0369a1 62%, #1e3a5f 100%); height: 100px;"></div>
+        <div class="token-info">
+          <div class="token-name">Hero Pool (Light)</div>
+          <div class="token-value">170deg · #14b8d4 → #0891b2 → #0369a1 → #1e3a5f</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════
+       02 · TYPOGRAPHY
+  ══════════════════════════════════ -->
+  <section class="guide-section" id="typography">
+    <div class="section-header">
+      <p class="section-label">02</p>
+      <h2 class="section-title">Typography</h2>
+      <p class="section-desc">Two font families cover all use cases. <strong>Instrument Serif</strong> for display and editorial moments. <strong>Plus Jakarta Sans</strong> for all UI text. <strong>JetBrains Mono</strong> for code.</p>
+    </div>
+
+    <div class="font-pair">
+      <div class="type-specimen">
+        <span class="type-label">Display — Instrument Serif</span>
+        <div style="font-family:'Instrument Serif', serif; font-size: 2.5rem; line-height:1.1;">The pursuit of excellence in the water</div>
+        <div style="font-family:'Instrument Serif', serif; font-size: 2.5rem; font-style:italic; line-height:1.1; color:var(--color-accent); margin-top:0.5rem;">Competitive. Committed. DARE.</div>
+        <div style="margin-top:1rem; font-family:var(--font-mono); font-size:0.6875rem; color:var(--color-text-subtle);">Google Fonts · Instrument Serif · ital@0;1 · fallback: Georgia, serif</div>
+      </div>
+      <div class="type-specimen">
+        <span class="type-label">Body — Plus Jakarta Sans</span>
+        <div style="font-size:1.25rem; font-weight:700; margin-bottom:0.5rem;">ABCDEFGHIJKLMNOPQRSTUVWXYZ</div>
+        <div style="font-size:1.125rem; font-weight:500; color:var(--color-text-subtle); margin-bottom:0.5rem;">abcdefghijklmnopqrstuvwxyz 0123456789</div>
+        <div style="font-size:0.9375rem; line-height:1.75; color:var(--color-text-subtle);">Our swimmers develop the discipline, technique, and drive to compete at the highest levels—and carry those values beyond the pool.</div>
+        <div style="margin-top:1rem; font-family:var(--font-mono); font-size:0.6875rem; color:var(--color-text-subtle);">Google Fonts · Plus Jakarta Sans · wght@400;500;600;700 · fallback: system-ui</div>
+      </div>
+    </div>
+
+    <div class="type-specimen">
+      <span class="type-label">Hero — clamp(3.5rem, 9vw, 7.5rem) · Instrument Serif · weight 400</span>
+      <div class="type-hero-demo">DARE</div>
+    </div>
+
+    <div class="type-specimen">
+      <span class="type-label">Section Heading — clamp(2rem, 5vw, 3.5rem) · Instrument Serif · weight 400 · line-height 1.1</span>
+      <div class="type-display-demo">Swim Faster. Grow Together.</div>
+    </div>
+
+    <div class="type-specimen">
+      <span class="type-label">Italic Display — clamp(1.75rem, 4vw, 2.75rem) · Instrument Serif · italic · line-height 1.65 (mission text)</span>
+      <div class="type-display-italic-demo">We believe the pool is where champions are made — not just in sport, but in character and resilience.</div>
+    </div>
+
+    <div class="two-col">
+      <div class="type-specimen">
+        <span class="type-label">UI Heading — 1.5rem · Plus Jakarta Sans · weight 700</span>
+        <div class="type-heading-demo">Swim Groups &amp; Training Levels</div>
+      </div>
+      <div class="type-specimen">
+        <span class="type-label">Section Label — 0.75rem · weight 700 · uppercase · 0.12em tracking</span>
+        <div class="type-label-demo">Training Programs</div>
+      </div>
+      <div class="type-specimen">
+        <span class="type-label">Body — 0.9375rem (15px) · weight 400 · line-height 1.75</span>
+        <div class="type-body-demo">DARE Aquatics offers year-round competitive swimming for athletes aged 5–18. Our structured programs ensure every swimmer progresses at the right pace.</div>
+      </div>
+      <div class="type-specimen">
+        <span class="type-label">Mono — JetBrains Mono · 0.875rem · code, tokens, labels</span>
+        <div class="type-mono-demo">--color-accent: #eb5d1e;<br>--font-display: 'Instrument Serif';</div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+    <p class="section-label" style="margin-bottom:1rem;">Font Loading — copy this into every app's &lt;head&gt;</p>
+    <pre class="code-block"><span class="code-comment">&lt;!-- Google Fonts: always load with preconnect --&gt;</span>
+<span class="code-value">&lt;link rel="preconnect" href="https://fonts.googleapis.com"&gt;</span>
+<span class="code-value">&lt;link rel="preconnect" href="https://fonts.gstatic.com" crossorigin&gt;</span>
+<span class="code-value">&lt;link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1</span>
+<span class="code-value">  &amp;family=Plus+Jakarta+Sans:wght@400;500;600;700</span>
+<span class="code-value">  &amp;family=JetBrains+Mono:wght@400;500</span>
+<span class="code-value">  &amp;display=swap" rel="stylesheet"&gt;</span></pre>
+  </section>
+
+  <!-- ══════════════════════════════════
+       03 · SPACING
+  ══════════════════════════════════ -->
+  <section class="guide-section" id="spacing">
+    <div class="section-header">
+      <p class="section-label">03</p>
+      <h2 class="section-title">Spacing &amp; Layout</h2>
+      <p class="section-desc">Base unit is <code>1rem</code> (16px). Use the scale below. Container widths and padding are fluid with <code>clamp()</code>.</p>
+    </div>
+
+    <div class="two-col">
+      <div>
+        <p class="color-group-title" style="margin-bottom:1.25rem;">Spacing Scale</p>
+        <div class="breakpoint-list">
+          <div class="spacing-row">
+            <div class="spacing-bar-wrap"><div class="spacing-bar" style="width:4px;"></div></div>
+            <div class="spacing-meta">
+              <span class="spacing-px">4px</span>
+              <span class="spacing-rem">0.25rem</span>
+              <span class="spacing-use">Micro gaps, icon padding</span>
+            </div>
+          </div>
+          <div class="spacing-row">
+            <div class="spacing-bar-wrap"><div class="spacing-bar" style="width:8px;"></div></div>
+            <div class="spacing-meta">
+              <span class="spacing-px">8px</span>
+              <span class="spacing-rem">0.5rem</span>
+              <span class="spacing-use">Badge padding, tight gaps</span>
+            </div>
+          </div>
+          <div class="spacing-row">
+            <div class="spacing-bar-wrap"><div class="spacing-bar" style="width:12px;"></div></div>
+            <div class="spacing-meta">
+              <span class="spacing-px">12px</span>
+              <span class="spacing-rem">0.75rem</span>
+              <span class="spacing-use">List spacing, small gaps</span>
+            </div>
+          </div>
+          <div class="spacing-row">
+            <div class="spacing-bar-wrap"><div class="spacing-bar" style="width:16px;"></div></div>
+            <div class="spacing-meta">
+              <span class="spacing-px">16px</span>
+              <span class="spacing-rem">1rem</span>
+              <span class="spacing-use">Standard gap unit</span>
+            </div>
+          </div>
+          <div class="spacing-row">
+            <div class="spacing-bar-wrap"><div class="spacing-bar" style="width:20px;"></div></div>
+            <div class="spacing-meta">
+              <span class="spacing-px">20px</span>
+              <span class="spacing-rem">1.25rem</span>
+              <span class="spacing-use">Item list margins</span>
+            </div>
+          </div>
+          <div class="spacing-row">
+            <div class="spacing-bar-wrap"><div class="spacing-bar" style="width:24px;"></div></div>
+            <div class="spacing-meta">
+              <span class="spacing-px">24px</span>
+              <span class="spacing-rem">1.5rem</span>
+              <span class="spacing-use">Card inner padding</span>
+            </div>
+          </div>
+          <div class="spacing-row">
+            <div class="spacing-bar-wrap"><div class="spacing-bar" style="width:32px;"></div></div>
+            <div class="spacing-meta">
+              <span class="spacing-px">32px</span>
+              <span class="spacing-rem">2rem</span>
+              <span class="spacing-use">Card padding, section gap</span>
+            </div>
+          </div>
+          <div class="spacing-row">
+            <div class="spacing-bar-wrap"><div class="spacing-bar" style="width:48px;"></div></div>
+            <div class="spacing-meta">
+              <span class="spacing-px">48px</span>
+              <span class="spacing-rem">3rem</span>
+              <span class="spacing-use">Large content spacing</span>
+            </div>
+          </div>
+          <div class="spacing-row">
+            <div class="spacing-bar-wrap"><div class="spacing-bar" style="width:80px;"></div></div>
+            <div class="spacing-meta">
+              <span class="spacing-px">80px</span>
+              <span class="spacing-rem">5rem</span>
+              <span class="spacing-use">Section padding (min)</span>
+            </div>
+          </div>
+          <div class="spacing-row">
+            <div class="spacing-bar-wrap"><div class="spacing-bar" style="width:112px;"></div></div>
+            <div class="spacing-meta">
+              <span class="spacing-px">112px</span>
+              <span class="spacing-rem">7rem</span>
+              <span class="spacing-use">Hero section padding</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <p class="color-group-title" style="margin-bottom:1.25rem;">Container Tokens</p>
+        <pre class="code-block"><span class="code-comment">/* Layout containers */</span>
+<span class="code-property">--container-max</span>:     <span class="code-string">1200px</span>;     <span class="code-comment">/* standard */</span>
+<span class="code-property">--container-narrow</span>:  <span class="code-string">760px</span>;      <span class="code-comment">/* text/article */</span>
+<span class="code-property">--container-wide</span>:    <span class="code-string">1400px</span>;     <span class="code-comment">/* full bleed */</span>
+<span class="code-property">--container-padding</span>: <span class="code-string">clamp(1.25rem, 4vw, 2rem)</span>;
+<span class="code-property">--nav-height</span>:        <span class="code-string">68px</span>;</pre>
+
+        <p class="color-group-title" style="margin:1.75rem 0 1.25rem;">Border Radius Scale</p>
+        <div class="radius-grid">
+          <div class="radius-demo" style="border-radius:4px;"><span>4px</span><span style="font-size:0.5625rem;opacity:0.7;">badges</span></div>
+          <div class="radius-demo" style="border-radius:6px;"><span>6px</span><span style="font-size:0.5625rem;opacity:0.7;">nav links</span></div>
+          <div class="radius-demo" style="border-radius:8px;"><span>8px</span><span style="font-size:0.5625rem;opacity:0.7;">buttons</span></div>
+          <div class="radius-demo" style="border-radius:10px;"><span>10px</span><span style="font-size:0.5625rem;opacity:0.7;">social</span></div>
+          <div class="radius-demo" style="border-radius:12px;"><span>12px</span><span style="font-size:0.5625rem;opacity:0.7;">gallery</span></div>
+          <div class="radius-demo" style="border-radius:14px;"><span>14px</span><span style="font-size:0.5625rem;opacity:0.7;">cards</span></div>
+          <div class="radius-demo" style="border-radius:16px;"><span>16px</span><span style="font-size:0.5625rem;opacity:0.7;">panels</span></div>
+          <div class="radius-demo" style="border-radius:20px;"><span>20px</span><span style="font-size:0.5625rem;opacity:0.7;">pills</span></div>
+          <div class="radius-demo" style="border-radius:50%;"><span>50%</span><span style="font-size:0.5625rem;opacity:0.7;">circle</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+    <p class="color-group-title" style="margin-bottom:1.25rem;">Responsive Breakpoints</p>
+    <div class="breakpoint-list">
+      <div class="breakpoint-row">
+        <span class="bp-value">1400px</span>
+        <div class="bp-bar-wrap"><div class="bp-bar" style="width:100%;"></div></div>
+        <span class="bp-desc">Wide container max-width</span>
+      </div>
+      <div class="breakpoint-row">
+        <span class="bp-value">1200px</span>
+        <div class="bp-bar-wrap"><div class="bp-bar" style="width:86%;"></div></div>
+        <span class="bp-desc">Nav switches to hamburger drawer</span>
+      </div>
+      <div class="breakpoint-row">
+        <span class="bp-value">900px</span>
+        <div class="bp-bar-wrap"><div class="bp-bar" style="width:64%;"></div></div>
+        <span class="bp-desc">Footer 4-col → 2-col; grids adjust</span>
+      </div>
+      <div class="breakpoint-row">
+        <span class="bp-value">768px</span>
+        <div class="bp-bar-wrap"><div class="bp-bar" style="width:55%;"></div></div>
+        <span class="bp-desc">Coaches 3→2 col; gallery 3→2 col</span>
+      </div>
+      <div class="breakpoint-row">
+        <span class="bp-value">640px</span>
+        <div class="bp-bar-wrap"><div class="bp-bar" style="width:46%;"></div></div>
+        <span class="bp-desc">Values grid 2→1 col; announcements</span>
+      </div>
+      <div class="breakpoint-row">
+        <span class="bp-value">600px</span>
+        <div class="bp-bar-wrap"><div class="bp-bar" style="width:43%;"></div></div>
+        <span class="bp-desc">Most grids → 1 col; stats stack</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════
+       04 · COMPONENTS
+  ══════════════════════════════════ -->
+  <section class="guide-section" id="components">
+    <div class="section-header">
+      <p class="section-label">04</p>
+      <h2 class="section-title">Components</h2>
+      <p class="section-desc">Live interactive examples of every UI component. All hover states are functional.</p>
+    </div>
+
+    <!-- Buttons -->
+    <p class="color-group-title" style="margin-bottom:1.25rem;">Buttons</p>
+    <div class="component-row">
+      <button class="btn btn--primary">Primary</button>
+      <button class="btn btn--ghost">Ghost</button>
+      <button class="btn btn--secondary">Secondary</button>
+      <button class="btn btn--nav-signin">Sign In</button>
+    </div>
+    <div class="component-row">
+      <button class="btn btn--primary btn--sm">Small Primary</button>
+      <button class="btn btn--ghost btn--sm">Small Ghost</button>
+      <button class="btn btn--primary btn--lg">Large Primary</button>
+      <button class="btn btn--ghost btn--lg">Large Ghost</button>
+    </div>
+    <div class="component-row component-row-dark">
+      <button class="btn btn--primary">Primary</button>
+      <button class="btn btn--ghost" style="color:#F5F5F5; border-color:rgba(255,255,255,0.2);">Ghost (dark)</button>
+      <button class="btn btn--nav-signin">Sign In</button>
+    </div>
+    <pre class="code-block" style="margin-top:1rem;"><span class="code-comment">/* Button variants */</span>
+<span class="code-value">&lt;button class="btn btn--primary"&gt;Primary&lt;/button&gt;</span>
+<span class="code-value">&lt;button class="btn btn--ghost"&gt;Ghost&lt;/button&gt;</span>
+<span class="code-value">&lt;button class="btn btn--secondary"&gt;Secondary&lt;/button&gt;</span>
+<span class="code-value">&lt;button class="btn btn--nav-signin"&gt;Sign In&lt;/button&gt;</span>
+<span class="code-comment">/* Size modifiers */</span>
+<span class="code-value">.btn--sm  → font-size: 0.875rem; padding: 0.4rem 0.875rem</span>
+<span class="code-value">.btn--lg  → font-size: 1.0625rem; padding: 0.8rem 1.75rem</span></pre>
+
+    <div class="divider"></div>
+
+    <!-- Badges -->
+    <p class="color-group-title" style="margin-bottom:1.25rem;">Badges &amp; Pills</p>
+    <div class="component-row">
+      <span class="badge badge--accent">Competitive</span>
+      <span class="badge badge--surface">Pre-Team</span>
+      <span class="badge badge--success">Active</span>
+      <span class="badge badge--warning">Waitlist</span>
+      <span class="badge badge--error">Closed</span>
+      <span class="badge badge--info">New</span>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Cards -->
+    <p class="color-group-title" style="margin-bottom:1.25rem;">Cards — hover to see elevation</p>
+    <div class="cards-demo-grid">
+      <div class="card">
+        <div class="card-image">Image placeholder (4:3)</div>
+        <div class="card-badge"><span class="badge badge--accent">Competitive</span></div>
+        <h3 class="card-title">Senior Elite Group</h3>
+        <p class="card-body">Advanced training for high school swimmers targeting regional and national championships.</p>
+        <div class="card-footer">
+          <span class="card-meta">Ages 15–18</span>
+          <a class="btn btn--ghost btn--sm" href="#">Learn more</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-badge"><span class="badge badge--surface">Developing</span></div>
+        <h3 class="card-title">Junior Development</h3>
+        <p class="card-body">Building foundational stroke mechanics and race strategy for middle school athletes.</p>
+        <div class="card-footer">
+          <span class="card-meta">Ages 11–14</span>
+          <a class="btn btn--primary btn--sm" href="#">Register</a>
+        </div>
+      </div>
+      <div class="value-panel">
+        <div class="value-panel-icon">🏊</div>
+        <h3 class="value-panel-title">Excellence</h3>
+        <p class="value-panel-body">We hold every swimmer to the highest standard — in the pool, in practice, and in life.</p>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Stats -->
+    <p class="color-group-title" style="margin-bottom:1.5rem;">Stats Row</p>
+    <div class="stats-row">
+      <div class="stat-item">
+        <div class="stat-number">280+</div>
+        <div class="stat-label">Active Swimmers</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-number">18</div>
+        <div class="stat-label">Training Groups</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-number">40+</div>
+        <div class="stat-label">Years of Excellence</div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Announcements -->
+    <p class="color-group-title" style="margin-bottom:1.25rem;">Announcement / Alert Components</p>
+    <div class="announcement announcement--info">
+      <div class="announcement-icon">ℹ</div>
+      <div class="announcement-body">
+        <div class="announcement-title">Spring Registration Open</div>
+        Spring 2026 group placements are now available. Submit your tryout request by March 31.
+      </div>
+    </div>
+    <div class="announcement announcement--success">
+      <div class="announcement-icon">✓</div>
+      <div class="announcement-body">
+        <div class="announcement-title">Registration Confirmed</div>
+        Your swimmer has been placed in Senior Elite. Practice begins April 7th.
+      </div>
+    </div>
+    <div class="announcement announcement--warning">
+      <div class="announcement-icon">!</div>
+      <div class="announcement-body">
+        <div class="announcement-title">Practice Cancelled</div>
+        Saturday March 15 practice is cancelled due to a pool maintenance event.
+      </div>
+    </div>
+    <div class="announcement announcement--error">
+      <div class="announcement-icon">✕</div>
+      <div class="announcement-body">
+        <div class="announcement-title">Payment Overdue</div>
+        Your monthly dues are past due. Please update your payment method to avoid suspension.
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Navigation Demo -->
+    <p class="color-group-title" style="margin-bottom:1.25rem;">Navigation Bar</p>
+    <div class="nav-demo">
+      <div class="nav-demo-bar">
+        <span class="nav-demo-logo">DARE Aquatics</span>
+        <ul class="nav-demo-links">
+          <li><a href="#" class="active">Home</a></li>
+          <li><a href="#">Groups</a></li>
+          <li><a href="#">Calendar</a></li>
+          <li><a href="#">News</a></li>
+          <li><a href="#">Contact</a></li>
+        </ul>
+        <button class="btn btn--nav-signin">Sign In</button>
+      </div>
+      <div class="nav-demo-content">
+        <p>Nav sits at <code>z-index: 1000</code>, height <code>68px</code>. Transparent on hero pages; applies <code>backdrop-filter: blur(20px) saturate(180%)</code> on scroll. Active link gets <code>--color-accent</code> color + <code>--color-accent-subtle</code> background.</p>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Form -->
+    <p class="color-group-title" style="margin-bottom:1.25rem;">Form Elements</p>
+    <div class="form-demo">
+      <div class="form-group">
+        <label class="form-label">Full Name</label>
+        <input class="form-input" type="text" placeholder="Jane Smith">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Swim Group</label>
+        <select class="form-select">
+          <option>Senior Elite</option>
+          <option>Junior Development</option>
+          <option>Bronze Group</option>
+        </select>
+        <p class="form-hint">Select the group closest to your current level.</p>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Notes</label>
+        <textarea class="form-textarea" placeholder="Any additional information..."></textarea>
+      </div>
+      <div style="display:flex; gap:0.75rem; justify-content:flex-end;">
+        <button class="btn btn--ghost">Cancel</button>
+        <button class="btn btn--primary">Submit</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════
+       05 · MOTION
+  ══════════════════════════════════ -->
+  <section class="guide-section" id="motion">
+    <div class="section-header">
+      <p class="section-label">05</p>
+      <h2 class="section-title">Motion &amp; Animation</h2>
+      <p class="section-desc">One custom easing curve does almost everything. Reveals use <code>IntersectionObserver</code> — elements start hidden and animate in when they enter the viewport.</p>
+    </div>
+
+    <div class="two-col" style="margin-bottom:2.5rem;">
+      <div>
+        <p class="color-group-title" style="margin-bottom:1.25rem;">Core Easing</p>
+        <div class="easing-list">
+          <div class="easing-item">
+            <div class="easing-name">--ease-out</div>
+            <div class="easing-value">cubic-bezier(0.16, 1, 0.3, 1)</div>
+            <div class="easing-track"><div class="easing-ball"></div></div>
+          </div>
+          <div class="easing-item">
+            <div class="easing-name">Standard transition</div>
+            <div class="easing-value">0.2s ease</div>
+            <div class="easing-track"><div class="easing-ball" style="animation: easingRun2 0.2s ease forwards;"></div></div>
+          </div>
+          <div class="easing-item">
+            <div class="easing-name">Card hover</div>
+            <div class="easing-value">0.25s ease</div>
+            <div class="easing-track"><div class="easing-ball"></div></div>
+          </div>
+          <div class="easing-item">
+            <div class="easing-name">Nav background</div>
+            <div class="easing-value">0.35s ease</div>
+            <div class="easing-track"><div class="easing-ball"></div></div>
+          </div>
+          <div class="easing-item">
+            <div class="easing-name">Drawer slide</div>
+            <div class="easing-value">0.42s cubic-bezier(0.16, 1, 0.3, 1)</div>
+            <div class="easing-track"><div class="easing-ball"></div></div>
+          </div>
+          <div class="easing-item">
+            <div class="easing-name">Reveal duration</div>
+            <div class="easing-value">900ms · --duration-reveal</div>
+            <div class="easing-track"><div class="easing-ball"></div></div>
+          </div>
+        </div>
+        <p style="font-size:0.75rem; color:var(--color-text-subtle); margin-top:0.75rem;">Hover each card to preview the easing track animation.</p>
+      </div>
+
+      <div>
+        <p class="color-group-title" style="margin-bottom:1.25rem;">Hover States — hover each box</p>
+        <div class="motion-grid">
+          <div class="motion-demo">
+            <div class="motion-target motion-target-hover-scale"></div>
+            <span class="motion-demo-label">Scale 1.1</span>
+          </div>
+          <div class="motion-demo">
+            <div class="motion-target motion-target-hover-lift"></div>
+            <span class="motion-demo-label">Lift + glow</span>
+          </div>
+          <div class="motion-demo">
+            <div class="motion-target motion-target-hover-fill"></div>
+            <span class="motion-demo-label">Fill accent</span>
+          </div>
+          <div class="motion-demo">
+            <div class="motion-target motion-target-hover-glow"></div>
+            <span class="motion-demo-label">Ring glow</span>
+          </div>
+          <div class="motion-demo">
+            <div class="motion-target motion-pulse"></div>
+            <span class="motion-demo-label">Pulse loop</span>
+          </div>
+          <div class="motion-demo">
+            <div class="motion-target motion-spin"></div>
+            <span class="motion-demo-label">Spin loader</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="color-group-title" style="margin-bottom:1.25rem;">Scroll Reveal Variants</p>
+    <pre class="code-block"><span class="code-comment">/* Add these classes to any element; JS adds .is-revealed on intersection */</span>
+<span class="code-comment">/* Threshold: 0.12 for most, 0.1 for stats, 0.6 for value panels */</span>
+<span class="code-comment">/* --reveal-distance: 32px (default) */</span>
+
+<span class="code-property">.reveal--fade</span>   → opacity 0 → 1 (no transform)
+<span class="code-property">.reveal--up</span>     → translateY(32px) → 0
+<span class="code-property">.reveal--left</span>   → translateX(-52px) → 0
+<span class="code-property">.reveal--right</span>  → translateX(52px) → 0
+<span class="code-property">.reveal--scale</span>  → scale(0.94) → 1
+<span class="code-property">.reveal--blur</span>   → blur(14px) + translateY(20px) → clear
+<span class="code-property">.reveal--rotate</span> → perspective(600px) rotateX(14deg) translateY(28px) → 0
+<span class="code-property">.reveal--clip</span>   → clip-path: inset(0 0 100% 0) → inset(0)
+<span class="code-property">.reveal--wave</span>   → skewY(4deg) + translateY(40px) → 0
+
+<span class="code-comment">/* Stagger using --reveal-delay */</span>
+<span class="code-value">&lt;div class="reveal--up" style="--reveal-delay: 100ms"&gt;...&lt;/div&gt;</span>
+<span class="code-value">&lt;div class="reveal--up" style="--reveal-delay: 200ms"&gt;...&lt;/div&gt;</span></pre>
+
+    <div class="divider"></div>
+    <p class="color-group-title" style="margin-bottom:1.25rem;">Reduced Motion</p>
+    <pre class="code-block"><span class="code-comment">/* Always include this block — accessibility requirement */</span>
+<span class="code-property">@media</span> (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    <span class="code-property">animation-duration</span>:   <span class="code-string">0.01ms</span> !important;
+    <span class="code-property">animation-iteration-count</span>: <span class="code-string">1</span> !important;
+    <span class="code-property">transition-duration</span>:  <span class="code-string">0.01ms</span> !important;
+    <span class="code-property">scroll-behavior</span>:      <span class="code-string">auto</span> !important;
+  }
+}</pre>
+  </section>
+
+  <!-- ══════════════════════════════════
+       06 · PATTERNS
+  ══════════════════════════════════ -->
+  <section class="guide-section" id="patterns">
+    <div class="section-header">
+      <p class="section-label">06</p>
+      <h2 class="section-title">Design Patterns</h2>
+      <p class="section-desc">Conventions for layout, interaction, and composition that keep every DARE surface consistent.</p>
+    </div>
+
+    <div class="two-col">
+
+      <div>
+        <p class="color-group-title" style="margin-bottom:1.25rem;">Section Anatomy</p>
+        <div style="background:var(--color-bg-elevated); border:1px solid var(--color-border); border-radius:14px; padding:2rem;">
+          <div style="font-size:0.75rem; font-weight:700; letter-spacing:0.12em; text-transform:uppercase; color:var(--color-accent); margin-bottom:0.5rem;">Training Programs</div>
+          <div style="font-family:var(--font-display); font-size:1.75rem; line-height:1.1; margin-bottom:0.75rem;">Train at every level</div>
+          <div style="font-size:0.9375rem; color:var(--color-text-subtle); max-width:52ch; line-height:1.7; margin-bottom:1.5rem;">From first-time swimmers to elite competitors, DARE has a program built for your athlete's exact stage.</div>
+          <button class="btn btn--primary">View All Groups</button>
+        </div>
+        <pre class="code-block" style="margin-top:1rem; font-size:0.6875rem;"><span class="code-comment">/* Section anatomy */</span>
+1. LABEL  → 0.75rem · 700 · uppercase · accent
+2. TITLE  → display font · 2–3.5rem · weight 400
+3. BODY   → 0.9375rem · subtle · max 56ch · lh 1.7
+4. CTA    → btn--primary or btn--ghost</pre>
+      </div>
+
+      <div>
+        <p class="color-group-title" style="margin-bottom:1.25rem;">Shadows Reference</p>
+        <div class="shadow-grid">
+          <div class="shadow-demo shadow-sm">sm<br>0 1px 3px rgba(0,0,0,0.08)</div>
+          <div class="shadow-demo shadow-md">md<br>0 4px 24px shadow-var</div>
+          <div class="shadow-demo shadow-lg">lg<br>0 6px 28px shadow-var</div>
+          <div class="shadow-demo shadow-xl">xl accent<br>0 8px 32px rgba(235,93,30,0.1)</div>
+          <div class="shadow-demo shadow-glow">glow<br>0 4px 18px rgba(235,93,30,0.35)</div>
+          <div class="shadow-demo shadow-ring">ring<br>0 0 0 3px rgba(235,93,30,0.12)</div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="two-col">
+      <div>
+        <p class="color-group-title" style="margin-bottom:1.25rem;">Interactive Card Rules</p>
+        <pre class="code-block" style="font-size:0.75rem;"><span class="code-comment">/* All interactive cards follow this pattern */</span>
+<span class="code-property">.card</span> {
+  border-radius: <span class="code-string">14px</span>;       <span class="code-comment">/* or 16px for value panels */</span>
+  border: 1px solid <span class="code-string">var(--color-border)</span>;
+  background: <span class="code-string">var(--color-bg-elevated)</span>;
+  transition: border-color <span class="code-string">0.25s</span>,
+              box-shadow    <span class="code-string">0.25s</span>,
+              transform     <span class="code-string">0.25s ease</span>;
+}
+<span class="code-property">.card:hover</span> {
+  border-color: <span class="code-string">rgba(235, 93, 30, 0.3)</span>;
+  box-shadow: <span class="code-string">0 4px 24px var(--color-shadow)</span>;
+  transform: <span class="code-string">translateY(-2px)</span>;
+}</pre>
+      </div>
+
+      <div>
+        <p class="color-group-title" style="margin-bottom:1.25rem;">Theme Implementation</p>
+        <pre class="code-block" style="font-size:0.75rem;"><span class="code-comment">/* HTML element carries the theme */</span>
+<span class="code-value">&lt;html data-theme="light"&gt;</span>  <span class="code-comment">← default</span>
+<span class="code-value">&lt;html data-theme="dark"&gt;</span>
+
+<span class="code-comment">/* CSS structure */</span>
+<span class="code-property">:root</span>                    { <span class="code-comment">/* light tokens */</span> }
+<span class="code-property">[data-theme="dark"]</span>      { <span class="code-comment">/* dark overrides */</span> }
+
+<span class="code-comment">/* Persist to localStorage */</span>
+localStorage.setItem(<span class="code-string">'dare-theme'</span>, theme);
+
+<span class="code-comment">/* System fallback */</span>
+<span class="code-property">@media</span> (prefers-color-scheme: dark) {
+  <span class="code-property">:root:not([data-theme])</span> { <span class="code-comment">/* auto dark */</span> }
+}</pre>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="two-col">
+      <div>
+        <p class="color-group-title" style="margin-bottom:1.25rem;">Grid Patterns</p>
+        <pre class="code-block" style="font-size:0.75rem;"><span class="code-comment">/* Standard responsive grids */</span>
+<span class="code-comment">/* Groups */</span>
+<span class="code-property">grid-template-columns</span>: repeat(4, 1fr);  <span class="code-comment">/* >900px */</span>
+                         repeat(2, 1fr);  <span class="code-comment">/* >480px */</span>
+                         1fr;             <span class="code-comment">/* mobile */</span>
+
+<span class="code-comment">/* Coaches */</span>
+<span class="code-property">grid-template-columns</span>: repeat(3, 1fr);  <span class="code-comment">/* >768px */</span>
+                         repeat(2, 1fr);  <span class="code-comment">/* >480px */</span>
+                         1fr;             <span class="code-comment">/* mobile */</span>
+
+<span class="code-comment">/* Gallery / Portfolio */</span>
+<span class="code-property">grid-template-columns</span>: repeat(3, 1fr);  <span class="code-comment">/* >768px */</span>
+                         repeat(2, 1fr);  <span class="code-comment">/* >480px */</span>
+                         1fr;             <span class="code-comment">/* mobile */</span>
+<span class="code-property">aspect-ratio</span>: 4/3;
+
+<span class="code-comment">/* Values (2 col max) */</span>
+<span class="code-property">grid-template-columns</span>: repeat(2, 1fr);  <span class="code-comment">/* >640px */</span>
+                         1fr;             <span class="code-comment">/* mobile */</span>
+<span class="code-property">max-width</span>: 840px;</pre>
+      </div>
+      <div>
+        <p class="color-group-title" style="margin-bottom:1.25rem;">Arrow List Style</p>
+        <pre class="code-block" style="font-size:0.75rem;"><span class="code-comment">/* Styled list with accent arrow bullets */</span>
+<span class="code-property">.list-arrow li</span> {
+  <span class="code-property">padding-left</span>: <span class="code-string">1.25rem</span>;
+  <span class="code-property">position</span>: relative;
+  <span class="code-property">margin-bottom</span>: <span class="code-string">0.5rem</span>;
+}
+<span class="code-property">.list-arrow li::before</span> {
+  <span class="code-property">content</span>: <span class="code-string">'→'</span>;
+  <span class="code-property">position</span>: absolute;
+  <span class="code-property">left</span>: <span class="code-string">0</span>;
+  <span class="code-property">color</span>: <span class="code-string">var(--color-accent)</span>;
+}</span></pre>
+
+        <div style="margin-top:1rem; background:var(--color-bg-elevated); border:1px solid var(--color-border); border-radius:10px; padding:1.25rem;">
+          <ul style="list-style:none; padding:0;">
+            <li style="padding-left:1.25rem; position:relative; margin-bottom:0.5rem;"><span style="position:absolute;left:0;color:var(--color-accent);">→</span>Morning practice 5:30–7:30 AM</li>
+            <li style="padding-left:1.25rem; position:relative; margin-bottom:0.5rem;"><span style="position:absolute;left:0;color:var(--color-accent);">→</span>Afternoon session 4:00–6:00 PM</li>
+            <li style="padding-left:1.25rem; position:relative;"><span style="position:absolute;left:0;color:var(--color-accent);">→</span>Dryland conditioning twice weekly</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="two-col">
+      <div>
+        <p class="color-group-title" style="margin-bottom:1.25rem;">Parent Portal UX Blueprint (Required)</p>
+        <div style="background:var(--color-bg-elevated); border:1px solid var(--color-border); border-radius:14px; padding:1.5rem;">
+          <p style="margin:0 0 0.75rem; font-weight:700; color:var(--color-accent); text-transform:uppercase; letter-spacing:0.08em; font-size:0.75rem;">Launch-Critical Policy</p>
+          <p style="margin:0 0 1rem; line-height:1.75;">Parent account is required. Every household-critical action must be completable from parent surfaces without a swimmer login.</p>
+          <ul style="margin:0; padding-left:1.1rem; line-height:1.75;">
+            <li>Dashboard alerts: unpaid invoices, commitment deadlines, missing documents</li>
+            <li>Household and swimmer profile management (restricted fields)</li>
+            <li>Meet commitments center with status and deadline urgency</li>
+            <li>Per-swimmer event picker after commitment <code>yes</code> with eligibility hints</li>
+            <li>Billing center: invoices, receipts, payment status, credit/refund visibility</li>
+            <li>Document/compliance center with upload and status tracking</li>
+            <li>Announcement/message feed and notification preferences</li>
+          </ul>
+        </div>
+      </div>
+      <div>
+        <p class="color-group-title" style="margin-bottom:1.25rem;">Swimmer Portal UX Blueprint (Optional)</p>
+        <div style="background:var(--color-bg-elevated); border:1px solid var(--color-border); border-radius:14px; padding:1.5rem;">
+          <p style="margin:0 0 0.75rem; font-weight:700; color:var(--color-accent); text-transform:uppercase; letter-spacing:0.08em; font-size:0.75rem;">Feature-Flagged Surface</p>
+          <p style="margin:0 0 1rem; line-height:1.75;">Swimmer account is optional at launch. Experience defaults to read-only and must be safe when disabled globally or per household.</p>
+          <ul style="margin:0; padding-left:1.1rem; line-height:1.75;">
+            <li>Dashboard: practices, meets, announcements, upcoming deadlines</li>
+            <li>Performance pages: best times, progression, standards/cut visibility</li>
+            <li>No direct billing controls and no cross-household data access</li>
+            <li>If disabled, UI routes users to parent context with clear explanation</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+    <p class="color-group-title" style="margin-bottom:1.25rem;">Portal Information Architecture and States</p>
+    <pre class="code-block" style="font-size:0.75rem;"><span class="code-comment">/* Parent IA (required) */</span>
+/portal/parent/dashboard
+/portal/parent/household
+/portal/parent/meets/commitments
+/portal/parent/billing
+/portal/parent/documents
+/portal/parent/messages
+/portal/parent/calendar
+
+<span class="code-comment">/* Swimmer IA (optional, feature flag) */</span>
+/portal/swimmer/dashboard
+/portal/swimmer/performance
+/portal/swimmer/schedule
+
+<span class="code-comment">/* Required UI states for every portal page */</span>
+loading | empty | error | partial-failure | permission-denied | success
+
+<span class="code-comment">/* Meet event selection UX requirements */</span>
+parent can pick events per swimmer after commit yes
+coach can override selections pre-lock with reason capture
+selection changes show audit/history timeline
+blocked selections explain rule violation inline
+
+<span class="code-comment">/* Accessibility and mobile requirements */</span>
+WCAG 2.2 AA minimum
+44px tap targets
+keyboard-first form flows
+inline + summary validation for multi-field forms</pre>
+  </section>
+
+  <!-- ══════════════════════════════════
+       07 · TOKEN INDEX
+  ══════════════════════════════════ -->
+  <section class="guide-section" id="tokens">
+    <div class="section-header">
+      <p class="section-label">07</p>
+      <h2 class="section-title">Complete Token Index</h2>
+      <p class="section-desc">Copy this entire <code>:root</code> block into any new DARE app. It is the single source of truth for all visual decisions.</p>
+    </div>
+
+    <pre class="code-block">
+<span class="code-comment">/* ─────────────────────────────────────────────────────────
+   DARE AQUATICS — DESIGN TOKENS  v1.0
+   Copy this :root block into every new DARE application.
+   ───────────────────────────────────────────────────────── */</span>
+
+<span class="code-property">:root</span> {
+
+  <span class="code-comment">/* ── Brand ──────────────────────────────────────────── */</span>
+  <span class="code-property">--color-accent</span>:        <span class="code-string">#eb5d1e</span>;
+  <span class="code-property">--color-accent-hover</span>:  <span class="code-string">#d44f14</span>;
+  <span class="code-property">--color-accent-subtle</span>: <span class="code-string">rgba(235, 93, 30, 0.12)</span>;
+
+  <span class="code-comment">/* ── Light Mode (default) ────────────────────────────── */</span>
+  <span class="code-property">--color-bg</span>:            <span class="code-string">#FAFAF8</span>;
+  <span class="code-property">--color-bg-surface</span>:    <span class="code-string">#F0EDEA</span>;
+  <span class="code-property">--color-bg-elevated</span>:   <span class="code-string">#ffffff</span>;
+  <span class="code-property">--color-text</span>:          <span class="code-string">#111111</span>;
+  <span class="code-property">--color-text-subtle</span>:   <span class="code-string">#6B6866</span>;
+  <span class="code-property">--color-border</span>:        <span class="code-string">rgba(0, 0, 0, 0.08)</span>;
+  <span class="code-property">--color-shadow</span>:        <span class="code-string">rgba(0, 0, 0, 0.06)</span>;
+
+  <span class="code-comment">/* ── Navigation ──────────────────────────────────────── */</span>
+  <span class="code-property">--nav-bg-scrolled</span>:     <span class="code-string">rgba(250, 250, 248, 0.85)</span>;
+  <span class="code-property">--nav-backdrop</span>:        <span class="code-string">blur(20px) saturate(180%)</span>;
+  <span class="code-property">--nav-height</span>:          <span class="code-string">68px</span>;
+
+  <span class="code-comment">/* ── Drawer ──────────────────────────────────────────── */</span>
+  <span class="code-property">--drawer-bg</span>:               <span class="code-string">rgba(250, 250, 248, 0.94)</span>;
+  <span class="code-property">--drawer-border</span>:           <span class="code-string">rgba(0, 0, 0, 0.1)</span>;
+  <span class="code-property">--drawer-shadow</span>:           <span class="code-string">-8px 0 40px rgba(0, 0, 0, 0.2)</span>;
+  <span class="code-property">--drawer-link-active-bg</span>:   <span class="code-string">rgba(235, 93, 30, 0.12)</span>;
+  <span class="code-property">--drawer-link-border-hover</span>:<span class="code-string">rgba(235, 93, 30, 0.5)</span>;
+
+  <span class="code-comment">/* ── Loader ──────────────────────────────────────────── */</span>
+  <span class="code-property">--loading-bg</span>:     <span class="code-string">#FAFAF8</span>;
+  <span class="code-property">--loader-bg-end</span>:  <span class="code-string">#F3EFEA</span>;
+  <span class="code-property">--loader-text</span>:    <span class="code-string">rgba(235, 93, 30, 0.88)</span>;
+  <span class="code-property">--loader-line</span>:    <span class="code-string">rgba(235, 93, 30, 0.28)</span>;
+  <span class="code-property">--loader-sheen</span>:   <span class="code-string">rgba(235, 93, 30, 0.68)</span>;
+
+  <span class="code-comment">/* ── Typography ──────────────────────────────────────── */</span>
+  <span class="code-property">--font-display</span>: <span class="code-string">'Instrument Serif'</span>, Georgia, serif;
+  <span class="code-property">--font-body</span>:    <span class="code-string">'Plus Jakarta Sans'</span>, system-ui, sans-serif;
+  <span class="code-property">--font-mono</span>:    <span class="code-string">'JetBrains Mono'</span>, 'Courier New', monospace;
+
+  <span class="code-comment">/* ── Fluid Type ──────────────────────────────────────── */</span>
+  <span class="code-property">--text-hero</span>:     <span class="code-string">clamp(3.5rem, 9vw, 7.5rem)</span>;
+  <span class="code-property">--text-wordmark</span>: <span class="code-string">clamp(5rem, 14vw, 12rem)</span>;
+
+  <span class="code-comment">/* ── Layout ──────────────────────────────────────────── */</span>
+  <span class="code-property">--container-max</span>:     <span class="code-string">1200px</span>;
+  <span class="code-property">--container-narrow</span>:  <span class="code-string">760px</span>;
+  <span class="code-property">--container-wide</span>:    <span class="code-string">1400px</span>;
+  <span class="code-property">--container-padding</span>: <span class="code-string">clamp(1.25rem, 4vw, 2rem)</span>;
+
+  <span class="code-comment">/* ── Motion ──────────────────────────────────────────── */</span>
+  <span class="code-property">--ease-out</span>:        <span class="code-string">cubic-bezier(0.16, 1, 0.3, 1)</span>;
+  <span class="code-property">--duration-reveal</span>: <span class="code-string">900ms</span>;
+  <span class="code-property">--reveal-distance</span>: <span class="code-string">32px</span>;
+}
+
+<span class="code-comment">/* ── Dark Mode Overrides ──────────────────────────────── */</span>
+<span class="code-property">[data-theme="dark"]</span> {
+  <span class="code-property">--color-bg</span>:          <span class="code-string">#0A0A0B</span>;
+  <span class="code-property">--color-bg-surface</span>:  <span class="code-string">#1A1A1C</span>;
+  <span class="code-property">--color-bg-elevated</span>: <span class="code-string">#242426</span>;
+  <span class="code-property">--color-text</span>:        <span class="code-string">#F5F5F5</span>;
+  <span class="code-property">--color-text-subtle</span>: <span class="code-string">#9A9693</span>;
+  <span class="code-property">--color-border</span>:      <span class="code-string">rgba(255, 255, 255, 0.08)</span>;
+  <span class="code-property">--color-shadow</span>:      <span class="code-string">rgba(0, 0, 0, 0.35)</span>;
+  <span class="code-property">--nav-bg-scrolled</span>:   <span class="code-string">rgba(10, 10, 11, 0.88)</span>;
+  <span class="code-property">--drawer-bg</span>:         <span class="code-string">rgba(10, 10, 11, 0.92)</span>;
+  <span class="code-property">--drawer-border</span>:     <span class="code-string">rgba(255, 255, 255, 0.08)</span>;
+  <span class="code-property">--drawer-shadow</span>:     <span class="code-string">-8px 0 40px rgba(0, 0, 0, 0.45)</span>;
+  <span class="code-property">--loading-bg</span>:        <span class="code-string">#0A0A0B</span>;
+  <span class="code-property">--loader-bg-end</span>:     <span class="code-string">#1A1A1C</span>;
+  <span class="code-property">--loader-text</span>:       <span class="code-string">rgba(235, 93, 30, 0.92)</span>;
+  <span class="code-property">--loader-line</span>:       <span class="code-string">rgba(235, 93, 30, 0.32)</span>;
+  <span class="code-property">--loader-sheen</span>:      <span class="code-string">rgba(235, 93, 30, 0.76)</span>;
+}
+
+<span class="code-comment">/* ── Reduced Motion ──────────────────────────────────── */</span>
+<span class="code-property">@media</span> (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    <span class="code-property">animation-duration</span>:        <span class="code-string">0.01ms</span> !important;
+    <span class="code-property">animation-iteration-count</span>: <span class="code-string">1</span> !important;
+    <span class="code-property">transition-duration</span>:       <span class="code-string">0.01ms</span> !important;
+    <span class="code-property">scroll-behavior</span>:           <span class="code-string">auto</span> !important;
+  }
+}
+    </pre>
+  </section>
+
+</div><!-- /guide-body -->
+
+<!-- ── Footer ── -->
+<footer class="guide-footer">
+  <div class="guide-footer-logo">DARE Aquatics</div>
+  <div class="guide-footer-sub">Design Language Guide · v1.0</div>
+  <div class="guide-footer-note">This document is the single source of truth for all DARE digital products. Keep it updated as the system evolves.</div>
+</footer>
+
+<script>
+  const toggle = document.getElementById('themeToggle');
+  const html = document.documentElement;
+  const saved = localStorage.getItem('dare-theme');
+  if (saved) {
+    html.setAttribute('data-theme', saved);
+    toggle.textContent = saved === 'dark' ? 'Light mode' : 'Dark mode';
+  }
+  toggle.addEventListener('click', () => {
+    const current = html.getAttribute('data-theme') || 'light';
+    const next = current === 'dark' ? 'light' : 'dark';
+    html.setAttribute('data-theme', next);
+    toggle.textContent = next === 'dark' ? 'Light mode' : 'Dark mode';
+    localStorage.setItem('dare-theme', next);
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,1 @@
+Since you are a LLM, you were given an abundance of reference files and outlines for you to reference during the development of this application. However, now that development is over, you must prune the refernece files given to you. Make a list of them and check. TBD TOOD

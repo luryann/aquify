@@ -1,0 +1,897 @@
+package groups
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"slices"
+	"strings"
+	"sync"
+	"time"
+
+	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+)
+
+var (
+	ErrForbidden             = errors.New("forbidden")
+	ErrGroupNotFound         = errors.New("group not found")
+	ErrGroupCodeConflict     = errors.New("group code already exists in org")
+	ErrRegistrationNotFound  = errors.New("registration not found")
+	ErrWaiverAlreadyAccepted = errors.New("waiver already accepted for this registration")
+	ErrInvalidTransition     = errors.New("invalid registration status transition")
+	ErrSwimmerNotFound       = errors.New("swimmer not found")
+	ErrHouseholdNotFound     = errors.New("household not found")
+	ErrDuplicateRegistration = errors.New("swimmer already registered to this group for this season")
+)
+
+// Group defines a swim training group within an org.
+type Group struct {
+	ID          string    `json:"id"`
+	OrgID       string    `json:"org_id"`
+	Code        string    `json:"code"`
+	Name        string    `json:"name"`
+	Description string    `json:"description,omitempty"`
+	Type        string    `json:"type"`
+	MinAge      *int      `json:"min_age,omitempty"`
+	MaxAge      *int      `json:"max_age,omitempty"`
+	CoachUserID string    `json:"coach_user_id,omitempty"`
+	IsActive    bool      `json:"is_active"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	CreatedBy   string    `json:"created_by"`
+	UpdatedBy   string    `json:"updated_by"`
+}
+
+// CreateGroupInput holds validated fields for group creation.
+type CreateGroupInput struct {
+	Code        string
+	Name        string
+	Description string
+	Type        string
+	MinAge      *int
+	MaxAge      *int
+	CoachUserID string
+}
+
+// UpdateGroupInput holds optional fields for group updates (nil = no change).
+type UpdateGroupInput struct {
+	Name        *string
+	Description *string
+	Type        *string
+	MinAge      *int
+	MaxAge      *int
+	CoachUserID *string
+	IsActive    *bool
+}
+
+// EligibilityRule defines a single rule that must pass for a swimmer to be eligible for a group.
+type EligibilityRule struct {
+	ID         string         `json:"id"`
+	OrgID      string         `json:"org_id"`
+	GroupID    string         `json:"group_id"`
+	RuleType   string         `json:"rule_type"`
+	Parameters map[string]any `json:"parameters"`
+	IsActive   bool           `json:"is_active"`
+	CreatedAt  time.Time      `json:"created_at"`
+	UpdatedAt  time.Time      `json:"updated_at"`
+	CreatedBy  string         `json:"created_by"`
+	UpdatedBy  string         `json:"updated_by"`
+}
+
+// AttachEligibilityRuleInput holds fields for attaching a rule to a group.
+type AttachEligibilityRuleInput struct {
+	RuleType   string
+	Parameters map[string]any
+}
+
+// EligibilityResult summarizes swimmer eligibility evaluation against a group.
+type EligibilityResult struct {
+	GroupID     string           `json:"group_id"`
+	SwimmerID   string           `json:"swimmer_id"`
+	Eligible    bool             `json:"eligible"`
+	RuleResults []RuleEvaluation `json:"rule_results"`
+	EvaluatedAt time.Time        `json:"evaluated_at"`
+}
+
+// RuleEvaluation captures the pass/fail result for a single rule.
+type RuleEvaluation struct {
+	RuleID   string `json:"rule_id"`
+	RuleType string `json:"rule_type"`
+	Passed   bool   `json:"passed"`
+	Reason   string `json:"reason,omitempty"`
+}
+
+// Registration links a swimmer to a group for a season.
+type Registration struct {
+	ID               string    `json:"id"`
+	OrgID            string    `json:"org_id"`
+	HouseholdID      string    `json:"household_id"`
+	SwimmerID        string    `json:"swimmer_id"`
+	GroupID          string    `json:"group_id"`
+	Season           string    `json:"season"`
+	Status           string    `json:"status"`
+	RegistrationDate string    `json:"registration_date"`
+	Notes            string    `json:"notes,omitempty"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+	CreatedBy        string    `json:"created_by"`
+	UpdatedBy        string    `json:"updated_by"`
+}
+
+// CreateRegistrationInput holds fields for registration creation.
+type CreateRegistrationInput struct {
+	HouseholdID      string
+	SwimmerID        string
+	GroupID          string
+	Season           string
+	RegistrationDate string
+	Notes            string
+}
+
+// WaiverAcceptance records a waiver acceptance for a registration.
+type WaiverAcceptance struct {
+	ID               string    `json:"id"`
+	OrgID            string    `json:"org_id"`
+	RegistrationID   string    `json:"registration_id"`
+	WaiverType       string    `json:"waiver_type"`
+	AcceptedAt       time.Time `json:"accepted_at"`
+	AcceptedByUserID string    `json:"accepted_by_user_id"`
+	IPAddress        string    `json:"ip_address,omitempty"`
+	CreatedAt        time.Time `json:"created_at"`
+}
+
+// AcceptWaiverInput holds fields for recording waiver acceptance.
+type AcceptWaiverInput struct {
+	WaiverType string
+	IPAddress  string
+}
+
+// GroupAuditEvent records a privileged action taken on a group, eligibility rule, or registration.
+type GroupAuditEvent struct {
+	ID          string         `json:"id"`
+	OrgID       string         `json:"org_id"`
+	ActorUserID string         `json:"actor_user_id"`
+	Action      string         `json:"action"`
+	Before      map[string]any `json:"before,omitempty"`
+	After       map[string]any `json:"after,omitempty"`
+	Metadata    map[string]any `json:"metadata,omitempty"`
+	CreatedAt   time.Time      `json:"created_at"`
+}
+
+// swimmerRef is a minimal swimmer representation used for eligibility evaluation.
+type swimmerRef struct {
+	ID                 string
+	OrgID              string
+	HouseholdID        string
+	DateOfBirth        string
+	Gender             string
+	RegistrationStatus string
+}
+
+// householdRef is a minimal household representation for scope checks.
+type householdRef struct {
+	ID    string
+	OrgID string
+}
+
+// Service is the in-memory groups/eligibility/registrations service.
+type Service struct {
+	mu              sync.RWMutex
+	groups          map[string]Group
+	rules           map[string]EligibilityRule
+	registrations   map[string]Registration
+	waivers         map[string]WaiverAcceptance
+	swimmers        map[string]swimmerRef
+	households      map[string]householdRef
+	parentHousehold map[string]map[string]struct{}
+	auditEvents     []GroupAuditEvent
+}
+
+// NewService returns a new in-memory groups service.
+func NewService() *Service {
+	return &Service{
+		groups:          make(map[string]Group),
+		rules:           make(map[string]EligibilityRule),
+		registrations:   make(map[string]Registration),
+		waivers:         make(map[string]WaiverAcceptance),
+		swimmers:        make(map[string]swimmerRef),
+		households:      make(map[string]householdRef),
+		parentHousehold: make(map[string]map[string]struct{}),
+		auditEvents:     []GroupAuditEvent{},
+	}
+}
+
+// SeedSwimmer allows test harnesses (or the members service) to register a swimmer
+// for eligibility evaluation. In production this would be a shared DB read.
+func (s *Service) SeedSwimmer(orgID, swimmerID, householdID, dob, gender, regStatus string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.swimmers[swimmerID] = swimmerRef{
+		ID:                 swimmerID,
+		OrgID:              orgID,
+		HouseholdID:        householdID,
+		DateOfBirth:        dob,
+		Gender:             gender,
+		RegistrationStatus: regStatus,
+	}
+	s.households[householdID] = householdRef{ID: householdID, OrgID: orgID}
+}
+
+// SeedParentHousehold links a parent user to a household for scope enforcement.
+func (s *Service) SeedParentHousehold(parentUserID, householdID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.parentHousehold[parentUserID] == nil {
+		s.parentHousehold[parentUserID] = make(map[string]struct{})
+	}
+	s.parentHousehold[parentUserID][householdID] = struct{}{}
+}
+
+// ─── Groups ──────────────────────────────────────────────────────────────────
+
+// CreateGroup creates a new training group.
+func (s *Service) CreateGroup(principal *appmiddleware.Principal, orgID string, input CreateGroupInput) (Group, GroupAuditEvent, error) {
+	if !hasAnyRole(principal, "owner", "admin", "coach") {
+		return Group{}, GroupAuditEvent{}, ErrForbidden
+	}
+
+	code := strings.TrimSpace(strings.ToLower(input.Code))
+	name := strings.TrimSpace(input.Name)
+	if code == "" || name == "" {
+		return Group{}, GroupAuditEvent{}, errors.New("code and name are required")
+	}
+	if err := validateGroupType(input.Type); err != nil {
+		return Group{}, GroupAuditEvent{}, err
+	}
+	if input.MinAge != nil && input.MaxAge != nil && *input.MinAge > *input.MaxAge {
+		return Group{}, GroupAuditEvent{}, errors.New("min_age cannot exceed max_age")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, g := range s.groups {
+		if g.OrgID == orgID && g.Code == code {
+			return Group{}, GroupAuditEvent{}, ErrGroupCodeConflict
+		}
+	}
+
+	now := time.Now().UTC()
+	groupType := strings.TrimSpace(strings.ToLower(input.Type))
+	if groupType == "" {
+		groupType = "competitive"
+	}
+	group := Group{
+		ID:          "grp_" + randomToken(12),
+		OrgID:       orgID,
+		Code:        code,
+		Name:        name,
+		Description: strings.TrimSpace(input.Description),
+		Type:        groupType,
+		MinAge:      input.MinAge,
+		MaxAge:      input.MaxAge,
+		CoachUserID: strings.TrimSpace(input.CoachUserID),
+		IsActive:    true,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+		CreatedBy:   principal.UserID,
+		UpdatedBy:   principal.UserID,
+	}
+	s.groups[group.ID] = group
+
+	event := s.recordAuditEventLocked(GroupAuditEvent{
+		OrgID:       orgID,
+		ActorUserID: principal.UserID,
+		Action:      "group.created",
+		After:       groupSnapshot(group),
+	})
+	return group, event, nil
+}
+
+// UpdateGroup updates a group's mutable fields.
+func (s *Service) UpdateGroup(principal *appmiddleware.Principal, orgID, groupID string, input UpdateGroupInput) (Group, GroupAuditEvent, error) {
+	if !hasAnyRole(principal, "owner", "admin", "coach") {
+		return Group{}, GroupAuditEvent{}, ErrForbidden
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	group, ok := s.groups[strings.TrimSpace(groupID)]
+	if !ok || group.OrgID != orgID {
+		return Group{}, GroupAuditEvent{}, ErrGroupNotFound
+	}
+
+	before := groupSnapshot(group)
+
+	if input.Name != nil {
+		name := strings.TrimSpace(*input.Name)
+		if name == "" {
+			return Group{}, GroupAuditEvent{}, errors.New("name cannot be empty")
+		}
+		group.Name = name
+	}
+	if input.Description != nil {
+		group.Description = strings.TrimSpace(*input.Description)
+	}
+	if input.Type != nil {
+		t := strings.TrimSpace(strings.ToLower(*input.Type))
+		if err := validateGroupType(t); err != nil {
+			return Group{}, GroupAuditEvent{}, err
+		}
+		group.Type = t
+	}
+	if input.MinAge != nil {
+		group.MinAge = input.MinAge
+	}
+	if input.MaxAge != nil {
+		group.MaxAge = input.MaxAge
+	}
+	if group.MinAge != nil && group.MaxAge != nil && *group.MinAge > *group.MaxAge {
+		return Group{}, GroupAuditEvent{}, errors.New("min_age cannot exceed max_age")
+	}
+	if input.CoachUserID != nil {
+		group.CoachUserID = strings.TrimSpace(*input.CoachUserID)
+	}
+	if input.IsActive != nil {
+		group.IsActive = *input.IsActive
+	}
+
+	group.UpdatedAt = time.Now().UTC()
+	group.UpdatedBy = principal.UserID
+	s.groups[group.ID] = group
+
+	event := s.recordAuditEventLocked(GroupAuditEvent{
+		OrgID:       orgID,
+		ActorUserID: principal.UserID,
+		Action:      "group.updated",
+		Before:      before,
+		After:       groupSnapshot(group),
+		Metadata:    map[string]any{"group_id": group.ID},
+	})
+	return group, event, nil
+}
+
+// GetGroup retrieves a single group by ID.
+func (s *Service) GetGroup(principal *appmiddleware.Principal, orgID, groupID string) (Group, error) {
+	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "billing", "read-only") {
+		return Group{}, ErrForbidden
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	group, ok := s.groups[strings.TrimSpace(groupID)]
+	if !ok || group.OrgID != orgID {
+		return Group{}, ErrGroupNotFound
+	}
+	return group, nil
+}
+
+// ListGroups returns groups in an org. Coaches without admin access only see their own groups.
+func (s *Service) ListGroups(principal *appmiddleware.Principal, orgID string, activeOnly bool) ([]Group, error) {
+	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "billing", "read-only") {
+		return nil, ErrForbidden
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var result []Group
+	for _, g := range s.groups {
+		if g.OrgID != orgID {
+			continue
+		}
+		if activeOnly && !g.IsActive {
+			continue
+		}
+		// Group-scoped coach visibility: coaches see only groups they coach,
+		// unless they're also owner/admin.
+		if hasAnyRole(principal, "coach") && !hasAnyRole(principal, "owner", "admin") {
+			if g.CoachUserID != principal.UserID {
+				continue
+			}
+		}
+		result = append(result, g)
+	}
+	return result, nil
+}
+
+// ─── Eligibility Rules ───────────────────────────────────────────────────────
+
+// AttachEligibilityRule attaches a new eligibility rule to a group.
+func (s *Service) AttachEligibilityRule(principal *appmiddleware.Principal, orgID, groupID string, input AttachEligibilityRuleInput) (EligibilityRule, GroupAuditEvent, error) {
+	if !hasAnyRole(principal, "owner", "admin") {
+		return EligibilityRule{}, GroupAuditEvent{}, ErrForbidden
+	}
+
+	ruleType := strings.TrimSpace(strings.ToLower(input.RuleType))
+	if err := validateRuleType(ruleType); err != nil {
+		return EligibilityRule{}, GroupAuditEvent{}, err
+	}
+	if input.Parameters == nil {
+		input.Parameters = map[string]any{}
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	group, ok := s.groups[strings.TrimSpace(groupID)]
+	if !ok || group.OrgID != orgID {
+		return EligibilityRule{}, GroupAuditEvent{}, ErrGroupNotFound
+	}
+
+	now := time.Now().UTC()
+	rule := EligibilityRule{
+		ID:         "rul_" + randomToken(12),
+		OrgID:      orgID,
+		GroupID:    group.ID,
+		RuleType:   ruleType,
+		Parameters: input.Parameters,
+		IsActive:   true,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+		CreatedBy:  principal.UserID,
+		UpdatedBy:  principal.UserID,
+	}
+	s.rules[rule.ID] = rule
+
+	event := s.recordAuditEventLocked(GroupAuditEvent{
+		OrgID:       orgID,
+		ActorUserID: principal.UserID,
+		Action:      "group.eligibility_rule_attached",
+		After:       map[string]any{"rule_id": rule.ID, "rule_type": rule.RuleType, "parameters": rule.Parameters},
+		Metadata:    map[string]any{"group_id": group.ID},
+	})
+	return rule, event, nil
+}
+
+// EvaluateSwimmerEligibility evaluates a swimmer against all active rules for a group.
+func (s *Service) EvaluateSwimmerEligibility(principal *appmiddleware.Principal, orgID, groupID, swimmerID string) (EligibilityResult, error) {
+	if !hasAnyRole(principal, "owner", "admin", "coach", "parent") {
+		return EligibilityResult{}, ErrForbidden
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	group, ok := s.groups[strings.TrimSpace(groupID)]
+	if !ok || group.OrgID != orgID {
+		return EligibilityResult{}, ErrGroupNotFound
+	}
+
+	swimmer, ok := s.swimmers[strings.TrimSpace(swimmerID)]
+	if !ok || swimmer.OrgID != orgID {
+		return EligibilityResult{}, ErrSwimmerNotFound
+	}
+
+	// Parent scope: can only evaluate own household swimmers.
+	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "owner", "admin", "coach") {
+		if !s.parentOwnsHouseholdLocked(principal.UserID, swimmer.HouseholdID) {
+			return EligibilityResult{}, ErrForbidden
+		}
+	}
+
+	var ruleResults []RuleEvaluation
+	allPassed := true
+
+	for _, rule := range s.rules {
+		if rule.GroupID != group.ID || !rule.IsActive {
+			continue
+		}
+		eval := s.evalRule(rule, swimmer)
+		ruleResults = append(ruleResults, eval)
+		if !eval.Passed {
+			allPassed = false
+		}
+	}
+
+	return EligibilityResult{
+		GroupID:     group.ID,
+		SwimmerID:   swimmer.ID,
+		Eligible:    allPassed,
+		RuleResults: ruleResults,
+		EvaluatedAt: time.Now().UTC(),
+	}, nil
+}
+
+// evalRule evaluates a single rule against a swimmer.
+func (s *Service) evalRule(rule EligibilityRule, swimmer swimmerRef) RuleEvaluation {
+	eval := RuleEvaluation{
+		RuleID:   rule.ID,
+		RuleType: rule.RuleType,
+		Passed:   true,
+	}
+
+	switch rule.RuleType {
+	case "age_range":
+		age := computeAge(swimmer.DateOfBirth)
+		if age < 0 {
+			eval.Passed = false
+			eval.Reason = "could not compute swimmer age from date_of_birth"
+			break
+		}
+		if minAge, ok := rule.Parameters["min_age"]; ok {
+			min := toInt(minAge)
+			if age < min {
+				eval.Passed = false
+				eval.Reason = fmt.Sprintf("swimmer age %d is below min_age %d", age, min)
+			}
+		}
+		if maxAge, ok := rule.Parameters["max_age"]; ok {
+			max := toInt(maxAge)
+			if age > max {
+				eval.Passed = false
+				eval.Reason = fmt.Sprintf("swimmer age %d exceeds max_age %d", age, max)
+			}
+		}
+
+	case "gender":
+		allowed := toStringSlice(rule.Parameters["allowed"])
+		if len(allowed) > 0 && !slices.Contains(allowed, swimmer.Gender) {
+			eval.Passed = false
+			eval.Reason = fmt.Sprintf("swimmer gender %q not in allowed list", swimmer.Gender)
+		}
+
+	case "registration_status":
+		allowed := toStringSlice(rule.Parameters["allowed"])
+		if len(allowed) > 0 && !slices.Contains(allowed, swimmer.RegistrationStatus) {
+			eval.Passed = false
+			eval.Reason = fmt.Sprintf("swimmer registration_status %q not in allowed list", swimmer.RegistrationStatus)
+		}
+
+	default:
+		eval.Reason = fmt.Sprintf("unknown rule type %q — treated as pass", rule.RuleType)
+	}
+
+	return eval
+}
+
+// ─── Registrations ───────────────────────────────────────────────────────────
+
+// CreateRegistration creates a new registration for a swimmer in a group.
+func (s *Service) CreateRegistration(principal *appmiddleware.Principal, orgID string, input CreateRegistrationInput) (Registration, error) {
+	if !hasAnyRole(principal, "owner", "admin", "coach", "parent") {
+		return Registration{}, ErrForbidden
+	}
+
+	swimmerID := strings.TrimSpace(input.SwimmerID)
+	householdID := strings.TrimSpace(input.HouseholdID)
+	groupID := strings.TrimSpace(input.GroupID)
+	season := strings.TrimSpace(input.Season)
+
+	if swimmerID == "" || householdID == "" || groupID == "" || season == "" {
+		return Registration{}, errors.New("swimmer_id, household_id, group_id, and season are required")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	group, ok := s.groups[groupID]
+	if !ok || group.OrgID != orgID {
+		return Registration{}, ErrGroupNotFound
+	}
+
+	household, ok := s.households[householdID]
+	if !ok || household.OrgID != orgID {
+		return Registration{}, ErrHouseholdNotFound
+	}
+
+	swimmer, ok := s.swimmers[swimmerID]
+	if !ok || swimmer.OrgID != orgID {
+		return Registration{}, ErrSwimmerNotFound
+	}
+
+	if swimmer.HouseholdID != householdID {
+		return Registration{}, errors.New("swimmer does not belong to the specified household")
+	}
+
+	// Parent scope: can only register swimmers from their own household.
+	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "owner", "admin", "coach") {
+		if !s.parentOwnsHouseholdLocked(principal.UserID, householdID) {
+			return Registration{}, ErrForbidden
+		}
+	}
+
+	// Duplicate check: swimmer+group+season must be unique per org.
+	for _, reg := range s.registrations {
+		if reg.OrgID == orgID && reg.SwimmerID == swimmerID && reg.GroupID == groupID && reg.Season == season {
+			return Registration{}, ErrDuplicateRegistration
+		}
+	}
+
+	regDate := strings.TrimSpace(input.RegistrationDate)
+	if regDate == "" {
+		regDate = time.Now().UTC().Format("2006-01-02")
+	}
+
+	now := time.Now().UTC()
+	reg := Registration{
+		ID:               "reg_" + randomToken(12),
+		OrgID:            orgID,
+		HouseholdID:      householdID,
+		SwimmerID:        swimmerID,
+		GroupID:          groupID,
+		Season:           season,
+		Status:           "pending",
+		RegistrationDate: regDate,
+		Notes:            strings.TrimSpace(input.Notes),
+		CreatedAt:        now,
+		UpdatedAt:        now,
+		CreatedBy:        principal.UserID,
+		UpdatedBy:        principal.UserID,
+	}
+	s.registrations[reg.ID] = reg
+	return reg, nil
+}
+
+// TransitionRegistrationStatus moves a registration through its status state machine.
+func (s *Service) TransitionRegistrationStatus(principal *appmiddleware.Principal, orgID, registrationID, toStatus string) (Registration, GroupAuditEvent, error) {
+	if !hasAnyRole(principal, "owner", "admin", "coach", "parent") {
+		return Registration{}, GroupAuditEvent{}, ErrForbidden
+	}
+
+	toStatus = strings.TrimSpace(strings.ToLower(toStatus))
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	reg, ok := s.registrations[strings.TrimSpace(registrationID)]
+	if !ok || reg.OrgID != orgID {
+		return Registration{}, GroupAuditEvent{}, ErrRegistrationNotFound
+	}
+
+	// Validate state machine transition.
+	if err := validateTransition(reg.Status, toStatus, principal); err != nil {
+		return Registration{}, GroupAuditEvent{}, err
+	}
+
+	fromStatus := reg.Status
+	reg.Status = toStatus
+	reg.UpdatedAt = time.Now().UTC()
+	reg.UpdatedBy = principal.UserID
+	s.registrations[reg.ID] = reg
+
+	event := s.recordAuditEventLocked(GroupAuditEvent{
+		OrgID:       orgID,
+		ActorUserID: principal.UserID,
+		Action:      "registration.status_changed",
+		Before:      map[string]any{"status": fromStatus},
+		After:       map[string]any{"status": toStatus},
+		Metadata:    map[string]any{"registration_id": reg.ID, "swimmer_id": reg.SwimmerID},
+	})
+	return reg, event, nil
+}
+
+// ─── Waivers ─────────────────────────────────────────────────────────────────
+
+// AcceptWaiver records a waiver acceptance for a registration.
+func (s *Service) AcceptWaiver(principal *appmiddleware.Principal, orgID, registrationID string, input AcceptWaiverInput) (WaiverAcceptance, error) {
+	if !hasAnyRole(principal, "owner", "admin", "parent") {
+		return WaiverAcceptance{}, ErrForbidden
+	}
+
+	waiverType := strings.TrimSpace(strings.ToLower(input.WaiverType))
+	if waiverType == "" {
+		return WaiverAcceptance{}, errors.New("waiver_type is required")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	reg, ok := s.registrations[strings.TrimSpace(registrationID)]
+	if !ok || reg.OrgID != orgID {
+		return WaiverAcceptance{}, ErrRegistrationNotFound
+	}
+
+	// Parent scope: can only accept waivers for their own household registrations.
+	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "owner", "admin") {
+		if !s.parentOwnsHouseholdLocked(principal.UserID, reg.HouseholdID) {
+			return WaiverAcceptance{}, ErrForbidden
+		}
+	}
+
+	// Idempotency: one acceptance per (registration, waiver_type).
+	for _, w := range s.waivers {
+		if w.RegistrationID == reg.ID && w.WaiverType == waiverType {
+			return WaiverAcceptance{}, ErrWaiverAlreadyAccepted
+		}
+	}
+
+	now := time.Now().UTC()
+	waiver := WaiverAcceptance{
+		ID:               "wvr_" + randomToken(12),
+		OrgID:            orgID,
+		RegistrationID:   reg.ID,
+		WaiverType:       waiverType,
+		AcceptedAt:       now,
+		AcceptedByUserID: principal.UserID,
+		IPAddress:        strings.TrimSpace(input.IPAddress),
+		CreatedAt:        now,
+	}
+	s.waivers[waiver.ID] = waiver
+	return waiver, nil
+}
+
+// ─── Internal helpers ─────────────────────────────────────────────────────────
+
+func (s *Service) parentOwnsHouseholdLocked(parentUserID, householdID string) bool {
+	households := s.parentHousehold[parentUserID]
+	_, ok := households[householdID]
+	return ok
+}
+
+func validateGroupType(t string) error {
+	allowed := []string{"competitive", "recreational", "developmental", "masters", "other"}
+	t = strings.TrimSpace(strings.ToLower(t))
+	if t == "" {
+		return nil // defaults to "competitive"
+	}
+	if !slices.Contains(allowed, t) {
+		return fmt.Errorf("type must be one of: %s", strings.Join(allowed, ", "))
+	}
+	return nil
+}
+
+func validateRuleType(t string) error {
+	allowed := []string{"age_range", "gender", "registration_status"}
+	if !slices.Contains(allowed, t) {
+		return fmt.Errorf("rule_type must be one of: %s", strings.Join(allowed, ", "))
+	}
+	return nil
+}
+
+// validTransitions defines allowed state machine moves.
+var validTransitions = map[string][]string{
+	"pending":  {"active", "withdrawn"},
+	"active":   {"inactive", "withdrawn"},
+	"inactive": {"active", "withdrawn"},
+}
+
+func validateTransition(from, to string, principal *appmiddleware.Principal) error {
+	allowed, ok := validTransitions[from]
+	if !ok {
+		return ErrInvalidTransition
+	}
+	if !slices.Contains(allowed, to) {
+		return fmt.Errorf("%w: %s -> %s is not allowed", ErrInvalidTransition, from, to)
+	}
+	// Parents can only withdraw; they cannot activate or deactivate.
+	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "owner", "admin", "coach") {
+		if to != "withdrawn" {
+			return fmt.Errorf("%w: parent role can only transition to withdrawn", ErrForbidden)
+		}
+	}
+	return nil
+}
+
+func computeAge(dob string) int {
+	t, err := time.Parse("2006-01-02", dob)
+	if err != nil {
+		return -1
+	}
+	now := time.Now().UTC()
+	age := now.Year() - t.Year()
+	// Subtract 1 if the birthday has not yet occurred this year.
+	// Month/day comparison correctly handles Feb 29 leap-day birthdays.
+	if now.Month() < t.Month() || (now.Month() == t.Month() && now.Day() < t.Day()) {
+		age--
+	}
+	return age
+}
+
+func toInt(v any) int {
+	switch n := v.(type) {
+	case int:
+		return n
+	case int64:
+		return int(n)
+	case float64:
+		return int(n)
+	case float32:
+		return int(n)
+	}
+	return 0
+}
+
+func toStringSlice(v any) []string {
+	if v == nil {
+		return nil
+	}
+	raw, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	result := make([]string, 0, len(raw))
+	for _, item := range raw {
+		if s, ok := item.(string); ok {
+			result = append(result, s)
+		}
+	}
+	return result
+}
+
+func hasAnyRole(principal *appmiddleware.Principal, required ...string) bool {
+	if principal == nil {
+		return false
+	}
+	for _, role := range principal.Roles {
+		if slices.Contains(required, role) {
+			return true
+		}
+	}
+	return false
+}
+
+func randomToken(byteLen int) string {
+	raw := make([]byte, byteLen)
+	if _, err := rand.Read(raw); err != nil {
+		return fmt.Sprintf("fallback%x", time.Now().UTC().UnixNano())
+	}
+	return hex.EncodeToString(raw)
+}
+
+func (s *Service) recordAuditEventLocked(event GroupAuditEvent) GroupAuditEvent {
+	event.ID = "aud_" + randomToken(12)
+	event.CreatedAt = time.Now().UTC()
+	s.auditEvents = append(s.auditEvents, event)
+	return event
+}
+
+// SnapshotGroups returns a copy of all groups for the given org.
+func (s *Service) SnapshotGroups(orgID string) []Group {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := make([]Group, 0, len(s.groups))
+	for _, group := range s.groups {
+		if group.OrgID != orgID {
+			continue
+		}
+		out = append(out, group)
+	}
+	return out
+}
+
+// SnapshotRegistrations returns a copy of all registrations for the given org.
+func (s *Service) SnapshotRegistrations(orgID string) []Registration {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := make([]Registration, 0, len(s.registrations))
+	for _, registration := range s.registrations {
+		if registration.OrgID != orgID {
+			continue
+		}
+		out = append(out, registration)
+	}
+	return out
+}
+
+// SnapshotWaivers returns a copy of all waiver acceptances for the given org.
+func (s *Service) SnapshotWaivers(orgID string) []WaiverAcceptance {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := make([]WaiverAcceptance, 0, len(s.waivers))
+	for _, waiver := range s.waivers {
+		if waiver.OrgID != orgID {
+			continue
+		}
+		out = append(out, waiver)
+	}
+	return out
+}
+
+func groupSnapshot(g Group) map[string]any {
+	return map[string]any{
+		"name":          g.Name,
+		"description":   g.Description,
+		"type":          g.Type,
+		"min_age":       g.MinAge,
+		"max_age":       g.MaxAge,
+		"coach_user_id": g.CoachUserID,
+		"is_active":     g.IsActive,
+	}
+}

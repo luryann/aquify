@@ -1,0 +1,28 @@
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Node / Next
+node_modules/
+admin/node_modules/
+admin/.next/
+admin/out/
+
+# Go
+server/bin/
+server/coverage.out
+
+# Logs and temp
+*.log
+.tmp/
+tmp/
+
+# Build artifacts
+dist/
+coverage/
