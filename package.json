@@ -1,0 +1,7 @@
+{
+  "name": "aquify-monorepo",
+  "private": true,
+  "scripts": {
+    "admin:dev": "npm --prefix admin run dev"
+  }
+}

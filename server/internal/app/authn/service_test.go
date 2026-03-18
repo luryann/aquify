@@ -1,0 +1,303 @@
+package authn
+
+import (
+	"crypto"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+)
+
+func TestResolvePrincipalDisablesStubTokensWhenNotConfigured(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(Config{EnableDevStubTokens: false})
+	if _, ok := service.ResolvePrincipal("stub-admin"); ok {
+		t.Fatal("expected stub token to be rejected when dev stubs are disabled")
+	}
+}
+
+func TestResolvePrincipalAllowsStubTokensWhenConfigured(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(Config{EnableDevStubTokens: true})
+	principal, ok := service.ResolvePrincipal("stub-admin")
+	if !ok || principal == nil {
+		t.Fatal("expected stub token to resolve when dev stubs are enabled")
+	}
+	if principal.UserID != "admin-user" {
+		t.Fatalf("expected admin-user, got %q", principal.UserID)
+	}
+}
+
+func TestChallengeMFARejectsStaticCodeAndAcceptsTOTP(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(Config{EnableDevStubTokens: true})
+	factor, err := service.EnrollMFA("admin-user", "org-demo", "totp", "Primary authenticator")
+	if err != nil {
+		t.Fatalf("failed to enroll mfa factor: %v", err)
+	}
+	if factor.ChallengeHint == "" {
+		t.Fatal("expected challenge hint for local/dev enrollment")
+	}
+
+	principal := &appmiddleware.Principal{
+		UserID: "admin-user",
+		OrgID:  "org-demo",
+		Roles:  []string{"admin"},
+	}
+
+	if _, err := service.ChallengeMFA(principal, factor.ID, "123456"); err == nil {
+		t.Fatal("expected static fallback code to be rejected")
+	}
+
+	validCode := generateTOTP(factor.ChallengeHint, time.Now().UTC().Unix())
+	if validCode == "" {
+		t.Fatal("expected generated totp code")
+	}
+
+	session, err := service.ChallengeMFA(principal, factor.ID, validCode)
+	if err != nil {
+		t.Fatalf("expected valid totp code to pass, got error: %v", err)
+	}
+	if session.AccessToken == "" {
+		t.Fatal("expected challenge flow to issue step-up access token")
+	}
+}
+
+func TestChallengeMFASupportsAcceptedFactorsOnly(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(Config{EnableDevStubTokens: true})
+	principal := &appmiddleware.Principal{
+		UserID: "admin-user",
+		OrgID:  "org-demo",
+		Roles:  []string{"admin"},
+	}
+
+	totpFactor, err := service.EnrollMFA(principal.UserID, principal.OrgID, "totp", "Authenticator")
+	if err != nil {
+		t.Fatalf("totp enrollment should succeed: %v", err)
+	}
+	totpCode := generateTOTP(totpFactor.ChallengeHint, time.Now().UTC().Unix())
+	if _, err := service.ChallengeMFA(principal, totpFactor.ID, totpCode); err != nil {
+		t.Fatalf("totp challenge should succeed: %v", err)
+	}
+
+	backupFactor, err := service.EnrollMFA(principal.UserID, principal.OrgID, "backup_code", "Backup code")
+	if err != nil {
+		t.Fatalf("backup code enrollment should succeed: %v", err)
+	}
+	if _, err := service.ChallengeMFA(principal, backupFactor.ID, backupFactor.ChallengeHint); err != nil {
+		t.Fatalf("backup code challenge should succeed: %v", err)
+	}
+	if _, err := service.ChallengeMFA(principal, backupFactor.ID, backupFactor.ChallengeHint); err == nil {
+		t.Fatal("backup code should be one-time use")
+	}
+
+	if _, err := service.EnrollMFA(principal.UserID, principal.OrgID, "webauthn", "Not supported"); err == nil {
+		t.Fatal("unsupported factor should be rejected")
+	}
+}
+
+func TestOIDCCallbackRejectsTamperedIDTokenPayload(t *testing.T) {
+	t.Parallel()
+
+	privateKey, jwk := generateJWK(t, "kid-1")
+	now := time.Now().UTC()
+	tokenClaims := map[string]any{
+		"sub":     "user-123",
+		"iss":     "https://issuer.example.com",
+		"aud":     []string{"dare-client"},
+		"exp":     now.Add(10 * time.Minute).Unix(),
+		"iat":     now.Add(-1 * time.Minute).Unix(),
+		"nonce":   "nonce-123",
+		"org_id":  "org-secure",
+		"roles":   []string{"parent"},
+		"typ":     "JWT",
+		"ignored": "value",
+	}
+	validToken := signedIDToken(t, privateKey, "kid-1", tokenClaims)
+	parts := strings.Split(validToken, ".")
+	tamperedPayload := map[string]any{}
+	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		t.Fatalf("failed to decode payload: %v", err)
+	}
+	if err := json.Unmarshal(payloadBytes, &tamperedPayload); err != nil {
+		t.Fatalf("failed to unmarshal payload: %v", err)
+	}
+	tamperedPayload["org_id"] = "org-attacker"
+	tamperedPayloadBytes, err := json.Marshal(tamperedPayload)
+	if err != nil {
+		t.Fatalf("failed to marshal tampered payload: %v", err)
+	}
+	tamperedToken := parts[0] + "." + base64.RawURLEncoding.EncodeToString(tamperedPayloadBytes) + "." + parts[2]
+
+	server := oidcTestServer(t, tamperedToken, []oidcJWK{jwk})
+	defer server.Close()
+
+	service := NewService(Config{
+		OIDC: OIDCConfig{
+			TokenURL:        server.URL + "/token",
+			JWKSURL:         server.URL + "/jwks",
+			RedirectURL:     "http://localhost:3000/callback",
+			ClientID:        "dare-client",
+			ClientSecret:    "secret",
+			ExpectedIssuer:  "https://issuer.example.com",
+			StateSigningKey: "state-signing-key",
+		},
+	})
+	state := signedState(t, "state-signing-key", oidcStatePayload{
+		Nonce: "nonce-123",
+		Exp:   now.Add(5 * time.Minute).Unix(),
+	})
+
+	if _, err := service.OIDCCallback("auth-code", state, "org-untrusted"); err == nil || !strings.Contains(err.Error(), "signature verification failed") {
+		t.Fatalf("expected signature verification failure, got: %v", err)
+	}
+}
+
+func TestOIDCCallbackRejectsUntrustedBodyOrgFallback(t *testing.T) {
+	t.Parallel()
+
+	privateKey, jwk := generateJWK(t, "kid-2")
+	now := time.Now().UTC()
+	idToken := signedIDToken(t, privateKey, "kid-2", map[string]any{
+		"sub":   "user-123",
+		"iss":   "https://issuer.example.com",
+		"aud":   []string{"dare-client"},
+		"exp":   now.Add(10 * time.Minute).Unix(),
+		"iat":   now.Add(-1 * time.Minute).Unix(),
+		"nonce": "nonce-abc",
+		"roles": []string{"parent"},
+	})
+
+	server := oidcTestServer(t, idToken, []oidcJWK{jwk})
+	defer server.Close()
+
+	service := NewService(Config{
+		OIDC: OIDCConfig{
+			TokenURL:        server.URL + "/token",
+			JWKSURL:         server.URL + "/jwks",
+			RedirectURL:     "http://localhost:3000/callback",
+			ClientID:        "dare-client",
+			ClientSecret:    "secret",
+			ExpectedIssuer:  "https://issuer.example.com",
+			StateSigningKey: "state-signing-key",
+		},
+	})
+	state := signedState(t, "state-signing-key", oidcStatePayload{
+		Nonce: "nonce-abc",
+		Exp:   now.Add(5 * time.Minute).Unix(),
+	})
+
+	if _, err := service.OIDCCallback("auth-code", state, "org-body-value"); err == nil || !strings.Contains(err.Error(), "trusted oidc claims/state") {
+		t.Fatalf("expected trusted org resolution error, got: %v", err)
+	}
+}
+
+func generateJWK(t *testing.T, kid string) (*rsa.PrivateKey, oidcJWK) {
+	t.Helper()
+
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("failed to generate rsa key: %v", err)
+	}
+
+	eBytes := bigEndianBytes(privateKey.PublicKey.E)
+	jwk := oidcJWK{
+		Kid: kid,
+		Kty: "RSA",
+		Use: "sig",
+		Alg: "RS256",
+		N:   base64.RawURLEncoding.EncodeToString(privateKey.PublicKey.N.Bytes()),
+		E:   base64.RawURLEncoding.EncodeToString(eBytes),
+	}
+	return privateKey, jwk
+}
+
+func signedIDToken(t *testing.T, key *rsa.PrivateKey, kid string, claims map[string]any) string {
+	t.Helper()
+
+	headerBytes, err := json.Marshal(map[string]any{
+		"alg": "RS256",
+		"kid": kid,
+		"typ": "JWT",
+	})
+	if err != nil {
+		t.Fatalf("failed to marshal token header: %v", err)
+	}
+	claimsBytes, err := json.Marshal(claims)
+	if err != nil {
+		t.Fatalf("failed to marshal token payload: %v", err)
+	}
+
+	header := base64.RawURLEncoding.EncodeToString(headerBytes)
+	payload := base64.RawURLEncoding.EncodeToString(claimsBytes)
+	signingInput := header + "." + payload
+
+	digest := sha256.Sum256([]byte(signingInput))
+	signature, err := rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, digest[:])
+	if err != nil {
+		t.Fatalf("failed to sign id token: %v", err)
+	}
+
+	return signingInput + "." + base64.RawURLEncoding.EncodeToString(signature)
+}
+
+func oidcTestServer(t *testing.T, idToken string, keys []oidcJWK) *httptest.Server {
+	t.Helper()
+
+	handler := http.NewServeMux()
+	handler.HandleFunc("/token", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token": "provider-access-token",
+			"id_token":     idToken,
+			"token_type":   "Bearer",
+			"expires_in":   3600,
+		})
+	})
+	handler.HandleFunc("/jwks", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(oidcJWKSet{Keys: keys})
+	})
+
+	return httptest.NewServer(handler)
+}
+
+func signedState(t *testing.T, signingKey string, payload oidcStatePayload) string {
+	t.Helper()
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("failed to marshal state payload: %v", err)
+	}
+	encodedPayload := base64.RawURLEncoding.EncodeToString(payloadBytes)
+	h := hmac.New(sha256.New, []byte(signingKey))
+	_, _ = h.Write([]byte(encodedPayload))
+	signature := h.Sum(nil)
+	return fmt.Sprintf("%s.%s", encodedPayload, base64.RawURLEncoding.EncodeToString(signature))
+}
+
+func bigEndianBytes(value int) []byte {
+	if value <= 0 {
+		return []byte{0}
+	}
+	out := make([]byte, 0, 4)
+	for value > 0 {
+		out = append([]byte{byte(value & 0xff)}, out...)
+		value >>= 8
+	}
+	return out
+}

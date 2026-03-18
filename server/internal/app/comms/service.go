@@ -1,0 +1,568 @@
+//  PROPRIETARY AND CONFIDENTIAL
+//  COPYRIGHT (C) 2026 RYAN LU. ALL RIGHTS RESERVED.
+//
+//  THIS SOURCE FILE IS PART OF A PROPRIETARY, CLOSED-SOURCE SOFTWARE
+//  SYSTEM OWNED EXCLUSIVELY BY RYAN LU. THIS FILE AND ALL ASSOCIATED
+//  SOURCE CODE, OBJECT CODE, MODULES, COMPONENTS, DOCUMENTATION, AND
+//  RELATED MATERIALS ARE CONFIDENTIAL AND PROPRIETARY INTELLECTUAL
+//  PROPERTY OF RYAN LU.
+//
+//  USE OF THIS SOFTWARE IS PERMITTED ONLY FOR PERSONS OR ENTITIES
+//  EXPRESSLY AUTHORIZED BY RYAN LU AND ONLY AFTER ACCEPTANCE OF THE
+//  APPLICABLE LICENSE TERMS. DARE AQUATICS AND OTHER TEAMS OR
+//  ORGANIZATIONS MAY USE THIS SOFTWARE ONLY IF SEPARATELY APPROVED BY
+//  RYAN LU.
+//
+//  NO COPYING, MODIFICATION, DISTRIBUTION, HOSTING, DISCLOSURE,
+//  REVERSE ENGINEERING, DECOMPILATION, OR OTHER USE IS PERMITTED
+//  EXCEPT AS EXPRESSLY AUTHORIZED IN WRITING BY RYAN LU.
+//
+//  ALL RIGHTS NOT EXPRESSLY GRANTED ARE RESERVED BY RYAN LU.
+
+
+// Package comms provides the in-memory service for announcements, email
+// campaigns, email delivery tracking, and the suppression list.
+//
+// Production note: all data is held in-memory maps protected by a RWMutex.
+// Replace with sqlc/pgx queries when the DB layer is wired.
+package comms
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/dareaquatics/aquify/server/internal/postmark"
+)
+
+// ─── Sentinel errors ──────────────────────────────────────────────────────────
+
+var (
+	ErrAnnouncementNotFound = errors.New("announcement not found")
+	ErrCampaignNotFound     = errors.New("email campaign not found")
+	ErrDeliveryNotFound     = errors.New("email delivery not found")
+	ErrSuppressionNotFound  = errors.New("suppression entry not found")
+	ErrForbidden            = errors.New("forbidden")
+	ErrInvalidTransition    = errors.New("invalid state transition")
+	ErrDuplicateSuppression = errors.New("email already suppressed for this organisation")
+	ErrCampaignNotDraft     = errors.New("campaign must be in draft status to send")
+)
+
+// ─── Domain types ─────────────────────────────────────────────────────────────
+
+// Announcement is an org-wide or group-scoped notice visible in the portal.
+type Announcement struct {
+	ID          string     `json:"id"`
+	OrgID       string     `json:"org_id"`
+	Title       string     `json:"title"`
+	Body        string     `json:"body"`
+	Status      string     `json:"status"` // draft | published | archived
+	Audience    string     `json:"audience"` // all | group
+	GroupID     string     `json:"group_id,omitempty"`
+	PublishedAt *time.Time `json:"published_at,omitempty"`
+	ArchivedAt  *time.Time `json:"archived_at,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+	CreatedBy   string     `json:"created_by"`
+	UpdatedBy   string     `json:"updated_by"`
+}
+
+// EmailCampaign is a bulk-email job targeting all org members or a group.
+type EmailCampaign struct {
+	ID               string     `json:"id"`
+	OrgID            string     `json:"org_id"`
+	Name             string     `json:"name"`
+	Subject          string     `json:"subject"`
+	BodyHTML         string     `json:"body_html"`
+	BodyText         string     `json:"body_text,omitempty"`
+	FromName         string     `json:"from_name"`
+	FromEmail        string     `json:"from_email"`
+	Audience         string     `json:"audience"` // all | group
+	GroupID          string     `json:"group_id,omitempty"`
+	Status           string     `json:"status"` // draft | sending | sent | failed | cancelled
+	SentAt           *time.Time `json:"sent_at,omitempty"`
+	TotalRecipients  int        `json:"total_recipients"`
+	SentCount        int        `json:"sent_count"`
+	FailedCount      int        `json:"failed_count"`
+	SuppressedCount  int        `json:"suppressed_count"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+	CreatedBy        string     `json:"created_by"`
+	UpdatedBy        string     `json:"updated_by"`
+}
+
+// EmailDelivery records a single email send attempt for a recipient.
+type EmailDelivery struct {
+	ID                 string     `json:"id"`
+	OrgID              string     `json:"org_id"`
+	CampaignID         string     `json:"campaign_id,omitempty"`
+	RecipientEmail     string     `json:"recipient_email"`
+	RecipientUserID    string     `json:"recipient_user_id,omitempty"`
+	Status             string     `json:"status"` // pending | sent | delivered | bounced | failed | suppressed
+	ProviderMessageID  string     `json:"provider_message_id,omitempty"`
+	ErrorMessage       string     `json:"error_message,omitempty"`
+	SentAt             *time.Time `json:"sent_at,omitempty"`
+	DeliveredAt        *time.Time `json:"delivered_at,omitempty"`
+	BouncedAt          *time.Time `json:"bounced_at,omitempty"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
+}
+
+// SuppressionEntry records an email address that should never receive sends.
+type SuppressionEntry struct {
+	ID        string    `json:"id"`
+	OrgID     string    `json:"org_id"`
+	Email     string    `json:"email"`
+	Reason    string    `json:"reason"` // bounce | complaint | manual
+	CreatedAt time.Time `json:"created_at"`
+	CreatedBy string    `json:"created_by"`
+}
+
+// ─── Input types ──────────────────────────────────────────────────────────────
+
+type CreateAnnouncementInput struct {
+	OrgID     string `json:"org_id"    validate:"required"`
+	Title     string `json:"title"     validate:"required,max=255"`
+	Body      string `json:"body"      validate:"required"`
+	Audience  string `json:"audience"  validate:"required,oneof=all group"`
+	GroupID   string `json:"group_id"`
+	CreatedBy string `json:"-"`
+}
+
+type CreateCampaignInput struct {
+	OrgID     string `json:"org_id"      validate:"required"`
+	Name      string `json:"name"        validate:"required,max=255"`
+	Subject   string `json:"subject"     validate:"required,max=255"`
+	BodyHTML  string `json:"body_html"   validate:"required"`
+	BodyText  string `json:"body_text"`
+	FromName  string `json:"from_name"   validate:"required"`
+	FromEmail string `json:"from_email"  validate:"required,email"`
+	Audience  string `json:"audience"    validate:"required,oneof=all group"`
+	GroupID   string `json:"group_id"`
+	CreatedBy string `json:"-"`
+}
+
+// SendCampaignInput contains the recipient list and the actor sending the campaign.
+// In a production system the recipients would be resolved from DB queries;
+// here they are passed in directly by the handler (using mocked members).
+type SendCampaignInput struct {
+	// Recipients is the full candidate list before suppression filtering.
+	Recipients []Recipient
+	ActorID    string
+}
+
+// Recipient is a single addressee for a campaign send.
+type Recipient struct {
+	Email  string
+	UserID string // optional
+}
+
+type AddSuppressionInput struct {
+	OrgID     string `json:"org_id"   validate:"required"`
+	Email     string `json:"email"    validate:"required,email"`
+	Reason    string `json:"reason"   validate:"required,oneof=bounce complaint manual"`
+	CreatedBy string `json:"-"`
+}
+
+// ─── Service ──────────────────────────────────────────────────────────────────
+
+// Service is the in-memory communications service.
+type Service struct {
+	mu            sync.RWMutex
+	announcements map[string]*Announcement
+	campaigns     map[string]*EmailCampaign
+	deliveries    map[string]*EmailDelivery
+	suppression   map[string]*SuppressionEntry // key: orgID|email (lowercase)
+
+	postmarkClient postmark.Client
+}
+
+// NewService returns a new in-memory Service with a stub Postmark client.
+func NewService() *Service {
+	return &Service{
+		announcements: make(map[string]*Announcement),
+		campaigns:     make(map[string]*EmailCampaign),
+		deliveries:    make(map[string]*EmailDelivery),
+		suppression:   make(map[string]*SuppressionEntry),
+		postmarkClient: postmark.NewStubClient(),
+	}
+}
+
+// NewServiceWithClient returns a Service using the provided Postmark client.
+func NewServiceWithClient(client postmark.Client) *Service {
+	svc := NewService()
+	svc.postmarkClient = client
+	return svc
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+func newID() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+func suppressionKey(orgID, email string) string {
+	return orgID + "|" + strings.ToLower(strings.TrimSpace(email))
+}
+
+// isSuppressed returns true when the given email is in the suppression list.
+// Caller must hold s.mu (at minimum RLock) before calling.
+func (s *Service) isSuppressed(orgID, email string) bool {
+	_, ok := s.suppression[suppressionKey(orgID, email)]
+	return ok
+}
+
+// ─── Announcement operations ─────────────────────────────────────────────────
+
+// CreateAnnouncement creates a new announcement in draft state.
+func (s *Service) CreateAnnouncement(inp CreateAnnouncementInput) (*Announcement, error) {
+	if inp.Audience == "group" && strings.TrimSpace(inp.GroupID) == "" {
+		return nil, errors.New("group_id is required when audience is 'group'")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now().UTC()
+	a := &Announcement{
+		ID:        newID(),
+		OrgID:     inp.OrgID,
+		Title:     strings.TrimSpace(inp.Title),
+		Body:      strings.TrimSpace(inp.Body),
+		Status:    "draft",
+		Audience:  inp.Audience,
+		GroupID:   inp.GroupID,
+		CreatedAt: now,
+		UpdatedAt: now,
+		CreatedBy: inp.CreatedBy,
+		UpdatedBy: inp.CreatedBy,
+	}
+	s.announcements[a.ID] = a
+	return a, nil
+}
+
+// PublishAnnouncement transitions an announcement from draft → published.
+func (s *Service) PublishAnnouncement(orgID, id, actorID string) (*Announcement, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	a, ok := s.announcements[id]
+	if !ok || a.OrgID != orgID {
+		return nil, ErrAnnouncementNotFound
+	}
+	if a.Status != "draft" {
+		return nil, ErrInvalidTransition
+	}
+
+	now := time.Now().UTC()
+	a.Status = "published"
+	a.PublishedAt = &now
+	a.UpdatedAt = now
+	a.UpdatedBy = actorID
+	return a, nil
+}
+
+// ArchiveAnnouncement transitions an announcement to archived.
+func (s *Service) ArchiveAnnouncement(orgID, id, actorID string) (*Announcement, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	a, ok := s.announcements[id]
+	if !ok || a.OrgID != orgID {
+		return nil, ErrAnnouncementNotFound
+	}
+	if a.Status == "archived" {
+		return nil, ErrInvalidTransition
+	}
+
+	now := time.Now().UTC()
+	a.Status = "archived"
+	a.ArchivedAt = &now
+	a.UpdatedAt = now
+	a.UpdatedBy = actorID
+	return a, nil
+}
+
+// GetAnnouncement returns a single announcement.
+func (s *Service) GetAnnouncement(orgID, id string) (*Announcement, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	a, ok := s.announcements[id]
+	if !ok || a.OrgID != orgID {
+		return nil, ErrAnnouncementNotFound
+	}
+	return a, nil
+}
+
+// ListAnnouncements returns all announcements for an org, newest first.
+// status filter is optional (empty = all).
+func (s *Service) ListAnnouncements(orgID, statusFilter string) ([]*Announcement, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := make([]*Announcement, 0)
+	for _, a := range s.announcements {
+		if a.OrgID != orgID {
+			continue
+		}
+		if statusFilter != "" && a.Status != statusFilter {
+			continue
+		}
+		out = append(out, a)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt.After(out[j].CreatedAt)
+	})
+	return out, nil
+}
+
+// ─── Campaign operations ──────────────────────────────────────────────────────
+
+// CreateCampaign creates a new email campaign in draft state.
+func (s *Service) CreateCampaign(inp CreateCampaignInput) (*EmailCampaign, error) {
+	if inp.Audience == "group" && strings.TrimSpace(inp.GroupID) == "" {
+		return nil, errors.New("group_id is required when audience is 'group'")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now().UTC()
+	c := &EmailCampaign{
+		ID:        newID(),
+		OrgID:     inp.OrgID,
+		Name:      strings.TrimSpace(inp.Name),
+		Subject:   strings.TrimSpace(inp.Subject),
+		BodyHTML:  inp.BodyHTML,
+		BodyText:  inp.BodyText,
+		FromName:  strings.TrimSpace(inp.FromName),
+		FromEmail: strings.ToLower(strings.TrimSpace(inp.FromEmail)),
+		Audience:  inp.Audience,
+		GroupID:   inp.GroupID,
+		Status:    "draft",
+		CreatedAt: now,
+		UpdatedAt: now,
+		CreatedBy: inp.CreatedBy,
+		UpdatedBy: inp.CreatedBy,
+	}
+	s.campaigns[c.ID] = c
+	return c, nil
+}
+
+// GetCampaign returns a single email campaign.
+func (s *Service) GetCampaign(orgID, id string) (*EmailCampaign, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	c, ok := s.campaigns[id]
+	if !ok || c.OrgID != orgID {
+		return nil, ErrCampaignNotFound
+	}
+	return c, nil
+}
+
+// ListCampaigns returns all campaigns for an org, newest first.
+func (s *Service) ListCampaigns(orgID string) ([]*EmailCampaign, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := make([]*EmailCampaign, 0)
+	for _, c := range s.campaigns {
+		if c.OrgID == orgID {
+			out = append(out, c)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt.After(out[j].CreatedAt)
+	})
+	return out, nil
+}
+
+// SendCampaign sends a campaign to the provided recipient list, enforcing
+// the suppression list. The campaign must be in draft status.
+func (s *Service) SendCampaign(ctx context.Context, orgID, campaignID string, inp SendCampaignInput) (*EmailCampaign, error) {
+	s.mu.Lock()
+	c, ok := s.campaigns[campaignID]
+	if !ok || c.OrgID != orgID {
+		s.mu.Unlock()
+		return nil, ErrCampaignNotFound
+	}
+	if c.Status != "draft" {
+		s.mu.Unlock()
+		return nil, ErrCampaignNotDraft
+	}
+	// Mark as sending while we hold the lock so concurrent sends are rejected.
+	c.Status = "sending"
+	c.UpdatedAt = time.Now().UTC()
+	c.UpdatedBy = inp.ActorID
+	s.mu.Unlock()
+
+	var (
+		sentCount       int
+		failedCount     int
+		suppressedCount int
+		processedCount  int
+	)
+
+	for _, r := range inp.Recipients {
+		email := strings.ToLower(strings.TrimSpace(r.Email))
+		if email == "" {
+			continue
+		}
+		processedCount++
+
+		d := &EmailDelivery{
+			ID:              newID(),
+			OrgID:           orgID,
+			CampaignID:      campaignID,
+			RecipientEmail:  email,
+			RecipientUserID: r.UserID,
+			CreatedAt:       time.Now().UTC(),
+			UpdatedAt:       time.Now().UTC(),
+		}
+
+		s.mu.RLock()
+		suppressed := s.isSuppressed(orgID, email)
+		s.mu.RUnlock()
+
+		if suppressed {
+			d.Status = "suppressed"
+			suppressedCount++
+		} else {
+			resp, err := s.postmarkClient.SendEmail(ctx, postmark.SendEmailRequest{
+				To:        email,
+				Subject:   c.Subject,
+				HTMLBody:  c.BodyHTML,
+				TextBody:  c.BodyText,
+				FromName:  c.FromName,
+				FromEmail: c.FromEmail,
+			})
+			now := time.Now().UTC()
+			if err != nil {
+				d.Status = "failed"
+				d.ErrorMessage = err.Error()
+				failedCount++
+			} else {
+				d.Status = "sent"
+				d.ProviderMessageID = resp.MessageID
+				d.SentAt = &now
+				sentCount++
+			}
+			d.UpdatedAt = now
+		}
+
+		s.mu.Lock()
+		s.deliveries[d.ID] = d
+		s.mu.Unlock()
+	}
+
+	// Determine terminal status: "failed" when all non-suppressed sends failed
+	// (i.e. nothing was actually delivered and nothing was suppressed to account
+	// for the zero sent_count).
+	finalStatus := "sent"
+	if sentCount == 0 && suppressedCount == 0 && processedCount > 0 {
+		finalStatus = "failed"
+	}
+
+	now := time.Now().UTC()
+	s.mu.Lock()
+	c.Status = finalStatus
+	c.SentAt = &now
+	c.TotalRecipients = processedCount
+	c.SentCount = sentCount
+	c.FailedCount = failedCount
+	c.SuppressedCount = suppressedCount
+	c.UpdatedAt = now
+	c.UpdatedBy = inp.ActorID
+	s.mu.Unlock()
+
+	return c, nil
+}
+
+// ListDeliveries returns all delivery records for a campaign.
+func (s *Service) ListDeliveries(orgID, campaignID string) ([]*EmailDelivery, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// Verify campaign ownership.
+	c, ok := s.campaigns[campaignID]
+	if !ok || c.OrgID != orgID {
+		return nil, ErrCampaignNotFound
+	}
+
+	out := make([]*EmailDelivery, 0)
+	for _, d := range s.deliveries {
+		if d.CampaignID == campaignID {
+			out = append(out, d)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
+	return out, nil
+}
+
+// ─── Suppression operations ───────────────────────────────────────────────────
+
+// AddSuppression adds an email to the suppression list for the org.
+func (s *Service) AddSuppression(inp AddSuppressionInput) (*SuppressionEntry, error) {
+	email := strings.ToLower(strings.TrimSpace(inp.Email))
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	key := suppressionKey(inp.OrgID, email)
+	if _, exists := s.suppression[key]; exists {
+		return nil, ErrDuplicateSuppression
+	}
+
+	entry := &SuppressionEntry{
+		ID:        newID(),
+		OrgID:     inp.OrgID,
+		Email:     email,
+		Reason:    inp.Reason,
+		CreatedAt: time.Now().UTC(),
+		CreatedBy: inp.CreatedBy,
+	}
+	s.suppression[key] = entry
+	return entry, nil
+}
+
+// RemoveSuppression removes an entry from the suppression list by ID.
+func (s *Service) RemoveSuppression(orgID, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for key, entry := range s.suppression {
+		if entry.ID == id && entry.OrgID == orgID {
+			delete(s.suppression, key)
+			return nil
+		}
+	}
+	return ErrSuppressionNotFound
+}
+
+// ListSuppression returns all suppression entries for an org.
+func (s *Service) ListSuppression(orgID string) ([]*SuppressionEntry, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := make([]*SuppressionEntry, 0)
+	for _, e := range s.suppression {
+		if e.OrgID == orgID {
+			out = append(out, e)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
+	return out, nil
+}
