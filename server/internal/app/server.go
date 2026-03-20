@@ -1,8 +1,11 @@
 package app
 
 import (
+	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/dareaquatics/aquify/server/internal/app/audit"
@@ -20,7 +23,10 @@ import (
 	"github.com/dareaquatics/aquify/server/internal/app/performance"
 	"github.com/dareaquatics/aquify/server/internal/app/reports"
 	"github.com/dareaquatics/aquify/server/internal/postmark"
+	"github.com/dareaquatics/aquify/server/internal/runtimepersist"
+	"github.com/dareaquatics/aquify/server/internal/storage"
 	stripelib "github.com/dareaquatics/aquify/server/internal/stripe"
+	"github.com/dareaquatics/aquify/server/internal/telemetry"
 	"github.com/dareaquatics/aquify/server/internal/workers"
 	"github.com/dareaquatics/aquify/server/internal/workers/jobhandlers"
 	"github.com/go-chi/chi/v5"
@@ -33,9 +39,72 @@ import (
 // because the scheduler goroutine cannot be stopped from this call site.
 // Production deployments use NewRouterWithServices directly (see main.go).
 func NewRouter(cfg Config, logger *slog.Logger) http.Handler {
-	ws, _ := BuildWorkers(cfg, logger)
-	ws.Start()
-	return NewRouterWithServices(cfg, logger, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ws)
+	return NewRouterWithServices(cfg, logger, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+}
+
+func allowsProviderStubFallback(appEnv string) bool {
+	switch strings.ToLower(strings.TrimSpace(appEnv)) {
+	case "", "development", "local", "test":
+		return true
+	default:
+		return false
+	}
+}
+
+// ValidateProviderConfig enforces that non-dev environments cannot boot
+// without working Stripe and Postmark provider clients.
+func ValidateProviderConfig(cfg Config) error {
+	if allowsProviderStubFallback(cfg.AppEnv) {
+		return nil
+	}
+
+	var errs []string
+	if _, err := stripelib.NewSDKClient(cfg.Stripe.SecretKey); err != nil {
+		errs = append(errs, fmt.Sprintf("stripe: %v", err))
+	}
+	if _, err := postmark.NewHTTPClient(postmark.Config{
+		ServerToken: cfg.Postmark.ServerToken,
+		FromName:    cfg.Postmark.FromName,
+		FromEmail:   cfg.Postmark.FromEmail,
+	}); err != nil {
+		errs = append(errs, fmt.Sprintf("postmark: %v", err))
+	}
+	if len(errs) == 0 {
+		return nil
+	}
+	return fmt.Errorf("provider startup validation failed: %s", strings.Join(errs, "; "))
+}
+
+type unavailableStripeClient struct {
+	err error
+}
+
+func (c unavailableStripeClient) CreatePaymentIntent(_ context.Context, _ stripelib.PaymentIntentParams) (*stripelib.PaymentIntentResult, error) {
+	return nil, c.err
+}
+
+func (c unavailableStripeClient) CreateCheckoutSession(_ context.Context, _ stripelib.CheckoutSessionParams) (*stripelib.CheckoutSessionResult, error) {
+	return nil, c.err
+}
+
+func (c unavailableStripeClient) ParseWebhookEvent(_ []byte, _, _ string) (*stripelib.WebhookEventData, error) {
+	return nil, c.err
+}
+
+func (c unavailableStripeClient) FetchBalanceCents(_ context.Context) (int, error) {
+	return 0, c.err
+}
+
+func (c unavailableStripeClient) CreateRefund(_ context.Context, _ stripelib.RefundParams) (*stripelib.RefundResult, error) {
+	return nil, c.err
+}
+
+type unavailablePostmarkClient struct {
+	err error
+}
+
+func (c unavailablePostmarkClient) SendEmail(_ context.Context, _ postmark.SendEmailRequest) (postmark.SendEmailResponse, error) {
+	return postmark.SendEmailResponse{}, c.err
 }
 
 // NewRouterWithServices constructs the HTTP router and wires all services.
@@ -45,6 +114,14 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.S
 	if logger == nil {
 		logger = slog.Default()
 	}
+	appEnv := strings.ToLower(strings.TrimSpace(cfg.AppEnv))
+	if appEnv == "" {
+		appEnv = "test"
+	}
+	allowDevSessionIssue := cfg.Auth.AllowDevSessionIssue
+	if !allowDevSessionIssue && (appEnv == "development" || appEnv == "local" || appEnv == "test") {
+		allowDevSessionIssue = true
+	}
 
 	router := chi.NewRouter()
 
@@ -52,11 +129,24 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.S
 	if auditService == nil {
 		auditService = audit.NewService()
 	}
+	objectStore, err := storage.NewClient(storage.Config{
+		Endpoint:  cfg.Storage.Endpoint,
+		AccessKey: cfg.Storage.AccessKey,
+		SecretKey: cfg.Storage.SecretKey,
+		Bucket:    cfg.Storage.Bucket,
+		UseSSL:    cfg.Storage.UseSSL,
+		Region:    cfg.Storage.Region,
+	})
+	if err != nil {
+		logger.Error("object storage init failed; falling back to stub storage", "error", err)
+		objectStore = storage.NewStubStorage(cfg.Storage.BaseURL())
+	}
 
 	if authService == nil {
 		authService = authn.NewService(authn.Config{
 			EnableDevStubTokens: cfg.Auth.EnableDevStubTokens,
 			OIDC: authn.OIDCConfig{
+				AuthorizeURL:    cfg.Auth.OIDC.AuthorizeURL,
 				TokenURL:        cfg.Auth.OIDC.TokenURL,
 				JWKSURL:         cfg.Auth.OIDC.JWKSURL,
 				RedirectURL:     cfg.Auth.OIDC.RedirectURL,
@@ -68,7 +158,7 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.S
 			},
 		})
 	}
-	authHandlers := handlers.NewAuthHandlersWithAudit(authService, auditService)
+	authHandlers := handlers.NewAuthHandlersWithAudit(authService, auditService, allowDevSessionIssue)
 	if membershipService == nil {
 		membershipService = members.NewService()
 	}
@@ -82,11 +172,18 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.S
 	}
 	meetsHandlers := handlers.NewMeetsHandlersWithAudit(meetsService, auditService)
 	if importsService == nil {
-		importsService = imports.NewService()
+		importsService = imports.NewServiceWithStorage(objectStore)
+	}
+	if cfg.Security.Uploads.MaxBytes > 0 || len(cfg.Security.Uploads.AllowedMIMEs) > 0 || cfg.Security.Uploads.RequireMalwareScanHook {
+		importsService.ConfigureSecurity(imports.SecurityConfig{
+			MaxBytes:               cfg.Security.Uploads.MaxBytes,
+			AllowedMIMEs:           cfg.Security.Uploads.AllowedMIMEs,
+			RequireMalwareScanHook: cfg.Security.Uploads.RequireMalwareScanHook,
+		})
 	}
 	importsHandlers := handlers.NewImportsHandlersWithAudit(importsService, auditService)
 	if exportsService == nil {
-		exportsService = exports.NewService()
+		exportsService = exports.NewServiceWithStorage(objectStore)
 	}
 	exportsHandlers := handlers.NewExportsHandlers(exportsService)
 	if performanceService == nil {
@@ -99,10 +196,19 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.S
 	if billingService == nil {
 		billingService = billing.NewService()
 	}
-	billingHandlers := handlers.NewBillingHandlersWithAudit(billingService, auditService)
 	if stripeClient == nil {
-		stripeClient = stripelib.NewStubClient()
+		realStripeClient, err := stripelib.NewSDKClient(cfg.Stripe.SecretKey)
+		if err == nil {
+			stripeClient = realStripeClient
+		} else if allowsProviderStubFallback(appEnv) {
+			logger.Warn("stripe init failed; falling back to stub client", "error", err)
+			stripeClient = stripelib.NewStubClient()
+		} else {
+			logger.Error("stripe init failed; provider unavailable in non-dev environment", "error", err)
+			stripeClient = unavailableStripeClient{err: fmt.Errorf("stripe provider unavailable: %w", err)}
+		}
 	}
+	billingHandlers := handlers.NewBillingHandlersWithAuditAndStripe(billingService, auditService, stripeClient)
 	stripeHandlers := handlers.NewStripeHandlers(
 		stripeClient,
 		billingService,
@@ -112,44 +218,80 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.S
 		logger,
 	)
 	if commsService == nil {
-		// Wire real Postmark client when server token is configured; fall back to stub.
+		// Wire real Postmark client when configured. Non-dev environments must
+		// fail closed instead of silently downgrading to a stub provider.
 		var pmClient postmark.Client
-		if cfg.Postmark.ServerToken != "" {
-			realClient, err := postmark.NewHTTPClient(postmark.Config{
-				ServerToken: cfg.Postmark.ServerToken,
-				FromName:    cfg.Postmark.FromName,
-				FromEmail:   cfg.Postmark.FromEmail,
-			})
-			if err == nil {
-				pmClient = realClient
-			}
+		realClient, err := postmark.NewHTTPClient(postmark.Config{
+			ServerToken: cfg.Postmark.ServerToken,
+			FromName:    cfg.Postmark.FromName,
+			FromEmail:   cfg.Postmark.FromEmail,
+		})
+		if err == nil {
+			pmClient = realClient
+		} else if allowsProviderStubFallback(appEnv) {
+			logger.Warn("postmark init failed; falling back to stub client", "error", err)
+		} else {
+			logger.Error("postmark init failed; provider unavailable in non-dev environment", "error", err)
+			pmClient = unavailablePostmarkClient{err: fmt.Errorf("postmark provider unavailable: %w", err)}
 		}
 		if pmClient == nil {
 			pmClient = postmark.NewStubClient()
 		}
 		commsService = comms.NewServiceWithClient(pmClient)
 	}
-	commsHandlers := handlers.NewCommsHandlers(commsService)
+	commsHandlers := handlers.NewCommsHandlersWithWebhookAuth(
+		commsService,
+		cfg.Postmark.WebhookAuthHeaderName,
+		cfg.Postmark.WebhookAuthHeaderValue,
+		cfg.Postmark.WebhookBasicUser,
+		cfg.Postmark.WebhookBasicPass,
+		appEnv,
+	)
 	auditHandlers := handlers.NewAuditHandlers(auditService)
 	if complianceService == nil {
 		complianceService = compliance.NewServiceWithConfig(cfg.Compliance.ExportTTLDays, cfg.Compliance.DeletionReviewDays)
 	}
 	complianceHandlers := handlers.NewComplianceHandlers(complianceService, auditService)
 	reportsService := reports.NewService(membershipService, groupsService, meetsService, billingService)
+	reportsService.SetStorage(objectStore)
 	reportsHandlers := handlers.NewReportsHandlers(reportsService, auditService)
+	runtimeRepo := runtimepersist.NewRepository(cfg.DatabaseURL)
+	runtimeParticipants := buildRuntimeParticipants(
+		membershipService,
+		groupsService,
+		meetsService,
+		importsService,
+		exportsService,
+		performanceService,
+		billingService,
+		commsService,
+		complianceService,
+		reportsService,
+	)
+	loadRuntimeSnapshots(logger, runtimeRepo, runtimeParticipants)
 
 	// ── Workers ────────────────────────────────────────────────────────────────
 	if workerServer == nil {
-		workerServer, _ = BuildWorkers(cfg, logger)
-		// Note: Start() is intentionally NOT called here. Callers (main.go) are
-		// responsible for starting the worker server and scheduler so that
-		// constructors remain side-effect-free and tests do not leak goroutines.
+		workerServer, _ = BuildWorkers(cfg, logger, importsService, exportsService, reportsService)
+		workerServer.Start()
 	}
+	workerServer.RegisterHandler(workers.TypeGenerateExport, jobhandlers.GenerateExportHandler(logger, exportsService))
+	workerServer.RegisterHandler(workers.TypePurgeExpiredFiles, jobhandlers.PurgeExpiredFilesHandler(logger, importsService, exportsService, reportsService))
+	exportsService.SetQueue(workerServer)
 	jobsHandlers := handlers.NewJobsHandlers(workerServer)
 
+	// Initialise Prometheus metrics. A no-op instance is used in tests when
+	// the metrics address is blank.
+	metrics := telemetry.NewMetrics()
+
 	router.Use(chimiddleware.RequestID)
+	router.Use(appmiddleware.OTelTracing(cfg.Telemetry.ServiceName))
+	router.Use(appmiddleware.PrometheusMetrics(metrics))
 	router.Use(appmiddleware.StructuredLogger(logger))
 	router.Use(appmiddleware.Recoverer(logger))
+	router.Use(appmiddleware.SecurityHeaders)
+	router.Use(appmiddleware.NewRateLimiter(cfg.Security.RateLimit.GlobalRequests, cfg.Security.RateLimit.GlobalWindow))
+	router.Use(runtimePersistenceMiddleware(logger, runtimeRepo, runtimeParticipants))
 	router.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   cfg.AllowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
@@ -159,18 +301,25 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.S
 		MaxAge:           300,
 	}))
 
+	// Prometheus metrics endpoint — served on the API port at /metrics.
+	// This endpoint is intentionally unauthenticated; in production it should
+	// be firewalled to only allow the Prometheus scraper IP range.
+	router.Get("/metrics", metrics.Handler().ServeHTTP)
+
 	router.Route("/api/v1", func(api chi.Router) {
 		api.Route("/health", handlers.RegisterHealthRoutes)
 		api.Get("/openapi", handlers.OpenAPIStub)
 
 		// Public routes: no auth middleware required.
 		stripeHandlers.RegisterPublicRoutes(api)
+		commsHandlers.RegisterPublicRoutes(api)
 
 		api.Route("/auth", func(auth chi.Router) {
+			auth.Use(appmiddleware.NewRateLimiter(cfg.Security.RateLimit.AuthRequests, cfg.Security.RateLimit.AuthWindow))
+			auth.Use(appmiddleware.CSRFProtection(cfg.Security.CSRFHeaderName))
 			authHandlers.RegisterPublicRoutes(auth)
 			auth.Group(func(protected chi.Router) {
 				protected.Use(appmiddleware.Auth(authService))
-				protected.Use(appmiddleware.OrgScopeStub)
 				authHandlers.RegisterProtectedRoutes(protected)
 			})
 		})
@@ -178,6 +327,7 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.S
 		api.Group(func(protected chi.Router) {
 			protected.Use(appmiddleware.Auth(authService))
 			protected.Use(appmiddleware.OrgScopeStub)
+			protected.Use(appmiddleware.RejectImpersonationHeaders(cfg.Security.Impersonation.Enabled))
 			protected.With(appmiddleware.RBACStub("owner", "admin", "coach")).Get("/authz/ping", handlers.AuthzPing)
 
 			protected.Route("/members", func(membersRouter chi.Router) {
@@ -205,7 +355,7 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.S
 // BuildWorkers creates and configures the worker server and scheduler without
 // starting either. Callers must invoke ws.Start() and sched.Start() and call
 // the corresponding Stop() methods on shutdown.
-func BuildWorkers(cfg Config, logger *slog.Logger) (*workers.Server, *workers.Scheduler) {
+func BuildWorkers(cfg Config, logger *slog.Logger, importsService *imports.Service, exportsService *exports.Service, reportsService *reports.Service) (*workers.Server, *workers.Scheduler) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -214,11 +364,11 @@ func BuildWorkers(cfg Config, logger *slog.Logger) (*workers.Server, *workers.Sc
 		Logger:      logger,
 	})
 	ws.RegisterHandler(workers.TypeParseImport, jobhandlers.ParseImportHandler(logger))
-	ws.RegisterHandler(workers.TypeGenerateExport, jobhandlers.GenerateExportHandler(logger))
+	ws.RegisterHandler(workers.TypeGenerateExport, jobhandlers.GenerateExportHandler(logger, exportsService))
 	ws.RegisterHandler(workers.TypeSendCampaignBatch, jobhandlers.SendCampaignBatchHandler(logger))
 	ws.RegisterHandler(workers.TypeBillingReconcile, jobhandlers.BillingReconcileHandler(logger))
 	ws.RegisterHandler(workers.TypeNightlyIntegrity, jobhandlers.NightlyIntegrityHandler(logger))
-	ws.RegisterHandler(workers.TypePurgeExpiredFiles, jobhandlers.PurgeExpiredFilesHandler(logger))
+	ws.RegisterHandler(workers.TypePurgeExpiredFiles, jobhandlers.PurgeExpiredFilesHandler(logger, importsService, exportsService, reportsService))
 	ws.RegisterHandler(workers.TypeProcessDataExport, jobhandlers.ProcessDataExportHandler(logger))
 	ws.RegisterHandler(workers.TypeProcessDataDeletion, jobhandlers.ProcessDataDeletionHandler(logger))
 

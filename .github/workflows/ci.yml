@@ -7,6 +7,19 @@ on:
     branches: ["**"]
 
 jobs:
+  secret-scan:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   openapi-lint:
     name: Validate OpenAPI Schema
     runs-on: ubuntu-latest
@@ -30,6 +43,9 @@ jobs:
         with:
           go-version-file: server/go.mod
 
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
       - name: Run meetfiles tests
         working-directory: internal/meetfiles
         run: go test ./...
@@ -38,6 +54,10 @@ jobs:
         working-directory: server
         run: go test ./...
 
+      - name: Run P0 gate
+        working-directory: server
+        run: go test ./internal/app -run 'TestP0'
+
       - name: Run meetfiles vet
         working-directory: internal/meetfiles
         run: go vet ./...
@@ -45,6 +65,14 @@ jobs:
       - name: Run server vet
         working-directory: server
         run: go vet ./...
+
+      - name: Run meetfiles govulncheck
+        working-directory: internal/meetfiles
+        run: govulncheck ./...
+
+      - name: Run server govulncheck
+        working-directory: server
+        run: govulncheck ./...
 
   admin-build:
     name: Admin Build & Lint
@@ -62,6 +90,10 @@ jobs:
       - name: Install dependencies
         working-directory: admin
         run: npm ci
+
+      - name: Dependency vulnerability scan
+        working-directory: admin
+        run: npm audit --audit-level=high
 
       - name: Lint
         working-directory: admin

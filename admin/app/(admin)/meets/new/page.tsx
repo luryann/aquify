@@ -34,8 +34,6 @@ type MeetDraft = {
 const STEP_LABELS = ['Basic Info', 'Schedule', 'Entry Rules', 'Review']
 const COURSES: Course[] = ['SCY', 'SCM', 'LCM']
 const DEFAULT_AGE_GROUPS = ['8 & Under', '9-10', '11-12', '13-14', '15-16', '17-18', 'Open']
-const CREATED_MEETS_KEY = 'aquify:created-meets'
-
 export default function NewMeetPage() {
   const router = useRouter()
   const [step, setStep] = useState(0)
@@ -78,31 +76,9 @@ export default function NewMeetPage() {
 
   async function handleSave() {
     setSaving(true)
-    const createdMeet = {
-      id: `meet-${Date.now()}`,
-      name: draft.name,
-      host: draft.hostClub,
-      location: draft.location || 'TBD',
-      startDate: draft.startDate,
-      endDate: draft.endDate || draft.startDate,
-      status: 'draft' as const,
-      course: draft.course,
-      entries: 0,
-      commitments: 0,
-      events: draft.sessions.length,
-    }
-
-    try {
-      const existing = JSON.parse(window.localStorage.getItem(CREATED_MEETS_KEY) ?? '[]') as unknown[]
-      const next = Array.isArray(existing) ? [createdMeet, ...existing] : [createdMeet]
-      window.localStorage.setItem(CREATED_MEETS_KEY, JSON.stringify(next))
-    } catch {
-      window.localStorage.setItem(CREATED_MEETS_KEY, JSON.stringify([createdMeet]))
-    }
-
     await new Promise((r) => setTimeout(r, 600))
     setSaving(false)
-    router.push('/meets')
+    router.push('/meets?created=1')
   }
 
   function updateSession(sessionId: string, key: keyof MeetSessionDraft, value: string) {

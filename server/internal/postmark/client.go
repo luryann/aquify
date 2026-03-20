@@ -44,6 +44,8 @@ type SendEmailRequest struct {
 	Tag string
 	// MessageStreamID is the Postmark message stream (default: "outbound").
 	MessageStreamID string
+	// Metadata is attached to the Postmark message for webhook correlation.
+	Metadata map[string]string
 }
 
 // SendEmailResponse captures the provider-assigned message ID and delivery state.
@@ -164,13 +166,14 @@ func NewHTTPClient(cfg Config) (*HTTPClient, error) {
 
 // postmarkSendRequest is the Postmark REST API payload shape.
 type postmarkSendRequest struct {
-	From            string `json:"From"`
-	To              string `json:"To"`
-	Subject         string `json:"Subject"`
-	HTMLBody        string `json:"HtmlBody,omitempty"`
-	TextBody        string `json:"TextBody,omitempty"`
-	Tag             string `json:"Tag,omitempty"`
-	MessageStreamID string `json:"MessageStream,omitempty"`
+	From            string            `json:"From"`
+	To              string            `json:"To"`
+	Subject         string            `json:"Subject"`
+	HTMLBody        string            `json:"HtmlBody,omitempty"`
+	TextBody        string            `json:"TextBody,omitempty"`
+	Tag             string            `json:"Tag,omitempty"`
+	MessageStreamID string            `json:"MessageStream,omitempty"`
+	Metadata        map[string]string `json:"Metadata,omitempty"`
 }
 
 type postmarkSendResponse struct {
@@ -209,6 +212,7 @@ func (c *HTTPClient) SendEmail(ctx context.Context, req SendEmailRequest) (SendE
 		TextBody:        req.TextBody,
 		Tag:             req.Tag,
 		MessageStreamID: streamID,
+		Metadata:        req.Metadata,
 	}
 
 	body, err := json.Marshal(payload)

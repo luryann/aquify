@@ -51,9 +51,11 @@ func (h *ImportsHandlers) RegisterRoutes(router chi.Router) {
 // ─── Request body types ───────────────────────────────────────────────────────
 
 type requestUploadURLBody struct {
-	Filename string `json:"filename" validate:"required"`
-	FileType string `json:"file_type" validate:"omitempty,oneof=cl2 sd3 zip hy3"`
-	MeetID   string `json:"meet_id"`
+	Filename  string `json:"filename" validate:"required"`
+	FileType  string `json:"file_type" validate:"omitempty,oneof=cl2 sd3 zip hy3"`
+	MeetID    string `json:"meet_id"`
+	SizeBytes int64  `json:"size_bytes" validate:"required,gt=0"`
+	MIMEType  string `json:"mime_type" validate:"required"`
 }
 
 type resolveConflictBody struct {
@@ -107,6 +109,16 @@ func importErrorToHTTP(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, r, http.StatusNotFound, "conflict_not_found", "Match conflict not found.", nil)
 	case errors.Is(err, imports.ErrInvalidFileType):
 		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_file_type", "Unsupported file type. Use cl2, sd3, zip, or hy3.", nil)
+	case errors.Is(err, imports.ErrInvalidFilename):
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_filename", "Filename must be a single safe basename with a supported extension.", nil)
+	case errors.Is(err, imports.ErrFileTooLarge):
+		httpx.WriteError(w, r, http.StatusRequestEntityTooLarge, "file_too_large", "Upload exceeds the configured file size cap.", nil)
+	case errors.Is(err, imports.ErrInvalidMIMEType):
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_mime_type", "Upload MIME type is not allowed for meet imports.", nil)
+	case errors.Is(err, imports.ErrMalwareDetected):
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "malware_detected", "Upload failed malware scanning and was rejected.", nil)
+	case errors.Is(err, imports.ErrMalwareScanRequired):
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, "malware_scan_required", "A compliant malware scanner must be configured before uploads can be finalized in this environment.", nil)
 	case errors.Is(err, imports.ErrInvalidTransition):
 		httpx.WriteError(w, r, http.StatusConflict, "invalid_transition", err.Error(), nil)
 	case errors.Is(err, imports.ErrConflictNotOpen):
@@ -131,9 +143,11 @@ func (h *ImportsHandlers) requestUploadURL(w http.ResponseWriter, r *http.Reques
 	}
 
 	imp, audit, err := h.service.RequestUploadURL(principal, orgID, imports.RequestUploadURLInput{
-		Filename: req.Filename,
-		FileType: req.FileType,
-		MeetID:   req.MeetID,
+		Filename:  req.Filename,
+		FileType:  req.FileType,
+		MeetID:    req.MeetID,
+		SizeBytes: req.SizeBytes,
+		MIMEType:  req.MIMEType,
 	})
 	if err != nil {
 		importErrorToHTTP(w, r, err)
@@ -158,7 +172,7 @@ func (h *ImportsHandlers) finalizeImport(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	imp, audit, err := h.service.FinalizeImport(principal, orgID, importID)
+	imp, audit, err := h.service.FinalizeImport(principal, orgID, importID, imports.FinalizeImportInput{})
 	if err != nil {
 		importErrorToHTTP(w, r, err)
 		return

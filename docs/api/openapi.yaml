@@ -102,7 +102,7 @@ paths:
     post:
       tags: [Auth]
       summary: OIDC callback — exchange code for session
-      description: Exchanges an OIDC authorization code for a platform session. Validates state signature, nonce, and audience.
+      description: Exchanges an OIDC authorization code for a platform session. Validates state signature, nonce, and audience, then sets Secure/HttpOnly session cookies plus a Secure CSRF cookie.
       security: []
       operationId: oidcCallback
       requestBody:
@@ -123,11 +123,31 @@ paths:
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
 
+  /auth/oidc/authorize:
+    get:
+      tags: [Auth]
+      summary: Begin OIDC login
+      description: Generates a signed OIDC `state` payload and redirects the browser to the configured identity provider authorization URL.
+      security: []
+      operationId: oidcAuthorize
+      parameters:
+        - in: query
+          name: login_hint
+          schema: { type: string }
+        - in: query
+          name: org_id
+          schema: { type: string }
+      responses:
+        "302":
+          description: Redirect to identity provider
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
   /auth/sessions/issue:
     post:
       tags: [Auth]
       summary: Issue session token
-      description: Directly issues a session for a known user (used in dev/internal flows).
+      description: Directly issues a session for a known user in approved development/test flows only and sets Secure/HttpOnly session cookies plus a Secure CSRF cookie. This route must not be enabled in non-development environments.
       security: []
       operationId: issueSession
       requestBody:
@@ -141,6 +161,8 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SessionResponse" }
+        "404":
+          $ref: "#/components/responses/NotFound"
         "400":
           $ref: "#/components/responses/BadRequest"
 
@@ -148,15 +170,15 @@ paths:
     post:
       tags: [Auth]
       summary: Refresh session token
+      description: Refreshes a session from either the JSON body or the Secure refresh cookie. Cookie-backed refresh requests must include the CSRF cookie value in the `X-CSRF-Token` header.
       security: []
       operationId: refreshSession
       requestBody:
-        required: true
+        required: false
         content:
           application/json:
             schema:
               type: object
-              required: [refresh_token]
               properties:
                 refresh_token: { type: string }
       responses:
@@ -172,15 +194,15 @@ paths:
     post:
       tags: [Auth]
       summary: Revoke session
+      description: Revokes a session from either the JSON body or the Secure refresh cookie. Cookie-backed revoke requests must include the CSRF cookie value in the `X-CSRF-Token` header.
       security: []
       operationId: revokeSession
       requestBody:
-        required: true
+        required: false
         content:
           application/json:
             schema:
               type: object
-              required: [refresh_token]
               properties:
                 refresh_token: { type: string }
       responses:
@@ -188,6 +210,70 @@ paths:
           description: Session revoked
         "404":
           $ref: "#/components/responses/NotFound"
+
+  /auth/session:
+    get:
+      tags: [Auth]
+      summary: Current session profile
+      description: Returns the current authenticated session identity resolved from the bearer token or the Secure access-token cookie.
+      security:
+        - BearerAuth: []
+      operationId: currentSession
+      responses:
+        "200":
+          description: Current session resolved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+                  user:
+                    type: object
+                    properties:
+                      user_id: { type: string }
+                      email: { type: string }
+                      name: { type: string }
+                      org_id: { type: string }
+                      household_id: { type: string }
+                      roles:
+                        type: array
+                        items: { type: string }
+                      mfa_authenticated: { type: boolean }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /auth/mfa/factors:
+    get:
+      tags: [Auth]
+      summary: List enrolled MFA factors
+      security:
+        - BearerAuth: []
+      operationId: listMFAFactors
+      responses:
+        "200":
+          description: Enrolled MFA factors
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: { type: integer }
+                  factors:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        user_id: { type: string }
+                        org_id: { type: string }
+                        factor_type: { type: string }
+                        label: { type: string }
+                        is_verified: { type: boolean }
+                        created_at: { type: string, format: date-time }
+                        challenge_hint: { type: string }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /auth/mfa/enroll:
     post:
@@ -1308,6 +1394,7 @@ paths:
     post:
       tags: [Imports]
       summary: Request presigned upload URL for meet file
+      description: Registers an import upload after validating filename safety, declared size cap, and allowed MIME type.
       operationId: requestImportUploadURL
       requestBody:
         required: true
@@ -1315,13 +1402,15 @@ paths:
           application/json:
             schema:
               type: object
-              required: [filename]
+              required: [filename, size_bytes, mime_type]
               properties:
                 filename: { type: string }
                 file_type:
                   type: string
                   enum: [cl2, sd3, zip, hy3]
                 meet_id: { type: string, format: uuid }
+                size_bytes: { type: integer, format: int64, minimum: 1 }
+                mime_type: { type: string }
       responses:
         "201":
           description: Import record and presigned upload URL created
@@ -1380,7 +1469,7 @@ paths:
   /imports/{importID}/finalize:
     post:
       tags: [Imports]
-      summary: Finalize upload and begin parsing
+      summary: Finalize upload, run malware-scan hook, and begin parsing
       operationId: finalizeImport
       parameters:
         - $ref: "#/components/parameters/ImportID"
@@ -1528,6 +1617,140 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /reports/membership-status:
+    get:
+      tags: [Reports]
+      summary: Generate membership status report
+      operationId: runMembershipStatusReport
+      parameters:
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [json, csv]
+      responses:
+        "200":
+          description: Membership status report generated
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    properties:
+                      report: { type: object }
+                  - $ref: "#/components/schemas/ReportArtifactResponse"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /reports/meet-fees:
+    get:
+      tags: [Reports]
+      summary: Generate meet fees report
+      operationId: runMeetFeesReport
+      parameters:
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [json, csv]
+      responses:
+        "200":
+          description: Meet fees report generated
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    properties:
+                      report: { type: object }
+                  - $ref: "#/components/schemas/ReportArtifactResponse"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /reports/invoice-aging:
+    get:
+      tags: [Reports]
+      summary: Generate invoice aging report
+      operationId: runInvoiceAgingReport
+      parameters:
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [json, csv]
+        - name: as_of
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Invoice aging report generated
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    properties:
+                      report: { type: object }
+                  - $ref: "#/components/schemas/ReportArtifactResponse"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /reports/payment-reconciliation:
+    get:
+      tags: [Reports]
+      summary: Generate payment reconciliation report
+      operationId: runPaymentReconciliationReport
+      parameters:
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [json, csv]
+        - name: stripe_reported_cents
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Payment reconciliation report generated
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    properties:
+                      report: { type: object }
+                  - $ref: "#/components/schemas/ReportArtifactResponse"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /reports/registration-status:
+    get:
+      tags: [Reports]
+      summary: Generate registration status report
+      operationId: runRegistrationStatusReport
+      parameters:
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [json, csv]
+      responses:
+        "200":
+          description: Registration status report generated
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    properties:
+                      report: { type: object }
+                  - $ref: "#/components/schemas/ReportArtifactResponse"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   # ── Performance ──────────────────────────────────────────────────────────────
 
@@ -2254,6 +2477,39 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           description: Invalid Stripe signature
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /webhooks/postmark:
+    post:
+      tags: [Communications]
+      summary: Postmark delivery-state webhook receiver
+      description: |
+        Public endpoint for Postmark delivery-state events. Supports Delivery,
+        Bounce, SpamComplaint, and SubscriptionChange events and updates local
+        delivery/suppression state using the message metadata and provider
+        message ID.
+      security: []
+      operationId: postmarkWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "200":
+          description: Webhook processed or safely ignored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: processed }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          description: Invalid Postmark webhook authentication
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -3042,6 +3298,9 @@ components:
       properties:
         status: { type: string }
         session: { $ref: "#/components/schemas/SessionTokens" }
+        csrf_token:
+          type: string
+          description: Returned via Secure CSRF cookie in browser flows; clients should echo it in the configured CSRF header for cookie-backed session mutations.
 
     SessionTokens:
       type: object
@@ -3475,6 +3734,10 @@ components:
               type: string
               enum: [uploaded, scanning, parsing, matching, conflicts_pending, applied, failed, archived]
             upload_url: { type: [string, "null"] }
+            declared_size_bytes: { type: integer, format: int64 }
+            declared_mime_type: { type: string }
+            scan_status: { type: string, enum: [pending, clean, infected] }
+            scan_provider: { type: string }
             conflict_count: { type: integer }
             error_count: { type: integer }
             row_count: { type: integer }
@@ -3509,8 +3772,34 @@ components:
               type: string
               enum: [pending, generating, ready, failed, expired]
             filename: { type: string }
+            size_bytes: { type: integer }
+            storage_key: { type: [string, "null"] }
             download_url: { type: [string, "null"] }
+            expires_at: { type: [string, "null"], format: date-time }
+            last_error: { type: [string, "null"] }
             entry_count: { type: integer }
+
+    ReportArtifact:
+      type: object
+      properties:
+        id: { type: string }
+        org_id: { type: string }
+        kind: { type: string }
+        filename: { type: string }
+        content_type: { type: string }
+        size_bytes: { type: integer }
+        storage_key: { type: string }
+        download_url: { type: [string, "null"] }
+        expires_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+
+    ReportArtifactResponse:
+      type: object
+      properties:
+        report: { type: object }
+        artifact: { $ref: "#/components/schemas/ReportArtifact" }
+        format: { type: string, enum: [csv] }
+        delivery: { type: string, enum: [artifact] }
 
     GenerateExportRequest:
       type: object
@@ -3520,8 +3809,8 @@ components:
           type: string
           enum: [standard_sd3, extended_sd3, sdif_roster]
         meet_name: { type: string }
-        meet_start_date: { type: string, format: date }
-        meet_end_date: { type: string, format: date }
+        meet_start_date: { type: string, description: "MMDDYYYY format" }
+        meet_end_date: { type: string, description: "MMDDYYYY format" }
         course:
           type: string
           enum: [SCY, SCM, LCM]
@@ -3788,6 +4077,7 @@ components:
             status:
               type: string
               enum: [pending, processed, failed]
+            stripe_refund_id: { type: string }
 
     CreateRefundRequest:
       type: object

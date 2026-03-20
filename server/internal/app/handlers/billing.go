@@ -3,7 +3,9 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -11,6 +13,7 @@ import (
 	"github.com/dareaquatics/aquify/server/internal/app/billing"
 	"github.com/dareaquatics/aquify/server/internal/app/httpx"
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	stripelib "github.com/dareaquatics/aquify/server/internal/stripe"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
 )
@@ -19,6 +22,7 @@ import (
 type BillingHandlers struct {
 	service      *billing.Service
 	auditService *audit.Service
+	stripeClient stripelib.Client
 	validate     *validator.Validate
 }
 
@@ -35,6 +39,17 @@ func NewBillingHandlersWithAudit(svc *billing.Service, auditSvc *audit.Service) 
 	return &BillingHandlers{
 		service:      svc,
 		auditService: auditSvc,
+		validate:     validator.New(),
+	}
+}
+
+// NewBillingHandlersWithAuditAndStripe returns a BillingHandlers with audit
+// logging and optional Stripe runtime refund execution.
+func NewBillingHandlersWithAuditAndStripe(svc *billing.Service, auditSvc *audit.Service, stripeClient stripelib.Client) *BillingHandlers {
+	return &BillingHandlers{
+		service:      svc,
+		auditService: auditSvc,
+		stripeClient: stripeClient,
 		validate:     validator.New(),
 	}
 }
@@ -271,6 +286,9 @@ func (h *BillingHandlers) voidInvoice(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !requirePrivilegedBillingAction(w, r, principal, appmiddleware.ActionBillingVoid, "void invoices") {
+		return
+	}
 	invoiceID := chi.URLParam(r, "invoiceID")
 
 	var beforeInv interface{}
@@ -305,6 +323,9 @@ func (h *BillingHandlers) voidInvoice(w http.ResponseWriter, r *http.Request) {
 func (h *BillingHandlers) writeOffInvoice(w http.ResponseWriter, r *http.Request) {
 	principal, orgID, ok := billingScopeFromRequest(w, r)
 	if !ok {
+		return
+	}
+	if !requirePrivilegedBillingAction(w, r, principal, appmiddleware.ActionBillingWriteOff, "write off invoices") {
 		return
 	}
 	invoiceID := chi.URLParam(r, "invoiceID")
@@ -382,6 +403,9 @@ func (h *BillingHandlers) createRefund(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !requirePrivilegedBillingAction(w, r, principal, appmiddleware.ActionBillingRefund, "create refunds") {
+		return
+	}
 	invoiceID := chi.URLParam(r, "invoiceID")
 
 	var input billing.CreateRefundInput
@@ -389,8 +413,41 @@ func (h *BillingHandlers) createRefund(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	preflight, err := h.service.ValidateRefundPreflight(orgID, principal, invoiceID, input)
+	if err != nil {
+		mapBillingError(w, r, err)
+		return
+	}
+
+	stripeRefundIssued := false
+	if preflight.Payment.Method == "stripe" && preflight.Payment.StripePaymentIntentID != "" && h.stripeClient != nil {
+		refundResult, err := h.stripeClient.CreateRefund(r.Context(), stripelib.RefundParams{
+			PaymentIntentID: preflight.Payment.StripePaymentIntentID,
+			AmountCents:     input.AmountCents,
+			Reason:          input.Reason,
+			IdempotencyKey:  fmt.Sprintf("refund:%s:%s:%s:%d", orgID, invoiceID, preflight.Payment.ID, input.AmountCents),
+		})
+		if err != nil {
+			httpx.WriteError(w, r, http.StatusBadGateway, "stripe_error", "Failed to create Stripe refund.", nil)
+			return
+		}
+		input.StripeRefundID = refundResult.ID
+		stripeRefundIssued = true
+	}
+
 	refund, ledgerEv, err := h.service.CreateRefund(orgID, principal.UserID, principal, invoiceID, input)
 	if err != nil {
+		if stripeRefundIssued {
+			slog.Default().Error("stripe refund succeeded but local persistence failed",
+				"org_id", orgID,
+				"invoice_id", invoiceID,
+				"payment_id", input.PaymentID,
+				"stripe_refund_id", input.StripeRefundID,
+				"error", err,
+			)
+			httpx.WriteError(w, r, http.StatusBadGateway, "refund_persistence_failed", "Stripe refund succeeded but local persistence failed. Operators must reconcile this refund.", nil)
+			return
+		}
 		mapBillingError(w, r, err)
 		return
 	}
@@ -471,4 +528,17 @@ func (h *BillingHandlers) listLedgerEvents(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"count": len(events), "events": events})
+}
+
+func requirePrivilegedBillingAction(w http.ResponseWriter, r *http.Request, principal *appmiddleware.Principal, action appmiddleware.Action, verb string) bool {
+	if err := appmiddleware.CheckPermission(principal, action); err != nil {
+		switch {
+		case errors.Is(err, appmiddleware.ErrMFARequired):
+			httpx.WriteError(w, r, http.StatusForbidden, "mfa_required", "MFA step-up is required to "+verb+".", nil)
+		default:
+			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to "+verb+".", nil)
+		}
+		return false
+	}
+	return true
 }

@@ -250,14 +250,46 @@ func TestReportsEndpointsCSVExport(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
 	}
-	if got := rr.Header().Get("Content-Type"); !strings.Contains(got, "text/csv") {
-		t.Fatalf("expected csv content type, got %q", got)
+
+	var payload struct {
+		Format   string `json:"format"`
+		Delivery string `json:"delivery"`
+		Artifact struct {
+			ID          string `json:"id"`
+			Kind        string `json:"kind"`
+			Filename    string `json:"filename"`
+			ContentType string `json:"content_type"`
+			StorageKey  string `json:"storage_key"`
+			DownloadURL string `json:"download_url"`
+			SizeBytes   int    `json:"size_bytes"`
+		} `json:"artifact"`
+		Report struct {
+			RowCount int `json:"row_count"`
+		} `json:"report"`
 	}
-	if got := rr.Header().Get("Content-Disposition"); !strings.Contains(got, "invoice-aging") {
-		t.Fatalf("expected attachment filename, got %q", got)
+	if err := json.Unmarshal(rr.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode response: %v", err)
 	}
-	if !strings.Contains(rr.Body.String(), "invoice_id,invoice_number") {
-		t.Fatalf("expected csv header row, got %s", rr.Body.String())
+	if payload.Format != "csv" {
+		t.Fatalf("format = %q, want csv", payload.Format)
+	}
+	if payload.Delivery != "artifact" {
+		t.Fatalf("delivery = %q, want artifact", payload.Delivery)
+	}
+	if payload.Artifact.ID == "" || payload.Artifact.StorageKey == "" || payload.Artifact.DownloadURL == "" {
+		t.Fatalf("expected durable artifact metadata, got %#v", payload.Artifact)
+	}
+	if !strings.Contains(payload.Artifact.Filename, "invoice-aging") {
+		t.Fatalf("filename = %q, want invoice-aging csv", payload.Artifact.Filename)
+	}
+	if !strings.Contains(payload.Artifact.ContentType, "text/csv") {
+		t.Fatalf("content type = %q, want csv", payload.Artifact.ContentType)
+	}
+	if payload.Artifact.SizeBytes <= 0 {
+		t.Fatalf("size_bytes = %d, want > 0", payload.Artifact.SizeBytes)
+	}
+	if payload.Report.RowCount == 0 {
+		t.Fatalf("expected report row_count in response")
 	}
 }
 

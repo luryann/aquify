@@ -40,6 +40,7 @@ func (h *GroupsHandlers) RegisterRoutes(router chi.Router) {
 	router.Get("/groups/{groupID}/eligibility/{swimmerID}", h.evaluateEligibility)
 
 	// Registrations
+	router.Get("/registrations", h.listRegistrations)
 	router.Post("/registrations", h.createRegistration)
 	router.Post("/registrations/{registrationID}/transition", h.transitionRegistration)
 	router.Post("/registrations/{registrationID}/waivers", h.acceptWaiver)
@@ -269,6 +270,29 @@ func (h *GroupsHandlers) evaluateEligibility(w http.ResponseWriter, r *http.Requ
 	})
 }
 
+func (h *GroupsHandlers) listRegistrations(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := groupScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+
+	if !hasRegistrationListAccess(principal) {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to list registrations.", nil)
+		return
+	}
+
+	registrations := h.service.SnapshotRegistrations(orgID)
+	if registrations == nil {
+		registrations = []groups.Registration{}
+	}
+
+	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"status":        "ok",
+		"count":         len(registrations),
+		"registrations": registrations,
+	})
+}
+
 // ─── Registrations ───────────────────────────────────────────────────────────
 
 type createRegistrationRequest struct {
@@ -436,4 +460,17 @@ func groupScopeFromRequest(w http.ResponseWriter, r *http.Request) (*appmiddlewa
 		return nil, "", false
 	}
 	return principal, orgID, true
+}
+
+func hasRegistrationListAccess(principal *appmiddleware.Principal) bool {
+	if principal == nil {
+		return false
+	}
+	for _, role := range principal.Roles {
+		switch strings.TrimSpace(strings.ToLower(role)) {
+		case "owner", "admin", "coach", "read-only":
+			return true
+		}
+	}
+	return false
 }

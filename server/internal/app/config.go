@@ -1,12 +1,12 @@
 package app
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 )
-
 
 const (
 	defaultAPIAddr       = ":8080"
@@ -17,12 +17,30 @@ type Config struct {
 	Addr           string
 	AllowedOrigins []string
 	AppEnv         string
+	DatabaseURL    string
 	Auth           AuthConfig
 	Storage        StorageConfig
 	Stripe         StripeConfig
 	Postmark       PostmarkConfig
 	Compliance     ComplianceConfig
 	Worker         WorkerConfig
+	Security       SecurityConfig
+	Telemetry      TelemetryConfig
+}
+
+// TelemetryConfig holds OpenTelemetry and Prometheus observability settings.
+type TelemetryConfig struct {
+	// ServiceName is the OTel service.name attribute. Default: "dare-api".
+	ServiceName string
+	// ServiceVersion is the deployed artifact version. Default: "dev".
+	ServiceVersion string
+	// OTLPEndpoint is the OTLP HTTP endpoint. When empty, a no-op tracer is used.
+	OTLPEndpoint string
+	// SampleRate is the OTel trace sampling rate (0.0–1.0). Default: 1.0.
+	SampleRate float64
+	// MetricsAddr is the address to serve the Prometheus /metrics endpoint.
+	// Default: ":9090". Set to "" to disable.
+	MetricsAddr string
 }
 
 // WorkerConfig holds background job worker settings.
@@ -63,6 +81,14 @@ type PostmarkConfig struct {
 	FromName string
 	// FromEmail is the default sender address.
 	FromEmail string
+	// WebhookAuthHeaderName is an optional custom header name that Postmark will send.
+	WebhookAuthHeaderName string
+	// WebhookAuthHeaderValue is the expected value for WebhookAuthHeaderName.
+	WebhookAuthHeaderValue string `json:"-"`
+	// WebhookBasicUser is the optional Postmark webhook basic auth username.
+	WebhookBasicUser string
+	// WebhookBasicPass is the optional Postmark webhook basic auth password.
+	WebhookBasicPass string `json:"-"`
 }
 
 // StripeConfig holds Stripe API and webhook settings.
@@ -88,14 +114,57 @@ type StorageConfig struct {
 	SecretKey string `json:"-"`
 	Bucket    string
 	UseSSL    bool
+	Region    string
+}
+
+func (c StorageConfig) BaseURL() string {
+	scheme := "http"
+	if c.UseSSL {
+		scheme = "https"
+	}
+	endpoint := strings.TrimPrefix(strings.TrimPrefix(strings.TrimSpace(c.Endpoint), "http://"), "https://")
+	if endpoint == "" {
+		endpoint = "localhost:9000"
+	}
+	bucket := strings.TrimSpace(c.Bucket)
+	if bucket == "" {
+		bucket = "aquify"
+	}
+	return fmt.Sprintf("%s://%s/%s", scheme, endpoint, bucket)
 }
 
 type AuthConfig struct {
-	EnableDevStubTokens bool
-	OIDC                OIDCConfig
+	EnableDevStubTokens  bool
+	AllowDevSessionIssue bool
+	OIDC                 OIDCConfig
+}
+
+type SecurityConfig struct {
+	CSRFHeaderName string
+	RateLimit      RateLimitConfig
+	Uploads        UploadSecurityConfig
+	Impersonation  ImpersonationConfig
+}
+
+type RateLimitConfig struct {
+	GlobalRequests int
+	GlobalWindow   time.Duration
+	AuthRequests   int
+	AuthWindow     time.Duration
+}
+
+type UploadSecurityConfig struct {
+	MaxBytes               int64
+	AllowedMIMEs           []string
+	RequireMalwareScanHook bool
+}
+
+type ImpersonationConfig struct {
+	Enabled bool
 }
 
 type OIDCConfig struct {
+	AuthorizeURL    string
 	TokenURL        string
 	JWKSURL         string
 	RedirectURL     string
@@ -113,16 +182,20 @@ func LoadConfig() Config {
 		Addr:           getEnv("API_ADDR", defaultAPIAddr),
 		AllowedOrigins: splitCSV(getEnv("API_ALLOWED_ORIGINS", defaultAllowedOrigin)),
 		AppEnv:         appEnv,
+		DatabaseURL:    strings.TrimSpace(getEnv("DATABASE_URL", "")),
 		Storage: StorageConfig{
-			Endpoint:  strings.TrimSpace(getEnv("STORAGE_ENDPOINT", "localhost:9000")),
-			AccessKey: strings.TrimSpace(getEnv("STORAGE_ACCESS_KEY", "")),
-			SecretKey: strings.TrimSpace(getEnv("STORAGE_SECRET_KEY", "")),
-			Bucket:    strings.TrimSpace(getEnv("STORAGE_BUCKET", "aquify")),
-			UseSSL:    getEnvBool("STORAGE_USE_SSL", false),
+			Endpoint:  strings.TrimSpace(firstEnvWithFallback("localhost:9000", "STORAGE_ENDPOINT", "S3_ENDPOINT")),
+			AccessKey: strings.TrimSpace(firstEnvWithFallback("", "STORAGE_ACCESS_KEY", "S3_ACCESS_KEY_ID")),
+			SecretKey: strings.TrimSpace(firstEnvWithFallback("", "STORAGE_SECRET_KEY", "S3_SECRET_ACCESS_KEY")),
+			Bucket:    strings.TrimSpace(firstEnvWithFallback("aquify", "STORAGE_BUCKET", "MINIO_BUCKET")),
+			UseSSL:    getEnvBool("STORAGE_USE_SSL", getEnvBool("S3_USE_SSL", false)),
+			Region:    strings.TrimSpace(firstEnvWithFallback("us-east-1", "STORAGE_REGION", "S3_REGION")),
 		},
 		Auth: AuthConfig{
-			EnableDevStubTokens: getEnvBool("AUTH_ENABLE_DEV_STUB_TOKENS", enableDevStubTokensDefault),
+			EnableDevStubTokens:  getEnvBool("AUTH_ENABLE_DEV_STUB_TOKENS", enableDevStubTokensDefault),
+			AllowDevSessionIssue: getEnvBool("AUTH_ALLOW_DEV_SESSION_ISSUE", enableDevStubTokensDefault),
 			OIDC: OIDCConfig{
+				AuthorizeURL:    strings.TrimSpace(getEnv("OIDC_AUTHORIZE_URL", "")),
 				TokenURL:        strings.TrimSpace(getEnv("OIDC_TOKEN_URL", "")),
 				JWKSURL:         strings.TrimSpace(getEnv("OIDC_JWKS_URL", "")),
 				RedirectURL:     strings.TrimSpace(getEnv("OIDC_REDIRECT_URL", "")),
@@ -140,9 +213,13 @@ func LoadConfig() Config {
 			ReconciliationAlertThresholdCents: getEnvInt("STRIPE_RECONCILIATION_ALERT_THRESHOLD_CENTS", 100),
 		},
 		Postmark: PostmarkConfig{
-			ServerToken: strings.TrimSpace(getEnv("POSTMARK_SERVER_TOKEN", "")),
-			FromName:    strings.TrimSpace(getEnv("POSTMARK_FROM_NAME", "")),
-			FromEmail:   strings.TrimSpace(getEnv("POSTMARK_FROM_EMAIL", "")),
+			ServerToken:            strings.TrimSpace(getEnv("POSTMARK_SERVER_TOKEN", "")),
+			FromName:               strings.TrimSpace(getEnv("POSTMARK_FROM_NAME", "")),
+			FromEmail:              strings.TrimSpace(getEnv("POSTMARK_FROM_EMAIL", "")),
+			WebhookAuthHeaderName:  strings.TrimSpace(getEnv("POSTMARK_WEBHOOK_AUTH_HEADER_NAME", "")),
+			WebhookAuthHeaderValue: strings.TrimSpace(getEnv("POSTMARK_WEBHOOK_AUTH_HEADER_VALUE", "")),
+			WebhookBasicUser:       strings.TrimSpace(getEnv("POSTMARK_WEBHOOK_BASIC_USER", "")),
+			WebhookBasicPass:       strings.TrimSpace(getEnv("POSTMARK_WEBHOOK_BASIC_PASS", "")),
 		},
 		Compliance: ComplianceConfig{
 			AuditRetentionDays: getEnvInt("AUDIT_RETENTION_DAYS", 2555),
@@ -155,12 +232,45 @@ func LoadConfig() Config {
 			IntegrityInterval:   getEnv("WORKER_INTEGRITY_INTERVAL", "24h"),
 			CleanupInterval:     getEnv("WORKER_CLEANUP_INTERVAL", "6h"),
 		},
+		Security: SecurityConfig{
+			CSRFHeaderName: strings.TrimSpace(getEnv("SECURITY_CSRF_HEADER_NAME", "X-CSRF-Token")),
+			RateLimit: RateLimitConfig{
+				GlobalRequests: getEnvInt("SECURITY_RATE_LIMIT_GLOBAL_REQUESTS", 240),
+				GlobalWindow:   getEnvDuration("SECURITY_RATE_LIMIT_GLOBAL_WINDOW", time.Minute),
+				AuthRequests:   getEnvInt("SECURITY_RATE_LIMIT_AUTH_REQUESTS", 20),
+				AuthWindow:     getEnvDuration("SECURITY_RATE_LIMIT_AUTH_WINDOW", time.Minute),
+			},
+			Uploads: UploadSecurityConfig{
+				MaxBytes:               getEnvInt64("SECURITY_UPLOAD_MAX_BYTES", 25<<20),
+				AllowedMIMEs:           splitCSV(getEnv("SECURITY_UPLOAD_ALLOWED_MIMES", "application/octet-stream,application/zip,application/x-zip-compressed,text/plain,text/csv")),
+				RequireMalwareScanHook: getEnvBool("SECURITY_UPLOAD_REQUIRE_MALWARE_SCAN_HOOK", false),
+			},
+			Impersonation: ImpersonationConfig{
+				Enabled: getEnvBool("SECURITY_IMPERSONATION_ENABLED", false),
+			},
+		},
+		Telemetry: TelemetryConfig{
+			ServiceName:    strings.TrimSpace(getEnv("OTEL_SERVICE_NAME", "dare-api")),
+			ServiceVersion: strings.TrimSpace(getEnv("OTEL_SERVICE_VERSION", "dev")),
+			OTLPEndpoint:   strings.TrimSpace(getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "")),
+			SampleRate:     getEnvFloat64("OTEL_TRACES_SAMPLER_ARG", 1.0),
+			MetricsAddr:    strings.TrimSpace(getEnv("METRICS_ADDR", ":9090")),
+		},
 	}
 }
 
 func getEnv(key, fallback string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
+	}
+	return fallback
+}
+
+func firstEnvWithFallback(fallback string, keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return value
+		}
 	}
 	return fallback
 }
@@ -198,6 +308,30 @@ func getEnvInt(key string, fallback int) int {
 	}
 	parsed, err := strconv.Atoi(value)
 	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func getEnvInt64(key string, fallback int64) int64 {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func getEnvFloat64(key string, fallback float64) float64 {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	var parsed float64
+	if _, err := fmt.Sscanf(value, "%f", &parsed); err != nil {
 		return fallback
 	}
 	return parsed

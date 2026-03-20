@@ -1,0 +1,36 @@
+source_system,source_export,row_key_field,source_field,target_table_field,transform,validation,default_value,owner,notes
+TeamUnify,households.csv,legacy_household_id,legacy_household_id,households.external_ref,trim|required|unique,non-empty string,,Operations lead,Stable idempotency key for household import
+TeamUnify,households.csv,legacy_household_id,household_name,households.household_name,trim|required,non-empty string,,Operations lead,
+TeamUnify,households.csv,legacy_household_id,primary_email,households.primary_email,trim|lower,email format,,Operations lead,
+TeamUnify,households.csv,legacy_household_id,primary_phone,households.primary_phone_e164,trim,e164 preferred,,Operations lead,
+TeamUnify,households.csv,legacy_household_id,status,households.status,trim|lower,allowed: active/inactive/pending,active,Operations lead,
+TeamUnify,swimmers.csv,legacy_swimmer_id,legacy_swimmer_id,swimmers.external_ref,trim|required|unique,non-empty string,,Membership lead,Stable idempotency key for swimmer import
+TeamUnify,swimmers.csv,legacy_swimmer_id,legacy_household_id,swimmers.household_id,lookup: households by legacy_household_id,must resolve household,,Membership lead,
+TeamUnify,swimmers.csv,legacy_swimmer_id,first_name,swimmers.first_name,trim|required,non-empty string,,Membership lead,
+TeamUnify,swimmers.csv,legacy_swimmer_id,last_name,swimmers.last_name,trim|required,non-empty string,,Membership lead,
+TeamUnify,swimmers.csv,legacy_swimmer_id,preferred_name,swimmers.preferred_name,trim,,,"Membership lead",
+TeamUnify,swimmers.csv,legacy_swimmer_id,date_of_birth,swimmers.date_of_birth,normalize: YYYY-MM-DD,valid date,,Membership lead,
+TeamUnify,swimmers.csv,legacy_swimmer_id,gender,swimmers.gender,map to female|male|non_binary|undisclosed,allowed enum,undisclosed,Membership lead,
+TeamUnify,swimmers.csv,legacy_swimmer_id,swimmer_external_id,swimmers.swimmer_external_id,trim,unique within org,,Membership lead,
+TeamUnify,swimmers.csv,legacy_swimmer_id,registration_status,swimmers.registration_status,trim|lower,allowed status,active,Membership lead,
+TeamUnify,groups.csv,legacy_group_code,legacy_group_code,groups.code,trim|lower|required,unique within org,,Coaching lead,Stable idempotency key for group import
+TeamUnify,groups.csv,legacy_group_code,name,groups.name,trim|required,non-empty string,,Coaching lead,
+TeamUnify,groups.csv,legacy_group_code,description,groups.description,trim,,,Coaching lead,
+TeamUnify,groups.csv,legacy_group_code,type,groups.type,trim|lower,allowed type,competitive,Coaching lead,
+TeamUnify,historical_best_times.csv,legacy_best_time_key,legacy_swimmer_id,best_times.swimmer_id,lookup: swimmers by legacy_swimmer_id,must resolve swimmer,,Head coach,
+TeamUnify,historical_best_times.csv,legacy_best_time_key,distance,best_times.event_distance,parse int,> 0,,Head coach,
+TeamUnify,historical_best_times.csv,legacy_best_time_key,stroke,best_times.stroke,trim|lower,allowed stroke,,Head coach,
+TeamUnify,historical_best_times.csv,legacy_best_time_key,course,best_times.course,trim|upper,allowed course,,Head coach,
+TeamUnify,historical_best_times.csv,legacy_best_time_key,best_time_ms,best_times.best_time_ms,parse int,>= 0,,Head coach,
+TeamUnify,open_invoices.csv,legacy_invoice_id,legacy_invoice_id,invoices.external_ref,trim|required|unique,non-empty string,,Finance lead,Stable idempotency key for invoice import
+TeamUnify,open_invoices.csv,legacy_invoice_id,invoice_number,invoices.invoice_number,trim|required,unique within org,,Finance lead,
+TeamUnify,open_invoices.csv,legacy_invoice_id,legacy_household_id,invoices.household_id,lookup: households by legacy_household_id,must resolve household,,Finance lead,
+TeamUnify,open_invoices.csv,legacy_invoice_id,due_date,invoices.due_date,normalize: YYYY-MM-DD,valid date,,Finance lead,
+TeamUnify,open_invoices.csv,legacy_invoice_id,total_amount_cents,invoice_items.total_cents,parse int,>= 0,,Finance lead,Preferred source amount so payment history can be replayed against the issued invoice total
+TeamUnify,open_invoices.csv,legacy_invoice_id,outstanding_amount_cents,invoice_items.total_cents,parse int,>= 0,,Finance lead,Imported as a single manual line item in the current migration CLI
+TeamUnify,payment_history.csv,legacy_payment_id,legacy_payment_id,payments.external_ref,trim|required|unique,non-empty string,,Finance lead,Stable idempotency key for payment import
+TeamUnify,payment_history.csv,legacy_payment_id,legacy_invoice_id,payments.invoice_id,lookup: invoices by legacy_invoice_id,must resolve invoice,,Finance lead,
+TeamUnify,payment_history.csv,legacy_payment_id,amount_cents,payments.amount_cents,parse int,> 0,,Finance lead,
+TeamUnify,payment_history.csv,legacy_payment_id,method,payments.method,map to stripe|check|cash|ach|other,allowed enum,other,Finance lead,
+Hy-Tek,HY3 inventory,archive_key,archive_name,file_imports.source_filename,trim|required,non-empty string,,Meet operations lead,Track HY3 source provenance separately even when dry-run inputs are CSV only
+Hy-Tek,HY3 inventory,archive_key,origin_system,file_imports.metadata.source_system,trim|required,non-empty string,Hy-Tek,Meet operations lead,

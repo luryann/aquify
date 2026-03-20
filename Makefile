@@ -1,6 +1,6 @@
 SHELL := /bin/zsh
 
-.PHONY: dev dev-api dev-admin test lint lint-openapi infra-up infra-down infra-reset db-up db-down db-status
+.PHONY: dev dev-api dev-admin test test-p0 lint lint-openapi infra-up infra-down infra-reset db-up db-down db-status cutover-rehearsal cutover-smoke cutover-certify cutover-billing-check
 
 COMPOSE_FILE ?= docker-compose.yml
 DOCKER_COMPOSE ?= docker compose
@@ -31,6 +31,10 @@ test:
 	@cd server && go test ./...
 	@echo "Running admin production build check"
 	@cd admin && npm run build
+
+test-p0:
+	@echo "Running P0 server happy-path/regression tests"
+	@cd server && go test ./internal/app -run 'TestP0'
 
 lint: lint-openapi
 	@echo "Running meetfiles static analysis"
@@ -82,3 +86,15 @@ db-status:
 	set +a; \
 	DB_URL="$${DATABASE_URL:-$(DATABASE_URL_DEFAULT)}"; \
 	$(GOOSE_CMD) -dir $(MIGRATIONS_DIR) postgres "$$DB_URL" status
+
+cutover-rehearsal:
+	@./scripts/cutover-rehearsal.sh
+
+cutover-smoke:
+	@./scripts/cutover-smoke.sh
+
+cutover-certify:
+	@./scripts/cutover-certification.sh
+
+cutover-billing-check:
+	@./scripts/cutover-billing-check.sh

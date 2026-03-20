@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/dareaquatics/aquify/server/internal/app/comms"
 	"github.com/dareaquatics/aquify/server/internal/app/httpx"
@@ -16,13 +17,37 @@ import (
 
 // CommsHandlers handles HTTP requests for the communications domain.
 type CommsHandlers struct {
-	service  *comms.Service
-	validate *validator.Validate
+	service              *comms.Service
+	validate             *validator.Validate
+	postmarkHeaderName   string
+	postmarkHeaderValue  string
+	postmarkBasicUser    string
+	postmarkBasicPass    string
+	allowInsecureWebhook bool
 }
 
 // NewCommsHandlers returns a new CommsHandlers.
 func NewCommsHandlers(svc *comms.Service) *CommsHandlers {
 	return &CommsHandlers{service: svc, validate: validator.New()}
+}
+
+// NewCommsHandlersWithWebhookAuth returns a CommsHandlers configured to verify
+// Postmark webhook requests via custom header and/or HTTP basic auth.
+func NewCommsHandlersWithWebhookAuth(svc *comms.Service, headerName, headerValue, basicUser, basicPass, appEnv string) *CommsHandlers {
+	return &CommsHandlers{
+		service:              svc,
+		validate:             validator.New(),
+		postmarkHeaderName:   strings.TrimSpace(headerName),
+		postmarkHeaderValue:  strings.TrimSpace(headerValue),
+		postmarkBasicUser:    strings.TrimSpace(basicUser),
+		postmarkBasicPass:    strings.TrimSpace(basicPass),
+		allowInsecureWebhook: strings.EqualFold(strings.TrimSpace(appEnv), "development") || strings.EqualFold(strings.TrimSpace(appEnv), "local") || strings.EqualFold(strings.TrimSpace(appEnv), "test"),
+	}
+}
+
+// RegisterPublicRoutes mounts unauthenticated provider webhook routes.
+func (h *CommsHandlers) RegisterPublicRoutes(router chi.Router) {
+	router.Post("/webhooks/postmark", h.handlePostmarkWebhook)
 }
 
 // RegisterRoutes mounts all comms routes on the given protected router.
@@ -77,6 +102,105 @@ func hasAnyRole(principal *appmiddleware.Principal, roles ...string) bool {
 		}
 	}
 	return false
+}
+
+func (h *CommsHandlers) verifyPostmarkWebhook(r *http.Request) bool {
+	headerConfigured := h.postmarkHeaderName != "" && h.postmarkHeaderValue != ""
+	basicConfigured := h.postmarkBasicUser != "" || h.postmarkBasicPass != ""
+	if !headerConfigured && !basicConfigured {
+		return h.allowInsecureWebhook
+	}
+	if headerConfigured && r.Header.Get(h.postmarkHeaderName) != h.postmarkHeaderValue {
+		return false
+	}
+	if basicConfigured {
+		user, pass, ok := r.BasicAuth()
+		if !ok || user != h.postmarkBasicUser || pass != h.postmarkBasicPass {
+			return false
+		}
+	}
+	return true
+}
+
+func parseWebhookTime(raw string) time.Time {
+	if strings.TrimSpace(raw) == "" {
+		return time.Time{}
+	}
+	if ts, err := time.Parse(time.RFC3339Nano, raw); err == nil {
+		return ts.UTC()
+	}
+	if ts, err := time.Parse(time.RFC3339, raw); err == nil {
+		return ts.UTC()
+	}
+	return time.Time{}
+}
+
+func metadataString(metadata map[string]any, key string) string {
+	if metadata == nil {
+		return ""
+	}
+	if value, ok := metadata[key].(string); ok {
+		return value
+	}
+	return ""
+}
+
+func (h *CommsHandlers) handlePostmarkWebhook(w http.ResponseWriter, r *http.Request) {
+	if !h.verifyPostmarkWebhook(r) {
+		httpx.WriteError(w, r, http.StatusUnauthorized, "invalid_webhook_auth", "Postmark webhook authentication failed.", nil)
+		return
+	}
+
+	var body struct {
+		RecordType        string         `json:"RecordType"`
+		MessageID         string         `json:"MessageID"`
+		Recipient         string         `json:"Recipient"`
+		Email             string         `json:"Email"`
+		DeliveredAt       string         `json:"DeliveredAt"`
+		BouncedAt         string         `json:"BouncedAt"`
+		ChangedAt         string         `json:"ChangedAt"`
+		Details           string         `json:"Details"`
+		Metadata          map[string]any `json:"Metadata"`
+		SuppressSending   bool           `json:"SuppressSending"`
+		SuppressionReason string         `json:"SuppressionReason"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Could not parse request body.", nil)
+		return
+	}
+
+	recipient := strings.TrimSpace(body.Recipient)
+	if recipient == "" {
+		recipient = strings.TrimSpace(body.Email)
+	}
+	occurredAt := parseWebhookTime(body.DeliveredAt)
+	if occurredAt.IsZero() {
+		occurredAt = parseWebhookTime(body.BouncedAt)
+	}
+	if occurredAt.IsZero() {
+		occurredAt = parseWebhookTime(body.ChangedAt)
+	}
+
+	err := h.service.ApplyPostmarkEvent(comms.PostmarkEventInput{
+		OrgID:             metadataString(body.Metadata, "org_id"),
+		MessageID:         body.MessageID,
+		RecipientEmail:    recipient,
+		RecordType:        body.RecordType,
+		OccurredAt:        occurredAt,
+		Details:           body.Details,
+		SuppressionReason: body.SuppressionReason,
+		SuppressSending:   body.SuppressSending,
+	})
+	if err != nil && !errors.Is(err, comms.ErrDeliveryNotFound) {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "webhook_apply_failed", "Failed to apply Postmark webhook.", nil)
+		return
+	}
+
+	status := "processed"
+	if errors.Is(err, comms.ErrDeliveryNotFound) {
+		status = "ignored_missing_delivery"
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": status})
 }
 
 // ─── Announcement handlers ────────────────────────────────────────────────────

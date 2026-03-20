@@ -2,24 +2,58 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { getCSRFCookieValue, useSession } from '@/lib/session'
 
 export default function LogoutPage() {
   const router = useRouter()
+  const { signOut } = useSession()
   const [mounted, setMounted] = useState(false)
-  const [stage, setStage] = useState<'revoking' | 'done'>('revoking')
+  const [stage, setStage] = useState<'revoking' | 'done' | 'error'>('revoking')
+  const [error, setError] = useState('')
 
   useEffect(() => {
+    let cancelled = false
     setMounted(true)
-    // Simulate session revocation
-    const t = setTimeout(() => {
-      // In production: POST /api/v1/auth/sessions/revoke, clear localStorage
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('dare_session')
+
+    async function revoke() {
+      try {
+        const csrf = getCSRFCookieValue()
+        const headers: Record<string, string> = {}
+        if (csrf) headers['X-CSRF-Token'] = csrf
+
+        const res = await fetch('/api/v1/auth/sessions/revoke', {
+          method: 'POST',
+          headers,
+          credentials: 'include',
+        })
+
+        if (!res.ok && res.status !== 401 && res.status !== 404) {
+          let message = 'Unable to revoke your session.'
+          try {
+            const payload = await res.json() as { message?: string; error?: string }
+            message = payload.message ?? payload.error ?? message
+          } catch {
+            // Use default message.
+          }
+          throw new Error(message)
+        }
+
+        signOut()
+        if (!cancelled) setStage('done')
+      } catch (err) {
+        signOut()
+        if (!cancelled) {
+          setStage('error')
+          setError(err instanceof Error ? err.message : 'Unable to sign out cleanly.')
+        }
       }
-      setStage('done')
-    }, 1400)
-    return () => clearTimeout(t)
-  }, [])
+    }
+
+    revoke()
+    return () => {
+      cancelled = true
+    }
+  }, [signOut])
 
   useEffect(() => {
     if (stage === 'done') {
@@ -86,7 +120,7 @@ export default function LogoutPage() {
               Revoking session and clearing credentials
             </p>
           </>
-        ) : (
+        ) : stage === 'done' ? (
           <div style={{ animation: 'logoutFade 0.4s ease' }}>
             {/* Checkmark */}
             <div style={{
@@ -123,6 +157,42 @@ export default function LogoutPage() {
               onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-subtle)' }}
             >
               Sign in again
+            </button>
+          </div>
+        ) : (
+          <div style={{ animation: 'logoutFade 0.4s ease' }}>
+            <div style={{
+              width: '56px', height: '56px', borderRadius: '50%',
+              background: 'var(--error-bg)', border: '1px solid var(--error-border)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              margin: '0 auto 24px',
+            }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
+                stroke="var(--error)" strokeWidth={2.25} strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+            </div>
+            <h2 style={{
+              fontFamily: 'var(--font-display)', fontSize: '22px', fontWeight: 400,
+              color: 'var(--text)', marginBottom: '8px', letterSpacing: '-0.01em',
+            }}>
+              Sign-out needs attention
+            </h2>
+            <p style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', letterSpacing: '0.04em', maxWidth: '320px' }}>
+              {error}
+            </p>
+            <button
+              onClick={() => router.push('/login')}
+              style={{
+                marginTop: '24px', padding: '9px 22px',
+                background: 'var(--bg-surface)', border: '1px solid var(--border)',
+                borderRadius: '8px', color: 'var(--text-subtle)', fontSize: '12px',
+                fontFamily: 'var(--font-body)', cursor: 'pointer',
+              }}
+            >
+              Return to sign-in
             </button>
           </div>
         )}

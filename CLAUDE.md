@@ -29,7 +29,7 @@ Interpret creatively and make unexpected choices that feel genuinely designed fo
 
 **DARE Platform** — a full-stack swim club operations platform intended to replace TeamUnify/SportsEngine Motion. Covers member/household management, meet scheduling and entries, CL2/SD3/ZIP file interoperability, performance tracking, billing (Stripe), communications, and admin reporting.
 
-**Current status:** Bootstrap, local infrastructure setup, DB migration foundation, API skeleton middleware foundation, STEP 5 auth/session/MFA/RBAC endpoints, STEP 6 membership/household foundations, STEP 7 groups/eligibility/registrations, a follow-up STEP 5 hardening pass, STEP 8 meet setup/commitments/entries, STEP 9 file interoperability data model, STEP 10 CL2/SD3/ZIP/HY3 parsing engine, STEP 11 SD3/SDIF export workflows, STEP 12 best times/performance history, STEP 13 billing core/ledger, STEP 14 Stripe integration, STEP 15 communications module, STEP 16 audit/compliance primitives, STEP 17 background jobs and queues, STEP 18 API contract and docs, and STEP 21 reporting pack are complete. STEP 0 through STEP 18 and STEP 21 from `TODO.md` are complete; repository now includes scaffolding, local Postgres/Redis/MinIO/Mailpit infrastructure, Goose-based migration tooling, identity + membership schema migrations, default role seeding, a Chi-based `/api/v1` router with auth, members household/swimmer flows, groups/eligibility/registrations, full meet lifecycle/commitment/entry workflows, file import/export job management with conflict resolution, the `internal/meetfiles` standalone Go parsing library for SD3/SDIF/CL2/ZIP/HY3 files, swimmer results and performance history, the billing core (invoices/payments/refunds/ledger), the communications module (announcements, email campaigns with Postmark, delivery tracking, suppression list), audit/compliance primitives, the background job infrastructure (in-memory worker server, scheduler, DLQ, metrics, admin endpoints), and the core v1 reporting pack with JSON/CSV endpoints for membership status, meet fees, invoice aging, payment reconciliation, and registration status.
+**Current status:** Bootstrap, local infrastructure setup, DB migration foundation, API skeleton middleware foundation, STEP 5 auth/session/MFA/RBAC endpoints, STEP 6 membership/household foundations, STEP 7 groups/eligibility/registrations, a follow-up STEP 5 hardening pass, STEP 8 meet setup/commitments/entries, STEP 9 file interoperability data model, STEP 10 CL2/SD3/ZIP/HY3 parsing engine, STEP 11 SD3/SDIF export workflows, STEP 12 best times/performance history, STEP 13 billing core/ledger, STEP 14 Stripe integration, STEP 15 communications module, STEP 16 audit/compliance primitives, STEP 17 background jobs and queues, STEP 18 API contract and docs, STEP 21 reporting pack, STEP 22 security hardening, STEP 23 test strategy execution, STEP 25 observability & support readiness, STEP 29A persistent backend runtime, and STEP 29B artifact storage/async durability are complete. STEP 24 is partially complete: the migration packet now includes a source-to-target mapping template and required legacy export inventory under `docs/migration/`, and the repo now has a Step 24 migration CLI skeleton under `server/cmd/migrate` plus `server/internal/migration` that can dry-run CSV imports for households, swimmers, groups, historical best times, open invoices, and payment history with per-step idempotency and JSON validation report output. STEP 26 now has execution-readiness artifacts: `docs/planning/STEP26-cutover-execution-plan.md`, `docs/runbooks/cutover.md`, `docs/runbooks/hypercare.md`, `docs/migration/cutover-signoff-template.md`, plus `make cutover-rehearsal`, `make cutover-smoke`, `make cutover-certify`, and `make cutover-billing-check` wrappers for the migration rehearsal, smoke, certification, and reconciliation workflows. STEP 0 through STEP 18, STEP 21 through STEP 25, and STEP 29A-29B from `TODO.md` are complete (STEP 24 is partially complete — dry-run execution on real data is blocked on a staging environment). Step 23 now includes a reusable Go service unit-test harness under `server/internal/testutil`, a `DATABASE_URL`/`psql`-driven real-DB integration harness, OpenAPI example contract checks, parser fixture-directory coverage under `internal/meetfiles/testdata/fixtures`, golden-file regression coverage for standard and extended SD3 exporter output plus deterministic import reports, HY3 import finalization/report integration coverage, RBAC matrix tests for sensitive routes, billing ledger invariant tests, P0 happy-path tests for registration-to-payment, meet-commit-to-SD3-export, and results-to-best-time updates, a duplicate-finalize chaos test, a large-import performance regression test, and a dedicated CI P0 gate. The repository now includes scaffolding, local Postgres/Redis/MinIO/Mailpit infrastructure, Goose-based migration tooling, identity + membership schema migrations, default role seeding, a Chi-based `/api/v1` router with auth, members household/swimmer flows, groups/eligibility/registrations, full meet lifecycle/commitment/entry workflows, file import/export job management with conflict resolution, the `internal/meetfiles` standalone Go parsing library for SD3/SDIF/CL2/ZIP/HY3 files, swimmer results and performance history, the billing core (invoices/payments/refunds/ledger), the communications module (announcements, email campaigns with Postmark, delivery tracking, suppression list), audit/compliance primitives, the background job infrastructure (in-memory worker server, scheduler, DLQ, metrics, admin endpoints), the core v1 reporting pack with JSON/CSV endpoints for membership status, meet fees, invoice aging, payment reconciliation, and registration status, plus hardened session/cookie handling, CSRF protection for cookie-backed auth mutations, baseline security headers, in-memory rate limiting, upload filename/size/MIME validation, malware-scan hook integration for imports, CI secret/dependency scanning, a v1 threat model document, the expanded Step 23 regression suite, the first Step 24 migration prep artifacts, the Step 26 cutover/hypercare launch packet, the Step 29A `runtime_snapshots` persistence bridge that loads/saves members, groups, meets, imports, exports, performance, billing, comms, compliance, and report artifact state via `DATABASE_URL` + `psql`, and the Step 29B real S3-compatible object storage integration plus queued export artifact generation and cleanup.
 
 ## PostgreSQL Runtime Notes (important)
 
@@ -117,6 +117,22 @@ See current_artifacts.md
 **Billing ledger:** Append-only `ledger_events` table. Stripe webhooks processed idempotently; nightly reconciliation job alerts on mismatch.
 **Reporting pack:** `/api/v1/reports/membership-status`, `/api/v1/reports/meet-fees`, `/api/v1/reports/invoice-aging`, `/api/v1/reports/payment-reconciliation`, and `/api/v1/reports/registration-status` are implemented. Each endpoint supports JSON by default and CSV via `?format=csv`, and each successful run emits a report audit event. Canonical report view definitions live in `docs/planning/STEP21-report-view-definitions.md`.
 
+## Observability Runtime Notes (STEP 25)
+
+- OpenTelemetry tracing is initialised at startup by `server/internal/telemetry`. When `OTEL_EXPORTER_OTLP_ENDPOINT` is not set, a no-op tracer is used (safe for tests and local dev).
+- Prometheus metrics are exposed at `/metrics` (port same as the API). In production, firewall this path to the Prometheus scraper IP range.
+- New env vars:
+  - `OTEL_SERVICE_NAME` (default: `dare-api`)
+  - `OTEL_SERVICE_VERSION` (default: `dev`)
+  - `OTEL_EXPORTER_OTLP_ENDPOINT` — OTLP HTTP endpoint; leave blank to disable tracing
+  - `OTEL_TRACES_SAMPLER_ARG` — float 0.0–1.0 sampling rate (default: `1.0`)
+  - `METRICS_ADDR` — address for the Prometheus metrics port (currently unused; metrics served on API port at `/metrics`)
+- Every HTTP request log line now includes `user_id`, `org_id`, `trace_id`, and `span_id` from context when available.
+- Background job handlers (`parse_import`, `billing_reconcile`, `nightly_integrity`) now create OTel spans with relevant attributes.
+- Grafana dashboard JSON files live in `docs/observability/grafana/`.
+- Prometheus alert rules live in `docs/observability/prometheus/alerts.yaml`.
+- On-call runbook lives in `docs/runbooks/on-call.md`.
+
 ## Design System
 
 Defined in `design-language-guide.html`. Brand accent: `#eb5d1e` (orangey-red). Fonts: Instrument Serif (display), Plus Jakarta Sans (body), JetBrains Mono (code). Dark mode supported.
@@ -129,6 +145,13 @@ Defined in `design-language-guide.html`. Brand accent: `#eb5d1e` (orangey-red). 
   - `/dashboard/performance/visualization` -> `/performance/visualization`
 - Parent meet detail page at `/portal/meets/[id]` includes meet info, meet files, and session-grouped event signup.
 - Swimmer meet detail page is available at `/swim/meets/[id]` with meet files and session-grouped swimmer-facing meet selection UI.
+- Step 29E live-data conversion is partially complete:
+  - admin list/index pages for households, swimmers, groups, registrations, meets, imports, exports, invoices, and ledger now fetch live API data instead of hard-coded mock arrays
+  - new backend read endpoints added for this slice:
+    - `GET /api/v1/members/households`
+    - `GET /api/v1/members/swimmer-groups`
+    - `GET /api/v1/registrations`
+  - detail/edit screens in those domains still need follow-up conversion work before Step 29E is fully complete
 
 ## Definition of Done (apply to every task)
 
@@ -143,10 +166,114 @@ Defined in `design-language-guide.html`. Brand accent: `#eb5d1e` (orangey-red). 
 
 - `APP_ENV` defaults to `development`.
 - `AUTH_ENABLE_DEV_STUB_TOKENS` defaults to `true` in local development and must be set to `false` for non-dev environments.
-- OIDC callback requires: `OIDC_TOKEN_URL`, `OIDC_JWKS_URL`, `OIDC_REDIRECT_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, and `OIDC_STATE_SIGNING_KEY`.
+- `AUTH_ALLOW_DEV_SESSION_ISSUE` defaults to `true` only in local development/test flows and must remain `false` for non-dev environments.
+- OIDC browser login requires: `OIDC_AUTHORIZE_URL`, `OIDC_TOKEN_URL`, `OIDC_JWKS_URL`, `OIDC_REDIRECT_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, and `OIDC_STATE_SIGNING_KEY`.
 - Optional OIDC settings: `OIDC_EXPECTED_ISSUER`, `OIDC_HTTP_TIMEOUT` (default `10s`).
+- Session endpoints now also issue cookie-backed sessions:
+  - access cookie: `aquify_access_token` (`Secure`, `HttpOnly`, `SameSite=Strict`)
+  - refresh cookie: `aquify_refresh_token` (`Secure`, `HttpOnly`, `SameSite=Strict`)
+  - CSRF cookie: `aquify_csrf_token` (`Secure`, readable by browser JS, `SameSite=Strict`)
+- The frontend now bootstraps signed-in state from `GET /api/v1/auth/session`; this route accepts cookie auth without requiring `X-Org-Id`.
+- `GET /api/v1/auth/mfa/factors` returns the enrolled factors for the current user so the browser MFA page can complete real step-up flows.
+- `POST /api/v1/auth/sessions/issue` is a development/test-only bootstrap route and must stay disabled in non-development environments.
+- Cookie-backed `POST /api/v1/auth/sessions/refresh` and `POST /api/v1/auth/sessions/revoke` require the CSRF cookie value in header `X-CSRF-Token` by default.
+- `middleware.Auth` accepts either `Authorization: Bearer ...` or the `aquify_access_token` cookie.
+- Frontend dev stub login/role switching must be gated by `NEXT_PUBLIC_APP_ENV != production` plus `NEXT_PUBLIC_AUTH_ENABLE_DEV_STUB_TOKENS != false`; production should not rely on `NODE_ENV` alone.
+
+## Security Runtime Notes
+
+- Baseline response headers are set by middleware: CSP, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, and HSTS on HTTPS requests.
+- In-memory rate limiting is enabled:
+  - global default: `240` requests per `1m`
+  - auth-route default: `20` requests per `1m`
+- New security env vars:
+  - `SECURITY_CSRF_HEADER_NAME`
+  - `SECURITY_RATE_LIMIT_GLOBAL_REQUESTS`
+  - `SECURITY_RATE_LIMIT_GLOBAL_WINDOW`
+  - `SECURITY_RATE_LIMIT_AUTH_REQUESTS`
+  - `SECURITY_RATE_LIMIT_AUTH_WINDOW`
+  - `SECURITY_UPLOAD_MAX_BYTES`
+  - `SECURITY_UPLOAD_ALLOWED_MIMES`
+  - `SECURITY_UPLOAD_REQUIRE_MALWARE_SCAN_HOOK`
+  - `SECURITY_IMPERSONATION_ENABLED`
+- Import upload hardening now validates:
+  - safe basename-only filenames
+  - declared file size against the configured cap
+  - declared MIME type against the allowlist
+  - malware-scan hook result before finalization continues
+  - `SECURITY_UPLOAD_REQUIRE_MALWARE_SCAN_HOOK=true` rejects missing or `stub` scanners
+- Admin impersonation is explicitly rejected by default. If `SECURITY_IMPERSONATION_ENABLED=true`, owner role, MFA, and a reason are still required, and the request is rejected as not implemented until full safeguards land.
 
 ## Make Quality Gates
 
 - `make test` runs `go test ./...` in `server/` and `npm run build` in `admin/`.
 - `make lint` runs `go vet ./...` in `server/` and `npm run lint` in `admin/`.
+
+## Runtime Persistence Notes
+
+- Step 29A tracking/notes live in `docs/planning/STEP29A-persistence-execution-plan.md`.
+- The backend now supports a DB-backed runtime persistence bridge through `runtime_snapshots`.
+- When `DATABASE_URL` is set and `psql` is available, `server/internal/app/server.go` hydrates members, groups, meets, imports, exports, performance, billing, comms, and compliance state from Postgres on startup and persists snapshots before a mutating request is allowed to return success.
+- The persistence bridge currently stores whole-domain JSON snapshots. This is intentionally a durability bridge for production readiness, not the final normalized sqlc/pgx repository end-state.
+- The Step 29A real-DB round-trip coverage lives in `server/internal/app/runtime_persistence_integration_test.go`.
+
+## Artifact Storage Notes (STEP 29B)
+
+- Step 29B tracking/notes live in `docs/planning/STEP29B-artifact-durability-plan.md`.
+- `server/internal/storage` now supports a real MinIO/S3-compatible client using `github.com/minio/minio-go/v7`, with an in-memory stub retained for tests and fallback development flows.
+- Storage config accepts both the repo's `STORAGE_*` env vars and the local MinIO-style aliases already used in `.env.local.example` (`S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_REGION`, `MINIO_BUCKET`).
+- Import upload URLs now come from the object storage client, and import finalization verifies that the uploaded object exists in storage before continuing.
+- Export requests now create a pending job and enqueue `workers.TypeGenerateExport`; the background worker generates the SD3/SDIF payload, uploads it to object storage, and then marks the export `ready`.
+- Generated CSV report requests now persist the CSV to object storage and return artifact metadata plus a presigned download URL instead of streaming inline CSV bytes.
+- The cleanup worker now expires stale import upload windows plus expired export/report artifacts and deletes their storage objects.
+
+## Provider Runtime Notes (STEP 29C)
+
+- Step 29C tracking/notes live in `docs/planning/STEP29C-provider-hardening-plan.md`.
+- `server/internal/stripe` now supports a real Stripe SDK client alongside the stub. Local/test flows may use the stub client, but staging/production startup must fail if Stripe cannot initialize from `STRIPE_SECRET_KEY`.
+- Stripe webhook signature verification still requires `STRIPE_WEBHOOK_SECRET`.
+- Billing refund creation now performs local eligibility validation before attempting a real Stripe refund for Stripe-backed payments, then records the returned `stripe_refund_id` on the local refund record.
+- Postmark outbound sends now attach `org_id` and `campaign_id` metadata for webhook correlation.
+- Local/test flows may use the Postmark stub client, but staging/production startup must fail if Postmark cannot initialize from `POSTMARK_SERVER_TOKEN` and `POSTMARK_FROM_EMAIL`.
+- `POST /api/v1/webhooks/postmark` now applies Postmark `Delivery`, `Bounce`, `SpamComplaint`, and `SubscriptionChange` events back into delivery/suppression state, including scoped bounce/complaint suppression updates when org/email metadata is present but the delivery row is missing.
+- Production Postmark webhooks should be protected with either:
+  - `POSTMARK_WEBHOOK_AUTH_HEADER_NAME` + `POSTMARK_WEBHOOK_AUTH_HEADER_VALUE` using Postmark custom webhook headers, or
+  - `POSTMARK_WEBHOOK_BASIC_USER` + `POSTMARK_WEBHOOK_BASIC_PASS` using Postmark webhook HTTP auth.
+
+## Migration Prep Notes
+
+- Step 24 planning/status is tracked in `docs/planning/STEP24-migration-prep-plan.md`.
+- Migration packet operator docs live in `docs/migration/`.
+- `server/cmd/migrate` currently supports:
+  - `go run ./cmd/migrate plan`
+  - `go run ./cmd/migrate dry-run -input-dir <dir> -report <file>`
+- The migration CLI currently expects these CSV files in the input directory:
+  - `households.csv`
+  - `swimmers.csv`
+  - `groups.csv`
+  - `historical_best_times.csv`
+  - `open_invoices.csv`
+  - `payment_history.csv`
+- Dry-run output is a JSON validation report with per-step processed/imported/skipped/duplicate counts plus warnings/errors.
+- Remaining Step 24 items are blocked on real legacy exports and a staging environment: anonymized dry-run execution, source-system row-count comparison, billing total comparison, and manual remediation logging.
+
+## Cutover Readiness Notes
+
+- Step 26 planning/status is tracked in `docs/planning/STEP26-cutover-execution-plan.md`.
+- Cutover operator runbooks live in `docs/runbooks/cutover.md` and `docs/runbooks/hypercare.md`.
+- Stakeholder approvals should be recorded in `docs/migration/cutover-signoff-template.md`.
+- New helper commands:
+  - `make cutover-rehearsal INPUT_DIR=/absolute/path/to/export-dir`
+  - `make cutover-smoke API_BASE_URL=https://api.example.com AUTH_TOKEN=... ORG_ID=...`
+  - `make cutover-certify`
+- `make cutover-billing-check API_BASE_URL=https://api.example.com AUTH_TOKEN=... ORG_ID=...`
+- These artifacts prepare Step 26 execution, but the actual cutover checklist items in `TODO.md` remain real-world launch actions and should only be marked complete during the production cutover window.
+
+## Known Production Readiness Gaps
+
+- Step 29A planning/status is tracked in `docs/planning/STEP29A-persistence-execution-plan.md`.
+- Step 29B planning/status is tracked in `docs/planning/STEP29B-artifact-durability-plan.md`.
+- Step 29 is intentionally chunked in `TODO.md` into sub-steps `29A` through `29N` so production-readiness work can be executed in small, auditable batches.
+- The app is not yet a fully ready production system because Step 29C onward is still open, several provider/runtime integrations are still scaffolded or stub-backed, and the current Step 29A persistence layer is a whole-domain snapshot bridge rather than the final normalized repository implementation.
+- Admin, parent portal, and swimmer portal UI work from Step 20/20E still includes many inline mock datasets that must be replaced with live API-backed state before launch.
+- Real launch readiness still requires finishing Step 24 migration validation, Step 26 cutover execution, and Step 27 stabilization in addition to the new Step 29 backlog.

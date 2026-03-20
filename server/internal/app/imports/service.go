@@ -3,10 +3,12 @@
 package imports
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -19,12 +21,17 @@ import (
 // ─── Sentinel errors ──────────────────────────────────────────────────────────
 
 var (
-	ErrForbidden         = errors.New("forbidden")
-	ErrImportNotFound    = errors.New("import job not found")
-	ErrConflictNotFound  = errors.New("match conflict not found")
-	ErrInvalidFileType   = errors.New("unsupported file type; expected cl2, sd3, zip, or hy3")
-	ErrInvalidTransition = errors.New("invalid state transition")
-	ErrConflictNotOpen   = errors.New("conflict is not in open state; cannot be resolved")
+	ErrForbidden           = errors.New("forbidden")
+	ErrImportNotFound      = errors.New("import job not found")
+	ErrConflictNotFound    = errors.New("match conflict not found")
+	ErrInvalidFileType     = errors.New("unsupported file type; expected cl2, sd3, zip, or hy3")
+	ErrInvalidTransition   = errors.New("invalid state transition")
+	ErrConflictNotOpen     = errors.New("conflict is not in open state; cannot be resolved")
+	ErrInvalidFilename     = errors.New("invalid filename")
+	ErrFileTooLarge        = errors.New("file exceeds upload size cap")
+	ErrInvalidMIMEType     = errors.New("invalid file mime type")
+	ErrMalwareDetected     = errors.New("uploaded file failed malware scan")
+	ErrMalwareScanRequired = errors.New("malware scan is required but no compliant scanner is configured")
 )
 
 // ─── Domain types ─────────────────────────────────────────────────────────────
@@ -38,12 +45,19 @@ type FileImport struct {
 	FileType           string        `json:"file_type"`
 	Status             string        `json:"status"`
 	StorageKey         string        `json:"storage_key,omitempty"`
+	StorageDownloadURL string        `json:"storage_download_url,omitempty"`
 	UploadURL          string        `json:"upload_url,omitempty"`
 	UploadURLExpiresAt *time.Time    `json:"upload_url_expires_at,omitempty"`
+	DeclaredSizeBytes  int64         `json:"declared_size_bytes,omitempty"`
+	DeclaredMIMEType   string        `json:"declared_mime_type,omitempty"`
+	ScanStatus         string        `json:"scan_status,omitempty"`
+	ScanProvider       string        `json:"scan_provider,omitempty"`
+	ScannedAt          *time.Time    `json:"scanned_at,omitempty"`
 	RowCount           int           `json:"row_count"`
 	ErrorCount         int           `json:"error_count"`
 	ConflictCount      int           `json:"conflict_count"`
 	ImportReport       *ImportReport `json:"import_report,omitempty"`
+	ArtifactExpiresAt  *time.Time    `json:"artifact_expires_at,omitempty"`
 	CreatedAt          time.Time     `json:"created_at"`
 	UpdatedAt          time.Time     `json:"updated_at"`
 	CreatedBy          string        `json:"created_by"`
@@ -100,10 +114,14 @@ type ImportAuditEvent struct {
 
 // RequestUploadURLInput is the input for requesting a presigned upload URL.
 type RequestUploadURLInput struct {
-	Filename string
-	FileType string // cl2, sd3, zip (or inferred from filename)
-	MeetID   string // optional
+	Filename  string
+	FileType  string // cl2, sd3, zip, hy3 (or inferred from filename)
+	MeetID    string // optional
+	SizeBytes int64
+	MIMEType  string
 }
+
+type FinalizeImportInput struct{}
 
 // ResolveConflictInput is the input for manually resolving a match conflict.
 type ResolveConflictInput struct {
@@ -115,10 +133,34 @@ type ResolveConflictInput struct {
 
 // Service manages file import jobs and match conflicts in memory.
 type Service struct {
-	mu        sync.RWMutex
-	imports   map[string]*FileImport
-	conflicts map[string]*MatchConflict
-	store     storage.ObjectStorage
+	mu             sync.RWMutex
+	imports        map[string]*FileImport
+	conflicts      map[string]*MatchConflict
+	store          storage.ObjectStorage
+	securityConfig SecurityConfig
+	scanner        MalwareScanner
+}
+
+type SecurityConfig struct {
+	MaxBytes               int64
+	AllowedMIMEs           []string
+	RequireMalwareScanHook bool
+}
+
+type FileUploadMetadata struct {
+	Filename  string
+	FileType  string
+	SizeBytes int64
+	MIMEType  string
+}
+
+type MalwareScanner interface {
+	Scan(storageKey string, metadata FileUploadMetadata) MalwareScanResult
+}
+
+type MalwareScanResult struct {
+	Status   string
+	Provider string
 }
 
 // NewService returns a new Service backed by a stub object storage client.
@@ -132,7 +174,31 @@ func NewServiceWithStorage(store storage.ObjectStorage) *Service {
 		imports:   make(map[string]*FileImport),
 		conflicts: make(map[string]*MatchConflict),
 		store:     store,
+		securityConfig: SecurityConfig{
+			MaxBytes:     25 << 20,
+			AllowedMIMEs: []string{"application/octet-stream", "application/zip", "application/x-zip-compressed", "text/plain", "text/csv"},
+		},
+		scanner: stubMalwareScanner{},
 	}
+}
+
+func (s *Service) ConfigureSecurity(cfg SecurityConfig) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if cfg.MaxBytes > 0 {
+		s.securityConfig.MaxBytes = cfg.MaxBytes
+	}
+	if len(cfg.AllowedMIMEs) > 0 {
+		s.securityConfig.AllowedMIMEs = append([]string{}, cfg.AllowedMIMEs...)
+	}
+	s.securityConfig.RequireMalwareScanHook = cfg.RequireMalwareScanHook
+}
+
+func (s *Service) SetMalwareScanner(scanner MalwareScanner) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.scanner = scanner
 }
 
 // ─── RequestUploadURL ─────────────────────────────────────────────────────────
@@ -144,12 +210,33 @@ func (s *Service) RequestUploadURL(principal *appmiddleware.Principal, orgID str
 		return nil, nil, ErrForbidden
 	}
 
+	if err := validateFilename(input.Filename); err != nil {
+		return nil, nil, err
+	}
+	if input.SizeBytes <= 0 {
+		return nil, nil, ErrFileTooLarge
+	}
+
 	fileType := strings.ToLower(strings.TrimSpace(input.FileType))
 	if fileType == "" {
 		fileType = detectFileType(input.Filename)
 	}
 	if fileType != "cl2" && fileType != "sd3" && fileType != "zip" && fileType != "hy3" {
 		return nil, nil, ErrInvalidFileType
+	}
+	if detectFileType(input.Filename) != fileType {
+		return nil, nil, ErrInvalidFileType
+	}
+
+	s.mu.RLock()
+	maxBytes := s.securityConfig.MaxBytes
+	allowedMIMEs := append([]string{}, s.securityConfig.AllowedMIMEs...)
+	s.mu.RUnlock()
+	if maxBytes > 0 && input.SizeBytes > maxBytes {
+		return nil, nil, ErrFileTooLarge
+	}
+	if !isAllowedMIMEType(input.MIMEType, allowedMIMEs) {
+		return nil, nil, ErrInvalidMIMEType
 	}
 
 	id := "import_" + randomToken(12)
@@ -173,6 +260,10 @@ func (s *Service) RequestUploadURL(principal *appmiddleware.Principal, orgID str
 		StorageKey:         storageKey,
 		UploadURL:          uploadURL,
 		UploadURLExpiresAt: &expiresAt,
+		DeclaredSizeBytes:  input.SizeBytes,
+		DeclaredMIMEType:   strings.TrimSpace(strings.ToLower(input.MIMEType)),
+		ScanStatus:         "pending",
+		ScanProvider:       "",
 		CreatedAt:          now,
 		UpdatedAt:          now,
 		CreatedBy:          principal.UserID,
@@ -184,8 +275,10 @@ func (s *Service) RequestUploadURL(principal *appmiddleware.Principal, orgID str
 	s.mu.Unlock()
 
 	audit := newAuditEvent(orgID, principal.UserID, "import.upload_url_requested", "file_import", id, map[string]string{
-		"filename":  input.Filename,
-		"file_type": fileType,
+		"filename":   input.Filename,
+		"file_type":  fileType,
+		"mime_type":  strings.TrimSpace(strings.ToLower(input.MIMEType)),
+		"size_bytes": fmt.Sprintf("%d", input.SizeBytes),
 	})
 	return imp, audit, nil
 }
@@ -196,7 +289,7 @@ func (s *Service) RequestUploadURL(principal *appmiddleware.Principal, orgID str
 // the state machine.  In the stub, it immediately advances to
 // conflicts_pending with synthetic data.  Only owner, admin, and coach may
 // finalize.
-func (s *Service) FinalizeImport(principal *appmiddleware.Principal, orgID, importID string) (*FileImport, *ImportAuditEvent, error) {
+func (s *Service) FinalizeImport(principal *appmiddleware.Principal, orgID, importID string, _ FinalizeImportInput) (*FileImport, *ImportAuditEvent, error) {
 	if !hasAnyRole(principal, "owner", "admin", "coach") {
 		return nil, nil, ErrForbidden
 	}
@@ -212,7 +305,72 @@ func (s *Service) FinalizeImport(principal *appmiddleware.Principal, orgID, impo
 		return nil, nil, fmt.Errorf("%w: cannot finalize an import with status %q", ErrInvalidTransition, imp.Status)
 	}
 
+	exists, err := s.store.Exists(context.Background(), imp.StorageKey)
+	if err != nil {
+		return nil, nil, fmt.Errorf("storage: verify upload exists: %w", err)
+	}
+	if !exists {
+		if _, ok := s.store.(*storage.StubStorage); ok {
+			if err := s.store.PutObject(context.Background(), imp.StorageKey, imp.DeclaredMIMEType, nil); err != nil {
+				return nil, nil, fmt.Errorf("storage: seed stub upload: %w", err)
+			}
+		}
+		exists, err = s.store.Exists(context.Background(), imp.StorageKey)
+		if err != nil {
+			return nil, nil, fmt.Errorf("storage: verify upload exists after stub seed: %w", err)
+		}
+	}
+	if !exists {
+		return nil, nil, fmt.Errorf("%w: uploaded object not found in storage", ErrInvalidTransition)
+	}
+
 	now := time.Now().UTC()
+	if s.scanner == nil && !s.securityConfig.RequireMalwareScanHook {
+		imp.ScanStatus = "clean"
+		imp.ScanProvider = ""
+		imp.ScannedAt = nil
+	} else {
+		scanResult := MalwareScanResult{
+			Status:   "pending",
+			Provider: "",
+		}
+		if s.scanner != nil {
+			scanResult = s.scanner.Scan(imp.StorageKey, FileUploadMetadata{
+				Filename:  imp.Filename,
+				FileType:  imp.FileType,
+				SizeBytes: imp.DeclaredSizeBytes,
+				MIMEType:  imp.DeclaredMIMEType,
+			})
+		}
+		provider := strings.TrimSpace(scanResult.Provider)
+		if s.securityConfig.RequireMalwareScanHook && !isCompliantScannerProvider(provider) {
+			return nil, nil, ErrMalwareScanRequired
+		}
+		scanStatus := strings.TrimSpace(strings.ToLower(scanResult.Status))
+		if scanStatus == "" && provider != "" {
+			scanStatus = "clean"
+		}
+		if scanStatus == "" {
+			scanStatus = "pending"
+		}
+		imp.ScanStatus = scanStatus
+		if provider != "" {
+			imp.ScanProvider = provider
+		} else {
+			imp.ScanProvider = ""
+		}
+		if provider != "" {
+			imp.ScannedAt = &now
+		} else {
+			imp.ScannedAt = nil
+		}
+		if scanStatus != "clean" {
+			imp.Status = "failed"
+			imp.UpdatedAt = now
+			imp.UpdatedBy = principal.UserID
+			return nil, nil, ErrMalwareDetected
+		}
+	}
 
 	// Stub: immediately advance to conflicts_pending with synthetic rows.
 	imp.Status = "conflicts_pending"
@@ -254,7 +412,8 @@ func (s *Service) FinalizeImport(principal *appmiddleware.Principal, orgID, impo
 	s.conflicts[conflictID] = conflict
 
 	audit := newAuditEvent(orgID, principal.UserID, "import.finalized", "file_import", importID, map[string]string{
-		"status": imp.Status,
+		"status":      imp.Status,
+		"scan_status": imp.ScanStatus,
 	})
 
 	cp := *imp
@@ -406,7 +565,53 @@ func (s *Service) GetImportReport(principal *appmiddleware.Principal, orgID, imp
 		return nil, ErrImportNotFound
 	}
 	cp := *imp
+	if cp.StorageKey != "" {
+		url, err := s.store.PresignedGetURL(cp.StorageKey, 15*time.Minute)
+		if err == nil {
+			cp.StorageDownloadURL = url
+		}
+	}
 	return &cp, nil
+}
+
+type ExpiredUploadArtifact struct {
+	ImportID   string
+	StorageKey string
+	ExpiredAt  time.Time
+}
+
+// ExpirePendingUploads revokes stale presigned upload windows and returns the
+// object keys that should be deleted from storage.
+func (s *Service) ExpirePendingUploads(cutoff time.Time) []ExpiredUploadArtifact {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var expired []ExpiredUploadArtifact
+	for _, imp := range s.imports {
+		if imp == nil || imp.Status != "uploaded" || imp.UploadURLExpiresAt == nil {
+			continue
+		}
+		if imp.UploadURLExpiresAt.After(cutoff) {
+			continue
+		}
+		expired = append(expired, ExpiredUploadArtifact{
+			ImportID:   imp.ID,
+			StorageKey: imp.StorageKey,
+			ExpiredAt:  *imp.UploadURLExpiresAt,
+		})
+		imp.Status = "expired"
+		imp.UploadURL = ""
+		imp.UploadURLExpiresAt = nil
+		imp.UpdatedAt = cutoff.UTC()
+	}
+	return expired
+}
+
+func (s *Service) DeleteArtifact(storageKey string) error {
+	if strings.TrimSpace(storageKey) == "" {
+		return nil
+	}
+	return s.store.Delete(storageKey)
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -454,7 +659,50 @@ func detectFileType(filename string) string {
 		return "sd3"
 	case strings.HasSuffix(lower, ".zip"):
 		return "zip"
+	case strings.HasSuffix(lower, ".hy3"):
+		return "hy3"
 	default:
 		return "unknown"
+	}
+}
+
+func validateFilename(filename string) error {
+	trimmed := strings.TrimSpace(filename)
+	if trimmed == "" {
+		return ErrInvalidFilename
+	}
+	if trimmed != filepath.Base(trimmed) {
+		return ErrInvalidFilename
+	}
+	if strings.Contains(trimmed, "..") || strings.ContainsAny(trimmed, `/\`) {
+		return ErrInvalidFilename
+	}
+	return nil
+}
+
+func isAllowedMIMEType(value string, allowed []string) bool {
+	mimeType := strings.TrimSpace(strings.ToLower(value))
+	if mimeType == "" {
+		return false
+	}
+	for _, item := range allowed {
+		if mimeType == strings.TrimSpace(strings.ToLower(item)) {
+			return true
+		}
+	}
+	return false
+}
+
+func isCompliantScannerProvider(provider string) bool {
+	normalized := strings.TrimSpace(strings.ToLower(provider))
+	return normalized != "" && normalized != "stub"
+}
+
+type stubMalwareScanner struct{}
+
+func (stubMalwareScanner) Scan(_ string, _ FileUploadMetadata) MalwareScanResult {
+	return MalwareScanResult{
+		Status:   "clean",
+		Provider: "stub",
 	}
 }

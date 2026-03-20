@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useSession } from '@/lib/session'
 import { DEV_SESSIONS } from '@/lib/session'
 import { ROLE_LABELS } from '@/lib/roles'
+import { DEV_STUB_TOKENS_ENABLED } from '@/lib/featureFlags'
 
 const STUB_ORDER = [
   'stub-owner',
@@ -20,7 +21,7 @@ export function DevRoleSwitcher() {
   const [open, setOpen] = useState(false)
 
   // Only render in development
-  if (process.env.NODE_ENV !== 'development') return null
+  if (!DEV_STUB_TOKENS_ENABLED) return null
 
   const currentStub = session?.token ?? ''
   const currentRole = session?.user.role ?? '—'

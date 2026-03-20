@@ -55,13 +55,6 @@ func reportFormat(r *http.Request) string {
 	return strings.ToLower(strings.TrimSpace(r.URL.Query().Get("format")))
 }
 
-func writeCSV(w http.ResponseWriter, doc *reports.CSVDocument) {
-	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", doc.Filename))
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(doc.Data)
-}
-
 func (h *ReportsHandlers) appendAudit(principal *appmiddleware.Principal, orgID, action, resourceID string, metadata map[string]string) {
 	if h.auditService == nil {
 		return
@@ -85,6 +78,15 @@ func mapReportError(w http.ResponseWriter, r *http.Request, err error) bool {
 	default:
 		return false
 	}
+}
+
+func writeCSVArtifactResponse(w http.ResponseWriter, report any, artifact *reports.StoredArtifact) {
+	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"report":   report,
+		"artifact": artifact,
+		"format":   "csv",
+		"delivery": "artifact",
+	})
 }
 
 func (h *ReportsHandlers) runMembershipStatus(w http.ResponseWriter, r *http.Request) {
@@ -120,7 +122,12 @@ func (h *ReportsHandlers) runMembershipStatus(w http.ResponseWriter, r *http.Req
 			httpx.WriteError(w, r, http.StatusInternalServerError, "csv_generation_failed", "Failed to build CSV report.", nil)
 			return
 		}
-		writeCSV(w, doc)
+		artifact, err := h.service.StoreCSVArtifact(orgID, "membership_status", report.GeneratedAt, doc)
+		if err != nil {
+			httpx.WriteError(w, r, http.StatusInternalServerError, "artifact_persist_failed", "Failed to persist CSV report artifact.", nil)
+			return
+		}
+		writeCSVArtifactResponse(w, report, artifact)
 		return
 	}
 
@@ -164,7 +171,12 @@ func (h *ReportsHandlers) runMeetFees(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, http.StatusInternalServerError, "csv_generation_failed", "Failed to build CSV report.", nil)
 			return
 		}
-		writeCSV(w, doc)
+		artifact, err := h.service.StoreCSVArtifact(orgID, "meet_fees", report.GeneratedAt, doc)
+		if err != nil {
+			httpx.WriteError(w, r, http.StatusInternalServerError, "artifact_persist_failed", "Failed to persist CSV report artifact.", nil)
+			return
+		}
+		writeCSVArtifactResponse(w, report, artifact)
 		return
 	}
 
@@ -214,7 +226,12 @@ func (h *ReportsHandlers) runInvoiceAging(w http.ResponseWriter, r *http.Request
 			httpx.WriteError(w, r, http.StatusInternalServerError, "csv_generation_failed", "Failed to build CSV report.", nil)
 			return
 		}
-		writeCSV(w, doc)
+		artifact, err := h.service.StoreCSVArtifact(orgID, "invoice_aging", report.GeneratedAt, doc)
+		if err != nil {
+			httpx.WriteError(w, r, http.StatusInternalServerError, "artifact_persist_failed", "Failed to persist CSV report artifact.", nil)
+			return
+		}
+		writeCSVArtifactResponse(w, report, artifact)
 		return
 	}
 
@@ -263,7 +280,12 @@ func (h *ReportsHandlers) runPaymentReconciliation(w http.ResponseWriter, r *htt
 			httpx.WriteError(w, r, http.StatusInternalServerError, "csv_generation_failed", "Failed to build CSV report.", nil)
 			return
 		}
-		writeCSV(w, doc)
+		artifact, err := h.service.StoreCSVArtifact(orgID, "payment_reconciliation", report.GeneratedAt, doc)
+		if err != nil {
+			httpx.WriteError(w, r, http.StatusInternalServerError, "artifact_persist_failed", "Failed to persist CSV report artifact.", nil)
+			return
+		}
+		writeCSVArtifactResponse(w, report, artifact)
 		return
 	}
 
@@ -307,7 +329,12 @@ func (h *ReportsHandlers) runRegistrationStatus(w http.ResponseWriter, r *http.R
 			httpx.WriteError(w, r, http.StatusInternalServerError, "csv_generation_failed", "Failed to build CSV report.", nil)
 			return
 		}
-		writeCSV(w, doc)
+		artifact, err := h.service.StoreCSVArtifact(orgID, "registration_status", report.GeneratedAt, doc)
+		if err != nil {
+			httpx.WriteError(w, r, http.StatusInternalServerError, "artifact_persist_failed", "Failed to persist CSV report artifact.", nil)
+			return
+		}
+		writeCSVArtifactResponse(w, report, artifact)
 		return
 	}
 

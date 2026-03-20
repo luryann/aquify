@@ -11,19 +11,20 @@ import (
 	"testing"
 
 	"github.com/dareaquatics/aquify/server/internal/app/billing"
+	stripelib "github.com/dareaquatics/aquify/server/internal/stripe"
 )
 
 // ─── Envelope helpers ─────────────────────────────────────────────────────────
 
 type invoiceEnvelope struct {
 	Invoice struct {
-		ID            string  `json:"id"`
-		OrgID         string  `json:"org_id"`
-		HouseholdID   string  `json:"household_id"`
-		InvoiceNumber string  `json:"invoice_number"`
-		Status        string  `json:"status"`
-		SubtotalCents int     `json:"subtotal_cents"`
-		TotalCents    int     `json:"total_cents"`
+		ID             string `json:"id"`
+		OrgID          string `json:"org_id"`
+		HouseholdID    string `json:"household_id"`
+		InvoiceNumber  string `json:"invoice_number"`
+		Status         string `json:"status"`
+		SubtotalCents  int    `json:"subtotal_cents"`
+		TotalCents     int    `json:"total_cents"`
 		AmountDueCents int    `json:"amount_due_cents"`
 	} `json:"invoice"`
 }
@@ -82,11 +83,12 @@ type paymentsListEnvelope struct {
 
 type refundEnvelope struct {
 	Refund struct {
-		ID          string `json:"id"`
-		InvoiceID   string `json:"invoice_id"`
-		PaymentID   string `json:"payment_id"`
-		AmountCents int    `json:"amount_cents"`
-		Status      string `json:"status"`
+		ID             string `json:"id"`
+		InvoiceID      string `json:"invoice_id"`
+		PaymentID      string `json:"payment_id"`
+		AmountCents    int    `json:"amount_cents"`
+		Status         string `json:"status"`
+		StripeRefundID string `json:"stripe_refund_id"`
 	} `json:"refund"`
 	LedgerEvent ledgerEvEnvelope `json:"ledger_event"`
 }
@@ -177,10 +179,10 @@ func createInvoice(t *testing.T, router http.Handler, token, orgID, number strin
 func addItem(t *testing.T, router http.Handler, token, orgID, invoiceID string, unitCents int) invoiceItemEnvelope {
 	t.Helper()
 	body := billingBody(map[string]any{
-		"description":      "Program fee",
-		"quantity":         1,
+		"description":       "Program fee",
+		"quantity":          1,
 		"unit_amount_cents": unitCents,
-		"category":         "program_fee",
+		"category":          "program_fee",
 	})
 	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/invoices/%s/items", invoiceID), strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -344,7 +346,7 @@ func TestAddInvoiceItemUpdatesInvoiceTotals(t *testing.T) {
 	t.Parallel()
 	svc := billing.NewService()
 	router := newBillingRouter(t, svc)
-	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
+	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, true)
 
 	env := createInvoice(t, router, token, "org-demo", "INV-TOTALS")
 	invoiceID := env.Invoice.ID
@@ -372,7 +374,7 @@ func TestAddItemToIssuedInvoiceConflict(t *testing.T) {
 	t.Parallel()
 	svc := billing.NewService()
 	router := newBillingRouter(t, svc)
-	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
+	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, true)
 
 	env := createInvoice(t, router, token, "org-demo", "INV-NOMOD")
 	invoiceID := env.Invoice.ID
@@ -381,10 +383,10 @@ func TestAddItemToIssuedInvoiceConflict(t *testing.T) {
 
 	// Try to add item after issuance.
 	body := billingBody(map[string]any{
-		"description":      "Late fee",
-		"quantity":         1,
+		"description":       "Late fee",
+		"quantity":          1,
 		"unit_amount_cents": 1000,
-		"category":         "late_fee",
+		"category":          "late_fee",
 	})
 	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/invoices/%s/items", invoiceID), strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -401,7 +403,7 @@ func TestRemoveInvoiceItemDraft(t *testing.T) {
 	t.Parallel()
 	svc := billing.NewService()
 	router := newBillingRouter(t, svc)
-	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
+	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, true)
 
 	inv := createInvoice(t, router, token, "org-demo", "INV-DEL")
 	item := addItem(t, router, token, "org-demo", inv.Invoice.ID, 8000)
@@ -434,7 +436,7 @@ func TestIssueInvoiceDraftToIssued(t *testing.T) {
 	t.Parallel()
 	svc := billing.NewService()
 	router := newBillingRouter(t, svc)
-	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
+	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, true)
 
 	inv := createInvoice(t, router, token, "org-demo", "INV-ISSUE")
 	addItem(t, router, token, "org-demo", inv.Invoice.ID, 20000)
@@ -458,7 +460,7 @@ func TestIssueAlreadyIssuedConflict(t *testing.T) {
 	t.Parallel()
 	svc := billing.NewService()
 	router := newBillingRouter(t, svc)
-	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
+	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, true)
 
 	inv := createInvoice(t, router, token, "org-demo", "INV-REISSUE")
 	addItem(t, router, token, "org-demo", inv.Invoice.ID, 5000)
@@ -479,7 +481,7 @@ func TestVoidInvoiceIssuedToVoided(t *testing.T) {
 	t.Parallel()
 	svc := billing.NewService()
 	router := newBillingRouter(t, svc)
-	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
+	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, true)
 
 	inv := createInvoice(t, router, token, "org-demo", "INV-VOID")
 	addItem(t, router, token, "org-demo", inv.Invoice.ID, 5000)
@@ -513,7 +515,7 @@ func TestWriteOffInvoiceAdminOnly(t *testing.T) {
 	svc := billing.NewService()
 	router := newBillingRouter(t, svc)
 	billingToken := issueSessionToken(t, router, "org-demo", []string{"billing"}, false)
-	adminToken := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
+	adminToken := issueSessionToken(t, router, "org-demo", []string{"admin"}, true)
 
 	inv := createInvoice(t, router, adminToken, "org-demo", "INV-WO")
 	addItem(t, router, adminToken, "org-demo", inv.Invoice.ID, 5000)
@@ -539,8 +541,10 @@ func TestWriteOffInvoiceAdminOnly(t *testing.T) {
 		t.Fatalf("expected 200 for admin write-off, got %d: %s", rr2.Code, rr2.Body.String())
 	}
 	var env struct {
-		Invoice struct{ Status string `json:"status"` } `json:"invoice"`
-		LedgerEvent ledgerEvEnvelope                    `json:"ledger_event"`
+		Invoice struct {
+			Status string `json:"status"`
+		} `json:"invoice"`
+		LedgerEvent ledgerEvEnvelope `json:"ledger_event"`
 	}
 	json.NewDecoder(rr2.Body).Decode(&env)
 	if env.Invoice.Status != "written_off" {
@@ -557,7 +561,7 @@ func TestRecordPaymentSucceeded(t *testing.T) {
 	t.Parallel()
 	svc := billing.NewService()
 	router := newBillingRouter(t, svc)
-	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
+	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, true)
 
 	inv := createInvoice(t, router, token, "org-demo", "INV-PAY")
 	addItem(t, router, token, "org-demo", inv.Invoice.ID, 30000)
@@ -582,7 +586,7 @@ func TestRecordPaymentUpdatesInvoiceStatusPaid(t *testing.T) {
 	t.Parallel()
 	svc := billing.NewService()
 	router := newBillingRouter(t, svc)
-	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
+	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, true)
 
 	inv := createInvoice(t, router, token, "org-demo", "INV-PAID")
 	addItem(t, router, token, "org-demo", inv.Invoice.ID, 10000)
@@ -608,7 +612,7 @@ func TestRecordPartialPaymentStatus(t *testing.T) {
 	t.Parallel()
 	svc := billing.NewService()
 	router := newBillingRouter(t, svc)
-	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
+	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, true)
 
 	inv := createInvoice(t, router, token, "org-demo", "INV-PARTIAL")
 	addItem(t, router, token, "org-demo", inv.Invoice.ID, 20000)
@@ -634,7 +638,7 @@ func TestRecordPaymentExceedsBalance(t *testing.T) {
 	t.Parallel()
 	svc := billing.NewService()
 	router := newBillingRouter(t, svc)
-	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
+	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, true)
 
 	inv := createInvoice(t, router, token, "org-demo", "INV-OVER")
 	addItem(t, router, token, "org-demo", inv.Invoice.ID, 5000)
@@ -656,7 +660,7 @@ func TestListPaymentsForInvoice(t *testing.T) {
 	t.Parallel()
 	svc := billing.NewService()
 	router := newBillingRouter(t, svc)
-	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
+	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, true)
 
 	inv := createInvoice(t, router, token, "org-demo", "INV-LPAY")
 	addItem(t, router, token, "org-demo", inv.Invoice.ID, 20000)
@@ -684,7 +688,7 @@ func TestCreateRefundSuccess(t *testing.T) {
 	t.Parallel()
 	svc := billing.NewService()
 	router := newBillingRouter(t, svc)
-	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
+	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, true)
 
 	inv := createInvoice(t, router, token, "org-demo", "INV-REFUND")
 	addItem(t, router, token, "org-demo", inv.Invoice.ID, 20000)
@@ -692,9 +696,9 @@ func TestCreateRefundSuccess(t *testing.T) {
 	payEnv := recordPaymentReq(t, router, token, "org-demo", inv.Invoice.ID, 20000)
 
 	body := billingBody(map[string]any{
-		"payment_id":  payEnv.Payment.ID,
+		"payment_id":   payEnv.Payment.ID,
 		"amount_cents": 20000,
-		"reason":      "Swimmer withdrew from program",
+		"reason":       "Swimmer withdrew from program",
 	})
 	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/invoices/%s/refunds", inv.Invoice.ID), strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -719,11 +723,38 @@ func TestCreateRefundSuccess(t *testing.T) {
 	}
 }
 
-func TestCreateRefundUpdatesInvoiceStatusFull(t *testing.T) {
+func TestCreateRefundRequiresMFA(t *testing.T) {
 	t.Parallel()
 	svc := billing.NewService()
 	router := newBillingRouter(t, svc)
 	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
+
+	inv := createInvoice(t, router, token, "org-demo", "INV-REFUND-MFA")
+	addItem(t, router, token, "org-demo", inv.Invoice.ID, 20000)
+	issueInvoiceReq(t, router, token, "org-demo", inv.Invoice.ID)
+	payEnv := recordPaymentReq(t, router, token, "org-demo", inv.Invoice.ID, 20000)
+
+	body := billingBody(map[string]any{
+		"payment_id":   payEnv.Payment.ID,
+		"amount_cents": 20000,
+		"reason":       "Needs MFA",
+	})
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/invoices/%s/refunds", inv.Invoice.ID), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Org-Id", "org-demo")
+	req.Header.Set("Authorization", "Bearer "+token)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestCreateRefundUpdatesInvoiceStatusFull(t *testing.T) {
+	t.Parallel()
+	svc := billing.NewService()
+	router := newBillingRouter(t, svc)
+	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, true)
 
 	inv := createInvoice(t, router, token, "org-demo", "INV-RFULL")
 	addItem(t, router, token, "org-demo", inv.Invoice.ID, 10000)
@@ -731,9 +762,9 @@ func TestCreateRefundUpdatesInvoiceStatusFull(t *testing.T) {
 	payEnv := recordPaymentReq(t, router, token, "org-demo", inv.Invoice.ID, 10000)
 
 	body := billingBody(map[string]any{
-		"payment_id":  payEnv.Payment.ID,
+		"payment_id":   payEnv.Payment.ID,
 		"amount_cents": 10000,
-		"reason":      "Full refund",
+		"reason":       "Full refund",
 	})
 	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/invoices/%s/refunds", inv.Invoice.ID), strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -758,11 +789,119 @@ func TestCreateRefundUpdatesInvoiceStatusFull(t *testing.T) {
 	}
 }
 
+func TestCreateRefundForStripePaymentStoresStripeRefundID(t *testing.T) {
+	t.Parallel()
+	svc := billing.NewService()
+	router := newBillingRouter(t, svc)
+	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, true)
+
+	inv := createInvoice(t, router, token, "org-demo", "INV-RSTRIPE")
+	addItem(t, router, token, "org-demo", inv.Invoice.ID, 10000)
+	issueInvoiceReq(t, router, token, "org-demo", inv.Invoice.ID)
+
+	paymentBody := billingBody(map[string]any{
+		"amount_cents":             10000,
+		"method":                   "stripe",
+		"stripe_payment_intent_id": "pi_test_refundable",
+	})
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/invoices/%s/payments", inv.Invoice.ID), strings.NewReader(paymentBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Org-Id", "org-demo")
+	req.Header.Set("Authorization", "Bearer "+token)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("record stripe payment: expected 201, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var payEnv paymentEnvelope
+	if err := json.NewDecoder(rr.Body).Decode(&payEnv); err != nil {
+		t.Fatalf("decode stripe payment: %v", err)
+	}
+
+	refundBody := billingBody(map[string]any{
+		"payment_id":   payEnv.Payment.ID,
+		"amount_cents": 10000,
+		"reason":       "Requested by customer",
+	})
+	req = httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/invoices/%s/refunds", inv.Invoice.ID), strings.NewReader(refundBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Org-Id", "org-demo")
+	req.Header.Set("Authorization", "Bearer "+token)
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("refund stripe payment: expected 201, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var env refundEnvelope
+	if err := json.NewDecoder(rr.Body).Decode(&env); err != nil {
+		t.Fatalf("decode refund: %v", err)
+	}
+	if env.Refund.StripeRefundID == "" {
+		t.Fatal("expected stripe_refund_id to be recorded for stripe-backed refund")
+	}
+}
+
+func TestCreateRefundValidatesLocallyBeforeCallingStripe(t *testing.T) {
+	t.Parallel()
+
+	svc := billing.NewService()
+	stripeStub := stripelib.NewStubClient()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	router := NewRouterWithServices(
+		Config{AppEnv: "test", Auth: AuthConfig{EnableDevStubTokens: true}},
+		logger,
+		nil, nil, nil, nil, nil, nil, nil, svc, stripeStub, nil, nil, nil, nil,
+	)
+	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, true)
+
+	inv := createInvoice(t, router, token, "org-demo", "INV-RPRECHECK")
+	addItem(t, router, token, "org-demo", inv.Invoice.ID, 5000)
+	issueInvoiceReq(t, router, token, "org-demo", inv.Invoice.ID)
+
+	paymentBody := billingBody(map[string]any{
+		"amount_cents":             5000,
+		"method":                   "stripe",
+		"stripe_payment_intent_id": "pi_test_preflight",
+	})
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/invoices/%s/payments", inv.Invoice.ID), strings.NewReader(paymentBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Org-Id", "org-demo")
+	req.Header.Set("Authorization", "Bearer "+token)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("record stripe payment: expected 201, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var payEnv paymentEnvelope
+	if err := json.NewDecoder(rr.Body).Decode(&payEnv); err != nil {
+		t.Fatalf("decode stripe payment: %v", err)
+	}
+
+	refundBody := billingBody(map[string]any{
+		"payment_id":   payEnv.Payment.ID,
+		"amount_cents": 6000,
+		"reason":       "Too much",
+	})
+	req = httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/invoices/%s/refunds", inv.Invoice.ID), strings.NewReader(refundBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Org-Id", "org-demo")
+	req.Header.Set("Authorization", "Bearer "+token)
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("refund should fail local validation first: expected 422, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if got := len(stripeStub.CreatedRefunds()); got != 0 {
+		t.Fatalf("expected Stripe not to be called when local validation fails, got %d refund calls", got)
+	}
+}
+
 func TestRefundExceedsPaymentAmount(t *testing.T) {
 	t.Parallel()
 	svc := billing.NewService()
 	router := newBillingRouter(t, svc)
-	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
+	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, true)
 
 	inv := createInvoice(t, router, token, "org-demo", "INV-REXCEED")
 	addItem(t, router, token, "org-demo", inv.Invoice.ID, 5000)
@@ -770,9 +909,9 @@ func TestRefundExceedsPaymentAmount(t *testing.T) {
 	payEnv := recordPaymentReq(t, router, token, "org-demo", inv.Invoice.ID, 5000)
 
 	body := billingBody(map[string]any{
-		"payment_id":  payEnv.Payment.ID,
+		"payment_id":   payEnv.Payment.ID,
 		"amount_cents": 9999,
-		"reason":      "Too much",
+		"reason":       "Too much",
 	})
 	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/invoices/%s/refunds", inv.Invoice.ID), strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -789,7 +928,7 @@ func TestRefundRequiresReason(t *testing.T) {
 	t.Parallel()
 	svc := billing.NewService()
 	router := newBillingRouter(t, svc)
-	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
+	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, true)
 
 	inv := createInvoice(t, router, token, "org-demo", "INV-RNOREASON")
 	addItem(t, router, token, "org-demo", inv.Invoice.ID, 5000)
@@ -797,9 +936,9 @@ func TestRefundRequiresReason(t *testing.T) {
 	payEnv := recordPaymentReq(t, router, token, "org-demo", inv.Invoice.ID, 5000)
 
 	body := billingBody(map[string]any{
-		"payment_id":  payEnv.Payment.ID,
+		"payment_id":   payEnv.Payment.ID,
 		"amount_cents": 5000,
-		"reason":      "",
+		"reason":       "",
 	})
 	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/invoices/%s/refunds", inv.Invoice.ID), strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -817,7 +956,7 @@ func TestRefundOnWrittenOffInvoiceRejected(t *testing.T) {
 	t.Parallel()
 	svc := billing.NewService()
 	router := newBillingRouter(t, svc)
-	adminToken := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
+	adminToken := issueSessionToken(t, router, "org-demo", []string{"admin"}, true)
 
 	// Create, add item, issue, record partial payment, then write off.
 	inv := createInvoice(t, router, adminToken, "org-demo", "INV-WO-REFUND")

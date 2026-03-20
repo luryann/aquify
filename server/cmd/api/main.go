@@ -52,6 +52,7 @@ import (
 	"time"
 
 	"github.com/dareaquatics/aquify/server/internal/app"
+	"github.com/dareaquatics/aquify/server/internal/telemetry"
 )
 
 func main() {
@@ -61,8 +62,26 @@ func main() {
 		&slog.HandlerOptions{Level: slog.LevelInfo},
 	))
 
+	// Initialise OpenTelemetry tracing.
+	telCfg := telemetry.Config{
+		ServiceName:    cfg.Telemetry.ServiceName,
+		ServiceVersion: cfg.Telemetry.ServiceVersion,
+		OTLPEndpoint:   cfg.Telemetry.OTLPEndpoint,
+		SampleRate:     cfg.Telemetry.SampleRate,
+	}
+	telShutdown, err := telemetry.Setup(context.Background(), telCfg, logger)
+	if err != nil {
+		logger.Error("telemetry setup failed", "error", err)
+		os.Exit(1)
+	}
+
 	// Build background workers (not started yet).
-	ws, sched := app.BuildWorkers(cfg, logger)
+	ws, sched := app.BuildWorkers(cfg, logger, nil, nil, nil)
+
+	if err := app.ValidateProviderConfig(cfg); err != nil {
+		logger.Error("startup config error", "error", err)
+		os.Exit(1)
+	}
 
 	// Build the HTTP router with the pre-configured worker server.
 	handler := app.NewRouterWithServices(cfg, logger,
@@ -105,6 +124,11 @@ func main() {
 
 		if err := httpServer.Shutdown(shutdownCtx); err != nil {
 			logger.Error("http server shutdown error", "error", err)
+		}
+
+		// Flush remaining OTel spans before exit.
+		if flushErr := telShutdown(shutdownCtx); flushErr != nil {
+			logger.Warn("telemetry shutdown error", "error", flushErr)
 		}
 
 		sched.Stop()

@@ -66,6 +66,7 @@ type Config struct {
 }
 
 type OIDCConfig struct {
+	AuthorizeURL    string
 	TokenURL        string
 	JWKSURL         string
 	RedirectURL     string
@@ -99,6 +100,8 @@ type Service struct {
 
 type SessionInput struct {
 	UserID           string
+	Email            string
+	Name             string
 	OrgID            string
 	HouseholdID      string
 	Roles            []string
@@ -114,6 +117,8 @@ type SessionTokens struct {
 
 type OIDCCallbackResult struct {
 	UserID string   `json:"user_id"`
+	Email  string   `json:"email,omitempty"`
+	Name   string   `json:"name,omitempty"`
 	OrgID  string   `json:"org_id"`
 	Roles  []string `json:"roles"`
 	SessionTokens
@@ -182,6 +187,8 @@ type oidcStatePayload struct {
 
 type idTokenClaims struct {
 	Subject string
+	Email   string
+	Name    string
 	Issuer  string
 	Nonce   string
 	OrgID   string
@@ -229,18 +236,51 @@ func NewService(cfg Config) *Service {
 	}
 	if cfg.EnableDevStubTokens {
 		service.staticPrincipals = map[string]*appmiddleware.Principal{
-			"stub-owner":     {UserID: "owner-user", OrgID: "org-demo", Roles: []string{"owner"}},
-			"stub-admin":     {UserID: "admin-user", OrgID: "org-demo", Roles: []string{"admin"}},
-			"stub-admin-mfa": {UserID: "admin-user", OrgID: "org-demo", Roles: []string{"admin"}, MFAAuthenticated: true},
-			"stub-coach":     {UserID: "coach-user", OrgID: "org-demo", Roles: []string{"coach"}},
-			"stub-billing":   {UserID: "billing-user", OrgID: "org-demo", Roles: []string{"billing"}},
-			"stub-parent":    {UserID: "parent-user", OrgID: "org-demo", Roles: []string{"parent"}},
-			"stub-readonly":  {UserID: "readonly-user", OrgID: "org-demo", Roles: []string{"read-only"}},
-			"stub-swimmer":   {UserID: "swimmer-user", OrgID: "org-demo", Roles: []string{"swimmer"}},
+			"stub-owner":     {UserID: "owner-user", Email: "owner@dare.local", Name: "Dev Owner", OrgID: "org-demo", Roles: []string{"owner"}},
+			"stub-admin":     {UserID: "admin-user", Email: "admin@dare.local", Name: "Dev Admin", OrgID: "org-demo", Roles: []string{"admin"}},
+			"stub-admin-mfa": {UserID: "admin-user", Email: "admin@dare.local", Name: "Dev Admin", OrgID: "org-demo", Roles: []string{"admin"}, MFAAuthenticated: true},
+			"stub-coach":     {UserID: "coach-user", Email: "coach@dare.local", Name: "Dev Coach", OrgID: "org-demo", Roles: []string{"coach"}},
+			"stub-billing":   {UserID: "billing-user", Email: "billing@dare.local", Name: "Dev Billing", OrgID: "org-demo", Roles: []string{"billing"}},
+			"stub-parent":    {UserID: "parent-user", Email: "parent@dare.local", Name: "Dev Parent", OrgID: "org-demo", Roles: []string{"parent"}},
+			"stub-readonly":  {UserID: "readonly-user", Email: "readonly@dare.local", Name: "Dev Read-Only", OrgID: "org-demo", Roles: []string{"read-only"}},
+			"stub-swimmer":   {UserID: "swimmer-user", Email: "swimmer@dare.local", Name: "Emma Chen", OrgID: "org-demo", Roles: []string{"swimmer"}},
 		}
 	}
 
 	return service
+}
+
+func (s *Service) BeginOIDCLogin(loginHint, orgID string) (string, error) {
+	if !s.oidcAuthorizeConfigured() {
+		return "", ErrOIDCNotConfigured
+	}
+
+	state, nonce, err := signOIDCState(oidcStatePayload{
+		Nonce: randomToken(24),
+		Exp:   time.Now().UTC().Add(10 * time.Minute).Unix(),
+		OrgID: strings.TrimSpace(orgID),
+	}, s.cfg.OIDC.StateSigningKey)
+	if err != nil {
+		return "", err
+	}
+
+	q := url.Values{}
+	q.Set("client_id", s.cfg.OIDC.ClientID)
+	q.Set("redirect_uri", s.cfg.OIDC.RedirectURL)
+	q.Set("response_type", "code")
+	q.Set("scope", "openid profile email")
+	q.Set("state", state)
+	q.Set("nonce", nonce)
+	if hint := strings.TrimSpace(loginHint); hint != "" {
+		q.Set("login_hint", hint)
+	}
+
+	base, err := url.Parse(s.cfg.OIDC.AuthorizeURL)
+	if err != nil {
+		return "", err
+	}
+	base.RawQuery = q.Encode()
+	return base.String(), nil
 }
 
 func (s *Service) OIDCCallback(code, state, _ string) (OIDCCallbackResult, error) {
@@ -297,6 +337,8 @@ func (s *Service) OIDCCallback(code, state, _ string) (OIDCCallbackResult, error
 
 	session, err := s.IssueSession(SessionInput{
 		UserID:           claims.Subject,
+		Email:            claims.Email,
+		Name:             claims.Name,
 		OrgID:            resolvedOrgID,
 		Roles:            roles,
 		ExpiresIn:        24 * time.Hour,
@@ -308,6 +350,8 @@ func (s *Service) OIDCCallback(code, state, _ string) (OIDCCallbackResult, error
 
 	return OIDCCallbackResult{
 		UserID:        claims.Subject,
+		Email:         claims.Email,
+		Name:          claims.Name,
 		OrgID:         resolvedOrgID,
 		Roles:         roles,
 		SessionTokens: session,
@@ -334,6 +378,8 @@ func (s *Service) IssueSession(input SessionInput) (SessionTokens, error) {
 		RefreshToken: refreshToken,
 		Principal: appmiddleware.Principal{
 			UserID:           input.UserID,
+			Email:            strings.TrimSpace(input.Email),
+			Name:             strings.TrimSpace(input.Name),
 			OrgID:            input.OrgID,
 			HouseholdID:      input.HouseholdID,
 			Roles:            append([]string{}, input.Roles...),
@@ -386,6 +432,8 @@ func (s *Service) RefreshSession(refreshToken string) (SessionTokens, error) {
 		RefreshToken: nextRefresh,
 		Principal: appmiddleware.Principal{
 			UserID:           record.Principal.UserID,
+			Email:            record.Principal.Email,
+			Name:             record.Principal.Name,
 			OrgID:            record.Principal.OrgID,
 			HouseholdID:      record.Principal.HouseholdID,
 			Roles:            append([]string{}, record.Principal.Roles...),
@@ -453,6 +501,18 @@ func (s *Service) ResolvePrincipal(token string) (*appmiddleware.Principal, bool
 	principal := clonePrincipal(&record.Principal)
 	s.mu.RUnlock()
 	return principal, true
+}
+
+func (s *Service) ListMFAFactors(userID string) []MFAFactor {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	records := s.mfaFactorsByUser[userID]
+	out := make([]MFAFactor, 0, len(records))
+	for _, record := range records {
+		out = append(out, record.Factor)
+	}
+	return out
 }
 
 func (s *Service) EnrollMFA(userID, orgID, factorType, label string) (MFAFactor, error) {
@@ -552,7 +612,10 @@ func (s *Service) ChallengeMFA(principal *appmiddleware.Principal, factorID, cha
 			RefreshToken: refreshToken,
 			Principal: appmiddleware.Principal{
 				UserID:           principal.UserID,
+				Email:            principal.Email,
+				Name:             principal.Name,
 				OrgID:            principal.OrgID,
+				HouseholdID:      principal.HouseholdID,
 				Roles:            append([]string{}, principal.Roles...),
 				MFAAuthenticated: true,
 			},
@@ -606,6 +669,14 @@ func (s *Service) oidcConfigured() bool {
 		strings.TrimSpace(oidc.RedirectURL) != "" &&
 		strings.TrimSpace(oidc.ClientID) != "" &&
 		strings.TrimSpace(oidc.ClientSecret) != "" &&
+		strings.TrimSpace(oidc.StateSigningKey) != ""
+}
+
+func (s *Service) oidcAuthorizeConfigured() bool {
+	oidc := s.cfg.OIDC
+	return strings.TrimSpace(oidc.AuthorizeURL) != "" &&
+		strings.TrimSpace(oidc.RedirectURL) != "" &&
+		strings.TrimSpace(oidc.ClientID) != "" &&
 		strings.TrimSpace(oidc.StateSigningKey) != ""
 }
 
@@ -685,6 +756,28 @@ func validateOIDCState(state, signingKey string, now time.Time) (oidcStatePayloa
 	return payload, nil
 }
 
+func signOIDCState(payload oidcStatePayload, signingKey string) (string, string, error) {
+	payload.Nonce = strings.TrimSpace(payload.Nonce)
+	if payload.Nonce == "" {
+		payload.Nonce = randomToken(24)
+	}
+	if payload.Exp == 0 {
+		payload.Exp = time.Now().UTC().Add(10 * time.Minute).Unix()
+	}
+
+	payloadRaw, err := json.Marshal(payload)
+	if err != nil {
+		return "", "", err
+	}
+	encodedPayload := base64.RawURLEncoding.EncodeToString(payloadRaw)
+
+	h := hmac.New(sha256.New, []byte(signingKey))
+	_, _ = h.Write([]byte(encodedPayload))
+	signature := base64.RawURLEncoding.EncodeToString(h.Sum(nil))
+
+	return encodedPayload + "." + signature, payload.Nonce, nil
+}
+
 func (s *Service) verifyAndParseIDToken(idToken string, now time.Time) (idTokenClaims, error) {
 	parts := strings.Split(strings.TrimSpace(idToken), ".")
 	if len(parts) != 3 {
@@ -722,6 +815,8 @@ func (s *Service) verifyAndParseIDToken(idToken string, now time.Time) (idTokenC
 
 	claims := idTokenClaims{
 		Subject: strings.TrimSpace(toString(payload["sub"])),
+		Email:   firstNonEmptyString(payload["email"], payload["preferred_username"]),
+		Name:    firstNonEmptyString(payload["name"], payload["given_name"]),
 		Issuer:  strings.TrimSpace(toString(payload["iss"])),
 		Nonce:   strings.TrimSpace(toString(payload["nonce"])),
 		OrgID:   strings.TrimSpace(toString(payload["org_id"])),
@@ -942,6 +1037,15 @@ func toInt64(value any) int64 {
 	}
 }
 
+func firstNonEmptyString(values ...any) string {
+	for _, value := range values {
+		if s := strings.TrimSpace(toString(value)); s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
 func toStringSlice(value any) []string {
 	switch typed := value.(type) {
 	case string:
@@ -1027,6 +1131,8 @@ func clonePrincipal(in *appmiddleware.Principal) *appmiddleware.Principal {
 	}
 	return &appmiddleware.Principal{
 		UserID:           in.UserID,
+		Email:            in.Email,
+		Name:             in.Name,
 		OrgID:            in.OrgID,
 		HouseholdID:      in.HouseholdID,
 		Roles:            append([]string{}, in.Roles...),
