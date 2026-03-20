@@ -19,7 +19,6 @@
 //
 //  ALL RIGHTS NOT EXPRESSLY GRANTED ARE RESERVED BY RYAN LU.
 
-
 // Package comms provides the in-memory service for announcements, email
 // campaigns, email delivery tracking, and the suppression list.
 //
@@ -61,7 +60,7 @@ type Announcement struct {
 	OrgID       string     `json:"org_id"`
 	Title       string     `json:"title"`
 	Body        string     `json:"body"`
-	Status      string     `json:"status"` // draft | published | archived
+	Status      string     `json:"status"`   // draft | published | archived
 	Audience    string     `json:"audience"` // all | group
 	GroupID     string     `json:"group_id,omitempty"`
 	PublishedAt *time.Time `json:"published_at,omitempty"`
@@ -74,43 +73,43 @@ type Announcement struct {
 
 // EmailCampaign is a bulk-email job targeting all org members or a group.
 type EmailCampaign struct {
-	ID               string     `json:"id"`
-	OrgID            string     `json:"org_id"`
-	Name             string     `json:"name"`
-	Subject          string     `json:"subject"`
-	BodyHTML         string     `json:"body_html"`
-	BodyText         string     `json:"body_text,omitempty"`
-	FromName         string     `json:"from_name"`
-	FromEmail        string     `json:"from_email"`
-	Audience         string     `json:"audience"` // all | group
-	GroupID          string     `json:"group_id,omitempty"`
-	Status           string     `json:"status"` // draft | sending | sent | failed | cancelled
-	SentAt           *time.Time `json:"sent_at,omitempty"`
-	TotalRecipients  int        `json:"total_recipients"`
-	SentCount        int        `json:"sent_count"`
-	FailedCount      int        `json:"failed_count"`
-	SuppressedCount  int        `json:"suppressed_count"`
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at"`
-	CreatedBy        string     `json:"created_by"`
-	UpdatedBy        string     `json:"updated_by"`
+	ID              string     `json:"id"`
+	OrgID           string     `json:"org_id"`
+	Name            string     `json:"name"`
+	Subject         string     `json:"subject"`
+	BodyHTML        string     `json:"body_html"`
+	BodyText        string     `json:"body_text,omitempty"`
+	FromName        string     `json:"from_name"`
+	FromEmail       string     `json:"from_email"`
+	Audience        string     `json:"audience"` // all | group
+	GroupID         string     `json:"group_id,omitempty"`
+	Status          string     `json:"status"` // draft | sending | sent | failed | cancelled
+	SentAt          *time.Time `json:"sent_at,omitempty"`
+	TotalRecipients int        `json:"total_recipients"`
+	SentCount       int        `json:"sent_count"`
+	FailedCount     int        `json:"failed_count"`
+	SuppressedCount int        `json:"suppressed_count"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	CreatedBy       string     `json:"created_by"`
+	UpdatedBy       string     `json:"updated_by"`
 }
 
 // EmailDelivery records a single email send attempt for a recipient.
 type EmailDelivery struct {
-	ID                 string     `json:"id"`
-	OrgID              string     `json:"org_id"`
-	CampaignID         string     `json:"campaign_id,omitempty"`
-	RecipientEmail     string     `json:"recipient_email"`
-	RecipientUserID    string     `json:"recipient_user_id,omitempty"`
-	Status             string     `json:"status"` // pending | sent | delivered | bounced | failed | suppressed
-	ProviderMessageID  string     `json:"provider_message_id,omitempty"`
-	ErrorMessage       string     `json:"error_message,omitempty"`
-	SentAt             *time.Time `json:"sent_at,omitempty"`
-	DeliveredAt        *time.Time `json:"delivered_at,omitempty"`
-	BouncedAt          *time.Time `json:"bounced_at,omitempty"`
-	CreatedAt          time.Time  `json:"created_at"`
-	UpdatedAt          time.Time  `json:"updated_at"`
+	ID                string     `json:"id"`
+	OrgID             string     `json:"org_id"`
+	CampaignID        string     `json:"campaign_id,omitempty"`
+	RecipientEmail    string     `json:"recipient_email"`
+	RecipientUserID   string     `json:"recipient_user_id,omitempty"`
+	Status            string     `json:"status"` // pending | sent | delivered | bounced | failed | suppressed
+	ProviderMessageID string     `json:"provider_message_id,omitempty"`
+	ErrorMessage      string     `json:"error_message,omitempty"`
+	SentAt            *time.Time `json:"sent_at,omitempty"`
+	DeliveredAt       *time.Time `json:"delivered_at,omitempty"`
+	BouncedAt         *time.Time `json:"bounced_at,omitempty"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
 }
 
 // SuppressionEntry records an email address that should never receive sends.
@@ -169,6 +168,18 @@ type AddSuppressionInput struct {
 	CreatedBy string `json:"-"`
 }
 
+// PostmarkEventInput represents an inbound Postmark delivery-state webhook.
+type PostmarkEventInput struct {
+	OrgID             string
+	MessageID         string
+	RecipientEmail    string
+	RecordType        string
+	OccurredAt        time.Time
+	Details           string
+	SuppressionReason string
+	SuppressSending   bool
+}
+
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 // Service is the in-memory communications service.
@@ -185,10 +196,10 @@ type Service struct {
 // NewService returns a new in-memory Service with a stub Postmark client.
 func NewService() *Service {
 	return &Service{
-		announcements: make(map[string]*Announcement),
-		campaigns:     make(map[string]*EmailCampaign),
-		deliveries:    make(map[string]*EmailDelivery),
-		suppression:   make(map[string]*SuppressionEntry),
+		announcements:  make(map[string]*Announcement),
+		campaigns:      make(map[string]*EmailCampaign),
+		deliveries:     make(map[string]*EmailDelivery),
+		suppression:    make(map[string]*SuppressionEntry),
 		postmarkClient: postmark.NewStubClient(),
 	}
 }
@@ -444,6 +455,10 @@ func (s *Service) SendCampaign(ctx context.Context, orgID, campaignID string, in
 				TextBody:  c.BodyText,
 				FromName:  c.FromName,
 				FromEmail: c.FromEmail,
+				Metadata: map[string]string{
+					"org_id":      orgID,
+					"campaign_id": campaignID,
+				},
 			})
 			now := time.Now().UTC()
 			if err != nil {
@@ -510,6 +525,88 @@ func (s *Service) ListDeliveries(orgID, campaignID string) ([]*EmailDelivery, er
 	return out, nil
 }
 
+// ApplyPostmarkEvent updates delivery and suppression state from a Postmark webhook.
+func (s *Service) ApplyPostmarkEvent(inp PostmarkEventInput) error {
+	email := strings.ToLower(strings.TrimSpace(inp.RecipientEmail))
+	recordType := strings.TrimSpace(inp.RecordType)
+	orgID := strings.TrimSpace(inp.OrgID)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var delivery *EmailDelivery
+	if strings.TrimSpace(inp.MessageID) != "" {
+		for _, candidate := range s.deliveries {
+			if candidate.ProviderMessageID != inp.MessageID {
+				continue
+			}
+			if email != "" && !strings.EqualFold(candidate.RecipientEmail, email) {
+				continue
+			}
+			delivery = candidate
+			if orgID == "" {
+				orgID = candidate.OrgID
+			}
+			break
+		}
+	}
+
+	switch recordType {
+	case "Delivery":
+		if delivery == nil {
+			return ErrDeliveryNotFound
+		}
+		now := occurredAtOrNow(inp.OccurredAt)
+		delivery.Status = "delivered"
+		delivery.DeliveredAt = &now
+		delivery.UpdatedAt = now
+		delivery.ErrorMessage = inp.Details
+		return nil
+	case "Bounce":
+		if delivery == nil && (orgID == "" || email == "") {
+			return ErrDeliveryNotFound
+		}
+		now := occurredAtOrNow(inp.OccurredAt)
+		if delivery != nil {
+			delivery.Status = "bounced"
+			delivery.BouncedAt = &now
+			delivery.UpdatedAt = now
+			delivery.ErrorMessage = inp.Details
+		}
+		if orgID != "" && email != "" {
+			s.upsertSuppressionLocked(orgID, email, "bounce", "postmark-webhook")
+		}
+		return nil
+	case "SpamComplaint":
+		if delivery == nil && (orgID == "" || email == "") {
+			return ErrDeliveryNotFound
+		}
+		now := occurredAtOrNow(inp.OccurredAt)
+		if delivery != nil {
+			delivery.Status = "bounced"
+			delivery.BouncedAt = &now
+			delivery.UpdatedAt = now
+			delivery.ErrorMessage = inp.Details
+		}
+		if orgID != "" && email != "" {
+			s.upsertSuppressionLocked(orgID, email, "complaint", "postmark-webhook")
+		}
+		return nil
+	case "SubscriptionChange":
+		if orgID == "" || email == "" {
+			return nil
+		}
+		if inp.SuppressSending {
+			s.upsertSuppressionLocked(orgID, email, normalizeSuppressionReason(inp.SuppressionReason), "postmark-webhook")
+		} else {
+			s.removeSuppressionByEmailLocked(orgID, email)
+		}
+		return nil
+	default:
+		return nil
+	}
+}
+
 // ─── Suppression operations ───────────────────────────────────────────────────
 
 // AddSuppression adds an email to the suppression list for the org.
@@ -518,22 +615,7 @@ func (s *Service) AddSuppression(inp AddSuppressionInput) (*SuppressionEntry, er
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	key := suppressionKey(inp.OrgID, email)
-	if _, exists := s.suppression[key]; exists {
-		return nil, ErrDuplicateSuppression
-	}
-
-	entry := &SuppressionEntry{
-		ID:        newID(),
-		OrgID:     inp.OrgID,
-		Email:     email,
-		Reason:    inp.Reason,
-		CreatedAt: time.Now().UTC(),
-		CreatedBy: inp.CreatedBy,
-	}
-	s.suppression[key] = entry
-	return entry, nil
+	return s.addSuppressionLocked(inp.OrgID, email, inp.Reason, inp.CreatedBy)
 }
 
 // RemoveSuppression removes an entry from the suppression list by ID.
@@ -565,4 +647,52 @@ func (s *Service) ListSuppression(orgID string) ([]*SuppressionEntry, error) {
 		return out[i].CreatedAt.Before(out[j].CreatedAt)
 	})
 	return out, nil
+}
+
+func (s *Service) addSuppressionLocked(orgID, email, reason, createdBy string) (*SuppressionEntry, error) {
+	key := suppressionKey(orgID, email)
+	if _, exists := s.suppression[key]; exists {
+		return nil, ErrDuplicateSuppression
+	}
+	entry := &SuppressionEntry{
+		ID:        newID(),
+		OrgID:     orgID,
+		Email:     email,
+		Reason:    reason,
+		CreatedAt: time.Now().UTC(),
+		CreatedBy: createdBy,
+	}
+	s.suppression[key] = entry
+	return entry, nil
+}
+
+func (s *Service) upsertSuppressionLocked(orgID, email, reason, createdBy string) {
+	key := suppressionKey(orgID, email)
+	if existing, ok := s.suppression[key]; ok {
+		existing.Reason = reason
+		return
+	}
+	_, _ = s.addSuppressionLocked(orgID, email, reason, createdBy)
+}
+
+func (s *Service) removeSuppressionByEmailLocked(orgID, email string) {
+	delete(s.suppression, suppressionKey(orgID, email))
+}
+
+func occurredAtOrNow(ts time.Time) time.Time {
+	if ts.IsZero() {
+		return time.Now().UTC()
+	}
+	return ts.UTC()
+}
+
+func normalizeSuppressionReason(reason string) string {
+	switch strings.TrimSpace(strings.ToLower(reason)) {
+	case "hardbounce", "bounce":
+		return "bounce"
+	case "spamcomplaint", "complaint":
+		return "complaint"
+	default:
+		return "manual"
+	}
 }

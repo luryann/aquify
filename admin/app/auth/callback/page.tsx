@@ -3,12 +3,15 @@
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
+import { useSession } from '@/lib/session'
+import { destinationForRole, roleRequiresMFA } from '@/lib/auth-routing'
 
 // ─── Inner component (uses useSearchParams) ───────────────────────────────────
 
 function CallbackInner() {
   const router = useRouter()
   const params = useSearchParams()
+  const { refreshSession } = useSession()
   const [stage, setStage] = useState<'processing' | 'mfa' | 'error'>('processing')
   const [errorMsg, setErrorMsg] = useState('')
   const [dots, setDots] = useState(1)
@@ -20,27 +23,72 @@ function CallbackInner() {
   }, [])
 
   useEffect(() => {
-    const error = params.get('error')
-    if (error) {
-      setStage('error')
-      setErrorMsg(params.get('error_description') ?? error)
-      return
+    let cancelled = false
+
+    async function completeCallback() {
+      const error = params.get('error')
+      if (error) {
+        setStage('error')
+        setErrorMsg(params.get('error_description') ?? error)
+        return
+      }
+
+      const code = params.get('code')?.trim() ?? ''
+      const state = params.get('state')?.trim() ?? ''
+      if (!code || !state) {
+        setStage('error')
+        setErrorMsg('Missing authorization code or state from the identity provider.')
+        return
+      }
+
+      try {
+        const res = await fetch('/api/v1/auth/oidc/callback', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include',
+          body: JSON.stringify({ code, state }),
+        })
+
+        if (!res.ok) {
+          let message = 'Unable to complete sign-in.'
+          try {
+            const payload = await res.json() as { message?: string; error?: string }
+            message = payload.message ?? payload.error ?? message
+          } catch {
+            // Use default message.
+          }
+          throw new Error(message)
+        }
+
+        const next = await refreshSession()
+        if (cancelled) return
+
+        if (!next) {
+          throw new Error('Sign-in completed but no active session could be loaded.')
+        }
+
+        if (roleRequiresMFA(next.user.role) && !next.user.mfaAuthenticated) {
+          setStage('mfa')
+          setTimeout(() => router.replace('/mfa'), 400)
+          return
+        }
+
+        router.replace(destinationForRole(next.user.role))
+      } catch (error) {
+        if (cancelled) return
+        setStage('error')
+        setErrorMsg(error instanceof Error ? error.message : 'An error occurred during sign-in. Please try again.')
+      }
     }
 
-    // Simulate token exchange + session creation, then route based on MFA
-    const timer = setTimeout(() => {
-      // In production: POST to /api/v1/auth/sessions/issue with the code param
-      // For dev: skip straight to dashboard
-      const requiresMfa = false // would come from API response
-      if (requiresMfa) {
-        setStage('mfa')
-        setTimeout(() => router.push('/mfa'), 600)
-      } else {
-        router.push('/dashboard')
-      }
-    }, 1800)
-    return () => clearTimeout(timer)
-  }, [params, router])
+    completeCallback()
+
+    return () => {
+      cancelled = true
+    }
+  }, [params, refreshSession, router])
 
   return (
     <div

@@ -7,6 +7,9 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/dareaquatics/aquify/server/internal/app/exports"
+	"github.com/dareaquatics/aquify/server/internal/app/imports"
+	"github.com/dareaquatics/aquify/server/internal/app/reports"
 	"github.com/dareaquatics/aquify/server/internal/workers"
 )
 
@@ -34,7 +37,7 @@ type ProcessDataDeletionPayload struct {
 
 // PurgeExpiredFilesHandler returns a Handler that removes expired temp files
 // (export objects in object storage and expired import upload URLs).
-func PurgeExpiredFilesHandler(logger *slog.Logger) workers.Handler {
+func PurgeExpiredFilesHandler(logger *slog.Logger, importsService *imports.Service, exportsService *exports.Service, reportsService *reports.Service) workers.Handler {
 	return func(ctx context.Context, task *workers.Task) error {
 		var p PurgeExpiredFilesPayload
 		if err := json.Unmarshal(task.Payload, &p); err != nil {
@@ -43,20 +46,45 @@ func PurgeExpiredFilesHandler(logger *slog.Logger) workers.Handler {
 
 		logger.Info("purge expired files: starting", "org_id", p.OrgID)
 
-		// Scaffold: simulate purge work.
-		// Production:
-		//   - List exports.Service.ListExpiredExports(cutoff) → delete from storage
-		//   - List imports.Service.ListExpiredUploadURLs(cutoff) → mark as expired
-		//   - List compliance exports past TTL → transition to "expired"
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(10 * time.Millisecond):
+		cutoff := parseCutoffTime(p.CutoffTime)
+
+		if importsService != nil {
+			for _, artifact := range importsService.ExpirePendingUploads(cutoff) {
+				if artifact.StorageKey != "" {
+					_ = importsService.DeleteArtifact(artifact.StorageKey)
+				}
+			}
+		}
+		if exportsService != nil {
+			for _, artifact := range exportsService.ExpireArtifacts(cutoff) {
+				if artifact.StorageKey != "" {
+					_ = exportsService.DeleteArtifact(artifact.StorageKey)
+				}
+			}
+		}
+		if reportsService != nil {
+			for _, artifact := range reportsService.ExpireArtifacts(cutoff) {
+				if artifact.StorageKey != "" {
+					_ = reportsService.DeleteArtifact(artifact.StorageKey)
+				}
+			}
 		}
 
 		logger.Info("purge expired files: completed", "org_id", p.OrgID)
 		return nil
 	}
+}
+
+func parseCutoffTime(raw string) (cutoff time.Time) {
+	cutoff = time.Now().UTC()
+	if raw == "" {
+		return cutoff
+	}
+	parsed, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return cutoff
+	}
+	return parsed.UTC()
 }
 
 // ProcessDataExportHandler returns a Handler that generates a GDPR/compliance

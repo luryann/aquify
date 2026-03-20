@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/dareaquatics/aquify/server/internal/app/groups"
+	"github.com/dareaquatics/aquify/server/internal/app/members"
 )
 
 // ─── Envelope helpers ─────────────────────────────────────────────────────────
@@ -68,6 +69,17 @@ type waiverEnvelope struct {
 		ID         string `json:"id"`
 		WaiverType string `json:"waiver_type"`
 	} `json:"waiver"`
+}
+
+type registrationsListEnvelope struct {
+	Count         int `json:"count"`
+	Registrations []struct {
+		ID         string `json:"id"`
+		HouseholdID string `json:"household_id"`
+		GroupID    string `json:"group_id"`
+		Season     string `json:"season"`
+		Status     string `json:"status"`
+	} `json:"registrations"`
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -287,6 +299,111 @@ func TestGroupScopedCoachVisibility(t *testing.T) {
 	}
 	if listAdmin.Count != 2 {
 		t.Fatalf("admin expected to see 2 groups, got %d", listAdmin.Count)
+	}
+}
+
+func TestListRegistrationsReturnsLiveData(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	memberSvc := members.NewService()
+	groupSvc := groups.NewService()
+	router := NewRouterWithServices(Config{}, logger, nil, memberSvc, groupSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	adminToken := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
+	parentToken := issueSessionToken(t, router, "org-demo", []string{"parent"}, false)
+
+	createHouseholdReq := httptest.NewRequest(http.MethodPost, "/api/v1/members/households", encodeJSONBody(t, map[string]any{
+		"org_id":         "org-demo",
+		"household_name": "Rivera Family",
+	}))
+	createHouseholdReq.Header.Set("Content-Type", "application/json")
+	createHouseholdReq.Header.Set("X-Org-Id", "org-demo")
+	createHouseholdReq.Header.Set("Authorization", "Bearer "+parentToken)
+	createHouseholdRes := httptest.NewRecorder()
+	router.ServeHTTP(createHouseholdRes, createHouseholdReq)
+	if createHouseholdRes.Code != http.StatusCreated {
+		t.Fatalf("expected household create status %d, got %d body=%s", http.StatusCreated, createHouseholdRes.Code, createHouseholdRes.Body.String())
+	}
+
+	var household householdEnvelope
+	if err := json.Unmarshal(createHouseholdRes.Body.Bytes(), &household); err != nil {
+		t.Fatalf("failed to decode household response: %v", err)
+	}
+
+	createSwimmerReq := httptest.NewRequest(http.MethodPost, "/api/v1/members/swimmers", encodeJSONBody(t, map[string]any{
+		"org_id":        "org-demo",
+		"household_id":  household.Household.ID,
+		"first_name":    "Ava",
+		"last_name":     "Rivera",
+		"date_of_birth": "2012-07-09",
+		"gender":        "female",
+	}))
+	createSwimmerReq.Header.Set("Content-Type", "application/json")
+	createSwimmerReq.Header.Set("X-Org-Id", "org-demo")
+	createSwimmerReq.Header.Set("Authorization", "Bearer "+adminToken)
+	createSwimmerRes := httptest.NewRecorder()
+	router.ServeHTTP(createSwimmerRes, createSwimmerReq)
+	if createSwimmerRes.Code != http.StatusCreated {
+		t.Fatalf("expected swimmer create status %d, got %d body=%s", http.StatusCreated, createSwimmerRes.Code, createSwimmerRes.Body.String())
+	}
+
+	var swimmer swimmerEnvelope
+	if err := json.Unmarshal(createSwimmerRes.Body.Bytes(), &swimmer); err != nil {
+		t.Fatalf("failed to decode swimmer response: %v", err)
+	}
+	groupSvc.SeedSwimmer("org-demo", swimmer.Swimmer.ID, household.Household.ID, "2012-07-09", "female", "active")
+
+	createGroupReq := httptest.NewRequest(http.MethodPost, "/api/v1/groups", encodeJSONBody(t, map[string]any{
+		"code": "senior-a",
+		"name": "Senior A",
+	}))
+	createGroupReq.Header.Set("Content-Type", "application/json")
+	createGroupReq.Header.Set("X-Org-Id", "org-demo")
+	createGroupReq.Header.Set("Authorization", "Bearer "+adminToken)
+	createGroupRes := httptest.NewRecorder()
+	router.ServeHTTP(createGroupRes, createGroupReq)
+	if createGroupRes.Code != http.StatusCreated {
+		t.Fatalf("expected group create status %d, got %d body=%s", http.StatusCreated, createGroupRes.Code, createGroupRes.Body.String())
+	}
+
+	var group groupEnvelope
+	if err := json.Unmarshal(createGroupRes.Body.Bytes(), &group); err != nil {
+		t.Fatalf("failed to decode group response: %v", err)
+	}
+
+	regReq := httptest.NewRequest(http.MethodPost, "/api/v1/registrations", encodeJSONBody(t, map[string]any{
+		"household_id": household.Household.ID,
+		"swimmer_id":   swimmer.Swimmer.ID,
+		"group_id":     group.Group.ID,
+		"season":       "2026-2027",
+	}))
+	regReq.Header.Set("Content-Type", "application/json")
+	regReq.Header.Set("X-Org-Id", "org-demo")
+	regReq.Header.Set("Authorization", "Bearer "+adminToken)
+	regRes := httptest.NewRecorder()
+	router.ServeHTTP(regRes, regReq)
+	if regRes.Code != http.StatusCreated {
+		t.Fatalf("expected registration create status %d, got %d body=%s", http.StatusCreated, regRes.Code, regRes.Body.String())
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/registrations", nil)
+	listReq.Header.Set("X-Org-Id", "org-demo")
+	listReq.Header.Set("Authorization", "Bearer "+adminToken)
+	listRes := httptest.NewRecorder()
+	router.ServeHTTP(listRes, listReq)
+	if listRes.Code != http.StatusOK {
+		t.Fatalf("expected registrations list status %d, got %d body=%s", http.StatusOK, listRes.Code, listRes.Body.String())
+	}
+
+	var env registrationsListEnvelope
+	if err := json.Unmarshal(listRes.Body.Bytes(), &env); err != nil {
+		t.Fatalf("failed to decode registrations list response: %v", err)
+	}
+	if env.Count != 1 {
+		t.Fatalf("expected 1 registration, got %d", env.Count)
+	}
+	if env.Registrations[0].HouseholdID != household.Household.ID || env.Registrations[0].GroupID != group.Group.ID {
+		t.Fatalf("expected registration to include created ids, got %#v", env.Registrations[0])
 	}
 }
 

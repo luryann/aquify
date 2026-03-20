@@ -1,0 +1,6 @@
+# test log
+open testdata/import_report.golden.json
+open testdata/fixtures/valid.sd3
+open testdata/fixtures/sample.cl2
+open testdata/fixtures/valid.sd3
+open testdata/fixtures/malformed.sd3

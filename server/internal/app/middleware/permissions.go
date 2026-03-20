@@ -9,7 +9,10 @@ import (
 type Action string
 
 const (
-	ActionAssignRole Action = "roles.assign"
+	ActionAssignRole       Action = "roles.assign"
+	ActionBillingRefund    Action = "billing.refund.create"
+	ActionBillingVoid      Action = "billing.invoice.void"
+	ActionBillingWriteOff  Action = "billing.invoice.write_off"
 )
 
 var ErrPermissionDenied = errors.New("permission denied")
@@ -22,6 +25,18 @@ type actionRule struct {
 
 var actionRules = map[Action]actionRule{
 	ActionAssignRole: {
+		AllowedRoles: []string{"owner", "admin"},
+		RequireMFA:   true,
+	},
+	ActionBillingRefund: {
+		AllowedRoles: []string{"owner", "admin", "billing"},
+		RequireMFA:   true,
+	},
+	ActionBillingVoid: {
+		AllowedRoles: []string{"owner", "admin"},
+		RequireMFA:   true,
+	},
+	ActionBillingWriteOff: {
 		AllowedRoles: []string{"owner", "admin"},
 		RequireMFA:   true,
 	},

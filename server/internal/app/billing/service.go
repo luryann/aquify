@@ -215,13 +215,22 @@ type RecordPaymentInput struct {
 	StripePaymentIntentID string `json:"stripe_payment_intent_id"`
 	ExternalRef           string `json:"external_ref"`
 	Notes                 string `json:"notes"`
+	PaidAt                string `json:"paid_at"`
 }
 
 // CreateRefundInput holds fields for creating a refund request.
 type CreateRefundInput struct {
-	PaymentID   string `json:"payment_id" validate:"required"`
-	AmountCents int    `json:"amount_cents" validate:"required,gt=0"`
-	Reason      string `json:"reason" validate:"required"`
+	PaymentID      string `json:"payment_id" validate:"required"`
+	AmountCents    int    `json:"amount_cents" validate:"required,gt=0"`
+	Reason         string `json:"reason" validate:"required"`
+	StripeRefundID string `json:"-"`
+}
+
+// RefundPreflight captures the local state validated before an external refund
+// is attempted.
+type RefundPreflight struct {
+	Invoice Invoice
+	Payment Payment
 }
 
 // ListInvoicesFilters supports optional filtering for invoice queries.
@@ -685,6 +694,14 @@ func (s *Service) RecordPayment(orgID, actorID string, principal *appmiddleware.
 	}
 
 	now := time.Now().UTC()
+	paidAt := now
+	if input.PaidAt != "" {
+		parsedPaidAt, err := time.Parse("2006-01-02", strings.TrimSpace(input.PaidAt))
+		if err != nil {
+			return nil, nil, fmt.Errorf("paid_at must use YYYY-MM-DD format: %w", err)
+		}
+		paidAt = parsedPaidAt.UTC()
+	}
 	payment := &Payment{
 		ID:                    newID(),
 		OrgID:                 orgID,
@@ -693,7 +710,7 @@ func (s *Service) RecordPayment(orgID, actorID string, principal *appmiddleware.
 		Method:                input.Method,
 		Status:                "succeeded",
 		StripePaymentIntentID: input.StripePaymentIntentID,
-		PaidAt:                &now,
+		PaidAt:                &paidAt,
 		ExternalRef:           input.ExternalRef,
 		Notes:                 input.Notes,
 		CreatedAt:             now,
@@ -742,15 +759,85 @@ func (s *Service) ListPayments(orgID string, principal *appmiddleware.Principal,
 	return out, nil
 }
 
+// GetPayment returns a single payment for an invoice.
+func (s *Service) GetPayment(orgID string, principal *appmiddleware.Principal, invoiceID, paymentID string) (*Payment, error) {
+	if err := s.requireBillingReadAccess(principal); err != nil {
+		return nil, err
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	inv, ok := s.invoices[invoiceID]
+	if !ok || inv.OrgID != orgID {
+		return nil, ErrInvoiceNotFound
+	}
+	payment, ok := s.paymentsByID[paymentID]
+	if !ok || payment.InvoiceID != invoiceID || payment.OrgID != orgID {
+		return nil, ErrPaymentNotFound
+	}
+
+	cp := *payment
+	return &cp, nil
+}
+
 // ─── Refunds ─────────────────────────────────────────────────────────────────
+
+// ValidateRefundPreflight verifies whether a refund is locally eligible before
+// any external provider call is made.
+func (s *Service) ValidateRefundPreflight(orgID string, principal *appmiddleware.Principal, invoiceID string, input CreateRefundInput) (*RefundPreflight, error) {
+	if err := s.requireBillingRole(principal); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(input.Reason) == "" {
+		return nil, ErrRefundRequiresReason
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	inv, ok := s.invoices[invoiceID]
+	if !ok || inv.OrgID != orgID {
+		return nil, ErrInvoiceNotFound
+	}
+
+	validRefundStatuses := map[string]bool{
+		"paid":             true,
+		"partially_paid":   true,
+		"refunded_partial": true,
+	}
+	if !validRefundStatuses[inv.Status] {
+		return nil, ErrInvalidTransition
+	}
+
+	payment, ok := s.paymentsByID[input.PaymentID]
+	if !ok || payment.InvoiceID != invoiceID || payment.OrgID != orgID {
+		return nil, ErrPaymentNotFound
+	}
+	if payment.Status != "succeeded" {
+		return nil, ErrInvalidTransition
+	}
+
+	alreadyRefunded := 0
+	for _, r := range s.refunds[invoiceID] {
+		if r.PaymentID == input.PaymentID && (r.Status == "pending" || r.Status == "approved" || r.Status == "processed") {
+			alreadyRefunded += r.AmountCents
+		}
+	}
+	if alreadyRefunded+input.AmountCents > payment.AmountCents {
+		return nil, ErrRefundExceedsPayment
+	}
+
+	return &RefundPreflight{
+		Invoice: *inv,
+		Payment: *payment,
+	}, nil
+}
 
 // CreateRefund creates a refund request for a payment.
 func (s *Service) CreateRefund(orgID, actorID string, principal *appmiddleware.Principal, invoiceID string, input CreateRefundInput) (*Refund, *LedgerEvent, error) {
-	if err := s.requireBillingRole(principal); err != nil {
+	if _, err := s.ValidateRefundPreflight(orgID, principal, invoiceID, input); err != nil {
 		return nil, nil, err
-	}
-	if strings.TrimSpace(input.Reason) == "" {
-		return nil, nil, ErrRefundRequiresReason
 	}
 
 	s.mu.Lock()
@@ -761,9 +848,6 @@ func (s *Service) CreateRefund(orgID, actorID string, principal *appmiddleware.P
 		return nil, nil, ErrInvoiceNotFound
 	}
 
-	// Refunds are only valid on invoices that have received (and not yet fully
-	// reversed) payments. Written-off, voided, draft, and issued invoices must
-	// not be refundable — doing so would corrupt the append-only ledger.
 	validRefundStatuses := map[string]bool{
 		"paid":             true,
 		"partially_paid":   true,
@@ -774,14 +858,13 @@ func (s *Service) CreateRefund(orgID, actorID string, principal *appmiddleware.P
 	}
 
 	payment, ok := s.paymentsByID[input.PaymentID]
-	if !ok || payment.InvoiceID != invoiceID {
+	if !ok || payment.InvoiceID != invoiceID || payment.OrgID != orgID {
 		return nil, nil, ErrPaymentNotFound
 	}
 	if payment.Status != "succeeded" {
 		return nil, nil, ErrInvalidTransition
 	}
 
-	// Sum existing refunds against this payment.
 	alreadyRefunded := 0
 	for _, r := range s.refunds[invoiceID] {
 		if r.PaymentID == input.PaymentID && (r.Status == "pending" || r.Status == "approved" || r.Status == "processed") {
@@ -794,20 +877,21 @@ func (s *Service) CreateRefund(orgID, actorID string, principal *appmiddleware.P
 
 	now := time.Now().UTC()
 	refund := &Refund{
-		ID:          newID(),
-		OrgID:       orgID,
-		InvoiceID:   invoiceID,
-		PaymentID:   input.PaymentID,
-		AmountCents: input.AmountCents,
-		Reason:      input.Reason,
-		Status:      "processed", // external refunds are immediately marked processed
-		ProcessedAt: &now,
-		RequestedBy: actorID,
-		ApprovedBy:  actorID,
-		CreatedAt:   now,
-		UpdatedAt:   now,
-		CreatedBy:   actorID,
-		UpdatedBy:   actorID,
+		ID:             newID(),
+		OrgID:          orgID,
+		InvoiceID:      invoiceID,
+		PaymentID:      input.PaymentID,
+		AmountCents:    input.AmountCents,
+		Reason:         input.Reason,
+		Status:         "processed", // external refunds are immediately marked processed
+		StripeRefundID: input.StripeRefundID,
+		ProcessedAt:    &now,
+		RequestedBy:    actorID,
+		ApprovedBy:     actorID,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		CreatedBy:      actorID,
+		UpdatedBy:      actorID,
 	}
 
 	s.refunds[invoiceID] = append(s.refunds[invoiceID], refund)

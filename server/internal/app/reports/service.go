@@ -1,11 +1,14 @@
 package reports
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dareaquatics/aquify/server/internal/app/billing"
@@ -13,16 +16,22 @@ import (
 	"github.com/dareaquatics/aquify/server/internal/app/meets"
 	"github.com/dareaquatics/aquify/server/internal/app/members"
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	"github.com/dareaquatics/aquify/server/internal/storage"
 )
 
 var ErrForbidden = errors.New("forbidden")
 
 type Service struct {
+	mu      sync.RWMutex
 	members *members.Service
 	groups  *groups.Service
 	meets   *meets.Service
 	billing *billing.Service
+	store   storage.ObjectStorage
 	nowFunc func() time.Time
+	ttl     time.Duration
+	urlTTL  time.Duration
+	files   map[string]StoredArtifact
 }
 
 func NewService(memberSvc *members.Service, groupSvc *groups.Service, meetSvc *meets.Service, billingSvc *billing.Service) *Service {
@@ -31,8 +40,136 @@ func NewService(memberSvc *members.Service, groupSvc *groups.Service, meetSvc *m
 		groups:  groupSvc,
 		meets:   meetSvc,
 		billing: billingSvc,
+		store:   storage.NewStubStorage(""),
 		nowFunc: func() time.Time { return time.Now().UTC() },
+		ttl:     7 * 24 * time.Hour,
+		urlTTL:  15 * time.Minute,
+		files:   make(map[string]StoredArtifact),
 	}
+}
+
+func (s *Service) SetStorage(store storage.ObjectStorage) {
+	if store == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.store = store
+}
+
+func (s *Service) ConfigureArtifactTTL(ttl time.Duration) {
+	if ttl <= 0 {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ttl = ttl
+}
+
+type StoredArtifact struct {
+	ID          string    `json:"id"`
+	OrgID       string    `json:"org_id"`
+	Kind        string    `json:"kind"`
+	Filename    string    `json:"filename"`
+	ContentType string    `json:"content_type"`
+	SizeBytes   int       `json:"size_bytes"`
+	StorageKey  string    `json:"storage_key"`
+	DownloadURL string    `json:"download_url,omitempty"`
+	ExpiresAt   time.Time `json:"expires_at"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+func (s *Service) StoreCSVArtifact(orgID, kind string, generatedAt time.Time, doc *CSVDocument) (*StoredArtifact, error) {
+	if doc == nil {
+		return nil, fmt.Errorf("csv document is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	id := fmt.Sprintf("report_%d", generatedAt.UnixNano())
+	storageKey := fmt.Sprintf("reports/%s/%s/%s", orgID, kind, doc.Filename)
+	if err := s.store.PutObject(context.Background(), storageKey, "text/csv; charset=utf-8", doc.Data); err != nil {
+		return nil, fmt.Errorf("store report artifact: %w", err)
+	}
+
+	artifact := StoredArtifact{
+		ID:          id,
+		OrgID:       orgID,
+		Kind:        kind,
+		Filename:    doc.Filename,
+		ContentType: "text/csv; charset=utf-8",
+		SizeBytes:   len(doc.Data),
+		StorageKey:  storageKey,
+		ExpiresAt:   generatedAt.Add(s.ttl),
+		CreatedAt:   generatedAt,
+	}
+	s.files[id] = artifact
+	response := s.cloneArtifactForResponse(artifact)
+	return &response, nil
+}
+
+func (s *Service) ExpireArtifacts(cutoff time.Time) []StoredArtifact {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var expired []StoredArtifact
+	for id, artifact := range s.files {
+		if artifact.ExpiresAt.After(cutoff) {
+			continue
+		}
+		expired = append(expired, artifact)
+		delete(s.files, id)
+	}
+	return expired
+}
+
+func (s *Service) DeleteArtifact(storageKey string) error {
+	if strings.TrimSpace(storageKey) == "" {
+		return nil
+	}
+	s.mu.RLock()
+	store := s.store
+	s.mu.RUnlock()
+	return store.Delete(storageKey)
+}
+
+func (s *Service) cloneArtifactForResponse(artifact StoredArtifact) StoredArtifact {
+	if artifact.StorageKey == "" || (!artifact.ExpiresAt.IsZero() && !artifact.ExpiresAt.After(s.nowFunc())) {
+		return artifact
+	}
+	if url, err := s.store.PresignedGetURL(artifact.StorageKey, s.urlTTL); err == nil {
+		artifact.DownloadURL = url
+	}
+	return artifact
+}
+
+func (s *Service) ExportRuntimeSnapshot() ([]byte, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return json.Marshal(struct {
+		Files map[string]StoredArtifact `json:"files"`
+	}{
+		Files: s.files,
+	})
+}
+
+func (s *Service) LoadRuntimeSnapshot(data []byte) error {
+	if len(data) == 0 {
+		return nil
+	}
+	var snapshot struct {
+		Files map[string]StoredArtifact `json:"files"`
+	}
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.files = make(map[string]StoredArtifact, len(snapshot.Files))
+	for id, artifact := range snapshot.Files {
+		s.files[id] = artifact
+	}
+	return nil
 }
 
 func (s *Service) requireReportAccess(principal *appmiddleware.Principal) error {

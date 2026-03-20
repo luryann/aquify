@@ -1,0 +1,5 @@
+# test log
+open ../../../../db/migrations/20260315001000_create_contacts.sql
+open ../../../../db/migrations/20260315001300_add_swimmer_uniqueness_constraints.sql
+open ../../../../db/migrations/20260315001100_create_swimmers.sql
+open ../../../../db/migrations/20260315001200_create_swimmer_groups.sql

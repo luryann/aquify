@@ -2,6 +2,8 @@ package sdif_test
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -80,6 +82,25 @@ func baseInput() sdif.ExportInput {
 	}
 }
 
+func readGolden(t *testing.T, name string) string {
+	t.Helper()
+
+	path := filepath.Join("testdata", name)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read golden %s: %v", path, err)
+	}
+	return normalizeGoldenLineEndings(string(raw))
+}
+
+func normalizeGoldenLineEndings(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	if !strings.HasSuffix(s, "\n") {
+		s += "\n"
+	}
+	return s
+}
+
 // ─── Standard SD3 export ──────────────────────────────────────────────────────
 
 func TestExportStandardSD3_Parseable(t *testing.T) {
@@ -104,6 +125,19 @@ func TestExportStandardSD3_Parseable(t *testing.T) {
 	}
 	if result.Course != meetfiles.CourseShortCourseYards {
 		t.Errorf("Course = %v; want SCY", result.Course)
+	}
+}
+
+func TestExportStandardSD3_GoldenFile(t *testing.T) {
+	data, err := sdif.ExportStandardSD3(baseInput())
+	if err != nil {
+		t.Fatalf("ExportStandardSD3: %v", err)
+	}
+
+	got := normalizeGoldenLineEndings(string(data))
+	want := readGolden(t, "standard_sd3.golden")
+	if got != want {
+		t.Fatalf("standard SD3 output mismatch\n--- got ---\n%s\n--- want ---\n%s", got, want)
 	}
 }
 
@@ -148,6 +182,19 @@ func TestExportExtendedSD3_Parseable(t *testing.T) {
 	}
 	if len(result.IndividualResults) != 2 {
 		t.Errorf("got %d individual results; want 2", len(result.IndividualResults))
+	}
+}
+
+func TestExportExtendedSD3_GoldenFile(t *testing.T) {
+	data, err := sdif.ExportExtendedSD3(baseInput())
+	if err != nil {
+		t.Fatalf("ExportExtendedSD3: %v", err)
+	}
+
+	got := normalizeGoldenLineEndings(string(data))
+	want := readGolden(t, "extended_sd3.golden")
+	if got != want {
+		t.Fatalf("extended SD3 output mismatch\n--- got ---\n%s\n--- want ---\n%s", got, want)
 	}
 }
 

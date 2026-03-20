@@ -38,11 +38,13 @@ func NewMembershipHandlersWithAudit(service *members.Service, auditSvc *audit.Se
 
 func (h *MembershipHandlers) RegisterProtectedRoutes(router chi.Router) {
 	router.Post("/households", h.createHousehold)
+	router.Get("/households", h.listHouseholds)
 	router.Patch("/households/{householdID}", h.updateHousehold)
 	router.Post("/households/{householdID}/contacts", h.addContact)
 	router.Post("/swimmers", h.createSwimmer)
 	router.Patch("/swimmers/{swimmerID}", h.updateSwimmer)
 	router.Post("/swimmers/{swimmerID}/groups", h.assignSwimmerGroup)
+	router.Get("/swimmer-groups", h.listSwimmerGroupLinks)
 	router.Get("/swimmers", h.listSwimmers)
 }
 
@@ -90,6 +92,29 @@ func (h *MembershipHandlers) createHousehold(w http.ResponseWriter, r *http.Requ
 	_ = httpx.WriteJSON(w, http.StatusCreated, map[string]any{
 		"status":    "created",
 		"household": household,
+	})
+}
+
+func (h *MembershipHandlers) listHouseholds(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := membershipScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+
+	if !hasMembershipListAccess(principal) {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to list households.", nil)
+		return
+	}
+
+	households := h.service.SnapshotHouseholds(orgID)
+	if households == nil {
+		households = []members.Household{}
+	}
+
+	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"status":     "ok",
+		"count":      len(households),
+		"households": households,
 	})
 }
 
@@ -406,6 +431,29 @@ func (h *MembershipHandlers) listSwimmers(w http.ResponseWriter, r *http.Request
 	})
 }
 
+func (h *MembershipHandlers) listSwimmerGroupLinks(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := membershipScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+
+	if !hasMembershipListAccess(principal) {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to list swimmer groups.", nil)
+		return
+	}
+
+	links := h.service.SnapshotSwimmerGroupLinks(orgID)
+	if links == nil {
+		links = []members.SwimmerGroupLink{}
+	}
+
+	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"status":         "ok",
+		"count":          len(links),
+		"swimmer_groups": links,
+	})
+}
+
 func (h *MembershipHandlers) decodeAndValidate(w http.ResponseWriter, r *http.Request, dst any) bool {
 	if err := decodeJSONBody(r, dst); err != nil {
 		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request_body", err.Error(), nil)
@@ -441,6 +489,19 @@ func membershipScopeFromRequest(w http.ResponseWriter, r *http.Request) (*appmid
 	}
 
 	return principal, orgID, true
+}
+
+func hasMembershipListAccess(principal *appmiddleware.Principal) bool {
+	if principal == nil {
+		return false
+	}
+	for _, role := range principal.Roles {
+		switch strings.TrimSpace(strings.ToLower(role)) {
+		case "owner", "admin", "coach", "billing", "read-only":
+			return true
+		}
+	}
+	return false
 }
 
 func validateBodyOrgScope(w http.ResponseWriter, r *http.Request, headerOrgID, bodyOrgID string) bool {

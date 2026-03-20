@@ -16,38 +16,65 @@ import (
 )
 
 type AuthHandlers struct {
-	service      *authn.Service
-	auditService *audit.Service
-	validate     *validator.Validate
+	service              *authn.Service
+	auditService         *audit.Service
+	validate             *validator.Validate
+	allowDevSessionIssue bool
 }
 
-func NewAuthHandlers(service *authn.Service) *AuthHandlers {
+func NewAuthHandlers(service *authn.Service, allowDevSessionIssue bool) *AuthHandlers {
 	return &AuthHandlers{
-		service:  service,
-		validate: validator.New(),
+		service:              service,
+		validate:             validator.New(),
+		allowDevSessionIssue: allowDevSessionIssue,
 	}
 }
 
 // NewAuthHandlersWithAudit returns an AuthHandlers with audit logging enabled.
-func NewAuthHandlersWithAudit(service *authn.Service, auditSvc *audit.Service) *AuthHandlers {
+func NewAuthHandlersWithAudit(service *authn.Service, auditSvc *audit.Service, allowDevSessionIssue bool) *AuthHandlers {
 	return &AuthHandlers{
-		service:      service,
-		auditService: auditSvc,
-		validate:     validator.New(),
+		service:              service,
+		auditService:         auditSvc,
+		validate:             validator.New(),
+		allowDevSessionIssue: allowDevSessionIssue,
 	}
 }
 
 func (h *AuthHandlers) RegisterPublicRoutes(router chi.Router) {
+	router.Get("/oidc/authorize", h.oidcAuthorize)
 	router.Post("/oidc/callback", h.oidcCallback)
-	router.Post("/sessions/issue", h.issueSession)
+	if h.allowDevSessionIssue {
+		router.Post("/sessions/issue", h.issueSession)
+	}
 	router.Post("/sessions/refresh", h.refreshSession)
 	router.Post("/sessions/revoke", h.revokeSession)
 }
 
 func (h *AuthHandlers) RegisterProtectedRoutes(router chi.Router) {
+	router.Get("/session", h.currentSession)
+	router.Get("/mfa/factors", h.listMFAFactors)
 	router.Post("/mfa/enroll", h.enrollMFA)
 	router.Post("/mfa/challenge", h.challengeMFA)
 	router.Post("/roles/assign", h.assignRole)
+}
+
+func (h *AuthHandlers) oidcAuthorize(w http.ResponseWriter, r *http.Request) {
+	loginHint := strings.TrimSpace(r.URL.Query().Get("login_hint"))
+	orgID := strings.TrimSpace(r.URL.Query().Get("org_id"))
+
+	location, err := h.service.BeginOIDCLogin(loginHint, orgID)
+	if err != nil {
+		status := http.StatusBadRequest
+		code := "invalid_oidc_authorize"
+		if errors.Is(err, authn.ErrOIDCNotConfigured) {
+			status = http.StatusServiceUnavailable
+			code = "oidc_not_configured"
+		}
+		httpx.WriteError(w, r, status, code, err.Error(), nil)
+		return
+	}
+
+	http.Redirect(w, r, location, http.StatusFound)
 }
 
 type oidcCallbackRequest struct {
@@ -78,6 +105,9 @@ func (h *AuthHandlers) oidcCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	csrfToken := appmiddleware.NewCSRFToken()
+	appmiddleware.SetSessionCookies(w, result.AccessToken, result.RefreshToken, csrfToken, result.ExpiresAt)
+
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status": "ok",
 		"user": map[string]any{
@@ -85,12 +115,15 @@ func (h *AuthHandlers) oidcCallback(w http.ResponseWriter, r *http.Request) {
 			"org_id":  result.OrgID,
 			"roles":   result.Roles,
 		},
-		"session": result.SessionTokens,
+		"session":    result.SessionTokens,
+		"csrf_token": csrfToken,
 	})
 }
 
 type issueSessionRequest struct {
 	UserID           string   `json:"user_id" validate:"required"`
+	Email            string   `json:"email"`
+	Name             string   `json:"name"`
 	OrgID            string   `json:"org_id" validate:"required"`
 	HouseholdID      string   `json:"household_id"`
 	Roles            []string `json:"roles" validate:"required,min=1"`
@@ -105,6 +138,8 @@ func (h *AuthHandlers) issueSession(w http.ResponseWriter, r *http.Request) {
 
 	session, err := h.service.IssueSession(authn.SessionInput{
 		UserID:           req.UserID,
+		Email:            req.Email,
+		Name:             req.Name,
 		OrgID:            req.OrgID,
 		HouseholdID:      req.HouseholdID,
 		Roles:            req.Roles,
@@ -115,9 +150,48 @@ func (h *AuthHandlers) issueSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	csrfToken := appmiddleware.NewCSRFToken()
+	appmiddleware.SetSessionCookies(w, session.AccessToken, session.RefreshToken, csrfToken, session.ExpiresAt)
+
 	_ = httpx.WriteJSON(w, http.StatusCreated, map[string]any{
-		"status":  "issued",
-		"session": session,
+		"status":     "issued",
+		"session":    session,
+		"csrf_token": csrfToken,
+	})
+}
+
+func (h *AuthHandlers) currentSession(w http.ResponseWriter, r *http.Request) {
+	principal, ok := appmiddleware.PrincipalFromContext(r.Context())
+	if !ok || principal == nil {
+		httpx.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Authentication context is missing.", nil)
+		return
+	}
+
+	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"status": "ok",
+		"user": map[string]any{
+			"user_id":           principal.UserID,
+			"email":             principal.Email,
+			"name":              principal.Name,
+			"org_id":            principal.OrgID,
+			"household_id":      principal.HouseholdID,
+			"roles":             principal.Roles,
+			"mfa_authenticated": principal.MFAAuthenticated,
+		},
+	})
+}
+
+func (h *AuthHandlers) listMFAFactors(w http.ResponseWriter, r *http.Request) {
+	principal, ok := appmiddleware.PrincipalFromContext(r.Context())
+	if !ok || principal == nil {
+		httpx.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Authentication context is missing.", nil)
+		return
+	}
+
+	factors := h.service.ListMFAFactors(principal.UserID)
+	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"factors": factors,
+		"count":   len(factors),
 	})
 }
 
@@ -126,12 +200,16 @@ type refreshSessionRequest struct {
 }
 
 func (h *AuthHandlers) refreshSession(w http.ResponseWriter, r *http.Request) {
-	var req refreshSessionRequest
-	if !h.decodeAndValidate(w, r, &req) {
-		return
+	refreshToken := readRefreshToken(r)
+	if refreshToken == "" {
+		var req refreshSessionRequest
+		if !h.decodeAndValidate(w, r, &req) {
+			return
+		}
+		refreshToken = req.RefreshToken
 	}
 
-	session, err := h.service.RefreshSession(req.RefreshToken)
+	session, err := h.service.RefreshSession(refreshToken)
 	if err != nil {
 		status := http.StatusUnauthorized
 		code := "invalid_session"
@@ -147,9 +225,17 @@ func (h *AuthHandlers) refreshSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	csrfCookie, err := r.Cookie(appmiddleware.CSRFTokenCookieName)
+	csrfToken := appmiddleware.NewCSRFToken()
+	if err == nil && strings.TrimSpace(csrfCookie.Value) != "" {
+		csrfToken = strings.TrimSpace(csrfCookie.Value)
+	}
+	appmiddleware.SetSessionCookies(w, session.AccessToken, session.RefreshToken, csrfToken, session.ExpiresAt)
+
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"status":  "refreshed",
-		"session": session,
+		"status":     "refreshed",
+		"session":    session,
+		"csrf_token": csrfToken,
 	})
 }
 
@@ -158,16 +244,21 @@ type revokeSessionRequest struct {
 }
 
 func (h *AuthHandlers) revokeSession(w http.ResponseWriter, r *http.Request) {
-	var req revokeSessionRequest
-	if !h.decodeAndValidate(w, r, &req) {
-		return
+	refreshToken := readRefreshToken(r)
+	if refreshToken == "" {
+		var req revokeSessionRequest
+		if !h.decodeAndValidate(w, r, &req) {
+			return
+		}
+		refreshToken = req.RefreshToken
 	}
 
-	if err := h.service.RevokeSession(req.RefreshToken); err != nil {
+	if err := h.service.RevokeSession(refreshToken); err != nil {
 		httpx.WriteError(w, r, http.StatusNotFound, "session_not_found", "No matching session was found to revoke.", nil)
 		return
 	}
 
+	appmiddleware.ClearSessionCookies(w)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -237,9 +328,17 @@ func (h *AuthHandlers) challengeMFA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	csrfCookie, err := r.Cookie(appmiddleware.CSRFTokenCookieName)
+	csrfToken := appmiddleware.NewCSRFToken()
+	if err == nil && strings.TrimSpace(csrfCookie.Value) != "" {
+		csrfToken = strings.TrimSpace(csrfCookie.Value)
+	}
+	appmiddleware.SetSessionCookies(w, session.AccessToken, session.RefreshToken, csrfToken, session.ExpiresAt)
+
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"status":  "verified",
-		"session": session,
+		"status":     "verified",
+		"session":    session,
+		"csrf_token": csrfToken,
 	})
 }
 
@@ -269,10 +368,9 @@ func (h *AuthHandlers) assignRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	orgID, ok := appmiddleware.OrgIDFromContext(r.Context())
-	if !ok || strings.TrimSpace(orgID) == "" {
-		httpx.WriteError(w, r, http.StatusBadRequest, "missing_org_scope", "Missing X-Org-Id header.", nil)
-		return
+	orgID := strings.TrimSpace(r.Header.Get("X-Org-Id"))
+	if orgID == "" {
+		orgID = strings.TrimSpace(principal.OrgID)
 	}
 
 	var req assignRoleRequest
@@ -358,4 +456,12 @@ func decodeJSONBody(r *http.Request, dst any) error {
 	}
 
 	return nil
+}
+
+func readRefreshToken(r *http.Request) string {
+	cookie, err := r.Cookie(appmiddleware.RefreshTokenCookieName)
+	if err == nil && strings.TrimSpace(cookie.Value) != "" {
+		return strings.TrimSpace(cookie.Value)
+	}
+	return ""
 }

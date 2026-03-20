@@ -1,7 +1,5 @@
-// Package stripe provides a Stripe API client interface, an in-memory stub
-// implementation for testing and development, and standalone webhook signature
-// verification. A production deployment should swap in a real client that
-// wraps the official github.com/stripe/stripe-go/vN SDK.
+// Package stripe provides a Stripe API client interface, an in-memory stub,
+// and a production client backed by Stripe's official Go SDK.
 package stripe
 
 import (
@@ -17,6 +15,12 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	stripeapi "github.com/stripe/stripe-go/v84"
+	"github.com/stripe/stripe-go/v84/balancetransaction"
+	"github.com/stripe/stripe-go/v84/checkout/session"
+	"github.com/stripe/stripe-go/v84/paymentintent"
+	striperefund "github.com/stripe/stripe-go/v84/refund"
 )
 
 // ─── Errors ───────────────────────────────────────────────────────────────────
@@ -25,6 +29,7 @@ var (
 	ErrInvalidSignature = errors.New("stripe: invalid webhook signature")
 	ErrExpiredTimestamp = errors.New("stripe: webhook timestamp too old (replay attack window exceeded)")
 	ErrMalformedHeader  = errors.New("stripe: malformed Stripe-Signature header")
+	ErrInvalidConfig    = errors.New("stripe: missing secret key")
 )
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -80,6 +85,21 @@ type CheckoutSessionResult struct {
 	URL string `json:"url"`
 }
 
+// RefundParams holds parameters for creating a Stripe refund.
+type RefundParams struct {
+	PaymentIntentID string
+	AmountCents     int
+	Reason          string
+	IdempotencyKey  string
+}
+
+// RefundResult is a simplified representation of a Stripe refund object.
+type RefundResult struct {
+	ID          string `json:"id"`
+	Status      string `json:"status"`
+	AmountCents int    `json:"amount_cents"`
+}
+
 // WebhookEventData holds a parsed Stripe webhook event.
 type WebhookEventData struct {
 	// ID is the Stripe event ID (evt_...).
@@ -104,13 +124,13 @@ type BalanceReport struct {
 
 // ReconciliationReport compares the internal billing ledger against Stripe.
 type ReconciliationReport struct {
-	LedgerStripeTotalCents  int       `json:"ledger_stripe_total_cents"`
-	StripeReportedCents     int       `json:"stripe_reported_cents"`
-	MismatchCents           int       `json:"mismatch_cents"`
-	HasMismatch             bool      `json:"has_mismatch"`
-	AlertTriggered          bool      `json:"alert_triggered"`
-	AlertThresholdCents     int       `json:"alert_threshold_cents"`
-	GeneratedAt             time.Time `json:"generated_at"`
+	LedgerStripeTotalCents int       `json:"ledger_stripe_total_cents"`
+	StripeReportedCents    int       `json:"stripe_reported_cents"`
+	MismatchCents          int       `json:"mismatch_cents"`
+	HasMismatch            bool      `json:"has_mismatch"`
+	AlertTriggered         bool      `json:"alert_triggered"`
+	AlertThresholdCents    int       `json:"alert_threshold_cents"`
+	GeneratedAt            time.Time `json:"generated_at"`
 }
 
 // ─── Client interface ─────────────────────────────────────────────────────────
@@ -135,6 +155,9 @@ type Client interface {
 	// Used by the reconciliation endpoint. Real clients query the Stripe Charges
 	// or Balance Transactions API; the stub returns a configurable value.
 	FetchBalanceCents(ctx context.Context) (int, error)
+
+	// CreateRefund creates a Stripe refund against a succeeded payment intent.
+	CreateRefund(ctx context.Context, params RefundParams) (*RefundResult, error)
 }
 
 // ─── Webhook signature verification ──────────────────────────────────────────
@@ -255,6 +278,8 @@ type StubClient struct {
 	CreatePaymentIntentErr error
 	// CreateCheckoutSessionErr, if non-nil, is returned by CreateCheckoutSession.
 	CreateCheckoutSessionErr error
+	// CreateRefundErr, if non-nil, is returned by CreateRefund.
+	CreateRefundErr error
 	// BalanceCents is returned by FetchBalanceCents. Defaults to 0.
 	BalanceCents int
 
@@ -262,6 +287,8 @@ type StubClient struct {
 	createdIntents []*PaymentIntentResult
 	// createdSessions records each CheckoutSession created for test assertions.
 	createdSessions []*CheckoutSessionResult
+	// createdRefunds records each refund request handled by the stub.
+	createdRefunds []RefundParams
 }
 
 // NewStubClient returns a new StubClient with default settings.
@@ -275,6 +302,15 @@ func (c *StubClient) CreatedIntents() []*PaymentIntentResult {
 	defer c.mu.Unlock()
 	out := make([]*PaymentIntentResult, len(c.createdIntents))
 	copy(out, c.createdIntents)
+	return out
+}
+
+// CreatedRefunds returns a snapshot of all refund requests created via this stub.
+func (c *StubClient) CreatedRefunds() []RefundParams {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]RefundParams, len(c.createdRefunds))
+	copy(out, c.createdRefunds)
 	return out
 }
 
@@ -334,6 +370,152 @@ func (c *StubClient) FetchBalanceCents(_ context.Context) (int, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.BalanceCents, nil
+}
+
+// CreateRefund returns a fake RefundResult.
+func (c *StubClient) CreateRefund(_ context.Context, params RefundParams) (*RefundResult, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.CreateRefundErr != nil {
+		return nil, c.CreateRefundErr
+	}
+
+	c.createdRefunds = append(c.createdRefunds, params)
+	return &RefundResult{
+		ID:          "re_stub_" + stubRandHex(8),
+		Status:      "succeeded",
+		AmountCents: params.AmountCents,
+	}, nil
+}
+
+// SDKClient is a production Stripe client backed by stripe-go.
+type SDKClient struct {
+	secretKey string
+}
+
+// NewSDKClient returns a Stripe SDK-backed client.
+func NewSDKClient(secretKey string) (*SDKClient, error) {
+	if strings.TrimSpace(secretKey) == "" {
+		return nil, ErrInvalidConfig
+	}
+	return &SDKClient{secretKey: strings.TrimSpace(secretKey)}, nil
+}
+
+func (c *SDKClient) withKey() {
+	stripeapi.Key = c.secretKey
+}
+
+// CreatePaymentIntent creates a Stripe PaymentIntent via stripe-go.
+func (c *SDKClient) CreatePaymentIntent(_ context.Context, params PaymentIntentParams) (*PaymentIntentResult, error) {
+	c.withKey()
+
+	req := &stripeapi.PaymentIntentParams{
+		Amount:      stripeapi.Int64(int64(params.AmountCents)),
+		Currency:    stripeapi.String(strings.ToLower(strings.TrimSpace(params.Currency))),
+		Description: stripeapi.String(params.Description),
+		Metadata:    params.Metadata,
+	}
+	intent, err := paymentintent.New(req)
+	if err != nil {
+		return nil, err
+	}
+	return &PaymentIntentResult{
+		ID:           intent.ID,
+		ClientSecret: intent.ClientSecret,
+		Status:       string(intent.Status),
+		Currency:     string(intent.Currency),
+		AmountCents:  int(intent.Amount),
+	}, nil
+}
+
+// CreateCheckoutSession creates a hosted Stripe Checkout session via stripe-go.
+func (c *SDKClient) CreateCheckoutSession(_ context.Context, params CheckoutSessionParams) (*CheckoutSessionResult, error) {
+	c.withKey()
+
+	req := &stripeapi.CheckoutSessionParams{
+		Mode:       stripeapi.String(string(stripeapi.CheckoutSessionModePayment)),
+		SuccessURL: stripeapi.String(params.SuccessURL),
+		CancelURL:  stripeapi.String(params.CancelURL),
+		Metadata:   params.Metadata,
+		LineItems: []*stripeapi.CheckoutSessionLineItemParams{
+			{
+				Quantity: stripeapi.Int64(1),
+				PriceData: &stripeapi.CheckoutSessionLineItemPriceDataParams{
+					Currency: stripeapi.String(strings.ToLower(strings.TrimSpace(params.Currency))),
+					ProductData: &stripeapi.CheckoutSessionLineItemPriceDataProductDataParams{
+						Name: stripeapi.String(params.Description),
+					},
+					UnitAmount: stripeapi.Int64(int64(params.AmountCents)),
+				},
+			},
+		},
+	}
+	cs, err := session.New(req)
+	if err != nil {
+		return nil, err
+	}
+	return &CheckoutSessionResult{ID: cs.ID, URL: cs.URL}, nil
+}
+
+// ParseWebhookEvent verifies the signature and parses the payload.
+func (c *SDKClient) ParseWebhookEvent(payload []byte, sigHeader, webhookSecret string) (*WebhookEventData, error) {
+	if err := VerifyStripeSignature(payload, sigHeader, webhookSecret, DefaultTimestampTolerance); err != nil {
+		return nil, err
+	}
+	return parseWebhookPayload(payload)
+}
+
+// FetchBalanceCents returns the summed gross amount for successful charge-type
+// balance transactions currently visible to the Stripe account.
+func (c *SDKClient) FetchBalanceCents(_ context.Context) (int, error) {
+	c.withKey()
+
+	total := 0
+	params := &stripeapi.BalanceTransactionListParams{}
+	params.Filters.AddFilter("type", "", "charge")
+	iter := balancetransaction.List(params)
+	for iter.Next() {
+		tx := iter.BalanceTransaction()
+		if tx == nil {
+			continue
+		}
+		total += int(tx.Amount)
+	}
+	if err := iter.Err(); err != nil {
+		return 0, err
+	}
+	return total, nil
+}
+
+// CreateRefund creates a refund against a Stripe payment intent.
+func (c *SDKClient) CreateRefund(_ context.Context, params RefundParams) (*RefundResult, error) {
+	c.withKey()
+
+	req := &stripeapi.RefundParams{
+		PaymentIntent: stripeapi.String(params.PaymentIntentID),
+		Amount:        stripeapi.Int64(int64(params.AmountCents)),
+	}
+	if strings.TrimSpace(params.IdempotencyKey) != "" {
+		req.SetIdempotencyKey(strings.TrimSpace(params.IdempotencyKey))
+	}
+	switch strings.TrimSpace(strings.ToLower(params.Reason)) {
+	case "fraudulent":
+		req.Reason = stripeapi.String(string(stripeapi.RefundReasonFraudulent))
+	case "duplicate":
+		req.Reason = stripeapi.String(string(stripeapi.RefundReasonDuplicate))
+	default:
+		req.Reason = stripeapi.String(string(stripeapi.RefundReasonRequestedByCustomer))
+	}
+	refund, err := striperefund.New(req)
+	if err != nil {
+		return nil, err
+	}
+	return &RefundResult{
+		ID:          refund.ID,
+		Status:      string(refund.Status),
+		AmountCents: int(refund.Amount),
+	}, nil
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

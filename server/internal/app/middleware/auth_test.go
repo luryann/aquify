@@ -88,3 +88,36 @@ func TestAuthAcceptsResolverToken(t *testing.T) {
 		t.Fatalf("expected status %d, got %d", http.StatusNoContent, rr.Code)
 	}
 }
+
+func TestAuthAcceptsAccessTokenCookie(t *testing.T) {
+	t.Parallel()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/authz/ping", nil)
+	req.AddCookie(&http.Cookie{Name: AccessTokenCookieName, Value: "cookie-admin-token"})
+	rr := httptest.NewRecorder()
+
+	resolver := staticResolver{principals: map[string]*Principal{
+		"cookie-admin-token": {
+			UserID: "admin-user",
+			OrgID:  "org-demo",
+			Roles:  []string{"admin"},
+		},
+	}}
+
+	h := Auth(resolver)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := PrincipalFromContext(r.Context())
+		if !ok || principal == nil {
+			t.Fatal("expected principal in context")
+		}
+		if principal.UserID != "admin-user" {
+			t.Fatalf("expected admin-user, got %q", principal.UserID)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("expected status %d, got %d", http.StatusNoContent, rr.Code)
+	}
+}

@@ -1,0 +1,2 @@
+./service.go
+./service_invariants_test.go

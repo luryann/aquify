@@ -85,20 +85,20 @@ export function createApiClient(getToken: () => string | undefined) {
   const t = () => getToken()
 
   return {
-    get<T = unknown>(path: string, signal?: AbortSignal) {
-      return apiFetch<T>(path, t(), { method: 'GET', signal })
+    get<T = unknown>(path: string, signal?: AbortSignal, headers?: Record<string, string>) {
+      return apiFetch<T>(path, t(), { method: 'GET', signal, headers })
     },
-    post<T = unknown>(path: string, body?: unknown) {
-      return apiFetch<T>(path, t(), { method: 'POST', body })
+    post<T = unknown>(path: string, body?: unknown, headers?: Record<string, string>) {
+      return apiFetch<T>(path, t(), { method: 'POST', body, headers })
     },
-    put<T = unknown>(path: string, body?: unknown) {
-      return apiFetch<T>(path, t(), { method: 'PUT', body })
+    put<T = unknown>(path: string, body?: unknown, headers?: Record<string, string>) {
+      return apiFetch<T>(path, t(), { method: 'PUT', body, headers })
     },
-    patch<T = unknown>(path: string, body?: unknown) {
-      return apiFetch<T>(path, t(), { method: 'PATCH', body })
+    patch<T = unknown>(path: string, body?: unknown, headers?: Record<string, string>) {
+      return apiFetch<T>(path, t(), { method: 'PATCH', body, headers })
     },
-    delete<T = unknown>(path: string) {
-      return apiFetch<T>(path, t(), { method: 'DELETE' })
+    delete<T = unknown>(path: string, headers?: Record<string, string>) {
+      return apiFetch<T>(path, t(), { method: 'DELETE', headers })
     },
   }
 }

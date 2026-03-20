@@ -2,7 +2,7 @@
 
 Date: 2026-03-18
 Owner: Codex
-Status: In progress
+Status: Remediated after audit
 
 ## Goal
 
@@ -38,20 +38,20 @@ Finish the remaining items in `TODO.md` section `22) Security hardening` with co
 
 ## Implementation checklist
 
-- [ ] Add security configuration for secure cookies, CSRF, rate limits, upload caps, malware-scan hook mode, and impersonation toggle.
-- [ ] Add HTTPS-only cookie issuance/clearing on auth session endpoints.
-- [ ] Add CSRF token issuance and validation for session mutation endpoints.
-- [ ] Add rate-limiting middleware and wire it into the router.
-- [ ] Add baseline security headers middleware and wire it into the router.
-- [ ] Harden import upload requests with filename checks, size caps, MIME allowlist, and malware-scan status hook.
-- [ ] Extend import tests to cover new upload/finalize security behavior.
-- [ ] Add privileged action step-up MFA checks for billing-sensitive mutations.
-- [ ] Make impersonation explicitly disabled unless a config flag is enabled, with guardrails if enabled later.
-- [ ] Add CI secret scanning.
-- [ ] Add CI dependency vulnerability scanning for Go and npm.
-- [ ] Create threat model v1 doc.
-- [ ] Update `CLAUDE.md` with newly relevant project security/runtime notes.
-- [ ] Update `TODO.md` once verified.
+- [x] Add security configuration for secure cookies, CSRF, rate limits, upload caps, malware-scan hook mode, and impersonation toggle.
+- [x] Add HTTPS-only cookie issuance/clearing on auth session endpoints.
+- [x] Add CSRF token issuance and validation for session mutation endpoints.
+- [x] Add rate-limiting middleware and wire it into the router.
+- [x] Add baseline security headers middleware and wire it into the router.
+- [x] Harden import upload requests with filename checks, size caps, MIME allowlist, and malware-scan status hook.
+- [x] Extend import tests to cover new upload/finalize security behavior.
+- [x] Add privileged action step-up MFA checks for billing-sensitive mutations.
+- [x] Make impersonation explicitly disabled unless a config flag is enabled, with guardrails if enabled later.
+- [x] Add CI secret scanning.
+- [x] Add CI dependency vulnerability scanning for Go and npm.
+- [x] Create threat model v1 doc.
+- [x] Update `CLAUDE.md` with newly relevant project security/runtime notes.
+- [x] Update `TODO.md` once verified.
 
 ## Working assumptions
 
@@ -66,3 +66,9 @@ Finish the remaining items in `TODO.md` section `22) Security hardening` with co
 - targeted router tests for auth/imports/billing security flows
 - CI workflow YAML validates structurally after edits
 
+## Verification completed
+
+- `env GOCACHE=/Users/ryan/Documents/aquify/.gocache go test ./internal/app`
+- `env GOCACHE=/Users/ryan/Documents/aquify/.gocache go test ./internal/app/middleware ./internal/app/imports ./internal/app/authn -run 'TestResolvePrincipalDisablesStubTokensWhenNotConfigured|TestResolvePrincipalAllowsStubTokensWhenConfigured|TestChallengeMFARejectsStaticCodeAndAcceptsTOTP|TestChallengeMFASupportsAcceptedFactorsOnly'`
+- remediation adds dev-only gating for `/auth/sessions/issue` and rejects required-mode malware scanning when the scanner is missing or still using the `stub` provider
+- `env GOCACHE=/Users/ryan/Documents/aquify/.gocache go test ./...` in `server/` completed successfully once rerun outside sandbox port restrictions

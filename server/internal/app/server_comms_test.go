@@ -77,6 +77,17 @@ func doCommsReq(router http.Handler, method, path, token, body string) *httptest
 	return rr
 }
 
+func doPublicCommsReq(router http.Handler, method, path, body string, headers map[string]string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	return rr
+}
+
 // ─── Announcement tests ───────────────────────────────────────────────────────
 
 func TestAnnouncements_CreateAndList(t *testing.T) {
@@ -469,5 +480,160 @@ func TestSuppression_RBACEnforcement(t *testing.T) {
 	rr := doCommsReq(router, http.MethodPost, "/api/v1/suppression", coachToken, body)
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("coach add suppression: want 403, got %d", rr.Code)
+	}
+}
+
+func TestPostmarkWebhookBounceUpdatesDeliveryAndSuppression(t *testing.T) {
+	t.Setenv("COMMS_ALLOW_ARBITRARY_RECIPIENTS", "true")
+	svc := comms.NewService()
+	router := newCommsRouter(t, svc)
+	token := issueCommsToken(t, router, "admin")
+
+	cBody := commsBody(map[string]any{
+		"name":       "Webhook Test",
+		"subject":    "Hello",
+		"body_html":  "<p>Hi</p>",
+		"from_name":  "DARE",
+		"from_email": "noreply@dare.swim",
+		"audience":   "all",
+	})
+	rr := doCommsReq(router, http.MethodPost, "/api/v1/email-campaigns", token, cBody)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("create campaign: want 201, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var campaign map[string]any
+	json.NewDecoder(rr.Body).Decode(&campaign)
+	campaignID := campaign["id"].(string)
+
+	sendBody := commsBody(map[string]any{
+		"recipients": []map[string]any{{"email": "alice@example.com"}},
+	})
+	rr = doCommsReq(router, http.MethodPost, "/api/v1/email-campaigns/"+campaignID+"/send", token, sendBody)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("send campaign: want 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	deliveries, err := svc.ListDeliveries(commsOrgID, campaignID)
+	if err != nil || len(deliveries) != 1 {
+		t.Fatalf("expected 1 delivery, got %d err=%v", len(deliveries), err)
+	}
+
+	webhookBody := commsBody(map[string]any{
+		"RecordType": "Bounce",
+		"MessageID":  deliveries[0].ProviderMessageID,
+		"Recipient":  "alice@example.com",
+		"BouncedAt":  "2026-03-20T10:00:00Z",
+		"Details":    "Hard bounce",
+		"Metadata": map[string]any{
+			"org_id": commsOrgID,
+		},
+	})
+	rr = doPublicCommsReq(router, http.MethodPost, "/api/v1/webhooks/postmark", webhookBody, nil)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("postmark bounce webhook: want 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	updatedDeliveries, err := svc.ListDeliveries(commsOrgID, campaignID)
+	if err != nil {
+		t.Fatalf("list deliveries after webhook: %v", err)
+	}
+	if updatedDeliveries[0].Status != "bounced" {
+		t.Fatalf("expected delivery status bounced, got %q", updatedDeliveries[0].Status)
+	}
+
+	suppression, err := svc.ListSuppression(commsOrgID)
+	if err != nil {
+		t.Fatalf("list suppression: %v", err)
+	}
+	if len(suppression) != 1 || suppression[0].Reason != "bounce" {
+		t.Fatalf("expected 1 bounce suppression entry, got %#v", suppression)
+	}
+}
+
+func TestPostmarkWebhookSubscriptionChangeUnsuppressesEmail(t *testing.T) {
+	svc := comms.NewService()
+	router := newCommsRouter(t, svc)
+	token := issueCommsToken(t, router, "admin")
+
+	body := commsBody(map[string]any{"email": "bounce@example.com", "reason": "bounce"})
+	rr := doCommsReq(router, http.MethodPost, "/api/v1/suppression", token, body)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("seed suppression: want 201, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	webhookBody := commsBody(map[string]any{
+		"RecordType":      "SubscriptionChange",
+		"Recipient":       "bounce@example.com",
+		"ChangedAt":       "2026-03-20T11:00:00Z",
+		"SuppressSending": false,
+		"Metadata": map[string]any{
+			"org_id": commsOrgID,
+		},
+	})
+	rr = doPublicCommsReq(router, http.MethodPost, "/api/v1/webhooks/postmark", webhookBody, nil)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("postmark subscription webhook: want 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	suppression, err := svc.ListSuppression(commsOrgID)
+	if err != nil {
+		t.Fatalf("list suppression: %v", err)
+	}
+	if len(suppression) != 0 {
+		t.Fatalf("expected suppression to be removed, got %#v", suppression)
+	}
+}
+
+func TestPostmarkWebhookBounceWithoutDeliveryStillSuppressesWhenScoped(t *testing.T) {
+	svc := comms.NewService()
+	router := newCommsRouter(t, svc)
+
+	webhookBody := commsBody(map[string]any{
+		"RecordType": "Bounce",
+		"Recipient":  "scoped-bounce@example.com",
+		"BouncedAt":  "2026-03-20T12:00:00Z",
+		"Details":    "Hard bounce",
+		"Metadata": map[string]any{
+			"org_id": commsOrgID,
+		},
+	})
+	rr := doPublicCommsReq(router, http.MethodPost, "/api/v1/webhooks/postmark", webhookBody, nil)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("postmark bounce webhook without delivery: want 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	suppression, err := svc.ListSuppression(commsOrgID)
+	if err != nil {
+		t.Fatalf("list suppression: %v", err)
+	}
+	if len(suppression) != 1 || suppression[0].Email != "scoped-bounce@example.com" || suppression[0].Reason != "bounce" {
+		t.Fatalf("expected scoped bounce suppression entry, got %#v", suppression)
+	}
+}
+
+func TestPostmarkWebhookComplaintWithoutDeliveryStillSuppressesWhenScoped(t *testing.T) {
+	svc := comms.NewService()
+	router := newCommsRouter(t, svc)
+
+	webhookBody := commsBody(map[string]any{
+		"RecordType": "SpamComplaint",
+		"Recipient":  "scoped-complaint@example.com",
+		"ChangedAt":  "2026-03-20T12:05:00Z",
+		"Details":    "Spam complaint",
+		"Metadata": map[string]any{
+			"org_id": commsOrgID,
+		},
+	})
+	rr := doPublicCommsReq(router, http.MethodPost, "/api/v1/webhooks/postmark", webhookBody, nil)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("postmark complaint webhook without delivery: want 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	suppression, err := svc.ListSuppression(commsOrgID)
+	if err != nil {
+		t.Fatalf("list suppression: %v", err)
+	}
+	if len(suppression) != 1 || suppression[0].Email != "scoped-complaint@example.com" || suppression[0].Reason != "complaint" {
+		t.Fatalf("expected scoped complaint suppression entry, got %#v", suppression)
 	}
 }

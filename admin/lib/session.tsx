@@ -10,6 +10,8 @@ import {
   type ReactNode,
 } from 'react'
 import type { Role } from './roles'
+import { ROLE_HIERARCHY } from './roles'
+import { DEV_STUB_TOKENS_ENABLED } from './featureFlags'
 
 export type User = {
   id: string
@@ -17,22 +19,11 @@ export type User = {
   name: string
   role: Role
   orgId: string
+  householdId?: string
+  mfaAuthenticated?: boolean
   avatarInitials?: string
 }
 
-// Session holds the bearer token in-memory only — it is NEVER written to localStorage.
-//
-// Production token storage model:
-//   The bearer token is an HttpOnly; Secure; SameSite=Strict cookie set by the backend
-//   at POST /api/v1/auth/sessions/issue. The browser attaches it automatically on every
-//   fetch() call. The frontend never has direct access to the real token value.
-//   Only non-sensitive display metadata (user profile, expiry) is stored in localStorage
-//   under `dare:session_meta` to allow the UI to hydrate without a round-trip on reload.
-//
-// Development stub token model:
-//   Stub token IDs (e.g. "stub-owner") are fixture identifiers, not real credentials.
-//   They are stored separately under `dare:dev_token` and are only active when
-//   AUTH_ENABLE_DEV_STUB_TOKENS is enabled on the server (development only).
 export type Session = {
   token: string
   refreshToken?: string
@@ -40,32 +31,35 @@ export type Session = {
   user: User
 }
 
-// Only non-sensitive display metadata is persisted to localStorage in production.
-type SessionMeta = {
-  user: User
-  expiresAt: number
-}
-
 type SessionContextValue = {
   session: Session | null
   loading: boolean
   setSession: (s: Session | null) => void
   signOut: () => void
+  refreshSession: () => Promise<Session | null>
+}
+
+type CurrentSessionResponse = {
+  status: string
+  user: {
+    user_id: string
+    email?: string
+    name?: string
+    org_id: string
+    household_id?: string
+    roles: string[]
+    mfa_authenticated?: boolean
+  }
 }
 
 const SessionContext = createContext<SessionContextValue | null>(null)
-
-// Production: stores only display metadata (name, role, orgId) — no token.
-const META_KEY = 'dare:session_meta'
-// Development: stores the stub token ID (a fixture string, not a real credential).
 const DEV_TOKEN_KEY = 'dare:dev_token'
 
-// Dev stub sessions — only active when AUTH_ENABLE_DEV_STUB_TOKENS is enabled on the server.
 export const DEV_SESSIONS: Record<string, Session> = {
   'stub-owner': {
     token: 'stub-owner',
     expiresAt: Infinity,
-    user: { id: 'dev-owner', email: 'owner@dare.local', name: 'Dev Owner', role: 'owner', orgId: 'org-dev', avatarInitials: 'DO' },
+    user: { id: 'dev-owner', email: 'owner@dare.local', name: 'Dev Owner', role: 'owner', orgId: 'org-dev', avatarInitials: 'DO', mfaAuthenticated: true },
   },
   'stub-admin': {
     token: 'stub-admin',
@@ -99,79 +93,165 @@ export const DEV_SESSIONS: Record<string, Session> = {
   },
 }
 
+function deriveInitials(name: string, email: string, userID: string): string {
+  const source = name || email || userID
+  const parts = source.split(/\s+/).filter(Boolean)
+  if (parts.length >= 2) return `${parts[0][0] ?? ''}${parts[1][0] ?? ''}`.toUpperCase()
+  return source.slice(0, 2).toUpperCase() || 'DA'
+}
+
+function resolvePrimaryRole(roles: string[]): Role {
+  const knownRoles = roles.filter((role): role is Role => role in ROLE_HIERARCHY)
+  if (knownRoles.length === 0) return 'parent'
+  return [...knownRoles].sort((a, b) => ROLE_HIERARCHY[b] - ROLE_HIERARCHY[a])[0]
+}
+
+function sessionFromCurrentResponse(payload: CurrentSessionResponse): Session {
+  const role = resolvePrimaryRole(payload.user.roles)
+  const name = payload.user.name?.trim() || payload.user.email?.trim() || payload.user.user_id
+  const email = payload.user.email?.trim() || ''
+  return {
+    token: '',
+    expiresAt: Date.now() + 15 * 60 * 1000,
+    user: {
+      id: payload.user.user_id,
+      email,
+      name,
+      role,
+      orgId: payload.user.org_id,
+      householdId: payload.user.household_id,
+      mfaAuthenticated: payload.user.mfa_authenticated,
+      avatarInitials: deriveInitials(name, email, payload.user.user_id),
+    },
+  }
+}
+
+export function getCSRFCookieValue(): string | null {
+  if (typeof document === 'undefined') return null
+  const cookie = document.cookie
+    .split('; ')
+    .find((entry) => entry.startsWith('aquify_csrf_token='))
+  if (!cookie) return null
+  const [, value = ''] = cookie.split('=')
+  return decodeURIComponent(value) || null
+}
+
+async function attemptRefresh(): Promise<boolean> {
+  const csrf = getCSRFCookieValue()
+  if (!csrf) return false
+
+  const res = await fetch('/api/v1/auth/sessions/refresh', {
+    method: 'POST',
+    headers: {
+      'X-CSRF-Token': csrf,
+    },
+    credentials: 'include',
+  })
+
+  return res.ok
+}
+
+async function fetchCurrentSession(allowRefresh: boolean): Promise<Session | null> {
+  const res = await fetch('/api/v1/auth/session', {
+    method: 'GET',
+    credentials: 'include',
+    cache: 'no-store',
+  })
+
+  if (res.ok) {
+    return sessionFromCurrentResponse(await res.json() as CurrentSessionResponse)
+  }
+
+  if (res.status === 401 && allowRefresh && await attemptRefresh()) {
+    return fetchCurrentSession(false)
+  }
+
+  if (res.status === 401 || res.status === 403) {
+    return null
+  }
+
+  throw new Error(`session bootstrap failed with status ${res.status}`)
+}
+
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [session, setSessionState] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    try {
-      if (process.env.NODE_ENV === 'development') {
-        // Dev path: restore session from the stub token ID stored in dare:dev_token.
-        // Stub IDs are fixture strings — not real credentials.
-        const storedId = localStorage.getItem(DEV_TOKEN_KEY)
-        if (storedId && DEV_SESSIONS[storedId] && DEV_SESSIONS[storedId].expiresAt > Date.now()) {
-          setSessionState(DEV_SESSIONS[storedId])
-          setLoading(false)
-          return
-        }
-        // Clean up expired or unknown dev token, then auto-seed default stub.
-        localStorage.removeItem(DEV_TOKEN_KEY)
-        const devSession = DEV_SESSIONS['stub-owner']
-        setSessionState(devSession)
-        localStorage.setItem(DEV_TOKEN_KEY, 'stub-owner')
-        setLoading(false)
-        return
-      }
-
-      // Production path: restore only non-sensitive display metadata from localStorage.
-      // The bearer token is an HttpOnly cookie — the frontend never reads or writes it.
-      const raw = localStorage.getItem(META_KEY)
-      if (raw) {
-        const meta = JSON.parse(raw) as SessionMeta
-        if (meta.expiresAt > Date.now()) {
-          // token is intentionally empty string here; the real token is an HttpOnly cookie
-          // forwarded automatically by the browser on every API request.
-          setSessionState({ token: '', expiresAt: meta.expiresAt, user: meta.user })
-        } else {
-          localStorage.removeItem(META_KEY)
-        }
-      }
-    } catch {
-      localStorage.removeItem(META_KEY)
-      localStorage.removeItem(DEV_TOKEN_KEY)
-    }
-    setLoading(false)
-  }, [])
-
   const setSession = useCallback((s: Session | null) => {
     setSessionState(s)
-    if (!s) {
-      localStorage.removeItem(META_KEY)
-      if (process.env.NODE_ENV === 'development') {
-        localStorage.removeItem(DEV_TOKEN_KEY)
-      }
+    if (typeof window === 'undefined') return
+
+    if (!DEV_STUB_TOKENS_ENABLED) {
+      localStorage.removeItem(DEV_TOKEN_KEY)
       return
     }
-    if (process.env.NODE_ENV === 'development') {
-      // Store only known stub IDs — never persist arbitrary token strings to localStorage.
-      // If a real OIDC token is passed in dev mode, it is NOT persisted (session resets on reload).
-      if (s.token in DEV_SESSIONS) {
-        localStorage.setItem(DEV_TOKEN_KEY, s.token)
-      }
-    } else {
-      // Store only non-sensitive display metadata; never store the bearer token.
-      const meta: SessionMeta = { user: s.user, expiresAt: s.expiresAt }
-      localStorage.setItem(META_KEY, JSON.stringify(meta))
+
+    if (s && s.token in DEV_SESSIONS) {
+      localStorage.setItem(DEV_TOKEN_KEY, s.token)
+      return
     }
+
+    localStorage.removeItem(DEV_TOKEN_KEY)
   }, [])
 
   const signOut = useCallback(() => {
-    setSession(null)
-  }, [setSession])
+    setSessionState(null)
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(DEV_TOKEN_KEY)
+    }
+  }, [])
+
+  const refreshSession = useCallback(async () => {
+    if (DEV_STUB_TOKENS_ENABLED && typeof window !== 'undefined') {
+      const storedId = localStorage.getItem(DEV_TOKEN_KEY)
+      if (storedId && DEV_SESSIONS[storedId]) {
+        const next = DEV_SESSIONS[storedId]
+        setSessionState(next)
+        return next
+      }
+    }
+
+    try {
+      const next = await fetchCurrentSession(true)
+      setSessionState(next)
+      return next
+    } catch {
+      setSessionState(null)
+      return null
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function bootstrap() {
+      try {
+        if (DEV_STUB_TOKENS_ENABLED) {
+          const storedId = localStorage.getItem(DEV_TOKEN_KEY)
+          if (storedId && DEV_SESSIONS[storedId]) {
+            if (!cancelled) setSessionState(DEV_SESSIONS[storedId])
+            return
+          }
+        }
+
+        const next = await fetchCurrentSession(true)
+        if (!cancelled) setSessionState(next)
+      } catch {
+        if (!cancelled) setSessionState(null)
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+
+    bootstrap()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const value = useMemo<SessionContextValue>(
-    () => ({ session, loading, setSession, signOut }),
-    [session, loading, setSession, signOut],
+    () => ({ session, loading, setSession, signOut, refreshSession }),
+    [session, loading, setSession, signOut, refreshSession],
   )
 
   return (

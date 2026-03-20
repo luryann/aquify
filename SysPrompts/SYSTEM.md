@@ -4,4 +4,4 @@ If the task given to you is complex, create a new planning file that you will us
 
 If at any time during the session if you deem that you are unable to complete the task due to any reason, including but not limited to a lack of information, or overall complexity, you may use the internet and look for guidance or documentation. 
 
-YOUR GOAL FOR RIGHT NOW: Use all information available to you to FINISH STEP 22.
+YOUR GOAL FOR RIGHT NOW: Use all information available to you to FINISH STEP 29E.

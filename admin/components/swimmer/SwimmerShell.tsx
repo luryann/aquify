@@ -108,7 +108,7 @@ export function SwimmerShell({ children }: { children: ReactNode }) {
 
   const handleSignOut = () => {
     signOut()
-    router.push('/login')
+    router.push('/logout')
   }
 
   return (

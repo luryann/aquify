@@ -11,6 +11,12 @@ import (
 	"github.com/dareaquatics/aquify/server/internal/app/imports"
 )
 
+type malwareScannerFunc func(storageKey string, metadata imports.FileUploadMetadata) imports.MalwareScanResult
+
+func (fn malwareScannerFunc) Scan(storageKey string, metadata imports.FileUploadMetadata) imports.MalwareScanResult {
+	return fn(storageKey, metadata)
+}
+
 // ─── Envelope helpers ─────────────────────────────────────────────────────────
 
 type importEnvelope struct {
@@ -72,8 +78,10 @@ func requestUploadURL(t *testing.T, router http.Handler, orgID, token, filename,
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/imports/upload-url",
 		encodeJSONBody(t, map[string]any{
-			"filename":  filename,
-			"file_type": fileType,
+			"filename":   filename,
+			"file_type":  fileType,
+			"size_bytes": 1024,
+			"mime_type":  importMIMEFor(filename, fileType),
 		}))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Org-Id", orgID)
@@ -93,6 +101,23 @@ func requestUploadURL(t *testing.T, router http.Handler, orgID, token, filename,
 	return env.Import.ID
 }
 
+func importMIMEFor(filename, fileType string) string {
+	switch fileType {
+	case "zip", "hy3":
+		return "application/zip"
+	case "cl2", "sd3":
+		return "application/octet-stream"
+	}
+	switch {
+	case len(filename) >= 4 && filename[len(filename)-4:] == ".zip":
+		return "application/zip"
+	case len(filename) >= 4 && filename[len(filename)-4:] == ".hy3":
+		return "application/zip"
+	default:
+		return "application/octet-stream"
+	}
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 func TestRequestUploadURL(t *testing.T) {
@@ -106,8 +131,10 @@ func TestRequestUploadURL(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/imports/upload-url",
 		encodeJSONBody(t, map[string]any{
-			"filename":  "results.sd3",
-			"file_type": "sd3",
+			"filename":   "results.sd3",
+			"file_type":  "sd3",
+			"size_bytes": 1024,
+			"mime_type":  "application/octet-stream",
 		}))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Org-Id", "org-import-test")
@@ -151,7 +178,9 @@ func TestRequestUploadURL_FileTypeInferredFromFilename(t *testing.T) {
 	// No file_type field — inferred from filename.
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/imports/upload-url",
 		encodeJSONBody(t, map[string]any{
-			"filename": "meet_results.zip",
+			"filename":   "meet_results.zip",
+			"size_bytes": 2048,
+			"mime_type":  "application/zip",
 		}))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Org-Id", "org-x")
@@ -181,8 +210,10 @@ func TestRequestUploadURL_Forbidden_Parent(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/imports/upload-url",
 		encodeJSONBody(t, map[string]any{
-			"filename":  "results.sd3",
-			"file_type": "sd3",
+			"filename":   "results.sd3",
+			"file_type":  "sd3",
+			"size_bytes": 1024,
+			"mime_type":  "application/octet-stream",
 		}))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Org-Id", "org-x")
@@ -552,7 +583,9 @@ func TestRequestUploadURL_UnsupportedType(t *testing.T) {
 	// filename has no recognized extension and no file_type given.
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/imports/upload-url",
 		encodeJSONBody(t, map[string]any{
-			"filename": "something.csv",
+			"filename":   "something.csv",
+			"size_bytes": 512,
+			"mime_type":  "text/csv",
 		}))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Org-Id", "org-x")
@@ -562,5 +595,110 @@ func TestRequestUploadURL_UnsupportedType(t *testing.T) {
 
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for unsupported type, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestFinalizeImportRejectsRequiredModeWithoutScanner(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	importsService := imports.NewService()
+	importsService.ConfigureSecurity(imports.SecurityConfig{RequireMalwareScanHook: true})
+	importsService.SetMalwareScanner(nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	adminToken := issueSessionToken(t, router, "org-required", []string{"admin"}, false)
+	importID := requestUploadURL(t, router, "org-required", adminToken, "required.sd3", "sd3")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/imports/"+importID+"/finalize", nil)
+	req.Header.Set("X-Org-Id", "org-required")
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestFinalizeImportRejectsRequiredModeWithStubScanner(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	importsService := imports.NewService()
+	importsService.ConfigureSecurity(imports.SecurityConfig{RequireMalwareScanHook: true})
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	adminToken := issueSessionToken(t, router, "org-stub", []string{"admin"}, false)
+	importID := requestUploadURL(t, router, "org-stub", adminToken, "stub.sd3", "sd3")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/imports/"+importID+"/finalize", nil)
+	req.Header.Set("X-Org-Id", "org-stub")
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestFinalizeImportRejectsInfectedUpload(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	importsService := imports.NewService()
+	importsService.SetMalwareScanner(malwareScannerFunc(func(_ string, _ imports.FileUploadMetadata) imports.MalwareScanResult {
+		return imports.MalwareScanResult{Status: "infected", Provider: "clamav"}
+	}))
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	adminToken := issueSessionToken(t, router, "org-infected", []string{"admin"}, false)
+	importID := requestUploadURL(t, router, "org-infected", adminToken, "infected.zip", "zip")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/imports/"+importID+"/finalize", nil)
+	req.Header.Set("X-Org-Id", "org-infected")
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestFinalizeImportAcceptsCleanUploadFromRealScanner(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	importsService := imports.NewService()
+	importsService.ConfigureSecurity(imports.SecurityConfig{RequireMalwareScanHook: true})
+	importsService.SetMalwareScanner(malwareScannerFunc(func(_ string, metadata imports.FileUploadMetadata) imports.MalwareScanResult {
+		if metadata.Filename != "clean.sd3" {
+			t.Fatalf("expected filename clean.sd3, got %q", metadata.Filename)
+		}
+		return imports.MalwareScanResult{Status: "clean", Provider: "clamav"}
+	}))
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	adminToken := issueSessionToken(t, router, "org-clean", []string{"admin"}, false)
+	importID := requestUploadURL(t, router, "org-clean", adminToken, "clean.sd3", "sd3")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/imports/"+importID+"/finalize", nil)
+	req.Header.Set("X-Org-Id", "org-clean")
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var env importEnvelope
+	if err := json.Unmarshal(rr.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if env.Import.Status != "conflicts_pending" {
+		t.Fatalf("expected status conflicts_pending, got %q", env.Import.Status)
 	}
 }

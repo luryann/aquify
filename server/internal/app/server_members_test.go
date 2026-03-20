@@ -36,6 +36,14 @@ type swimmersListEnvelope struct {
 	} `json:"swimmers"`
 }
 
+type householdsListEnvelope struct {
+	Count      int `json:"count"`
+	Households []struct {
+		ID            string `json:"id"`
+		HouseholdName string `json:"household_name"`
+	} `json:"households"`
+}
+
 func TestMembersListRejectsUnauthenticatedRequests(t *testing.T) {
 	t.Parallel()
 
@@ -142,6 +150,49 @@ func TestMembersMedicalVisibilityByRole(t *testing.T) {
 	}
 	if len(coachList.Swimmers[0].MedicalFlags) != 1 || coachList.Swimmers[0].MedicalFlags[0] != "asthma" {
 		t.Fatalf("expected coach list medical flags [asthma], got %#v", coachList.Swimmers[0].MedicalFlags)
+	}
+}
+
+func TestListHouseholdsReturnsLiveDataForPrivilegedRoles(t *testing.T) {
+	t.Parallel()
+
+	router := NewRouter(Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	parentToken := issueSessionToken(t, router, "org-demo", []string{"parent"}, false)
+	adminToken := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
+
+	for _, name := range []string{"Rivera Family", "Nguyen Family"} {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/members/households", encodeJSONBody(t, map[string]any{
+			"org_id":         "org-demo",
+			"household_name": name,
+		}))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Org-Id", "org-demo")
+		req.Header.Set("Authorization", "Bearer "+parentToken)
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		if rr.Code != http.StatusCreated {
+			t.Fatalf("expected household create status %d, got %d body=%s", http.StatusCreated, rr.Code, rr.Body.String())
+		}
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/members/households", nil)
+	listReq.Header.Set("X-Org-Id", "org-demo")
+	listReq.Header.Set("Authorization", "Bearer "+adminToken)
+	listRes := httptest.NewRecorder()
+	router.ServeHTTP(listRes, listReq)
+	if listRes.Code != http.StatusOK {
+		t.Fatalf("expected household list status %d, got %d body=%s", http.StatusOK, listRes.Code, listRes.Body.String())
+	}
+
+	var env householdsListEnvelope
+	if err := json.Unmarshal(listRes.Body.Bytes(), &env); err != nil {
+		t.Fatalf("failed to decode household list response: %v", err)
+	}
+	if env.Count != 2 {
+		t.Fatalf("expected 2 households, got %d", env.Count)
+	}
+	if env.Households[0].ID == "" || env.Households[0].HouseholdName == "" {
+		t.Fatalf("expected populated household response, got %#v", env.Households[0])
 	}
 }
 

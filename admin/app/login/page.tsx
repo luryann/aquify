@@ -3,8 +3,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useSession, DEV_SESSIONS } from '@/lib/session'
-
-const IS_DEV = process.env.NODE_ENV === 'development'
+import { destinationForRole } from '@/lib/auth-routing'
+import { DEV_STUB_TOKENS_ENABLED } from '@/lib/featureFlags'
 
 const STUB_ROLES = [
   { id: 'stub-owner',    label: 'Owner',     color: '#eb5d1e', rgb: '235,93,30',   desc: 'Full system access' },
@@ -15,12 +15,6 @@ const STUB_ROLES = [
   { id: 'stub-readonly', label: 'Read-Only', color: '#9ca3af', rgb: '156,163,175', desc: 'View-only staff' },
   { id: 'stub-swimmer',  label: 'Swimmer',   color: '#22d3ee', rgb: '34,211,238',  desc: 'Swimmer portal' },
 ] as const
-
-function getDestination(role: string): string {
-  if (role === 'parent') return '/portal/dashboard'
-  if (role === 'swimmer') return '/swim'
-  return '/dashboard'
-}
 
 export default function LoginPage() {
   const router = useRouter()
@@ -34,7 +28,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!loading && session) {
-      router.replace(getDestination(session.user.role))
+      router.replace(destinationForRole(session.user.role))
     }
   }, [loading, session, router])
 
@@ -49,7 +43,7 @@ export default function LoginPage() {
     const s = DEV_SESSIONS[id]
     if (!s) return
     setSession(s)
-    router.push(getDestination(s.user.role))
+    router.push(destinationForRole(s.user.role))
   }, [setSession, router])
 
   // Loading splash
@@ -190,7 +184,7 @@ export default function LoginPage() {
             </div>
 
             {/* Development stub login — hidden in production */}
-            {IS_DEV && (
+            {DEV_STUB_TOKENS_ENABLED && (
               <div className="lp-dev">
                 <button
                   className="lp-dev-toggle"

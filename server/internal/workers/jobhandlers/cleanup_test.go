@@ -1,0 +1,164 @@
+package jobhandlers
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"log/slog"
+	"testing"
+	"time"
+
+	"github.com/dareaquatics/aquify/server/internal/app/exports"
+	"github.com/dareaquatics/aquify/server/internal/app/imports"
+	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	"github.com/dareaquatics/aquify/server/internal/app/reports"
+	"github.com/dareaquatics/aquify/server/internal/storage"
+	"github.com/dareaquatics/aquify/server/internal/workers"
+)
+
+func TestPurgeExpiredFilesHandler_ExpiresImportsExportsAndReports(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	store := storage.NewStubStorage("")
+	importsService := imports.NewServiceWithStorage(store)
+	exportsService := exports.NewServiceWithStorage(store)
+	reportsService := reports.NewService(nil, nil, nil, nil)
+	reportsService.SetStorage(store)
+
+	principal := &appmiddleware.Principal{UserID: "admin-user", OrgID: "org-cleanup", Roles: []string{"admin"}}
+
+	importRecord, _, err := importsService.RequestUploadURL(principal, "org-cleanup", imports.RequestUploadURLInput{
+		Filename:  "results.sd3",
+		FileType:  "sd3",
+		SizeBytes: 1024,
+		MIMEType:  "application/octet-stream",
+	})
+	if err != nil {
+		t.Fatalf("RequestUploadURL: %v", err)
+	}
+	if err := store.PutObject(context.Background(), importRecord.StorageKey, "application/octet-stream", []byte("import-payload")); err != nil {
+		t.Fatalf("seed import object: %v", err)
+	}
+	importSnapshot, err := importsService.ExportRuntimeSnapshot()
+	if err != nil {
+		t.Fatalf("ExportRuntimeSnapshot(imports): %v", err)
+	}
+	var importState struct {
+		Imports map[string]*imports.FileImport `json:"imports"`
+	}
+	if err := json.Unmarshal(importSnapshot, &importState); err != nil {
+		t.Fatalf("decode import snapshot: %v", err)
+	}
+	expiredUploadAt := time.Now().UTC().Add(-time.Minute)
+	importState.Imports[importRecord.ID].UploadURLExpiresAt = &expiredUploadAt
+	if err := importsService.LoadRuntimeSnapshot(mustJSON(t, importState)); err != nil {
+		t.Fatalf("LoadRuntimeSnapshot(imports): %v", err)
+	}
+
+	exportsService.ConfigureArtifactTTL(time.Millisecond)
+	exportRecord, _, err := exportsService.GenerateExport(principal, "org-cleanup", "meet-cleanup", exports.GenerateExportInput{
+		ExportType:    exports.ExportTypeStandardSD3,
+		MeetName:      "Cleanup Meet",
+		MeetStartDate: "03152026",
+		MeetEndDate:   "03162026",
+		Course:        "SCY",
+		HostTeamCode:  "DARE",
+		HostTeamName:  "DARE Aquatics",
+		Entries: []exports.ExportEntry{
+			{
+				Swimmer: exports.ExportSwimmer{
+					LastName:  "Smith",
+					FirstName: "Jamie",
+					USSNumber: "123456789012",
+					DOBRaw:    "02152010",
+					Gender:    "F",
+					TeamCode:  "DARE",
+				},
+				EventNumber: "1",
+				Distance:    100,
+				Stroke:      "free",
+				EventGender: "F",
+				AgeGroup:    "1517",
+				Course:      "SCY",
+				SeedTimeMs:  60000,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("GenerateExport: %v", err)
+	}
+
+	reportsService.ConfigureArtifactTTL(time.Millisecond)
+	reportArtifact, err := reportsService.StoreCSVArtifact("org-cleanup", "invoice_aging", time.Now().UTC(), &reports.CSVDocument{
+		Filename: "invoice-aging.csv",
+		Data:     []byte("invoice_id\ninv-1\n"),
+	})
+	if err != nil {
+		t.Fatalf("StoreCSVArtifact: %v", err)
+	}
+
+	time.Sleep(5 * time.Millisecond)
+	cutoff := time.Now().UTC()
+	task, err := workers.NewTask(workers.TypePurgeExpiredFiles, PurgeExpiredFilesPayload{
+		OrgID:      "org-cleanup",
+		CutoffTime: cutoff.Format(time.RFC3339Nano),
+	})
+	if err != nil {
+		t.Fatalf("NewTask: %v", err)
+	}
+
+	handler := PurgeExpiredFilesHandler(logger, importsService, exportsService, reportsService)
+	if err := handler(context.Background(), task); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+
+	importAfter, err := importsService.GetImport(principal, "org-cleanup", importRecord.ID)
+	if err != nil {
+		t.Fatalf("GetImport: %v", err)
+	}
+	if importAfter.Status != "expired" {
+		t.Fatalf("import status = %q, want expired", importAfter.Status)
+	}
+
+	exportAfter, err := exportsService.GetExport(principal, "org-cleanup", exportRecord.ID)
+	if err != nil {
+		t.Fatalf("GetExport: %v", err)
+	}
+	if exportAfter.Status != "expired" {
+		t.Fatalf("export status = %q, want expired", exportAfter.Status)
+	}
+
+	reportSnapshot, err := reportsService.ExportRuntimeSnapshot()
+	if err != nil {
+		t.Fatalf("ExportRuntimeSnapshot: %v", err)
+	}
+	var snapshot struct {
+		Files map[string]reports.StoredArtifact `json:"files"`
+	}
+	if err := json.Unmarshal(reportSnapshot, &snapshot); err != nil {
+		t.Fatalf("decode report snapshot: %v", err)
+	}
+	if len(snapshot.Files) != 0 {
+		t.Fatalf("expected report artifacts to be purged, got %d", len(snapshot.Files))
+	}
+
+	for _, key := range []string{importRecord.StorageKey, exportRecord.StorageKey, reportArtifact.StorageKey} {
+		exists, err := store.Exists(context.Background(), key)
+		if err != nil {
+			t.Fatalf("Exists(%q): %v", key, err)
+		}
+		if exists {
+			t.Fatalf("expected storage key %q to be deleted", key)
+		}
+	}
+}
+
+func mustJSON(t *testing.T, value any) []byte {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("marshal snapshot: %v", err)
+	}
+	return data
+}

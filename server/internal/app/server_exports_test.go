@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dareaquatics/aquify/server/internal/app/exports"
 )
@@ -40,8 +41,9 @@ type exportListEnvelope struct {
 
 type exportGetEnvelope struct {
 	Export struct {
-		ID     string `json:"id"`
-		Status string `json:"status"`
+		ID        string `json:"id"`
+		Status    string `json:"status"`
+		SizeBytes int    `json:"size_bytes"`
 	} `json:"export"`
 }
 
@@ -98,6 +100,23 @@ func doGenerateExport(t *testing.T, router http.Handler, orgID, token, meetID, e
 	if env.Export.ID == "" {
 		t.Fatal("expected export ID in response")
 	}
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		req = httptest.NewRequest(http.MethodGet, "/api/v1/exports/"+env.Export.ID, nil)
+		req.Header.Set("X-Org-Id", orgID)
+		req.Header.Set("Authorization", "Bearer "+token)
+		rr = httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		if rr.Code == http.StatusOK {
+			var getEnv exportGetEnvelope
+			if err := json.Unmarshal(rr.Body.Bytes(), &getEnv); err == nil && getEnv.Export.Status == "ready" {
+				env.Export.Status = getEnv.Export.Status
+				env.Export.SizeBytes = getEnv.Export.SizeBytes
+				break
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	return env
 }
 
@@ -127,8 +146,8 @@ func TestGenerateExport_StandardSD3(t *testing.T) {
 	if !strings.HasSuffix(env.Export.Filename, ".sd3") {
 		t.Errorf("filename = %q; want .sd3 suffix", env.Export.Filename)
 	}
-	if env.AuditEvent.Action != "export.generated" {
-		t.Errorf("audit action = %q; want export.generated", env.AuditEvent.Action)
+	if env.AuditEvent.Action != "export.requested" {
+		t.Errorf("audit action = %q; want export.requested", env.AuditEvent.Action)
 	}
 }
 

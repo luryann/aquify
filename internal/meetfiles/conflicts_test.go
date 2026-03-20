@@ -1,6 +1,9 @@
 package meetfiles_test
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -95,8 +98,8 @@ func TestClassifyEventErrors_UnknownEvent(t *testing.T) {
 		{EventNumber: "0001"},
 	}
 	results := []meetfiles.ParsedIndividualResult{
-		ind(1, "Smith", "John", "0001"),  // known
-		ind(2, "Doe", "Jane", "9999"),    // unknown
+		ind(1, "Smith", "John", "0001"), // known
+		ind(2, "Doe", "Jane", "9999"),   // unknown
 	}
 	errs := meetfiles.ClassifyEventErrors(results, known)
 	if len(errs) != 1 {
@@ -213,6 +216,46 @@ func TestBuildReport_Deterministic(t *testing.T) {
 	}
 	if report.Errors[1].LineNumber != 10 {
 		t.Errorf("Errors[1].LineNumber = %d, want 10", report.Errors[1].LineNumber)
+	}
+}
+
+func TestBuildReport_GoldenFile(t *testing.T) {
+	parsed := &meetfiles.ParseResult{
+		FileType: meetfiles.FileTypeSD3,
+		ParseErrors: []meetfiles.ParseError{
+			{LineNumber: 10, Code: meetfiles.ErrCodeMalformedRecord, Message: "bad line"},
+			{LineNumber: 3, Code: meetfiles.ErrCodeMalformedRecord, Message: "another bad line"},
+		},
+		IndividualResults: []meetfiles.ParsedIndividualResult{
+			ind(5, "Smith", "John", "0001"),
+			ind(8, "Doe", "Jane", "0002"),
+		},
+	}
+
+	withMatches := []meetfiles.ResultWithMatch{
+		{
+			Result: parsed.IndividualResults[0],
+			Match:  meetfiles.MatchResult{Outcome: meetfiles.MatchExact, SwimmerID: "swimmer_001"},
+		},
+		{
+			Result: parsed.IndividualResults[1],
+			Match:  meetfiles.MatchResult{Outcome: meetfiles.MatchNone, Strategy: "name_dob_gender"},
+		},
+	}
+
+	report := meetfiles.BuildReport(parsed, withMatches, nil)
+	got, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal report: %v", err)
+	}
+
+	want, err := os.ReadFile(filepath.Join("testdata", "import_report.golden.json"))
+	if err != nil {
+		t.Fatalf("read golden report: %v", err)
+	}
+
+	if string(got)+"\n" != string(want) {
+		t.Fatalf("import report golden mismatch\n--- got ---\n%s\n--- want ---\n%s", got, want)
 	}
 }
 

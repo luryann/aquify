@@ -217,6 +217,8 @@ func (h *ExportsHandlers) getExport(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient permissions.", nil)
 		case errors.Is(err, exports.ErrExportNotFound):
 			httpx.WriteError(w, r, http.StatusNotFound, "export_not_found", "Export job not found.", nil)
+		case errors.Is(err, exports.ErrExportExpired):
+			httpx.WriteError(w, r, http.StatusGone, "export_expired", "Export artifact has expired.", nil)
 		default:
 			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to get export.", nil)
 		}
@@ -244,6 +246,8 @@ func (h *ExportsHandlers) downloadExport(w http.ResponseWriter, r *http.Request)
 			httpx.WriteError(w, r, http.StatusNotFound, "export_not_found", "Export job not found.", nil)
 		case errors.Is(err, exports.ErrExportNotReady):
 			httpx.WriteError(w, r, http.StatusConflict, "export_not_ready", "Export is not ready for download.", nil)
+		case errors.Is(err, exports.ErrExportExpired):
+			httpx.WriteError(w, r, http.StatusGone, "export_expired", "Export artifact has expired.", nil)
 		default:
 			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to download export.", nil)
 		}

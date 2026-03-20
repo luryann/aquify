@@ -12,6 +12,8 @@ type principalContextKey struct{}
 
 type Principal struct {
 	UserID           string   `json:"user_id"`
+	Email            string   `json:"email,omitempty"`
+	Name             string   `json:"name,omitempty"`
 	OrgID            string   `json:"org_id,omitempty"`
 	HouseholdID      string   `json:"household_id,omitempty"`
 	Roles            []string `json:"roles"`
@@ -25,20 +27,9 @@ type PrincipalResolver interface {
 func Auth(resolver PrincipalResolver) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			authHeader := strings.TrimSpace(r.Header.Get("Authorization"))
-			if authHeader == "" {
-				httpx.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Missing Authorization header.", nil)
-				return
-			}
-
-			if !strings.HasPrefix(authHeader, "Bearer ") {
-				httpx.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Authorization header must use Bearer token format.", nil)
-				return
-			}
-
-			token := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
+			token, errCode, errMessage := extractAuthToken(r)
 			if token == "" {
-				httpx.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Bearer token is required.", nil)
+				httpx.WriteError(w, r, http.StatusUnauthorized, errCode, errMessage, nil)
 				return
 			}
 
@@ -58,6 +49,28 @@ func Auth(resolver PrincipalResolver) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+func extractAuthToken(r *http.Request) (string, string, string) {
+	authHeader := strings.TrimSpace(r.Header.Get("Authorization"))
+	if authHeader != "" {
+		if !strings.HasPrefix(authHeader, "Bearer ") {
+			return "", "unauthorized", "Authorization header must use Bearer token format."
+		}
+
+		token := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
+		if token == "" {
+			return "", "unauthorized", "Bearer token is required."
+		}
+		return token, "", ""
+	}
+
+	cookie, err := r.Cookie(AccessTokenCookieName)
+	if err == nil && strings.TrimSpace(cookie.Value) != "" {
+		return strings.TrimSpace(cookie.Value), "", ""
+	}
+
+	return "", "unauthorized", "Missing Authorization header or session cookie."
 }
 
 func PrincipalFromContext(ctx context.Context) (*Principal, bool) {

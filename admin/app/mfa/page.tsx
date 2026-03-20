@@ -2,6 +2,8 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { getCSRFCookieValue, useSession } from '@/lib/session'
+import { destinationForRole } from '@/lib/auth-routing'
 
 const KEYFRAMES = `
 @keyframes mfaFadeUp {
@@ -22,11 +24,16 @@ const KEYFRAMES = `
 
 export default function MfaPage() {
   const router = useRouter()
+  const { refreshSession, session } = useSession()
   const [mounted, setMounted] = useState(false)
   const [mode, setMode] = useState<'totp' | 'backup'>('totp')
   const [digits, setDigits] = useState<string[]>(Array(6).fill(''))
   const [backupCode, setBackupCode] = useState('')
+  const [factorId, setFactorId] = useState('')
+  const [totpFactorId, setTotpFactorId] = useState('')
+  const [backupFactorId, setBackupFactorId] = useState('')
   const [loading, setLoading] = useState(false)
+  const [loadingFactors, setLoadingFactors] = useState(true)
   const [error, setError] = useState('')
   const [shake, setShake] = useState(false)
   const inputRefs = useRef<(HTMLInputElement | null)[]>([])
@@ -43,6 +50,48 @@ export default function MfaPage() {
     // Focus first input on mount
     setTimeout(() => inputRefs.current[0]?.focus(), 300)
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadFactors() {
+      try {
+        const res = await fetch('/api/v1/auth/mfa/factors', {
+          method: 'GET',
+          credentials: 'include',
+          cache: 'no-store',
+        })
+        if (!res.ok) {
+          throw new Error('Unable to load your MFA factors.')
+        }
+        const payload = await res.json() as {
+          factors: Array<{ id: string; factor_type: string; label?: string }>
+        }
+        const totp = payload.factors.find((item) => item.factor_type === 'totp')?.id ?? ''
+        const backup = payload.factors.find((item) => item.factor_type === 'backup_code')?.id ?? ''
+        if (!cancelled) {
+          setTotpFactorId(totp)
+          setBackupFactorId(backup)
+          setFactorId(totp || backup)
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Unable to load MFA factors.')
+        }
+      } finally {
+        if (!cancelled) setLoadingFactors(false)
+      }
+    }
+
+    loadFactors()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    setFactorId(mode === 'totp' ? totpFactorId : backupFactorId)
+  }, [mode, totpFactorId, backupFactorId])
 
   function handleDigitChange(idx: number, val: string) {
     if (!/^\d?$/.test(val)) return
@@ -77,6 +126,11 @@ export default function MfaPage() {
   async function handleVerify(e: React.FormEvent) {
     e.preventDefault()
     const code = mode === 'totp' ? digits.join('') : backupCode.trim()
+    if (!factorId) {
+      setError('No enrolled factor is available for this verification method.')
+      triggerShake()
+      return
+    }
     if ((mode === 'totp' && code.length < 6) || (mode === 'backup' && !code)) {
       setError('Please enter a complete code.')
       triggerShake()
@@ -84,12 +138,42 @@ export default function MfaPage() {
     }
     setLoading(true)
     setError('')
-    // Simulate API call
-    await new Promise((r) => setTimeout(r, 1200))
-    // In production: POST /api/v1/auth/mfa/challenge
-    // Stub: always succeeds
-    setLoading(false)
-    router.push('/dashboard')
+    try {
+      const csrf = getCSRFCookieValue()
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      }
+      if (csrf) headers['X-CSRF-Token'] = csrf
+
+      const res = await fetch('/api/v1/auth/mfa/challenge', {
+        method: 'POST',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify({
+          factor_id: factorId,
+          challenge_code: code,
+        }),
+      })
+
+      if (!res.ok) {
+        let message = 'Verification failed.'
+        try {
+          const payload = await res.json() as { message?: string; error?: string }
+          message = payload.message ?? payload.error ?? message
+        } catch {
+          // Use default message.
+        }
+        throw new Error(message)
+      }
+
+      const next = await refreshSession()
+      setLoading(false)
+      router.replace(destinationForRole(next?.user.role ?? session?.user.role ?? 'admin'))
+    } catch (err) {
+      setLoading(false)
+      setError(err instanceof Error ? err.message : 'Verification failed.')
+      triggerShake()
+    }
   }
 
   function triggerShake() {
@@ -193,6 +277,12 @@ export default function MfaPage() {
               ? 'Enter the 6-digit code from your authenticator app.'
               : 'Enter one of your saved backup codes.'}
           </p>
+
+          {loadingFactors && (
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '18px' }}>
+              Loading your enrolled verification methods…
+            </p>
+          )}
 
           {/* Mode tabs */}
           <div

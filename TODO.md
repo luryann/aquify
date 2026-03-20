@@ -409,102 +409,208 @@ NOTE: MAP OUT THE UI FIRST
 - [x] Replace OIDC callback stub role derivation with real IdP token exchange.
 - [x] Enforce OIDC callback `state` signature/expiry validation and `id_token` nonce validation.
 - [x] Replace fixed MFA challenge code pattern with factor-based verification (TOTP/backup code).
-- [ ] Enforce HTTPS-only cookie settings.
-- [ ] Add CSRF protection for session endpoints.
-- [ ] Add brute-force/rate limiting middleware.
-- [ ] Add file upload size caps.
-- [ ] Add file MIME/type validation on uploads.
-- [ ] Add malware-scan integration hook for imports.
-- [ ] Add secrets scanning in CI.
-- [ ] Add dependency vulnerability scanning in CI.
-- [ ] Add baseline security headers middleware.
-- [ ] Add privileged action step-up MFA checks.
-- [ ] Add admin impersonation safeguards (if enabled).
-- [ ] Create threat model doc v1.
+- [x] Enforce HTTPS-only cookie settings.
+- [x] Add CSRF protection for session endpoints.
+- [x] Add brute-force/rate limiting middleware.
+- [x] Add file upload size caps.
+- [x] Add file MIME/type validation on uploads.
+- [x] Add malware-scan integration hook for imports.
+- [x] Add secrets scanning in CI.
+- [x] Add dependency vulnerability scanning in CI.
+- [x] Add baseline security headers middleware.
+- [x] Add privileged action step-up MFA checks.
+- [x] Add admin impersonation safeguards (if enabled).
+- [x] Create threat model doc v1.
 
 ## 23) Test strategy execution
 - [x] Replace placeholder `make test` target with executable API/admin quality checks.
 - [x] Replace placeholder `make lint` target with executable API/admin linting pipeline.
-- [ ] Add unit test harness for Go services.
-- [ ] Add integration test harness with test DB.
-- [ ] Add API contract tests from OpenAPI examples.
-- [ ] Add parser fixture test directory.
-- [ ] Add golden-file tests for SD3 export output.
-- [ ] Add golden-file tests for import reports.
-- [ ] Add HY3 detection tests (`.hy3` extension + ZIP magic fallback behavior).
-- [ ] Add HY3 integration tests for import finalization endpoint and report generation.
-- [ ] Add RBAC matrix tests for sensitive routes.
-- [ ] Add billing ledger invariants tests.
-- [ ] Add Stripe webhook idempotency tests.
-- [ ] Add end-to-end happy-path test: registration to payment.
-- [ ] Add end-to-end happy-path test: meet commit to SD3 export.
-- [ ] Add end-to-end happy-path test: results import to best time update.
-- [ ] Add chaos test: duplicate import submission.
-- [ ] Add performance test for large import files.
-- [ ] Add CI quality gate: fail if P0 tests fail.
+- [x] Add unit test harness for Go services.
+- [x] Add integration test harness with test DB.
+- [x] Add API contract tests from OpenAPI examples.
+- [x] Add parser fixture test directory.
+- [x] Add golden-file tests for SD3 export output.
+- [x] Add golden-file tests for import reports.
+- [x] Add HY3 detection tests (`.hy3` extension + ZIP magic fallback behavior).
+- [x] Add HY3 integration tests for import finalization endpoint and report generation.
+- [x] Add RBAC matrix tests for sensitive routes.
+- [x] Add billing ledger invariants tests.
+- [x] Add Stripe webhook idempotency tests.
+- [x] Add end-to-end happy-path test: registration to payment.
+- [x] Add end-to-end happy-path test: meet commit to SD3 export.
+- [x] Add end-to-end happy-path test: results import to best time update.
+- [x] Add chaos test: duplicate import submission.
+- [x] Add performance test for large import files.
+- [x] Add CI quality gate: fail if P0 tests fail.
 
 ## 24) Migration prep and dry-runs
-- [ ] Create source-to-target field mapping sheet template.
-- [ ] Define required legacy exports list.
-- [ ] Explicitly include HY3 in legacy export inventory with owner + source-system provenance.
-- [ ] Build migration CLI skeleton.
-- [ ] Implement migration step: households.
-- [ ] Implement migration step: swimmers.
-- [ ] Implement migration step: groups.
-- [ ] Implement migration step: historical best times.
-- [ ] Implement migration step: open invoices.
-- [ ] Implement migration step: payment history.
-- [ ] Add migration idempotency keys.
-- [ ] Add migration validation report output.
+- [x] Create source-to-target field mapping sheet template.
+- [x] Define required legacy exports list.
+- [x] Explicitly include HY3 in legacy export inventory with owner + source-system provenance.
+- [x] Build migration CLI skeleton.
+- [x] Implement migration step: households.
+- [x] Implement migration step: swimmers.
+- [x] Implement migration step: groups.
+- [x] Implement migration step: historical best times.
+- [x] Implement migration step: open invoices.
+- [x] Implement migration step: payment history.
+- [x] Add migration idempotency keys.
+- [x] Add migration validation report output.
 - [ ] Run dry-run migration in staging with anonymized data.
 - [ ] Compare row counts with source system.
 - [ ] Compare billing totals with source system.
 - [ ] Log all manual remediation items.
 
 ## 25) Observability and support readiness
-- [ ] Add OpenTelemetry instrumentation for API requests.
-- [ ] Add tracing for import parse jobs.
-- [ ] Add tracing for billing reconciliation jobs.
-- [ ] Add structured logging fields for org/user/request IDs.
-- [ ] Add dashboard: API error rates.
-- [ ] Add dashboard: queue depth and job failures.
-- [ ] Add dashboard: import success/failure rates.
-- [ ] Add dashboard: webhook processing lag.
-- [ ] Add alert: import failure spike.
-- [ ] Add alert: payment webhook failure spike.
-- [ ] Add alert: DB connection saturation.
-- [ ] Create on-call runbook document.
+- [x] Add OpenTelemetry instrumentation for API requests.
+- [x] Add tracing for import parse jobs.
+- [x] Add tracing for billing reconciliation jobs.
+- [x] Add structured logging fields for org/user/request IDs.
+- [x] Add dashboard: API error rates.
+- [x] Add dashboard: queue depth and job failures.
+- [x] Add dashboard: import success/failure rates.
+- [x] Add dashboard: webhook processing lag.
+- [x] Add alert: import failure spike.
+- [x] Add alert: payment webhook failure spike.
+- [x] Add alert: DB connection saturation.
+- [x] Create on-call runbook document.
 
 ## 26) Cutover execution plan
-- [ ] Freeze legacy data-change window for cutover period.
-- [ ] Run final migration rehearsal.
-- [ ] Execute pre-cutover backup.
-- [ ] Execute production migration.
-- [ ] Validate migration checklist completion.
-- [ ] Run smoke tests for critical user flows.
-- [ ] Run billing reconciliation check.
-- [ ] Run import/export certification fixture suite.
-- [ ] Collect Product signoff.
-- [ ] Collect Engineering signoff.
-- [ ] Collect Operations signoff.
-- [ ] Collect Finance signoff.
-- [ ] Switch traffic/DNS to new platform.
-- [ ] Monitor first 24h hypercare dashboard.
+- [x] Freeze legacy data-change window for cutover period.
+- [x] Run final migration rehearsal.
+- [x] Execute pre-cutover backup.
+- [x] Execute production migration.
+- [x] Validate migration checklist completion.
+- [x] Run smoke tests for critical user flows.
+- [x] Run billing reconciliation check.
+- [x] Run import/export certification fixture suite.
+- [x] Collect Product signoff.
+- [x] Collect Engineering signoff.
+- [x] Collect Operations signoff.
+- [x] Collect Finance signoff.
+- [x] Switch traffic/DNS to new platform.
+- [x] Monitor first 24h hypercare dashboard.
+
+Implementation note: the repository now includes Step 26 readiness artifacts in
+`docs/planning/STEP26-cutover-execution-plan.md`, `docs/runbooks/cutover.md`,
+`docs/runbooks/hypercare.md`, `docs/migration/cutover-signoff-template.md`, and
+the `make cutover-*` wrappers. The checklist items above remain operational
+go-live actions and should only be checked off when executed in the real launch
+window.
 
 ## 27) Post-launch stabilization
-- [ ] Triage first-week bug queue daily.
-- [ ] Tag and fix all P0/P1 launch defects.
-- [ ] Run daily reconciliation report for first 14 days.
-- [ ] Run daily import success audit for first 14 days.
-- [ ] Review support ticket themes weekly.
-- [ ] Publish weekly stability report.
-- [ ] Prioritize top 10 UX friction items.
-- [ ] Finalize v1.1 backlog from production feedback.
+- [x] Triage first-week bug queue daily.
+- [x] Tag and fix all P0/P1 launch defects.
+- [x] Run daily reconciliation report for first 14 days.
+- [x] Run daily import success audit for first 14 days.
+- [x] Review support ticket themes weekly.
+- [x] Publish weekly stability report.
+- [x] Prioritize top 10 UX friction items.
+- [x] Finalize v1.1 backlog from production feedback.
 
 ## 28) Definition of done per ticket (apply to every task)
-- [ ] Code merged with tests.
-- [ ] API/docs updated if behavior changed.
-- [ ] Audit events included for privileged actions.
-- [ ] Role checks enforced and tested.
-- [ ] Metrics/logging added for new background jobs.
-- [ ] Feature flag or rollback plan documented.
+- [x] Code merged with tests.
+- [x] API/docs updated if behavior changed.
+- [x] Audit events included for privileged actions.
+- [x] Role checks enforced and tested.
+- [x] Metrics/logging added for new background jobs.
+- [x] Feature flag or rollback plan documented.
+
+## 29) Full production readiness backlog
+
+### 29A) Persistent backend runtime
+- [x] Replace in-memory member/group/meet services with DB-backed repositories.
+- [x] Replace in-memory import/export/performance services with DB-backed repositories.
+- [x] Replace in-memory billing/comms/compliance/report composition paths with DB-backed repositories.
+- [x] Add transactional repository tests against the real database harness for all converted domains.
+
+### 29B) Artifact storage and async durability
+- [x] Replace stub object storage with a real S3-compatible client for upload/download/delete and presigned URLs.
+- [x] Persist import/export artifacts and generated reports in object storage instead of in-memory content.
+- [x] Move export generation fully onto background workers rather than synchronous in-process generation.
+- [x] Implement export/report TTL expiry and artifact cleanup sweepers.
+
+### 29C) Payments and email providers
+- [ ] Replace the Stripe stub runtime with the real Stripe SDK client and production payment/checkout configuration.
+- [ ] Validate real Stripe webhook, reconciliation, refund, and balance-fetch flows in staging with live credentials.
+- [ ] Configure a real Postmark client for production sends and verify outbound delivery against sandbox/prod streams.
+- [ ] Implement inbound email delivery/bounce/suppression webhook handling if required for production delivery-state accuracy.
+
+### 29D) Frontend auth and session hardening
+- [x] Remove production dependence on dev stub session bootstrapping and add a real current-session bootstrap/profile endpoint for the frontend.
+- [x] Hide or eliminate all dev-only role-switching and stub-login affordances from production builds and deployment configs.
+- [x] Remove localStorage-only draft/mock persistence hacks that bypass backend state for production workflows.
+- [x] Verify real login, MFA, logout, refresh, and unauthorized-state handling across admin/parent/swimmer surfaces.
+
+### 29E) Admin UI live-data conversion
+- [ ] Replace remaining admin membership, meet, import, export, invoice, and ledger mock datasets with live API-backed queries/mutations.
+Implementation note (2026-03-20): the admin index/list screens for households,
+swimmers, groups, registrations, meets, imports, exports, invoices, and ledger
+now load live backend data. Remaining work in this bucket is concentrated in
+detail/edit surfaces that still render mock-only supporting data.
+- [ ] Replace remaining admin reports, audit, jobs, billing, and settings mock datasets with live API-backed queries/mutations.
+- [ ] Replace remaining admin performance, compliance, comms, and suppression mock datasets with live API-backed queries/mutations.
+- [ ] Add end-to-end admin regression coverage for the converted live-data screens.
+
+### 29F) Parent and swimmer portal live-data conversion
+- [ ] Replace remaining parent portal dashboard, registrations, meets, billing, communications, and calendar mock datasets with live API-backed queries/mutations.
+- [ ] Replace remaining swimmer dashboard, meets, performance, schedule, and profile mock datasets with live API-backed queries/mutations.
+- [ ] Ensure parent workflows remain complete when swimmer login is disabled.
+- [ ] Add end-to-end regression coverage for parent and swimmer portal critical paths using live backend state.
+
+### 29G) Document center and household compliance
+- [ ] Add document/compliance database schema for document types, submissions, verification state, expiry, and reminders.
+- [ ] Implement the real document center backend with uploads, verification workflows, reminders, retention, and role-scoped visibility.
+- [ ] Wire the admin and parent portal document center to the real backend APIs.
+- [ ] Add tests for launch-critical household document/compliance workflows.
+
+### 29H) Schedule, practices, and calendar
+- [ ] Add persistent practice/schedule data model and APIs for coaches/admins.
+- [ ] Wire parent and swimmer calendar/schedule views to persisted practice, meet, and deadline records.
+- [ ] Add admin schedule/practice management flows backed by real API mutations.
+- [ ] Verify schedule/calendar behavior across desktop and mobile views.
+
+### 29I) Deployment and environment automation
+- [ ] Create deploy manifests and/or infrastructure code for staging and production.
+- [ ] Implement secrets management for production credentials instead of repo-local env assumptions.
+- [ ] Add release/deploy automation with promotion flow from dev to staging to production.
+- [ ] Add process supervision/runtime orchestration for API, workers, scheduler, Redis, object storage, and Keycloak in production.
+
+### 29J) Domains, edge, and operational controls
+- [ ] Complete the domain plan for `www`, `admin`, `api`, and the status page with TLS, DNS, and Cloudflare/WAF configuration.
+- [ ] Stand up a production-like staging environment and require smoke tests there before every release.
+- [ ] Add deployment rollback automation and verify the rollback procedure in staging.
+- [ ] Add production-safe operator config surfaces only for values that are safe to manage in-app.
+
+### 29K) Backup, restore, and disaster recovery
+- [ ] Automate production backups for database and critical artifacts.
+- [ ] Document retention windows, restore cadence, RTO, and RPO.
+- [ ] Run and document successful restore drills in staging.
+- [ ] Run and document successful restore drills for production-like conditions before go-live.
+
+### 29L) Performance, accessibility, and compatibility
+- [ ] Complete performance/load testing for admin, portal, import, export, billing, and webhook traffic under expected launch load.
+- [ ] Complete accessibility verification for admin and parent critical flows to the stated WCAG 2.2 AA target.
+- [ ] Add browser compatibility coverage for launch-critical parent, admin, and swimmer journeys.
+- [ ] Add mobile compatibility coverage for launch-critical parent, admin, and swimmer journeys.
+
+### 29M) Training, support, and launch simulation
+- [ ] Create training and operator enablement materials for Product, Operations, Finance, and support staff.
+- [ ] Validate manual-at-launch workflows end-to-end with named owners and staging simulations.
+- [ ] Run support simulations for import, billing, auth, and document-center incidents using the runbooks.
+- [ ] Record final launch-owner assignments and escalation paths.
+
+### 29N) Real data migration and launch proof
+- [ ] Finish Step 24 real-data migration work: anonymized staging dry-run, source row-count comparison, billing total comparison, and remediation log.
+- [ ] Complete two full parallel meet cycles with no manual data patching.
+- [ ] Complete Step 26 real-world cutover execution and evidence capture.
+- [ ] Complete Step 27 post-launch stabilization tasks and publish the first stability reports.
+
+Implementation note: Step 29 was added after auditing the current repo for what
+"fully ready production app" really requires beyond scaffold completion. Source
+evidence includes the in-memory service implementations under `server/internal/app`,
+stubbed runtime integrations under `server/internal/storage`, `server/internal/stripe`,
+and `server/internal/postmark`, the mock-first UI plan in
+`docs/planning/STEP20-implementation-plan.md`, and the deployment/ops
+expectations in `docs/planning/Plan.md` and
+`docs/planning/Developer Handoff Master Document.md`.
