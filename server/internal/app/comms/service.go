@@ -31,10 +31,15 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/dareaquatics/aquify/server/internal/postmark"
 )
@@ -185,6 +190,7 @@ type PostmarkEventInput struct {
 // Service is the in-memory communications service.
 type Service struct {
 	mu            sync.RWMutex
+	repo          *Repository
 	announcements map[string]*Announcement
 	campaigns     map[string]*EmailCampaign
 	deliveries    map[string]*EmailDelivery
@@ -209,6 +215,50 @@ func NewServiceWithClient(client postmark.Client) *Service {
 	svc := NewService()
 	svc.postmarkClient = client
 	return svc
+}
+
+// SetPostmarkClient replaces the Postmark client on an existing Service.
+func (s *Service) SetPostmarkClient(client postmark.Client) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.postmarkClient = client
+}
+
+// NewServiceWithPool creates a DB-backed comms Service and loads existing data
+// from Postgres into memory on startup.
+func NewServiceWithPool(pool *pgxpool.Pool) *Service {
+	s := NewService()
+	s.repo = newRepository(pool)
+	if err := s.loadFromDB(context.Background()); err != nil {
+		slog.Error("comms: failed to load from DB", "err", err)
+	}
+	return s
+}
+
+func (s *Service) loadFromDB(ctx context.Context) error {
+	announcements, campaigns, suppressions, err := s.repo.LoadAll(ctx)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, a := range announcements {
+		s.announcements[a.ID] = a
+	}
+	for _, c := range campaigns {
+		s.campaigns[c.ID] = c
+	}
+	for _, e := range suppressions {
+		s.suppression[suppressionKey(e.OrgID, e.Email)] = e
+	}
+	return nil
+}
+
+func (s *Service) newID() string {
+	if s.repo != nil {
+		return uuid.New().String()
+	}
+	return newID()
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -243,7 +293,7 @@ func (s *Service) CreateAnnouncement(inp CreateAnnouncementInput) (*Announcement
 
 	now := time.Now().UTC()
 	a := &Announcement{
-		ID:        newID(),
+		ID:        s.newID(),
 		OrgID:     inp.OrgID,
 		Title:     strings.TrimSpace(inp.Title),
 		Body:      strings.TrimSpace(inp.Body),
@@ -254,6 +304,11 @@ func (s *Service) CreateAnnouncement(inp CreateAnnouncementInput) (*Announcement
 		UpdatedAt: now,
 		CreatedBy: inp.CreatedBy,
 		UpdatedBy: inp.CreatedBy,
+	}
+	if s.repo != nil {
+		if err := s.repo.UpsertAnnouncement(context.Background(), a); err != nil {
+			return nil, fmt.Errorf("persist announcement: %w", err)
+		}
 	}
 	s.announcements[a.ID] = a
 	return a, nil
@@ -277,6 +332,11 @@ func (s *Service) PublishAnnouncement(orgID, id, actorID string) (*Announcement,
 	a.PublishedAt = &now
 	a.UpdatedAt = now
 	a.UpdatedBy = actorID
+	if s.repo != nil {
+		if err := s.repo.UpsertAnnouncement(context.Background(), a); err != nil {
+			return nil, fmt.Errorf("persist published announcement: %w", err)
+		}
+	}
 	return a, nil
 }
 
@@ -298,6 +358,11 @@ func (s *Service) ArchiveAnnouncement(orgID, id, actorID string) (*Announcement,
 	a.ArchivedAt = &now
 	a.UpdatedAt = now
 	a.UpdatedBy = actorID
+	if s.repo != nil {
+		if err := s.repo.UpsertAnnouncement(context.Background(), a); err != nil {
+			return nil, fmt.Errorf("persist archived announcement: %w", err)
+		}
+	}
 	return a, nil
 }
 
@@ -348,7 +413,7 @@ func (s *Service) CreateCampaign(inp CreateCampaignInput) (*EmailCampaign, error
 
 	now := time.Now().UTC()
 	c := &EmailCampaign{
-		ID:        newID(),
+		ID:        s.newID(),
 		OrgID:     inp.OrgID,
 		Name:      strings.TrimSpace(inp.Name),
 		Subject:   strings.TrimSpace(inp.Subject),
@@ -363,6 +428,11 @@ func (s *Service) CreateCampaign(inp CreateCampaignInput) (*EmailCampaign, error
 		UpdatedAt: now,
 		CreatedBy: inp.CreatedBy,
 		UpdatedBy: inp.CreatedBy,
+	}
+	if s.repo != nil {
+		if err := s.repo.UpsertCampaign(context.Background(), c); err != nil {
+			return nil, fmt.Errorf("persist campaign: %w", err)
+		}
 	}
 	s.campaigns[c.ID] = c
 	return c, nil
@@ -499,6 +569,11 @@ func (s *Service) SendCampaign(ctx context.Context, orgID, campaignID string, in
 	c.UpdatedBy = inp.ActorID
 	s.mu.Unlock()
 
+	if s.repo != nil {
+		if err := s.repo.UpsertCampaign(context.Background(), c); err != nil {
+			return nil, fmt.Errorf("persist sent campaign: %w", err)
+		}
+	}
 	return c, nil
 }
 
@@ -625,6 +700,11 @@ func (s *Service) RemoveSuppression(orgID, id string) error {
 
 	for key, entry := range s.suppression {
 		if entry.ID == id && entry.OrgID == orgID {
+			if s.repo != nil {
+				if err := s.repo.DeleteSuppressionEntry(context.Background(), orgID, entry.Email); err != nil {
+					return fmt.Errorf("delete suppression entry: %w", err)
+				}
+			}
 			delete(s.suppression, key)
 			return nil
 		}
@@ -662,6 +742,11 @@ func (s *Service) addSuppressionLocked(orgID, email, reason, createdBy string) (
 		CreatedAt: time.Now().UTC(),
 		CreatedBy: createdBy,
 	}
+	if s.repo != nil {
+		if err := s.repo.UpsertSuppressionEntry(context.Background(), entry); err != nil {
+			return nil, fmt.Errorf("persist suppression entry: %w", err)
+		}
+	}
 	s.suppression[key] = entry
 	return entry, nil
 }
@@ -670,12 +755,18 @@ func (s *Service) upsertSuppressionLocked(orgID, email, reason, createdBy string
 	key := suppressionKey(orgID, email)
 	if existing, ok := s.suppression[key]; ok {
 		existing.Reason = reason
+		if s.repo != nil {
+			_ = s.repo.UpsertSuppressionEntry(context.Background(), existing)
+		}
 		return
 	}
 	_, _ = s.addSuppressionLocked(orgID, email, reason, createdBy)
 }
 
 func (s *Service) removeSuppressionByEmailLocked(orgID, email string) {
+	if s.repo != nil {
+		_ = s.repo.DeleteSuppressionEntry(context.Background(), orgID, email)
+	}
 	delete(s.suppression, suppressionKey(orgID, email))
 }
 

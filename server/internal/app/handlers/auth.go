@@ -55,6 +55,7 @@ func (h *AuthHandlers) RegisterProtectedRoutes(router chi.Router) {
 	router.Get("/mfa/factors", h.listMFAFactors)
 	router.Post("/mfa/enroll", h.enrollMFA)
 	router.Post("/mfa/challenge", h.challengeMFA)
+	router.Get("/roles/assignments", h.listRoleAssignments)
 	router.Post("/roles/assign", h.assignRole)
 }
 
@@ -192,6 +193,33 @@ func (h *AuthHandlers) listMFAFactors(w http.ResponseWriter, r *http.Request) {
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"factors": factors,
 		"count":   len(factors),
+	})
+}
+
+func (h *AuthHandlers) listRoleAssignments(w http.ResponseWriter, r *http.Request) {
+	principal, ok := appmiddleware.PrincipalFromContext(r.Context())
+	if !ok || principal == nil {
+		httpx.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Authentication context is missing.", nil)
+		return
+	}
+	if !hasAnyRole(principal, "owner", "admin") {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Role assignment visibility requires owner or admin role.", nil)
+		return
+	}
+
+	orgID := strings.TrimSpace(r.Header.Get("X-Org-Id"))
+	if orgID == "" {
+		orgID = strings.TrimSpace(principal.OrgID)
+	}
+	if strings.TrimSpace(principal.OrgID) != strings.TrimSpace(orgID) {
+		httpx.WriteError(w, r, http.StatusForbidden, "scope_violation", "Principal org_id must match X-Org-Id scope.", nil)
+		return
+	}
+
+	assignments := h.service.ListRoleAssignments(orgID)
+	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"assignments": assignments,
+		"count":       len(assignments),
 	})
 }
 

@@ -27,16 +27,21 @@
 package billing
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
 )
@@ -245,11 +250,18 @@ type ListLedgerFilters struct {
 	EventType string
 }
 
+// ListPaymentsFilters supports optional filtering for org-wide payment queries.
+type ListPaymentsFilters struct {
+	InvoiceID string
+	Status    string
+}
+
 // ─── Service ─────────────────────────────────────────────────────────────────
 
 // Service is the billing domain service.
 type Service struct {
 	mu                sync.RWMutex
+	repo              *Repository
 	invoices          map[string]*Invoice
 	items             map[string][]*InvoiceItem // invoiceID → []InvoiceItem
 	itemsByID         map[string]*InvoiceItem   // itemID → InvoiceItem
@@ -277,6 +289,57 @@ func NewService() *Service {
 		invoiceNums:       make(map[string]bool),
 		webhookEvents:     make(map[string]*WebhookEventRecord),
 	}
+}
+
+// NewServiceWithPool creates a DB-backed billing Service and loads existing
+// data from Postgres into memory on startup.
+func NewServiceWithPool(pool *pgxpool.Pool) *Service {
+	s := NewService()
+	if pool == nil {
+		return s
+	}
+	s.repo = newRepository(pool)
+	if err := s.loadFromDB(context.Background()); err != nil {
+		slog.Error("billing: failed to load from DB", "err", err)
+	}
+	return s
+}
+
+func (s *Service) loadFromDB(ctx context.Context) error {
+	invoices, items, payments, refunds, ledger, err := s.repo.LoadAll(ctx)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, inv := range invoices {
+		s.invoices[inv.ID] = inv
+		s.invoiceNums[invoiceNumKey(inv.OrgID, inv.InvoiceNumber)] = true
+	}
+	for _, item := range items {
+		s.items[item.InvoiceID] = append(s.items[item.InvoiceID], item)
+		s.itemsByID[item.ID] = item
+	}
+	for _, p := range payments {
+		s.payments[p.InvoiceID] = append(s.payments[p.InvoiceID], p)
+		s.paymentsByID[p.ID] = p
+		if p.StripePaymentIntentID != "" {
+			s.stripeIntentIndex[p.StripePaymentIntentID] = p
+		}
+	}
+	for _, r := range refunds {
+		s.refunds[r.InvoiceID] = append(s.refunds[r.InvoiceID], r)
+		s.refundsByID[r.ID] = r
+	}
+	s.ledger = ledger
+	return nil
+}
+
+func (s *Service) newID() string {
+	if s.repo != nil {
+		return uuid.New().String()
+	}
+	return newID()
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -354,9 +417,9 @@ func (s *Service) recomputeTotals(inv *Invoice) {
 }
 
 // appendLedger appends an immutable ledger event. Must be called with s.mu held (write).
-func (s *Service) appendLedger(orgID, invoiceID, paymentID, refundID, eventType string, amountCents int, description, actorID string) *LedgerEvent {
+func (s *Service) appendLedger(orgID, invoiceID, paymentID, refundID, eventType string, amountCents int, description, actorID string) (*LedgerEvent, error) {
 	ev := &LedgerEvent{
-		ID:          newID(),
+		ID:          s.newID(),
 		OrgID:       orgID,
 		InvoiceID:   invoiceID,
 		PaymentID:   paymentID,
@@ -367,8 +430,13 @@ func (s *Service) appendLedger(orgID, invoiceID, paymentID, refundID, eventType 
 		ActorID:     actorID,
 		CreatedAt:   time.Now().UTC(),
 	}
+	if s.repo != nil {
+		if err := s.repo.InsertLedgerEvent(context.Background(), ev); err != nil {
+			return nil, fmt.Errorf("persist ledger event: %w", err)
+		}
+	}
 	s.ledger = append(s.ledger, ev)
-	return ev
+	return ev, nil
 }
 
 // updateInvoiceStatusAfterPayment recalculates invoice status based on paid vs total.
@@ -407,7 +475,7 @@ func (s *Service) CreateInvoice(orgID, actorID string, principal *appmiddleware.
 
 	now := time.Now().UTC()
 	inv := &Invoice{
-		ID:            newID(),
+		ID:            s.newID(),
 		OrgID:         orgID,
 		HouseholdID:   input.HouseholdID,
 		InvoiceNumber: input.InvoiceNumber,
@@ -421,6 +489,11 @@ func (s *Service) CreateInvoice(orgID, actorID string, principal *appmiddleware.
 		UpdatedBy:     actorID,
 	}
 
+	if s.repo != nil {
+		if err := s.repo.UpsertInvoice(context.Background(), inv); err != nil {
+			return nil, fmt.Errorf("persist invoice: %w", err)
+		}
+	}
 	s.invoices[inv.ID] = inv
 	s.invoiceNums[key] = true
 	return inv, nil
@@ -494,7 +567,7 @@ func (s *Service) AddInvoiceItem(orgID, actorID string, principal *appmiddleware
 
 	now := time.Now().UTC()
 	item := &InvoiceItem{
-		ID:              newID(),
+		ID:              s.newID(),
 		OrgID:           orgID,
 		InvoiceID:       invoiceID,
 		Description:     input.Description,
@@ -510,12 +583,22 @@ func (s *Service) AddInvoiceItem(orgID, actorID string, principal *appmiddleware
 		UpdatedBy:       actorID,
 	}
 
+	if s.repo != nil {
+		if err := s.repo.UpsertInvoiceItem(context.Background(), item); err != nil {
+			return nil, fmt.Errorf("persist invoice item: %w", err)
+		}
+	}
 	s.items[invoiceID] = append(s.items[invoiceID], item)
 	s.itemsByID[item.ID] = item
 
 	inv.UpdatedAt = now
 	inv.UpdatedBy = actorID
 	s.recomputeTotals(inv)
+	if s.repo != nil {
+		if err := s.repo.UpsertInvoice(context.Background(), inv); err != nil {
+			return nil, fmt.Errorf("persist invoice after item add: %w", err)
+		}
+	}
 
 	return item, nil
 }
@@ -602,8 +685,16 @@ func (s *Service) IssueInvoice(orgID, actorID string, principal *appmiddleware.P
 	inv.UpdatedAt = now
 	inv.UpdatedBy = actorID
 
-	ev := s.appendLedger(orgID, invoiceID, "", "", "invoice_issued", inv.TotalCents,
+	if s.repo != nil {
+		if err := s.repo.UpsertInvoice(context.Background(), inv); err != nil {
+			return nil, nil, fmt.Errorf("persist issued invoice: %w", err)
+		}
+	}
+	ev, err := s.appendLedger(orgID, invoiceID, "", "", "invoice_issued", inv.TotalCents,
 		fmt.Sprintf("Invoice %s issued", inv.InvoiceNumber), actorID)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	return inv, ev, nil
 }
@@ -634,8 +725,16 @@ func (s *Service) VoidInvoice(orgID, actorID string, principal *appmiddleware.Pr
 	inv.UpdatedAt = now
 	inv.UpdatedBy = actorID
 
-	ev := s.appendLedger(orgID, invoiceID, "", "", "invoice_voided", -inv.AmountDueCents,
+	if s.repo != nil {
+		if err := s.repo.UpsertInvoice(context.Background(), inv); err != nil {
+			return nil, nil, fmt.Errorf("persist voided invoice: %w", err)
+		}
+	}
+	ev, err := s.appendLedger(orgID, invoiceID, "", "", "invoice_voided", -inv.AmountDueCents,
 		fmt.Sprintf("Invoice %s voided", inv.InvoiceNumber), actorID)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	return inv, ev, nil
 }
@@ -665,8 +764,16 @@ func (s *Service) WriteOffInvoice(orgID, actorID string, principal *appmiddlewar
 	inv.UpdatedAt = now
 	inv.UpdatedBy = actorID
 
-	ev := s.appendLedger(orgID, invoiceID, "", "", "invoice_written_off", -remaining,
+	if s.repo != nil {
+		if err := s.repo.UpsertInvoice(context.Background(), inv); err != nil {
+			return nil, nil, fmt.Errorf("persist written-off invoice: %w", err)
+		}
+	}
+	ev, err := s.appendLedger(orgID, invoiceID, "", "", "invoice_written_off", -remaining,
 		fmt.Sprintf("Invoice %s written off", inv.InvoiceNumber), actorID)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	return inv, ev, nil
 }
@@ -703,7 +810,7 @@ func (s *Service) RecordPayment(orgID, actorID string, principal *appmiddleware.
 		paidAt = parsedPaidAt.UTC()
 	}
 	payment := &Payment{
-		ID:                    newID(),
+		ID:                    s.newID(),
 		OrgID:                 orgID,
 		InvoiceID:             invoiceID,
 		AmountCents:           input.AmountCents,
@@ -719,6 +826,11 @@ func (s *Service) RecordPayment(orgID, actorID string, principal *appmiddleware.
 		UpdatedBy:             actorID,
 	}
 
+	if s.repo != nil {
+		if err := s.repo.UpsertPayment(context.Background(), payment); err != nil {
+			return nil, nil, fmt.Errorf("persist payment: %w", err)
+		}
+	}
 	s.payments[invoiceID] = append(s.payments[invoiceID], payment)
 	s.paymentsByID[payment.ID] = payment
 	if input.StripePaymentIntentID != "" {
@@ -730,8 +842,16 @@ func (s *Service) RecordPayment(orgID, actorID string, principal *appmiddleware.
 	inv.UpdatedAt = now
 	inv.UpdatedBy = actorID
 
-	ev := s.appendLedger(orgID, invoiceID, payment.ID, "", "payment_succeeded", -input.AmountCents,
+	if s.repo != nil {
+		if err := s.repo.UpsertInvoice(context.Background(), inv); err != nil {
+			return nil, nil, fmt.Errorf("persist invoice after payment: %w", err)
+		}
+	}
+	ev, err := s.appendLedger(orgID, invoiceID, payment.ID, "", "payment_succeeded", -input.AmountCents,
 		fmt.Sprintf("Payment of %d cents recorded for invoice %s", input.AmountCents, inv.InvoiceNumber), actorID)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	return payment, ev, nil
 }
@@ -756,6 +876,44 @@ func (s *Service) ListPayments(orgID string, principal *appmiddleware.Principal,
 		cp := *p
 		out[i] = &cp
 	}
+	return out, nil
+}
+
+// ListPaymentsForOrg returns payments across the org using optional filters.
+func (s *Service) ListPaymentsForOrg(orgID string, principal *appmiddleware.Principal, filters ListPaymentsFilters) ([]*Payment, error) {
+	if err := s.requireBillingReadAccess(principal); err != nil {
+		return nil, err
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var out []*Payment
+	for _, payment := range s.paymentsByID {
+		if payment.OrgID != orgID {
+			continue
+		}
+		if filters.InvoiceID != "" && payment.InvoiceID != filters.InvoiceID {
+			continue
+		}
+		if filters.Status != "" && payment.Status != filters.Status {
+			continue
+		}
+		cp := *payment
+		out = append(out, &cp)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		leftPaidAt, rightPaidAt := out[i].PaidAt, out[j].PaidAt
+		switch {
+		case leftPaidAt != nil && rightPaidAt != nil && !leftPaidAt.Equal(*rightPaidAt):
+			return leftPaidAt.After(*rightPaidAt)
+		case leftPaidAt != nil && rightPaidAt == nil:
+			return true
+		case leftPaidAt == nil && rightPaidAt != nil:
+			return false
+		}
+		return out[i].CreatedAt.After(out[j].CreatedAt)
+	})
 	return out, nil
 }
 
@@ -877,7 +1035,7 @@ func (s *Service) CreateRefund(orgID, actorID string, principal *appmiddleware.P
 
 	now := time.Now().UTC()
 	refund := &Refund{
-		ID:             newID(),
+		ID:             s.newID(),
 		OrgID:          orgID,
 		InvoiceID:      invoiceID,
 		PaymentID:      input.PaymentID,
@@ -894,6 +1052,11 @@ func (s *Service) CreateRefund(orgID, actorID string, principal *appmiddleware.P
 		UpdatedBy:      actorID,
 	}
 
+	if s.repo != nil {
+		if err := s.repo.UpsertRefund(context.Background(), refund); err != nil {
+			return nil, nil, fmt.Errorf("persist refund: %w", err)
+		}
+	}
 	s.refunds[invoiceID] = append(s.refunds[invoiceID], refund)
 	s.refundsByID[refund.ID] = refund
 
@@ -923,8 +1086,19 @@ func (s *Service) CreateRefund(orgID, actorID string, principal *appmiddleware.P
 	inv.UpdatedAt = now
 	inv.UpdatedBy = actorID
 
-	ev := s.appendLedger(orgID, invoiceID, input.PaymentID, refund.ID, "refund_processed", input.AmountCents,
+	if s.repo != nil {
+		if err := s.repo.UpsertInvoice(context.Background(), inv); err != nil {
+			return nil, nil, fmt.Errorf("persist invoice after refund: %w", err)
+		}
+		if err := s.repo.UpsertPayment(context.Background(), payment); err != nil {
+			return nil, nil, fmt.Errorf("persist payment after refund: %w", err)
+		}
+	}
+	ev, err := s.appendLedger(orgID, invoiceID, input.PaymentID, refund.ID, "refund_processed", input.AmountCents,
 		fmt.Sprintf("Refund of %d cents processed for invoice %s", input.AmountCents, inv.InvoiceNumber), actorID)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	return refund, ev, nil
 }
@@ -1199,8 +1373,11 @@ func (s *Service) HandleStripePaymentIntentSucceeded(
 	inv.UpdatedAt = now
 	inv.UpdatedBy = actorID
 
-	ev := s.appendLedger(orgID, invoiceID, payment.ID, "", "payment_succeeded", -amountCents,
+	ev, err := s.appendLedger(orgID, invoiceID, payment.ID, "", "payment_succeeded", -amountCents,
 		fmt.Sprintf("Stripe payment %s of %d cents for invoice %s", paymentIntentID, amountCents, inv.InvoiceNumber), actorID)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	return payment, ev, nil
 }
@@ -1323,8 +1500,11 @@ func (s *Service) HandleStripeChargeRefunded(
 	inv.UpdatedAt = now
 	inv.UpdatedBy = actorID
 
-	ev := s.appendLedger(orgID, invoiceID, payment.ID, refund.ID, "refund_processed", amountRefundedCents,
+	ev, err := s.appendLedger(orgID, invoiceID, payment.ID, refund.ID, "refund_processed", amountRefundedCents,
 		fmt.Sprintf("Stripe refund %s of %d cents for invoice %s", stripeRefundID, amountRefundedCents, inv.InvoiceNumber), actorID)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	return refund, ev, nil
 }

@@ -30,13 +30,18 @@
 package compliance
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"log/slog"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // ─── Sentinel errors ──────────────────────────────────────────────────────────
@@ -90,6 +95,7 @@ type DataDeletionRequest struct {
 // Service manages compliance data-export and data-deletion requests.
 type Service struct {
 	mu        sync.RWMutex
+	repo      *Repository
 	exports   map[string]*DataExportRequest
 	deletions map[string]*DataDeletionRequest
 
@@ -116,14 +122,49 @@ func NewServiceWithConfig(exportTTLDays, deletionReviewDays int) *Service {
 	}
 }
 
+// NewServiceWithPool creates a DB-backed compliance Service and loads existing
+// data from Postgres into memory on startup.
+func NewServiceWithPool(pool *pgxpool.Pool, exportTTLDays, deletionReviewDays int) *Service {
+	s := NewServiceWithConfig(exportTTLDays, deletionReviewDays)
+	if pool == nil {
+		return s
+	}
+	s.repo = newRepository(pool)
+	if err := s.loadFromDB(context.Background()); err != nil {
+		slog.Error("compliance: failed to load from DB", "err", err)
+	}
+	return s
+}
+
+func (s *Service) loadFromDB(ctx context.Context) error {
+	exports, deletions, err := s.repo.LoadAll(ctx)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, e := range exports {
+		s.exports[e.ID] = e
+	}
+	for _, d := range deletions {
+		s.deletions[d.ID] = d
+	}
+	return nil
+}
+
+func (s *Service) genID() string {
+	if s.repo != nil {
+		return uuid.New().String()
+	}
+	id, _ := newID()
+	return id
+}
+
 // ─── Data Export Requests ─────────────────────────────────────────────────────
 
 // CreateDataExportRequest opens a new pending data-export request for a household.
 func (s *Service) CreateDataExportRequest(orgID, householdID, requestedBy string) (*DataExportRequest, error) {
-	id, err := newID()
-	if err != nil {
-		return nil, err
-	}
+	id := s.genID()
 	now := time.Now().UTC()
 	expiresAt := now.AddDate(0, 0, s.exportTTLDays)
 	req := &DataExportRequest{
@@ -136,6 +177,11 @@ func (s *Service) CreateDataExportRequest(orgID, householdID, requestedBy string
 		ExpiresAt:   &expiresAt,
 		CreatedAt:   now,
 		UpdatedAt:   now,
+	}
+	if s.repo != nil {
+		if err := s.repo.UpsertDataExportRequest(context.Background(), req); err != nil {
+			slog.Error("compliance: persist data export request", "err", err)
+		}
 	}
 	s.mu.Lock()
 	s.exports[id] = req
@@ -185,10 +231,7 @@ func (s *Service) ListDataExportRequests(orgID, householdID string) ([]DataExpor
 
 // CreateDataDeletionRequest opens a new pending data-deletion request.
 func (s *Service) CreateDataDeletionRequest(orgID, householdID, requestedBy, reason string) (*DataDeletionRequest, error) {
-	id, err := newID()
-	if err != nil {
-		return nil, err
-	}
+	id := s.genID()
 	now := time.Now().UTC()
 	reviewDeadline := now.AddDate(0, 0, s.deletionReviewDays)
 	req := &DataDeletionRequest{
@@ -202,6 +245,11 @@ func (s *Service) CreateDataDeletionRequest(orgID, householdID, requestedBy, rea
 		ExpiresAt:   &reviewDeadline,
 		CreatedAt:   now,
 		UpdatedAt:   now,
+	}
+	if s.repo != nil {
+		if err := s.repo.UpsertDataDeletionRequest(context.Background(), req); err != nil {
+			slog.Error("compliance: persist data deletion request", "err", err)
+		}
 	}
 	s.mu.Lock()
 	s.deletions[id] = req

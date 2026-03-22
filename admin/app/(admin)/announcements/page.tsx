@@ -1,355 +1,268 @@
 'use client'
 
-import { useState, useMemo } from 'react'
 import Link from 'next/link'
-import { Icon } from '@/components/ui/icons'
-import { Table, type Column } from '@/components/ui/Table'
+import { useEffect, useMemo, useState } from 'react'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { useSession } from '@/lib/session'
+import { ApiError, useApiClient } from '@/lib/api'
+import {
+  archiveAnnouncement,
+  createAnnouncement,
+  fetchAnnouncements,
+  publishAnnouncement,
+  type AnnouncementRecord,
+} from '@/lib/adminData'
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type AnnouncementStatus = 'draft' | 'published' | 'archived'
-type Audience = 'all' | 'coaches' | 'parents' | 'swimmers' | 'admin'
-
-type Announcement = {
-  id: string
-  title: string
-  status: AnnouncementStatus
-  audience: Audience
-  pinned: boolean
-  authorName: string
-  authorRole: string
-  bodyPreview: string
-  publishedAt: string | null
-  archivedAt:  string | null
-  createdAt:   string
+function formatDateTime(value?: string) {
+  if (!value) return '—'
+  return new Date(value).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }
-
-// ─── Mock Data ─────────────────────────────────────────────────────────────────
-
-const MOCK_ANNOUNCEMENTS: Announcement[] = [
-  {
-    id: 'ann-001', title: 'Spring Season Registration Now Open',
-    status: 'published', audience: 'all', pinned: true,
-    authorName: 'Coach Martinez', authorRole: 'coach',
-    bodyPreview: 'Registration for the 2026 Spring Season is now open. All returning families should complete their registration by March 25th…',
-    publishedAt: '2026-03-01T09:00:00Z', archivedAt: null, createdAt: '2026-02-28T18:00:00Z',
-  },
-  {
-    id: 'ann-002', title: 'Pool Closure — March 18th (Maintenance)',
-    status: 'published', audience: 'all', pinned: true,
-    authorName: 'Admin User', authorRole: 'admin',
-    bodyPreview: 'The Aquatic Center will be closed on Tuesday, March 18th for scheduled lane line maintenance. All practices are cancelled that day…',
-    publishedAt: '2026-03-10T14:30:00Z', archivedAt: null, createdAt: '2026-03-09T10:00:00Z',
-  },
-  {
-    id: 'ann-003', title: 'State Championships — Travel Information',
-    status: 'published', audience: 'parents', pinned: false,
-    authorName: 'Coach Kim', authorRole: 'coach',
-    bodyPreview: 'Please review the attached travel itinerary for the State Championships in Sacramento. Carpooling sign-ups close March 20th…',
-    publishedAt: '2026-03-12T08:00:00Z', archivedAt: null, createdAt: '2026-03-11T16:00:00Z',
-  },
-  {
-    id: 'ann-004', title: 'Updated Code of Conduct — 2026',
-    status: 'draft', audience: 'all', pinned: false,
-    authorName: 'Admin User', authorRole: 'admin',
-    bodyPreview: 'An updated Code of Conduct has been prepared for the 2026 season. Please review and provide feedback before we publish…',
-    publishedAt: null, archivedAt: null, createdAt: '2026-03-14T11:00:00Z',
-  },
-  {
-    id: 'ann-005', title: 'End-of-Season Banquet Details',
-    status: 'draft', audience: 'all', pinned: false,
-    authorName: 'Admin User', authorRole: 'admin',
-    bodyPreview: 'The end-of-season banquet will be held on May 10th at the Community Center. RSVP details coming soon…',
-    publishedAt: null, archivedAt: null, createdAt: '2026-03-15T09:30:00Z',
-  },
-  {
-    id: 'ann-006', title: 'Winter Season — Final Practice Schedule',
-    status: 'archived', audience: 'all', pinned: false,
-    authorName: 'Coach Martinez', authorRole: 'coach',
-    bodyPreview: 'The final practice schedule for the 2025 Winter Season is published. Please check your group assignment…',
-    publishedAt: '2025-11-01T08:00:00Z', archivedAt: '2026-01-15T00:00:00Z', createdAt: '2025-10-30T12:00:00Z',
-  },
-  {
-    id: 'ann-007', title: 'Holiday Break — Pool Hours',
-    status: 'archived', audience: 'all', pinned: false,
-    authorName: 'Admin User', authorRole: 'admin',
-    bodyPreview: 'Pool hours during the holiday break (Dec 22 – Jan 5) will be reduced. See schedule below…',
-    publishedAt: '2025-12-18T09:00:00Z', archivedAt: '2026-01-06T00:00:00Z', createdAt: '2025-12-17T10:00:00Z',
-  },
-]
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
-const STATUS_COLORS: Record<AnnouncementStatus, string> = {
-  published: 'var(--success)',
-  draft:     'var(--warning)',
-  archived:  'var(--text-muted)',
-}
-
-const STATUS_BG: Record<AnnouncementStatus, string> = {
-  published: 'var(--success-bg)',
-  draft:     'var(--warning-bg)',
-  archived:  'var(--border)',
-}
-
-const STATUS_BORDER: Record<AnnouncementStatus, string> = {
-  published: 'var(--success-border)',
-  draft:     'var(--warning-border)',
-  archived:  'var(--border)',
-}
-
-const AUDIENCE_LABELS: Record<Audience, string> = {
-  all:     'Everyone',
-  coaches: 'Coaches',
-  parents: 'Parents',
-  swimmers:'Swimmers',
-  admin:   'Admin',
-}
-
-// ─── Components ───────────────────────────────────────────────────────────────
-
-function StatusBadge({ status }: { status: AnnouncementStatus }) {
-  return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: 5,
-      padding: '2px 8px', borderRadius: 4,
-      fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase',
-      color: STATUS_COLORS[status], background: STATUS_BG[status],
-      border: `1px solid ${STATUS_BORDER[status]}`,
-    }}>
-      <span style={{ width: 5, height: 5, borderRadius: '50%', background: STATUS_COLORS[status], display: 'inline-block' }} />
-      {status}
-    </span>
-  )
-}
-
-function StatCard({ label, value, color }: { label: string; value: number; color?: string }) {
-  return (
-    <div style={{
-      padding: '18px 22px', borderRadius: 10,
-      background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-      display: 'flex', flexDirection: 'column', gap: 5,
-    }}>
-      <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>{label}</span>
-      <span style={{ fontSize: 28, fontWeight: 700, letterSpacing: '-0.03em', fontFamily: 'var(--font-mono)', color: color ?? 'var(--text)' }}>{value}</span>
-    </div>
-  )
-}
-
-// ─── Page ─────────────────────────────────────────────────────────────────────
-
-const STATUS_FILTERS: { value: AnnouncementStatus | ''; label: string }[] = [
-  { value: '', label: 'All statuses' },
-  { value: 'published', label: 'Published' },
-  { value: 'draft',     label: 'Draft' },
-  { value: 'archived',  label: 'Archived' },
-]
 
 export default function AnnouncementsPage() {
-  const [search, setSearch]           = useState('')
-  const [statusFilter, setStatusFilter] = useState<AnnouncementStatus | ''>('')
+  const { session } = useSession()
+  const api = useApiClient(session?.token)
+  const [announcements, setAnnouncements] = useState<AnnouncementRecord[]>([])
+  const [statusFilter, setStatusFilter] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
+  const [actionId, setActionId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [form, setForm] = useState({
+    title: '',
+    body: '',
+    audience: 'all',
+  })
 
-  const filtered = useMemo(() => {
-    return MOCK_ANNOUNCEMENTS.filter(a => {
-      if (statusFilter && a.status !== statusFilter) return false
-      if (search) {
-        const q = search.toLowerCase()
-        if (!a.title.toLowerCase().includes(q) && !a.authorName.toLowerCase().includes(q)) return false
+  async function loadAnnouncements(selectedStatus = statusFilter) {
+    if (!session?.user.orgId) return
+    const next = await fetchAnnouncements(api, session.user.orgId, selectedStatus || undefined)
+    setAnnouncements(next)
+  }
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function run() {
+      if (!session?.user.orgId) {
+        setLoading(false)
+        return
       }
-      return true
-    })
-  }, [search, statusFilter])
+      try {
+        setLoading(true)
+        setError(null)
+        const next = await fetchAnnouncements(api, session.user.orgId, statusFilter || undefined)
+        if (!cancelled) setAnnouncements(next)
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof ApiError ? err.message : 'Unable to load announcements.')
+          setAnnouncements([])
+        }
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
 
-  const published = MOCK_ANNOUNCEMENTS.filter(a => a.status === 'published').length
-  const drafts    = MOCK_ANNOUNCEMENTS.filter(a => a.status === 'draft').length
-  const archived  = MOCK_ANNOUNCEMENTS.filter(a => a.status === 'archived').length
-  const pinned    = MOCK_ANNOUNCEMENTS.filter(a => a.pinned).length
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [api, session?.user.orgId, statusFilter])
 
-  const columns: Column<Announcement>[] = [
-    {
-      key: 'title', label: 'Title', sortable: true,
-      render: (row) => (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {row.pinned && (
-            <span title="Pinned" style={{
-              width: 16, height: 16, borderRadius: 3,
-              background: 'var(--accent-subtle)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-            }}>
-              <Icon name="activity" size={10} color="var(--accent)" />
-            </span>
-          )}
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 360 }}>
-              {row.title}
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 360 }}>
-              {row.bodyPreview}
-            </div>
-          </div>
-        </div>
-      ),
-    },
-    {
-      key: 'status', label: 'Status', sortable: true,
-      render: (row) => <StatusBadge status={row.status} />,
-    },
-    {
-      key: 'audience', label: 'Audience',
-      render: (row) => (
-        <span style={{ fontSize: 12, color: 'var(--text-subtle)', fontWeight: 500 }}>
-          {AUDIENCE_LABELS[row.audience]}
-        </span>
-      ),
-    },
-    {
-      key: 'authorName', label: 'Author', sortable: true,
-      render: (row) => (
-        <div>
-          <div style={{ fontSize: 12, color: 'var(--text)' }}>{row.authorName}</div>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{row.authorRole}</div>
-        </div>
-      ),
-    },
-    {
-      key: 'publishedAt', label: 'Published', sortable: true,
-      render: (row) => (
-        <span style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-          {row.publishedAt ? formatDate(row.publishedAt) : <span style={{ color: 'var(--text-disabled)' }}>—</span>}
-        </span>
-      ),
-    },
-    {
-      key: 'id', label: '',
-      render: (row) => (
-        <Link href={`/announcements/${row.id}`} style={{
-          display: 'inline-flex', alignItems: 'center', gap: 4,
-          padding: '4px 10px', borderRadius: 5,
-          background: 'var(--bg)', border: '1px solid var(--border)',
-          color: 'var(--text-subtle)', fontSize: 11, fontWeight: 500,
-          textDecoration: 'none', whiteSpace: 'nowrap',
-        }}>
-          View <Icon name="chevron-right" size={11} />
-        </Link>
-      ),
-    },
-  ]
+  const stats = useMemo(() => ({
+    total: announcements.length,
+    published: announcements.filter((announcement) => announcement.status === 'published').length,
+    draft: announcements.filter((announcement) => announcement.status === 'draft').length,
+    archived: announcements.filter((announcement) => announcement.status === 'archived').length,
+  }), [announcements])
+
+  async function handleCreate() {
+    if (!session?.user.orgId || !form.title.trim() || !form.body.trim()) return
+    setSubmitting(true)
+    setError(null)
+    try {
+      await createAnnouncement(api, session.user.orgId, {
+        title: form.title.trim(),
+        body: form.body.trim(),
+        audience: form.audience,
+      })
+      setForm({ title: '', body: '', audience: 'all' })
+      await loadAnnouncements()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Unable to create announcement.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function handlePublish(id: string) {
+    if (!session?.user.orgId) return
+    setActionId(id)
+    setError(null)
+    try {
+      await publishAnnouncement(api, session.user.orgId, id)
+      await loadAnnouncements()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Unable to publish announcement.')
+    } finally {
+      setActionId(null)
+    }
+  }
+
+  async function handleArchive(id: string) {
+    if (!session?.user.orgId) return
+    setActionId(id)
+    setError(null)
+    try {
+      await archiveAnnouncement(api, session.user.orgId, id)
+      await loadAnnouncements()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Unable to archive announcement.')
+    } finally {
+      setActionId(null)
+    }
+  }
+
+  if (!session) {
+    return <div style={{ padding: '32px' }}><EmptyState icon="megaphone" title="Sign in required" description="Authenticate to manage live announcements." /></div>
+  }
 
   return (
-    <div style={{ padding: '32px 36px', maxWidth: 1300, margin: '0 auto' }}>
+    <div style={{ padding: '32px 36px 80px', maxWidth: 1180, margin: '0 auto' }}>
+      <div style={{ marginBottom: '28px' }}>
+        <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
+          Communications
+        </p>
+        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '30px', fontWeight: 400, color: 'var(--text)', marginBottom: '6px' }}>
+          Announcements
+        </h1>
+        <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>
+          Draft, publish, and archive announcements using the live communications service.
+        </p>
+      </div>
 
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28 }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-            <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--accent-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Icon name="megaphone" size={16} color="var(--accent)" />
-            </div>
-            <h1 style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--text)', margin: 0 }}>
-              Announcements
-            </h1>
+      {error ? (
+        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: '12px' }}>
+          {error}
+        </div>
+      ) : null}
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '24px' }}>
+        {[
+          { label: 'Total', value: String(stats.total) },
+          { label: 'Published', value: String(stats.published) },
+          { label: 'Drafts', value: String(stats.draft) },
+          { label: 'Archived', value: String(stats.archived) },
+        ].map((stat) => (
+          <div key={stat.label} className="card-elevated" style={{ padding: '14px 16px' }}>
+            <div style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>{stat.label}</div>
+            <div style={{ fontSize: '22px', fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>{stat.value}</div>
           </div>
-          <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: 0 }}>
-            Broadcast messages to club members and parents
-          </p>
-        </div>
-        <button style={{
-          display: 'flex', alignItems: 'center', gap: 6,
-          padding: '9px 16px', borderRadius: 7,
-          background: 'var(--accent)', border: 'none',
-          color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-        }}>
-          <Icon name="plus" size={14} />
-          New Announcement
-        </button>
+        ))}
       </div>
 
-      {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 28 }}>
-        <StatCard label="Published"  value={published} color="var(--success)" />
-        <StatCard label="Drafts"     value={drafts}    color="var(--warning)" />
-        <StatCard label="Archived"   value={archived}  />
-        <StatCard label="Pinned"     value={pinned}    color="var(--accent)" />
-      </div>
-
-      {/* Pinned announcements callout */}
-      {filtered.some(a => a.pinned && a.status === 'published') && !statusFilter && !search && (
-        <div style={{
-          marginBottom: 20, padding: '10px 14px', borderRadius: 7,
-          background: 'var(--accent-subtle)', border: '1px solid var(--accent-border)',
-          display: 'flex', alignItems: 'center', gap: 8,
-        }}>
-          <Icon name="activity" size={13} color="var(--accent)" />
-          <span style={{ fontSize: 12, color: 'var(--text-subtle)' }}>
-            <strong style={{ color: 'var(--text)', fontWeight: 600 }}>{pinned} pinned</strong> announcement{pinned !== 1 ? 's' : ''} currently visible at the top of the member portal.
-          </span>
+      <div style={{ display: 'grid', gridTemplateColumns: '340px 1fr', gap: '20px', alignItems: 'start' }}>
+        <div className="card" style={{ padding: '18px' }}>
+          <h2 style={{ fontSize: '14px', color: 'var(--text)', marginBottom: '14px' }}>New Announcement</h2>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <input
+              value={form.title}
+              onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
+              placeholder="Title"
+              style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: '13px' }}
+            />
+            <select
+              value={form.audience}
+              onChange={(event) => setForm((current) => ({ ...current, audience: event.target.value }))}
+              style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: '13px' }}
+            >
+              <option value="all">All members</option>
+              <option value="group">Specific group</option>
+            </select>
+            <textarea
+              value={form.body}
+              onChange={(event) => setForm((current) => ({ ...current, body: event.target.value }))}
+              rows={8}
+              placeholder="Write the announcement body."
+              style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: '13px', resize: 'vertical' }}
+            />
+            <button
+              onClick={() => void handleCreate()}
+              disabled={submitting || !form.title.trim() || !form.body.trim()}
+              style={{ padding: '9px 14px', borderRadius: '8px', border: 'none', background: 'var(--accent)', color: '#fff', fontSize: '12px', fontWeight: 600, cursor: submitting ? 'not-allowed' : 'pointer' }}
+            >
+              {submitting ? 'Creating…' : 'Create Draft'}
+            </button>
+          </div>
         </div>
-      )}
 
-      {/* Filters */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20,
-        padding: '14px 16px', borderRadius: 9,
-        background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-      }}>
-        <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
-          <Icon name="search" size={14} color="var(--text-muted)"
-            style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
-          <input
-            value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Search by title or author…"
-            style={{
-              width: '100%', padding: '7px 10px 7px 32px', borderRadius: 6,
-              background: 'var(--bg)', border: '1px solid var(--border)',
-              color: 'var(--text)', fontSize: 13, outline: 'none', boxSizing: 'border-box',
-            }}
-          />
+        <div className="card" style={{ overflow: 'hidden' }}>
+          <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+            <h2 style={{ fontSize: '14px', color: 'var(--text)' }}>Live Announcement Feed</h2>
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: '12px' }}>
+              <option value="">All statuses</option>
+              <option value="draft">Draft</option>
+              <option value="published">Published</option>
+              <option value="archived">Archived</option>
+            </select>
+          </div>
+          {loading ? (
+            <div style={{ padding: '20px' }}><EmptyState icon="megaphone" title="Loading announcements" description="Fetching the live communications feed." /></div>
+          ) : announcements.length === 0 ? (
+            <div style={{ padding: '20px' }}><EmptyState icon="megaphone" title="No announcements yet" description="Create a draft to populate this feed." /></div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {announcements.map((announcement, index) => (
+                <div key={announcement.id} style={{ padding: '16px 18px', borderBottom: index < announcements.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start', marginBottom: '8px' }}>
+                    <div>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '4px' }}>
+                        <Link href={`/announcements/${announcement.id}`} style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text)', textDecoration: 'none' }}>
+                          {announcement.title}
+                        </Link>
+                        <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: announcement.status === 'published' ? 'var(--success)' : announcement.status === 'draft' ? 'var(--warning)' : 'var(--text-muted)', background: 'var(--bg-surface)', border: '1px solid var(--border)', padding: '2px 8px', borderRadius: '999px' }}>
+                          {announcement.status}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                        Audience: {announcement.audience} · Created {formatDateTime(announcement.created_at)} · Updated {formatDateTime(announcement.updated_at)}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      {announcement.status === 'draft' ? (
+                        <button
+                          onClick={() => void handlePublish(announcement.id)}
+                          disabled={actionId === announcement.id}
+                          style={{ padding: '6px 10px', borderRadius: '6px', border: 'none', background: 'var(--accent)', color: '#fff', fontSize: '12px', cursor: actionId === announcement.id ? 'not-allowed' : 'pointer' }}
+                        >
+                          Publish
+                        </button>
+                      ) : null}
+                      {announcement.status !== 'archived' ? (
+                        <button
+                          onClick={() => void handleArchive(announcement.id)}
+                          disabled={actionId === announcement.id}
+                          style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: '12px', cursor: actionId === announcement.id ? 'not-allowed' : 'pointer' }}
+                        >
+                          Archive
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                  <p style={{ fontSize: '13px', color: 'var(--text-subtle)', lineHeight: 1.6, margin: 0 }}>
+                    {announcement.body}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-        <select
-          value={statusFilter} onChange={e => setStatusFilter(e.target.value as AnnouncementStatus | '')}
-          style={{
-            padding: '7px 10px', borderRadius: 6,
-            background: 'var(--bg)', border: '1px solid var(--border)',
-            color: statusFilter ? 'var(--text)' : 'var(--text-muted)', fontSize: 13, cursor: 'pointer',
-          }}
-        >
-          {STATUS_FILTERS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-        </select>
-        {(search || statusFilter) && (
-          <button
-            onClick={() => { setSearch(''); setStatusFilter('') }}
-            style={{
-              padding: '7px 12px', borderRadius: 6,
-              background: 'transparent', border: '1px solid var(--border)',
-              color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer',
-            }}
-          >
-            Clear
-          </button>
-        )}
       </div>
-
-      {/* Table */}
-      {filtered.length === 0 ? (
-        <EmptyState
-          icon="megaphone" title="No announcements found"
-          description={search || statusFilter ? 'Try adjusting your filters.' : 'Create your first announcement to get started.'}
-        />
-      ) : (
-        <Table
-          data={filtered}
-          columns={columns}
-          keyField="id"
-          defaultSort={{ key: 'createdAt', direction: 'desc' }}
-          paginated
-          pageSize={15}
-        />
-      )}
     </div>
   )
 }

@@ -202,15 +202,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const refreshSession = useCallback(async () => {
-    if (DEV_STUB_TOKENS_ENABLED && typeof window !== 'undefined') {
-      const storedId = localStorage.getItem(DEV_TOKEN_KEY)
-      if (storedId && DEV_SESSIONS[storedId]) {
-        const next = DEV_SESSIONS[storedId]
-        setSessionState(next)
-        return next
-      }
-    }
-
     try {
       const next = await fetchCurrentSession(true)
       setSessionState(next)

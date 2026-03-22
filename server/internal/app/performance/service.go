@@ -6,10 +6,12 @@
 package performance
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"sort"
 	"strings"
@@ -17,6 +19,8 @@ import (
 	"time"
 
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // ─── Sentinel errors ──────────────────────────────────────────────────────────
@@ -33,34 +37,34 @@ var (
 
 // Result holds a single swimmer-event result record.
 type Result struct {
-	ID               string     `json:"id"`
-	OrgID            string     `json:"org_id"`
-	SwimmerID        string     `json:"swimmer_id"`
-	MeetID           string     `json:"meet_id,omitempty"`
-	MeetEventID      string     `json:"meet_event_id,omitempty"`
-	ImportID         string     `json:"import_id,omitempty"`
-	EventNumber      string     `json:"event_number,omitempty"`
-	Distance         int        `json:"distance"`
-	Stroke           string     `json:"stroke"`
-	Course           string     `json:"course"`
-	Gender           string     `json:"gender"`
-	Heat             *int       `json:"heat,omitempty"`
-	Lane             *int       `json:"lane,omitempty"`
-	Place            *int       `json:"place,omitempty"`
-	SeedTimeMs       *int       `json:"seed_time_ms,omitempty"`
-	FinTimeMs        *int       `json:"fin_time_ms,omitempty"` // nil = NT or DQ
-	DQ               bool       `json:"dq"`
-	DQCode           string     `json:"dq_code,omitempty"`
-	DQNote           string     `json:"dq_note,omitempty"`
-	IsOfficial       bool       `json:"is_official"`
-	IsManualOverride bool       `json:"is_manual_override"`
-	OverrideReason   string     `json:"override_reason,omitempty"`
-	OverrideBy       string     `json:"override_by,omitempty"`
-	Status           string     `json:"status"`
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at"`
-	CreatedBy        string     `json:"created_by"`
-	UpdatedBy        string     `json:"updated_by"`
+	ID               string    `json:"id"`
+	OrgID            string    `json:"org_id"`
+	SwimmerID        string    `json:"swimmer_id"`
+	MeetID           string    `json:"meet_id,omitempty"`
+	MeetEventID      string    `json:"meet_event_id,omitempty"`
+	ImportID         string    `json:"import_id,omitempty"`
+	EventNumber      string    `json:"event_number,omitempty"`
+	Distance         int       `json:"distance"`
+	Stroke           string    `json:"stroke"`
+	Course           string    `json:"course"`
+	Gender           string    `json:"gender"`
+	Heat             *int      `json:"heat,omitempty"`
+	Lane             *int      `json:"lane,omitempty"`
+	Place            *int      `json:"place,omitempty"`
+	SeedTimeMs       *int      `json:"seed_time_ms,omitempty"`
+	FinTimeMs        *int      `json:"fin_time_ms,omitempty"` // nil = NT or DQ
+	DQ               bool      `json:"dq"`
+	DQCode           string    `json:"dq_code,omitempty"`
+	DQNote           string    `json:"dq_note,omitempty"`
+	IsOfficial       bool      `json:"is_official"`
+	IsManualOverride bool      `json:"is_manual_override"`
+	OverrideReason   string    `json:"override_reason,omitempty"`
+	OverrideBy       string    `json:"override_by,omitempty"`
+	Status           string    `json:"status"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+	CreatedBy        string    `json:"created_by"`
+	UpdatedBy        string    `json:"updated_by"`
 }
 
 // Split holds one split record for a result.
@@ -143,7 +147,7 @@ type CutQualification struct {
 	Course        string `json:"course"`
 	Gender        string `json:"gender"`
 	CutTimeMs     int    `json:"cut_time_ms"`
-	BestTimeMs    *int   `json:"best_time_ms"`             // nil = NT
+	BestTimeMs    *int   `json:"best_time_ms"` // nil = NT
 	Qualified     bool   `json:"qualified"`
 	MarginMs      *int   `json:"margin_ms,omitempty"` // positive = under the cut (qualified); negative = over
 }
@@ -152,24 +156,24 @@ type CutQualification struct {
 
 // UpsertResultInput contains all fields needed to create or update a result.
 type UpsertResultInput struct {
-	SwimmerID   string  `json:"swimmer_id" validate:"required"`
-	MeetID      string  `json:"meet_id"`
-	MeetEventID string  `json:"meet_event_id"`
-	ImportID    string  `json:"import_id"`
-	EventNumber string  `json:"event_number"`
-	Distance    int     `json:"distance" validate:"required,gt=0"`
-	Stroke      string  `json:"stroke" validate:"required,oneof=free back breast fly im free_relay medley_relay"`
-	Course      string  `json:"course" validate:"required,oneof=SCY SCM LCM"`
-	Gender      string  `json:"gender" validate:"required,oneof=M F X"`
-	Heat        *int    `json:"heat"`
-	Lane        *int    `json:"lane"`
-	Place       *int    `json:"place"`
-	SeedTimeMs  *int    `json:"seed_time_ms"`
-	FinTimeMs   *int    `json:"fin_time_ms"`
-	DQ          bool    `json:"dq"`
-	DQCode      string  `json:"dq_code"`
-	DQNote      string  `json:"dq_note"`
-	IsOfficial  bool    `json:"is_official"`
+	SwimmerID   string       `json:"swimmer_id" validate:"required"`
+	MeetID      string       `json:"meet_id"`
+	MeetEventID string       `json:"meet_event_id"`
+	ImportID    string       `json:"import_id"`
+	EventNumber string       `json:"event_number"`
+	Distance    int          `json:"distance" validate:"required,gt=0"`
+	Stroke      string       `json:"stroke" validate:"required,oneof=free back breast fly im free_relay medley_relay"`
+	Course      string       `json:"course" validate:"required,oneof=SCY SCM LCM"`
+	Gender      string       `json:"gender" validate:"required,oneof=M F X"`
+	Heat        *int         `json:"heat"`
+	Lane        *int         `json:"lane"`
+	Place       *int         `json:"place"`
+	SeedTimeMs  *int         `json:"seed_time_ms"`
+	FinTimeMs   *int         `json:"fin_time_ms"`
+	DQ          bool         `json:"dq"`
+	DQCode      string       `json:"dq_code"`
+	DQNote      string       `json:"dq_note"`
+	IsOfficial  bool         `json:"is_official"`
 	Splits      []SplitInput `json:"splits"`
 }
 
@@ -218,12 +222,14 @@ type UpdateTimeStandardInput struct {
 
 // ListBestTimesFilters supports optional filtering for best-time queries.
 type ListBestTimesFilters struct {
-	Course string
-	Stroke string
+	SwimmerID string
+	Course    string
+	Stroke    string
 }
 
 // ListResultsFilters supports optional filtering for progression queries.
 type ListResultsFilters struct {
+	SwimmerID     string
 	EventDistance int
 	Stroke        string
 	Course        string
@@ -254,6 +260,7 @@ type EntrySeedTimeUpdater interface {
 // Service is the performance/best-times domain service.
 type Service struct {
 	mu               sync.RWMutex
+	repo             *Repository             // nil = in-memory only
 	results          map[string]*Result       // id → Result
 	splits           map[string][]*Split      // resultID → []Split
 	bestTimes        map[string]*BestTime     // id → BestTime
@@ -283,6 +290,50 @@ func NewService() *Service {
 		btByKey:   make(map[string]*BestTime),
 		standards: make(map[string]*TimeStandard),
 	}
+}
+
+// NewServiceWithPool creates a DB-backed performance service.
+func NewServiceWithPool(pool *pgxpool.Pool) *Service {
+	s := NewService()
+	if pool == nil {
+		return s
+	}
+	s.repo = newRepository(pool)
+	if err := s.loadFromDB(context.Background()); err != nil {
+		slog.Error("performance: failed to load initial state from DB", "error", err)
+	}
+	return s
+}
+
+func (s *Service) loadFromDB(ctx context.Context) error {
+	if s.repo == nil {
+		return nil
+	}
+	results, bestTimes, standards, err := s.repo.LoadAll(ctx)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, r := range results {
+		s.results[r.ID] = r
+	}
+	for _, bt := range bestTimes {
+		s.bestTimes[bt.ID] = bt
+		key := btKey(bt.OrgID, bt.SwimmerID, bt.EventDistance, bt.Stroke, bt.Course)
+		s.btByKey[key] = bt
+	}
+	for _, ts := range standards {
+		s.standards[ts.ID] = ts
+	}
+	return nil
+}
+
+func (s *Service) newID() string {
+	if s.repo != nil {
+		return uuid.New().String()
+	}
+	return newID()
 }
 
 // SetEntrySeedTimeUpdater injects the cross-domain updater used to back-fill
@@ -391,6 +442,11 @@ func (s *Service) UpsertResult(orgID, actorID string, principal *appmiddleware.P
 		UpdatedAt:   now,
 		CreatedBy:   actorID,
 		UpdatedBy:   actorID,
+	}
+	if s.repo != nil {
+		if err := s.repo.UpsertResult(context.Background(), result); err != nil {
+			slog.Error("performance: upsert result", "error", err)
+		}
 	}
 	s.results[result.ID] = result
 
@@ -533,6 +589,11 @@ func (s *Service) recomputeBestTimeLocked(orgID, actorID, swimmerID string, dist
 		CreatedBy:     actorID,
 		UpdatedBy:     actorID,
 	}
+	if s.repo != nil {
+		if err := s.repo.UpsertBestTime(context.Background(), bt); err != nil {
+			slog.Error("performance: upsert best_time (recompute)", "error", err)
+		}
+	}
 	s.bestTimes[bt.ID] = bt
 	s.btByKey[key] = bt
 }
@@ -579,6 +640,47 @@ func (s *Service) ListBestTimes(orgID string, principal *appmiddleware.Principal
 		out = append(out, bt)
 	}
 	sort.Slice(out, func(i, j int) bool {
+		if out[i].Stroke != out[j].Stroke {
+			return out[i].Stroke < out[j].Stroke
+		}
+		if out[i].EventDistance != out[j].EventDistance {
+			return out[i].EventDistance < out[j].EventDistance
+		}
+		return out[i].Course < out[j].Course
+	})
+	return out, nil
+}
+
+// ListBestTimesForOrg returns all best-time records visible within the org.
+func (s *Service) ListBestTimesForOrg(orgID string, principal *appmiddleware.Principal, filters ListBestTimesFilters) ([]*BestTime, error) {
+	if err := s.requireReadAccess(principal); err != nil {
+		return nil, err
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var out []*BestTime
+	for _, bt := range s.bestTimes {
+		if bt.OrgID != orgID {
+			continue
+		}
+		if filters.SwimmerID != "" && bt.SwimmerID != filters.SwimmerID {
+			continue
+		}
+		if filters.Course != "" && bt.Course != filters.Course {
+			continue
+		}
+		if filters.Stroke != "" && bt.Stroke != filters.Stroke {
+			continue
+		}
+		cp := *bt
+		out = append(out, &cp)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].SwimmerID != out[j].SwimmerID {
+			return out[i].SwimmerID < out[j].SwimmerID
+		}
 		if out[i].Stroke != out[j].Stroke {
 			return out[i].Stroke < out[j].Stroke
 		}
@@ -669,6 +771,11 @@ func (s *Service) OverrideBestTime(orgID, actorID string, principal *appmiddlewa
 		Meta:       meta,
 		CreatedAt:  now,
 	}
+	if s.repo != nil {
+		if err := s.repo.UpsertBestTime(context.Background(), existing); err != nil {
+			slog.Error("performance: upsert best_time (override)", "error", err)
+		}
+	}
 	s.auditEvents = append(s.auditEvents, audit)
 
 	return existing, audit, nil
@@ -713,6 +820,47 @@ func (s *Service) ListProgression(orgID string, principal *appmiddleware.Princip
 	return out, nil
 }
 
+// ListProgressionForOrg returns all visible progression rows within the org.
+func (s *Service) ListProgressionForOrg(orgID string, principal *appmiddleware.Principal, filters ListResultsFilters) ([]*Result, error) {
+	if err := s.requireReadAccess(principal); err != nil {
+		return nil, err
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var out []*Result
+	for _, result := range s.results {
+		if result.OrgID != orgID {
+			continue
+		}
+		if filters.SwimmerID != "" && result.SwimmerID != filters.SwimmerID {
+			continue
+		}
+		if result.Status != "active" {
+			continue
+		}
+		if filters.EventDistance > 0 && result.Distance != filters.EventDistance {
+			continue
+		}
+		if filters.Stroke != "" && result.Stroke != filters.Stroke {
+			continue
+		}
+		if filters.Course != "" && result.Course != filters.Course {
+			continue
+		}
+		cp := *result
+		out = append(out, &cp)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].SwimmerID != out[j].SwimmerID {
+			return out[i].SwimmerID < out[j].SwimmerID
+		}
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
+	return out, nil
+}
+
 // ─── Time Standards ───────────────────────────────────────────────────────────
 
 // CreateTimeStandard creates a new time standard.
@@ -744,6 +892,11 @@ func (s *Service) CreateTimeStandard(orgID, actorID string, principal *appmiddle
 		UpdatedAt:     now,
 		CreatedBy:     actorID,
 		UpdatedBy:     actorID,
+	}
+	if s.repo != nil {
+		if err := s.repo.UpsertTimeStandard(context.Background(), ts); err != nil {
+			slog.Error("performance: upsert time_standard", "error", err)
+		}
 	}
 	s.standards[ts.ID] = ts
 	return ts, nil
@@ -837,6 +990,11 @@ func (s *Service) UpdateTimeStandard(orgID, actorID, standardID string, principa
 	}
 	ts.UpdatedAt = time.Now().UTC()
 	ts.UpdatedBy = actorID
+	if s.repo != nil {
+		if err := s.repo.UpsertTimeStandard(context.Background(), ts); err != nil {
+			slog.Error("performance: upsert time_standard (update)", "error", err)
+		}
+	}
 	return ts, nil
 }
 

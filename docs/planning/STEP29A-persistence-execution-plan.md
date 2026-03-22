@@ -47,10 +47,28 @@ database harness.
 
 ## Checkpoints
 
-- [ ] Add runtime snapshot storage migration
-- [ ] Add snapshot repository package
-- [ ] Convert service constructors to optionally load persisted state
-- [ ] Persist writes for converted domains
-- [ ] Wire `server.go` to the persistent runtime
-- [ ] Add real-DB round-trip tests
-- [ ] Update `CLAUDE.md` and `TODO.md`
+- [x] Add runtime snapshot storage migration (2026-03-21: runtime_snapshots table via psql)
+- [x] Add snapshot repository package (2026-03-21: server/internal/runtimepersist)
+- [x] Convert service constructors to optionally load persisted state (2026-03-21: LoadRuntimeSnapshot)
+- [x] Persist writes for converted domains (2026-03-21: runtimePersistenceMiddleware)
+- [x] Wire `server.go` to the persistent runtime (2026-03-21)
+- [x] Add real-DB round-trip tests (2026-03-21: runtime_persistence_integration_test.go)
+- [x] Update `CLAUDE.md` and `TODO.md` (2026-03-21)
+
+## Phase 2: Full DB-backed repositories (2026-03-22)
+
+- [x] Add pgx/v5 dependency (github.com/jackc/pgx/v5)
+- [x] Create server/internal/db/pool.go (pgxpool connection management)
+- [x] Create members/repository.go (households, contacts, swimmers, swimmer_groups)
+- [x] Create groups/repository.go (groups, eligibility_rules, registrations, waiver_acceptances)
+- [x] Create meets/repository.go (meets, sessions, events, commitments, entries)
+- [x] Create performance/repository.go (results, best_times, time_standards)
+- [x] Create billing/repository.go (invoices, invoice_items, payments, refunds, ledger_events)
+- [x] Create comms/repository.go (announcements, email_campaigns)
+- [x] Create compliance/repository.go (data_export_requests, data_deletion_requests)
+- [x] Create imports/repository.go (file_imports)
+- [x] Create exports/repository.go (file_exports)
+- [x] Add NewServiceWithPool constructors to all 9 services
+- [x] Wire DB pool in server.go (NewServiceWithPool replaces NewService when DATABASE_URL set)
+- [x] Add integration tests (server_db_repos_test.go) for all converted domains
+- [x] Update CLAUDE.md and TODO.md

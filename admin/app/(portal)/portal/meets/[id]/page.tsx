@@ -4,39 +4,180 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { Icon } from '@/components/ui/icons'
+import { useSession } from '@/lib/session'
+import { useApiClient } from '@/lib/api'
 import {
-  HOUSEHOLD_SWIMMERS,
-  getDefaultHouseholdMeetStates,
-  getFamilyVisibleDocuments,
-  getMeetById,
-} from '@/lib/meetCenter'
+  fetchMeet,
+  fetchMeetCommitments,
+  fetchMeetEvents,
+  fetchSwimmers,
+  MeetRecord,
+  CommitmentRecord,
+  MeetEventRecord,
+  SwimmerRecord,
+} from '@/lib/adminData'
 
-const SWIMMERS = HOUSEHOLD_SWIMMERS
-
+// ── Types ────────────────────────────────────────────────────────────────────
 type SwimmerState = {
-  commitment: 'pending' | 'yes' | 'no'
+  commitment: 'pending' | 'yes' | 'no' | 'closed'
+  commitmentId: string | null
   selectedEvents: string[]
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function mapCommitmentStatus(status: string): 'pending' | 'yes' | 'no' | 'closed' {
+  if (status === 'committed_yes') return 'yes'
+  if (status === 'committed_no') return 'no'
+  if (status === 'invited') return 'pending'
+  if (status === 'coach_reviewed' || status === 'locked') return 'closed'
+  return 'pending'
+}
+
+function formatDateRange(start?: string, end?: string): string {
+  if (!start) return '—'
+  const s = new Date(start)
+  const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' }
+  if (!end || end === start) return s.toLocaleDateString('en-US', { ...opts, year: 'numeric' })
+  const e = new Date(end)
+  if (s.getFullYear() === e.getFullYear()) {
+    return `${s.toLocaleDateString('en-US', opts)}–${e.toLocaleDateString('en-US', { ...opts, year: 'numeric' })}`
+  }
+  return `${s.toLocaleDateString('en-US', { ...opts, year: 'numeric' })}–${e.toLocaleDateString('en-US', { ...opts, year: 'numeric' })}`
+}
+
+function swimmerInitials(s: SwimmerRecord): string {
+  const first = (s.preferred_name ?? s.first_name)[0] ?? ''
+  const last = s.last_name[0] ?? ''
+  return (first + last).toUpperCase()
+}
+
+function swimmerDisplayName(s: SwimmerRecord): string {
+  return `${s.preferred_name ?? s.first_name} ${s.last_name}`
+}
+
+function swimmerAge(s: SwimmerRecord): number {
+  const dob = new Date(s.date_of_birth)
+  const now = new Date()
+  let age = now.getFullYear() - dob.getFullYear()
+  const m = now.getMonth() - dob.getMonth()
+  if (m < 0 || (m === 0 && now.getDate() < dob.getDate())) age--
+  return age
+}
+
+const SWIMMER_GRADIENTS = [
+  'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)',
+  'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+  'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+  'linear-gradient(135deg, #ec4899 0%, #a855f7 100%)',
+  'linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%)',
+]
+
+function eventLabel(ev: MeetEventRecord): string {
+  const parts: string[] = []
+  if (ev.distance) parts.push(String(ev.distance))
+  if (ev.stroke) parts.push(ev.stroke.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()))
+  return parts.length > 0 ? parts.join(' ') : `Event #${ev.event_number ?? ev.id.slice(-4)}`
+}
+
+function eventAgeGroup(ev: MeetEventRecord): string {
+  const parts: string[] = []
+  if (ev.gender) parts.push(ev.gender === 'F' ? 'Girls' : ev.gender === 'M' ? 'Boys' : ev.gender)
+  if (ev.age_group) parts.push(ev.age_group)
+  return parts.join(' ')
+}
+
+// ── Loading skeleton ─────────────────────────────────────────────────────────
+function LoadingSkeleton() {
+  return (
+    <div style={{ maxWidth: '860px' }}>
+      <div style={{ height: '20px', width: '160px', background: 'rgba(0,0,0,0.06)', borderRadius: '6px', marginBottom: '24px' }} />
+      <div
+        style={{
+          background: '#ffffff',
+          borderRadius: '16px',
+          border: '1px solid rgba(0,0,0,0.07)',
+          padding: '24px 28px',
+          marginBottom: '24px',
+        }}
+      >
+        <div style={{ height: '28px', width: '280px', background: 'rgba(0,0,0,0.06)', borderRadius: '8px', marginBottom: '12px' }} />
+        <div style={{ display: 'flex', gap: '16px' }}>
+          <div style={{ height: '14px', width: '120px', background: 'rgba(0,0,0,0.04)', borderRadius: '4px' }} />
+          <div style={{ height: '14px', width: '140px', background: 'rgba(0,0,0,0.04)', borderRadius: '4px' }} />
+        </div>
+      </div>
+      <style>{`
+        @keyframes slideUp {
+          from { opacity: 0; transform: translateY(12px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+    </div>
+  )
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
 export default function MeetDetailPage() {
   const params = useParams<{ id: string }>()
   const meetId = typeof params?.id === 'string' ? params.id : ''
-  const MEET = getMeetById(meetId)
-  const initialSwimmerStates = getDefaultHouseholdMeetStates(meetId)
-  const [swimmerStates, setSwimmerStates] = useState<Record<string, SwimmerState>>(initialSwimmerStates)
-  const [activeSwimmer, setActiveSwimmer] = useState<string>(SWIMMERS[0].id)
+
+  const { session } = useSession()
+  const api = useApiClient(session?.token)
+  const orgId = session?.user.orgId ?? ''
+  const householdId = session?.user.householdId ?? ''
+
+  const [meet, setMeet] = useState<MeetRecord | null>(null)
+  const [commitments, setCommitments] = useState<CommitmentRecord[]>([])
+  const [events, setEvents] = useState<MeetEventRecord[]>([])
+  const [swimmers, setSwimmers] = useState<SwimmerRecord[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const [swimmerStates, setSwimmerStates] = useState<Record<string, SwimmerState>>({})
+  const [activeSwimmer, setActiveSwimmer] = useState<string>('')
   const [submitting, setSubmitting] = useState<string | null>(null)
   const [submitted, setSubmitted] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
-    setSwimmerStates(getDefaultHouseholdMeetStates(meetId))
-    setActiveSwimmer(SWIMMERS[0].id)
-    setSubmitting(null)
-    setSubmitted({})
-  }, [meetId])
+    if (!orgId || !meetId) { setLoading(false); return }
+    setLoading(true)
+    Promise.all([
+      fetchMeet(api, orgId, meetId),
+      fetchMeetCommitments(api, orgId, meetId),
+      fetchMeetEvents(api, orgId, meetId),
+      fetchSwimmers(api, orgId),
+    ])
+      .then(([m, cmts, evs, swmrs]) => {
+        setMeet(m)
+        setCommitments(cmts)
+        setEvents(evs)
 
-  if (!MEET) {
+        // Filter to household swimmers
+        const householdSwimmers = householdId
+          ? swmrs.filter((s) => s.household_id === householdId)
+          : swmrs
+
+        setSwimmers(householdSwimmers)
+
+        // Build initial swimmer states from existing commitments
+        const initialStates: Record<string, SwimmerState> = {}
+        for (const s of householdSwimmers) {
+          const cmt = cmts.find((c) => c.swimmer_id === s.id)
+          initialStates[s.id] = {
+            commitment: cmt ? mapCommitmentStatus(cmt.status) : 'pending',
+            commitmentId: cmt?.id ?? null,
+            selectedEvents: [],
+          }
+        }
+        setSwimmerStates(initialStates)
+        if (householdSwimmers.length > 0) setActiveSwimmer(householdSwimmers[0].id)
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false))
+  }, [api, orgId, householdId, meetId])
+
+  if (loading) return <LoadingSkeleton />
+
+  if (!meet) {
     return (
       <div style={{ maxWidth: '720px' }}>
         <nav style={{ marginBottom: '20px', fontSize: '13px' }}>
@@ -71,43 +212,65 @@ export default function MeetDetailPage() {
     )
   }
 
-  const EVENTS = MEET.events
-  const SESSIONS = MEET.sessions
-  const DOCUMENTS = getFamilyVisibleDocuments(MEET)
-  const deadlineDate = new Date(MEET.deadlineDate)
+  const deadlineStr = meet.commitment_deadline ?? meet.entry_deadline
+  const deadlineDate = deadlineStr ? new Date(deadlineStr) : null
   const now = new Date()
-  const daysUntilDeadline = Math.max(
-    0,
-    Math.ceil((deadlineDate.getTime() - now.getTime()) / 86400000),
+  const daysUntilDeadline = deadlineDate
+    ? Math.max(0, Math.ceil((deadlineDate.getTime() - now.getTime()) / 86400000))
+    : null
+
+  const commitmentOpen = meet.status === 'commitment_open'
+
+  const swimmer = swimmers.find((s) => s.id === activeSwimmer)
+  const state = activeSwimmer ? swimmerStates[activeSwimmer] : undefined
+
+  // Group events by session_id for display
+  const sessionIds = Array.from(new Set(events.map((e) => e.session_id ?? 'main')))
+
+  const eligibleEvents = swimmer
+    ? events.filter((ev) => !ev.gender || ev.gender === swimmer.gender || ev.gender === 'X')
+    : []
+
+  const eligibleSessionGroups = sessionIds
+    .map((sid) => ({
+      id: sid,
+      events: eligibleEvents.filter((e) => (e.session_id ?? 'main') === sid),
+    }))
+    .filter((g) => g.events.length > 0)
+
+  const totalEvents = Object.values(swimmerStates).reduce(
+    (acc, s) => acc + s.selectedEvents.length, 0
   )
 
-  const swimmer = SWIMMERS.find((s) => s.id === activeSwimmer)!
-  const state = swimmerStates[activeSwimmer]
-  const sessionById = Object.fromEntries(SESSIONS.map((session) => [session.id, session]))
-
-  const eligibleEvents = EVENTS.filter((ev) => ev.gender === swimmer.gender)
-  const eligibleSessions = SESSIONS
-    .map((session) => ({
-      ...session,
-      events: eligibleEvents.filter((event) => event.sessionId === session.id),
-    }))
-    .filter((session) => session.events.length > 0)
-  const commitmentOpen = MEET.status === 'commitment_open'
-
   const setCommitment = async (swimmerId: string, val: 'yes' | 'no') => {
+    const st = swimmerStates[swimmerId]
+    if (!st) return
+    const commitmentId = st.commitmentId
+
     setSubmitting(swimmerId + val)
-    await new Promise((r) => setTimeout(r, 600))
-    setSwimmerStates((prev) => ({
-      ...prev,
-      [swimmerId]: {
-        ...prev[swimmerId],
-        commitment: val,
-        selectedEvents: val === 'no' ? [] : prev[swimmerId].selectedEvents,
-      },
-    }))
-    setSubmitting(null)
-    setSubmitted((prev) => ({ ...prev, [swimmerId]: true }))
-    setTimeout(() => setSubmitted((prev) => ({ ...prev, [swimmerId]: false })), 2500)
+    try {
+      if (commitmentId) {
+        await api.post(
+          `/api/v1/orgs/${orgId}/meets/${meetId}/commitments/${commitmentId}/respond`,
+          { response: val },
+          { 'X-Org-Id': orgId }
+        )
+      }
+      setSwimmerStates((prev) => ({
+        ...prev,
+        [swimmerId]: {
+          ...prev[swimmerId],
+          commitment: val,
+          selectedEvents: val === 'no' ? [] : prev[swimmerId].selectedEvents,
+        },
+      }))
+      setSubmitted((prev) => ({ ...prev, [swimmerId]: true }))
+      setTimeout(() => setSubmitted((prev) => ({ ...prev, [swimmerId]: false })), 2500)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setSubmitting(null)
+    }
   }
 
   const toggleEvent = (eventId: string) => {
@@ -120,10 +283,7 @@ export default function MeetDetailPage() {
     })
   }
 
-  const totalEvents = Object.values(swimmerStates).reduce(
-    (acc, s) => acc + s.selectedEvents.length, 0
-  )
-  const estimatedFee = totalEvents * MEET.entryFeePerEvent
+  const dateLabel = formatDateRange(meet.start_date, meet.end_date)
 
   return (
     <div style={{ maxWidth: '860px' }}>
@@ -143,7 +303,7 @@ export default function MeetDetailPage() {
           Meets
         </Link>
         <span>/</span>
-        <span style={{ color: '#1A1714', fontWeight: 500 }}>{MEET.name}</span>
+        <span style={{ color: '#1A1714', fontWeight: 500 }}>{meet.name}</span>
       </nav>
 
       {/* Meet header */}
@@ -169,17 +329,19 @@ export default function MeetDetailPage() {
                 lineHeight: 1.1,
               }}
             >
-              {MEET.name}
+              {meet.name}
             </h1>
             <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', fontSize: '13px', color: '#6B6866' }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                 <Icon name="calendar" size={13} style={{ color: '#9A9693' }} />
-                {MEET.dateLabel}
+                {dateLabel}
               </span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                <Icon name="map-pin" size={13} style={{ color: '#9A9693' }} />
-                {MEET.location}
-              </span>
+              {meet.location && (
+                <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <Icon name="map-pin" size={13} style={{ color: '#9A9693' }} />
+                  {meet.location}
+                </span>
+              )}
               <span
                 style={{
                   padding: '2px 8px',
@@ -189,50 +351,34 @@ export default function MeetDetailPage() {
                   fontSize: '11px',
                 }}
               >
-                {MEET.course}
+                {meet.course}
               </span>
             </div>
           </div>
 
           {/* Deadline urgency */}
-          <div
-            style={{
-              background: daysUntilDeadline <= 3 ? '#fef2f2' : '#fffbeb',
-              border: `1px solid ${daysUntilDeadline <= 3 ? 'rgba(220,38,38,0.2)' : 'rgba(217,119,6,0.2)'}`,
-              borderRadius: '10px',
-              padding: '10px 16px',
-              textAlign: 'center',
-            }}
-          >
-            <div style={{ fontSize: '11px', color: daysUntilDeadline <= 3 ? '#dc2626' : '#d97706', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '2px' }}>
-              Deadline
+          {deadlineDate && (
+            <div
+              style={{
+                background: daysUntilDeadline !== null && daysUntilDeadline <= 3 ? '#fef2f2' : '#fffbeb',
+                border: `1px solid ${daysUntilDeadline !== null && daysUntilDeadline <= 3 ? 'rgba(220,38,38,0.2)' : 'rgba(217,119,6,0.2)'}`,
+                borderRadius: '10px',
+                padding: '10px 16px',
+                textAlign: 'center',
+              }}
+            >
+              <div style={{ fontSize: '11px', color: daysUntilDeadline !== null && daysUntilDeadline <= 3 ? '#dc2626' : '#d97706', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '2px' }}>
+                Deadline
+              </div>
+              <div style={{ fontSize: '14px', fontWeight: 700, color: daysUntilDeadline !== null && daysUntilDeadline <= 3 ? '#dc2626' : '#92400e' }}>
+                {deadlineDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+              </div>
+              <div style={{ fontSize: '12px', fontWeight: 600, color: daysUntilDeadline !== null && daysUntilDeadline <= 3 ? '#dc2626' : '#d97706', marginTop: '2px' }}>
+                {daysUntilDeadline === null ? '' : daysUntilDeadline <= 0 ? 'Closed' : daysUntilDeadline === 1 ? '1 day left' : `${daysUntilDeadline} days left`}
+              </div>
             </div>
-            <div style={{ fontSize: '14px', fontWeight: 700, color: daysUntilDeadline <= 3 ? '#dc2626' : '#92400e' }}>
-              {deadlineDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-            </div>
-            <div style={{ fontSize: '12px', fontWeight: 600, color: daysUntilDeadline <= 3 ? '#dc2626' : '#d97706', marginTop: '2px' }}>
-              {daysUntilDeadline <= 0 ? 'Closed' : daysUntilDeadline === 1 ? '1 day left' : `${daysUntilDeadline} days left`}
-            </div>
-          </div>
+          )}
         </div>
-
-        {/* Notes */}
-        {MEET.notes && (
-          <div
-            style={{
-              marginTop: '16px',
-              padding: '10px 14px',
-              background: 'rgba(0,0,0,0.03)',
-              borderRadius: '8px',
-              fontSize: '13px',
-              color: '#6B6866',
-              lineHeight: 1.5,
-              borderLeft: '3px solid rgba(235,93,30,0.25)',
-            }}
-          >
-            <strong style={{ color: '#1A1714', fontWeight: 600 }}>Note:</strong> {MEET.notes}
-          </div>
-        )}
       </div>
 
       <div
@@ -274,19 +420,15 @@ export default function MeetDetailPage() {
                 fontWeight: 600,
               }}
             >
-              {DOCUMENTS.length} files
+              {events.length} events
             </span>
           </div>
 
-          <p style={{ fontSize: '13px', color: '#6B6866', lineHeight: 1.7, marginBottom: '16px' }}>
-            {MEET.overview}
-          </p>
-
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px', marginBottom: '16px' }}>
             {[
-              { label: 'Host', value: MEET.host },
-              { label: 'Course', value: MEET.course },
-              { label: 'Location', value: MEET.location },
+              { label: 'Host', value: meet.host_org ?? '—' },
+              { label: 'Course', value: meet.course },
+              { label: 'Location', value: meet.location ?? '—' },
             ].map((item) => (
               <div
                 key={item.label}
@@ -307,29 +449,37 @@ export default function MeetDetailPage() {
             ))}
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {SESSIONS.map((session) => (
-              <div
-                key={session.id}
-                style={{
-                  padding: '12px 14px',
-                  borderRadius: '12px',
-                  background: 'rgba(235,93,30,0.04)',
-                  border: '1px solid rgba(235,93,30,0.14)',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'center', marginBottom: '6px', flexWrap: 'wrap' }}>
-                  <div style={{ fontSize: '14px', fontWeight: 600, color: '#1A1714' }}>{session.label}</div>
-                  <div style={{ fontSize: '11px', color: '#9A9693', fontFamily: 'var(--font-mono)' }}>
-                    Warm-up {session.warmup} · Start {session.start}
+          {/* Session groups summary */}
+          {sessionIds.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {sessionIds.map((sid) => {
+                const evCount = events.filter((e) => (e.session_id ?? 'main') === sid).length
+                return (
+                  <div
+                    key={sid}
+                    style={{
+                      padding: '12px 14px',
+                      borderRadius: '12px',
+                      background: 'rgba(235,93,30,0.04)',
+                      border: '1px solid rgba(235,93,30,0.14)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <div style={{ fontSize: '14px', fontWeight: 600, color: '#1A1714' }}>
+                        {sid === 'main' ? 'Main Session' : `Session ${sid.slice(-4)}`}
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#9A9693', fontFamily: 'var(--font-mono)' }}>
+                        {evCount} event{evCount !== 1 ? 's' : ''}
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <div style={{ fontSize: '12.5px', color: '#6B6866', lineHeight: 1.55 }}>{session.notes}</div>
-              </div>
-            ))}
-          </div>
+                )
+              })}
+            </div>
+          )}
         </div>
 
+        {/* Meet files panel — no files in API yet, show placeholder */}
         <div
           style={{
             background: '#ffffff',
@@ -342,281 +492,162 @@ export default function MeetDetailPage() {
           <div style={{ fontSize: '11px', color: '#9A9693', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>
             Meet Files
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {DOCUMENTS.map((doc) => (
-              <a
-                key={doc.id}
-                href={doc.url}
-                target="_blank"
-                rel="noreferrer"
-                style={{
-                  textDecoration: 'none',
-                  color: 'inherit',
-                  display: 'block',
-                }}
-              >
-                <div
-                  style={{
-                    padding: '11px 12px',
-                    borderRadius: '10px',
-                    border: '1px solid rgba(0,0,0,0.08)',
-                    background:
-                      doc.type === 'image'
-                        ? 'rgba(59,130,246,0.05)'
-                        : 'rgba(235,93,30,0.04)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '10px',
-                  }}
-                >
-                  <div
-                    style={{
-                      width: '30px',
-                      height: '30px',
-                      borderRadius: '8px',
-                      background: '#ffffff',
-                      border: '1px solid rgba(0,0,0,0.06)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: doc.type === 'image' ? '#3b82f6' : '#eb5d1e',
-                      flexShrink: 0,
-                    }}
-                  >
-                    <Icon name={doc.type === 'image' ? 'eye' : 'file-text'} size={14} />
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: '12.5px', fontWeight: 600, color: '#1A1714', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {doc.name}
-                    </div>
-                    <div style={{ fontSize: '10.5px', color: '#9A9693', fontFamily: 'var(--font-mono)' }}>
-                      {doc.size} · updated {doc.updatedAt}
-                    </div>
-                  </div>
-                  <Icon name="download-cloud" size={14} style={{ color: '#9A9693', flexShrink: 0 }} />
-                </div>
-              </a>
-            ))}
+          <div
+            style={{
+              padding: '32px 12px',
+              textAlign: 'center',
+              color: '#C0BDBB',
+              fontSize: '12.5px',
+            }}
+          >
+            <Icon name="file-text" size={22} style={{ color: '#E0DEDC', marginBottom: '8px', display: 'block', margin: '0 auto 8px' }} />
+            No files uploaded yet
           </div>
         </div>
       </div>
 
       {/* Swimmer tabs */}
-      <div
-        style={{
-          display: 'flex',
-          gap: '8px',
-          marginBottom: '20px',
-          animation: 'slideUp 0.4s ease both',
-          flexWrap: 'wrap',
-        }}
-      >
-        {SWIMMERS.map((s) => {
-          const st = swimmerStates[s.id]
-          const isActive = activeSwimmer === s.id
-          return (
-            <button
-              key={s.id}
-              onClick={() => setActiveSwimmer(s.id)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '8px 14px',
-                borderRadius: '10px',
-                border: isActive ? '2px solid #eb5d1e' : '1px solid rgba(0,0,0,0.10)',
-                background: isActive ? 'rgba(235,93,30,0.05)' : '#ffffff',
-                cursor: 'pointer',
-                fontFamily: 'var(--font-body)',
-                transition: 'all 120ms ease',
-              }}
-            >
-              <div
-                style={{
-                  width: '26px',
-                  height: '26px',
-                  borderRadius: '50%',
-                  background: s.gradient,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#fff',
-                  fontSize: '9px',
-                  fontWeight: 700,
-                  fontFamily: 'var(--font-mono)',
-                }}
-              >
-                {s.initials}
-              </div>
-              <span style={{ fontSize: '13.5px', fontWeight: 600, color: isActive ? '#eb5d1e' : '#1A1714' }}>
-                {s.name.split(' ')[0]}
-              </span>
-              {/* Commitment badge */}
-              <span
-                style={{
-                  padding: '2px 6px',
-                  borderRadius: '5px',
-                  fontSize: '10.5px',
-                  fontWeight: 600,
-                  background: st.commitment === 'yes' ? '#ecfdf5' : st.commitment === 'no' ? '#fef2f2' : '#fffbeb',
-                  color: st.commitment === 'yes' ? '#059669' : st.commitment === 'no' ? '#dc2626' : '#d97706',
-                }}
-              >
-                {st.commitment === 'yes' ? 'Going' : st.commitment === 'no' ? 'Not Going' : 'Pending'}
-              </span>
-            </button>
-          )
-        })}
-      </div>
-
-      {/* Commitment card for active swimmer */}
-      <div
-        style={{
-          background: '#ffffff',
-          borderRadius: '14px',
-          border: '1px solid rgba(0,0,0,0.07)',
-          boxShadow: '0 2px 12px rgba(0,0,0,0.05)',
-          overflow: 'hidden',
-          marginBottom: '20px',
-          animation: 'slideUp 0.45s ease both',
-        }}
-      >
-        {/* Header */}
+      {swimmers.length > 0 && (
         <div
           style={{
-            padding: '18px 22px',
-            borderBottom: '1px solid rgba(0,0,0,0.06)',
             display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
+            gap: '8px',
+            marginBottom: '20px',
+            animation: 'slideUp 0.4s ease both',
+            flexWrap: 'wrap',
           }}
         >
+          {swimmers.map((s, idx) => {
+            const st = swimmerStates[s.id]
+            const isActive = activeSwimmer === s.id
+            const gradient = SWIMMER_GRADIENTS[idx % SWIMMER_GRADIENTS.length]
+            const initials = swimmerInitials(s)
+            const commitment = st?.commitment ?? 'pending'
+            return (
+              <button
+                key={s.id}
+                onClick={() => setActiveSwimmer(s.id)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '8px 14px',
+                  borderRadius: '10px',
+                  border: isActive ? '2px solid #eb5d1e' : '1px solid rgba(0,0,0,0.10)',
+                  background: isActive ? 'rgba(235,93,30,0.05)' : '#ffffff',
+                  cursor: 'pointer',
+                  fontFamily: 'var(--font-body)',
+                  transition: 'all 120ms ease',
+                }}
+              >
+                <div
+                  style={{
+                    width: '26px',
+                    height: '26px',
+                    borderRadius: '50%',
+                    background: gradient,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#fff',
+                    fontSize: '9px',
+                    fontWeight: 700,
+                    fontFamily: 'var(--font-mono)',
+                  }}
+                >
+                  {initials}
+                </div>
+                <span style={{ fontSize: '13.5px', fontWeight: 600, color: isActive ? '#eb5d1e' : '#1A1714' }}>
+                  {(s.preferred_name ?? s.first_name)}
+                </span>
+                {/* Commitment badge */}
+                <span
+                  style={{
+                    padding: '2px 6px',
+                    borderRadius: '5px',
+                    fontSize: '10.5px',
+                    fontWeight: 600,
+                    background: commitment === 'yes' ? '#ecfdf5' : commitment === 'no' ? '#fef2f2' : '#fffbeb',
+                    color: commitment === 'yes' ? '#059669' : commitment === 'no' ? '#dc2626' : '#d97706',
+                  }}
+                >
+                  {commitment === 'yes' ? 'Going' : commitment === 'no' ? 'Not Going' : commitment === 'closed' ? 'Locked' : 'Pending'}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Commitment card for active swimmer */}
+      {swimmer && state && (
+        <div
+          style={{
+            background: '#ffffff',
+            borderRadius: '14px',
+            border: '1px solid rgba(0,0,0,0.07)',
+            boxShadow: '0 2px 12px rgba(0,0,0,0.05)',
+            overflow: 'hidden',
+            marginBottom: '20px',
+            animation: 'slideUp 0.45s ease both',
+          }}
+        >
+          {/* Header */}
           <div
             style={{
-              width: '40px',
-              height: '40px',
-              borderRadius: '50%',
-              background: swimmer.gradient,
+              padding: '18px 22px',
+              borderBottom: '1px solid rgba(0,0,0,0.06)',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
-              color: '#fff',
-              fontSize: '14px',
-              fontWeight: 700,
-              fontFamily: 'var(--font-mono)',
+              gap: '12px',
             }}
           >
-            {swimmer.initials}
-          </div>
-          <div>
-            <div style={{ fontFamily: 'var(--font-display)', fontSize: '18px', color: '#1A1714' }}>
-              {swimmer.name}
-            </div>
-            <div style={{ fontSize: '12.5px', color: '#9A9693' }}>
-              Age {swimmer.age} · {swimmer.gender === 'F' ? 'Female' : 'Male'}
-            </div>
-          </div>
-          {submitted[swimmer.id] && (
             <div
               style={{
-                marginLeft: 'auto',
+                width: '40px',
+                height: '40px',
+                borderRadius: '50%',
+                background: SWIMMER_GRADIENTS[swimmers.indexOf(swimmer) % SWIMMER_GRADIENTS.length],
                 display: 'flex',
                 alignItems: 'center',
-                gap: '6px',
-                fontSize: '13px',
-                color: '#059669',
-                fontWeight: 500,
-                animation: 'slideUp 0.2s ease both',
-              }}
-            >
-              <Icon name="check-circle" size={15} />
-              Saved
-            </div>
-          )}
-        </div>
-
-        {/* Commitment step */}
-        <div style={{ padding: '20px 22px', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-          <div
-            style={{
-              fontSize: '11px',
-              fontFamily: 'var(--font-mono)',
-              color: '#9A9693',
-              textTransform: 'uppercase',
-              letterSpacing: '0.07em',
-              marginBottom: '12px',
-            }}
-          >
-            Step 1 — Commitment
-          </div>
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            <button
-              onClick={() => setCommitment(swimmer.id, 'yes')}
-              disabled={submitting !== null || !commitmentOpen}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '11px 22px',
-                borderRadius: '10px',
-                border: state.commitment === 'yes' ? '2px solid #059669' : '1.5px solid rgba(0,0,0,0.12)',
-                background: state.commitment === 'yes' ? '#ecfdf5' : '#ffffff',
-                color: state.commitment === 'yes' ? '#059669' : '#1A1714',
-                fontWeight: 600,
+                justifyContent: 'center',
+                color: '#fff',
                 fontSize: '14px',
-                cursor: 'pointer',
-                fontFamily: 'var(--font-body)',
-                transition: 'all 120ms ease',
-                opacity: submitting !== null || !commitmentOpen ? 0.6 : 1,
+                fontWeight: 700,
+                fontFamily: 'var(--font-mono)',
               }}
             >
-              <Icon name="check-circle" size={16} style={{ color: state.commitment === 'yes' ? '#059669' : '#9A9693' }} />
-              {submitting === swimmer.id + 'yes' ? 'Saving…' : 'Yes, we\'re going'}
-            </button>
-            <button
-              onClick={() => setCommitment(swimmer.id, 'no')}
-              disabled={submitting !== null || !commitmentOpen}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '11px 22px',
-                borderRadius: '10px',
-                border: state.commitment === 'no' ? '2px solid #dc2626' : '1.5px solid rgba(0,0,0,0.12)',
-                background: state.commitment === 'no' ? '#fef2f2' : '#ffffff',
-                color: state.commitment === 'no' ? '#dc2626' : '#1A1714',
-                fontWeight: 600,
-                fontSize: '14px',
-                cursor: 'pointer',
-                fontFamily: 'var(--font-body)',
-                transition: 'all 120ms ease',
-                opacity: submitting !== null || !commitmentOpen ? 0.6 : 1,
-              }}
-            >
-              <Icon name="x-circle" size={16} style={{ color: state.commitment === 'no' ? '#dc2626' : '#9A9693' }} />
-              {submitting === swimmer.id + 'no' ? 'Saving…' : 'Not this time'}
-            </button>
-          </div>
-          {!commitmentOpen && (
-            <div
-              style={{
-                marginTop: '12px',
-                padding: '10px 14px',
-                background: 'rgba(59,130,246,0.06)',
-                borderRadius: '8px',
-                fontSize: '12.5px',
-                color: '#4B7BF5',
-                lineHeight: 1.5,
-              }}
-            >
-              Commitment actions unlock when this meet moves into the open family response window.
+              {swimmerInitials(swimmer)}
             </div>
-          )}
-        </div>
+            <div>
+              <div style={{ fontFamily: 'var(--font-display)', fontSize: '18px', color: '#1A1714' }}>
+                {swimmerDisplayName(swimmer)}
+              </div>
+              <div style={{ fontSize: '12.5px', color: '#9A9693' }}>
+                Age {swimmerAge(swimmer)} · {swimmer.gender === 'F' ? 'Female' : swimmer.gender === 'M' ? 'Male' : swimmer.gender}
+              </div>
+            </div>
+            {submitted[swimmer.id] && (
+              <div
+                style={{
+                  marginLeft: 'auto',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  fontSize: '13px',
+                  color: '#059669',
+                  fontWeight: 500,
+                  animation: 'slideUp 0.2s ease both',
+                }}
+              >
+                <Icon name="check-circle" size={15} />
+                Saved
+              </div>
+            )}
+          </div>
 
-        {/* Event selection (only if committed yes) */}
-        {commitmentOpen && state.commitment === 'yes' && (
-          <div style={{ padding: '20px 22px' }}>
+          {/* Commitment step */}
+          <div style={{ padding: '20px 22px', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
             <div
               style={{
                 fontSize: '11px',
@@ -624,224 +655,313 @@ export default function MeetDetailPage() {
                 color: '#9A9693',
                 textTransform: 'uppercase',
                 letterSpacing: '0.07em',
-                marginBottom: '6px',
+                marginBottom: '12px',
               }}
             >
-              Step 2 — Select Events
+              Step 1 — Commitment
             </div>
-            <p style={{ margin: '0 0 16px', fontSize: '13px', color: '#9A9693', lineHeight: 1.5 }}>
-              Select the events {swimmer.name.split(' ')[0]} would like to enter. Coach may adjust selections before the deadline.
-            </p>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {eligibleSessions.map((session) => (
-                <div key={session.id} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '10px',
-                      padding: '10px 12px',
-                      borderRadius: '10px',
-                      background: 'rgba(0,0,0,0.03)',
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontSize: '13px', fontWeight: 600, color: '#1A1714' }}>{session.label}</div>
-                      <div style={{ fontSize: '11.5px', color: '#9A9693' }}>
-                        Warm-up {session.warmup} · Start {session.start}
-                      </div>
-                    </div>
-                    <span
-                      style={{
-                        padding: '3px 8px',
-                        borderRadius: '999px',
-                        background: 'rgba(235,93,30,0.08)',
-                        color: '#eb5d1e',
-                        fontSize: '10.5px',
-                        fontFamily: 'var(--font-mono)',
-                        fontWeight: 600,
-                      }}
-                    >
-                      {session.events.length} options
-                    </span>
-                  </div>
-
-                  {session.events.map((ev) => {
-                const isSelected = state.selectedEvents.includes(ev.id)
-                const bestTime = swimmer.bestTimes[ev.name as keyof typeof swimmer.bestTimes]
-                const cutMet = bestTime && ev.cut
-                  ? parseTimeToMs(bestTime) <= parseTimeToMs(ev.cut)
-                  : null
-
-                return (
-                  <div
-                    key={ev.id}
-                    onClick={() => toggleEvent(ev.id)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '12px',
-                      padding: '12px 14px',
-                      borderRadius: '10px',
-                      border: isSelected ? '2px solid #eb5d1e' : '1.5px solid rgba(0,0,0,0.09)',
-                      background: isSelected ? 'rgba(235,93,30,0.04)' : '#fafafa',
-                      cursor: 'pointer',
-                      transition: 'all 120ms ease',
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!isSelected) e.currentTarget.style.borderColor = 'rgba(235,93,30,0.35)'
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!isSelected) e.currentTarget.style.borderColor = 'rgba(0,0,0,0.09)'
-                    }}
-                  >
-                    {/* Checkbox */}
-                    <div
-                      style={{
-                        width: '20px',
-                        height: '20px',
-                        borderRadius: '5px',
-                        border: isSelected ? 'none' : '2px solid rgba(0,0,0,0.15)',
-                        background: isSelected ? '#eb5d1e' : 'transparent',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0,
-                        transition: 'all 120ms ease',
-                      }}
-                    >
-                      {isSelected && <Icon name="check" size={12} style={{ color: '#fff' }} />}
-                    </div>
-
-                    {/* Event number */}
-                    <span
-                      style={{
-                        width: '28px',
-                        fontSize: '11.5px',
-                        fontFamily: 'var(--font-mono)',
-                        color: '#9A9693',
-                        flexShrink: 0,
-                        textAlign: 'center',
-                      }}
-                    >
-                      #{ev.number}
-                    </span>
-
-                    {/* Event name */}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: '14px', fontWeight: 600, color: '#1A1714' }}>
-                          {ev.name}
-                        </div>
-                        <div style={{ fontSize: '12px', color: '#9A9693' }}>
-                        {ev.ageGroup}
-                        <span style={{ marginLeft: '8px' }}>{sessionById[ev.sessionId]?.label}</span>
-                        {ev.cut && <span style={{ marginLeft: '8px' }}>Cut: {ev.cut}</span>}
-                        </div>
-                      </div>
-
-                    {/* Best time + cut eligibility hint */}
-                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                      {bestTime ? (
-                        <>
-                          <div
-                            style={{
-                              fontSize: '13.5px',
-                              fontFamily: 'var(--font-mono)',
-                              color: '#4B7BF5',
-                              fontWeight: 600,
-                            }}
-                          >
-                            {bestTime}
-                          </div>
-                          {ev.cut && (
-                            <div
-                              style={{
-                                fontSize: '10.5px',
-                                color: cutMet ? '#059669' : '#d97706',
-                                fontWeight: 500,
-                                marginTop: '2px',
-                              }}
-                            >
-                              {cutMet ? '✓ Meets cut' : '⚠ Under cut time'}
-                            </div>
-                          )}
-                        </>
-                      ) : (
-                        <span style={{ fontSize: '12px', color: '#C0BDBB', fontStyle: 'italic' }}>
-                          No best time
-                        </span>
-                      )}
-                    </div>
-                    </div>
-                  )
-                  })}
-                </div>
-              ))}
-            </div>
-
-            {/* Summary */}
-            {state.selectedEvents.length > 0 && (
-              <div
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <button
+                onClick={() => setCommitment(swimmer.id, 'yes')}
+                disabled={submitting !== null || !commitmentOpen || state.commitment === 'closed'}
                 style={{
-                  marginTop: '16px',
-                  padding: '12px 16px',
-                  background: 'rgba(235,93,30,0.06)',
-                  borderRadius: '10px',
                   display: 'flex',
-                  justifyContent: 'space-between',
                   alignItems: 'center',
-                  animation: 'slideUp 0.2s ease both',
+                  gap: '8px',
+                  padding: '11px 22px',
+                  borderRadius: '10px',
+                  border: state.commitment === 'yes' ? '2px solid #059669' : '1.5px solid rgba(0,0,0,0.12)',
+                  background: state.commitment === 'yes' ? '#ecfdf5' : '#ffffff',
+                  color: state.commitment === 'yes' ? '#059669' : '#1A1714',
+                  fontWeight: 600,
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  fontFamily: 'var(--font-body)',
+                  transition: 'all 120ms ease',
+                  opacity: submitting !== null || !commitmentOpen || state.commitment === 'closed' ? 0.6 : 1,
                 }}
               >
-                <span style={{ fontSize: '13.5px', color: '#1A1714', fontWeight: 500 }}>
-                  {state.selectedEvents.length} event{state.selectedEvents.length !== 1 ? 's' : ''} selected
-                </span>
-                <span style={{ fontSize: '13.5px', color: '#eb5d1e', fontWeight: 600, fontFamily: 'var(--font-mono)' }}>
-                  Est. ${(state.selectedEvents.length * MEET.entryFeePerEvent).toFixed(2)}
-                </span>
+                <Icon name="check-circle" size={16} style={{ color: state.commitment === 'yes' ? '#059669' : '#9A9693' }} />
+                {submitting === swimmer.id + 'yes' ? 'Saving…' : 'Yes, we\'re going'}
+              </button>
+              <button
+                onClick={() => setCommitment(swimmer.id, 'no')}
+                disabled={submitting !== null || !commitmentOpen || state.commitment === 'closed'}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '11px 22px',
+                  borderRadius: '10px',
+                  border: state.commitment === 'no' ? '2px solid #dc2626' : '1.5px solid rgba(0,0,0,0.12)',
+                  background: state.commitment === 'no' ? '#fef2f2' : '#ffffff',
+                  color: state.commitment === 'no' ? '#dc2626' : '#1A1714',
+                  fontWeight: 600,
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  fontFamily: 'var(--font-body)',
+                  transition: 'all 120ms ease',
+                  opacity: submitting !== null || !commitmentOpen || state.commitment === 'closed' ? 0.6 : 1,
+                }}
+              >
+                <Icon name="x-circle" size={16} style={{ color: state.commitment === 'no' ? '#dc2626' : '#9A9693' }} />
+                {submitting === swimmer.id + 'no' ? 'Saving…' : 'Not this time'}
+              </button>
+            </div>
+            {!commitmentOpen && state.commitment !== 'closed' && (
+              <div
+                style={{
+                  marginTop: '12px',
+                  padding: '10px 14px',
+                  background: 'rgba(59,130,246,0.06)',
+                  borderRadius: '8px',
+                  fontSize: '12.5px',
+                  color: '#4B7BF5',
+                  lineHeight: 1.5,
+                }}
+              >
+                Commitment actions unlock when this meet moves into the open family response window.
               </div>
             )}
+            {state.commitment === 'closed' && (
+              <div
+                style={{
+                  marginTop: '12px',
+                  padding: '10px 14px',
+                  background: 'rgba(0,0,0,0.03)',
+                  borderRadius: '8px',
+                  fontSize: '12.5px',
+                  color: '#6B6866',
+                  lineHeight: 1.5,
+                }}
+              >
+                This commitment has been reviewed and locked by the coach.
+              </div>
+            )}
+          </div>
 
-            {/* Coach override notice */}
+          {/* Event selection (only if committed yes) */}
+          {commitmentOpen && state.commitment === 'yes' && (
+            <div style={{ padding: '20px 22px' }}>
+              <div
+                style={{
+                  fontSize: '11px',
+                  fontFamily: 'var(--font-mono)',
+                  color: '#9A9693',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.07em',
+                  marginBottom: '6px',
+                }}
+              >
+                Step 2 — Select Events
+              </div>
+              <p style={{ margin: '0 0 16px', fontSize: '13px', color: '#9A9693', lineHeight: 1.5 }}>
+                Select the events {swimmer.preferred_name ?? swimmer.first_name} would like to enter. Coach may adjust selections before the deadline.
+              </p>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {eligibleSessionGroups.length === 0 ? (
+                  <div style={{ padding: '24px', textAlign: 'center', fontSize: '13.5px', color: '#9A9693' }}>
+                    No eligible events found for this swimmer.
+                  </div>
+                ) : (
+                  eligibleSessionGroups.map((group) => (
+                    <div key={group.id} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '10px',
+                          padding: '10px 12px',
+                          borderRadius: '10px',
+                          background: 'rgba(0,0,0,0.03)',
+                        }}
+                      >
+                        <div style={{ fontSize: '13px', fontWeight: 600, color: '#1A1714' }}>
+                          {group.id === 'main' ? 'Main Session' : `Session ${group.id.slice(-4)}`}
+                        </div>
+                        <span
+                          style={{
+                            padding: '3px 8px',
+                            borderRadius: '999px',
+                            background: 'rgba(235,93,30,0.08)',
+                            color: '#eb5d1e',
+                            fontSize: '10.5px',
+                            fontFamily: 'var(--font-mono)',
+                            fontWeight: 600,
+                          }}
+                        >
+                          {group.events.length} options
+                        </span>
+                      </div>
+
+                      {group.events.map((ev) => {
+                        const isSelected = state.selectedEvents.includes(ev.id)
+                        const label = eventLabel(ev)
+                        const ageGroup = eventAgeGroup(ev)
+
+                        return (
+                          <div
+                            key={ev.id}
+                            onClick={() => toggleEvent(ev.id)}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '12px',
+                              padding: '12px 14px',
+                              borderRadius: '10px',
+                              border: isSelected ? '2px solid #eb5d1e' : '1.5px solid rgba(0,0,0,0.09)',
+                              background: isSelected ? 'rgba(235,93,30,0.04)' : '#fafafa',
+                              cursor: 'pointer',
+                              transition: 'all 120ms ease',
+                            }}
+                            onMouseEnter={(e) => {
+                              if (!isSelected) e.currentTarget.style.borderColor = 'rgba(235,93,30,0.35)'
+                            }}
+                            onMouseLeave={(e) => {
+                              if (!isSelected) e.currentTarget.style.borderColor = 'rgba(0,0,0,0.09)'
+                            }}
+                          >
+                            {/* Checkbox */}
+                            <div
+                              style={{
+                                width: '20px',
+                                height: '20px',
+                                borderRadius: '5px',
+                                border: isSelected ? 'none' : '2px solid rgba(0,0,0,0.15)',
+                                background: isSelected ? '#eb5d1e' : 'transparent',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                flexShrink: 0,
+                                transition: 'all 120ms ease',
+                              }}
+                            >
+                              {isSelected && <Icon name="check" size={12} style={{ color: '#fff' }} />}
+                            </div>
+
+                            {/* Event number */}
+                            <span
+                              style={{
+                                width: '28px',
+                                fontSize: '11.5px',
+                                fontFamily: 'var(--font-mono)',
+                                color: '#9A9693',
+                                flexShrink: 0,
+                                textAlign: 'center',
+                              }}
+                            >
+                              #{ev.event_number ?? '—'}
+                            </span>
+
+                            {/* Event name */}
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: '14px', fontWeight: 600, color: '#1A1714' }}>
+                                {label}
+                              </div>
+                              <div style={{ fontSize: '12px', color: '#9A9693' }}>
+                                {ageGroup}
+                                {ev.requires_qualification && (
+                                  <span style={{ marginLeft: '8px' }}>Qualification required</span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Entry limit hint */}
+                            {ev.entry_limit != null && (
+                              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                                <span style={{ fontSize: '12px', color: '#C0BDBB', fontStyle: 'italic' }}>
+                                  Limit {ev.entry_limit}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Summary */}
+              {state.selectedEvents.length > 0 && (
+                <div
+                  style={{
+                    marginTop: '16px',
+                    padding: '12px 16px',
+                    background: 'rgba(235,93,30,0.06)',
+                    borderRadius: '10px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    animation: 'slideUp 0.2s ease both',
+                  }}
+                >
+                  <span style={{ fontSize: '13.5px', color: '#1A1714', fontWeight: 500 }}>
+                    {state.selectedEvents.length} event{state.selectedEvents.length !== 1 ? 's' : ''} selected
+                  </span>
+                </div>
+              )}
+
+              {/* Coach override notice */}
+              <div
+                style={{
+                  marginTop: '12px',
+                  padding: '10px 14px',
+                  background: 'rgba(0,0,0,0.03)',
+                  borderRadius: '8px',
+                  fontSize: '12.5px',
+                  color: '#9A9693',
+                  lineHeight: 1.5,
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '8px',
+                }}
+              >
+                <Icon name="info" size={13} style={{ color: '#C0BDBB', marginTop: '1px', flexShrink: 0 }} />
+                Coaches may adjust event selections based on eligibility and team strategy. You&apos;ll see any changes reflected here.
+              </div>
+            </div>
+          )}
+
+          {/* Not going state */}
+          {state.commitment === 'no' && (
             <div
               style={{
-                marginTop: '12px',
-                padding: '10px 14px',
-                background: 'rgba(0,0,0,0.03)',
-                borderRadius: '8px',
-                fontSize: '12.5px',
-                color: '#9A9693',
-                lineHeight: 1.5,
+                padding: '20px 22px',
                 display: 'flex',
-                alignItems: 'flex-start',
-                gap: '8px',
+                alignItems: 'center',
+                gap: '12px',
               }}
             >
-              <Icon name="info" size={13} style={{ color: '#C0BDBB', marginTop: '1px', flexShrink: 0 }} />
-              Coaches may adjust event selections based on eligibility and team strategy. You&apos;ll see any changes reflected here.
+              <Icon name="x-circle" size={18} style={{ color: '#dc2626' }} />
+              <span style={{ fontSize: '14px', color: '#6B6866' }}>
+                {swimmer.preferred_name ?? swimmer.first_name} is not attending this meet. You can change this before the deadline.
+              </span>
             </div>
-          </div>
-        )}
+          )}
+        </div>
+      )}
 
-        {/* Not going state */}
-        {state.commitment === 'no' && (
-          <div
-            style={{
-              padding: '20px 22px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-            }}
-          >
-            <Icon name="x-circle" size={18} style={{ color: '#dc2626' }} />
-            <span style={{ fontSize: '14px', color: '#6B6866' }}>
-              {swimmer.name.split(' ')[0]} is not attending this meet. You can change this before the deadline.
-            </span>
+      {/* No swimmers message */}
+      {swimmers.length === 0 && (
+        <div
+          style={{
+            background: '#ffffff',
+            borderRadius: '14px',
+            border: '1px solid rgba(0,0,0,0.07)',
+            padding: '48px',
+            textAlign: 'center',
+            marginBottom: '20px',
+          }}
+        >
+          <div style={{ fontSize: '15px', color: '#9A9693', fontWeight: 500 }}>No swimmers found for your household</div>
+          <div style={{ fontSize: '13px', color: '#C0BDBB', marginTop: '6px' }}>
+            Contact your club admin to link swimmers to your account.
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Fee summary */}
       {totalEvents > 0 && (
@@ -860,18 +980,18 @@ export default function MeetDetailPage() {
           <div>
             <div style={{ fontSize: '13px', color: '#9A9693' }}>Total estimated entry fee</div>
             <div style={{ fontSize: '11.5px', color: '#C0BDBB', marginTop: '2px' }}>
-              ${MEET.entryFeePerEvent}/event × {totalEvents} event{totalEvents !== 1 ? 's' : ''} across all swimmers
+              {totalEvents} event{totalEvents !== 1 ? 's' : ''} selected across all swimmers
             </div>
           </div>
           <div
             style={{
-              fontSize: '22px',
+              fontSize: '18px',
               fontWeight: 700,
-              color: '#1A1714',
+              color: '#eb5d1e',
               fontFamily: 'var(--font-mono)',
             }}
           >
-            ${estimatedFee.toFixed(2)}
+            {totalEvents} event{totalEvents !== 1 ? 's' : ''}
           </div>
         </div>
       )}
@@ -884,12 +1004,4 @@ export default function MeetDetailPage() {
       `}</style>
     </div>
   )
-}
-
-// ── Time comparison utility ──────────────────────────────────────────────────
-function parseTimeToMs(t: string): number {
-  const parts = t.split(':')
-  if (parts.length === 1) return parseFloat(t) * 1000
-  const [min, sec] = parts
-  return parseInt(min) * 60000 + parseFloat(sec) * 1000
 }

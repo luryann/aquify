@@ -1,37 +1,22 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { useParams } from 'next/navigation'
 import { Icon } from '@/components/ui/icons'
-
-// ── Stub data ──────────────────────────────────────────────────────────────
-const INVOICE = {
-  id: 'inv-001',
-  number: 'INV-2026-0012',
-  status: 'issued' as const,
-  description: 'Season Registration Fee — 2025–2026',
-  issuedDate: 'Mar 1, 2026',
-  dueDate: 'Apr 1, 2026',
-  total: 420.00,
-  amountPaid: 0,
-  amountDue: 420.00,
-  household: 'Chen Family',
-  items: [
-    { description: 'Competitive Team Registration — Emma Chen', qty: 1, unitPrice: 250.00, total: 250.00 },
-    { description: 'Competitive Team Registration — Noah Chen',  qty: 1, unitPrice: 170.00, total: 170.00 },
-  ],
-}
-
-const PAYMENTS: { date: string; amount: number; method: string; status: string; receiptId: string }[] = []
-
-const RECEIPTS = [
-  { id: 'rec-7811', date: 'Mar 10, 2026', description: 'Payment — Tri-City Classic',  amount: 48.00,  method: 'Visa ····4321' },
-  { id: 'rec-6502', date: 'Jan 28, 2026', description: 'Payment — Spring Invite',      amount: 64.00,  method: 'Visa ····4321' },
-  { id: 'rec-4120', date: 'Sep 12, 2025', description: 'Payment — Fall Registration',  amount: 850.00, method: 'ACH Transfer' },
-]
+import { useSession } from '@/lib/session'
+import { useApiClient } from '@/lib/api'
+import {
+  fetchInvoice,
+  fetchInvoiceItems,
+  fetchInvoicePayments,
+  InvoiceRecord,
+  InvoiceItemRecord,
+  PaymentRecord,
+} from '@/lib/adminData'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
-const STATUS_CONFIG = {
+const STATUS_CONFIG: Record<string, { label: string; bg: string; color: string }> = {
   draft:            { label: 'Draft',        bg: '#f9fafb', color: '#9A9693' },
   issued:           { label: 'Payment Due',  bg: '#fffbeb', color: '#d97706' },
   partially_paid:   { label: 'Partially Paid',bg: '#eff6ff', color: '#2563eb' },
@@ -42,15 +27,119 @@ const STATUS_CONFIG = {
   written_off:      { label: 'Written Off',  bg: '#f9fafb', color: '#9A9693' },
 }
 
+function centsToDisplay(cents: number): string {
+  return (cents / 100).toFixed(2)
+}
+
+function formatDate(iso?: string): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
 type Tab = 'summary' | 'payments' | 'receipts'
+
+// ── Loading skeleton ─────────────────────────────────────────────────────────
+function LoadingSkeleton() {
+  return (
+    <div style={{ maxWidth: '780px' }}>
+      <div style={{ height: '20px', width: '180px', background: 'rgba(0,0,0,0.06)', borderRadius: '6px', marginBottom: '24px' }} />
+      <div
+        style={{
+          background: '#ffffff',
+          borderRadius: '16px',
+          border: '1px solid rgba(0,0,0,0.07)',
+          boxShadow: '0 2px 12px rgba(0,0,0,0.05)',
+          padding: '28px',
+          marginBottom: '20px',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <div style={{ height: '14px', width: '160px', background: 'rgba(0,0,0,0.06)', borderRadius: '4px' }} />
+            <div style={{ height: '24px', width: '300px', background: 'rgba(0,0,0,0.06)', borderRadius: '6px' }} />
+            <div style={{ height: '14px', width: '240px', background: 'rgba(0,0,0,0.04)', borderRadius: '4px' }} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'flex-end' }}>
+            <div style={{ height: '12px', width: '80px', background: 'rgba(0,0,0,0.04)', borderRadius: '4px' }} />
+            <div style={{ height: '36px', width: '100px', background: 'rgba(0,0,0,0.06)', borderRadius: '6px' }} />
+          </div>
+        </div>
+        <div style={{ height: '6px', background: 'rgba(0,0,0,0.06)', borderRadius: '999px', marginBottom: '20px' }} />
+        <div style={{ height: '52px', background: 'rgba(0,0,0,0.05)', borderRadius: '11px' }} />
+      </div>
+      <style>{`
+        @keyframes slideUp {
+          from { opacity: 0; transform: translateY(12px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+    </div>
+  )
+}
 
 // ── Component ────────────────────────────────────────────────────────────────
 export default function InvoiceDetailPage() {
+  const params = useParams<{ id: string }>()
+  const invoiceId = typeof params?.id === 'string' ? params.id : ''
+
+  const { session } = useSession()
+  const api = useApiClient(session?.token)
+  const orgId = session?.user.orgId ?? ''
+
+  const [invoice, setInvoice] = useState<InvoiceRecord | null>(null)
+  const [items, setItems] = useState<InvoiceItemRecord[]>([])
+  const [payments, setPayments] = useState<PaymentRecord[]>([])
+  const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<Tab>('summary')
   const [checkingOut, setCheckingOut] = useState(false)
 
-  const statusCfg = STATUS_CONFIG[INVOICE.status]
-  const paidPct = INVOICE.total > 0 ? Math.round((INVOICE.amountPaid / INVOICE.total) * 100) : 0
+  useEffect(() => {
+    if (!orgId || !invoiceId) { setLoading(false); return }
+    setLoading(true)
+    Promise.all([
+      fetchInvoice(api, orgId, invoiceId),
+      fetchInvoiceItems(api, orgId, invoiceId),
+      fetchInvoicePayments(api, orgId, invoiceId),
+    ])
+      .then(([inv, its, pmts]) => {
+        setInvoice(inv)
+        setItems(its)
+        setPayments(pmts)
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false))
+  }, [api, orgId, invoiceId])
+
+  if (loading) return <LoadingSkeleton />
+
+  if (!invoice) {
+    return (
+      <div style={{ maxWidth: '780px' }}>
+        <nav style={{ marginBottom: '20px', fontSize: '13px' }}>
+          <Link href="/portal/billing" style={{ color: '#9A9693', textDecoration: 'none' }}>
+            Billing
+          </Link>
+        </nav>
+        <div
+          style={{
+            background: '#ffffff',
+            borderRadius: '16px',
+            border: '1px solid rgba(0,0,0,0.07)',
+            padding: '48px',
+            textAlign: 'center',
+          }}
+        >
+          <div style={{ fontSize: '15px', color: '#9A9693', fontWeight: 500 }}>Invoice not found</div>
+        </div>
+      </div>
+    )
+  }
+
+  const statusCfg = STATUS_CONFIG[invoice.status] ?? { label: invoice.status, bg: '#f9fafb', color: '#9A9693' }
+  const total = invoice.total_cents / 100
+  const amountPaid = invoice.amount_paid_cents / 100
+  const amountDue = invoice.amount_due_cents / 100
+  const paidPct = total > 0 ? Math.round((amountPaid / total) * 100) : 0
 
   const handlePay = async () => {
     setCheckingOut(true)
@@ -78,7 +167,7 @@ export default function InvoiceDetailPage() {
         </Link>
         <span>/</span>
         <span style={{ color: '#1A1714', fontWeight: 500, fontFamily: 'var(--font-mono)', fontSize: '12px' }}>
-          {INVOICE.number}
+          {invoice.invoice_number}
         </span>
       </nav>
 
@@ -105,7 +194,7 @@ export default function InvoiceDetailPage() {
                   letterSpacing: '0.06em',
                 }}
               >
-                {INVOICE.number}
+                {invoice.invoice_number}
               </span>
               <span
                 style={{
@@ -131,10 +220,11 @@ export default function InvoiceDetailPage() {
                 lineHeight: 1.2,
               }}
             >
-              {INVOICE.description}
+              {invoice.notes ?? invoice.invoice_number}
             </h1>
             <div style={{ fontSize: '13px', color: '#9A9693' }}>
-              {INVOICE.household} · Issued {INVOICE.issuedDate} · Due {INVOICE.dueDate}
+              {invoice.issued_at ? `Issued ${formatDate(invoice.issued_at)}` : ''}
+              {invoice.due_date ? ` · Due ${formatDate(invoice.due_date)}` : ''}
             </div>
           </div>
 
@@ -145,21 +235,21 @@ export default function InvoiceDetailPage() {
               style={{
                 fontFamily: 'var(--font-display)',
                 fontSize: '32px',
-                color: INVOICE.amountDue > 0 ? '#d97706' : '#059669',
+                color: amountDue > 0 ? '#d97706' : '#059669',
                 lineHeight: 1,
               }}
             >
-              ${INVOICE.amountDue.toFixed(2)}
+              ${amountDue.toFixed(2)}
             </div>
           </div>
         </div>
 
         {/* Payment progress bar */}
-        {INVOICE.total > 0 && (
+        {total > 0 && (
           <div style={{ marginBottom: '20px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
               <span style={{ fontSize: '12px', color: '#9A9693' }}>
-                ${INVOICE.amountPaid.toFixed(2)} paid of ${INVOICE.total.toFixed(2)}
+                ${amountPaid.toFixed(2)} paid of ${total.toFixed(2)}
               </span>
               <span style={{ fontSize: '12px', color: '#9A9693' }}>{paidPct}%</span>
             </div>
@@ -185,7 +275,7 @@ export default function InvoiceDetailPage() {
         )}
 
         {/* Pay button */}
-        {(INVOICE.status === 'issued' || INVOICE.status === 'partially_paid') && (
+        {(invoice.status === 'issued' || invoice.status === 'partially_paid') && (
           <button
             onClick={handlePay}
             disabled={checkingOut}
@@ -219,7 +309,7 @@ export default function InvoiceDetailPage() {
             ) : (
               <>
                 <Icon name="credit-card" size={18} />
-                Pay ${INVOICE.amountDue.toFixed(2)} via Stripe
+                Pay ${amountDue.toFixed(2)} via Stripe
               </>
             )}
           </button>
@@ -303,29 +393,35 @@ export default function InvoiceDetailPage() {
           </div>
 
           {/* Items */}
-          {INVOICE.items.map((item, i) => (
-            <div
-              key={i}
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 60px 90px 90px',
-                padding: '14px 20px',
-                borderBottom: i < INVOICE.items.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none',
-                alignItems: 'center',
-              }}
-            >
-              <span style={{ fontSize: '13.5px', color: '#1A1714' }}>{item.description}</span>
-              <span style={{ fontSize: '13.5px', color: '#6B6866', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
-                {item.qty}
-              </span>
-              <span style={{ fontSize: '13.5px', color: '#6B6866', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
-                ${item.unitPrice.toFixed(2)}
-              </span>
-              <span style={{ fontSize: '14px', fontWeight: 600, color: '#1A1714', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
-                ${item.total.toFixed(2)}
-              </span>
+          {items.length === 0 ? (
+            <div style={{ padding: '32px 20px', textAlign: 'center', fontSize: '13.5px', color: '#9A9693' }}>
+              No line items found.
             </div>
-          ))}
+          ) : (
+            items.map((item, i) => (
+              <div
+                key={item.id}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 60px 90px 90px',
+                  padding: '14px 20px',
+                  borderBottom: i < items.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none',
+                  alignItems: 'center',
+                }}
+              >
+                <span style={{ fontSize: '13.5px', color: '#1A1714' }}>{item.description}</span>
+                <span style={{ fontSize: '13.5px', color: '#6B6866', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
+                  {item.quantity}
+                </span>
+                <span style={{ fontSize: '13.5px', color: '#6B6866', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
+                  ${centsToDisplay(item.unit_amount_cents)}
+                </span>
+                <span style={{ fontSize: '14px', fontWeight: 600, color: '#1A1714', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
+                  ${centsToDisplay(item.total_cents)}
+                </span>
+              </div>
+            ))
+          )}
 
           {/* Totals */}
           <div
@@ -340,13 +436,13 @@ export default function InvoiceDetailPage() {
             <div style={{ textAlign: 'right' }}>
               <div style={{ fontSize: '12px', color: '#9A9693', marginBottom: '2px' }}>Subtotal</div>
               <div style={{ fontSize: '14px', fontFamily: 'var(--font-mono)', color: '#1A1714' }}>
-                ${INVOICE.total.toFixed(2)}
+                ${total.toFixed(2)}
               </div>
             </div>
             <div style={{ textAlign: 'right' }}>
               <div style={{ fontSize: '12px', color: '#9A9693', marginBottom: '2px' }}>Amount Due</div>
               <div style={{ fontSize: '18px', fontWeight: 700, fontFamily: 'var(--font-mono)', color: '#d97706' }}>
-                ${INVOICE.amountDue.toFixed(2)}
+                ${amountDue.toFixed(2)}
               </div>
             </div>
           </div>
@@ -356,7 +452,7 @@ export default function InvoiceDetailPage() {
       {/* ── Payments ────────────────────────────────────────────────────────── */}
       {tab === 'payments' && (
         <div style={{ animation: 'slideUp 0.3s ease both' }}>
-          {PAYMENTS.length === 0 ? (
+          {payments.length === 0 ? (
             <div
               style={{
                 background: '#ffffff',
@@ -387,25 +483,27 @@ export default function InvoiceDetailPage() {
             </div>
           ) : (
             <div style={{ background: '#ffffff', borderRadius: '14px', border: '1px solid rgba(0,0,0,0.07)', overflow: 'hidden' }}>
-              {PAYMENTS.map((p, i) => (
+              {payments.map((p, i) => (
                 <div
-                  key={i}
+                  key={p.id}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     padding: '14px 20px',
-                    borderBottom: i < PAYMENTS.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none',
+                    borderBottom: i < payments.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none',
                   }}
                 >
                   <div>
                     <div style={{ fontSize: '13.5px', color: '#1A1714', fontWeight: 500 }}>
                       {p.method}
                     </div>
-                    <div style={{ fontSize: '12px', color: '#9A9693', marginTop: '2px' }}>{p.date}</div>
+                    <div style={{ fontSize: '12px', color: '#9A9693', marginTop: '2px' }}>
+                      {p.paid_at ? formatDate(p.paid_at) : formatDate(p.created_at)}
+                    </div>
                   </div>
                   <span style={{ fontSize: '15px', fontWeight: 700, fontFamily: 'var(--font-mono)', color: '#059669' }}>
-                    −${p.amount.toFixed(2)}
+                    −${centsToDisplay(p.amount_cents)}
                   </span>
                 </div>
               ))}
@@ -425,76 +523,87 @@ export default function InvoiceDetailPage() {
             animation: 'slideUp 0.3s ease both',
           }}
         >
-          {RECEIPTS.map((rec, i) => (
-            <div
-              key={rec.id}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '14px',
-                padding: '14px 20px',
-                borderBottom: i < RECEIPTS.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none',
-              }}
-            >
-              <div
-                style={{
-                  width: '34px',
-                  height: '34px',
-                  borderRadius: '8px',
-                  background: '#ecfdf5',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                }}
-              >
-                <Icon name="file-text" size={15} style={{ color: '#059669' }} />
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: '13.5px', color: '#1A1714', fontWeight: 500 }}>{rec.description}</div>
-                <div style={{ fontSize: '12px', color: '#9A9693', marginTop: '2px' }}>
-                  {rec.date} · {rec.method}
-                  <span
-                    style={{
-                      marginLeft: '8px',
-                      fontFamily: 'var(--font-mono)',
-                      fontSize: '10.5px',
-                      color: '#C0BDBB',
-                    }}
-                  >
-                    #{rec.id}
-                  </span>
-                </div>
-              </div>
-              <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                <div
-                  style={{
-                    fontSize: '14px',
-                    fontWeight: 700,
-                    fontFamily: 'var(--font-mono)',
-                    color: '#059669',
-                  }}
-                >
-                  ${rec.amount.toFixed(2)}
-                </div>
-                <button
-                  style={{
-                    marginTop: '3px',
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    fontSize: '11.5px',
-                    color: '#eb5d1e',
-                    fontWeight: 500,
-                    padding: '0',
-                    fontFamily: 'var(--font-body)',
-                  }}
-                >
-                  Download PDF
-                </button>
+          {payments.length === 0 ? (
+            <div style={{ padding: '48px', textAlign: 'center' }}>
+              <div style={{ fontSize: '15px', color: '#9A9693', fontWeight: 500 }}>No receipts available</div>
+              <div style={{ fontSize: '13px', color: '#C0BDBB', marginTop: '6px' }}>
+                Receipts will appear here after payments are processed.
               </div>
             </div>
-          ))}
+          ) : (
+            payments.filter((p) => p.status === 'succeeded' || p.status === 'paid').map((rec, i, arr) => (
+              <div
+                key={rec.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '14px',
+                  padding: '14px 20px',
+                  borderBottom: i < arr.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none',
+                }}
+              >
+                <div
+                  style={{
+                    width: '34px',
+                    height: '34px',
+                    borderRadius: '8px',
+                    background: '#ecfdf5',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <Icon name="file-text" size={15} style={{ color: '#059669' }} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '13.5px', color: '#1A1714', fontWeight: 500 }}>
+                    Payment — {rec.method}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#9A9693', marginTop: '2px' }}>
+                    {rec.paid_at ? formatDate(rec.paid_at) : formatDate(rec.created_at)} · {rec.method}
+                    <span
+                      style={{
+                        marginLeft: '8px',
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: '10.5px',
+                        color: '#C0BDBB',
+                      }}
+                    >
+                      #{rec.id.slice(-6)}
+                    </span>
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                  <div
+                    style={{
+                      fontSize: '14px',
+                      fontWeight: 700,
+                      fontFamily: 'var(--font-mono)',
+                      color: '#059669',
+                    }}
+                  >
+                    ${centsToDisplay(rec.amount_cents)}
+                  </div>
+                  <button
+                    style={{
+                      marginTop: '3px',
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      fontSize: '11.5px',
+                      color: '#eb5d1e',
+                      fontWeight: 500,
+                      padding: '0',
+                      fontFamily: 'var(--font-body)',
+                    }}
+                  >
+                    Download PDF
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       )}
 

@@ -37,6 +37,7 @@ func (h *GroupsHandlers) RegisterRoutes(router chi.Router) {
 
 	// Eligibility rules
 	router.Post("/groups/{groupID}/eligibility-rules", h.attachEligibilityRule)
+	router.Get("/groups/{groupID}/eligibility-rules", h.listEligibilityRules)
 	router.Get("/groups/{groupID}/eligibility/{swimmerID}", h.evaluateEligibility)
 
 	// Registrations
@@ -237,6 +238,34 @@ func (h *GroupsHandlers) attachEligibilityRule(w http.ResponseWriter, r *http.Re
 		"status":      "attached",
 		"rule":        rule,
 		"audit_event": auditEvent,
+	})
+}
+
+func (h *GroupsHandlers) listEligibilityRules(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := groupScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+
+	groupID := strings.TrimSpace(chi.URLParam(r, "groupID"))
+	rules, err := h.service.ListEligibilityRules(principal, orgID, groupID)
+	if err != nil {
+		switch {
+		case errors.Is(err, groups.ErrGroupNotFound):
+			httpx.WriteError(w, r, http.StatusNotFound, "group_not_found", "Group was not found.", nil)
+		case errors.Is(err, groups.ErrForbidden):
+			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to view eligibility rules.", nil)
+		default:
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+		}
+		return
+	}
+
+	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"status":   "ok",
+		"count":    len(rules),
+		"group_id": groupID,
+		"rules":    rules,
 	})
 }
 

@@ -31,6 +31,16 @@ type roleAssignmentEnvelope struct {
 	} `json:"assignment"`
 }
 
+type roleAssignmentsListEnvelope struct {
+	Assignments []struct {
+		OrgID        string `json:"org_id"`
+		TargetUserID string `json:"target_user_id"`
+		Role         string `json:"role"`
+		Reason       string `json:"reason"`
+	} `json:"assignments"`
+	Count int `json:"count"`
+}
+
 func TestProtectedRoutesDenyByDefaultWithoutAuthorization(t *testing.T) {
 	t.Parallel()
 
@@ -242,6 +252,52 @@ func TestRoleAssignmentAuthorizationMatrix(t *testing.T) {
 				t.Fatalf("expected error code %q, got %q", tc.expectedErrCode, envelope.Error.Code)
 			}
 		})
+	}
+}
+
+func TestRoleAssignmentListReturnsLiveAssignments(t *testing.T) {
+	t.Parallel()
+
+	router := NewRouter(Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	adminMFAToken := issueSessionToken(t, router, "org-demo", []string{"admin"}, true)
+
+	body := map[string]any{
+		"org_id":         "org-demo",
+		"target_user_id": "user-live",
+		"role":           "coach",
+		"reason":         "Live assignment check",
+	}
+	assignReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/roles/assign", encodeJSONBody(t, body))
+	assignReq.Header.Set("Content-Type", "application/json")
+	assignReq.Header.Set("X-Org-Id", "org-demo")
+	assignReq.Header.Set("Authorization", "Bearer "+adminMFAToken)
+	assignRR := httptest.NewRecorder()
+	router.ServeHTTP(assignRR, assignReq)
+	if assignRR.Code != http.StatusCreated {
+		t.Fatalf("expected assignment creation status %d, got %d: %s", http.StatusCreated, assignRR.Code, assignRR.Body.String())
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/auth/roles/assignments", nil)
+	listReq.Header.Set("X-Org-Id", "org-demo")
+	listReq.Header.Set("Authorization", "Bearer "+adminMFAToken)
+	listRR := httptest.NewRecorder()
+	router.ServeHTTP(listRR, listReq)
+	if listRR.Code != http.StatusOK {
+		t.Fatalf("expected list status %d, got %d: %s", http.StatusOK, listRR.Code, listRR.Body.String())
+	}
+
+	var env roleAssignmentsListEnvelope
+	if err := json.Unmarshal(listRR.Body.Bytes(), &env); err != nil {
+		t.Fatalf("failed to decode assignments list response: %v", err)
+	}
+	if env.Count != 1 || len(env.Assignments) != 1 {
+		t.Fatalf("expected exactly one assignment, got count=%d len=%d", env.Count, len(env.Assignments))
+	}
+	if env.Assignments[0].TargetUserID != "user-live" {
+		t.Fatalf("expected target_user_id user-live, got %q", env.Assignments[0].TargetUserID)
+	}
+	if env.Assignments[0].Role != "coach" {
+		t.Fatalf("expected role coach, got %q", env.Assignments[0].Role)
 	}
 }
 

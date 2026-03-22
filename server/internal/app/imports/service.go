@@ -8,11 +8,15 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
 	"github.com/dareaquatics/aquify/server/internal/storage"
@@ -134,6 +138,7 @@ type ResolveConflictInput struct {
 // Service manages file import jobs and match conflicts in memory.
 type Service struct {
 	mu             sync.RWMutex
+	repo           *Repository
 	imports        map[string]*FileImport
 	conflicts      map[string]*MatchConflict
 	store          storage.ObjectStorage
@@ -180,6 +185,40 @@ func NewServiceWithStorage(store storage.ObjectStorage) *Service {
 		},
 		scanner: stubMalwareScanner{},
 	}
+}
+
+// NewServiceWithPool creates a DB-backed imports Service and loads existing
+// data from Postgres into memory on startup.
+func NewServiceWithPool(pool *pgxpool.Pool, store storage.ObjectStorage) *Service {
+	s := NewServiceWithStorage(store)
+	s.repo = newRepository(pool)
+	if err := s.loadFromDB(context.Background()); err != nil {
+		slog.Error("imports: failed to load from DB", "err", err)
+	}
+	return s
+}
+
+func (s *Service) loadFromDB(ctx context.Context) error {
+	fileImports, conflicts, err := s.repo.LoadAll(ctx)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, imp := range fileImports {
+		s.imports[imp.ID] = imp
+	}
+	for _, c := range conflicts {
+		s.conflicts[c.ID] = c
+	}
+	return nil
+}
+
+func (s *Service) newID(prefix string) string {
+	if s.repo != nil {
+		return uuid.New().String()
+	}
+	return prefix + randomToken(12)
 }
 
 func (s *Service) ConfigureSecurity(cfg SecurityConfig) {
@@ -239,7 +278,7 @@ func (s *Service) RequestUploadURL(principal *appmiddleware.Principal, orgID str
 		return nil, nil, ErrInvalidMIMEType
 	}
 
-	id := "import_" + randomToken(12)
+	id := s.newID("import_")
 	now := time.Now().UTC()
 	storageKey := fmt.Sprintf("imports/%s/%s/%s", orgID, id, input.Filename)
 
@@ -270,6 +309,11 @@ func (s *Service) RequestUploadURL(principal *appmiddleware.Principal, orgID str
 		UpdatedBy:          principal.UserID,
 	}
 
+	if s.repo != nil {
+		if err := s.repo.UpsertFileImport(context.Background(), imp); err != nil {
+			return nil, nil, fmt.Errorf("persist file import: %w", err)
+		}
+	}
 	s.mu.Lock()
 	s.imports[id] = imp
 	s.mu.Unlock()
@@ -411,6 +455,14 @@ func (s *Service) FinalizeImport(principal *appmiddleware.Principal, orgID, impo
 	}
 	s.conflicts[conflictID] = conflict
 
+	if s.repo != nil {
+		if err := s.repo.UpsertFileImport(context.Background(), imp); err != nil {
+			return nil, nil, fmt.Errorf("persist finalized file import: %w", err)
+		}
+		if err := s.repo.UpsertMatchConflict(context.Background(), conflict); err != nil {
+			return nil, nil, fmt.Errorf("persist match conflict: %w", err)
+		}
+	}
 	audit := newAuditEvent(orgID, principal.UserID, "import.finalized", "file_import", importID, map[string]string{
 		"status":      imp.Status,
 		"scan_status": imp.ScanStatus,
@@ -526,6 +578,17 @@ func (s *Service) ResolveConflict(principal *appmiddleware.Principal, orgID, imp
 		imp.Status = "applied"
 		imp.UpdatedAt = now
 		imp.UpdatedBy = principal.UserID
+	}
+
+	if s.repo != nil {
+		if err := s.repo.UpsertMatchConflict(context.Background(), conflict); err != nil {
+			return nil, nil, fmt.Errorf("persist resolved conflict: %w", err)
+		}
+		if imp.Status == "applied" {
+			if err := s.repo.UpsertFileImport(context.Background(), imp); err != nil {
+				return nil, nil, fmt.Errorf("persist applied import: %w", err)
+			}
+		}
 	}
 
 	audit := newAuditEvent(orgID, principal.UserID, "import.conflict_resolved", "match_conflict", conflictID, map[string]string{

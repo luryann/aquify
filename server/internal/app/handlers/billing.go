@@ -58,6 +58,7 @@ func NewBillingHandlersWithAuditAndStripe(svc *billing.Service, auditSvc *audit.
 func (h *BillingHandlers) RegisterRoutes(router chi.Router) {
 	// Invoice CRUD
 	router.Post("/invoices", h.createInvoice)
+	router.Get("/invoices", h.listInvoices)
 	router.Get("/invoices/{invoiceID}", h.getInvoice)
 
 	// Invoice items
@@ -71,6 +72,7 @@ func (h *BillingHandlers) RegisterRoutes(router chi.Router) {
 	router.Post("/invoices/{invoiceID}/write-off", h.writeOffInvoice)
 
 	// Payments
+	router.Get("/payments", h.listOrgPayments)
 	router.Post("/invoices/{invoiceID}/payments", h.recordPayment)
 	router.Get("/invoices/{invoiceID}/payments", h.listPayments)
 
@@ -188,6 +190,25 @@ func (h *BillingHandlers) getInvoice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"invoice": inv})
+}
+
+func (h *BillingHandlers) listInvoices(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := billingScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+
+	filters := billing.ListInvoicesFilters{
+		HouseholdID: r.URL.Query().Get("household_id"),
+		Status:      r.URL.Query().Get("status"),
+	}
+
+	invoices, err := h.service.ListInvoices(orgID, principal, filters)
+	if err != nil {
+		mapBillingError(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"count": len(invoices), "invoices": invoices})
 }
 
 // ─── Invoice item handlers ────────────────────────────────────────────────────
@@ -394,6 +415,23 @@ func (h *BillingHandlers) listPayments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"invoice_id": invoiceID, "count": len(payments), "payments": payments})
+}
+
+func (h *BillingHandlers) listOrgPayments(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := billingScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+
+	payments, err := h.service.ListPaymentsForOrg(orgID, principal, billing.ListPaymentsFilters{
+		InvoiceID: r.URL.Query().Get("invoice_id"),
+		Status:    r.URL.Query().Get("status"),
+	})
+	if err != nil {
+		mapBillingError(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"count": len(payments), "payments": payments})
 }
 
 // ─── Refund handlers ──────────────────────────────────────────────────────────
