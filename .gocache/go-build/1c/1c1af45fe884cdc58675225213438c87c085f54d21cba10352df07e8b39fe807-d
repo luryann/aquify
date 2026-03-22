@@ -1,7 +1,0 @@
-./conflicts.go
-./detector.go
-./hy3.go
-./matcher.go
-./model.go
-./report.go
-./zip.go

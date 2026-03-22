@@ -1,16 +1,20 @@
 package groups
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 var (
@@ -178,6 +182,7 @@ type householdRef struct {
 // Service is the in-memory groups/eligibility/registrations service.
 type Service struct {
 	mu              sync.RWMutex
+	repo            *Repository // nil = in-memory only
 	groups          map[string]Group
 	rules           map[string]EligibilityRule
 	registrations   map[string]Registration
@@ -200,6 +205,51 @@ func NewService() *Service {
 		parentHousehold: make(map[string]map[string]struct{}),
 		auditEvents:     []GroupAuditEvent{},
 	}
+}
+
+// NewServiceWithPool creates a DB-backed groups service.
+func NewServiceWithPool(pool *pgxpool.Pool) *Service {
+	s := NewService()
+	if pool == nil {
+		return s
+	}
+	s.repo = newRepository(pool)
+	if err := s.loadFromDB(context.Background()); err != nil {
+		slog.Error("groups: failed to load initial state from DB", "error", err)
+	}
+	return s
+}
+
+func (s *Service) loadFromDB(ctx context.Context) error {
+	if s.repo == nil {
+		return nil
+	}
+	grps, rules, regs, waivers, err := s.repo.LoadAll(ctx)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, g := range grps {
+		s.groups[g.ID] = g
+	}
+	for _, r := range rules {
+		s.rules[r.ID] = r
+	}
+	for _, r := range regs {
+		s.registrations[r.ID] = r
+	}
+	for _, w := range waivers {
+		s.waivers[w.ID] = w
+	}
+	return nil
+}
+
+func (s *Service) newID(prefix string) string {
+	if s.repo != nil {
+		return uuid.New().String()
+	}
+	return prefix + randomToken(12)
 }
 
 // SeedSwimmer allows test harnesses (or the members service) to register a swimmer
@@ -263,7 +313,7 @@ func (s *Service) CreateGroup(principal *appmiddleware.Principal, orgID string, 
 		groupType = "competitive"
 	}
 	group := Group{
-		ID:          "grp_" + randomToken(12),
+		ID:          s.newID("grp_"),
 		OrgID:       orgID,
 		Code:        code,
 		Name:        name,
@@ -277,6 +327,11 @@ func (s *Service) CreateGroup(principal *appmiddleware.Principal, orgID string, 
 		UpdatedAt:   now,
 		CreatedBy:   principal.UserID,
 		UpdatedBy:   principal.UserID,
+	}
+	if s.repo != nil {
+		if err := s.repo.UpsertGroup(context.Background(), group); err != nil {
+			slog.Error("groups: upsert group", "error", err)
+		}
 	}
 	s.groups[group.ID] = group
 
@@ -340,6 +395,11 @@ func (s *Service) UpdateGroup(principal *appmiddleware.Principal, orgID, groupID
 
 	group.UpdatedAt = time.Now().UTC()
 	group.UpdatedBy = principal.UserID
+	if s.repo != nil {
+		if err := s.repo.UpsertGroup(context.Background(), group); err != nil {
+			slog.Error("groups: upsert group (update)", "error", err)
+		}
+	}
 	s.groups[group.ID] = group
 
 	event := s.recordAuditEventLocked(GroupAuditEvent{
@@ -424,7 +484,7 @@ func (s *Service) AttachEligibilityRule(principal *appmiddleware.Principal, orgI
 
 	now := time.Now().UTC()
 	rule := EligibilityRule{
-		ID:         "rul_" + randomToken(12),
+		ID:         s.newID("rul_"),
 		OrgID:      orgID,
 		GroupID:    group.ID,
 		RuleType:   ruleType,
@@ -434,6 +494,11 @@ func (s *Service) AttachEligibilityRule(principal *appmiddleware.Principal, orgI
 		UpdatedAt:  now,
 		CreatedBy:  principal.UserID,
 		UpdatedBy:  principal.UserID,
+	}
+	if s.repo != nil {
+		if err := s.repo.UpsertEligibilityRule(context.Background(), rule); err != nil {
+			slog.Error("groups: upsert eligibility_rule", "error", err)
+		}
 	}
 	s.rules[rule.ID] = rule
 
@@ -494,6 +559,32 @@ func (s *Service) EvaluateSwimmerEligibility(principal *appmiddleware.Principal,
 		RuleResults: ruleResults,
 		EvaluatedAt: time.Now().UTC(),
 	}, nil
+}
+
+func (s *Service) ListEligibilityRules(principal *appmiddleware.Principal, orgID, groupID string) ([]EligibilityRule, error) {
+	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "billing", "read-only") {
+		return nil, ErrForbidden
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	group, ok := s.groups[strings.TrimSpace(groupID)]
+	if !ok || group.OrgID != orgID {
+		return nil, ErrGroupNotFound
+	}
+
+	out := make([]EligibilityRule, 0)
+	for _, rule := range s.rules {
+		if rule.OrgID != orgID || rule.GroupID != group.ID {
+			continue
+		}
+		out = append(out, rule)
+	}
+	slices.SortFunc(out, func(a, b EligibilityRule) int {
+		return a.CreatedAt.Compare(b.CreatedAt)
+	})
+	return out, nil
 }
 
 // evalRule evaluates a single rule against a swimmer.
@@ -608,7 +699,7 @@ func (s *Service) CreateRegistration(principal *appmiddleware.Principal, orgID s
 
 	now := time.Now().UTC()
 	reg := Registration{
-		ID:               "reg_" + randomToken(12),
+		ID:               s.newID("reg_"),
 		OrgID:            orgID,
 		HouseholdID:      householdID,
 		SwimmerID:        swimmerID,
@@ -621,6 +712,11 @@ func (s *Service) CreateRegistration(principal *appmiddleware.Principal, orgID s
 		UpdatedAt:        now,
 		CreatedBy:        principal.UserID,
 		UpdatedBy:        principal.UserID,
+	}
+	if s.repo != nil {
+		if err := s.repo.UpsertRegistration(context.Background(), reg); err != nil {
+			slog.Error("groups: upsert registration", "error", err)
+		}
 	}
 	s.registrations[reg.ID] = reg
 	return reg, nil
@@ -651,6 +747,11 @@ func (s *Service) TransitionRegistrationStatus(principal *appmiddleware.Principa
 	reg.Status = toStatus
 	reg.UpdatedAt = time.Now().UTC()
 	reg.UpdatedBy = principal.UserID
+	if s.repo != nil {
+		if err := s.repo.UpsertRegistration(context.Background(), reg); err != nil {
+			slog.Error("groups: upsert registration (transition)", "error", err)
+		}
+	}
 	s.registrations[reg.ID] = reg
 
 	event := s.recordAuditEventLocked(GroupAuditEvent{
@@ -701,7 +802,7 @@ func (s *Service) AcceptWaiver(principal *appmiddleware.Principal, orgID, regist
 
 	now := time.Now().UTC()
 	waiver := WaiverAcceptance{
-		ID:               "wvr_" + randomToken(12),
+		ID:               s.newID("wvr_"),
 		OrgID:            orgID,
 		RegistrationID:   reg.ID,
 		WaiverType:       waiverType,
@@ -709,6 +810,11 @@ func (s *Service) AcceptWaiver(principal *appmiddleware.Principal, orgID, regist
 		AcceptedByUserID: principal.UserID,
 		IPAddress:        strings.TrimSpace(input.IPAddress),
 		CreatedAt:        now,
+	}
+	if s.repo != nil {
+		if err := s.repo.UpsertWaiverAcceptance(context.Background(), waiver); err != nil {
+			slog.Error("groups: upsert waiver_acceptance", "error", err)
+		}
 	}
 	s.waivers[waiver.ID] = waiver
 	return waiver, nil

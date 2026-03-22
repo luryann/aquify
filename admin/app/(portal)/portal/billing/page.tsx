@@ -1,71 +1,45 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { Icon } from '@/components/ui/icons'
+import { useSession } from '@/lib/session'
+import { useApiClient } from '@/lib/api'
+import {
+  fetchInvoicesForHousehold,
+  fetchInvoicePayments,
+  type InvoiceRecord,
+  type PaymentRecord,
+} from '@/lib/adminData'
 
-// ── Stub data ──────────────────────────────────────────────────────────────
-const SUMMARY = {
-  openBalance: 420.00,
-  totalPaidThisSeason: 1840.00,
-  creditBalance: 25.00,
-  nextDueDate: 'Apr 1, 2026',
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function fmtDate(iso?: string): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-const INVOICES = [
-  {
-    id: 'inv-001',
-    number: 'INV-2026-0012',
-    description: 'Season Registration Fee — 2025–2026',
-    amount: 420.00,
-    status: 'issued' as const,
-    dueDate: 'Apr 1, 2026',
-    issuedDate: 'Mar 1, 2026',
-    items: 2,
-  },
-  {
-    id: 'inv-002',
-    number: 'INV-2026-0007',
-    description: 'Tri-City Classic Entry Fees',
-    amount: 48.00,
-    status: 'paid' as const,
-    dueDate: 'Mar 15, 2026',
-    issuedDate: 'Feb 28, 2026',
-    paidDate: 'Mar 10, 2026',
-    items: 6,
-  },
-  {
-    id: 'inv-003',
-    number: 'INV-2025-0041',
-    description: 'Fall Season Registration',
-    amount: 850.00,
-    status: 'paid' as const,
-    dueDate: 'Sep 15, 2025',
-    issuedDate: 'Sep 1, 2025',
-    paidDate: 'Sep 12, 2025',
-    items: 1,
-  },
-  {
-    id: 'inv-004',
-    number: 'INV-2025-0053',
-    description: 'Regional Spring Invite Entries',
-    amount: 64.00,
-    status: 'paid' as const,
-    dueDate: 'Jan 30, 2026',
-    issuedDate: 'Jan 15, 2026',
-    paidDate: 'Jan 28, 2026',
-    items: 8,
-  },
-]
+function cents(n: number): string {
+  return (n / 100).toFixed(2)
+}
 
-const RECENT_PAYMENTS = [
-  { date: 'Mar 10, 2026', description: 'Tri-City Classic Entry Fees',   amount: 48.00,   method: 'Visa ····4321' },
-  { date: 'Jan 28, 2026', description: 'Regional Spring Invite Entries', amount: 64.00,   method: 'Visa ····4321' },
-  { date: 'Sep 12, 2025', description: 'Fall Season Registration',       amount: 850.00,  method: 'ACH Transfer' },
-]
+// ── Skeleton ─────────────────────────────────────────────────────────────────
+function Skeleton({ w = '100%', h = 16, r = 8 }: { w?: string | number; h?: number; r?: number }) {
+  return (
+    <div
+      style={{
+        width: w,
+        height: h,
+        borderRadius: r,
+        background: 'linear-gradient(90deg, #f0efee 25%, #e6e5e3 50%, #f0efee 75%)',
+        backgroundSize: '200% 100%',
+        animation: 'shimmer 1.5s infinite',
+      }}
+    />
+  )
+}
 
-// ── Helpers ─────────────────────────────────────────────────────────────────
-const STATUS_CONFIG = {
+// ── Status config ─────────────────────────────────────────────────────────────
+const STATUS_CONFIG: Record<string, { label: string; bg: string; color: string }> = {
   draft:            { label: 'Draft',     bg: '#f9fafb', color: '#9A9693' },
   issued:           { label: 'Due',       bg: '#fffbeb', color: '#d97706' },
   partially_paid:   { label: 'Partial',   bg: '#eff6ff', color: '#2563eb' },
@@ -76,10 +50,10 @@ const STATUS_CONFIG = {
   written_off:      { label: 'Written Off', bg: '#f9fafb', color: '#9A9693' },
 }
 
-// ── Autopay Component ─────────────────────────────────────────────────────────
+// ── Autopay Component (local state only — no backend endpoint yet) ──────────
 function AutopayTab() {
   const [autopayEnabled, setAutopayEnabled] = useState(false)
-  const [payDay, setPayDay] = useState('1')
+  const [payDay, setPayDay] = useState('due')
   const [payMethod, setPayMethod] = useState('visa-4321')
   const [addCard, setAddCard] = useState(false)
 
@@ -88,13 +62,8 @@ function AutopayTab() {
     { id: 'ach',       label: 'ACH Transfer', icon: 'dollar-sign' as const, expires: null,    isDefault: false },
   ]
 
-  const SCHEDULED = autopayEnabled ? [
-    { desc: 'Season Registration Fee — 2025–2026', amount: 420.00, date: 'Apr 1, 2026', method: 'Visa ····4321' },
-  ] : []
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', animation: 'slideUp 0.3s ease both' }}>
-      {/* Enable/disable toggle */}
       <div
         style={{
           background: autopayEnabled ? 'linear-gradient(135deg, #ecfdf5, #d1fae5)' : '#ffffff',
@@ -136,7 +105,6 @@ function AutopayTab() {
         </button>
       </div>
 
-      {/* Autopay settings (shown when enabled) */}
       {autopayEnabled && (
         <div style={{ background: '#ffffff', borderRadius: '14px', border: '1px solid rgba(0,0,0,0.07)', padding: '20px 24px' }}>
           <div style={{ fontWeight: 600, fontSize: '14px', color: '#1A1714', marginBottom: '16px' }}>Autopay Settings</div>
@@ -208,30 +176,6 @@ function AutopayTab() {
         </div>
       )}
 
-      {/* Scheduled payments */}
-      {SCHEDULED.length > 0 && (
-        <div style={{ background: '#ffffff', borderRadius: '14px', border: '1px solid rgba(0,0,0,0.07)', overflow: 'hidden' }}>
-          <div style={{ padding: '14px 20px', borderBottom: '1px solid rgba(0,0,0,0.06)', fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#9A9693', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-            Scheduled Payments
-          </div>
-          {SCHEDULED.map((s, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 20px', borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
-              <div style={{ width: '36px', height: '36px', background: '#fffbeb', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <Icon name="clock" size={16} style={{ color: '#d97706' }} />
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '13px', fontWeight: 500, color: '#1A1714', marginBottom: '2px' }}>{s.desc}</div>
-                <div style={{ fontSize: '11.5px', color: '#9A9693' }}>Scheduled {s.date} · {s.method}</div>
-              </div>
-              <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#1A1714', fontSize: '14px' }}>${s.amount.toFixed(2)}</div>
-                <div style={{ fontSize: '11px', color: '#d97706', fontWeight: 600 }}>Pending</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
       {!autopayEnabled && (
         <div style={{ background: '#eff6ff', border: '1px solid rgba(37,99,235,0.15)', borderRadius: '12px', padding: '16px 20px', display: 'flex', gap: '12px' }}>
           <Icon name="info" size={16} style={{ color: '#2563eb', flexShrink: 0, marginTop: '1px' }} />
@@ -244,23 +188,67 @@ function AutopayTab() {
   )
 }
 
-// ── Component ────────────────────────────────────────────────────────────────
+// ── Component ─────────────────────────────────────────────────────────────────
 export default function BillingPage() {
+  const { session } = useSession()
+  const api = useApiClient(session?.token)
+  const orgId = session?.user.orgId ?? ''
+  const householdId = session?.user.householdId ?? ''
+
+  const [invoices, setInvoices] = useState<InvoiceRecord[]>([])
+  const [payments, setPayments] = useState<Array<PaymentRecord & { invoiceNumber: string }>>([])
+  const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<'overview' | 'autopay'>('overview')
+
+  useEffect(() => {
+    if (!orgId || !householdId) { setLoading(false); return }
+    setLoading(true)
+    fetchInvoicesForHousehold(api, orgId, householdId)
+      .then(async (invs) => {
+        setInvoices(invs)
+        // Fetch payments for recent paid invoices
+        const paidInvs = invs
+          .filter((inv) => ['paid', 'partially_paid'].includes(inv.status))
+          .slice(0, 5)
+        if (paidInvs.length > 0) {
+          const arrays = await Promise.all(
+            paidInvs.map((inv) =>
+              fetchInvoicePayments(api, orgId, inv.id)
+                .then((pmts) => pmts.map((p) => ({ ...p, invoiceNumber: inv.invoice_number })))
+                .catch(() => [])
+            )
+          )
+          const flat = arrays
+            .flat()
+            .sort((a, b) => new Date(b.paid_at ?? b.created_at).getTime() - new Date(a.paid_at ?? a.created_at).getTime())
+            .slice(0, 5)
+          setPayments(flat)
+        }
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false))
+  }, [api, orgId, householdId])
+
+  // Derived summary
+  const openBalance = invoices
+    .filter((inv) => ['issued', 'partially_paid'].includes(inv.status))
+    .reduce((sum, inv) => sum + inv.amount_due_cents, 0) / 100
+  const totalPaid = invoices.reduce((sum, inv) => sum + inv.amount_paid_cents, 0) / 100
+  const nextDueInvoice = invoices
+    .filter((inv) => ['issued', 'partially_paid'].includes(inv.status) && inv.due_date)
+    .sort((a, b) => new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime())[0]
+  const firstDueInvoiceId = nextDueInvoice?.id ?? ''
 
   return (
     <div>
+      <style>{`
+        @keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+      `}</style>
+
       {/* Page header */}
       <div style={{ marginBottom: '20px', animation: 'slideUp 0.3s ease both' }}>
-        <h1
-          style={{
-            fontFamily: 'var(--font-display)',
-            fontSize: '30px',
-            color: '#1A1714',
-            margin: '0 0 6px',
-            lineHeight: 1.1,
-          }}
-        >
+        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '30px', color: '#1A1714', margin: '0 0 6px', lineHeight: 1.1 }}>
           Billing
         </h1>
         <p style={{ margin: 0, fontSize: '14px', color: '#9A9693' }}>
@@ -283,304 +271,202 @@ export default function BillingPage() {
               boxShadow: activeTab === t.id ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
               transition: 'all 150ms ease',
             }}
-          >{t.label}{t.id === 'autopay' && <span style={{ marginLeft: '6px', fontSize: '10px', background: '#ecfdf5', color: '#059669', padding: '1px 6px', borderRadius: '8px', fontWeight: 600 }}>New</span>}</button>
+          >
+            {t.label}
+            {t.id === 'autopay' && (
+              <span style={{ marginLeft: '6px', fontSize: '10px', background: '#ecfdf5', color: '#059669', padding: '1px 6px', borderRadius: '8px', fontWeight: 600 }}>New</span>
+            )}
+          </button>
         ))}
       </div>
 
       {activeTab === 'autopay' && <AutopayTab />}
 
-      {activeTab === 'overview' && <div>
-
-      {/* Outstanding balance banner */}
-      {SUMMARY.openBalance > 0 && (
-        <div
-          style={{
-            background: 'linear-gradient(135deg, #fef3c7 0%, #fffbeb 100%)',
-            border: '1px solid rgba(217,119,6,0.25)',
-            borderRadius: '14px',
-            padding: '20px 24px',
-            marginBottom: '24px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '20px',
-            animation: 'slideUp 0.35s ease both',
-          }}
-        >
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: '13px', color: '#92400e', fontWeight: 500, marginBottom: '4px' }}>
-              Outstanding Balance
-            </div>
+      {activeTab === 'overview' && (
+        <div>
+          {/* Outstanding balance banner */}
+          {!loading && openBalance > 0 && (
             <div
               style={{
-                fontFamily: 'var(--font-display)',
-                fontSize: '34px',
-                color: '#92400e',
-                lineHeight: 1,
-                marginBottom: '6px',
-              }}
-            >
-              ${SUMMARY.openBalance.toFixed(2)}
-            </div>
-            <div style={{ fontSize: '12.5px', color: '#a16207' }}>
-              Due by {SUMMARY.nextDueDate}
-            </div>
-          </div>
-          <Link
-            href="/portal/billing/invoices/inv-001"
-            style={{
-              padding: '12px 24px',
-              background: '#d97706',
-              color: '#fff',
-              borderRadius: '10px',
-              fontSize: '14px',
-              fontWeight: 700,
-              textDecoration: 'none',
-              flexShrink: 0,
-              boxShadow: '0 4px 12px rgba(217,119,6,0.3)',
-            }}
-          >
-            Pay Now
-          </Link>
-        </div>
-      )}
-
-      {/* Stats strip */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(3, 1fr)',
-          gap: '12px',
-          marginBottom: '28px',
-          animation: 'slideUp 0.4s ease both',
-        }}
-      >
-        {[
-          { label: 'Paid This Season', value: `$${SUMMARY.totalPaidThisSeason.toLocaleString()}`, color: '#059669' },
-          { label: 'Open Balance',     value: `$${SUMMARY.openBalance.toFixed(2)}`,               color: '#d97706' },
-          { label: 'Account Credit',   value: `$${SUMMARY.creditBalance.toFixed(2)}`,             color: '#2563eb' },
-        ].map((stat) => (
-          <div
-            key={stat.label}
-            style={{
-              background: '#ffffff',
-              borderRadius: '12px',
-              border: '1px solid rgba(0,0,0,0.07)',
-              padding: '16px 20px',
-              boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
-            }}
-          >
-            <div
-              style={{
-                fontSize: '22px',
-                fontWeight: 700,
-                color: stat.color,
-                fontFamily: 'var(--font-mono)',
-              }}
-            >
-              {stat.value}
-            </div>
-            <div style={{ fontSize: '12px', color: '#9A9693', marginTop: '4px' }}>{stat.label}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Invoices list */}
-      <section style={{ marginBottom: '32px', animation: 'slideUp 0.45s ease both' }}>
-        <div
-          style={{
-            fontSize: '11px',
-            fontFamily: 'var(--font-mono)',
-            color: '#9A9693',
-            textTransform: 'uppercase',
-            letterSpacing: '0.08em',
-            marginBottom: '14px',
-          }}
-        >
-          Invoices
-        </div>
-
-        <div
-          style={{
-            background: '#ffffff',
-            borderRadius: '14px',
-            border: '1px solid rgba(0,0,0,0.07)',
-            boxShadow: '0 1px 6px rgba(0,0,0,0.04)',
-            overflow: 'hidden',
-          }}
-        >
-          {/* Table header */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 100px 100px 100px 36px',
-              padding: '10px 20px',
-              borderBottom: '1px solid rgba(0,0,0,0.07)',
-              background: 'rgba(0,0,0,0.02)',
-            }}
-          >
-            {['Invoice', 'Amount', 'Due', 'Status', ''].map((h) => (
-              <span
-                key={h}
-                style={{
-                  fontSize: '11px',
-                  fontFamily: 'var(--font-mono)',
-                  color: '#9A9693',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.06em',
-                }}
-              >
-                {h}
-              </span>
-            ))}
-          </div>
-
-          {/* Rows */}
-          {INVOICES.map((inv, i) => {
-            const statusCfg = STATUS_CONFIG[inv.status]
-            return (
-              <Link
-                key={inv.id}
-                href={`/portal/billing/invoices/${inv.id}`}
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 100px 100px 100px 36px',
-                  padding: '14px 20px',
-                  borderBottom: i < INVOICES.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none',
-                  alignItems: 'center',
-                  textDecoration: 'none',
-                  transition: 'background 100ms',
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(0,0,0,0.015)')}
-                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-              >
-                <div>
-                  <div style={{ fontSize: '13.5px', color: '#1A1714', fontWeight: 500, lineHeight: 1.3 }}>
-                    {inv.description}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: '11.5px',
-                      color: '#9A9693',
-                      fontFamily: 'var(--font-mono)',
-                      marginTop: '2px',
-                    }}
-                  >
-                    {inv.number}
-                  </div>
-                </div>
-                <span
-                  style={{
-                    fontSize: '14px',
-                    fontWeight: 700,
-                    color: '#1A1714',
-                    fontFamily: 'var(--font-mono)',
-                  }}
-                >
-                  ${inv.amount.toFixed(2)}
-                </span>
-                <span style={{ fontSize: '12.5px', color: '#6B6866' }}>{inv.dueDate}</span>
-                <span
-                  style={{
-                    display: 'inline-block',
-                    padding: '3px 9px',
-                    borderRadius: '999px',
-                    fontSize: '11.5px',
-                    fontWeight: 600,
-                    background: statusCfg.bg,
-                    color: statusCfg.color,
-                  }}
-                >
-                  {statusCfg.label}
-                </span>
-                <Icon name="chevron-right" size={14} style={{ color: '#C0BDBB' }} />
-              </Link>
-            )
-          })}
-        </div>
-      </section>
-
-      {/* Payment history */}
-      <section style={{ animation: 'slideUp 0.5s ease both' }}>
-        <div
-          style={{
-            fontSize: '11px',
-            fontFamily: 'var(--font-mono)',
-            color: '#9A9693',
-            textTransform: 'uppercase',
-            letterSpacing: '0.08em',
-            marginBottom: '14px',
-          }}
-        >
-          Recent Payments
-        </div>
-
-        <div
-          style={{
-            background: '#ffffff',
-            borderRadius: '12px',
-            border: '1px solid rgba(0,0,0,0.07)',
-            overflow: 'hidden',
-          }}
-        >
-          {RECENT_PAYMENTS.map((payment, i) => (
-            <div
-              key={i}
-              style={{
+                background: 'linear-gradient(135deg, #fef3c7 0%, #fffbeb 100%)',
+                border: '1px solid rgba(217,119,6,0.25)',
+                borderRadius: '14px',
+                padding: '20px 24px',
+                marginBottom: '24px',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '14px 18px',
-                borderBottom: i < RECENT_PAYMENTS.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none',
-                gap: '12px',
+                gap: '20px',
+                animation: 'slideUp 0.35s ease both',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <div
-                  style={{
-                    width: '32px',
-                    height: '32px',
-                    borderRadius: '50%',
-                    background: '#ecfdf5',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0,
-                  }}
-                >
-                  <Icon name="check-circle" size={15} style={{ color: '#059669' }} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: '13px', color: '#92400e', fontWeight: 500, marginBottom: '4px' }}>
+                  Outstanding Balance
                 </div>
-                <div>
-                  <div style={{ fontSize: '13.5px', color: '#1A1714', fontWeight: 500 }}>
-                    {payment.description}
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#9A9693', marginTop: '2px' }}>
-                    {payment.date} · {payment.method}
-                  </div>
+                <div style={{ fontFamily: 'var(--font-display)', fontSize: '34px', color: '#92400e', lineHeight: 1, marginBottom: '6px' }}>
+                  ${openBalance.toFixed(2)}
                 </div>
+                {nextDueInvoice?.due_date && (
+                  <div style={{ fontSize: '12.5px', color: '#a16207' }}>
+                    Due by {fmtDate(nextDueInvoice.due_date)}
+                  </div>
+                )}
               </div>
-              <span
-                style={{
-                  fontSize: '14px',
-                  fontWeight: 700,
-                  color: '#059669',
-                  fontFamily: 'var(--font-mono)',
-                  flexShrink: 0,
-                }}
+              <Link
+                href={firstDueInvoiceId ? `/portal/billing/invoices/${firstDueInvoiceId}` : '/portal/billing'}
+                style={{ padding: '12px 24px', background: '#d97706', color: '#fff', borderRadius: '10px', fontSize: '14px', fontWeight: 700, textDecoration: 'none', flexShrink: 0, boxShadow: '0 4px 12px rgba(217,119,6,0.3)' }}
               >
-                −${payment.amount.toFixed(2)}
-              </span>
+                Pay Now
+              </Link>
             </div>
-          ))}
-        </div>
-      </section>
+          )}
 
-      <style>{`
-        @keyframes slideUp {
-          from { opacity: 0; transform: translateY(12px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
-      </div>}
+          {/* Stats strip */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '28px', animation: 'slideUp 0.4s ease both' }}>
+            {loading ? (
+              [0, 1, 2].map((i) => (
+                <div key={i} style={{ background: '#fff', borderRadius: '12px', border: '1px solid rgba(0,0,0,0.07)', padding: '16px 20px' }}>
+                  <Skeleton w="60%" h={22} r={4} />
+                  <div style={{ marginTop: '8px' }}><Skeleton w="80%" h={12} /></div>
+                </div>
+              ))
+            ) : (
+              [
+                { label: 'Paid This Season', value: `$${totalPaid.toLocaleString()}`, color: '#059669' },
+                { label: 'Open Balance',     value: `$${openBalance.toFixed(2)}`,     color: '#d97706' },
+                { label: 'Invoices',         value: String(invoices.length),           color: '#2563eb' },
+              ].map((stat) => (
+                <div key={stat.label} style={{ background: '#ffffff', borderRadius: '12px', border: '1px solid rgba(0,0,0,0.07)', padding: '16px 20px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+                  <div style={{ fontSize: '22px', fontWeight: 700, color: stat.color, fontFamily: 'var(--font-mono)' }}>
+                    {stat.value}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#9A9693', marginTop: '4px' }}>{stat.label}</div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Invoices list */}
+          <section style={{ marginBottom: '32px', animation: 'slideUp 0.45s ease both' }}>
+            <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#9A9693', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '14px' }}>
+              Invoices
+            </div>
+
+            <div style={{ background: '#ffffff', borderRadius: '14px', border: '1px solid rgba(0,0,0,0.07)', boxShadow: '0 1px 6px rgba(0,0,0,0.04)', overflow: 'hidden' }}>
+              {/* Table header */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 100px 100px 36px', padding: '10px 20px', borderBottom: '1px solid rgba(0,0,0,0.07)', background: 'rgba(0,0,0,0.02)' }}>
+                {['Invoice', 'Amount', 'Due', 'Status', ''].map((h) => (
+                  <span key={h} style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#9A9693', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    {h}
+                  </span>
+                ))}
+              </div>
+
+              {loading ? (
+                [0, 1, 2].map((i) => (
+                  <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 100px 100px 100px 36px', padding: '14px 20px', borderBottom: '1px solid rgba(0,0,0,0.05)', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <Skeleton w="70%" h={14} />
+                      <Skeleton w="40%" h={11} />
+                    </div>
+                    <Skeleton w="80%" h={14} />
+                    <Skeleton w="80%" h={13} />
+                    <Skeleton w={60} h={24} r={999} />
+                    <Skeleton w={14} h={14} />
+                  </div>
+                ))
+              ) : invoices.length === 0 ? (
+                <div style={{ padding: '32px', textAlign: 'center', color: '#9A9693', fontSize: '14px' }}>No invoices found.</div>
+              ) : (
+                invoices.map((inv, i) => {
+                  const statusCfg = STATUS_CONFIG[inv.status] ?? STATUS_CONFIG['draft']
+                  return (
+                    <Link
+                      key={inv.id}
+                      href={`/portal/billing/invoices/${inv.id}`}
+                      style={{
+                        display: 'grid', gridTemplateColumns: '1fr 100px 100px 100px 36px',
+                        padding: '14px 20px',
+                        borderBottom: i < invoices.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none',
+                        alignItems: 'center', textDecoration: 'none', transition: 'background 100ms',
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(0,0,0,0.015)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                    >
+                      <div>
+                        <div style={{ fontSize: '13.5px', color: '#1A1714', fontWeight: 500, lineHeight: 1.3 }}>
+                          {inv.notes ?? `Invoice ${inv.invoice_number}`}
+                        </div>
+                        <div style={{ fontSize: '11.5px', color: '#9A9693', fontFamily: 'var(--font-mono)', marginTop: '2px' }}>
+                          {inv.invoice_number}
+                        </div>
+                      </div>
+                      <span style={{ fontSize: '14px', fontWeight: 700, color: '#1A1714', fontFamily: 'var(--font-mono)' }}>
+                        ${cents(inv.total_cents)}
+                      </span>
+                      <span style={{ fontSize: '12.5px', color: '#6B6866' }}>{fmtDate(inv.due_date)}</span>
+                      <span style={{ display: 'inline-block', padding: '3px 9px', borderRadius: '999px', fontSize: '11.5px', fontWeight: 600, background: statusCfg.bg, color: statusCfg.color }}>
+                        {statusCfg.label}
+                      </span>
+                      <Icon name="chevron-right" size={14} style={{ color: '#C0BDBB' }} />
+                    </Link>
+                  )
+                })
+              )}
+            </div>
+          </section>
+
+          {/* Payment history */}
+          <section style={{ animation: 'slideUp 0.5s ease both' }}>
+            <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#9A9693', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '14px' }}>
+              Recent Payments
+            </div>
+
+            <div style={{ background: '#ffffff', borderRadius: '12px', border: '1px solid rgba(0,0,0,0.07)', overflow: 'hidden' }}>
+              {loading ? (
+                [0, 1, 2].map((i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: i < 2 ? '1px solid rgba(0,0,0,0.05)' : 'none', gap: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <Skeleton w={32} h={32} r={16} />
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <Skeleton w={160} h={14} />
+                        <Skeleton w={120} h={12} />
+                      </div>
+                    </div>
+                    <Skeleton w={60} h={14} />
+                  </div>
+                ))
+              ) : payments.length === 0 ? (
+                <div style={{ padding: '24px', textAlign: 'center', color: '#9A9693', fontSize: '14px' }}>No payment history yet.</div>
+              ) : (
+                payments.map((payment, i) => (
+                  <div
+                    key={payment.id}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: i < payments.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none', gap: '12px' }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#ecfdf5', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <Icon name="check-circle" size={15} style={{ color: '#059669' }} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '13.5px', color: '#1A1714', fontWeight: 500 }}>
+                          {payment.invoiceNumber}
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#9A9693', marginTop: '2px' }}>
+                          {fmtDate(payment.paid_at ?? payment.created_at)} · {payment.method}
+                        </div>
+                      </div>
+                    </div>
+                    <span style={{ fontSize: '14px', fontWeight: 700, color: '#059669', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
+                      −${cents(payment.amount_cents)}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   )
 }

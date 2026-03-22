@@ -39,9 +39,12 @@ func NewMembershipHandlersWithAudit(service *members.Service, auditSvc *audit.Se
 func (h *MembershipHandlers) RegisterProtectedRoutes(router chi.Router) {
 	router.Post("/households", h.createHousehold)
 	router.Get("/households", h.listHouseholds)
+	router.Get("/households/{householdID}", h.getHousehold)
 	router.Patch("/households/{householdID}", h.updateHousehold)
 	router.Post("/households/{householdID}/contacts", h.addContact)
+	router.Get("/households/{householdID}/contacts", h.listContacts)
 	router.Post("/swimmers", h.createSwimmer)
+	router.Get("/swimmers/{swimmerID}", h.getSwimmer)
 	router.Patch("/swimmers/{swimmerID}", h.updateSwimmer)
 	router.Post("/swimmers/{swimmerID}/groups", h.assignSwimmerGroup)
 	router.Get("/swimmer-groups", h.listSwimmerGroupLinks)
@@ -115,6 +118,34 @@ func (h *MembershipHandlers) listHouseholds(w http.ResponseWriter, r *http.Reque
 		"status":     "ok",
 		"count":      len(households),
 		"households": households,
+	})
+}
+
+func (h *MembershipHandlers) getHousehold(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := membershipScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+
+	householdID := strings.TrimSpace(chi.URLParam(r, "householdID"))
+	household, err := h.service.GetHousehold(principal, orgID, householdID)
+	if err != nil {
+		switch {
+		case errors.Is(err, members.ErrHouseholdNotFound):
+			httpx.WriteError(w, r, http.StatusNotFound, "household_not_found", "Household was not found.", nil)
+		case errors.Is(err, members.ErrParentHouseholdScope):
+			httpx.WriteError(w, r, http.StatusForbidden, "scope_violation", "Parent can only view own household.", nil)
+		case errors.Is(err, members.ErrForbidden):
+			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to view households.", nil)
+		default:
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+		}
+		return
+	}
+
+	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"status":    "ok",
+		"household": household,
 	})
 }
 
@@ -222,6 +253,36 @@ func (h *MembershipHandlers) addContact(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+func (h *MembershipHandlers) listContacts(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := membershipScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+
+	householdID := strings.TrimSpace(chi.URLParam(r, "householdID"))
+	contacts, err := h.service.ListContacts(principal, orgID, householdID)
+	if err != nil {
+		switch {
+		case errors.Is(err, members.ErrHouseholdNotFound):
+			httpx.WriteError(w, r, http.StatusNotFound, "household_not_found", "Household was not found.", nil)
+		case errors.Is(err, members.ErrParentHouseholdScope):
+			httpx.WriteError(w, r, http.StatusForbidden, "scope_violation", "Parent can only view contacts for own household.", nil)
+		case errors.Is(err, members.ErrForbidden):
+			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to list contacts.", nil)
+		default:
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+		}
+		return
+	}
+
+	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"status":       "ok",
+		"count":        len(contacts),
+		"household_id": householdID,
+		"contacts":     contacts,
+	})
+}
+
 type createSwimmerRequest struct {
 	OrgID              string   `json:"org_id" validate:"required"`
 	HouseholdID        string   `json:"household_id" validate:"required"`
@@ -284,6 +345,35 @@ func (h *MembershipHandlers) createSwimmer(w http.ResponseWriter, r *http.Reques
 		"status":      "created",
 		"swimmer":     swimmer,
 		"audit_event": auditEvent,
+	})
+}
+
+func (h *MembershipHandlers) getSwimmer(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := membershipScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+
+	swimmerID := strings.TrimSpace(chi.URLParam(r, "swimmerID"))
+	includeMedical := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("include_medical")), "true")
+	swimmer, err := h.service.GetSwimmer(principal, orgID, swimmerID, includeMedical)
+	if err != nil {
+		switch {
+		case errors.Is(err, members.ErrSwimmerNotFound):
+			httpx.WriteError(w, r, http.StatusNotFound, "swimmer_not_found", "Swimmer was not found.", nil)
+		case errors.Is(err, members.ErrParentHouseholdScope):
+			httpx.WriteError(w, r, http.StatusForbidden, "scope_violation", "Parent can only view own household swimmers.", nil)
+		case errors.Is(err, members.ErrForbidden):
+			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to view swimmers.", nil)
+		default:
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+		}
+		return
+	}
+
+	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"status":  "ok",
+		"swimmer": swimmer,
 	})
 }
 

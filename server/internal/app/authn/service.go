@@ -662,6 +662,23 @@ func (s *Service) AssignRole(input RoleAssignmentInput) (RoleAssignment, error) 
 	return assignment, nil
 }
 
+func (s *Service) ListRoleAssignments(orgID string) []RoleAssignment {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := make([]RoleAssignment, 0, len(s.assignments))
+	for _, assignment := range s.assignments {
+		if strings.TrimSpace(orgID) != "" && !strings.EqualFold(strings.TrimSpace(assignment.OrgID), strings.TrimSpace(orgID)) {
+			continue
+		}
+		out = append(out, assignment)
+	}
+	slices.SortFunc(out, func(a, b RoleAssignment) int {
+		return b.AssignedAt.Compare(a.AssignedAt)
+	})
+	return out
+}
+
 func (s *Service) oidcConfigured() bool {
 	oidc := s.cfg.OIDC
 	return strings.TrimSpace(oidc.TokenURL) != "" &&

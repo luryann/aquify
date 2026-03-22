@@ -1,444 +1,254 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Icon } from '@/components/ui/icons'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { useSession } from '@/lib/session'
+import { ApiError, useApiClient } from '@/lib/api'
+import {
+  downloadReportArtifact,
+  fetchInvoiceAgingReport,
+  fetchMeetFeesReport,
+  fetchMembershipStatusReport,
+  fetchPaymentReconciliationReport,
+  fetchRegistrationStatusReport,
+  type ReportArtifactRecord,
+} from '@/lib/adminData'
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+type ReportKey = 'membership-status' | 'meet-fees' | 'invoice-aging' | 'payment-reconciliation' | 'registration-status'
 
-type ReportFormat = 'CSV' | 'PDF' | 'XLSX' | 'JSON'
-type GeneratedStatus = 'ready' | 'generating' | 'expired' | 'failed'
-
-type ReportDefinition = {
-  id: string
-  name: string
-  description: string
+type ReportSummary = {
+  key: ReportKey
+  title: string
   category: string
-  formats: ReportFormat[]
-  allowedRoles: string[]
-  estimatedRows: string
-}
-
-type GeneratedReport = {
-  id: string
-  reportId: string
-  reportName: string
-  format: ReportFormat
-  status: GeneratedStatus
-  fileSizeKb: number | null
-  generatedBy: string
+  description: string
+  rowCount: number
   generatedAt: string
-  expiresAt: string | null
-  downloadUrl: string | null
+  accent: string
 }
 
-// ─── Mock Data ─────────────────────────────────────────────────────────────────
-
-const REPORT_DEFINITIONS: ReportDefinition[] = [
-  {
-    id: 'billing-summary',
-    name: 'Billing Summary',
-    description: 'Invoices, payments, and outstanding balances by household for a given date range. Includes total collected, outstanding, and overdue amounts.',
-    category: 'Billing',
-    formats: ['CSV', 'XLSX', 'PDF'],
-    allowedRoles: ['owner', 'admin', 'billing'],
-    estimatedRows: '50–200',
-  },
-  {
-    id: 'ledger-export',
-    name: 'Ledger Export',
-    description: 'Full append-only ledger export with all financial events. Useful for reconciliation and tax reporting.',
-    category: 'Billing',
-    formats: ['CSV', 'XLSX'],
-    allowedRoles: ['owner', 'admin', 'billing'],
-    estimatedRows: '100–500',
-  },
-  {
-    id: 'member-roster',
-    name: 'Member Roster',
-    description: 'Full list of active swimmers and their household contacts. Includes group assignments, registration status, and emergency contacts.',
-    category: 'Members',
-    formats: ['CSV', 'XLSX', 'PDF'],
-    allowedRoles: ['owner', 'admin', 'coach', 'read-only'],
-    estimatedRows: '80–300',
-  },
-  {
-    id: 'registration-summary',
-    name: 'Season Registration Summary',
-    description: 'Registration counts and waiver completion rates by group and season. Useful for board reporting and planning.',
-    category: 'Members',
-    formats: ['CSV', 'PDF'],
-    allowedRoles: ['owner', 'admin', 'read-only'],
-    estimatedRows: '20–50',
-  },
-  {
-    id: 'meet-results',
-    name: 'Meet Results Export',
-    description: 'Individual event results for a specific meet or date range. Supports filtering by group, event, and swimmer.',
-    category: 'Competition',
-    formats: ['CSV', 'XLSX'],
-    allowedRoles: ['owner', 'admin', 'coach', 'read-only'],
-    estimatedRows: '100–2000',
-  },
-  {
-    id: 'best-times',
-    name: 'Best Times Report',
-    description: 'Personal best times for all active swimmers across all events, with optional previous-season comparison.',
-    category: 'Competition',
-    formats: ['CSV', 'PDF'],
-    allowedRoles: ['owner', 'admin', 'coach', 'read-only'],
-    estimatedRows: '300–1000',
-  },
-  {
-    id: 'time-standards',
-    name: 'Time Standards Export',
-    description: 'All configured time standard cuts and qualification counts per event. Useful for meet preparation.',
-    category: 'Competition',
-    formats: ['CSV', 'PDF'],
-    allowedRoles: ['owner', 'admin', 'coach', 'read-only'],
-    estimatedRows: '50–200',
-  },
-  {
-    id: 'audit-log-export',
-    name: 'Audit Log Export',
-    description: 'Filtered export of audit events for compliance and governance review. Supports all audit log filters.',
-    category: 'Compliance',
-    formats: ['CSV', 'JSON'],
-    allowedRoles: ['owner', 'admin'],
-    estimatedRows: '50–500',
-  },
-  {
-    id: 'suppression-list',
-    name: 'Email Suppression List',
-    description: 'Current email suppression list (opt-outs, bounces). Required for CAN-SPAM / CASL compliance review.',
-    category: 'Compliance',
-    formats: ['CSV'],
-    allowedRoles: ['owner', 'admin'],
-    estimatedRows: '0–50',
-  },
+const REPORTS: Array<{ key: ReportKey; title: string; category: string; description: string; accent: string }> = [
+  { key: 'membership-status', title: 'Membership Status', category: 'Members', description: 'Live roster, household, and primary group coverage.', accent: 'var(--accent)' },
+  { key: 'meet-fees', title: 'Meet Fees', category: 'Billing', description: 'Issued meet-fee invoice lines grouped from the persisted billing data.', accent: 'var(--warning)' },
+  { key: 'invoice-aging', title: 'Invoice Aging', category: 'Billing', description: 'Outstanding balances bucketed by current aging windows.', accent: 'var(--error)' },
+  { key: 'payment-reconciliation', title: 'Payment Reconciliation', category: 'Billing', description: 'Payment, refund, and ledger agreement from the live billing service.', accent: 'var(--success)' },
+  { key: 'registration-status', title: 'Registration Status', category: 'Members', description: 'Current season registration and waiver completion view.', accent: 'var(--info)' },
 ]
 
-const MOCK_GENERATED: GeneratedReport[] = [
-  {
-    id: 'gr-001', reportId: 'billing-summary', reportName: 'Billing Summary',
-    format: 'XLSX', status: 'ready', fileSizeKb: 48,
-    generatedBy: 'Admin User', generatedAt: '2026-03-15T09:00:00Z',
-    expiresAt: '2026-03-22T09:00:00Z', downloadUrl: '/reports/gr-001/download',
-  },
-  {
-    id: 'gr-002', reportId: 'member-roster', reportName: 'Member Roster',
-    format: 'CSV', status: 'ready', fileSizeKb: 22,
-    generatedBy: 'Coach Kim', generatedAt: '2026-03-14T14:30:00Z',
-    expiresAt: '2026-03-21T14:30:00Z', downloadUrl: '/reports/gr-002/download',
-  },
-  {
-    id: 'gr-003', reportId: 'meet-results', reportName: 'Meet Results Export',
-    format: 'CSV', status: 'ready', fileSizeKb: 134,
-    generatedBy: 'Coach Martinez', generatedAt: '2026-03-13T16:00:00Z',
-    expiresAt: '2026-03-20T16:00:00Z', downloadUrl: '/reports/gr-003/download',
-  },
-  {
-    id: 'gr-004', reportId: 'audit-log-export', reportName: 'Audit Log Export',
-    format: 'JSON', status: 'expired', fileSizeKb: null,
-    generatedBy: 'Owner', generatedAt: '2026-03-08T10:00:00Z',
-    expiresAt: '2026-03-15T10:00:00Z', downloadUrl: null,
-  },
-  {
-    id: 'gr-005', reportId: 'best-times', reportName: 'Best Times Report',
-    format: 'PDF', status: 'ready', fileSizeKb: 210,
-    generatedBy: 'Admin User', generatedAt: '2026-03-12T08:00:00Z',
-    expiresAt: '2026-03-19T08:00:00Z', downloadUrl: '/reports/gr-005/download',
-  },
-]
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+function formatDateTime(value: string) {
+  return new Date(value).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }
 
-function isExpiringSoon(iso: string): boolean {
-  return new Date(iso).getTime() - Date.now() < 2 * 24 * 60 * 60 * 1000
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-const FORMAT_COLORS: Record<ReportFormat, string> = {
-  CSV:  'var(--success)',
-  XLSX: 'var(--info)',
-  PDF:  'var(--warning)',
-  JSON: 'var(--accent)',
+function csvPath(key: ReportKey) {
+  switch (key) {
+    case 'membership-status':
+      return '/api/v1/reports/membership-status?format=csv'
+    case 'meet-fees':
+      return '/api/v1/reports/meet-fees?format=csv'
+    case 'invoice-aging':
+      return '/api/v1/reports/invoice-aging?format=csv'
+    case 'payment-reconciliation':
+      return '/api/v1/reports/payment-reconciliation?format=csv'
+    case 'registration-status':
+      return '/api/v1/reports/registration-status?format=csv'
+  }
 }
-
-const FORMAT_BG: Record<ReportFormat, string> = {
-  CSV:  'var(--success-bg)',
-  XLSX: 'var(--info-bg)',
-  PDF:  'var(--warning-bg)',
-  JSON: 'var(--accent-subtle)',
-}
-
-const FORMAT_BORDER: Record<ReportFormat, string> = {
-  CSV:  'var(--success-border)',
-  XLSX: 'var(--info-border)',
-  PDF:  'var(--warning-border)',
-  JSON: 'var(--accent-border)',
-}
-
-const CATEGORIES = ['All', 'Billing', 'Members', 'Competition', 'Compliance']
-
-const STATUS_COLORS: Record<GeneratedStatus, string> = {
-  ready:      'var(--success)',
-  generating: 'var(--info)',
-  expired:    'var(--text-muted)',
-  failed:     'var(--error)',
-}
-
-// ─── Components ───────────────────────────────────────────────────────────────
-
-function FormatBadge({ format }: { format: ReportFormat }) {
-  return (
-    <span style={{
-      padding: '2px 6px', borderRadius: 3,
-      fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700,
-      color: FORMAT_COLORS[format],
-      background: FORMAT_BG[format],
-      border: `1px solid ${FORMAT_BORDER[format]}`,
-    }}>
-      {format}
-    </span>
-  )
-}
-
-// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ReportsPage() {
-  const [category, setCategory]       = useState('All')
-  const [generating, setGenerating]   = useState<string | null>(null)
-  const [generatedReports, setGeneratedReports] = useState(MOCK_GENERATED)
-  const [selectedFormats, setSelectedFormats]   = useState<Record<string, ReportFormat>>({})
+  const { session } = useSession()
+  const api = useApiClient(session?.token)
+  const [summaries, setSummaries] = useState<ReportSummary[]>([])
+  const [artifacts, setArtifacts] = useState<Record<string, ReportArtifactRecord | null>>({})
+  const [loading, setLoading] = useState(true)
+  const [downloading, setDownloading] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
-  const definitions = REPORT_DEFINITIONS.filter(r =>
-    category === 'All' || r.category === category
-  )
+  useEffect(() => {
+    let cancelled = false
 
-  function getSelectedFormat(def: ReportDefinition): ReportFormat {
-    return selectedFormats[def.id] ?? def.formats[0]
+    async function run() {
+      if (!session?.user.orgId) {
+        setLoading(false)
+        return
+      }
+
+      try {
+        setLoading(true)
+        setError(null)
+        const [membership, meetFees, invoiceAging, reconciliation, registration] = await Promise.all([
+          fetchMembershipStatusReport(api, session.user.orgId),
+          fetchMeetFeesReport(api, session.user.orgId),
+          fetchInvoiceAgingReport(api, session.user.orgId),
+          fetchPaymentReconciliationReport(api, session.user.orgId),
+          fetchRegistrationStatusReport(api, session.user.orgId),
+        ])
+
+        const next: ReportSummary[] = [
+          { key: 'membership-status', title: 'Membership Status', category: 'Members', description: 'Live roster, household, and primary group coverage.', rowCount: membership.row_count, generatedAt: membership.generated_at, accent: 'var(--accent)' },
+          { key: 'meet-fees', title: 'Meet Fees', category: 'Billing', description: 'Issued meet-fee invoice lines grouped from the persisted billing data.', rowCount: meetFees.row_count, generatedAt: meetFees.generated_at, accent: 'var(--warning)' },
+          { key: 'invoice-aging', title: 'Invoice Aging', category: 'Billing', description: 'Outstanding balances bucketed by current aging windows.', rowCount: invoiceAging.row_count, generatedAt: invoiceAging.generated_at, accent: 'var(--error)' },
+          { key: 'payment-reconciliation', title: 'Payment Reconciliation', category: 'Billing', description: 'Payment, refund, and ledger agreement from the live billing service.', rowCount: reconciliation.row_count, generatedAt: reconciliation.generated_at, accent: 'var(--success)' },
+          { key: 'registration-status', title: 'Registration Status', category: 'Members', description: 'Current season registration and waiver completion view.', rowCount: registration.row_count, generatedAt: registration.generated_at, accent: 'var(--info)' },
+        ]
+
+        if (!cancelled) setSummaries(next)
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof ApiError ? err.message : 'Unable to load live report summaries.')
+          setSummaries([])
+        }
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [api, session?.user.orgId])
+
+  const grouped = useMemo(() => {
+    const map = new Map<string, ReportSummary[]>()
+    for (const summary of summaries) {
+      const existing = map.get(summary.category) ?? []
+      existing.push(summary)
+      map.set(summary.category, existing)
+    }
+    return Array.from(map.entries())
+  }, [summaries])
+
+  async function handleDownload(key: ReportKey) {
+    if (!session?.user.orgId) return
+    setDownloading(key)
+    setError(null)
+    try {
+      const artifact = await downloadReportArtifact(api, session.user.orgId, csvPath(key))
+      setArtifacts((current) => ({ ...current, [key]: artifact }))
+      if (artifact?.download_url) {
+        window.open(artifact.download_url, '_blank', 'noopener,noreferrer')
+      }
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Unable to generate report artifact.')
+    } finally {
+      setDownloading(null)
+    }
   }
 
-  function handleGenerate(defId: string) {
-    const def = REPORT_DEFINITIONS.find(d => d.id === defId)
-    if (!def) return
-    setGenerating(defId)
-    setTimeout(() => {
-      const newReport: GeneratedReport = {
-        id: 'gr-new-' + Date.now(),
-        reportId: defId,
-        reportName: def.name,
-        format: getSelectedFormat(def),
-        status: 'ready',
-        fileSizeKb: Math.floor(Math.random() * 200) + 20,
-        generatedBy: 'Admin User',
-        generatedAt: new Date().toISOString(),
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        downloadUrl: '/reports/new/download',
-      }
-      setGeneratedReports(prev => [newReport, ...prev])
-      setGenerating(null)
-    }, 2200)
+  if (!session) {
+    return <div style={{ padding: '32px' }}><EmptyState icon="bar-chart-2" title="Sign in required" description="Authenticate to run live reports." /></div>
   }
 
   return (
-    <div style={{ padding: '32px 36px', maxWidth: 1200, margin: '0 auto' }}>
-
-      {/* Header */}
-      <div style={{ marginBottom: 28 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--accent-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Icon name="bar-chart-2" size={16} color="var(--accent)" />
-          </div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--text)', margin: 0 }}>
-            Reports
-          </h1>
-        </div>
-        <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: 0 }}>
-          Generate and download data exports. Reports are available for 7 days after generation.
+    <div style={{ padding: '32px 36px 80px', maxWidth: 1180, margin: '0 auto' }}>
+      <div style={{ marginBottom: '28px' }}>
+        <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
+          Reporting
+        </p>
+        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '30px', fontWeight: 400, color: 'var(--text)', marginBottom: '6px' }}>
+          Live Report Console
+        </h1>
+        <p style={{ fontSize: '13px', color: 'var(--text-subtle)', maxWidth: '68ch' }}>
+          These report cards are backed by the production report endpoints. Row counts and generated timestamps come from the live API, and CSV exports are stored as report artifacts instead of mock downloads.
         </p>
       </div>
 
-      {/* Category filter */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 24, flexWrap: 'wrap' }}>
-        {CATEGORIES.map(cat => (
-          <button
-            key={cat}
-            onClick={() => setCategory(cat)}
-            style={{
-              padding: '6px 14px', borderRadius: 6,
-              background: category === cat ? 'var(--accent)' : 'var(--bg-elevated)',
-              border: category === cat ? 'none' : '1px solid var(--border)',
-              color: category === cat ? '#fff' : 'var(--text-subtle)',
-              fontSize: 13, fontWeight: category === cat ? 600 : 400, cursor: 'pointer',
-              transition: 'all 150ms',
-            }}
-          >
-            {cat}
-          </button>
-        ))}
-      </div>
+      {error ? (
+        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: '12px' }}>
+          {error}
+        </div>
+      ) : null}
 
-      {/* Report definitions grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 14, marginBottom: 40 }}>
-        {definitions.map(def => (
-          <div key={def.id} style={{
-            padding: '20px', borderRadius: 10,
-            background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-            display: 'flex', flexDirection: 'column', gap: 12,
-          }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
-                <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--text)', lineHeight: 1.3 }}>
-                  {def.name}
-                </h3>
-                <span style={{
-                  flexShrink: 0, padding: '2px 7px', borderRadius: 4,
-                  fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em',
-                  color: 'var(--text-muted)', background: 'var(--bg)', border: '1px solid var(--border)',
-                }}>
-                  {def.category}
-                </span>
+      {loading ? (
+        <EmptyState icon="bar-chart-2" title="Loading report definitions" description="Fetching live summaries from the backend reporting pack." />
+      ) : summaries.length === 0 ? (
+        <EmptyState icon="bar-chart-2" title="No reports available" description="Live report endpoints returned no data for this organisation yet." />
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          {grouped.map(([category, items]) => (
+            <section key={category}>
+              <div style={{ marginBottom: '12px' }}>
+                <h2 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text)' }}>{category}</h2>
               </div>
-              <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-                {def.description}
-              </p>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Formats:</span>
-              {def.formats.map(f => <FormatBadge key={f} format={f} />)}
-              <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-muted)' }}>
-                ~{def.estimatedRows} rows
-              </span>
-            </div>
-
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <button
-                onClick={() => handleGenerate(def.id)}
-                disabled={generating === def.id}
-                style={{
-                  flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                  padding: '8px 14px', borderRadius: 7,
-                  background: generating === def.id ? 'var(--accent-border)' : 'var(--accent)',
-                  border: 'none', color: '#fff', fontSize: 12, fontWeight: 600,
-                  cursor: generating === def.id ? 'not-allowed' : 'pointer',
-                  transition: 'background 200ms',
-                }}
-              >
-                {generating === def.id ? (
-                  <>
-                    <Icon name="refresh-cw" size={13} /> Generating…
-                  </>
-                ) : (
-                  <>
-                    <Icon name="download" size={13} /> Generate {getSelectedFormat(def)}
-                  </>
-                )}
-              </button>
-              {def.formats.length > 1 && (
-                <select
-                  value={getSelectedFormat(def)}
-                  onChange={e => setSelectedFormats(prev => ({ ...prev, [def.id]: e.target.value as ReportFormat }))}
-                  disabled={generating === def.id}
-                  style={{
-                    padding: '8px 10px', borderRadius: 7,
-                    background: 'var(--bg)', border: '1px solid var(--border)',
-                    color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer',
-                  }}
-                >
-                  {def.formats.map(f => <option key={f} value={f}>{f}</option>)}
-                </select>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Generated reports history */}
-      <div>
-        <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', margin: '0 0 14px', letterSpacing: '-0.01em' }}>
-          Generated Reports
-        </h2>
-
-        {generatedReports.length === 0 ? (
-          <EmptyState icon="bar-chart-2" title="No reports generated yet" description="Click 'Generate' on any report type above to create your first export." />
-        ) : (
-          <div style={{
-            borderRadius: 10, overflow: 'hidden',
-            border: '1px solid var(--border)',
-            background: 'var(--bg-elevated)',
-          }}>
-            {/* Header */}
-            <div style={{
-              display: 'grid', gridTemplateColumns: '1fr 80px 100px 140px 140px 120px',
-              padding: '10px 16px', borderBottom: '1px solid var(--border)',
-              background: 'var(--bg)',
-            }}>
-              {['Report', 'Format', 'Size', 'Generated By', 'Generated At', ''].map(h => (
-                <span key={h} style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</span>
-              ))}
-            </div>
-
-            {generatedReports.map((r, i) => {
-              const expiring = r.expiresAt && r.status === 'ready' && isExpiringSoon(r.expiresAt)
-              return (
-                <div key={r.id} style={{
-                  display: 'grid', gridTemplateColumns: '1fr 80px 100px 140px 140px 120px',
-                  padding: '12px 16px',
-                  borderBottom: i < generatedReports.length - 1 ? '1px solid var(--border)' : 'none',
-                  opacity: r.status === 'expired' ? 0.5 : 1,
-                }}>
-                  <div>
-                    <div style={{ fontSize: 13, color: 'var(--text)', fontWeight: 500 }}>{r.reportName}</div>
-                    {expiring && r.expiresAt && (
-                      <div style={{ fontSize: 11, color: 'var(--warning)', marginTop: 2 }}>
-                        Expires {formatDate(r.expiresAt)}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '14px' }}>
+                {items.map((report) => {
+                  const artifact = artifacts[report.key]
+                  return (
+                    <div key={report.key} className="card" style={{ padding: '18px 18px 16px', borderTop: `3px solid ${report.accent}` }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', marginBottom: '12px' }}>
+                        <div>
+                          <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: report.accent, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>
+                            {REPORTS.find((item) => item.key === report.key)?.category}
+                          </div>
+                          <h3 style={{ fontSize: '18px', color: 'var(--text)', marginBottom: '4px' }}>{report.title}</h3>
+                          <p style={{ fontSize: '12px', color: 'var(--text-subtle)', lineHeight: 1.55 }}>{report.description}</p>
+                        </div>
+                        <div style={{ width: '36px', height: '36px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--accent-subtle)', color: 'var(--accent)', flexShrink: 0 }}>
+                          <Icon name="file-text" size={16} />
+                        </div>
                       </div>
-                    )}
-                  </div>
-                  <div style={{ alignSelf: 'center' }}>
-                    <FormatBadge format={r.format} />
-                  </div>
-                  <span style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', alignSelf: 'center' }}>
-                    {r.fileSizeKb ? `${r.fileSizeKb} KB` : '—'}
-                  </span>
-                  <span style={{ fontSize: 12, color: 'var(--text-muted)', alignSelf: 'center' }}>
-                    {r.generatedBy}
-                  </span>
-                  <span style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', alignSelf: 'center' }}>
-                    {formatDate(r.generatedAt)}
-                  </span>
-                  <div style={{ alignSelf: 'center' }}>
-                    {r.status === 'ready' && r.downloadUrl ? (
-                      <a
-                        href={r.downloadUrl}
-                        style={{
-                          display: 'inline-flex', alignItems: 'center', gap: 5,
-                          padding: '5px 10px', borderRadius: 5,
-                          background: 'var(--accent)', border: 'none',
-                          color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                          textDecoration: 'none',
-                        }}
-                      >
-                        <Icon name="download" size={12} /> Download
-                      </a>
-                    ) : (
-                      <span style={{ fontSize: 12, color: STATUS_COLORS[r.status], textTransform: 'capitalize' }}>
-                        {r.status}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
+                        <div style={{ padding: '12px', borderRadius: '8px', background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
+                          <div style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>Rows</div>
+                          <div style={{ fontSize: '22px', fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>{report.rowCount}</div>
+                        </div>
+                        <div style={{ padding: '12px', borderRadius: '8px', background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
+                          <div style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>Generated</div>
+                          <div style={{ fontSize: '12px', color: 'var(--text-subtle)', lineHeight: 1.45 }}>{formatDateTime(report.generatedAt)}</div>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <button
+                          onClick={() => void handleDownload(report.key)}
+                          disabled={downloading === report.key}
+                          style={{
+                            padding: '8px 12px',
+                            borderRadius: '7px',
+                            border: 'none',
+                            background: report.accent,
+                            color: '#fff',
+                            fontSize: '12px',
+                            fontWeight: 600,
+                            cursor: downloading === report.key ? 'not-allowed' : 'pointer',
+                          }}
+                        >
+                          {downloading === report.key ? 'Generating…' : 'Generate CSV'}
+                        </button>
+                        {artifact ? (
+                          <a
+                            href={artifact.download_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{ fontSize: '12px', color: 'var(--accent)', textDecoration: 'none' }}
+                          >
+                            {artifact.filename} · {formatBytes(artifact.size_bytes)}
+                          </a>
+                        ) : (
+                          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Artifact delivery enabled</span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

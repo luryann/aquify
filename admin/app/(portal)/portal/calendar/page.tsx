@@ -3,6 +3,9 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { Icon } from '@/components/ui/icons'
+import { useSession } from '@/lib/session'
+import { useApiClient } from '@/lib/api'
+import { fetchMeets, type MeetRecord } from '@/lib/adminData'
 
 // ── Types ───────────────────────────────────────────────────────────────────
 type EventType = 'meet' | 'practice' | 'deadline' | 'holiday' | 'event'
@@ -18,9 +21,52 @@ type CalEvent = {
   linkPath?: string
 }
 
-// ── Stub data ──────────────────────────────────────────────────────────────
-// Using March/April 2026 (current date context is Mar 17, 2026)
-const EVENTS: CalEvent[] = [
+// ── Helpers ─────────────────────────────────────────────────────────────────
+function dateOnly(iso?: string): string {
+  if (!iso) return ''
+  return iso.split('T')[0]
+}
+
+function meetsToCalEvents(meets: MeetRecord[]): CalEvent[] {
+  const events: CalEvent[] = []
+  for (const meet of meets) {
+    if (meet.start_date) {
+      events.push({
+        id: `meet-${meet.id}`,
+        title: meet.name,
+        type: 'meet',
+        date: dateOnly(meet.start_date),
+        location: meet.location ?? undefined,
+        detail: meet.host_org ? `Hosted by ${meet.host_org}` : undefined,
+        linkPath: `/portal/meets/${meet.id}`,
+      })
+      if (meet.end_date && dateOnly(meet.end_date) !== dateOnly(meet.start_date)) {
+        events.push({
+          id: `meet-${meet.id}-end`,
+          title: `${meet.name} — Day 2`,
+          type: 'meet',
+          date: dateOnly(meet.end_date),
+          location: meet.location ?? undefined,
+          linkPath: `/portal/meets/${meet.id}`,
+        })
+      }
+    }
+    if (meet.commitment_deadline && meet.status === 'commitment_open') {
+      events.push({
+        id: `deadline-${meet.id}`,
+        title: `Commitment Deadline — ${meet.name}`,
+        type: 'deadline',
+        date: dateOnly(meet.commitment_deadline),
+        detail: 'Respond yes/no for each swimmer by tonight.',
+        linkPath: `/portal/meets/${meet.id}`,
+      })
+    }
+  }
+  return events
+}
+
+// ── Legacy stub (empty — replaced by live API data below) ─────────────────
+const EVENTS_STUB: CalEvent[] = [
   // March
   { id: 'e-001', type: 'practice', title: 'Morning Practice — Senior A', date: '2026-03-17', time: '5:30 AM', location: 'Main Pool' },
   { id: 'e-002', type: 'practice', title: 'Afternoon Practice — Junior B', date: '2026-03-17', time: '4:00 PM', location: 'Main Pool' },

@@ -43,6 +43,8 @@ func NewPerformanceHandlersWithAudit(svc *performance.Service, auditSvc *audit.S
 func (h *PerformanceHandlers) RegisterRoutes(router chi.Router) {
 	// Results
 	router.Post("/results", h.upsertResult)
+	router.Get("/performance/best-times", h.listOrgBestTimes)
+	router.Get("/performance/progression", h.listOrgProgression)
 
 	// Per-swimmer performance
 	router.Get("/swimmers/{swimmerID}/best-times", h.listBestTimes)
@@ -239,6 +241,33 @@ func (h *PerformanceHandlers) listBestTimes(w http.ResponseWriter, r *http.Reque
 	})
 }
 
+// listOrgBestTimes GET /performance/best-times
+func (h *PerformanceHandlers) listOrgBestTimes(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := perfScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+
+	bestTimes, err := h.service.ListBestTimesForOrg(orgID, principal, performance.ListBestTimesFilters{
+		SwimmerID: r.URL.Query().Get("swimmer_id"),
+		Course:    r.URL.Query().Get("course"),
+		Stroke:    r.URL.Query().Get("stroke"),
+	})
+	if err != nil {
+		if errors.Is(err, performance.ErrForbidden) {
+			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role to read best times.", nil)
+			return
+		}
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"count":      len(bestTimes),
+		"best_times": bestTimes,
+	})
+}
+
 // overrideBestTime POST /swimmers/{swimmerID}/best-times/override
 func (h *PerformanceHandlers) overrideBestTime(w http.ResponseWriter, r *http.Request) {
 	principal, orgID, ok := perfScopeFromRequest(w, r)
@@ -335,6 +364,44 @@ func (h *PerformanceHandlers) listProgression(w http.ResponseWriter, r *http.Req
 		"swimmer_id": swimmerID,
 		"count":      len(results),
 		"results":    results,
+	})
+}
+
+// listOrgProgression GET /performance/progression
+func (h *PerformanceHandlers) listOrgProgression(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := perfScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+
+	q := r.URL.Query()
+	distanceStr := q.Get("distance")
+	var distance int
+	if distanceStr != "" {
+		d, err := strconv.Atoi(distanceStr)
+		if err == nil {
+			distance = d
+		}
+	}
+
+	results, err := h.service.ListProgressionForOrg(orgID, principal, performance.ListResultsFilters{
+		SwimmerID:     q.Get("swimmer_id"),
+		EventDistance: distance,
+		Stroke:        q.Get("stroke"),
+		Course:        q.Get("course"),
+	})
+	if err != nil {
+		if errors.Is(err, performance.ErrForbidden) {
+			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role to read progression data.", nil)
+			return
+		}
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"count":   len(results),
+		"results": results,
 	})
 }
 

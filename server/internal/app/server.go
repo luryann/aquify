@@ -27,11 +27,13 @@ import (
 	"github.com/dareaquatics/aquify/server/internal/storage"
 	stripelib "github.com/dareaquatics/aquify/server/internal/stripe"
 	"github.com/dareaquatics/aquify/server/internal/telemetry"
+	"github.com/dareaquatics/aquify/server/internal/db"
 	"github.com/dareaquatics/aquify/server/internal/workers"
 	"github.com/dareaquatics/aquify/server/internal/workers/jobhandlers"
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // NewRouter is a convenience wrapper for tests and simple deployments.
@@ -142,6 +144,18 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.S
 		objectStore = storage.NewStubStorage(cfg.Storage.BaseURL())
 	}
 
+	// Open a pgxpool when DatabaseURL is configured. The pool is used to back
+	// all service repositories; a nil pool falls back to in-memory only.
+	var dbPool *pgxpool.Pool
+	if cfg.DatabaseURL != "" {
+		var poolErr error
+		dbPool, poolErr = db.Open(context.Background(), cfg.DatabaseURL)
+		if poolErr != nil {
+			logger.Error("db pool init failed; services will run in-memory only", "error", poolErr)
+			dbPool = nil
+		}
+	}
+
 	if authService == nil {
 		authService = authn.NewService(authn.Config{
 			EnableDevStubTokens: cfg.Auth.EnableDevStubTokens,
@@ -160,19 +174,35 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.S
 	}
 	authHandlers := handlers.NewAuthHandlersWithAudit(authService, auditService, allowDevSessionIssue)
 	if membershipService == nil {
-		membershipService = members.NewService()
+		if dbPool != nil {
+			membershipService = members.NewServiceWithPool(dbPool)
+		} else {
+			membershipService = members.NewService()
+		}
 	}
 	membershipHandlers := handlers.NewMembershipHandlersWithAudit(membershipService, auditService)
 	if groupsService == nil {
-		groupsService = groups.NewService()
+		if dbPool != nil {
+			groupsService = groups.NewServiceWithPool(dbPool)
+		} else {
+			groupsService = groups.NewService()
+		}
 	}
 	groupsHandlers := handlers.NewGroupsHandlers(groupsService)
 	if meetsService == nil {
-		meetsService = meets.NewService()
+		if dbPool != nil {
+			meetsService = meets.NewServiceWithPool(dbPool)
+		} else {
+			meetsService = meets.NewService()
+		}
 	}
 	meetsHandlers := handlers.NewMeetsHandlersWithAudit(meetsService, auditService)
 	if importsService == nil {
-		importsService = imports.NewServiceWithStorage(objectStore)
+		if dbPool != nil {
+			importsService = imports.NewServiceWithPool(dbPool, objectStore)
+		} else {
+			importsService = imports.NewServiceWithStorage(objectStore)
+		}
 	}
 	if cfg.Security.Uploads.MaxBytes > 0 || len(cfg.Security.Uploads.AllowedMIMEs) > 0 || cfg.Security.Uploads.RequireMalwareScanHook {
 		importsService.ConfigureSecurity(imports.SecurityConfig{
@@ -183,18 +213,30 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.S
 	}
 	importsHandlers := handlers.NewImportsHandlersWithAudit(importsService, auditService)
 	if exportsService == nil {
-		exportsService = exports.NewServiceWithStorage(objectStore)
+		if dbPool != nil {
+			exportsService = exports.NewServiceWithPool(dbPool, objectStore)
+		} else {
+			exportsService = exports.NewServiceWithStorage(objectStore)
+		}
 	}
 	exportsHandlers := handlers.NewExportsHandlers(exportsService)
 	if performanceService == nil {
-		performanceService = performance.NewService()
+		if dbPool != nil {
+			performanceService = performance.NewServiceWithPool(dbPool)
+		} else {
+			performanceService = performance.NewService()
+		}
 	}
 	// Wire meets service into performance service so that best-time recomputes
 	// automatically back-fill seed times on future draft/submitted entries.
 	performanceService.SetEntrySeedTimeUpdater(meetsService)
 	performanceHandlers := handlers.NewPerformanceHandlersWithAudit(performanceService, auditService)
 	if billingService == nil {
-		billingService = billing.NewService()
+		if dbPool != nil {
+			billingService = billing.NewServiceWithPool(dbPool)
+		} else {
+			billingService = billing.NewService()
+		}
 	}
 	if stripeClient == nil {
 		realStripeClient, err := stripelib.NewSDKClient(cfg.Stripe.SecretKey)
@@ -237,7 +279,12 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.S
 		if pmClient == nil {
 			pmClient = postmark.NewStubClient()
 		}
-		commsService = comms.NewServiceWithClient(pmClient)
+		if dbPool != nil {
+			commsService = comms.NewServiceWithPool(dbPool)
+			commsService.SetPostmarkClient(pmClient)
+		} else {
+			commsService = comms.NewServiceWithClient(pmClient)
+		}
 	}
 	commsHandlers := handlers.NewCommsHandlersWithWebhookAuth(
 		commsService,
@@ -249,12 +296,65 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.S
 	)
 	auditHandlers := handlers.NewAuditHandlers(auditService)
 	if complianceService == nil {
-		complianceService = compliance.NewServiceWithConfig(cfg.Compliance.ExportTTLDays, cfg.Compliance.DeletionReviewDays)
+		if dbPool != nil {
+			complianceService = compliance.NewServiceWithPool(dbPool, cfg.Compliance.ExportTTLDays, cfg.Compliance.DeletionReviewDays)
+		} else {
+			complianceService = compliance.NewServiceWithConfig(cfg.Compliance.ExportTTLDays, cfg.Compliance.DeletionReviewDays)
+		}
 	}
 	complianceHandlers := handlers.NewComplianceHandlers(complianceService, auditService)
 	reportsService := reports.NewService(membershipService, groupsService, meetsService, billingService)
 	reportsService.SetStorage(objectStore)
 	reportsHandlers := handlers.NewReportsHandlers(reportsService, auditService)
+	settingsHandlers := handlers.NewSettingsHandlers(map[string]any{
+		"app_env": cfg.AppEnv,
+		"auth": map[string]any{
+			"enable_dev_stub_tokens":  cfg.Auth.EnableDevStubTokens,
+			"allow_dev_session_issue": cfg.Auth.AllowDevSessionIssue,
+			"oidc_client_id":          cfg.Auth.OIDC.ClientID,
+			"oidc_redirect_url":       cfg.Auth.OIDC.RedirectURL,
+			"oidc_expected_issuer":    cfg.Auth.OIDC.ExpectedIssuer,
+		},
+		"workers": map[string]any{
+			"concurrency_per_queue": cfg.Worker.ConcurrencyPerQueue,
+			"reconcile_interval":    cfg.Worker.ReconcileInterval,
+			"integrity_interval":    cfg.Worker.IntegrityInterval,
+			"cleanup_interval":      cfg.Worker.CleanupInterval,
+		},
+		"compliance": map[string]any{
+			"audit_retention_days":     cfg.Compliance.AuditRetentionDays,
+			"export_ttl_days":          cfg.Compliance.ExportTTLDays,
+			"deletion_review_days":     cfg.Compliance.DeletionReviewDays,
+			"csrf_header_name":         cfg.Security.CSRFHeaderName,
+			"impersonation_enabled":    cfg.Security.Impersonation.Enabled,
+			"global_rate_limit":        cfg.Security.RateLimit.GlobalRequests,
+			"global_rate_limit_window": cfg.Security.RateLimit.GlobalWindow.String(),
+			"auth_rate_limit":          cfg.Security.RateLimit.AuthRequests,
+			"auth_rate_limit_window":   cfg.Security.RateLimit.AuthWindow.String(),
+		},
+		"storage": map[string]any{
+			"endpoint": cfg.Storage.Endpoint,
+			"bucket":   cfg.Storage.Bucket,
+			"use_ssl":  cfg.Storage.UseSSL,
+			"region":   cfg.Storage.Region,
+		},
+		"stripe": map[string]any{
+			"currency":                            cfg.Stripe.Currency,
+			"reconciliation_alert_threshold_cents": cfg.Stripe.ReconciliationAlertThresholdCents,
+		},
+		"postmark": map[string]any{
+			"from_name":    cfg.Postmark.FromName,
+			"from_email":   cfg.Postmark.FromEmail,
+			"webhook_auth": cfg.Postmark.WebhookAuthHeaderName != "" || cfg.Postmark.WebhookBasicUser != "" || cfg.Postmark.WebhookBasicPass != "",
+		},
+		"telemetry": map[string]any{
+			"service_name":    cfg.Telemetry.ServiceName,
+			"service_version": cfg.Telemetry.ServiceVersion,
+			"otlp_endpoint":   cfg.Telemetry.OTLPEndpoint,
+			"sample_rate":     cfg.Telemetry.SampleRate,
+			"metrics_addr":    cfg.Telemetry.MetricsAddr,
+		},
+	})
 	runtimeRepo := runtimepersist.NewRepository(cfg.DatabaseURL)
 	runtimeParticipants := buildRuntimeParticipants(
 		membershipService,
@@ -346,6 +446,7 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.S
 			complianceHandlers.RegisterRoutes(protected)
 			reportsHandlers.RegisterRoutes(protected)
 			jobsHandlers.RegisterRoutes(protected)
+			settingsHandlers.RegisterRoutes(protected)
 		})
 	})
 

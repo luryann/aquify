@@ -2,21 +2,38 @@
 .DS_Store
 .vscode/
 .idea/
+.claude/
 
-# Environment
+# Environment files (keep examples tracked)
 .env
 .env.local
 .env.*.local
+.envrc
 
 # Node / Next
 node_modules/
 admin/node_modules/
 admin/.next/
 admin/out/
+admin/.turbo/
+admin/.eslintcache
+admin/tsconfig.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
-# Go
+# Go build/test artifacts
+*.test
+*.out
+coverage.out
 server/bin/
-server/coverage.out
+
+# Local Go caches
+.gocache/
+.gocache_local/
+.gomodcache/
+.gomodcache_local/
 
 # Logs and temp
 *.log

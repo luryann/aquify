@@ -9,11 +9,15 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/dareaquatics/aquify/meetfiles"
 	sdifexport "github.com/dareaquatics/aquify/meetfiles/sdif"
@@ -102,6 +106,7 @@ type GenerateExportInput struct {
 
 type Service struct {
 	mu             sync.RWMutex
+	repo           *Repository
 	exports        map[string]*FileExport
 	store          storage.ObjectStorage
 	queue          workers.Queue
@@ -122,6 +127,37 @@ func NewServiceWithStorage(store storage.ObjectStorage) *Service {
 		downloadURLTTL: 15 * time.Minute,
 		nowFunc:        func() time.Time { return time.Now().UTC() },
 	}
+}
+
+// NewServiceWithPool creates a DB-backed exports Service and loads existing
+// data from Postgres into memory on startup.
+func NewServiceWithPool(pool *pgxpool.Pool, store storage.ObjectStorage) *Service {
+	s := NewServiceWithStorage(store)
+	s.repo = newRepository(pool)
+	if err := s.loadFromDB(context.Background()); err != nil {
+		slog.Error("exports: failed to load from DB", "err", err)
+	}
+	return s
+}
+
+func (s *Service) loadFromDB(ctx context.Context) error {
+	fileExports, err := s.repo.LoadAll(ctx)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, ex := range fileExports {
+		s.exports[ex.ID] = ex
+	}
+	return nil
+}
+
+func (s *Service) newID(prefix string) string {
+	if s.repo != nil {
+		return uuid.New().String()
+	}
+	return prefix + randomToken(12)
 }
 
 func (s *Service) SetQueue(queue workers.Queue) {
@@ -147,7 +183,7 @@ func (s *Service) GenerateExport(principal *appmiddleware.Principal, orgID, meet
 		return nil, nil, err
 	}
 
-	id := "export_" + randomToken(12)
+	id := s.newID("export_")
 	now := s.nowFunc()
 	filename := suggestedFilename(input)
 	storageKey := fmt.Sprintf("exports/%s/%s/%s", orgID, id, filename)
@@ -169,6 +205,11 @@ func (s *Service) GenerateExport(principal *appmiddleware.Principal, orgID, meet
 		pendingInput: &cpInput,
 	}
 
+	if s.repo != nil {
+		if err := s.repo.UpsertFileExport(context.Background(), job); err != nil {
+			slog.Error("exports: persist file export", "err", err)
+		}
+	}
 	s.mu.Lock()
 	s.exports[id] = job
 	queue := s.queue
@@ -243,6 +284,11 @@ func (s *Service) ProcessExport(ctx context.Context, exportID string) error {
 	job.LastError = ""
 	job.UpdatedAt = s.nowFunc()
 	job.pendingInput = nil
+	if s.repo != nil {
+		if err := s.repo.UpsertFileExport(ctx, job); err != nil {
+			slog.Error("exports: persist ready file export", "err", err)
+		}
+	}
 	return nil
 }
 
@@ -256,6 +302,11 @@ func (s *Service) FailExport(exportID string, cause error) {
 	job.Status = "failed"
 	job.LastError = strings.TrimSpace(cause.Error())
 	job.UpdatedAt = s.nowFunc()
+	if s.repo != nil {
+		if err := s.repo.UpsertFileExport(context.Background(), job); err != nil {
+			slog.Error("exports: persist failed file export", "err", err)
+		}
+	}
 }
 
 func (s *Service) ListExports(principal *appmiddleware.Principal, orgID, meetID string) ([]FileExport, error) {

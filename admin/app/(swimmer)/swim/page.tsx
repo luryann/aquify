@@ -1,8 +1,21 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
+import { useApiClient } from '@/lib/api'
+import {
+  fetchSwimmers,
+  fetchMeets,
+  fetchMeetCommitments,
+  fetchSwimmerBestTimes,
+  fetchAnnouncements,
+  type SwimmerRecord,
+  type MeetRecord,
+  type BestTimeRecord,
+  type AnnouncementRecord,
+} from '@/lib/adminData'
 
 // ── Design tokens ──────────────────────────────────────────────────────────
 const C = {
@@ -20,68 +33,33 @@ const C = {
   warnBorder: 'rgba(245,158,11,0.25)',
 }
 
-// ── Stub data ──────────────────────────────────────────────────────────────
-const SWIMMER = {
-  name: 'Emma Chen',
-  age: 14,
-  group: 'Senior A',
-  ussNumber: 'CA2019-0134',
-  registrationStatus: 'active',
-  initials: 'EC',
+// ── Helpers ────────────────────────────────────────────────────────────────
+function fmtTime(ms: number): string {
+  const s = ms / 1000
+  const m = Math.floor(s / 60)
+  const rem = s % 60
+  return m > 0 ? `${m}:${rem.toFixed(2).padStart(5, '0')}` : rem.toFixed(2)
 }
 
-const UPCOMING_MEETS = [
-  {
-    id: 'meet-001',
-    name: 'Tri-City Classic',
-    date: 'Mar 22–23, 2026',
-    course: 'SCY',
-    location: 'Riverside Aquatic Center',
-    commitmentStatus: 'committed' as const,
-    events: ['200 Free', '100 Back', '400 IM'],
-    path: '/swim/meets/meet-001',
-  },
-  {
-    id: 'meet-002',
-    name: 'Regional Spring Invite',
-    date: 'Apr 5, 2026',
-    course: 'LCM',
-    location: 'University Pool',
-    commitmentStatus: 'open' as const,
-    events: [],
-    path: '/swim/meets/meet-002',
-  },
-]
+function eventName(distance: number, stroke: string): string {
+  const cap = stroke.charAt(0).toUpperCase() + stroke.slice(1)
+  return `${distance} ${cap}`
+}
 
-const RECENT_ANNOUNCEMENTS = [
-  {
-    id: 'ann-001',
-    title: 'Tri-City Classic — Updated Warm-up Schedule',
-    publishedAt: 'Mar 14, 2026',
-    category: 'meet',
-    unread: true,
-  },
-  {
-    id: 'ann-002',
-    title: 'Pool Closure — Spring Break (Mar 28 – Apr 5)',
-    publishedAt: 'Mar 12, 2026',
-    category: 'facility',
-    unread: true,
-  },
-  {
-    id: 'ann-003',
-    title: 'Altitude Camp Opportunity — Senior Group',
-    publishedAt: 'Mar 10, 2026',
-    category: 'training',
-    unread: false,
-  },
-]
+function fmtDate(dateStr?: string): string {
+  if (!dateStr) return '—'
+  const d = new Date(dateStr)
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
 
-const BEST_TIMES_PREVIEW = [
-  { event: '200 Free', course: 'SCY', time: '1:52.34', standard: 'A', improvementDays: 45 },
-  { event: '100 Back', course: 'SCY', time: '59.87',   standard: 'AA', improvementDays: 22 },
-  { event: '400 IM',   course: 'SCY', time: '4:42.11', standard: 'B',  improvementDays: 78 },
-]
+// Convert raw commitment status to display status
+function commitStatus(raw: string | undefined): 'committed' | 'pending' | 'open' {
+  if (!raw) return 'open'
+  if (raw === 'committed_yes') return 'committed'
+  if (raw === 'invited') return 'pending'
+  if (raw === 'committed_no' || raw === 'coach_reviewed' || raw === 'locked') return 'open'
+  return 'open'
+}
 
 const COMMIT_STATUS = {
   committed: { label: 'Committed',       color: '#00D4AA', bg: 'rgba(0,212,170,0.10)', border: 'rgba(0,212,170,0.25)' },
@@ -95,6 +73,57 @@ const STANDARD_COLOR: Record<string, string> = {
   A:   '#8b5cf6',
   BB:  '#F59E0B',
   B:   '#9A9693',
+}
+
+// ── Types ──────────────────────────────────────────────────────────────────
+type MeetDisplay = {
+  id: string
+  name: string
+  date: string
+  course: string
+  location: string
+  commitmentStatus: 'committed' | 'pending' | 'open'
+  path: string
+}
+
+type BestTimeDisplay = {
+  event: string
+  course: string
+  time: string
+}
+
+// ── Skeleton components ────────────────────────────────────────────────────
+function SkeletonLine({ width = '100%', height = '14px' }: { width?: string; height?: string }) {
+  return (
+    <div
+      style={{
+        width,
+        height,
+        background: 'rgba(0,212,170,0.08)',
+        borderRadius: '6px',
+        animation: 'pulse 1.5s ease-in-out infinite',
+      }}
+    />
+  )
+}
+
+function SkeletonCard() {
+  return (
+    <div
+      style={{
+        background: C.card,
+        border: `1px solid ${C.border}`,
+        borderRadius: '12px',
+        padding: '18px 20px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '10px',
+      }}
+    >
+      <SkeletonLine width="60%" height="16px" />
+      <SkeletonLine width="40%" height="12px" />
+    </div>
+  )
 }
 
 // ── Components ─────────────────────────────────────────────────────────────
@@ -122,7 +151,7 @@ function StatCard({ label, value, sub, accent }: { label: string; value: string;
   )
 }
 
-function MeetCard({ meet }: { meet: typeof UPCOMING_MEETS[number] }) {
+function MeetCard({ meet }: { meet: MeetDisplay }) {
   const status = COMMIT_STATUS[meet.commitmentStatus]
   return (
     <div
@@ -158,16 +187,20 @@ function MeetCard({ meet }: { meet: typeof UPCOMING_MEETS[number] }) {
               <Icon name="calendar" size={11} />
               {meet.date}
             </span>
-            <span style={{ fontSize: '12px', color: C.subtle, display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <Icon name="map-pin" size={11} />
-              {meet.location}
-            </span>
+            {meet.location && (
+              <span style={{ fontSize: '12px', color: C.subtle, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <Icon name="map-pin" size={11} />
+                {meet.location}
+              </span>
+            )}
           </div>
         </div>
         <div style={{ display: 'flex', gap: '7px', alignItems: 'center' }}>
-          <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', fontWeight: 600, color: '#0D2235', background: C.accent, padding: '2px 7px', borderRadius: '4px', letterSpacing: '0.04em' }}>
-            {meet.course}
-          </span>
+          {meet.course && (
+            <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', fontWeight: 600, color: '#0D2235', background: C.accent, padding: '2px 7px', borderRadius: '4px', letterSpacing: '0.04em' }}>
+              {meet.course}
+            </span>
+          )}
           <span
             style={{
               fontSize: '11px',
@@ -184,33 +217,6 @@ function MeetCard({ meet }: { meet: typeof UPCOMING_MEETS[number] }) {
           </span>
         </div>
       </div>
-
-      {/* Events */}
-      {meet.events.length > 0 && (
-        <div>
-          <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px' }}>
-            My Events
-          </p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-            {meet.events.map((ev) => (
-              <span
-                key={ev}
-                style={{
-                  fontSize: '12px',
-                  color: C.accent,
-                  background: C.accentDim,
-                  border: `1px solid ${C.accentBorder}`,
-                  padding: '3px 10px',
-                  borderRadius: '6px',
-                  fontFamily: 'var(--font-mono)',
-                }}
-              >
-                {ev}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
 
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
         <Link
@@ -236,14 +242,116 @@ function MeetCard({ meet }: { meet: typeof UPCOMING_MEETS[number] }) {
 // ── Page ────────────────────────────────────────────────────────────────────
 export default function SwimmerDashboardPage() {
   const { session } = useSession()
-  const firstName = session?.user.name?.split(' ')[0] ?? SWIMMER.name.split(' ')[0]
+  const api = useApiClient(session?.token)
+  const orgId = session?.user.orgId ?? ''
+  const householdId = session?.user.householdId ?? ''
+
+  const [swimmer, setSwimmer] = useState<SwimmerRecord | null>(null)
+  const [meets, setMeets] = useState<MeetDisplay[]>([])
+  const [bestTimes, setBestTimes] = useState<BestTimeDisplay[]>([])
+  const [announcements, setAnnouncements] = useState<AnnouncementRecord[]>([])
+  const [loading, setLoading] = useState(true)
 
   const now = new Date()
   const hour = now.getHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
 
+  useEffect(() => {
+    if (!orgId) { setLoading(false); return }
+
+    Promise.all([
+      fetchSwimmers(api, orgId),
+      fetchMeets(api, orgId),
+      fetchAnnouncements(api, orgId, 'published'),
+    ]).then(async ([swimmers, allMeets, anns]) => {
+      // Resolve swimmer
+      const mySwimmer = householdId
+        ? (swimmers.find(s => s.household_id === householdId) ?? swimmers[0] ?? null)
+        : (swimmers[0] ?? null)
+      setSwimmer(mySwimmer)
+      setAnnouncements(anns.slice(0, 3))
+
+      // Filter meets to those with commitment_open or later
+      const ACTIVE_STATUSES = ['commitment_open', 'commitment_closed', 'entry_finalized', 'completed']
+      const activeMeets = allMeets.filter(m => ACTIVE_STATUSES.includes(m.status))
+
+      if (mySwimmer) {
+        // Fetch best times
+        const rawBT = await fetchSwimmerBestTimes(api, orgId, mySwimmer.id)
+        const btDisplay: BestTimeDisplay[] = rawBT
+          .filter(bt => bt.best_time_ms != null)
+          .slice(0, 3)
+          .map(bt => ({
+            event: eventName(bt.event_distance, bt.stroke),
+            course: bt.course.toUpperCase(),
+            time: fmtTime(bt.best_time_ms!),
+          }))
+        setBestTimes(btDisplay)
+
+        // Fetch commitments for each active meet
+        const meetDisplays: MeetDisplay[] = await Promise.all(
+          activeMeets.slice(0, 5).map(async (m) => {
+            let cs: 'committed' | 'pending' | 'open' = 'open'
+            try {
+              const commitments = await fetchMeetCommitments(api, orgId, m.id)
+              const myCommitment = commitments.find(c => c.swimmer_id === mySwimmer.id)
+              cs = commitStatus(myCommitment?.status)
+            } catch {
+              // no commitment record yet → open
+            }
+            return {
+              id: m.id,
+              name: m.name,
+              date: fmtDate(m.start_date),
+              course: m.course?.toUpperCase() ?? '',
+              location: m.location ?? '',
+              commitmentStatus: cs,
+              path: `/swim/meets/${m.id}`,
+            }
+          })
+        )
+        setMeets(meetDisplays)
+      } else {
+        // No swimmer resolved — still show meets without commitment status
+        const meetDisplays: MeetDisplay[] = activeMeets.slice(0, 5).map(m => ({
+          id: m.id,
+          name: m.name,
+          date: fmtDate(m.start_date),
+          course: m.course?.toUpperCase() ?? '',
+          location: m.location ?? '',
+          commitmentStatus: 'open' as const,
+          path: `/swim/meets/${m.id}`,
+        }))
+        setMeets(meetDisplays)
+      }
+    }).catch(console.error).finally(() => setLoading(false))
+  }, [api, orgId, householdId])
+
+  const firstName = swimmer
+    ? (swimmer.preferred_name || swimmer.first_name)
+    : (session?.user.name?.split(' ')[0] ?? 'Swimmer')
+
+  const initials = swimmer
+    ? `${swimmer.first_name[0]}${swimmer.last_name[0]}`.toUpperCase()
+    : (session?.user.avatarInitials ?? 'SW')
+
+  // Stats
+  const nextMeet = meets[0]
+  const topBT = bestTimes[0]
+
   return (
     <div>
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.45; }
+        }
+        @keyframes slideUp {
+          from { opacity: 0; transform: translateY(12px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+
       {/* Hero greeting */}
       <div
         style={{
@@ -270,7 +378,7 @@ export default function SwimmerDashboardPage() {
               flexShrink: 0,
             }}
           >
-            {SWIMMER.initials}
+            {loading ? '…' : initials}
           </div>
           <div>
             <p
@@ -293,12 +401,16 @@ export default function SwimmerDashboardPage() {
                 lineHeight: 1.1,
               }}
             >
-              {firstName}.
+              {loading ? '…' : `${firstName}.`}
             </h1>
           </div>
         </div>
         <p style={{ fontSize: '14px', color: C.subtle, marginTop: '8px', marginLeft: '74px' }}>
-          {SWIMMER.group} · USS# {SWIMMER.ussNumber}
+          {loading
+            ? ''
+            : swimmer
+              ? `${swimmer.registration_status === 'active' ? 'Active' : swimmer.registration_status} member`
+              : 'Swimmer portal'}
         </p>
       </div>
 
@@ -312,10 +424,38 @@ export default function SwimmerDashboardPage() {
           animation: 'slideUp 0.45s cubic-bezier(0.16,1,0.3,1) 0.06s both',
         }}
       >
-        <StatCard label="Season Events" value="3" sub="Registered events" accent />
-        <StatCard label="Next Meet" value="Mar 22" sub="Tri-City Classic" />
-        <StatCard label="Best Time (100 Back)" value="59.87" sub="SCY — AA standard" />
-        <StatCard label="Registration" value="Active" sub="2025–2026 season" />
+        {loading ? (
+          <>
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+          </>
+        ) : (
+          <>
+            <StatCard
+              label="Upcoming Meets"
+              value={String(meets.length)}
+              sub="Scheduled this season"
+              accent
+            />
+            <StatCard
+              label="Next Meet"
+              value={nextMeet ? fmtDate(undefined) && meets[0]?.date : '—'}
+              sub={nextMeet?.name ?? 'No meets scheduled'}
+            />
+            <StatCard
+              label={topBT ? `Best (${topBT.event})` : 'Best Time'}
+              value={topBT?.time ?? '—'}
+              sub={topBT ? `${topBT.course}` : 'No times recorded'}
+            />
+            <StatCard
+              label="Registration"
+              value={swimmer ? (swimmer.registration_status === 'active' ? 'Active' : swimmer.registration_status) : '—'}
+              sub="Current season"
+            />
+          </>
+        )}
       </div>
 
       <div
@@ -361,14 +501,33 @@ export default function SwimmerDashboardPage() {
               </Link>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {UPCOMING_MEETS.map((meet, i) => (
+              {loading ? (
+                <>
+                  <SkeletonCard />
+                  <SkeletonCard />
+                </>
+              ) : meets.length === 0 ? (
                 <div
-                  key={meet.id}
-                  style={{ animationDelay: `${0.1 + i * 0.07}s`, animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both' }}
+                  style={{
+                    background: C.card,
+                    border: `1px solid ${C.border}`,
+                    borderRadius: '12px',
+                    padding: '32px 20px',
+                    textAlign: 'center',
+                  }}
                 >
-                  <MeetCard meet={meet} />
+                  <p style={{ fontSize: '14px', color: C.subtle }}>No upcoming meets scheduled.</p>
                 </div>
-              ))}
+              ) : (
+                meets.map((meet, i) => (
+                  <div
+                    key={meet.id}
+                    style={{ animationDelay: `${0.1 + i * 0.07}s`, animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both' }}
+                  >
+                    <MeetCard meet={meet} />
+                  </div>
+                ))
+              )}
             </div>
           </section>
 
@@ -417,12 +576,12 @@ export default function SwimmerDashboardPage() {
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: '1fr 80px 100px 80px',
+                  gridTemplateColumns: '1fr 80px 100px',
                   padding: '10px 18px',
                   borderBottom: `1px solid ${C.border}`,
                 }}
               >
-                {['Event', 'Course', 'Best Time', 'Std'].map((h) => (
+                {['Event', 'Course', 'Best Time'].map((h) => (
                   <span
                     key={h}
                     style={{
@@ -437,39 +596,37 @@ export default function SwimmerDashboardPage() {
                   </span>
                 ))}
               </div>
-              {BEST_TIMES_PREVIEW.map((bt, i) => (
-                <div
-                  key={bt.event}
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '1fr 80px 100px 80px',
-                    padding: '12px 18px',
-                    borderBottom: i < BEST_TIMES_PREVIEW.length - 1 ? `1px solid ${C.border}` : 'none',
-                    alignItems: 'center',
-                    transition: 'background 100ms ease',
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(0,212,170,0.04)')}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                >
-                  <span style={{ fontSize: '13.5px', fontWeight: 600, color: C.text }}>{bt.event}</span>
-                  <span style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', color: C.subtle }}>{bt.course}</span>
-                  <span style={{ fontSize: '14px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: C.accent }}>{bt.time}</span>
-                  <span
-                    style={{
-                      fontSize: '11px',
-                      fontFamily: 'var(--font-mono)',
-                      fontWeight: 700,
-                      color: STANDARD_COLOR[bt.standard] ?? C.subtle,
-                      background: `${STANDARD_COLOR[bt.standard] ?? C.subtle}15`,
-                      padding: '2px 8px',
-                      borderRadius: '5px',
-                      display: 'inline-block',
-                    }}
-                  >
-                    {bt.standard}
-                  </span>
+              {loading ? (
+                <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <SkeletonLine />
+                  <SkeletonLine />
+                  <SkeletonLine />
                 </div>
-              ))}
+              ) : bestTimes.length === 0 ? (
+                <div style={{ padding: '24px 18px', textAlign: 'center' }}>
+                  <p style={{ fontSize: '13px', color: C.muted }}>No best times recorded yet.</p>
+                </div>
+              ) : (
+                bestTimes.map((bt, i) => (
+                  <div
+                    key={`${bt.event}-${bt.course}`}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 80px 100px',
+                      padding: '12px 18px',
+                      borderBottom: i < bestTimes.length - 1 ? `1px solid ${C.border}` : 'none',
+                      alignItems: 'center',
+                      transition: 'background 100ms ease',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(0,212,170,0.04)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    <span style={{ fontSize: '13.5px', fontWeight: 600, color: C.text }}>{bt.event}</span>
+                    <span style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', color: C.subtle }}>{bt.course}</span>
+                    <span style={{ fontSize: '14px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: C.accent }}>{bt.time}</span>
+                  </div>
+                ))
+              )}
             </div>
           </section>
         </div>
@@ -505,41 +662,53 @@ export default function SwimmerDashboardPage() {
             </p>
           </div>
 
-          {RECENT_ANNOUNCEMENTS.map((ann, i) => (
-            <div
-              key={ann.id}
-              style={{
-                padding: '14px 18px',
-                borderBottom: i < RECENT_ANNOUNCEMENTS.length - 1 ? `1px solid ${C.border}` : 'none',
-                display: 'flex',
-                gap: '10px',
-                alignItems: 'flex-start',
-                transition: 'background 100ms ease',
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(0,212,170,0.03)')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-            >
-              {/* Unread dot */}
-              <div
-                style={{
-                  width: '7px',
-                  height: '7px',
-                  borderRadius: '50%',
-                  background: ann.unread ? C.accent : 'transparent',
-                  flexShrink: 0,
-                  marginTop: '5px',
-                }}
-              />
-              <div>
-                <p style={{ fontSize: '13px', fontWeight: 500, color: ann.unread ? C.text : C.subtle, lineHeight: 1.4, marginBottom: '3px' }}>
-                  {ann.title}
-                </p>
-                <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: C.muted }}>
-                  {ann.publishedAt}
-                </p>
-              </div>
+          {loading ? (
+            <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <SkeletonLine />
+              <SkeletonLine width="80%" />
+              <SkeletonLine width="90%" />
             </div>
-          ))}
+          ) : announcements.length === 0 ? (
+            <div style={{ padding: '24px 18px', textAlign: 'center' }}>
+              <p style={{ fontSize: '13px', color: C.muted }}>No announcements.</p>
+            </div>
+          ) : (
+            announcements.map((ann, i) => (
+              <div
+                key={ann.id}
+                style={{
+                  padding: '14px 18px',
+                  borderBottom: i < announcements.length - 1 ? `1px solid ${C.border}` : 'none',
+                  display: 'flex',
+                  gap: '10px',
+                  alignItems: 'flex-start',
+                  transition: 'background 100ms ease',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(0,212,170,0.03)')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+              >
+                {/* Dot */}
+                <div
+                  style={{
+                    width: '7px',
+                    height: '7px',
+                    borderRadius: '50%',
+                    background: C.accent,
+                    flexShrink: 0,
+                    marginTop: '5px',
+                  }}
+                />
+                <div>
+                  <p style={{ fontSize: '13px', fontWeight: 500, color: C.text, lineHeight: 1.4, marginBottom: '3px' }}>
+                    {ann.title}
+                  </p>
+                  <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: C.muted }}>
+                    {ann.published_at ? new Date(ann.published_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}
+                  </p>
+                </div>
+              </div>
+            ))
+          )}
 
           <div
             style={{

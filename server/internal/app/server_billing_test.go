@@ -115,6 +115,14 @@ type householdInvoicesEnvelope struct {
 	} `json:"invoices"`
 }
 
+type orgPaymentsEnvelope struct {
+	Count    int `json:"count"`
+	Payments []struct {
+		ID        string `json:"id"`
+		InvoiceID string `json:"invoice_id"`
+	} `json:"payments"`
+}
+
 // ─── Router helper ────────────────────────────────────────────────────────────
 
 func newBillingRouter(t *testing.T, svc *billing.Service) http.Handler {
@@ -237,6 +245,62 @@ func recordPaymentReq(t *testing.T, router http.Handler, token, orgID, invoiceID
 		t.Fatalf("recordPayment decode: %v", err)
 	}
 	return env
+}
+
+func TestOrgWideBillingListEndpointsReturnInvoicesAndPayments(t *testing.T) {
+	t.Parallel()
+	svc := billing.NewService()
+	router := newBillingRouter(t, svc)
+	token := issueSessionToken(t, router, "org-demo", []string{"billing"}, false)
+
+	first := createInvoiceForHousehold(t, router, token, "org-demo", "hh-001", "INV-ORG-1")
+	addItem(t, router, token, "org-demo", first.Invoice.ID, 5000)
+	issueInvoiceReq(t, router, token, "org-demo", first.Invoice.ID)
+	recordPaymentReq(t, router, token, "org-demo", first.Invoice.ID, 5000)
+
+	second := createInvoiceForHousehold(t, router, token, "org-demo", "hh-002", "INV-ORG-2")
+	addItem(t, router, token, "org-demo", second.Invoice.ID, 7000)
+	issueInvoiceReq(t, router, token, "org-demo", second.Invoice.ID)
+	recordPaymentReq(t, router, token, "org-demo", second.Invoice.ID, 7000)
+
+	invoicesReq := httptest.NewRequest(http.MethodGet, "/api/v1/invoices", nil)
+	invoicesReq.Header.Set("X-Org-Id", "org-demo")
+	invoicesReq.Header.Set("Authorization", "Bearer "+token)
+	invoicesRes := httptest.NewRecorder()
+	router.ServeHTTP(invoicesRes, invoicesReq)
+	if invoicesRes.Code != http.StatusOK {
+		t.Fatalf("expected 200 for invoice list, got %d: %s", invoicesRes.Code, invoicesRes.Body.String())
+	}
+
+	var invoicesEnv struct {
+		Count    int `json:"count"`
+		Invoices []struct {
+			ID string `json:"id"`
+		} `json:"invoices"`
+	}
+	if err := json.NewDecoder(invoicesRes.Body).Decode(&invoicesEnv); err != nil {
+		t.Fatalf("decode invoices list: %v", err)
+	}
+	if invoicesEnv.Count != 2 {
+		t.Fatalf("expected 2 invoices, got %d", invoicesEnv.Count)
+	}
+
+	paymentsReq := httptest.NewRequest(http.MethodGet, "/api/v1/payments", nil)
+	paymentsReq.Header.Set("X-Org-Id", "org-demo")
+	paymentsReq.Header.Set("Authorization", "Bearer "+token)
+	paymentsRes := httptest.NewRecorder()
+	router.ServeHTTP(paymentsRes, paymentsReq)
+	if paymentsRes.Code != http.StatusOK {
+		t.Fatalf("expected 200 for payments list, got %d: %s", paymentsRes.Code, paymentsRes.Body.String())
+	}
+
+	var paymentsEnv orgPaymentsEnvelope
+	if err := json.NewDecoder(paymentsRes.Body).Decode(&paymentsEnv); err != nil {
+		t.Fatalf("decode payments list: %v", err)
+	}
+	if paymentsEnv.Count != 2 {
+		t.Fatalf("expected 2 payments, got %d", paymentsEnv.Count)
+	}
 }
 
 // ─── Tests: Invoice creation ──────────────────────────────────────────────────

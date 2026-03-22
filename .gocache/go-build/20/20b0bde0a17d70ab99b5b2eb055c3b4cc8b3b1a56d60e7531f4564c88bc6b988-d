@@ -1,5 +1,0 @@
-./conflicts_test.go
-./detector_test.go
-./hy3_test.go
-./matcher_test.go
-./zip_test.go

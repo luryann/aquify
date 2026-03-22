@@ -40,6 +40,14 @@ async function parseResponseError(res: Response): Promise<ApiError> {
   return new ApiError(res.status, code, message)
 }
 
+function getCSRFToken(): string | null {
+  if (typeof document === 'undefined') return null
+  const entry = document.cookie.split('; ').find((c) => c.startsWith('aquify_csrf_token='))
+  if (!entry) return null
+  const [, value = ''] = entry.split('=')
+  return decodeURIComponent(value) || null
+}
+
 // Core fetch function
 export async function apiFetch<T = unknown>(
   path: string,
@@ -57,10 +65,18 @@ export async function apiFetch<T = unknown>(
     headers['Authorization'] = `Bearer ${token}`
   }
 
+  // When using cookie-based auth (no bearer token), include CSRF token for mutations
+  const isMutation = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)
+  if (isMutation && !token) {
+    const csrf = getCSRFToken()
+    if (csrf) headers['X-CSRF-Token'] = csrf
+  }
+
   const res = await fetch(path, {
     method,
     headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
+    credentials: 'include',
     signal,
   })
 

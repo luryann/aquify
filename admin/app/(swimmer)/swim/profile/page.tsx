@@ -1,7 +1,16 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Icon } from '@/components/ui/icons'
+import { useSession } from '@/lib/session'
+import { useApiClient } from '@/lib/api'
+import {
+  fetchSwimmers,
+  fetchSwimmerGroups,
+  fetchGroups,
+  type SwimmerRecord,
+  type GroupRecord,
+} from '@/lib/adminData'
 
 // ── Design tokens ──────────────────────────────────────────────────────────
 const C = {
@@ -17,28 +26,25 @@ const C = {
   inputBorder:  'rgba(0,212,170,0.18)',
 }
 
-// ── Stub data ──────────────────────────────────────────────────────────────
-const SWIMMER_PROFILE = {
-  // Read-only (managed by club)
-  legalName:         'Emma Rachel Chen',
-  preferredName:     'Emma',
-  dob:               'Aug 14, 2011',
-  age:               14,
-  gender:            'Female',
-  ussNumber:         'CA2019-0134',
-  registrationYear:  '2025–2026',
-  registrationStatus:'Active',
-  group:             'Senior A',
-  coachName:         'Coach Rivera',
-  clubName:          'Aquify Swim Club',
+// ── Helpers ────────────────────────────────────────────────────────────────
+function calcAge(dob: string): number {
+  const d = new Date(dob)
+  const now = new Date()
+  let age = now.getFullYear() - d.getFullYear()
+  const m = now.getMonth() - d.getMonth()
+  if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age--
+  return age
+}
 
-  // Parent-editable (via parent portal)
-  jerseySize:        'M',
-  emergencyNotes:    'Mild penicillin allergy — carry EpiPen. Contact mom first.',
+function fmtDob(dob: string): string {
+  return new Date(dob).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
 
-  // Swimmer-editable (limited)
-  bio:               '',
-  preferredEvents:   ['100 Back', '200 Free', '400 IM'],
+// ── Skeleton ───────────────────────────────────────────────────────────────
+function SkeletonLine({ width = '100%', height = '14px' }: { width?: string; height?: string }) {
+  return (
+    <div style={{ width, height, background: 'rgba(0,212,170,0.08)', borderRadius: '6px', animation: 'pulse 1.5s ease-in-out infinite' }} />
+  )
 }
 
 // ── Components ─────────────────────────────────────────────────────────────
@@ -97,16 +103,63 @@ function FieldGroup({ label, children }: { label: string; children: React.ReactN
 
 // ── Page ────────────────────────────────────────────────────────────────────
 export default function SwimmerProfilePage() {
-  const [bio, setBio] = useState(SWIMMER_PROFILE.bio)
+  const { session } = useSession()
+  const api = useApiClient(session?.token)
+  const orgId = session?.user.orgId ?? ''
+  const householdId = session?.user.householdId ?? ''
+
+  const [swimmer, setSwimmer] = useState<SwimmerRecord | null>(null)
+  const [group, setGroup] = useState<GroupRecord | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [bio, setBio] = useState('')
   const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    if (!orgId) { setLoading(false); return }
+
+    Promise.all([
+      fetchSwimmers(api, orgId),
+      fetchSwimmerGroups(api, orgId),
+      fetchGroups(api, orgId),
+    ]).then(([swimmers, swimmerGroupLinks, groups]) => {
+      // Resolve swimmer
+      const mySwimmer = householdId
+        ? (swimmers.find(s => s.household_id === householdId) ?? swimmers[0] ?? null)
+        : (swimmers[0] ?? null)
+      setSwimmer(mySwimmer)
+
+      if (mySwimmer) {
+        // Find primary group link for this swimmer
+        const myLinks = swimmerGroupLinks.filter(l => l.swimmer_id === mySwimmer.id)
+        const primaryLink = myLinks.find(l => l.is_primary) ?? myLinks[0] ?? null
+        if (primaryLink) {
+          const matchedGroup = groups.find(g => g.code === primaryLink.group_code) ?? null
+          setGroup(matchedGroup)
+        }
+      }
+    }).catch(console.error).finally(() => setLoading(false))
+  }, [api, orgId, householdId])
 
   const handleSave = () => {
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
   }
 
+  const initials = swimmer
+    ? `${swimmer.first_name[0]}${swimmer.last_name[0]}`.toUpperCase()
+    : (session?.user.avatarInitials ?? 'SW')
+
+  const displayName = swimmer
+    ? `${swimmer.preferred_name || swimmer.first_name} ${swimmer.last_name}`
+    : (session?.user.name ?? 'Swimmer')
+
   return (
     <div>
+      <style>{`
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.45} }
+        @keyframes slideUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+      `}</style>
+
       {/* Header */}
       <div
         style={{
@@ -135,54 +188,52 @@ export default function SwimmerProfilePage() {
             flexShrink: 0,
           }}
         >
-          EC
+          {loading ? '…' : initials}
         </div>
 
         <div style={{ flex: 1 }}>
-          <h1
-            style={{
-              fontFamily: 'var(--font-display)',
-              fontSize: 'clamp(24px, 4vw, 32px)',
-              color: C.text,
-              letterSpacing: '-0.02em',
-              lineHeight: 1.1,
-              marginBottom: '4px',
-            }}
-          >
-            {SWIMMER_PROFILE.preferredName} Chen
-          </h1>
-          <p style={{ fontSize: '13px', color: C.subtle, marginBottom: '10px' }}>
-            {SWIMMER_PROFILE.group} · USS# {SWIMMER_PROFILE.ussNumber}
-          </p>
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            <span
-              style={{
-                fontSize: '11px',
-                fontFamily: 'var(--font-mono)',
-                color: '#00D4AA',
-                background: 'rgba(0,212,170,0.12)',
-                border: '1px solid rgba(0,212,170,0.25)',
-                padding: '3px 10px',
-                borderRadius: '999px',
-                fontWeight: 600,
-              }}
-            >
-              {SWIMMER_PROFILE.registrationStatus}
-            </span>
-            <span
-              style={{
-                fontSize: '11px',
-                fontFamily: 'var(--font-mono)',
-                color: C.subtle,
-                background: 'rgba(127,168,201,0.10)',
-                border: '1px solid rgba(127,168,201,0.15)',
-                padding: '3px 10px',
-                borderRadius: '999px',
-              }}
-            >
-              {SWIMMER_PROFILE.registrationYear}
-            </span>
-          </div>
+          {loading ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '4px' }}>
+              <SkeletonLine width="200px" height="28px" />
+              <SkeletonLine width="140px" height="14px" />
+            </div>
+          ) : (
+            <>
+              <h1
+                style={{
+                  fontFamily: 'var(--font-display)',
+                  fontSize: 'clamp(24px, 4vw, 32px)',
+                  color: C.text,
+                  letterSpacing: '-0.02em',
+                  lineHeight: 1.1,
+                  marginBottom: '4px',
+                }}
+              >
+                {displayName}
+              </h1>
+              <p style={{ fontSize: '13px', color: C.subtle, marginBottom: '10px' }}>
+                {group ? group.name : 'No group assigned'}
+                {swimmer?.swimmer_external_id ? ` · USS# ${swimmer.swimmer_external_id}` : ''}
+              </p>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <span
+                  style={{
+                    fontSize: '11px',
+                    fontFamily: 'var(--font-mono)',
+                    color: '#00D4AA',
+                    background: 'rgba(0,212,170,0.12)',
+                    border: '1px solid rgba(0,212,170,0.25)',
+                    padding: '3px 10px',
+                    borderRadius: '999px',
+                    fontWeight: 600,
+                    textTransform: 'capitalize',
+                  }}
+                >
+                  {swimmer?.registration_status ?? 'Unknown'}
+                </span>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -218,40 +269,68 @@ export default function SwimmerProfilePage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {/* Club info */}
           <div style={{ animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) 0.08s both' }}>
-            <FieldGroup label="Club Information">
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 1fr',
-                  gap: '18px',
-                }}
-              >
-                <ReadOnlyField label="Club" value={SWIMMER_PROFILE.clubName} />
-                <ReadOnlyField label="Group" value={SWIMMER_PROFILE.group} />
-                <ReadOnlyField label="Coach" value={SWIMMER_PROFILE.coachName} />
-                <ReadOnlyField label="Registration" value={SWIMMER_PROFILE.registrationYear} />
+            {loading ? (
+              <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '14px', padding: '22px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <SkeletonLine width="120px" height="18px" />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px' }}>
+                  {[1,2,3,4].map(i => <SkeletonLine key={i} height="40px" />)}
+                </div>
               </div>
-            </FieldGroup>
+            ) : (
+              <FieldGroup label="Club Information">
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px' }}>
+                  <ReadOnlyField label="Group" value={group?.name ?? '—'} />
+                  <ReadOnlyField label="Group Code" value={group?.code ?? '—'} />
+                  <ReadOnlyField label="Registration" value={swimmer?.registration_status ?? '—'} />
+                  <ReadOnlyField label="External ID" value={swimmer?.swimmer_external_id ?? '—'} />
+                </div>
+              </FieldGroup>
+            )}
           </div>
 
           {/* Personal info */}
           <div style={{ animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) 0.12s both' }}>
-            <FieldGroup label="Personal Information">
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 1fr',
-                  gap: '18px',
-                }}
-              >
-                <ReadOnlyField label="Legal Name" value={SWIMMER_PROFILE.legalName} />
-                <ReadOnlyField label="Preferred Name" value={SWIMMER_PROFILE.preferredName} />
-                <ReadOnlyField label="Date of Birth" value={SWIMMER_PROFILE.dob} />
-                <ReadOnlyField label="Age" value={String(SWIMMER_PROFILE.age)} />
-                <ReadOnlyField label="Gender" value={SWIMMER_PROFILE.gender} />
-                <ReadOnlyField label="USS Number" value={SWIMMER_PROFILE.ussNumber} />
+            {loading ? (
+              <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '14px', padding: '22px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <SkeletonLine width="160px" height="18px" />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px' }}>
+                  {[1,2,3,4,5,6].map(i => <SkeletonLine key={i} height="40px" />)}
+                </div>
               </div>
-            </FieldGroup>
+            ) : swimmer ? (
+              <FieldGroup label="Personal Information">
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px' }}>
+                  <ReadOnlyField label="First Name" value={swimmer.first_name} />
+                  <ReadOnlyField label="Last Name" value={swimmer.last_name} />
+                  {swimmer.preferred_name && (
+                    <ReadOnlyField label="Preferred Name" value={swimmer.preferred_name} />
+                  )}
+                  <ReadOnlyField
+                    label="Date of Birth"
+                    value={swimmer.date_of_birth ? fmtDob(swimmer.date_of_birth) : '—'}
+                  />
+                  <ReadOnlyField
+                    label="Age"
+                    value={swimmer.date_of_birth ? String(calcAge(swimmer.date_of_birth)) : '—'}
+                  />
+                  <ReadOnlyField
+                    label="Gender"
+                    value={swimmer.gender
+                      ? swimmer.gender.charAt(0).toUpperCase() + swimmer.gender.slice(1)
+                      : '—'}
+                  />
+                </div>
+                {swimmer.medical_flags && (
+                  <div>
+                    <ReadOnlyField label="Medical Notes" value={swimmer.medical_flags} />
+                  </div>
+                )}
+              </FieldGroup>
+            ) : (
+              <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '14px', padding: '24px', textAlign: 'center' }}>
+                <p style={{ fontSize: '14px', color: C.muted }}>No swimmer profile found for your account.</p>
+              </div>
+            )}
           </div>
 
           {/* Bio — editable */}
@@ -265,14 +344,7 @@ export default function SwimmerProfilePage() {
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', paddingBottom: '14px', borderBottom: `1px solid ${C.border}` }}>
-                <h3
-                  style={{
-                    fontFamily: 'var(--font-display)',
-                    fontSize: '17px',
-                    color: C.text,
-                    letterSpacing: '-0.01em',
-                  }}
-                >
+                <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '17px', color: C.text, letterSpacing: '-0.01em' }}>
                   My Bio
                 </h3>
                 <span
@@ -358,7 +430,7 @@ export default function SwimmerProfilePage() {
 
         {/* Sidebar */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {/* Preferred events */}
+          {/* Group card */}
           <div
             style={{
               background: C.card,
@@ -378,41 +450,31 @@ export default function SwimmerProfilePage() {
                 borderBottom: `1px solid ${C.border}`,
               }}
             >
-              Preferred Events
+              My Group
             </h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {SWIMMER_PROFILE.preferredEvents.map((ev) => (
-                <div
-                  key={ev}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '10px',
-                    padding: '8px 12px',
-                    background: C.accentDim,
-                    border: `1px solid ${C.accentBorder}`,
-                    borderRadius: '8px',
-                  }}
-                >
-                  <span
-                    style={{
-                      width: '6px',
-                      height: '6px',
-                      borderRadius: '50%',
-                      background: C.accent,
-                      flexShrink: 0,
-                    }}
-                  />
-                  <span style={{ fontSize: '13px', fontWeight: 500, color: C.text }}>{ev}</span>
+            {loading ? (
+              <SkeletonLine />
+            ) : group ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', background: C.accentDim, border: `1px solid ${C.accentBorder}`, borderRadius: '8px' }}>
+                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: C.accent, flexShrink: 0 }} />
+                  <div>
+                    <p style={{ fontSize: '14px', fontWeight: 600, color: C.text }}>{group.name}</p>
+                    <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: C.muted }}>{group.code}</p>
+                  </div>
                 </div>
-              ))}
-            </div>
-            <p style={{ fontSize: '11.5px', color: C.muted, marginTop: '10px', lineHeight: 1.5 }}>
-              Preferred events are set by your coach.
-            </p>
+                {(group.min_age != null || group.max_age != null) && (
+                  <p style={{ fontSize: '11.5px', color: C.muted }}>
+                    Age range: {group.min_age ?? '—'} – {group.max_age ?? '—'}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p style={{ fontSize: '13px', color: C.muted }}>No group assigned yet.</p>
+            )}
           </div>
 
-          {/* Parent contact info notice */}
+          {/* Notes / Equipment sidebar */}
           <div
             style={{
               background: 'rgba(0,0,0,0.20)',
@@ -422,17 +484,16 @@ export default function SwimmerProfilePage() {
               animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) 0.14s both',
             }}
           >
-            <h3
-              style={{
-                fontFamily: 'var(--font-display)',
-                fontSize: '16px',
-                color: C.text,
-                marginBottom: '10px',
-              }}
-            >
-              Equipment
+            <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '16px', color: C.text, marginBottom: '10px' }}>
+              Notes
             </h3>
-            <ReadOnlyField label="Jersey Size" value={SWIMMER_PROFILE.jerseySize} />
+            {loading ? (
+              <SkeletonLine />
+            ) : swimmer?.notes ? (
+              <p style={{ fontSize: '13px', color: C.subtle, lineHeight: 1.6 }}>{swimmer.notes}</p>
+            ) : (
+              <p style={{ fontSize: '13px', color: C.muted, lineHeight: 1.5 }}>No notes on file.</p>
+            )}
             <p style={{ fontSize: '11.5px', color: C.muted, marginTop: '10px', lineHeight: 1.5 }}>
               To update equipment sizes or emergency notes, ask a parent to update via the parent portal.
             </p>

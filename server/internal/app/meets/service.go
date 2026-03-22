@@ -1,16 +1,20 @@
 package meets
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // ─── Sentinel errors ─────────────────────────────────────────────────────────
@@ -248,6 +252,7 @@ type householdRef struct {
 // Service is the in-memory meets/commitments/entries service.
 type Service struct {
 	mu              sync.RWMutex
+	repo            *Repository // nil = in-memory only
 	meets           map[string]Meet
 	sessions        map[string]MeetSession
 	events          map[string]MeetEvent
@@ -276,6 +281,54 @@ func NewService() *Service {
 		parentHousehold: make(map[string]map[string]struct{}),
 		auditEvents:     []MeetAuditEvent{},
 	}
+}
+
+// NewServiceWithPool creates a DB-backed meets service.
+func NewServiceWithPool(pool *pgxpool.Pool) *Service {
+	s := NewService()
+	if pool == nil {
+		return s
+	}
+	s.repo = newRepository(pool)
+	if err := s.loadFromDB(context.Background()); err != nil {
+		slog.Error("meets: failed to load initial state from DB", "error", err)
+	}
+	return s
+}
+
+func (s *Service) loadFromDB(ctx context.Context) error {
+	if s.repo == nil {
+		return nil
+	}
+	ms, sessions, events, commitments, entries, err := s.repo.LoadAll(ctx)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, m := range ms {
+		s.meets[m.ID] = m
+	}
+	for _, sess := range sessions {
+		s.sessions[sess.ID] = sess
+	}
+	for _, e := range events {
+		s.events[e.ID] = e
+	}
+	for _, c := range commitments {
+		s.commitments[c.ID] = c
+	}
+	for _, e := range entries {
+		s.entries[e.ID] = e
+	}
+	return nil
+}
+
+func (s *Service) newID(prefix string) string {
+	if s.repo != nil {
+		return uuid.New().String()
+	}
+	return prefix + randomToken(12)
 }
 
 // SeedEntry directly inserts a meet event and entry into the service for test
@@ -391,7 +444,7 @@ func (s *Service) CreateMeet(principal *appmiddleware.Principal, orgID string, i
 
 	now := time.Now().UTC()
 	meet := Meet{
-		ID:                 "meet_" + randomToken(12),
+		ID:                 s.newID("meet_"),
 		OrgID:              orgID,
 		Name:               name,
 		MeetType:           meetType,
@@ -407,6 +460,11 @@ func (s *Service) CreateMeet(principal *appmiddleware.Principal, orgID string, i
 		UpdatedAt:          now,
 		CreatedBy:          principal.UserID,
 		UpdatedBy:          principal.UserID,
+	}
+	if s.repo != nil {
+		if err := s.repo.UpsertMeet(context.Background(), meet); err != nil {
+			return Meet{}, MeetAuditEvent{}, fmt.Errorf("persist meet: %w", err)
+		}
 	}
 	s.meets[meet.ID] = meet
 
@@ -494,6 +552,11 @@ func (s *Service) TransitionMeetStatus(principal *appmiddleware.Principal, orgID
 		meet.EntryFinalizedAt = &now
 	}
 
+	if s.repo != nil {
+		if err := s.repo.UpsertMeet(context.Background(), meet); err != nil {
+			return Meet{}, MeetAuditEvent{}, fmt.Errorf("persist meet transition: %w", err)
+		}
+	}
 	s.meets[meet.ID] = meet
 
 	event := s.recordAuditEventLocked(MeetAuditEvent{
@@ -540,7 +603,7 @@ func (s *Service) CreateMeetSession(principal *appmiddleware.Principal, orgID, m
 
 	now := time.Now().UTC()
 	session := MeetSession{
-		ID:            "sess_" + randomToken(12),
+		ID:            s.newID("sess_"),
 		OrgID:         orgID,
 		MeetID:        meet.ID,
 		SessionNumber: input.SessionNumber,
@@ -553,6 +616,11 @@ func (s *Service) CreateMeetSession(principal *appmiddleware.Principal, orgID, m
 		UpdatedAt:     now,
 		CreatedBy:     principal.UserID,
 		UpdatedBy:     principal.UserID,
+	}
+	if s.repo != nil {
+		if err := s.repo.UpsertMeetSession(context.Background(), session); err != nil {
+			return MeetSession{}, MeetAuditEvent{}, fmt.Errorf("persist meet session: %w", err)
+		}
 	}
 	s.sessions[session.ID] = session
 
@@ -648,7 +716,7 @@ func (s *Service) CreateMeetEvent(principal *appmiddleware.Principal, orgID, mee
 
 	now := time.Now().UTC()
 	meetEvent := MeetEvent{
-		ID:            "evt_" + randomToken(12),
+		ID:            s.newID("evt_"),
 		OrgID:         orgID,
 		MeetID:        meet.ID,
 		SessionID:     sessionID,
@@ -665,6 +733,11 @@ func (s *Service) CreateMeetEvent(principal *appmiddleware.Principal, orgID, mee
 		UpdatedAt:     now,
 		CreatedBy:     principal.UserID,
 		UpdatedBy:     principal.UserID,
+	}
+	if s.repo != nil {
+		if err := s.repo.UpsertMeetEvent(context.Background(), meetEvent); err != nil {
+			return MeetEvent{}, MeetAuditEvent{}, fmt.Errorf("persist meet event: %w", err)
+		}
 	}
 	s.events[meetEvent.ID] = meetEvent
 
@@ -728,6 +801,11 @@ func (s *Service) PublishCommitmentRequest(principal *appmiddleware.Principal, o
 	meet.CommitmentOpenAt = &now
 	meet.UpdatedAt = now
 	meet.UpdatedBy = principal.UserID
+	if s.repo != nil {
+		if err := s.repo.UpsertMeet(context.Background(), meet); err != nil {
+			return Meet{}, nil, MeetAuditEvent{}, fmt.Errorf("persist meet (commitment_open): %w", err)
+		}
+	}
 	s.meets[meet.ID] = meet
 
 	// Create commitment records for all swimmers in the org that don't already have one.
@@ -748,7 +826,7 @@ func (s *Service) PublishCommitmentRequest(principal *appmiddleware.Principal, o
 			continue
 		}
 		c := Commitment{
-			ID:          "cmt_" + randomToken(12),
+			ID:          s.newID("cmt_"),
 			OrgID:       orgID,
 			MeetID:      meet.ID,
 			HouseholdID: swimmer.HouseholdID,
@@ -758,6 +836,11 @@ func (s *Service) PublishCommitmentRequest(principal *appmiddleware.Principal, o
 			UpdatedAt:   now,
 			CreatedBy:   principal.UserID,
 			UpdatedBy:   principal.UserID,
+		}
+		if s.repo != nil {
+			if err := s.repo.UpsertCommitment(context.Background(), c); err != nil {
+				return Meet{}, nil, MeetAuditEvent{}, fmt.Errorf("persist commitment (publish): %w", err)
+			}
 		}
 		s.commitments[c.ID] = c
 		created = append(created, c)
@@ -855,6 +938,11 @@ func (s *Service) RespondToCommitment(principal *appmiddleware.Principal, orgID,
 	cmt.CommittedAt = &now
 	cmt.UpdatedAt = now
 	cmt.UpdatedBy = principal.UserID
+	if s.repo != nil {
+		if err := s.repo.UpsertCommitment(context.Background(), cmt); err != nil {
+			return Commitment{}, MeetAuditEvent{}, fmt.Errorf("persist commitment (respond): %w", err)
+		}
+	}
 	s.commitments[cmt.ID] = cmt
 
 	// If switching to committed_no, remove any existing event selections atomically.
@@ -935,7 +1023,7 @@ func (s *Service) SelectCommitmentEvent(principal *appmiddleware.Principal, orgI
 
 	now := time.Now().UTC()
 	sel := EventSelection{
-		ID:           "sel_" + randomToken(12),
+		ID:           s.newID("sel_"),
 		OrgID:        orgID,
 		CommitmentID: cmt.ID,
 		MeetEventID:  meetEventID,
@@ -1047,6 +1135,11 @@ func (s *Service) LockCommitments(principal *appmiddleware.Principal, orgID, mee
 	meet.CommitmentClosedAt = &now
 	meet.UpdatedAt = now
 	meet.UpdatedBy = principal.UserID
+	if s.repo != nil {
+		if err := s.repo.UpsertMeet(context.Background(), meet); err != nil {
+			return Meet{}, MeetAuditEvent{}, fmt.Errorf("persist meet (lock commitments): %w", err)
+		}
+	}
 	s.meets[meet.ID] = meet
 
 	// Lock all commitments for this meet.
@@ -1059,6 +1152,11 @@ func (s *Service) LockCommitments(principal *appmiddleware.Principal, orgID, mee
 		cmt.LockedAt = &now
 		cmt.UpdatedAt = now
 		cmt.UpdatedBy = principal.UserID
+		if s.repo != nil {
+			if err := s.repo.UpsertCommitment(context.Background(), cmt); err != nil {
+				return Meet{}, MeetAuditEvent{}, fmt.Errorf("persist commitment (lock): %w", err)
+			}
+		}
 		s.commitments[id] = cmt
 		lockedCount++
 	}
@@ -1161,7 +1259,7 @@ func (s *Service) ProposeEntry(principal *appmiddleware.Principal, orgID, meetID
 
 	now := time.Now().UTC()
 	entry := Entry{
-		ID:           "ent_" + randomToken(12),
+		ID:           s.newID("ent_"),
 		OrgID:        orgID,
 		MeetID:       meet.ID,
 		SwimmerID:    swimmerID,
@@ -1175,6 +1273,11 @@ func (s *Service) ProposeEntry(principal *appmiddleware.Principal, orgID, meetID
 		UpdatedAt:    now,
 		CreatedBy:    principal.UserID,
 		UpdatedBy:    principal.UserID,
+	}
+	if s.repo != nil {
+		if err := s.repo.UpsertEntry(context.Background(), entry); err != nil {
+			return Entry{}, MeetAuditEvent{}, fmt.Errorf("persist entry (propose): %w", err)
+		}
 	}
 	s.entries[entry.ID] = entry
 
@@ -1252,6 +1355,11 @@ func (s *Service) OverrideEntry(principal *appmiddleware.Principal, orgID, meetI
 	}
 	entry.UpdatedAt = time.Now().UTC()
 	entry.UpdatedBy = principal.UserID
+	if s.repo != nil {
+		if err := s.repo.UpsertEntry(context.Background(), entry); err != nil {
+			return Entry{}, MeetAuditEvent{}, fmt.Errorf("persist entry (override): %w", err)
+		}
+	}
 	s.entries[entry.ID] = entry
 
 	after := entrySnapshot(entry)
@@ -1307,6 +1415,11 @@ func (s *Service) ApproveEntry(principal *appmiddleware.Principal, orgID, meetID
 	entry.ApprovedBy = principal.UserID
 	entry.UpdatedAt = now
 	entry.UpdatedBy = principal.UserID
+	if s.repo != nil {
+		if err := s.repo.UpsertEntry(context.Background(), entry); err != nil {
+			return Entry{}, MeetAuditEvent{}, fmt.Errorf("persist entry (approve): %w", err)
+		}
+	}
 	s.entries[entry.ID] = entry
 
 	auditEvent := s.recordAuditEventLocked(MeetAuditEvent{

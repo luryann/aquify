@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
 	"github.com/dareaquatics/aquify/server/internal/app/meets"
+	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
 	"github.com/dareaquatics/aquify/server/internal/app/performance"
 )
 
@@ -61,6 +61,20 @@ type progressionEnvelope struct {
 		ID       string `json:"id"`
 		Distance int    `json:"distance"`
 		Stroke   string `json:"stroke"`
+	} `json:"results"`
+}
+
+type orgBestTimesEnvelope struct {
+	Count     int `json:"count"`
+	BestTimes []struct {
+		SwimmerID string `json:"swimmer_id"`
+	} `json:"best_times"`
+}
+
+type orgProgressionEnvelope struct {
+	Count   int `json:"count"`
+	Results []struct {
+		SwimmerID string `json:"swimmer_id"`
 	} `json:"results"`
 }
 
@@ -438,6 +452,59 @@ func TestBillingRoleCannotReadProgression(t *testing.T) {
 
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("expected 403 for billing role on progression, got %d", rr.Code)
+	}
+}
+
+func TestOrgPerformanceSummaryEndpointsReturnAggregatedData(t *testing.T) {
+	t.Parallel()
+	svc := performance.NewService()
+	router := newPerfRouter(t, svc)
+	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
+
+	for _, swimmerID := range []string{"swimmer-one", "swimmer-two"} {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/results", strings.NewReader(minimalResultBody(swimmerID)))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Org-Id", "org-demo")
+		req.Header.Set("Authorization", "Bearer "+token)
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		if rr.Code != http.StatusCreated {
+			t.Fatalf("expected 201 creating result for %s, got %d: %s", swimmerID, rr.Code, rr.Body.String())
+		}
+	}
+
+	bestTimesReq := httptest.NewRequest(http.MethodGet, "/api/v1/performance/best-times", nil)
+	bestTimesReq.Header.Set("X-Org-Id", "org-demo")
+	bestTimesReq.Header.Set("Authorization", "Bearer "+token)
+	bestTimesRes := httptest.NewRecorder()
+	router.ServeHTTP(bestTimesRes, bestTimesReq)
+	if bestTimesRes.Code != http.StatusOK {
+		t.Fatalf("expected 200 for org best-times, got %d: %s", bestTimesRes.Code, bestTimesRes.Body.String())
+	}
+
+	var bestTimesEnv orgBestTimesEnvelope
+	if err := json.NewDecoder(bestTimesRes.Body).Decode(&bestTimesEnv); err != nil {
+		t.Fatalf("decode org best-times: %v", err)
+	}
+	if bestTimesEnv.Count != 2 {
+		t.Fatalf("expected 2 best-time rows, got %d", bestTimesEnv.Count)
+	}
+
+	progressionReq := httptest.NewRequest(http.MethodGet, "/api/v1/performance/progression", nil)
+	progressionReq.Header.Set("X-Org-Id", "org-demo")
+	progressionReq.Header.Set("Authorization", "Bearer "+token)
+	progressionRes := httptest.NewRecorder()
+	router.ServeHTTP(progressionRes, progressionReq)
+	if progressionRes.Code != http.StatusOK {
+		t.Fatalf("expected 200 for org progression, got %d: %s", progressionRes.Code, progressionRes.Body.String())
+	}
+
+	var progressionEnv orgProgressionEnvelope
+	if err := json.NewDecoder(progressionRes.Body).Decode(&progressionEnv); err != nil {
+		t.Fatalf("decode org progression: %v", err)
+	}
+	if progressionEnv.Count != 2 {
+		t.Fatalf("expected 2 progression rows, got %d", progressionEnv.Count)
 	}
 }
 

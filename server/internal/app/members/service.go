@@ -1,16 +1,20 @@
 package members
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 var (
@@ -24,6 +28,7 @@ var (
 
 type Service struct {
 	mu                   sync.RWMutex
+	repo                 *Repository // nil = in-memory only
 	households           map[string]Household
 	contacts             map[string]Contact
 	swimmers             map[string]Swimmer
@@ -41,6 +46,57 @@ func NewService() *Service {
 		parentHouseholdIndex: make(map[string]map[string]struct{}),
 		auditEvents:          []SwimmerAuditEvent{},
 	}
+}
+
+// NewServiceWithPool creates a DB-backed members service. On construction it
+// loads all existing records from the database into the in-memory maps, then
+// every subsequent write is persisted to the database before updating memory.
+func NewServiceWithPool(pool *pgxpool.Pool) *Service {
+	s := NewService()
+	if pool == nil {
+		return s
+	}
+	s.repo = newRepository(pool)
+	if err := s.loadFromDB(context.Background()); err != nil {
+		slog.Error("members: failed to load initial state from DB", "error", err)
+	}
+	return s
+}
+
+// loadFromDB populates the in-memory maps from the database.
+func (s *Service) loadFromDB(ctx context.Context) error {
+	if s.repo == nil {
+		return nil
+	}
+	households, contacts, swimmers, links, err := s.repo.LoadAll(ctx)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, h := range households {
+		s.households[h.ID] = h
+	}
+	for _, c := range contacts {
+		s.contacts[c.ID] = c
+	}
+	for _, sw := range swimmers {
+		s.swimmers[sw.ID] = sw
+	}
+	for _, link := range links {
+		s.swimmerGroupLinks[link.ID] = link
+	}
+	return nil
+}
+
+// newID generates an ID for a new record. When a DB repository is configured
+// the ID is a proper UUID (required by the DB schema). In in-memory mode the
+// existing prefix-token format is preserved so legacy tests are unaffected.
+func (s *Service) newID(prefix string) string {
+	if s.repo != nil {
+		return uuid.New().String()
+	}
+	return prefix + randomToken(12)
 }
 
 type Household struct {
@@ -199,7 +255,7 @@ func (s *Service) CreateHousehold(principal *appmiddleware.Principal, input Crea
 	}
 
 	household := Household{
-		ID:               "hsh_" + randomToken(12),
+		ID:               s.newID("hsh_"),
 		OrgID:            strings.TrimSpace(input.OrgID),
 		HouseholdName:    strings.TrimSpace(input.HouseholdName),
 		PrimaryEmail:     strings.TrimSpace(strings.ToLower(input.PrimaryEmail)),
@@ -219,11 +275,18 @@ func (s *Service) CreateHousehold(principal *appmiddleware.Principal, input Crea
 	}
 
 	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.repo != nil {
+		if err := s.repo.UpsertHousehold(context.Background(), household); err != nil {
+			return Household{}, fmt.Errorf("persist household: %w", err)
+		}
+	}
+
 	s.households[household.ID] = household
 	if hasAnyRole(principal, "parent") {
 		s.associateParentHouseholdLocked(principal.UserID, household.ID)
 	}
-	s.mu.Unlock()
 
 	return household, nil
 }
@@ -265,7 +328,31 @@ func (s *Service) UpdateHousehold(principal *appmiddleware.Principal, orgID, hou
 		return Household{}, errors.New("household_name cannot be empty")
 	}
 
+	if s.repo != nil {
+		if err := s.repo.UpsertHousehold(context.Background(), household); err != nil {
+			return Household{}, fmt.Errorf("persist household: %w", err)
+		}
+	}
 	s.households[household.ID] = household
+	return household, nil
+}
+
+func (s *Service) GetHousehold(principal *appmiddleware.Principal, orgID, householdID string) (Household, error) {
+	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "billing", "read-only") {
+		return Household{}, ErrForbidden
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	household, ok := s.households[strings.TrimSpace(householdID)]
+	if !ok || household.OrgID != orgID {
+		return Household{}, ErrHouseholdNotFound
+	}
+	if err := s.enforceParentHouseholdAccess(principal, household.ID); err != nil {
+		return Household{}, err
+	}
+
 	return household, nil
 }
 
@@ -286,7 +373,7 @@ func (s *Service) AddContact(principal *appmiddleware.Principal, orgID, househol
 	}
 
 	contact := Contact{
-		ID:                 "ctc_" + randomToken(12),
+		ID:                 s.newID("ctc_"),
 		OrgID:              orgID,
 		HouseholdID:        householdID,
 		Relationship:       strings.TrimSpace(strings.ToLower(input.Relationship)),
@@ -308,6 +395,11 @@ func (s *Service) AddContact(principal *appmiddleware.Principal, orgID, househol
 		return Contact{}, errors.New("relationship, first_name, and last_name are required")
 	}
 
+	if s.repo != nil {
+		if err := s.repo.UpsertContact(context.Background(), contact); err != nil {
+			return Contact{}, fmt.Errorf("persist contact: %w", err)
+		}
+	}
 	s.contacts[contact.ID] = contact
 	return contact, nil
 }
@@ -339,7 +431,7 @@ func (s *Service) CreateSwimmer(principal *appmiddleware.Principal, orgID string
 	}
 
 	swimmer := Swimmer{
-		ID:                 "swm_" + randomToken(12),
+		ID:                 s.newID("swm_"),
 		OrgID:              orgID,
 		HouseholdID:        household.ID,
 		FirstName:          strings.TrimSpace(input.FirstName),
@@ -371,6 +463,11 @@ func (s *Service) CreateSwimmer(principal *appmiddleware.Principal, orgID string
 		}
 	}
 
+	if s.repo != nil {
+		if err := s.repo.UpsertSwimmer(context.Background(), swimmer); err != nil {
+			return Swimmer{}, SwimmerAuditEvent{}, fmt.Errorf("persist swimmer: %w", err)
+		}
+	}
 	s.swimmers[swimmer.ID] = swimmer
 	event := s.recordSwimmerAuditEventLocked(SwimmerAuditEvent{
 		OrgID:       orgID,
@@ -462,6 +559,11 @@ func (s *Service) UpdateSwimmer(principal *appmiddleware.Principal, orgID, swimm
 	}
 	swimmer.UpdatedAt = time.Now().UTC()
 	swimmer.UpdatedBy = principal.UserID
+	if s.repo != nil {
+		if err := s.repo.UpsertSwimmer(context.Background(), swimmer); err != nil {
+			return Swimmer{}, SwimmerAuditEvent{}, fmt.Errorf("persist swimmer: %w", err)
+		}
+	}
 	s.swimmers[swimmer.ID] = swimmer
 
 	event := s.recordSwimmerAuditEventLocked(SwimmerAuditEvent{
@@ -477,6 +579,33 @@ func (s *Service) UpdateSwimmer(principal *appmiddleware.Principal, orgID, swimm
 	})
 
 	return swimmer, event, nil
+}
+
+func (s *Service) GetSwimmer(principal *appmiddleware.Principal, orgID, swimmerID string, includeMedical bool) (SwimmerView, error) {
+	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "billing", "read-only") {
+		return SwimmerView{}, ErrForbidden
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	swimmer, ok := s.swimmers[strings.TrimSpace(swimmerID)]
+	if !ok || swimmer.OrgID != orgID {
+		return SwimmerView{}, ErrSwimmerNotFound
+	}
+	if err := s.enforceParentHouseholdAccess(principal, swimmer.HouseholdID); err != nil {
+		return SwimmerView{}, err
+	}
+
+	view := SwimmerView{Swimmer: swimmer}
+	if includeMedical && s.canViewMedicalLocked(principal, swimmer.HouseholdID) {
+		view.MedicalFlagsRedacted = false
+		return view, nil
+	}
+
+	view.MedicalFlags = nil
+	view.MedicalFlagsRedacted = true
+	return view, nil
 }
 
 func (s *Service) AssignSwimmerToGroup(principal *appmiddleware.Principal, orgID, swimmerID string, input AssignSwimmerGroupInput) (SwimmerGroupLink, error) {
@@ -516,7 +645,7 @@ func (s *Service) AssignSwimmerToGroup(principal *appmiddleware.Principal, orgID
 	}
 
 	link := SwimmerGroupLink{
-		ID:         "swg_" + randomToken(12),
+		ID:         s.newID("swg_"),
 		OrgID:      orgID,
 		SwimmerID:  swimmer.ID,
 		GroupCode:  groupCode,
@@ -526,6 +655,11 @@ func (s *Service) AssignSwimmerToGroup(principal *appmiddleware.Principal, orgID
 		UpdatedAt:  now,
 		CreatedBy:  principal.UserID,
 		UpdatedBy:  principal.UserID,
+	}
+	if s.repo != nil {
+		if err := s.repo.UpsertSwimmerGroupLink(context.Background(), link); err != nil {
+			return SwimmerGroupLink{}, fmt.Errorf("persist swimmer group link: %w", err)
+		}
 	}
 	s.swimmerGroupLinks[link.ID] = link
 	return link, nil
@@ -670,7 +804,7 @@ func (s *Service) swimmerInGroupLocked(orgID, swimmerID, groupCode string) bool 
 }
 
 func (s *Service) recordSwimmerAuditEventLocked(event SwimmerAuditEvent) SwimmerAuditEvent {
-	event.ID = "aud_" + randomToken(12)
+	event.ID = s.newID("aud_")
 	event.CreatedAt = time.Now().UTC()
 	s.auditEvents = append(s.auditEvents, event)
 	return event
@@ -704,6 +838,44 @@ func (s *Service) SnapshotContacts(orgID string) []Contact {
 		out = append(out, contact)
 	}
 	return out
+}
+
+func (s *Service) ListContacts(principal *appmiddleware.Principal, orgID, householdID string) ([]Contact, error) {
+	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "billing", "read-only") {
+		return nil, ErrForbidden
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	household, ok := s.households[strings.TrimSpace(householdID)]
+	if !ok || household.OrgID != orgID {
+		return nil, ErrHouseholdNotFound
+	}
+	if err := s.enforceParentHouseholdAccess(principal, household.ID); err != nil {
+		return nil, err
+	}
+
+	out := make([]Contact, 0)
+	for _, contact := range s.contacts {
+		if contact.OrgID != orgID || contact.HouseholdID != household.ID {
+			continue
+		}
+		out = append(out, contact)
+	}
+	slices.SortFunc(out, func(a, b Contact) int {
+		if a.IsPrimary != b.IsPrimary {
+			if a.IsPrimary {
+				return -1
+			}
+			return 1
+		}
+		if cmp := strings.Compare(a.LastName, b.LastName); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(a.FirstName, b.FirstName)
+	})
+	return out, nil
 }
 
 // SnapshotSwimmers returns a copy of all swimmers for the given org.

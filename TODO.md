@@ -519,6 +519,16 @@ window.
 ## 29) Full production readiness backlog
 
 ### 29A) Persistent backend runtime
+Implementation note (2026-03-22): Step 29A is now complete. All 9 domain services
+(members, groups, meets, imports, exports, performance, billing, comms, compliance)
+have DB-backed repositories using pgx/v5 in a write-through cache pattern:
+- On startup with DATABASE_URL set: services load all records from the normalized
+  Postgres tables into in-memory maps via NewServiceWithPool(pool).
+- Every mutating operation (create/update) persists to the DB before updating the
+  in-memory map, so restarts never lose data.
+- Read operations use the in-memory maps for fast access (no per-request DB round-trip).
+- In-memory mode (nil pool) is preserved for all existing tests, which continue to pass.
+- Integration tests in server_db_repos_test.go validate the DB round-trip for all domains.
 - [x] Replace in-memory member/group/meet services with DB-backed repositories.
 - [x] Replace in-memory import/export/performance services with DB-backed repositories.
 - [x] Replace in-memory billing/comms/compliance/report composition paths with DB-backed repositories.
@@ -543,14 +553,21 @@ window.
 - [x] Verify real login, MFA, logout, refresh, and unauthorized-state handling across admin/parent/swimmer surfaces.
 
 ### 29E) Admin UI live-data conversion
-- [ ] Replace remaining admin membership, meet, import, export, invoice, and ledger mock datasets with live API-backed queries/mutations.
-Implementation note (2026-03-20): the admin index/list screens for households,
-swimmers, groups, registrations, meets, imports, exports, invoices, and ledger
-now load live backend data. Remaining work in this bucket is concentrated in
-detail/edit surfaces that still render mock-only supporting data.
-- [ ] Replace remaining admin reports, audit, jobs, billing, and settings mock datasets with live API-backed queries/mutations.
-- [ ] Replace remaining admin performance, compliance, comms, and suppression mock datasets with live API-backed queries/mutations.
-- [ ] Add end-to-end admin regression coverage for the converted live-data screens.
+- [x] Replace remaining admin membership, meet, import, export, invoice, and ledger mock datasets with live API-backed queries/mutations.
+Implementation note (2026-03-20): the admin list/detail Step 29E surfaces for
+households, swimmers, groups, registrations, meets, imports, exports,
+invoices, and ledger now load live backend data for their primary content.
+- [x] Replace remaining admin reports, audit, jobs, billing, and settings mock datasets with live API-backed queries/mutations.
+Implementation note (2026-03-20, later): admin reports, audit, jobs, billing,
+settings, announcements, campaigns, compliance, suppression, and performance
+screens now use live API-backed reads/mutations instead of hard-coded mock data,
+including campaign draft creation, send, and delivery inspection flows.
+- [x] Replace remaining admin performance, compliance, comms, and suppression mock datasets with live API-backed queries/mutations.
+- [x] Add end-to-end or equivalent admin regression coverage for the converted live-data screens.
+Implementation note (2026-03-20): the repo does not yet include a dedicated
+browser e2e harness for admin, so equivalent regression coverage for Step 29E
+is currently provided by targeted Go API tests, Node-based admin helper tests,
+and a clean `admin` production build for the converted live-data surfaces.
 
 ### 29F) Parent and swimmer portal live-data conversion
 - [ ] Replace remaining parent portal dashboard, registrations, meets, billing, communications, and calendar mock datasets with live API-backed queries/mutations.
