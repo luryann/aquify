@@ -1,6 +1,6 @@
 module github.com/dareaquatics/aquify/server
 
-go 1.25.0
+go 1.25.8
 
 require (
 	github.com/dareaquatics/aquify/meetfiles v0.0.0
