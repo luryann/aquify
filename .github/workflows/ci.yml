@@ -25,7 +25,7 @@ jobs:
       - name: Run gitleaks
         uses: docker://ghcr.io/gitleaks/gitleaks:latest
         with:
-          args: git --redact --no-banner --verbose --source /github/workspace
+          args: git --redact --no-banner --verbose .
 
   openapi-lint:
     name: Validate OpenAPI Schema
