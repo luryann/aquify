@@ -24,8 +24,10 @@ jobs:
 
       - name: Install gitleaks
         run: |
+          mkdir -p "${RUNNER_TEMP}/bin"
           curl -sSfL https://raw.githubusercontent.com/gitleaks/gitleaks/master/install.sh \
-            | sh -s -- -b /usr/local/bin
+            | sh -s -- -b "${RUNNER_TEMP}/bin"
+          echo "${RUNNER_TEMP}/bin" >> "$GITHUB_PATH"
 
       - name: Run gitleaks
         run: gitleaks git --redact --no-banner --verbose
