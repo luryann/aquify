@@ -127,7 +127,7 @@ func TestGenerateExport_StandardSD3(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	svc := exports.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, svc, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, svc, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	orgID := "org-export-std"
 	token := issueSessionToken(t, router, orgID, []string{"coach"}, false)
@@ -156,7 +156,7 @@ func TestGenerateExport_ExtendedSD3(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	svc := exports.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, svc, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, svc, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	orgID := "org-export-ext"
 	token := issueSessionToken(t, router, orgID, []string{"admin"}, false)
@@ -176,7 +176,7 @@ func TestGenerateExport_SDIFRoster(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	svc := exports.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, svc, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, svc, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	orgID := "org-export-roster"
 	token := issueSessionToken(t, router, orgID, []string{"admin"}, false)
@@ -195,7 +195,7 @@ func TestGenerateExport_ParentForbidden(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	orgID := "org-export-perm"
 	parentToken := issueSessionToken(t, router, orgID, []string{"parent"}, false)
@@ -217,7 +217,7 @@ func TestGenerateExport_InvalidExportType(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	orgID := "org-export-invalid"
 	token := issueSessionToken(t, router, orgID, []string{"admin"}, false)
@@ -243,7 +243,7 @@ func TestListMeetExports(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	svc := exports.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, svc, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, svc, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	orgID := "org-export-list"
 	token := issueSessionToken(t, router, orgID, []string{"coach"}, false)
@@ -277,7 +277,7 @@ func TestGetExport(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	svc := exports.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, svc, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, svc, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	orgID := "org-export-get"
 	token := issueSessionToken(t, router, orgID, []string{"admin"}, false)
@@ -311,7 +311,7 @@ func TestGetExport_NotFound(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	orgID := "org-export-404"
 	token := issueSessionToken(t, router, orgID, []string{"admin"}, false)
@@ -332,7 +332,7 @@ func TestDownloadExport(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	svc := exports.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, svc, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, svc, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	orgID := "org-export-dl"
 	token := issueSessionToken(t, router, orgID, []string{"coach"}, false)
@@ -380,7 +380,7 @@ func TestDownloadExport_OrgIsolation(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	svc := exports.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, svc, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, svc, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	orgA := "org-export-iso-a"
 	tokenA := issueSessionToken(t, router, orgA, []string{"admin"}, false)
@@ -408,7 +408,7 @@ func TestGenerateExport_UnauthenticatedRejected(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/meets/m1/exports",
 		strings.NewReader(minimalExportBody("standard_sd3")))
@@ -428,7 +428,7 @@ func TestDownloadExport_ExtendedSD3_ContainsSeedTime(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	svc := exports.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, svc, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, svc, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	orgID := "org-export-seed"
 	token := issueSessionToken(t, router, orgID, []string{"coach"}, false)

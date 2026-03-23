@@ -31,6 +31,16 @@ export default function BillingAutopayPage() {
 
   return (
     <div style={{ padding: '32px', maxWidth: '1100px' }}>
+      {/* Demo data notice */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', marginBottom: '20px', background: 'var(--warning-bg)', border: '1px solid var(--warning-border)', borderRadius: '7px', fontSize: '12px', color: 'var(--warning)', fontFamily: 'var(--font-mono)' }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+          <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+        </svg>
+        <span>
+          <strong>Demo data</strong> — Autopay management API is not yet available. Displayed enrollment states are illustrative only and toggling does not affect live billing.
+        </span>
+      </div>
+
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', gap: '16px', flexWrap: 'wrap' }}>
         <div>
           <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>

@@ -655,6 +655,47 @@ export type DataDeletionRequestRecord = {
   updated_at: string
 }
 
+export type DocumentTypeRecord = {
+  id: string
+  org_id: string
+  name: string
+  category: string
+  description?: string
+  is_required: boolean
+  applies_to: string
+  expiry_months?: number
+  is_active: boolean
+  created_at: string
+  updated_at: string
+  created_by: string
+  updated_by: string
+}
+
+export type DocumentSubmissionRecord = {
+  id: string
+  org_id: string
+  document_type_id: string
+  document_type_name?: string
+  household_id: string
+  swimmer_id?: string
+  status: string
+  file_object_key?: string
+  file_name?: string
+  file_size_bytes?: number
+  file_mime?: string
+  notes?: string
+  review_notes?: string
+  submitted_at?: string
+  verified_at?: string
+  verified_by?: string
+  expires_at?: string
+  reminder_sent_at?: string
+  created_at: string
+  updated_at: string
+  created_by: string
+  updated_by: string
+}
+
 export type TimeStandardRecord = {
   id: string
   org_id: string
@@ -1077,4 +1118,81 @@ export async function updateTimeStandard(api: ApiClient, orgId: string, standard
 
 export async function deleteTimeStandard(api: ApiClient, orgId: string, standardId: string): Promise<void> {
   await api.delete(`/api/v1/time-standards/${standardId}`, withOrgHeaders(orgId))
+}
+
+// ── Document Center ───────────────────────────────────────────────────────────
+
+export async function fetchDocumentTypes(api: ApiClient, orgId: string, activeOnly = true): Promise<DocumentTypeRecord[]> {
+  const res = await api.get<{ document_types?: DocumentTypeRecord[] }>(`/api/v1/document-types?active_only=${activeOnly}`, undefined, withOrgHeaders(orgId))
+  return res.document_types ?? []
+}
+
+export async function createDocumentType(api: ApiClient, orgId: string, input: {
+  name: string
+  category: string
+  description?: string
+  is_required: boolean
+  applies_to?: string
+  expiry_months?: number
+  is_active: boolean
+}): Promise<DocumentTypeRecord> {
+  const res = await api.post<{ document_type: DocumentTypeRecord }>('/api/v1/document-types', input, withOrgHeaders(orgId))
+  return res.document_type
+}
+
+export async function updateDocumentType(api: ApiClient, orgId: string, typeId: string, input: {
+  name?: string
+  category?: string
+  description?: string
+  is_required?: boolean
+  applies_to?: string
+  expiry_months?: number
+  is_active?: boolean
+}): Promise<DocumentTypeRecord> {
+  const res = await api.put<{ document_type: DocumentTypeRecord }>(`/api/v1/document-types/${typeId}`, input, withOrgHeaders(orgId))
+  return res.document_type
+}
+
+export async function deleteDocumentType(api: ApiClient, orgId: string, typeId: string): Promise<void> {
+  await api.delete(`/api/v1/document-types/${typeId}`, withOrgHeaders(orgId))
+}
+
+export async function fetchDocumentSubmissions(api: ApiClient, orgId: string, householdId?: string): Promise<DocumentSubmissionRecord[]> {
+  const q = householdId ? `?household_id=${householdId}` : ''
+  const res = await api.get<{ documents?: DocumentSubmissionRecord[] }>(`/api/v1/documents${q}`, undefined, withOrgHeaders(orgId))
+  return res.documents ?? []
+}
+
+export async function createDocumentSubmission(api: ApiClient, orgId: string, input: {
+  document_type_id: string
+  household_id: string
+  swimmer_id?: string
+}): Promise<DocumentSubmissionRecord> {
+  const res = await api.post<{ document: DocumentSubmissionRecord }>('/api/v1/documents', input, withOrgHeaders(orgId))
+  return res.document
+}
+
+export async function getDocumentSubmission(api: ApiClient, orgId: string, submissionId: string): Promise<DocumentSubmissionRecord> {
+  const res = await api.get<{ document: DocumentSubmissionRecord }>(`/api/v1/documents/${submissionId}`, undefined, withOrgHeaders(orgId))
+  return res.document
+}
+
+export async function attachDocumentFile(api: ApiClient, orgId: string, submissionId: string, input: {
+  file_object_key: string
+  file_name: string
+  file_mime?: string
+  file_size_bytes?: number
+}): Promise<DocumentSubmissionRecord> {
+  const res = await api.post<{ document: DocumentSubmissionRecord }>(`/api/v1/documents/${submissionId}/attach`, input, withOrgHeaders(orgId))
+  return res.document
+}
+
+export async function verifyDocumentSubmission(api: ApiClient, orgId: string, submissionId: string, reviewNotes?: string): Promise<DocumentSubmissionRecord> {
+  const res = await api.post<{ document: DocumentSubmissionRecord }>(`/api/v1/documents/${submissionId}/verify`, { review_notes: reviewNotes ?? '' }, withOrgHeaders(orgId))
+  return res.document
+}
+
+export async function rejectDocumentSubmission(api: ApiClient, orgId: string, submissionId: string, reviewNotes?: string): Promise<DocumentSubmissionRecord> {
+  const res = await api.post<{ document: DocumentSubmissionRecord }>(`/api/v1/documents/${submissionId}/reject`, { review_notes: reviewNotes ?? '' }, withOrgHeaders(orgId))
+  return res.document
 }

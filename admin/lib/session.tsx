@@ -59,37 +59,37 @@ export const DEV_SESSIONS: Record<string, Session> = {
   'stub-owner': {
     token: 'stub-owner',
     expiresAt: Infinity,
-    user: { id: 'dev-owner', email: 'owner@dare.local', name: 'Dev Owner', role: 'owner', orgId: 'org-dev', avatarInitials: 'DO', mfaAuthenticated: true },
+    user: { id: 'dev-owner', email: 'owner@dare.local', name: 'Dev Owner', role: 'owner', orgId: 'org-demo', avatarInitials: 'DO', mfaAuthenticated: true },
   },
   'stub-admin': {
     token: 'stub-admin',
     expiresAt: Infinity,
-    user: { id: 'dev-admin', email: 'admin@dare.local', name: 'Dev Admin', role: 'admin', orgId: 'org-dev', avatarInitials: 'DA' },
+    user: { id: 'dev-admin', email: 'admin@dare.local', name: 'Dev Admin', role: 'admin', orgId: 'org-demo', avatarInitials: 'DA' },
   },
   'stub-coach': {
     token: 'stub-coach',
     expiresAt: Infinity,
-    user: { id: 'dev-coach', email: 'coach@dare.local', name: 'Dev Coach', role: 'coach', orgId: 'org-dev', avatarInitials: 'DC' },
+    user: { id: 'dev-coach', email: 'coach@dare.local', name: 'Dev Coach', role: 'coach', orgId: 'org-demo', avatarInitials: 'DC' },
   },
   'stub-parent': {
     token: 'stub-parent',
     expiresAt: Infinity,
-    user: { id: 'dev-parent', email: 'parent@dare.local', name: 'Dev Parent', role: 'parent', orgId: 'org-dev', avatarInitials: 'DP' },
+    user: { id: 'dev-parent', email: 'parent@dare.local', name: 'Dev Parent', role: 'parent', orgId: 'org-demo', avatarInitials: 'DP' },
   },
   'stub-billing': {
     token: 'stub-billing',
     expiresAt: Infinity,
-    user: { id: 'dev-billing', email: 'billing@dare.local', name: 'Dev Billing', role: 'billing', orgId: 'org-dev', avatarInitials: 'DB' },
+    user: { id: 'dev-billing', email: 'billing@dare.local', name: 'Dev Billing', role: 'billing', orgId: 'org-demo', avatarInitials: 'DB' },
   },
   'stub-readonly': {
     token: 'stub-readonly',
     expiresAt: Infinity,
-    user: { id: 'dev-readonly', email: 'readonly@dare.local', name: 'Dev Read-Only', role: 'read-only', orgId: 'org-dev', avatarInitials: 'DR' },
+    user: { id: 'dev-readonly', email: 'readonly@dare.local', name: 'Dev Read-Only', role: 'read-only', orgId: 'org-demo', avatarInitials: 'DR' },
   },
   'stub-swimmer': {
     token: 'stub-swimmer',
     expiresAt: Infinity,
-    user: { id: 'dev-swimmer', email: 'swimmer@dare.local', name: 'Emma Chen', role: 'swimmer', orgId: 'org-dev', avatarInitials: 'EC' },
+    user: { id: 'dev-swimmer', email: 'swimmer@dare.local', name: 'Emma Chen', role: 'swimmer', orgId: 'org-demo', avatarInitials: 'EC' },
   },
 }
 

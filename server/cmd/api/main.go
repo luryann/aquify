@@ -85,7 +85,7 @@ func main() {
 
 	// Build the HTTP router with the pre-configured worker server.
 	handler := app.NewRouterWithServices(cfg, logger,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		ws,
 	)
 

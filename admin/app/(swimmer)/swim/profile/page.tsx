@@ -124,8 +124,8 @@ export default function SwimmerProfilePage() {
     ]).then(([swimmers, swimmerGroupLinks, groups]) => {
       // Resolve swimmer
       const mySwimmer = householdId
-        ? (swimmers.find(s => s.household_id === householdId) ?? swimmers[0] ?? null)
-        : (swimmers[0] ?? null)
+        ? (swimmers.find(s => s.household_id === householdId) ?? null)
+        : null
       setSwimmer(mySwimmer)
 
       if (mySwimmer) {
@@ -322,7 +322,7 @@ export default function SwimmerProfilePage() {
                 </div>
                 {swimmer.medical_flags && (
                   <div>
-                    <ReadOnlyField label="Medical Notes" value={swimmer.medical_flags} />
+                    <ReadOnlyField label="Medical Notes" value={swimmer.medical_flags?.join('; ') ?? ''} />
                   </div>
                 )}
               </FieldGroup>

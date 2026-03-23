@@ -65,41 +65,6 @@ function meetsToCalEvents(meets: MeetRecord[]): CalEvent[] {
   return events
 }
 
-// ── Legacy stub (empty — replaced by live API data below) ─────────────────
-const EVENTS_STUB: CalEvent[] = [
-  // March
-  { id: 'e-001', type: 'practice', title: 'Morning Practice — Senior A', date: '2026-03-17', time: '5:30 AM', location: 'Main Pool' },
-  { id: 'e-002', type: 'practice', title: 'Afternoon Practice — Junior B', date: '2026-03-17', time: '4:00 PM', location: 'Main Pool' },
-  { id: 'e-003', type: 'deadline', title: 'Commitment Deadline — Tri-City Classic', date: '2026-03-19', detail: 'Respond yes/no for each swimmer by tonight.', linkPath: '/portal/meets/meet-001' },
-  { id: 'e-004', type: 'practice', title: 'Morning Practice — Senior A', date: '2026-03-18', time: '5:30 AM', location: 'Main Pool' },
-  { id: 'e-005', type: 'practice', title: 'Morning Practice', date: '2026-03-19', time: '5:30 AM', location: 'Main Pool' },
-  { id: 'e-006', type: 'practice', title: 'Morning Practice', date: '2026-03-20', time: '5:30 AM', location: 'Main Pool' },
-  { id: 'e-007', type: 'meet', title: 'Tri-City Classic', date: '2026-03-22', time: '7:00 AM', location: 'Riverside Aquatic Center', detail: 'Warm-up begins 7 AM. Bring team cap + two suits.', linkPath: '/portal/meets/meet-001' },
-  { id: 'e-008', type: 'meet', title: 'Tri-City Classic — Day 2', date: '2026-03-23', time: '7:30 AM', location: 'Riverside Aquatic Center', linkPath: '/portal/meets/meet-001' },
-  { id: 'e-009', type: 'practice', title: 'Morning Practice', date: '2026-03-24', time: '5:30 AM', location: 'Main Pool' },
-  { id: 'e-010', type: 'practice', title: 'Morning Practice', date: '2026-03-25', time: '5:30 AM', location: 'Main Pool' },
-  { id: 'e-011', type: 'deadline', title: 'Document Due — Insurance Card (Emma)', date: '2026-03-25', detail: 'Insurance card copy required.', linkPath: '/portal/documents' },
-  { id: 'e-012', type: 'holiday', title: 'Spring Break — Pool Closed', date: '2026-03-28', detail: 'Facility closed Mar 28 – Apr 5.' },
-  { id: 'e-013', type: 'holiday', title: 'Spring Break — Pool Closed', date: '2026-03-29', detail: 'Facility closed.' },
-  { id: 'e-014', type: 'holiday', title: 'Spring Break — Pool Closed', date: '2026-03-30', detail: 'Facility closed.' },
-  { id: 'e-015', type: 'holiday', title: 'Spring Break — Pool Closed', date: '2026-03-31', detail: 'Facility closed.' },
-  // April
-  { id: 'e-016', type: 'holiday', title: 'Spring Break — Pool Closed', date: '2026-04-01', detail: 'Facility closed.' },
-  { id: 'e-017', type: 'holiday', title: 'Spring Break — Pool Closed', date: '2026-04-02', detail: 'Facility closed.' },
-  { id: 'e-018', type: 'holiday', title: 'Spring Break — Pool Closed', date: '2026-04-03', detail: 'Facility closed.' },
-  { id: 'e-019', type: 'event', title: 'Open Swim — Optional', date: '2026-04-04', time: '10:00 AM', location: 'Main Pool', detail: 'Optional open swim during spring break.' },
-  { id: 'e-020', type: 'holiday', title: 'Spring Break — Pool Closed', date: '2026-04-05', detail: 'Facility closed.' },
-  { id: 'e-021', type: 'practice', title: 'Practice Resumes', date: '2026-04-06', time: '5:30 AM', location: 'Main Pool', detail: 'Regular schedule resumes.' },
-  { id: 'e-022', type: 'meet', title: 'Regional Spring Invite', date: '2026-04-05', time: '8:00 AM', location: 'University Pool', detail: 'All-day meet. Heat sheets released April 3.', linkPath: '/portal/meets/meet-002' },
-  { id: 'e-023', type: 'deadline', title: 'Commitment Deadline — Spring Invite', date: '2026-03-29', detail: 'Respond to Spring Invite commitment request.', linkPath: '/portal/meets/meet-002' },
-  { id: 'e-024', type: 'practice', title: 'Morning Practice', date: '2026-04-07', time: '5:30 AM', location: 'Main Pool' },
-  { id: 'e-025', type: 'practice', title: 'Morning Practice', date: '2026-04-08', time: '5:30 AM', location: 'Main Pool' },
-  { id: 'e-026', type: 'practice', title: 'Morning Practice', date: '2026-04-09', time: '5:30 AM', location: 'Main Pool' },
-  { id: 'e-027', type: 'practice', title: 'Morning Practice', date: '2026-04-13', time: '5:30 AM', location: 'Main Pool' },
-  { id: 'e-028', type: 'practice', title: 'Morning Practice', date: '2026-04-14', time: '5:30 AM', location: 'Main Pool' },
-  { id: 'e-029', type: 'practice', title: 'Morning Practice', date: '2026-04-15', time: '5:30 AM', location: 'Main Pool' },
-  { id: 'e-030', type: 'deadline', title: 'Season Registration Deadline', date: '2026-04-15', detail: 'Complete 2026–2027 season registration and waivers.', linkPath: '/portal/registrations' },
-]
 
 // ── Config ─────────────────────────────────────────────────────────────────
 const EVENT_STYLE: Record<EventType, { dot: string; bg: string; border: string; color: string; label: string }> = {
@@ -247,6 +212,19 @@ function UpcomingEventRow({ ev }: { ev: CalEvent }) {
 
 // ── Page ────────────────────────────────────────────────────────────────────
 export default function CalendarPage() {
+  const { session } = useSession()
+  const api = useApiClient(session?.token)
+  const orgId = session?.user.orgId ?? ''
+
+  const [events, setEvents] = useState<CalEvent[]>([])
+
+  useEffect(() => {
+    if (!orgId) return
+    fetchMeets(api, orgId)
+      .then((meets) => setEvents(meetsToCalEvents(meets)))
+      .catch(console.error)
+  }, [api, orgId])
+
   const today = new Date()
   const [viewYear, setViewYear] = useState(today.getFullYear())
   const [viewMonth, setViewMonth] = useState(today.getMonth())
@@ -270,7 +248,7 @@ export default function CalendarPage() {
   const firstDow = getFirstDayOfWeek(viewYear, viewMonth)
 
   // Events indexed by date string
-  const eventsByDate = EVENTS.reduce<Record<string, CalEvent[]>>((acc, ev) => {
+  const eventsByDate = events.reduce<Record<string, CalEvent[]>>((acc, ev) => {
     if (!acc[ev.date]) acc[ev.date] = []
     acc[ev.date].push(ev)
     return acc
@@ -293,7 +271,7 @@ export default function CalendarPage() {
   const todayStr = toDateStr(today.getFullYear(), today.getMonth(), today.getDate())
 
   // Upcoming events from today
-  const upcomingEvents = EVENTS
+  const upcomingEvents = events
     .filter((ev) => ev.date >= todayStr)
     .filter((ev) => typeFilter === 'all' || ev.type === typeFilter)
     .sort((a, b) => a.date.localeCompare(b.date))

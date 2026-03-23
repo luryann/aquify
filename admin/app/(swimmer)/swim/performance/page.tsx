@@ -102,13 +102,10 @@ function pivotBestTimes(records: BestTimeRecord[]): BestTimeRow[] {
 
 // Build progression data from BestTimeRecord[] for a given event+course key
 function buildProgressionData(records: BestTimeRecord[], eventKey: string): Array<{ date: string; time: number; meet?: string }> {
-  const [distStr, ...strokeParts] = eventKey.split(' ')
-  const strokePart = strokeParts.join(' ')
   const courseMatch = /(SCY|SCM|LCM)$/.exec(eventKey)
   if (!courseMatch) return []
   const course = courseMatch[1].toLowerCase()
   const filteredEvent = eventKey.replace(/ (SCY|SCM|LCM)$/, '')
-  const dist = Number.parseInt(distStr, 10)
 
   return records
     .filter(r => {
@@ -189,8 +186,8 @@ export default function PerformancePage() {
     if (!orgId) { setLoading(false); return }
     fetchSwimmers(api, orgId).then(async (swimmers) => {
       const mySwimmer = householdId
-        ? (swimmers.find(s => s.household_id === householdId) ?? swimmers[0] ?? null)
-        : (swimmers[0] ?? null)
+        ? (swimmers.find(s => s.household_id === householdId) ?? null)
+        : null
       if (!mySwimmer) { setLoading(false); return }
       const records = await fetchSwimmerBestTimes(api, orgId, mySwimmer.id)
       setRawRecords(records)

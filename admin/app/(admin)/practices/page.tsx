@@ -513,6 +513,14 @@ export default function PracticesPage() {
 
   return (
     <div style={{ padding: '24px', maxWidth: '1300px' }}>
+      {/* Demo data notice */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', marginBottom: '20px', background: 'var(--warning-bg)', border: '1px solid var(--warning-border)', borderRadius: '7px', fontSize: '12px', color: 'var(--warning)', fontFamily: 'var(--font-mono)' }}>
+        <Icon name="alert-circle" size={14} color="var(--warning)" />
+        <span>
+          <strong>Demo data</strong> — Practice scheduler API is not yet available. Displayed schedules are illustrative only and changes are not persisted.
+        </span>
+      </div>
+
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '28px' }}>
         <div>

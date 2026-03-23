@@ -569,17 +569,24 @@ browser e2e harness for admin, so equivalent regression coverage for Step 29E
 is currently provided by targeted Go API tests, Node-based admin helper tests,
 and a clean `admin` production build for the converted live-data surfaces.
 
-### 29F) Parent and swimmer portal live-data conversion
-- [ ] Replace remaining parent portal dashboard, registrations, meets, billing, communications, and calendar mock datasets with live API-backed queries/mutations.
-- [ ] Replace remaining swimmer dashboard, meets, performance, schedule, and profile mock datasets with live API-backed queries/mutations.
-- [ ] Ensure parent workflows remain complete when swimmer login is disabled.
+### 29F) Parent and swimmer portal live-data conversion ✅
+- [x] Replace remaining parent portal dashboard, registrations, meets, billing, communications, and calendar mock datasets with live API-backed queries/mutations.
+- [x] Replace remaining swimmer dashboard, meets, performance, schedule, and profile mock datasets with live API-backed queries/mutations.
+- [x] Ensure parent workflows remain complete when swimmer login is disabled.
 - [ ] Add end-to-end regression coverage for parent and swimmer portal critical paths using live backend state.
 
-### 29G) Document center and household compliance
-- [ ] Add document/compliance database schema for document types, submissions, verification state, expiry, and reminders.
-- [ ] Implement the real document center backend with uploads, verification workflows, reminders, retention, and role-scoped visibility.
-- [ ] Wire the admin and parent portal document center to the real backend APIs.
-- [ ] Add tests for launch-critical household document/compliance workflows.
+### 29G) Document center and household compliance ✅
+Implementation note (2026-03-22): Step 29G is complete.
+- DB migrations: `document_types` and `document_submissions` tables.
+- New `server/internal/app/documents/` service+repository with DB-backed write-through cache.
+- HTTP handlers at `/api/v1/document-types` (CRUD, owner/admin) and `/api/v1/documents` (submissions, attach, verify, reject) with parent household-scope enforcement.
+- Admin document center UI at `/compliance/documents/page.tsx` (types catalog + submissions review with status filter and verify/reject dialogs).
+- Parent portal `/portal/documents/page.tsx` now loads live document types and household submissions from the backend.
+- 5 integration tests in `server_documents_test.go` covering CRUD, full workflow, reject+resubmit, household scope enforcement, and admin-only verify/reject.
+- [x] Add document/compliance database schema for document types, submissions, verification state, expiry, and reminders.
+- [x] Implement the real document center backend with uploads, verification workflows, reminders, retention, and role-scoped visibility.
+- [x] Wire the admin and parent portal document center to the real backend APIs.
+- [x] Add tests for launch-critical household document/compliance workflows.
 
 ### 29H) Schedule, practices, and calendar
 - [ ] Add persistent practice/schedule data model and APIs for coaches/admins.

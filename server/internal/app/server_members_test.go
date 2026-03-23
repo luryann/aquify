@@ -276,7 +276,7 @@ func TestParentAssociatedToExistingHouseholdCanManageOwnSwimmer(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	membershipService := members.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, membershipService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, membershipService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionTokenForUser(t, router, "admin-user", "org-demo", []string{"admin"}, false)
 	parentToken := issueSessionTokenForUser(t, router, "parent-user", "org-demo", []string{"parent"}, false)

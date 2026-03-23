@@ -125,7 +125,7 @@ func TestRequestUploadURL(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	importsService := imports.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-import-test", []string{"admin"}, false)
 
@@ -171,7 +171,7 @@ func TestRequestUploadURL_FileTypeInferredFromFilename(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-x", []string{"admin"}, false)
 
@@ -204,7 +204,7 @@ func TestRequestUploadURL_Forbidden_Parent(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	parentToken := issueSessionToken(t, router, "org-x", []string{"parent"}, false)
 
@@ -231,7 +231,7 @@ func TestFinalizeImport(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	importsService := imports.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-import-test", []string{"admin"}, false)
 
@@ -264,7 +264,7 @@ func TestFinalizeImport_AlreadyFinalized(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	importsService := imports.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-x", []string{"admin"}, false)
 	importID := requestUploadURL(t, router, "org-x", adminToken, "data.sd3", "sd3")
@@ -295,7 +295,7 @@ func TestListImports(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	importsService := imports.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-list", []string{"admin"}, false)
 
@@ -341,7 +341,7 @@ func TestGetImport(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	importsService := imports.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-get", []string{"admin"}, false)
 	importID := requestUploadURL(t, router, "org-get", adminToken, "results.sd3", "sd3")
@@ -369,7 +369,7 @@ func TestListConflicts(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	importsService := imports.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-conflicts", []string{"admin"}, false)
 	importID := requestUploadURL(t, router, "org-conflicts", adminToken, "data.cl2", "cl2")
@@ -427,7 +427,7 @@ func TestResolveConflict(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	importsService := imports.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-resolve", []string{"admin"}, false)
 	importID := requestUploadURL(t, router, "org-resolve", adminToken, "data.zip", "zip")
@@ -486,7 +486,7 @@ func TestResolveConflict_Forbidden_Coach(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	importsService := imports.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-x", []string{"admin"}, false)
 	coachToken := issueSessionToken(t, router, "org-x", []string{"coach"}, false)
@@ -521,7 +521,7 @@ func TestGetImportReport(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	importsService := imports.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-report", []string{"admin"}, false)
 	importID := requestUploadURL(t, router, "org-report", adminToken, "data.cl2", "cl2")
@@ -557,7 +557,7 @@ func TestGetImport_NotFound(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-x", []string{"admin"}, false)
 
@@ -576,7 +576,7 @@ func TestRequestUploadURL_UnsupportedType(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-x", []string{"admin"}, false)
 
@@ -605,7 +605,7 @@ func TestFinalizeImportRejectsRequiredModeWithoutScanner(t *testing.T) {
 	importsService := imports.NewService()
 	importsService.ConfigureSecurity(imports.SecurityConfig{RequireMalwareScanHook: true})
 	importsService.SetMalwareScanner(nil)
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-required", []string{"admin"}, false)
 	importID := requestUploadURL(t, router, "org-required", adminToken, "required.sd3", "sd3")
@@ -627,7 +627,7 @@ func TestFinalizeImportRejectsRequiredModeWithStubScanner(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	importsService := imports.NewService()
 	importsService.ConfigureSecurity(imports.SecurityConfig{RequireMalwareScanHook: true})
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-stub", []string{"admin"}, false)
 	importID := requestUploadURL(t, router, "org-stub", adminToken, "stub.sd3", "sd3")
@@ -651,7 +651,7 @@ func TestFinalizeImportRejectsInfectedUpload(t *testing.T) {
 	importsService.SetMalwareScanner(malwareScannerFunc(func(_ string, _ imports.FileUploadMetadata) imports.MalwareScanResult {
 		return imports.MalwareScanResult{Status: "infected", Provider: "clamav"}
 	}))
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-infected", []string{"admin"}, false)
 	importID := requestUploadURL(t, router, "org-infected", adminToken, "infected.zip", "zip")
@@ -679,7 +679,7 @@ func TestFinalizeImportAcceptsCleanUploadFromRealScanner(t *testing.T) {
 		}
 		return imports.MalwareScanResult{Status: "clean", Provider: "clamav"}
 	}))
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-clean", []string{"admin"}, false)
 	importID := requestUploadURL(t, router, "org-clean", adminToken, "clean.sd3", "sd3")

@@ -351,7 +351,7 @@ func TestCommitmentRequestAndParentResponse(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	meetsService := meets.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsService, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-test", []string{"admin"}, false)
 	parentToken := issueSessionTokenForUser(t, router, "user-parent-1", "org-test", []string{"parent"}, false)
@@ -422,7 +422,7 @@ func TestParentEventSelectionFlow(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	meetsService := meets.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsService, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-sel", []string{"admin"}, false)
 	parentToken := issueSessionTokenForUser(t, router, "user-parent-sel", "org-sel", []string{"parent"}, false)
@@ -517,7 +517,7 @@ func TestEventSelectionLockedAfterCommitmentsLocked(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	meetsService := meets.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsService, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-lock", []string{"admin"}, false)
 	parentToken := issueSessionTokenForUser(t, router, "user-parent-lock", "org-lock", []string{"parent"}, false)
@@ -582,7 +582,7 @@ func TestCoachCannotRespondToOtherHouseholdCommitment(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	meetsService := meets.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsService, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-scope", []string{"admin"}, false)
 	otherParentToken := issueSessionTokenForUser(t, router, "user-parent-other", "org-scope", []string{"parent"}, false)
@@ -623,7 +623,7 @@ func TestEntryProposeOverrideApprove(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	meetsService := meets.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsService, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-entry", []string{"admin"}, false)
 
@@ -743,7 +743,7 @@ func TestEntryOverrideRequiresReason(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	meetsService := meets.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsService, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-reason", []string{"admin"}, false)
 
@@ -799,7 +799,7 @@ func TestEntryApproveOnlySubmitted(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	meetsService := meets.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsService, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-state", []string{"admin"}, false)
 
@@ -855,7 +855,7 @@ func TestDuplicateEntryRejected(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	meetsService := meets.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsService, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-dup-entry", []string{"admin"}, false)
 
@@ -959,7 +959,7 @@ func TestCoachCannotRespondToCommitment(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	meetsService := meets.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsService, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-sec2", []string{"admin"}, false)
 	coachToken := issueSessionToken(t, router, "org-sec2", []string{"coach"}, false)
@@ -1000,7 +1000,7 @@ func TestRespondNoRemovesEventSelections(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	meetsService := meets.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsService, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-high4", []string{"admin"}, false)
 	parentToken := issueSessionTokenForUser(t, router, "user-parent-high4", "org-high4", []string{"parent"}, false)
@@ -1081,7 +1081,7 @@ func TestListEntriesParentScope(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	meetsService := meets.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsService, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-high1", []string{"admin"}, false)
 	parentToken := issueSessionTokenForUser(t, router, "user-parent-high1", "org-high1", []string{"parent"}, false)
@@ -1206,7 +1206,7 @@ func TestOverrideEntryDuplicateConflict(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	meetsService := meets.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsService, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-crit4", []string{"admin"}, false)
 
@@ -1269,7 +1269,7 @@ func TestOverrideEntryBlockedOnFinalizedMeet(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	meetsService := meets.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsService, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-high2", []string{"admin"}, false)
 
@@ -1363,7 +1363,7 @@ func TestApproveEntryBlockedOnInvalidMeetState(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	meetsService := meets.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsService, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-high3", []string{"admin"}, false)
 
@@ -1453,7 +1453,7 @@ func TestProposeEntryBlockedDuringCommitmentOpen(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	meetsService := meets.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsService, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-crit3", []string{"admin"}, false)
 

@@ -12,8 +12,6 @@ import {
   fetchSwimmerBestTimes,
   fetchAnnouncements,
   type SwimmerRecord,
-  type MeetRecord,
-  type BestTimeRecord,
   type AnnouncementRecord,
 } from '@/lib/adminData'
 
@@ -53,26 +51,21 @@ function fmtDate(dateStr?: string): string {
 }
 
 // Convert raw commitment status to display status
-function commitStatus(raw: string | undefined): 'committed' | 'pending' | 'open' {
+function commitStatus(raw: string | undefined): 'committed' | 'pending' | 'no' | 'closed' | 'open' {
   if (!raw) return 'open'
   if (raw === 'committed_yes') return 'committed'
   if (raw === 'invited') return 'pending'
-  if (raw === 'committed_no' || raw === 'coach_reviewed' || raw === 'locked') return 'open'
+  if (raw === 'committed_no') return 'no'
+  if (raw === 'coach_reviewed' || raw === 'locked') return 'closed'
   return 'open'
 }
 
 const COMMIT_STATUS = {
   committed: { label: 'Committed',       color: '#00D4AA', bg: 'rgba(0,212,170,0.10)', border: 'rgba(0,212,170,0.25)' },
   pending:   { label: 'Response Needed', color: '#F59E0B', bg: 'rgba(245,158,11,0.10)', border: 'rgba(245,158,11,0.25)' },
+  no:        { label: 'Not Going',       color: '#EF4444', bg: 'rgba(239,68,68,0.10)',  border: 'rgba(239,68,68,0.25)' },
+  closed:    { label: 'Closed',          color: '#4A6B82', bg: 'rgba(74,107,130,0.10)', border: 'rgba(74,107,130,0.20)' },
   open:      { label: 'Not Yet Open',    color: '#4A6B82', bg: 'rgba(74,107,130,0.10)', border: 'rgba(74,107,130,0.20)' },
-}
-
-const STANDARD_COLOR: Record<string, string> = {
-  AAA: '#00D4AA',
-  AA:  '#3b82f6',
-  A:   '#8b5cf6',
-  BB:  '#F59E0B',
-  B:   '#9A9693',
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -82,7 +75,7 @@ type MeetDisplay = {
   date: string
   course: string
   location: string
-  commitmentStatus: 'committed' | 'pending' | 'open'
+  commitmentStatus: 'committed' | 'pending' | 'no' | 'closed' | 'open'
   path: string
 }
 
@@ -266,8 +259,8 @@ export default function SwimmerDashboardPage() {
     ]).then(async ([swimmers, allMeets, anns]) => {
       // Resolve swimmer
       const mySwimmer = householdId
-        ? (swimmers.find(s => s.household_id === householdId) ?? swimmers[0] ?? null)
-        : (swimmers[0] ?? null)
+        ? (swimmers.find(s => s.household_id === householdId) ?? null)
+        : null
       setSwimmer(mySwimmer)
       setAnnouncements(anns.slice(0, 3))
 
@@ -291,7 +284,7 @@ export default function SwimmerDashboardPage() {
         // Fetch commitments for each active meet
         const meetDisplays: MeetDisplay[] = await Promise.all(
           activeMeets.slice(0, 5).map(async (m) => {
-            let cs: 'committed' | 'pending' | 'open' = 'open'
+            let cs: 'committed' | 'pending' | 'no' | 'closed' | 'open' = 'open'
             try {
               const commitments = await fetchMeetCommitments(api, orgId, m.id)
               const myCommitment = commitments.find(c => c.swimmer_id === mySwimmer.id)
@@ -441,7 +434,7 @@ export default function SwimmerDashboardPage() {
             />
             <StatCard
               label="Next Meet"
-              value={nextMeet ? fmtDate(undefined) && meets[0]?.date : '—'}
+              value={nextMeet ? (meets[0]?.date ?? '—') : '—'}
               sub={nextMeet?.name ?? 'No meets scheduled'}
             />
             <StatCard

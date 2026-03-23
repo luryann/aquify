@@ -12,7 +12,6 @@ import {
   fetchMeetEvents,
   fetchSwimmers,
   MeetRecord,
-  CommitmentRecord,
   MeetEventRecord,
   SwimmerRecord,
 } from '@/lib/adminData'
@@ -127,7 +126,6 @@ export default function MeetDetailPage() {
   const householdId = session?.user.householdId ?? ''
 
   const [meet, setMeet] = useState<MeetRecord | null>(null)
-  const [commitments, setCommitments] = useState<CommitmentRecord[]>([])
   const [events, setEvents] = useState<MeetEventRecord[]>([])
   const [swimmers, setSwimmers] = useState<SwimmerRecord[]>([])
   const [loading, setLoading] = useState(true)
@@ -148,7 +146,6 @@ export default function MeetDetailPage() {
     ])
       .then(([m, cmts, evs, swmrs]) => {
         setMeet(m)
-        setCommitments(cmts)
         setEvents(evs)
 
         // Filter to household swimmers
@@ -228,7 +225,7 @@ export default function MeetDetailPage() {
   const sessionIds = Array.from(new Set(events.map((e) => e.session_id ?? 'main')))
 
   const eligibleEvents = swimmer
-    ? events.filter((ev) => !ev.gender || ev.gender === swimmer.gender || ev.gender === 'X')
+    ? events.filter((ev) => !ev.gender || ev.gender.toLowerCase() === 'mixed' || ev.gender === swimmer.gender)
     : []
 
   const eligibleSessionGroups = sessionIds
@@ -255,17 +252,19 @@ export default function MeetDetailPage() {
           { response: val },
           { 'X-Org-Id': orgId }
         )
+        setSwimmerStates((prev) => ({
+          ...prev,
+          [swimmerId]: {
+            ...prev[swimmerId],
+            commitment: val,
+            selectedEvents: val === 'no' ? [] : prev[swimmerId].selectedEvents,
+          },
+        }))
+        setSubmitted((prev) => ({ ...prev, [swimmerId]: true }))
+        setTimeout(() => setSubmitted((prev) => ({ ...prev, [swimmerId]: false })), 2500)
+      } else {
+        console.error('Cannot update commitment: no commitment record found. Please refresh and try again.')
       }
-      setSwimmerStates((prev) => ({
-        ...prev,
-        [swimmerId]: {
-          ...prev[swimmerId],
-          commitment: val,
-          selectedEvents: val === 'no' ? [] : prev[swimmerId].selectedEvents,
-        },
-      }))
-      setSubmitted((prev) => ({ ...prev, [swimmerId]: true }))
-      setTimeout(() => setSubmitted((prev) => ({ ...prev, [swimmerId]: false })), 2500)
     } catch (err) {
       console.error(err)
     } finally {
@@ -274,6 +273,7 @@ export default function MeetDetailPage() {
   }
 
   const toggleEvent = (eventId: string) => {
+    if (!activeSwimmer || !swimmerStates[activeSwimmer]) return
     setSwimmerStates((prev) => {
       const current = prev[activeSwimmer].selectedEvents
       const next = current.includes(eventId)

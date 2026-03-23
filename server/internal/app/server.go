@@ -13,6 +13,7 @@ import (
 	"github.com/dareaquatics/aquify/server/internal/app/billing"
 	"github.com/dareaquatics/aquify/server/internal/app/comms"
 	"github.com/dareaquatics/aquify/server/internal/app/compliance"
+	"github.com/dareaquatics/aquify/server/internal/app/documents"
 	"github.com/dareaquatics/aquify/server/internal/app/exports"
 	"github.com/dareaquatics/aquify/server/internal/app/groups"
 	"github.com/dareaquatics/aquify/server/internal/app/handlers"
@@ -41,7 +42,7 @@ import (
 // because the scheduler goroutine cannot be stopped from this call site.
 // Production deployments use NewRouterWithServices directly (see main.go).
 func NewRouter(cfg Config, logger *slog.Logger) http.Handler {
-	return NewRouterWithServices(cfg, logger, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	return NewRouterWithServices(cfg, logger, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 func allowsProviderStubFallback(appEnv string) bool {
@@ -112,7 +113,7 @@ func (c unavailablePostmarkClient) SendEmail(_ context.Context, _ postmark.SendE
 // NewRouterWithServices constructs the HTTP router and wires all services.
 // workerServer may be nil; when nil a new in-memory worker server is
 // created, registered, and started automatically.
-func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.Service, membershipService *members.Service, groupsService *groups.Service, meetsService *meets.Service, importsService *imports.Service, exportsService *exports.Service, performanceService *performance.Service, billingService *billing.Service, stripeClient stripelib.Client, commsService *comms.Service, auditService *audit.Service, complianceService *compliance.Service, workerServer *workers.Server) http.Handler {
+func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.Service, membershipService *members.Service, groupsService *groups.Service, meetsService *meets.Service, importsService *imports.Service, exportsService *exports.Service, performanceService *performance.Service, billingService *billing.Service, stripeClient stripelib.Client, commsService *comms.Service, auditService *audit.Service, complianceService *compliance.Service, documentsService *documents.Service, workerServer *workers.Server) http.Handler {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -303,6 +304,14 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.S
 		}
 	}
 	complianceHandlers := handlers.NewComplianceHandlers(complianceService, auditService)
+	if documentsService == nil {
+		if dbPool != nil {
+			documentsService = documents.NewServiceWithPool(dbPool)
+		} else {
+			documentsService = documents.NewService()
+		}
+	}
+	documentHandlers := handlers.NewDocumentHandlers(documentsService, auditService)
 	reportsService := reports.NewService(membershipService, groupsService, meetsService, billingService)
 	reportsService.SetStorage(objectStore)
 	reportsHandlers := handlers.NewReportsHandlers(reportsService, auditService)
@@ -444,6 +453,7 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.S
 			commsHandlers.RegisterRoutes(protected)
 			auditHandlers.RegisterRoutes(protected)
 			complianceHandlers.RegisterRoutes(protected)
+			documentHandlers.RegisterRoutes(protected)
 			reportsHandlers.RegisterRoutes(protected)
 			jobsHandlers.RegisterRoutes(protected)
 			settingsHandlers.RegisterRoutes(protected)

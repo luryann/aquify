@@ -20,14 +20,6 @@ function fmtDate(iso?: string): string {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-function calcAge(dob: string): number {
-  const d = new Date(dob)
-  const now = new Date()
-  let age = now.getFullYear() - d.getFullYear()
-  const m = now.getMonth() - d.getMonth()
-  if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age--
-  return age
-}
 
 const GRADIENTS = [
   'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)',

@@ -10,10 +10,7 @@ import {
   fetchMeets,
   fetchMeetCommitments,
   fetchInvoicesForHousehold,
-  type SwimmerRecord,
-  type MeetRecord,
   type CommitmentRecord,
-  type InvoiceRecord,
 } from '@/lib/adminData'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────

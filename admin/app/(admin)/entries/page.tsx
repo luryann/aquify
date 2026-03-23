@@ -1,21 +1,30 @@
 'use client'
 
-import { useCallback, useMemo, useState, type CSSProperties } from 'react'
+import { useCallback, useMemo, useState, useEffect, type CSSProperties } from 'react'
 import Link from 'next/link'
 import { Icon } from '@/components/ui/icons'
 import { Table, type Column } from '@/components/ui/Table'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { useSession } from '@/lib/session'
+import { useApiClient } from '@/lib/api'
+import {
+  fetchMeets,
+  fetchMeetEntries,
+  fetchMeetEvents,
+  fetchSwimmers,
+  type EntryRecord,
+  type MeetEventRecord,
+  type SwimmerRecord,
+} from '@/lib/adminData'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type EntryStatus = 'draft' | 'submitted' | 'approved' | 'rejected' | 'exported'
+type EntryStatus = 'draft' | 'submitted' | 'approved' | 'rejected' | 'exported' | 'updated_from_results' | 'archived'
 
-type Entry = {
+type EntryRow = {
   id: string
   swimmer: string
   swimmerId: string
-  household: string
-  householdId: string
   meetId: string
   meetName: string
   meetDate: string
@@ -24,36 +33,18 @@ type Entry = {
   status: EntryStatus
   override: boolean
   overrideNote: string | null
-  proposedAt: string
 }
-
-// ─── Mock Data ────────────────────────────────────────────────────────────────
-
-const MOCK_ENTRIES: Entry[] = [
-  // Winter Classic — submitted entries needing approval
-  { id: 'ent-001', swimmer: 'Sofia Torres',    swimmerId: 'sw-006', household: 'Torres Household',  householdId: 'hh-003', meetId: 'meet-001', meetName: 'Winter Classic',        meetDate: '2026-03-22', event: '200 Free (F Open)',   seedTime: '2:02.18', status: 'submitted', override: false, overrideNote: null,                             proposedAt: '2026-03-10T14:00:00Z' },
-  { id: 'ent-002', swimmer: 'Sofia Torres',    swimmerId: 'sw-006', household: 'Torres Household',  householdId: 'hh-003', meetId: 'meet-001', meetName: 'Winter Classic',        meetDate: '2026-03-22', event: '100 Free (F Open)',   seedTime: '56.40',   status: 'submitted', override: false, overrideNote: null,                             proposedAt: '2026-03-10T14:00:00Z' },
-  { id: 'ent-003', swimmer: 'Jenna Park',      swimmerId: 'sw-004', household: 'Park Family',       householdId: 'hh-002', meetId: 'meet-001', meetName: 'Winter Classic',        meetDate: '2026-03-22', event: '200 IM (F 13-14)',    seedTime: '2:18.44', status: 'submitted', override: false, overrideNote: null,                             proposedAt: '2026-03-10T14:01:00Z' },
-  { id: 'ent-004', swimmer: 'Jenna Park',      swimmerId: 'sw-004', household: 'Park Family',       householdId: 'hh-002', meetId: 'meet-001', meetName: 'Winter Classic',        meetDate: '2026-03-22', event: '100 Fly (F 13-14)',   seedTime: '1:04.88', status: 'submitted', override: false, overrideNote: null,                             proposedAt: '2026-03-10T14:01:00Z' },
-  { id: 'ent-005', swimmer: 'Caleb Henderson', swimmerId: 'sw-001', household: 'Henderson Family',  householdId: 'hh-001', meetId: 'meet-001', meetName: 'Winter Classic',        meetDate: '2026-03-22', event: '100 Free (M Open)',   seedTime: '52.84',   status: 'submitted', override: false, overrideNote: null,                             proposedAt: '2026-03-10T14:02:00Z' },
-  { id: 'ent-006', swimmer: 'Ade Okafor',      swimmerId: 'sw-009', household: 'Okafor Household',  householdId: 'hh-004', meetId: 'meet-001', meetName: 'Winter Classic',        meetDate: '2026-03-22', event: '100 Back (M Open)',   seedTime: '56.12',   status: 'submitted', override: true,  overrideNote: 'Coach override: seed time updated from March results', proposedAt: '2026-03-10T14:03:00Z' },
-  // Spring Dual — approved entries
-  { id: 'ent-007', swimmer: 'Caleb Henderson', swimmerId: 'sw-001', household: 'Henderson Family',  householdId: 'hh-001', meetId: 'meet-004', meetName: 'Spring Dual — Sharks', meetDate: '2026-04-05', event: '100 Free (M Open)',   seedTime: '52.40',   status: 'approved',  override: false, overrideNote: null,                             proposedAt: '2026-03-20T10:00:00Z' },
-  { id: 'ent-008', swimmer: 'Jenna Park',      swimmerId: 'sw-004', household: 'Park Family',       householdId: 'hh-002', meetId: 'meet-004', meetName: 'Spring Dual — Sharks', meetDate: '2026-04-05', event: '200 IM (F 13-14)',    seedTime: '2:17.11', status: 'approved',  override: false, overrideNote: null,                             proposedAt: '2026-03-20T10:01:00Z' },
-  { id: 'ent-009', swimmer: 'Sofia Torres',    swimmerId: 'sw-006', household: 'Torres Household',  householdId: 'hh-003', meetId: 'meet-004', meetName: 'Spring Dual — Sharks', meetDate: '2026-04-05', event: '200 Free (F Open)',   seedTime: '2:01.44', status: 'approved',  override: false, overrideNote: null,                             proposedAt: '2026-03-20T10:02:00Z' },
-  // Rose City Invitational — draft entries
-  { id: 'ent-010', swimmer: 'Amara Okafor',    swimmerId: 'sw-011', household: 'Okafor Household',  householdId: 'hh-004', meetId: 'meet-002', meetName: 'Rose City Invitational', meetDate: '2026-04-19', event: '100 Breast (F Open)', seedTime: '1:12.33', status: 'draft',     override: false, overrideNote: null,                             proposedAt: '2026-04-01T09:00:00Z' },
-  { id: 'ent-011', swimmer: 'Mia Henderson',   swimmerId: 'sw-002', household: 'Henderson Family',  householdId: 'hh-001', meetId: 'meet-002', meetName: 'Rose City Invitational', meetDate: '2026-04-19', event: '100 Back (F 11-12)', seedTime: '1:08.22', status: 'draft',     override: false, overrideNote: null,                             proposedAt: '2026-04-01T09:01:00Z' },
-]
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-const STATUS_CFG: Record<EntryStatus, { label: string; color: string; bg: string }> = {
-  draft:     { label: 'Draft',     color: 'var(--text-muted)', bg: 'var(--bg-elevated)' },
-  submitted: { label: 'Submitted', color: 'var(--warning)',    bg: 'var(--warning-bg)' },
-  approved:  { label: 'Approved',  color: 'var(--success)',    bg: 'var(--success-bg)' },
-  rejected:  { label: 'Rejected',  color: 'var(--error)',      bg: 'var(--error-bg)' },
-  exported:  { label: 'Exported',  color: 'var(--info)',       bg: 'var(--info-bg)' },
+const STATUS_CFG: Record<string, { label: string; color: string; bg: string }> = {
+  draft:                { label: 'Draft',     color: 'var(--text-muted)', bg: 'var(--bg-elevated)' },
+  submitted:            { label: 'Submitted', color: 'var(--warning)',    bg: 'var(--warning-bg)' },
+  approved:             { label: 'Approved',  color: 'var(--success)',    bg: 'var(--success-bg)' },
+  rejected:             { label: 'Rejected',  color: 'var(--error)',      bg: 'var(--error-bg)' },
+  exported:             { label: 'Exported',  color: 'var(--info)',       bg: 'var(--info-bg)' },
+  updated_from_results: { label: 'Updated',   color: 'var(--info)',       bg: 'var(--info-bg)' },
+  archived:             { label: 'Archived',  color: 'var(--text-muted)', bg: 'var(--bg-elevated)' },
 }
 
 const STATUS_FILTER_OPTIONS = [
@@ -65,91 +56,164 @@ const STATUS_FILTER_OPTIONS = [
   { value: 'exported',  label: 'Exported' },
 ]
 
+const STROKE_LABELS: Record<string, string> = {
+  free: 'Free', back: 'Back', breast: 'Breast', fly: 'Fly', im: 'IM', medley: 'Medley',
+}
+
+const ENTRY_STATUSES = new Set(['commitment_open', 'commitment_closed', 'entry_finalized', 'completed'])
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-// ─── Derived: meet options ─────────────────────────────────────────────────────
+function formatSeedTime(hundredths: number | undefined): string {
+  if (!hundredths || hundredths <= 0) return 'NT'
+  const totalHundredths = Math.round(hundredths)
+  const h = Math.floor(totalHundredths / 360000)
+  const m = Math.floor((totalHundredths % 360000) / 6000)
+  const s = Math.floor((totalHundredths % 6000) / 100)
+  const cs = totalHundredths % 100
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(cs).padStart(2, '0')}`
+  if (m > 0) return `${m}:${String(s).padStart(2, '0')}.${String(cs).padStart(2, '0')}`
+  return `${s}.${String(cs).padStart(2, '0')}`
+}
 
-const MEET_OPTIONS = (() => {
-  const seen = new Map<string, string>()
-  for (const e of MOCK_ENTRIES) seen.set(e.meetId, e.meetName)
-  return [{ value: 'all', label: 'All Meets' }, ...[...seen.entries()].map(([v, l]) => ({ value: v, label: l }))]
-})()
+function formatEvent(ev: MeetEventRecord | undefined): string {
+  if (!ev) return '—'
+  const dist = ev.distance ?? ''
+  const stroke = STROKE_LABELS[ev.stroke?.toLowerCase() ?? ''] ?? ev.stroke ?? ''
+  const gender = ev.gender ? (ev.gender === 'M' ? 'M' : ev.gender === 'F' ? 'F' : ev.gender) : ''
+  const age = ev.age_group ? ` ${ev.age_group}` : ' Open'
+  return [dist, stroke, gender ? `(${gender}${age})` : ''].filter(Boolean).join(' ')
+}
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function EntriesPage() {
-  const [entries, setEntries]           = useState<Entry[]>(MOCK_ENTRIES)
-  const [meetFilter, setMeetFilter]     = useState('all')
+  const { session } = useSession()
+  const api = useApiClient(session?.token)
+
+  const [rows, setRows] = useState<EntryRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [meetFilter, setMeetFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
-  const [search, setSearch]             = useState('')
+  const [search, setSearch] = useState('')
 
   const handleApprove = useCallback((entryId: string) => {
-    setEntries((prev) => prev.map((e) => e.id === entryId ? { ...e, status: 'approved' } : e))
+    setRows((prev) => prev.map((e) => e.id === entryId ? { ...e, status: 'approved' } : e))
   }, [])
 
   const handleReject = useCallback((entryId: string) => {
-    if (!window.confirm('Reject this submitted entry? The swimmer entry will remain visible as rejected.')) return
-    setEntries((prev) => prev.map((e) => e.id === entryId ? { ...e, status: 'rejected' } : e))
+    if (!window.confirm('Reject this submitted entry?')) return
+    setRows((prev) => prev.map((e) => e.id === entryId ? { ...e, status: 'rejected' } : e))
   }, [])
 
-  function handleApproveAll(ids: string[]) {
-    setEntries((prev) => prev.map((e) => ids.includes(e.id) ? { ...e, status: 'approved' } : e))
-  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    let cancelled = false
+    async function run() {
+      if (!session?.user.orgId) { setLoading(false); return }
+      try {
+        setLoading(true)
+        setError(null)
+        const orgId = session.user.orgId
+
+        const [allMeets, allSwimmers] = await Promise.all([
+          fetchMeets(api, orgId),
+          fetchSwimmers(api, orgId),
+        ])
+
+        const swimmerMap = new Map<string, SwimmerRecord>(allSwimmers.map((s) => [s.id, s]))
+        const relevantMeets = allMeets.filter((m) => ENTRY_STATUSES.has(m.status))
+
+        // Fetch entries and events for each meet in parallel
+        const [entryResults, eventResults] = await Promise.all([
+          Promise.all(relevantMeets.map((m) => fetchMeetEntries(api, orgId, m.id).catch(() => [] as EntryRecord[]))),
+          Promise.all(relevantMeets.map((m) => fetchMeetEvents(api, orgId, m.id).catch(() => [] as MeetEventRecord[]))),
+        ])
+
+        const combined: EntryRow[] = []
+        for (let i = 0; i < relevantMeets.length; i++) {
+          const meet = relevantMeets[i]
+          const entries = entryResults[i]
+          const eventsMap = new Map<string, MeetEventRecord>(eventResults[i].map((ev) => [ev.id, ev]))
+
+          for (const e of entries) {
+            const swimmer = swimmerMap.get(e.swimmer_id)
+            const meetEvent = e.meet_event_id ? eventsMap.get(e.meet_event_id) : undefined
+            combined.push({
+              id: e.id,
+              swimmer: swimmer ? `${swimmer.first_name} ${swimmer.last_name}` : e.swimmer_id,
+              swimmerId: e.swimmer_id,
+              meetId: meet.id,
+              meetName: meet.name,
+              meetDate: meet.start_date ?? '',
+              event: formatEvent(meetEvent),
+              seedTime: formatSeedTime(e.seed_time_cents),
+              status: e.status as EntryStatus,
+              override: !!e.override_reason,
+              overrideNote: e.override_reason ?? null,
+            })
+          }
+        }
+
+        if (!cancelled) setRows(combined)
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load entries')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    run()
+    return () => { cancelled = true }
+  }, [session?.user.orgId])
 
   // Stats
-  const total     = entries.length
-  const submitted = entries.filter((e) => e.status === 'submitted').length
-  const approved  = entries.filter((e) => e.status === 'approved').length
-  const draft     = entries.filter((e) => e.status === 'draft').length
-  const overrides = entries.filter((e) => e.override).length
+  const total     = rows.length
+  const submitted = rows.filter((e) => e.status === 'submitted').length
+  const approved  = rows.filter((e) => e.status === 'approved').length
+  const draft     = rows.filter((e) => e.status === 'draft').length
+  const overrides = rows.filter((e) => e.override).length
+
+  // Meet options
+  const meetOptions = useMemo(() => {
+    const seen = new Map<string, string>()
+    for (const r of rows) seen.set(r.meetId, r.meetName)
+    return [{ value: 'all', label: 'All Meets' }, ...[...seen.entries()].map(([v, l]) => ({ value: v, label: l }))]
+  }, [rows])
 
   const filtered = useMemo(() => {
-    return entries.filter((e) => {
+    return rows.filter((e) => {
       const q = search.toLowerCase()
       const matchSearch = !q
         || e.swimmer.toLowerCase().includes(q)
         || e.event.toLowerCase().includes(q)
         || e.meetName.toLowerCase().includes(q)
-        || e.household.toLowerCase().includes(q)
-      const matchMeet   = meetFilter   === 'all' || e.meetId   === meetFilter
-      const matchStatus = statusFilter === 'all' || e.status   === statusFilter
+      const matchMeet   = meetFilter   === 'all' || e.meetId === meetFilter
+      const matchStatus = statusFilter === 'all' || e.status === statusFilter
       return matchSearch && matchMeet && matchStatus
     })
-  }, [entries, search, meetFilter, statusFilter])
+  }, [rows, search, meetFilter, statusFilter])
 
   const pendingVisible = filtered.filter((e) => e.status === 'submitted')
 
-  // Build table columns inside the component so approve/reject closures work
-  const columns = useMemo<Column<Entry>[]>(() => [
+  const columns = useMemo<Column<EntryRow>[]>(() => [
     {
       key: 'swimmer',
       label: 'Swimmer',
       sortable: true,
       render: (r) => (
-        <div>
-          <Link
-            href={`/members/swimmers/${r.swimmerId}`}
-            style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', textDecoration: 'none' }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--accent)')}
-            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text)')}
-          >
-            {r.swimmer}
-          </Link>
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '1px' }}>
-            <Link
-              href={`/members/households/${r.householdId}`}
-              style={{ color: 'var(--text-muted)', textDecoration: 'none' }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--accent)')}
-              onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
-            >
-              {r.household}
-            </Link>
-          </div>
-        </div>
+        <Link
+          href={`/members/swimmers/${r.swimmerId}`}
+          style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', textDecoration: 'none' }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--accent)')}
+          onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text)')}
+        >
+          {r.swimmer}
+        </Link>
       ),
     },
     {
@@ -164,7 +228,7 @@ export default function EntriesPage() {
       label: 'Seed Time',
       align: 'right',
       render: (r) => (
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', fontWeight: 700, color: 'var(--accent)' }}>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', fontWeight: 700, color: r.seedTime === 'NT' ? 'var(--text-muted)' : 'var(--accent)' }}>
           {r.seedTime}
         </span>
       ),
@@ -183,9 +247,11 @@ export default function EntriesPage() {
           >
             {r.meetName}
           </Link>
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: '1px' }}>
-            {formatDate(r.meetDate)}
-          </div>
+          {r.meetDate && (
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: '1px' }}>
+              {formatDate(r.meetDate)}
+            </div>
+          )}
         </div>
       ),
     },
@@ -193,7 +259,7 @@ export default function EntriesPage() {
       key: 'status',
       label: 'Status',
       render: (r) => {
-        const c = STATUS_CFG[r.status]
+        const c = STATUS_CFG[r.status] ?? STATUS_CFG['draft']
         return (
           <div style={{ display: 'flex', gap: '5px', alignItems: 'center', flexWrap: 'wrap' }}>
             <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '10px', background: c.bg, color: c.color, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' as const }}>
@@ -207,15 +273,6 @@ export default function EntriesPage() {
           </div>
         )
       },
-    },
-    {
-      key: 'proposedAt',
-      label: 'Proposed',
-      render: (r) => (
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-muted)' }}>
-          {formatDate(r.proposedAt)}
-        </span>
-      ),
     },
     {
       key: 'id',
@@ -255,8 +312,19 @@ export default function EntriesPage() {
     },
   ], [handleApprove, handleReject])
 
+  if (error) {
+    return (
+      <div style={{ padding: '24px', maxWidth: '1200px' }}>
+        <div className="card" style={{ padding: '20px', borderLeft: '3px solid var(--error)' }}>
+          <p style={{ color: 'var(--error)', fontSize: '13px' }}>Failed to load entries: {error}</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div style={{ padding: '24px', maxWidth: '1200px' }}>
+      <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }`}</style>
 
       {/* Page header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
@@ -272,7 +340,9 @@ export default function EntriesPage() {
           <button
             className="btn btn-primary"
             style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-            onClick={() => handleApproveAll(pendingVisible.map((e) => e.id))}
+            onClick={() => {
+              for (const e of pendingVisible) handleApprove(e.id)
+            }}
           >
             <Icon name="check-circle" size={13} /> Approve All ({pendingVisible.length})
           </button>
@@ -282,10 +352,10 @@ export default function EntriesPage() {
       {/* Stats strip */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '24px' }}>
         {[
-          { label: 'Total',       value: total,     color: 'var(--text)' },
-          { label: 'Needs Review', value: submitted, color: submitted > 0 ? 'var(--warning)' : 'var(--text-muted)' },
-          { label: 'Approved',    value: approved,  color: 'var(--success)' },
-          { label: 'Overrides',   value: overrides, color: overrides > 0 ? 'var(--accent)' : 'var(--text-muted)' },
+          { label: 'Total',        value: loading ? '—' : total,     color: 'var(--text)' },
+          { label: 'Needs Review', value: loading ? '—' : submitted, color: (submitted > 0 && !loading) ? 'var(--warning)' : 'var(--text-muted)' },
+          { label: 'Approved',     value: loading ? '—' : approved,  color: 'var(--success)' },
+          { label: 'Overrides',    value: loading ? '—' : overrides, color: (overrides > 0 && !loading) ? 'var(--accent)' : 'var(--text-muted)' },
         ].map((s) => (
           <div key={s.label} className="card" style={{ padding: '14px 16px' }}>
             <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)', marginBottom: '6px' }}>{s.label}</div>
@@ -295,7 +365,7 @@ export default function EntriesPage() {
       </div>
 
       {/* Pending banner */}
-      {submitted > 0 && (
+      {!loading && submitted > 0 && (
         <div
           className="card"
           style={{ padding: '14px 16px', marginBottom: '20px', borderLeft: '3px solid var(--warning)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}
@@ -328,7 +398,7 @@ export default function EntriesPage() {
           />
         </div>
         <select value={meetFilter} onChange={(e) => setMeetFilter(e.target.value)} className="input" style={{ minWidth: '180px' }}>
-          {MEET_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          {meetOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="input" style={{ minWidth: '150px' }}>
           {STATUS_FILTER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -336,15 +406,27 @@ export default function EntriesPage() {
       </div>
 
       {/* Result count */}
-      <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginBottom: '12px' }}>
-        {filtered.length} of {total} entries
-      </div>
+      {!loading && (
+        <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginBottom: '12px' }}>
+          {filtered.length} of {total} entries
+        </div>
+      )}
+
+      {/* Loading skeleton */}
+      {loading && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {[1,2,3,4,5].map((i) => (
+            <div key={i} style={{ height: '44px', background: 'var(--bg-elevated)', borderRadius: '6px', animation: 'pulse 1.5s ease-in-out infinite', animationDelay: `${i * 0.1}s` }} />
+          ))}
+        </div>
+      )}
 
       {/* Table */}
-      {filtered.length === 0
-        ? <EmptyState title="No entries found" description="Try adjusting your filters. Entries are proposed when commitments are locked and event selections are finalized." />
-        : <Table columns={columns} data={filtered} pageSize={20} emptyTitle="No entries" emptyDescription="No entries match the current filters." />
-      }
+      {!loading && (
+        filtered.length === 0
+          ? <EmptyState title="No entries found" description={total === 0 ? "No entries exist yet. Entries are created when commitments are locked and event selections are finalized." : "Try adjusting your filters."} />
+          : <Table columns={columns} data={filtered} pageSize={20} emptyTitle="No entries" emptyDescription="No entries match the current filters." />
+      )}
     </div>
   )
 }

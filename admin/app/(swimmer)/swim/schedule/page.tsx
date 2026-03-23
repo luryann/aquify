@@ -258,7 +258,6 @@ export default function SwimmerSchedulePage() {
   const [schedule, setSchedule] = useState<ScheduleEvent[]>([])
   const [loading, setLoading] = useState(true)
   const [typeFilter, setTypeFilter] = useState<EventType | 'all'>('all')
-  const [view, setView] = useState<'schedule'>('schedule')
 
   useEffect(() => {
     if (!orgId) { setLoading(false); return }
