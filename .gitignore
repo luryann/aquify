@@ -54,11 +54,13 @@ bin/
 .gomodcache_local/
 go.work
 go.work.sum
+server/.gocache/
 
 # Logs and temp
 *.log
 .tmp/
 tmp/
+failed/
 
 # Build artifacts
 dist/
