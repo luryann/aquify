@@ -1,8 +1,20 @@
 # OS / editor
 .DS_Store
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~
+*.bak
 .vscode/
 .idea/
 .claude/
+.cursor/
+.zed/
 
 # Environment files (keep examples tracked)
 .env
@@ -26,14 +38,22 @@ pnpm-debug.log*
 # Go build/test artifacts
 *.test
 *.out
+*.exe
+*.prof
+*.pprof
+*.coverprofile
 coverage.out
 server/bin/
+internal/meetfiles/bin/
+bin/
 
 # Local Go caches
 .gocache/
 .gocache_local/
 .gomodcache/
 .gomodcache_local/
+go.work
+go.work.sum
 
 # Logs and temp
 *.log
@@ -43,3 +63,5 @@ tmp/
 # Build artifacts
 dist/
 coverage/
+*.tgz
+*.tar.gz
