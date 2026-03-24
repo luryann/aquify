@@ -10,7 +10,7 @@
 
 ## Overview
 
-DARE Platform is the team's operational system of record: memberships, meets, money, messaging, and data exchange with swim meet software. It covers:
+aquify is the team's operational system of record: memberships, meets, money, messaging, and data exchange with swim meet software. It covers:
 
 - **Member & household management** — parents, swimmers, coaches, groups, and registrations
 - **Meet operations** — meet setup, commitment tracking, event entry approvals, and coach overrides
