@@ -1,4 +1,4 @@
-# DARE Platform
+# aquify
 
 > Full-stack swim club operations platform replacing TeamUnify/SportsEngine Motion.
 
