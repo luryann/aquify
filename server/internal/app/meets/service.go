@@ -8,10 +8,14 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/dareaquatics/aquify/meetfiles"
+	"github.com/dareaquatics/aquify/meetfiles/cl2"
+	"github.com/dareaquatics/aquify/meetfiles/sdif"
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -34,6 +38,7 @@ var (
 	ErrEntryNotEditable    = errors.New("entry is not in an editable state")
 	ErrDuplicateSelection  = errors.New("event already selected for this commitment")
 	ErrEventNumberConflict = errors.New("event number already exists in this meet")
+	ErrInvalidMeetFile     = errors.New("invalid meet file")
 )
 
 // ─── Domain types ─────────────────────────────────────────────────────────────
@@ -234,6 +239,31 @@ type OverrideEntryInput struct {
 	Reason         string
 }
 
+type ParsedSessionDraft struct {
+	SessionNumber int    `json:"session_number"`
+	Section       string `json:"section"`
+	Name          string `json:"name"`
+	SessionDate   string `json:"session_date,omitempty"`
+	WarmupTime    string `json:"warmup_time,omitempty"`
+	StartTime     string `json:"start_time,omitempty"`
+}
+
+type ParseMeetFileInput struct {
+	Filename string
+	Data     []byte
+}
+
+type ParseMeetFileResult struct {
+	FileType      string               `json:"file_type"`
+	SourceFile    string               `json:"source_file"`
+	MeetName      string               `json:"meet_name,omitempty"`
+	Course        string               `json:"course,omitempty"`
+	StartDate     string               `json:"start_date,omitempty"`
+	EndDate       string               `json:"end_date,omitempty"`
+	Sessions      []ParsedSessionDraft `json:"sessions"`
+	ParseWarnings []string             `json:"parse_warnings,omitempty"`
+}
+
 // ─── Internal seed refs ───────────────────────────────────────────────────────
 
 type swimmerRef struct {
@@ -329,6 +359,160 @@ func (s *Service) newID(prefix string) string {
 		return uuid.New().String()
 	}
 	return prefix + randomToken(12)
+}
+
+func (s *Service) ParseMeetFile(principal *appmiddleware.Principal, orgID string, input ParseMeetFileInput) (*ParseMeetFileResult, error) {
+	if !hasAnyRole(principal, "owner", "admin", "coach") {
+		return nil, ErrForbidden
+	}
+	if strings.TrimSpace(orgID) == "" {
+		return nil, fmt.Errorf("%w: org id is required", ErrInvalidMeetFile)
+	}
+	filename := strings.TrimSpace(input.Filename)
+	if filename == "" {
+		return nil, fmt.Errorf("%w: filename is required", ErrInvalidMeetFile)
+	}
+	if len(input.Data) == 0 {
+		return nil, fmt.Errorf("%w: file is empty", ErrInvalidMeetFile)
+	}
+
+	sourceFile, result, warnings, err := parseMeetFile(filename, input.Data)
+	if err != nil {
+		return nil, err
+	}
+
+	startDate := ""
+	if result.MeetStartDate != nil {
+		startDate = result.MeetStartDate.UTC().Format("2006-01-02")
+	}
+	endDate := ""
+	if result.MeetEndDate != nil {
+		endDate = result.MeetEndDate.UTC().Format("2006-01-02")
+	}
+
+	return &ParseMeetFileResult{
+		FileType:      string(result.FileType),
+		SourceFile:    sourceFile,
+		MeetName:      strings.TrimSpace(result.MeetName),
+		Course:        strings.TrimSpace(string(result.Course)),
+		StartDate:     startDate,
+		EndDate:       endDate,
+		Sessions:      deriveSessionDrafts(result),
+		ParseWarnings: warnings,
+	}, nil
+}
+
+func parseMeetFile(filename string, data []byte) (string, *meetfiles.ParseResult, []string, error) {
+	fileType := meetfiles.DetectFileType(filename, data)
+	switch fileType {
+	case meetfiles.FileTypeSD3:
+		result, err := sdif.Parse(data)
+		if err != nil {
+			return "", nil, nil, fmt.Errorf("%w: parse SD3: %v", ErrInvalidMeetFile, err)
+		}
+		return filename, result, parseWarnings(result.ParseErrors), nil
+	case meetfiles.FileTypeCL2:
+		result, err := cl2.Parse(data)
+		if err != nil {
+			return "", nil, nil, fmt.Errorf("%w: parse CL2: %v", ErrInvalidMeetFile, err)
+		}
+		return filename, result, parseWarnings(result.ParseErrors), nil
+	case meetfiles.FileTypeHY3:
+		ingest := meetfiles.ReadHY3(filename, data)
+		if ingest.SelectedPayload == nil {
+			if ingest.Error != nil {
+				return "", nil, nil, fmt.Errorf("%w: %s", ErrInvalidMeetFile, ingest.Error.Message)
+			}
+			return "", nil, nil, fmt.Errorf("%w: hy3 payload missing", ErrInvalidMeetFile)
+		}
+		sourceFile, result, warnings, err := parseMeetFile(ingest.SelectedPayload.Name, ingest.SelectedPayload.Content)
+		if err != nil {
+			return "", nil, nil, err
+		}
+		if ingest.Error != nil {
+			warnings = append([]string{ingest.Error.Message}, warnings...)
+		}
+		return sourceFile, result, warnings, nil
+	case meetfiles.FileTypeZIP:
+		entries, err := meetfiles.ReadZip(data)
+		if err != nil {
+			return "", nil, nil, fmt.Errorf("%w: parse ZIP: %v", ErrInvalidMeetFile, err)
+		}
+		if len(entries) == 0 {
+			return "", nil, nil, fmt.Errorf("%w: zip archive does not contain a parseable sd3/cl2 payload", ErrInvalidMeetFile)
+		}
+		sort.Slice(entries, func(i, j int) bool {
+			iType := meetfiles.DetectFileType(entries[i].Name, entries[i].Content)
+			jType := meetfiles.DetectFileType(entries[j].Name, entries[j].Content)
+			if iType != jType {
+				return iType == meetfiles.FileTypeSD3
+			}
+			return strings.ToLower(entries[i].Name) < strings.ToLower(entries[j].Name)
+		})
+		sourceFile, result, warnings, err := parseMeetFile(entries[0].Name, entries[0].Content)
+		if err != nil {
+			return "", nil, nil, err
+		}
+		if len(entries) > 1 {
+			warnings = append([]string{fmt.Sprintf("zip archive contained %d parseable files; selected %s", len(entries), entries[0].Name)}, warnings...)
+		}
+		return sourceFile, result, warnings, nil
+	default:
+		return "", nil, nil, fmt.Errorf("%w: unsupported file type", ErrInvalidMeetFile)
+	}
+}
+
+func parseWarnings(errs []meetfiles.ParseError) []string {
+	if len(errs) == 0 {
+		return nil
+	}
+	limit := min(len(errs), 5)
+	out := make([]string, 0, limit)
+	for _, parseErr := range errs[:limit] {
+		if strings.TrimSpace(parseErr.Message) != "" {
+			out = append(out, parseErr.Message)
+		}
+	}
+	return out
+}
+
+func deriveSessionDrafts(result *meetfiles.ParseResult) []ParsedSessionDraft {
+	if result == nil {
+		return []ParsedSessionDraft{{SessionNumber: 1, Section: "Day 1", Name: "Session 1"}}
+	}
+
+	start := result.MeetStartDate
+	end := result.MeetEndDate
+	if start == nil && end != nil {
+		start = end
+	}
+	if end == nil && start != nil {
+		end = start
+	}
+	if start == nil || end == nil {
+		return []ParsedSessionDraft{{SessionNumber: 1, Section: "Day 1", Name: "Session 1"}}
+	}
+
+	startDay := start.UTC().Truncate(24 * time.Hour)
+	endDay := end.UTC().Truncate(24 * time.Hour)
+	if endDay.Before(startDay) {
+		endDay = startDay
+	}
+
+	var drafts []ParsedSessionDraft
+	for day := startDay; !day.After(endDay); day = day.Add(24 * time.Hour) {
+		number := len(drafts) + 1
+		drafts = append(drafts, ParsedSessionDraft{
+			SessionNumber: number,
+			Section:       fmt.Sprintf("Day %d", number),
+			Name:          fmt.Sprintf("Session %d", number),
+			SessionDate:   day.Format("2006-01-02"),
+		})
+	}
+	if len(drafts) == 0 {
+		return []ParsedSessionDraft{{SessionNumber: 1, Section: "Day 1", Name: "Session 1"}}
+	}
+	return drafts
 }
 
 // SeedEntry directly inserts a meet event and entry into the service for test
@@ -480,7 +664,7 @@ func (s *Service) CreateMeet(principal *appmiddleware.Principal, orgID string, i
 
 // ListMeets returns all meets in an org.
 func (s *Service) ListMeets(principal *appmiddleware.Principal, orgID string) ([]Meet, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "billing", "read-only") {
+	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "billing", "read-only", "swimmer") {
 		return nil, ErrForbidden
 	}
 
@@ -498,7 +682,7 @@ func (s *Service) ListMeets(principal *appmiddleware.Principal, orgID string) ([
 
 // GetMeet retrieves a single meet by ID.
 func (s *Service) GetMeet(principal *appmiddleware.Principal, orgID, meetID string) (Meet, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "billing", "read-only") {
+	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "billing", "read-only", "swimmer") {
 		return Meet{}, ErrForbidden
 	}
 
@@ -636,7 +820,7 @@ func (s *Service) CreateMeetSession(principal *appmiddleware.Principal, orgID, m
 
 // ListMeetSessions returns all sessions for a meet.
 func (s *Service) ListMeetSessions(principal *appmiddleware.Principal, orgID, meetID string) ([]MeetSession, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "billing", "read-only") {
+	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "billing", "read-only", "swimmer") {
 		return nil, ErrForbidden
 	}
 
@@ -753,7 +937,7 @@ func (s *Service) CreateMeetEvent(principal *appmiddleware.Principal, orgID, mee
 
 // ListMeetEvents returns all events for a meet.
 func (s *Service) ListMeetEvents(principal *appmiddleware.Principal, orgID, meetID string) ([]MeetEvent, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "billing", "read-only") {
+	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "billing", "read-only", "swimmer") {
 		return nil, ErrForbidden
 	}
 
@@ -860,7 +1044,7 @@ func (s *Service) PublishCommitmentRequest(principal *appmiddleware.Principal, o
 
 // ListCommitments returns commitments for a meet. Parents only see their own household's commitments.
 func (s *Service) ListCommitments(principal *appmiddleware.Principal, orgID, meetID string) ([]Commitment, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent") {
+	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "swimmer") {
 		return nil, ErrForbidden
 	}
 
@@ -880,6 +1064,12 @@ func (s *Service) ListCommitments(principal *appmiddleware.Principal, orgID, mee
 		// Parent scope: only see their own household's commitments.
 		if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "owner", "admin", "coach") {
 			if !s.parentOwnsHouseholdLocked(principal.UserID, c.HouseholdID) {
+				continue
+			}
+		}
+		// Swimmer-only scope: only commitments for their own household.
+		if hasAnyRole(principal, "swimmer") && !hasAnyRole(principal, "owner", "admin", "coach", "parent") {
+			if strings.TrimSpace(principal.HouseholdID) == "" || strings.TrimSpace(c.HouseholdID) != strings.TrimSpace(principal.HouseholdID) {
 				continue
 			}
 		}

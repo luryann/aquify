@@ -2,9 +2,11 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"reflect"
 	"strings"
 	"time"
 
@@ -23,12 +25,14 @@ import (
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
 	"github.com/dareaquatics/aquify/server/internal/app/performance"
 	"github.com/dareaquatics/aquify/server/internal/app/reports"
+	"github.com/dareaquatics/aquify/server/internal/app/training"
+	"github.com/dareaquatics/aquify/server/internal/db"
+	"github.com/dareaquatics/aquify/server/internal/keycloak"
 	"github.com/dareaquatics/aquify/server/internal/postmark"
 	"github.com/dareaquatics/aquify/server/internal/runtimepersist"
 	"github.com/dareaquatics/aquify/server/internal/storage"
 	stripelib "github.com/dareaquatics/aquify/server/internal/stripe"
 	"github.com/dareaquatics/aquify/server/internal/telemetry"
-	"github.com/dareaquatics/aquify/server/internal/db"
 	"github.com/dareaquatics/aquify/server/internal/workers"
 	"github.com/dareaquatics/aquify/server/internal/workers/jobhandlers"
 	"github.com/go-chi/chi/v5"
@@ -42,20 +46,73 @@ import (
 // because the scheduler goroutine cannot be stopped from this call site.
 // Production deployments use NewRouterWithServices directly (see main.go).
 func NewRouter(cfg Config, logger *slog.Logger) http.Handler {
-	return NewRouterWithServices(cfg, logger, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	return NewRouterWithServices(cfg, logger, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 func allowsProviderStubFallback(appEnv string) bool {
-	switch strings.ToLower(strings.TrimSpace(appEnv)) {
-	case "", "development", "local", "test":
-		return true
-	default:
-		return false
+	return isExplicitDevelopmentEnv(appEnv)
+}
+
+// ValidateKeycloakStartup verifies Keycloak connectivity when KEYCLOAK_REALM is set.
+// It checks that the OIDC JWKS endpoint is reachable and ensures required realm roles exist.
+// Returns an error if JWKS is unreachable; logs a warning if realm roles cannot be verified.
+func ValidateKeycloakStartup(cfg Config, logger *slog.Logger) error {
+	if cfg.Keycloak.Realm == "" {
+		return nil
 	}
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	// 1. Verify JWKS endpoint is reachable.
+	if cfg.Auth.OIDC.JWKSURL != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, cfg.Auth.OIDC.JWKSURL, nil)
+		if err != nil {
+			return fmt.Errorf("keycloak startup: invalid JWKS URL %q: %w", cfg.Auth.OIDC.JWKSURL, err)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("keycloak startup: JWKS endpoint unreachable at %q — verify OIDC_JWKS_URL and Keycloak is running: %w", cfg.Auth.OIDC.JWKSURL, err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("keycloak startup: JWKS endpoint at %q returned HTTP %d (expected 200)", cfg.Auth.OIDC.JWKSURL, resp.StatusCode)
+		}
+		logger.Info("keycloak startup: JWKS endpoint reachable", "url", cfg.Auth.OIDC.JWKSURL)
+	}
+
+	// 2. Ensure required realm roles exist (idempotent — creates any that are missing).
+	if cfg.Keycloak.AdminURL != "" && cfg.Keycloak.ClientID != "" && cfg.Keycloak.ClientSecret != "" {
+		kcClient, err := keycloak.NewAdminClient(keycloak.AdminConfig{
+			AdminURL:     cfg.Keycloak.AdminURL,
+			Realm:        cfg.Keycloak.Realm,
+			ClientID:     cfg.Keycloak.ClientID,
+			ClientSecret: cfg.Keycloak.ClientSecret,
+		})
+		if err != nil {
+			return fmt.Errorf("keycloak startup: failed to create admin client: %w", err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := kcClient.EnsureRealmRolesExist(ctx, keycloak.DefaultRealmRoles); err != nil {
+			logger.Warn("keycloak startup: could not verify/create realm roles — role assignment features may be degraded",
+				"error", err,
+				"roles", keycloak.DefaultRealmRoles,
+			)
+		} else {
+			logger.Info("keycloak startup: realm roles verified", "roles", keycloak.DefaultRealmRoles)
+		}
+	}
+
+	return nil
 }
 
 // ValidateProviderConfig enforces that non-dev environments cannot boot
-// without working Stripe and Postmark provider clients.
+// without working Stripe and Postmark provider clients, and that Postmark
+// webhook authentication is explicitly configured.
 func ValidateProviderConfig(cfg Config) error {
 	if allowsProviderStubFallback(cfg.AppEnv) {
 		return nil
@@ -72,14 +129,37 @@ func ValidateProviderConfig(cfg Config) error {
 	}); err != nil {
 		errs = append(errs, fmt.Sprintf("postmark: %v", err))
 	}
+	// Postmark webhook auth must be explicitly configured in non-dev environments.
+	// Static shared-secret header or HTTP basic auth is the minimum requirement.
+	pmWebhookAuthConfigured := (cfg.Postmark.WebhookAuthHeaderName != "" && cfg.Postmark.WebhookAuthHeaderValue != "") ||
+		(cfg.Postmark.WebhookBasicUser != "" && cfg.Postmark.WebhookBasicPass != "")
+	if !pmWebhookAuthConfigured {
+		errs = append(errs, "postmark webhook: auth must be configured via POSTMARK_WEBHOOK_AUTH_HEADER_NAME+VALUE or POSTMARK_WEBHOOK_BASIC_USER+PASS in non-development environments")
+	}
 	if len(errs) == 0 {
 		return nil
 	}
 	return fmt.Errorf("provider startup validation failed: %s", strings.Join(errs, "; "))
 }
 
+// ValidateWorkerConfig enforces Redis-backed durable queues outside explicit
+// development/test environments.
+func ValidateWorkerConfig(cfg Config) error {
+	if allowsProviderStubFallback(cfg.AppEnv) {
+		return nil
+	}
+	if strings.TrimSpace(cfg.Worker.RedisURL) == "" {
+		return fmt.Errorf("worker startup validation failed: REDIS_URL must be configured in non-development environments")
+	}
+	return nil
+}
+
 type unavailableStripeClient struct {
 	err error
+}
+
+func (c unavailableStripeClient) Ready(_ context.Context) error {
+	return c.err
 }
 
 func (c unavailableStripeClient) CreatePaymentIntent(_ context.Context, _ stripelib.PaymentIntentParams) (*stripelib.PaymentIntentResult, error) {
@@ -106,14 +186,60 @@ type unavailablePostmarkClient struct {
 	err error
 }
 
+func (c unavailablePostmarkClient) Ready(_ context.Context) error {
+	return c.err
+}
+
 func (c unavailablePostmarkClient) SendEmail(_ context.Context, _ postmark.SendEmailRequest) (postmark.SendEmailResponse, error) {
 	return postmark.SendEmailResponse{}, c.err
 }
 
+var (
+	openDBPool       = db.Open
+	validateDBSchema = db.ValidateExpectedSchema
+	closeDBPool      = func(pool *pgxpool.Pool) { pool.Close() }
+)
+
+func openValidatedDBPool(ctx context.Context, cfg Config, logger *slog.Logger) *pgxpool.Pool {
+	if cfg.DatabaseURL == "" {
+		return nil
+	}
+
+	dbPool, err := openDBPool(ctx, cfg.DatabaseURL)
+	if err != nil {
+		logger.Error("db pool init failed; services will run in-memory only", "error", err)
+		return nil
+	}
+	if dbPool == nil {
+		return nil
+	}
+	if err := validateDBSchema(ctx, dbPool); err != nil {
+		logger.Error("database schema validation failed; DB-backed services disabled", "error", err)
+		closeDBPool(dbPool)
+		return nil
+	}
+	return dbPool
+}
+
+func isNilWorkerBackend(backend workers.Backend) bool {
+	if backend == nil {
+		return true
+	}
+	value := reflect.ValueOf(backend)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return value.IsNil()
+	default:
+		return false
+	}
+}
+
 // NewRouterWithServices constructs the HTTP router and wires all services.
-// workerServer may be nil; when nil a new in-memory worker server is
+// workerBackend may be nil; when nil a new in-memory worker server is
 // created, registered, and started automatically.
-func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.Service, membershipService *members.Service, groupsService *groups.Service, meetsService *meets.Service, importsService *imports.Service, exportsService *exports.Service, performanceService *performance.Service, billingService *billing.Service, stripeClient stripelib.Client, commsService *comms.Service, auditService *audit.Service, complianceService *compliance.Service, documentsService *documents.Service, workerServer *workers.Server) http.Handler {
+// kcClient may be nil; when nil a StubClient is used in dev/test and a real
+// AdminClient is constructed from cfg.Keycloak in non-dev environments.
+func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.Service, membershipService *members.Service, groupsService *groups.Service, meetsService *meets.Service, importsService *imports.Service, exportsService *exports.Service, performanceService *performance.Service, billingService *billing.Service, stripeClient stripelib.Client, commsService *comms.Service, auditService *audit.Service, complianceService *compliance.Service, documentsService *documents.Service, trainingService *training.Service, workerBackend workers.Backend, kcClient keycloak.Client) http.Handler {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -132,7 +258,7 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.S
 	if auditService == nil {
 		auditService = audit.NewService()
 	}
-	objectStore, err := storage.NewClient(storage.Config{
+	objectStore, err := newObjectStorageClient(storage.Config{
 		Endpoint:  cfg.Storage.Endpoint,
 		AccessKey: cfg.Storage.AccessKey,
 		SecretKey: cfg.Storage.SecretKey,
@@ -147,32 +273,29 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.S
 
 	// Open a pgxpool when DatabaseURL is configured. The pool is used to back
 	// all service repositories; a nil pool falls back to in-memory only.
-	var dbPool *pgxpool.Pool
-	if cfg.DatabaseURL != "" {
-		var poolErr error
-		dbPool, poolErr = db.Open(context.Background(), cfg.DatabaseURL)
-		if poolErr != nil {
-			logger.Error("db pool init failed; services will run in-memory only", "error", poolErr)
-			dbPool = nil
-		}
-	}
+	dbPool := openValidatedDBPool(context.Background(), cfg, logger)
 
 	if authService == nil {
 		authService = authn.NewService(authn.Config{
 			EnableDevStubTokens: cfg.Auth.EnableDevStubTokens,
+			Logger:              logger,
 			OIDC: authn.OIDCConfig{
-				AuthorizeURL:    cfg.Auth.OIDC.AuthorizeURL,
-				TokenURL:        cfg.Auth.OIDC.TokenURL,
-				JWKSURL:         cfg.Auth.OIDC.JWKSURL,
-				RedirectURL:     cfg.Auth.OIDC.RedirectURL,
-				ClientID:        cfg.Auth.OIDC.ClientID,
-				ClientSecret:    cfg.Auth.OIDC.ClientSecret,
-				ExpectedIssuer:  cfg.Auth.OIDC.ExpectedIssuer,
-				StateSigningKey: cfg.Auth.OIDC.StateSigningKey,
-				HTTPTimeout:     cfg.Auth.OIDC.HTTPTimeout,
+				AuthorizeURL:          cfg.Auth.OIDC.AuthorizeURL,
+				TokenURL:              cfg.Auth.OIDC.TokenURL,
+				JWKSURL:               cfg.Auth.OIDC.JWKSURL,
+				EndSessionURL:         cfg.Auth.OIDC.EndSessionURL,
+				RedirectURL:           cfg.Auth.OIDC.RedirectURL,
+				PostLogoutRedirectURL: cfg.Auth.OIDC.PostLogoutRedirectURL,
+				ClientID:              cfg.Auth.OIDC.ClientID,
+				ClientSecret:          cfg.Auth.OIDC.ClientSecret,
+				ExpectedIssuer:        cfg.Auth.OIDC.ExpectedIssuer,
+				StateSigningKey:       cfg.Auth.OIDC.StateSigningKey,
+				HTTPTimeout:           cfg.Auth.OIDC.HTTPTimeout,
 			},
 		})
 	}
+	// Persist MFA factors to DB when a pool is available so they survive restarts.
+	authService.SetPool(dbPool)
 	authHandlers := handlers.NewAuthHandlersWithAudit(authService, auditService, allowDevSessionIssue)
 	if membershipService == nil {
 		if dbPool != nil {
@@ -231,6 +354,9 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.S
 	// Wire meets service into performance service so that best-time recomputes
 	// automatically back-fill seed times on future draft/submitted entries.
 	performanceService.SetEntrySeedTimeUpdater(meetsService)
+	// Wire members service as the household checker so that per-swimmer
+	// performance reads enforce parent household scoping at the service layer.
+	performanceService.SetHouseholdChecker(membershipService)
 	performanceHandlers := handlers.NewPerformanceHandlersWithAudit(performanceService, auditService)
 	if billingService == nil {
 		if dbPool != nil {
@@ -244,7 +370,7 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.S
 		if err == nil {
 			stripeClient = realStripeClient
 		} else if allowsProviderStubFallback(appEnv) {
-			logger.Warn("stripe init failed; falling back to stub client", "error", err)
+			logger.Info("stripe init skipped; falling back to stub client (dev mode)", "error", err)
 			stripeClient = stripelib.NewStubClient()
 		} else {
 			logger.Error("stripe init failed; provider unavailable in non-dev environment", "error", err)
@@ -260,32 +386,40 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.S
 		cfg.Stripe.ReconciliationAlertThresholdCents,
 		logger,
 	)
+	// Apply a tighter per-IP rate limiter to cost-driving Stripe write routes.
+	stripeHandlers.SetWriteLimiter(appmiddleware.NewRateLimiter(
+		cfg.Security.RateLimit.StripeRequests,
+		cfg.Security.RateLimit.StripeWindow,
+		cfg.Security.RateLimit.TrustedProxyCIDRs,
+	))
+	var postmarkClient postmark.Client
 	if commsService == nil {
 		// Wire real Postmark client when configured. Non-dev environments must
 		// fail closed instead of silently downgrading to a stub provider.
-		var pmClient postmark.Client
 		realClient, err := postmark.NewHTTPClient(postmark.Config{
 			ServerToken: cfg.Postmark.ServerToken,
 			FromName:    cfg.Postmark.FromName,
 			FromEmail:   cfg.Postmark.FromEmail,
 		})
 		if err == nil {
-			pmClient = realClient
+			postmarkClient = realClient
 		} else if allowsProviderStubFallback(appEnv) {
-			logger.Warn("postmark init failed; falling back to stub client", "error", err)
+			logger.Info("postmark init skipped; falling back to stub client (dev mode)", "error", err)
 		} else {
 			logger.Error("postmark init failed; provider unavailable in non-dev environment", "error", err)
-			pmClient = unavailablePostmarkClient{err: fmt.Errorf("postmark provider unavailable: %w", err)}
+			postmarkClient = unavailablePostmarkClient{err: fmt.Errorf("postmark provider unavailable: %w", err)}
 		}
-		if pmClient == nil {
-			pmClient = postmark.NewStubClient()
+		if postmarkClient == nil {
+			postmarkClient = postmark.NewStubClient()
 		}
 		if dbPool != nil {
 			commsService = comms.NewServiceWithPool(dbPool)
-			commsService.SetPostmarkClient(pmClient)
+			commsService.SetPostmarkClient(postmarkClient)
 		} else {
-			commsService = comms.NewServiceWithClient(pmClient)
+			commsService = comms.NewServiceWithClient(postmarkClient)
 		}
+	} else {
+		postmarkClient = commsService.PostmarkClient()
 	}
 	commsHandlers := handlers.NewCommsHandlersWithWebhookAuth(
 		commsService,
@@ -311,7 +445,53 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.S
 			documentsService = documents.NewService()
 		}
 	}
-	documentHandlers := handlers.NewDocumentHandlers(documentsService, auditService)
+	documentHandlers := handlers.NewDocumentHandlers(documentsService, auditService, objectStore)
+	if trainingService == nil {
+		if dbPool != nil {
+			trainingService = training.NewServiceWithPool(dbPool)
+		} else {
+			trainingService = training.NewService()
+		}
+	}
+	trainingHandlers := handlers.NewTrainingHandlers(trainingService, auditService)
+
+	// Keycloak client — prefer injected, then real from config, then stub fallback.
+	if kcClient == nil {
+		realKC, kcErr := keycloak.NewAdminClient(keycloak.AdminConfig{
+			AdminURL:     cfg.Keycloak.AdminURL,
+			Realm:        cfg.Keycloak.Realm,
+			ClientID:     cfg.Keycloak.ClientID,
+			ClientSecret: cfg.Keycloak.ClientSecret,
+		})
+		if kcErr == nil {
+			kcClient = realKC
+		} else if allowsProviderStubFallback(appEnv) {
+			if errors.Is(kcErr, keycloak.ErrInvalidConfig) {
+				logger.Info("keycloak admin client not configured; using stub client (dev mode)")
+			} else {
+				logger.Info("keycloak init skipped; falling back to stub client (dev mode)", "error", kcErr)
+			}
+			kcClient = keycloak.NewStubClient()
+		} else {
+			logger.Error("keycloak init failed in non-dev environment", "error", kcErr)
+			kcClient = keycloak.NewStubClient()
+		}
+	}
+	userHandlers := handlers.NewUserHandlersWithMembers(kcClient, auditService, membershipService)
+
+	// Wire household lookup: after OIDC login, attach the session's household_id
+	// from the keycloak_user_id stored on the household record.
+	authService.SetHouseholdLookup(func(keycloakUserID string) string {
+		if membershipService == nil {
+			return ""
+		}
+		h, found := membershipService.GetHouseholdByKeycloakUserID(keycloakUserID)
+		if !found {
+			return ""
+		}
+		return h.ID
+	})
+
 	reportsService := reports.NewService(membershipService, groupsService, meetsService, billingService)
 	reportsService.SetStorage(objectStore)
 	reportsHandlers := handlers.NewReportsHandlers(reportsService, auditService)
@@ -325,6 +505,7 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.S
 			"oidc_expected_issuer":    cfg.Auth.OIDC.ExpectedIssuer,
 		},
 		"workers": map[string]any{
+			"redis_configured":      cfg.Worker.RedisURL != "",
 			"concurrency_per_queue": cfg.Worker.ConcurrencyPerQueue,
 			"reconcile_interval":    cfg.Worker.ReconcileInterval,
 			"integrity_interval":    cfg.Worker.IntegrityInterval,
@@ -348,7 +529,7 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.S
 			"region":   cfg.Storage.Region,
 		},
 		"stripe": map[string]any{
-			"currency":                            cfg.Stripe.Currency,
+			"currency":                             cfg.Stripe.Currency,
 			"reconciliation_alert_threshold_cents": cfg.Stripe.ReconciliationAlertThresholdCents,
 		},
 		"postmark": map[string]any{
@@ -380,14 +561,16 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.S
 	loadRuntimeSnapshots(logger, runtimeRepo, runtimeParticipants)
 
 	// ── Workers ────────────────────────────────────────────────────────────────
-	if workerServer == nil {
-		workerServer, _ = BuildWorkers(cfg, logger, importsService, exportsService, reportsService)
+	if isNilWorkerBackend(workerBackend) {
+		workerServer, _ := BuildWorkers(cfg, logger, importsService, exportsService, reportsService)
 		workerServer.Start()
+		workerBackend = workerServer
+	} else {
+		registerWorkerHandlers(workerBackend, logger, importsService, exportsService, reportsService)
 	}
-	workerServer.RegisterHandler(workers.TypeGenerateExport, jobhandlers.GenerateExportHandler(logger, exportsService))
-	workerServer.RegisterHandler(workers.TypePurgeExpiredFiles, jobhandlers.PurgeExpiredFilesHandler(logger, importsService, exportsService, reportsService))
-	exportsService.SetQueue(workerServer)
-	jobsHandlers := handlers.NewJobsHandlers(workerServer)
+	readinessChecker := buildReadinessChecker(cfg, dbPool, objectStore, stripeClient, postmarkClient, workerBackend, kcClient)
+	exportsService.SetQueue(workerBackend)
+	jobsHandlers := handlers.NewJobsHandlers(workerBackend)
 
 	// Initialise Prometheus metrics. A no-op instance is used in tests when
 	// the metrics address is blank.
@@ -399,7 +582,7 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.S
 	router.Use(appmiddleware.StructuredLogger(logger))
 	router.Use(appmiddleware.Recoverer(logger))
 	router.Use(appmiddleware.SecurityHeaders)
-	router.Use(appmiddleware.NewRateLimiter(cfg.Security.RateLimit.GlobalRequests, cfg.Security.RateLimit.GlobalWindow))
+	router.Use(appmiddleware.NewRateLimiter(cfg.Security.RateLimit.GlobalRequests, cfg.Security.RateLimit.GlobalWindow, cfg.Security.RateLimit.TrustedProxyCIDRs))
 	router.Use(runtimePersistenceMiddleware(logger, runtimeRepo, runtimeParticipants))
 	router.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   cfg.AllowedOrigins,
@@ -416,20 +599,37 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.S
 	router.Get("/metrics", metrics.Handler().ServeHTTP)
 
 	router.Route("/api/v1", func(api chi.Router) {
-		api.Route("/health", handlers.RegisterHealthRoutes)
+		api.Route("/health", func(healthRouter chi.Router) {
+			handlers.RegisterHealthRoutes(healthRouter, readinessChecker)
+		})
 		api.Get("/openapi", handlers.OpenAPIStub)
 
 		// Public routes: no auth middleware required.
 		stripeHandlers.RegisterPublicRoutes(api)
 		commsHandlers.RegisterPublicRoutes(api)
+		userHandlers.RegisterPublicRoutes(api)
 
 		api.Route("/auth", func(auth chi.Router) {
-			auth.Use(appmiddleware.NewRateLimiter(cfg.Security.RateLimit.AuthRequests, cfg.Security.RateLimit.AuthWindow))
-			auth.Use(appmiddleware.CSRFProtection(cfg.Security.CSRFHeaderName))
-			authHandlers.RegisterPublicRoutes(auth)
-			auth.Group(func(protected chi.Router) {
-				protected.Use(appmiddleware.Auth(authService))
-				authHandlers.RegisterProtectedRoutes(protected)
+			auth.Use(appmiddleware.NewRateLimiter(cfg.Security.RateLimit.AuthRequests, cfg.Security.RateLimit.AuthWindow, cfg.Security.RateLimit.TrustedProxyCIDRs))
+			// OIDC endpoints are exempt from CSRF: the signed state parameter
+			// already provides CSRF protection for the authorization code flow.
+			auth.Group(func(oidc chi.Router) {
+				oidc.Get("/oidc/authorize", authHandlers.OIDCAuthorize)
+				oidc.Post("/oidc/callback", authHandlers.OIDCCallback)
+			})
+			// Logout is intentionally CSRF-exempt because it only terminates
+			// browser session state (no privilege gain or data mutation).
+			auth.Group(func(noCSRF chi.Router) {
+				authHandlers.RegisterNoCSRFRoutes(noCSRF)
+			})
+			// All other auth endpoints require CSRF protection.
+			auth.Group(func(csrf chi.Router) {
+				csrf.Use(appmiddleware.CSRFProtection(cfg.Security.CSRFHeaderName))
+				authHandlers.RegisterPublicRoutes(csrf)
+				csrf.Group(func(protected chi.Router) {
+					protected.Use(appmiddleware.Auth(authService))
+					authHandlers.RegisterProtectedRoutes(protected)
+				})
 			})
 		})
 
@@ -454,9 +654,11 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.S
 			auditHandlers.RegisterRoutes(protected)
 			complianceHandlers.RegisterRoutes(protected)
 			documentHandlers.RegisterRoutes(protected)
+			trainingHandlers.RegisterRoutes(protected)
 			reportsHandlers.RegisterRoutes(protected)
 			jobsHandlers.RegisterRoutes(protected)
 			settingsHandlers.RegisterRoutes(protected)
+			userHandlers.RegisterRoutes(protected)
 		})
 	})
 
@@ -474,14 +676,7 @@ func BuildWorkers(cfg Config, logger *slog.Logger, importsService *imports.Servi
 		Concurrency: cfg.Worker.ConcurrencyPerQueue,
 		Logger:      logger,
 	})
-	ws.RegisterHandler(workers.TypeParseImport, jobhandlers.ParseImportHandler(logger))
-	ws.RegisterHandler(workers.TypeGenerateExport, jobhandlers.GenerateExportHandler(logger, exportsService))
-	ws.RegisterHandler(workers.TypeSendCampaignBatch, jobhandlers.SendCampaignBatchHandler(logger))
-	ws.RegisterHandler(workers.TypeBillingReconcile, jobhandlers.BillingReconcileHandler(logger))
-	ws.RegisterHandler(workers.TypeNightlyIntegrity, jobhandlers.NightlyIntegrityHandler(logger))
-	ws.RegisterHandler(workers.TypePurgeExpiredFiles, jobhandlers.PurgeExpiredFilesHandler(logger, importsService, exportsService, reportsService))
-	ws.RegisterHandler(workers.TypeProcessDataExport, jobhandlers.ProcessDataExportHandler(logger))
-	ws.RegisterHandler(workers.TypeProcessDataDeletion, jobhandlers.ProcessDataDeletionHandler(logger))
+	registerWorkerHandlers(ws, logger, importsService, exportsService, reportsService)
 
 	sched := workers.NewScheduler(ws, logger)
 	registerScheduledJobs(sched, cfg)
@@ -489,9 +684,40 @@ func BuildWorkers(cfg Config, logger *slog.Logger, importsService *imports.Servi
 	return ws, sched
 }
 
+// RegisterDurableScheduledJobs wires the configured periodic jobs into the
+// Redis-backed durable backend used by the dedicated worker process.
+func RegisterDurableScheduledJobs(backend *workers.RedisBackend, cfg Config) {
+	if backend == nil {
+		return
+	}
+	registerScheduledJobs(backend, cfg)
+}
+
 // registerScheduledJobs wires periodic jobs into the scheduler.
 // Intervals are parsed from config; a zero or invalid duration disables the job.
-func registerScheduledJobs(s *workers.Scheduler, cfg Config) {
+type scheduledJobRegistrar interface {
+	Register(workers.ScheduledJob)
+}
+
+type workerHandlerRegistrar interface {
+	RegisterHandler(taskType string, h workers.Handler)
+}
+
+func registerWorkerHandlers(registrar workerHandlerRegistrar, logger *slog.Logger, importsService *imports.Service, exportsService *exports.Service, reportsService *reports.Service) {
+	if registrar == nil {
+		return
+	}
+	registrar.RegisterHandler(workers.TypeParseImport, jobhandlers.ParseImportHandler(logger))
+	registrar.RegisterHandler(workers.TypeGenerateExport, jobhandlers.GenerateExportHandler(logger, exportsService))
+	registrar.RegisterHandler(workers.TypeSendCampaignBatch, jobhandlers.SendCampaignBatchHandler(logger))
+	registrar.RegisterHandler(workers.TypeBillingReconcile, jobhandlers.BillingReconcileHandler(logger))
+	registrar.RegisterHandler(workers.TypeNightlyIntegrity, jobhandlers.NightlyIntegrityHandler(logger))
+	registrar.RegisterHandler(workers.TypePurgeExpiredFiles, jobhandlers.PurgeExpiredFilesHandler(logger, importsService, exportsService, reportsService))
+	registrar.RegisterHandler(workers.TypeProcessDataExport, jobhandlers.ProcessDataExportHandler(logger))
+	registrar.RegisterHandler(workers.TypeProcessDataDeletion, jobhandlers.ProcessDataDeletionHandler(logger))
+}
+
+func registerScheduledJobs(s scheduledJobRegistrar, cfg Config) {
 	type entry struct {
 		name     string
 		taskType string

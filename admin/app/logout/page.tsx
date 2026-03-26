@@ -2,7 +2,15 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { getCSRFCookieValue, useSession } from '@/lib/session'
+import { useSession } from '@/lib/session'
+
+type LogoutResponse = {
+  status?: string
+  logout_url?: string
+  redirect_url?: string
+  message?: string
+  error?: string | { message?: string }
+}
 
 export default function LogoutPage() {
   const router = useRouter()
@@ -10,6 +18,8 @@ export default function LogoutPage() {
   const [mounted, setMounted] = useState(false)
   const [stage, setStage] = useState<'revoking' | 'done' | 'error'>('revoking')
   const [error, setError] = useState('')
+  const [redirectTarget, setRedirectTarget] = useState('/login')
+  const [topLevelRedirect, setTopLevelRedirect] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -17,34 +27,43 @@ export default function LogoutPage() {
 
     async function revoke() {
       try {
-        const csrf = getCSRFCookieValue()
-        const headers: Record<string, string> = {}
-        if (csrf) headers['X-CSRF-Token'] = csrf
-
-        const res = await fetch('/api/v1/auth/sessions/revoke', {
+        const res = await fetch('/api/v1/auth/sessions/logout', {
           method: 'POST',
-          headers,
           credentials: 'include',
         })
 
-        if (!res.ok && res.status !== 401 && res.status !== 404) {
+        if (!res.ok) {
           let message = 'Unable to revoke your session.'
           try {
-            const payload = await res.json() as { message?: string; error?: string }
-            message = payload.message ?? payload.error ?? message
+            const payload = await res.json() as {
+              message?: string
+              error?: string | { message?: string }
+            }
+            const errField = payload.error
+            message = payload.message
+              ?? (typeof errField === 'string' ? errField : errField?.message)
+              ?? message
           } catch {
             // Use default message.
           }
           throw new Error(message)
         }
 
+        const payload = await res.json() as LogoutResponse
+        const nextRedirect = payload.redirect_url?.trim() || '/login'
+        const logoutURL = payload.logout_url?.trim() || ''
+
         signOut()
-        if (!cancelled) setStage('done')
+        if (!cancelled) {
+          setRedirectTarget(logoutURL || nextRedirect)
+          setTopLevelRedirect(Boolean(logoutURL))
+          setStage('done')
+        }
       } catch (err) {
         signOut()
         if (!cancelled) {
           setStage('error')
-          setError(err instanceof Error ? err.message : 'Unable to sign out cleanly.')
+          setError(err instanceof Error ? `${err.message} Please retry sign-out.` : 'Unable to sign out cleanly. Please retry.')
         }
       }
     }
@@ -57,10 +76,16 @@ export default function LogoutPage() {
 
   useEffect(() => {
     if (stage === 'done') {
-      const t = setTimeout(() => router.push('/login'), 1200)
+      const t = setTimeout(() => {
+        if (topLevelRedirect) {
+          window.location.assign(redirectTarget)
+          return
+        }
+        router.push(redirectTarget)
+      }, 1200)
       return () => clearTimeout(t)
     }
-  }, [stage, router])
+  }, [redirectTarget, router, stage, topLevelRedirect])
 
   return (
     <div
@@ -145,7 +170,13 @@ export default function LogoutPage() {
             </p>
 
             <button
-              onClick={() => router.push('/login')}
+              onClick={() => {
+                if (topLevelRedirect) {
+                  window.location.assign(redirectTarget)
+                  return
+                }
+                router.push(redirectTarget)
+              }}
               style={{
                 marginTop: '24px', padding: '9px 22px',
                 background: 'var(--bg-surface)', border: '1px solid var(--border)',
@@ -184,7 +215,7 @@ export default function LogoutPage() {
               {error}
             </p>
             <button
-              onClick={() => router.push('/login')}
+              onClick={() => window.location.reload()}
               style={{
                 marginTop: '24px', padding: '9px 22px',
                 background: 'var(--bg-surface)', border: '1px solid var(--border)',
@@ -192,7 +223,7 @@ export default function LogoutPage() {
                 fontFamily: 'var(--font-body)', cursor: 'pointer',
               }}
             >
-              Return to sign-in
+              Retry sign-out
             </button>
           </div>
         )}

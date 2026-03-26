@@ -17,6 +17,7 @@ import (
 	"time"
 
 	stripeapi "github.com/stripe/stripe-go/v84"
+	"github.com/stripe/stripe-go/v84/account"
 	"github.com/stripe/stripe-go/v84/balancetransaction"
 	"github.com/stripe/stripe-go/v84/checkout/session"
 	"github.com/stripe/stripe-go/v84/paymentintent"
@@ -139,6 +140,9 @@ type ReconciliationReport struct {
 // deployment should provide a real implementation backed by stripe-go. All
 // financial-facing tests should inject a *StubClient.
 type Client interface {
+	// Ready performs a lightweight authenticated probe against Stripe.
+	Ready(ctx context.Context) error
+
 	// CreatePaymentIntent creates a new PaymentIntent on Stripe.
 	CreatePaymentIntent(ctx context.Context, params PaymentIntentParams) (*PaymentIntentResult, error)
 
@@ -296,6 +300,11 @@ func NewStubClient() *StubClient {
 	return &StubClient{}
 }
 
+// Ready reports the stub as available for local/test environments.
+func (c *StubClient) Ready(_ context.Context) error {
+	return nil
+}
+
 // CreatedIntents returns a snapshot of all PaymentIntents created via this stub.
 func (c *StubClient) CreatedIntents() []*PaymentIntentResult {
 	c.mu.Lock()
@@ -404,6 +413,13 @@ func NewSDKClient(secretKey string) (*SDKClient, error) {
 
 func (c *SDKClient) withKey() {
 	stripeapi.Key = c.secretKey
+}
+
+// Ready performs a cheap authenticated read against the Stripe account API.
+func (c *SDKClient) Ready(_ context.Context) error {
+	c.withKey()
+	_, err := account.Get()
+	return err
 }
 
 // CreatePaymentIntent creates a Stripe PaymentIntent via stripe-go.

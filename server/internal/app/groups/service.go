@@ -224,12 +224,42 @@ func (s *Service) loadFromDB(ctx context.Context) error {
 	if s.repo == nil {
 		return nil
 	}
-	grps, rules, regs, waivers, err := s.repo.LoadAll(ctx)
+	grps, rules, regs, waivers, swimmers, households, err := s.repo.LoadAll(ctx)
 	if err != nil {
 		return err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.resetDBBackedStateLocked()
+	s.populateDBBackedStateLocked(grps, rules, regs, waivers, swimmers, households)
+	return nil
+}
+
+func (s *Service) syncFromDB(ctx context.Context) error {
+	if s.repo == nil {
+		return nil
+	}
+	grps, rules, regs, waivers, swimmers, households, err := s.repo.LoadAll(ctx)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.resetDBBackedStateLocked()
+	s.populateDBBackedStateLocked(grps, rules, regs, waivers, swimmers, households)
+	return nil
+}
+
+func (s *Service) resetDBBackedStateLocked() {
+	s.groups = make(map[string]Group)
+	s.rules = make(map[string]EligibilityRule)
+	s.registrations = make(map[string]Registration)
+	s.waivers = make(map[string]WaiverAcceptance)
+	s.swimmers = make(map[string]swimmerRef)
+	s.households = make(map[string]householdRef)
+}
+
+func (s *Service) populateDBBackedStateLocked(grps []Group, rules []EligibilityRule, regs []Registration, waivers []WaiverAcceptance, swimmers []swimmerRef, households []householdRef) {
 	for _, g := range grps {
 		s.groups[g.ID] = g
 	}
@@ -242,7 +272,12 @@ func (s *Service) loadFromDB(ctx context.Context) error {
 	for _, w := range waivers {
 		s.waivers[w.ID] = w
 	}
-	return nil
+	for _, swimmer := range swimmers {
+		s.swimmers[swimmer.ID] = swimmer
+	}
+	for _, household := range households {
+		s.households[household.ID] = household
+	}
 }
 
 func (s *Service) newID(prefix string) string {
@@ -284,6 +319,9 @@ func (s *Service) SeedParentHousehold(parentUserID, householdID string) {
 func (s *Service) CreateGroup(principal *appmiddleware.Principal, orgID string, input CreateGroupInput) (Group, GroupAuditEvent, error) {
 	if !hasAnyRole(principal, "owner", "admin", "coach") {
 		return Group{}, GroupAuditEvent{}, ErrForbidden
+	}
+	if err := s.syncFromDB(context.Background()); err != nil {
+		return Group{}, GroupAuditEvent{}, err
 	}
 
 	code := strings.TrimSpace(strings.ToLower(input.Code))
@@ -330,7 +368,7 @@ func (s *Service) CreateGroup(principal *appmiddleware.Principal, orgID string, 
 	}
 	if s.repo != nil {
 		if err := s.repo.UpsertGroup(context.Background(), group); err != nil {
-			slog.Error("groups: upsert group", "error", err)
+			return Group{}, GroupAuditEvent{}, mapPersistenceError(err)
 		}
 	}
 	s.groups[group.ID] = group
@@ -348,6 +386,9 @@ func (s *Service) CreateGroup(principal *appmiddleware.Principal, orgID string, 
 func (s *Service) UpdateGroup(principal *appmiddleware.Principal, orgID, groupID string, input UpdateGroupInput) (Group, GroupAuditEvent, error) {
 	if !hasAnyRole(principal, "owner", "admin", "coach") {
 		return Group{}, GroupAuditEvent{}, ErrForbidden
+	}
+	if err := s.syncFromDB(context.Background()); err != nil {
+		return Group{}, GroupAuditEvent{}, err
 	}
 
 	s.mu.Lock()
@@ -397,7 +438,7 @@ func (s *Service) UpdateGroup(principal *appmiddleware.Principal, orgID, groupID
 	group.UpdatedBy = principal.UserID
 	if s.repo != nil {
 		if err := s.repo.UpsertGroup(context.Background(), group); err != nil {
-			slog.Error("groups: upsert group (update)", "error", err)
+			return Group{}, GroupAuditEvent{}, mapPersistenceError(err)
 		}
 	}
 	s.groups[group.ID] = group
@@ -418,6 +459,9 @@ func (s *Service) GetGroup(principal *appmiddleware.Principal, orgID, groupID st
 	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "billing", "read-only") {
 		return Group{}, ErrForbidden
 	}
+	if err := s.syncFromDB(context.Background()); err != nil {
+		return Group{}, err
+	}
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -433,6 +477,9 @@ func (s *Service) GetGroup(principal *appmiddleware.Principal, orgID, groupID st
 func (s *Service) ListGroups(principal *appmiddleware.Principal, orgID string, activeOnly bool) ([]Group, error) {
 	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "billing", "read-only") {
 		return nil, ErrForbidden
+	}
+	if err := s.syncFromDB(context.Background()); err != nil {
+		return nil, err
 	}
 
 	s.mu.RLock()
@@ -464,6 +511,9 @@ func (s *Service) ListGroups(principal *appmiddleware.Principal, orgID string, a
 func (s *Service) AttachEligibilityRule(principal *appmiddleware.Principal, orgID, groupID string, input AttachEligibilityRuleInput) (EligibilityRule, GroupAuditEvent, error) {
 	if !hasAnyRole(principal, "owner", "admin") {
 		return EligibilityRule{}, GroupAuditEvent{}, ErrForbidden
+	}
+	if err := s.syncFromDB(context.Background()); err != nil {
+		return EligibilityRule{}, GroupAuditEvent{}, err
 	}
 
 	ruleType := strings.TrimSpace(strings.ToLower(input.RuleType))
@@ -497,7 +547,7 @@ func (s *Service) AttachEligibilityRule(principal *appmiddleware.Principal, orgI
 	}
 	if s.repo != nil {
 		if err := s.repo.UpsertEligibilityRule(context.Background(), rule); err != nil {
-			slog.Error("groups: upsert eligibility_rule", "error", err)
+			return EligibilityRule{}, GroupAuditEvent{}, mapPersistenceError(err)
 		}
 	}
 	s.rules[rule.ID] = rule
@@ -517,6 +567,9 @@ func (s *Service) EvaluateSwimmerEligibility(principal *appmiddleware.Principal,
 	if !hasAnyRole(principal, "owner", "admin", "coach", "parent") {
 		return EligibilityResult{}, ErrForbidden
 	}
+	if err := s.syncFromDB(context.Background()); err != nil {
+		return EligibilityResult{}, err
+	}
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -533,7 +586,7 @@ func (s *Service) EvaluateSwimmerEligibility(principal *appmiddleware.Principal,
 
 	// Parent scope: can only evaluate own household swimmers.
 	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "owner", "admin", "coach") {
-		if !s.parentOwnsHouseholdLocked(principal.UserID, swimmer.HouseholdID) {
+		if strings.TrimSpace(principal.HouseholdID) != swimmer.HouseholdID && !s.parentOwnsHouseholdLocked(principal.UserID, swimmer.HouseholdID) {
 			return EligibilityResult{}, ErrForbidden
 		}
 	}
@@ -564,6 +617,9 @@ func (s *Service) EvaluateSwimmerEligibility(principal *appmiddleware.Principal,
 func (s *Service) ListEligibilityRules(principal *appmiddleware.Principal, orgID, groupID string) ([]EligibilityRule, error) {
 	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "billing", "read-only") {
 		return nil, ErrForbidden
+	}
+	if err := s.syncFromDB(context.Background()); err != nil {
+		return nil, err
 	}
 
 	s.mu.RLock()
@@ -646,6 +702,9 @@ func (s *Service) CreateRegistration(principal *appmiddleware.Principal, orgID s
 	if !hasAnyRole(principal, "owner", "admin", "coach", "parent") {
 		return Registration{}, ErrForbidden
 	}
+	if err := s.syncFromDB(context.Background()); err != nil {
+		return Registration{}, err
+	}
 
 	swimmerID := strings.TrimSpace(input.SwimmerID)
 	householdID := strings.TrimSpace(input.HouseholdID)
@@ -680,7 +739,7 @@ func (s *Service) CreateRegistration(principal *appmiddleware.Principal, orgID s
 
 	// Parent scope: can only register swimmers from their own household.
 	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "owner", "admin", "coach") {
-		if !s.parentOwnsHouseholdLocked(principal.UserID, householdID) {
+		if strings.TrimSpace(principal.HouseholdID) != householdID && !s.parentOwnsHouseholdLocked(principal.UserID, householdID) {
 			return Registration{}, ErrForbidden
 		}
 	}
@@ -715,7 +774,7 @@ func (s *Service) CreateRegistration(principal *appmiddleware.Principal, orgID s
 	}
 	if s.repo != nil {
 		if err := s.repo.UpsertRegistration(context.Background(), reg); err != nil {
-			slog.Error("groups: upsert registration", "error", err)
+			return Registration{}, mapPersistenceError(err)
 		}
 	}
 	s.registrations[reg.ID] = reg
@@ -726,6 +785,9 @@ func (s *Service) CreateRegistration(principal *appmiddleware.Principal, orgID s
 func (s *Service) TransitionRegistrationStatus(principal *appmiddleware.Principal, orgID, registrationID, toStatus string) (Registration, GroupAuditEvent, error) {
 	if !hasAnyRole(principal, "owner", "admin", "coach", "parent") {
 		return Registration{}, GroupAuditEvent{}, ErrForbidden
+	}
+	if err := s.syncFromDB(context.Background()); err != nil {
+		return Registration{}, GroupAuditEvent{}, err
 	}
 
 	toStatus = strings.TrimSpace(strings.ToLower(toStatus))
@@ -749,7 +811,7 @@ func (s *Service) TransitionRegistrationStatus(principal *appmiddleware.Principa
 	reg.UpdatedBy = principal.UserID
 	if s.repo != nil {
 		if err := s.repo.UpsertRegistration(context.Background(), reg); err != nil {
-			slog.Error("groups: upsert registration (transition)", "error", err)
+			return Registration{}, GroupAuditEvent{}, mapPersistenceError(err)
 		}
 	}
 	s.registrations[reg.ID] = reg
@@ -772,6 +834,9 @@ func (s *Service) AcceptWaiver(principal *appmiddleware.Principal, orgID, regist
 	if !hasAnyRole(principal, "owner", "admin", "parent") {
 		return WaiverAcceptance{}, ErrForbidden
 	}
+	if err := s.syncFromDB(context.Background()); err != nil {
+		return WaiverAcceptance{}, err
+	}
 
 	waiverType := strings.TrimSpace(strings.ToLower(input.WaiverType))
 	if waiverType == "" {
@@ -788,7 +853,7 @@ func (s *Service) AcceptWaiver(principal *appmiddleware.Principal, orgID, regist
 
 	// Parent scope: can only accept waivers for their own household registrations.
 	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "owner", "admin") {
-		if !s.parentOwnsHouseholdLocked(principal.UserID, reg.HouseholdID) {
+		if strings.TrimSpace(principal.HouseholdID) != reg.HouseholdID && !s.parentOwnsHouseholdLocked(principal.UserID, reg.HouseholdID) {
 			return WaiverAcceptance{}, ErrForbidden
 		}
 	}
@@ -813,7 +878,7 @@ func (s *Service) AcceptWaiver(principal *appmiddleware.Principal, orgID, regist
 	}
 	if s.repo != nil {
 		if err := s.repo.UpsertWaiverAcceptance(context.Background(), waiver); err != nil {
-			slog.Error("groups: upsert waiver_acceptance", "error", err)
+			return WaiverAcceptance{}, mapPersistenceError(err)
 		}
 	}
 	s.waivers[waiver.ID] = waiver
@@ -947,6 +1012,9 @@ func (s *Service) recordAuditEventLocked(event GroupAuditEvent) GroupAuditEvent 
 
 // SnapshotGroups returns a copy of all groups for the given org.
 func (s *Service) SnapshotGroups(orgID string) []Group {
+	if err := s.syncFromDB(context.Background()); err != nil {
+		return []Group{}
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -962,6 +1030,9 @@ func (s *Service) SnapshotGroups(orgID string) []Group {
 
 // SnapshotRegistrations returns a copy of all registrations for the given org.
 func (s *Service) SnapshotRegistrations(orgID string) []Registration {
+	if err := s.syncFromDB(context.Background()); err != nil {
+		return []Registration{}
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -977,6 +1048,9 @@ func (s *Service) SnapshotRegistrations(orgID string) []Registration {
 
 // SnapshotWaivers returns a copy of all waiver acceptances for the given org.
 func (s *Service) SnapshotWaivers(orgID string) []WaiverAcceptance {
+	if err := s.syncFromDB(context.Background()); err != nil {
+		return []WaiverAcceptance{}
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -999,5 +1073,22 @@ func groupSnapshot(g Group) map[string]any {
 		"max_age":       g.MaxAge,
 		"coach_user_id": g.CoachUserID,
 		"is_active":     g.IsActive,
+	}
+}
+
+func mapPersistenceError(err error) error {
+	if err == nil {
+		return nil
+	}
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "groups_code_org_unique"):
+		return ErrGroupCodeConflict
+	case strings.Contains(msg, "registrations_swimmer_group_season_unique"):
+		return ErrDuplicateRegistration
+	case strings.Contains(msg, "waiver_acceptances_registration_type_unique"):
+		return ErrWaiverAlreadyAccepted
+	default:
+		return err
 	}
 }

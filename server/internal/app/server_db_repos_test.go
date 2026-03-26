@@ -13,6 +13,7 @@ package app
 import (
 	"context"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -25,6 +26,7 @@ import (
 	"github.com/dareaquatics/aquify/server/internal/app/meets"
 	"github.com/dareaquatics/aquify/server/internal/app/members"
 	"github.com/dareaquatics/aquify/server/internal/app/performance"
+	"github.com/dareaquatics/aquify/server/internal/app/training"
 	"github.com/dareaquatics/aquify/server/internal/storage"
 	"github.com/dareaquatics/aquify/server/internal/testutil"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -115,6 +117,72 @@ func TestDBRepoMembers_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestDBRepoMembers_CrossInstanceVisibilityWithoutRestart(t *testing.T) {
+	t.Parallel()
+	pool := openTestPool(t)
+	_ = testutil.RequireDBHarness(t)
+
+	admin := testutil.AdminPrincipal()
+	admin.OrgID = testOrgID
+	cleanupMembersFixtures(t, pool, testOrgID)
+
+	svc1 := members.NewServiceWithPool(pool)
+	svc2 := members.NewServiceWithPool(pool)
+
+	household, err := svc1.CreateHousehold(admin, members.CreateHouseholdInput{
+		OrgID:         testOrgID,
+		HouseholdName: "Cross Instance Family",
+		PrimaryEmail:  "cross@example.com",
+	})
+	if err != nil {
+		t.Fatalf("CreateHousehold: %v", err)
+	}
+
+	swimmer, _, err := svc1.CreateSwimmer(admin, testOrgID, members.CreateSwimmerInput{
+		HouseholdID:        household.ID,
+		FirstName:          "Casey",
+		LastName:           "Lane",
+		DateOfBirth:        "2013-05-10",
+		Gender:             "female",
+		RegistrationStatus: "active",
+	})
+	if err != nil {
+		t.Fatalf("CreateSwimmer: %v", err)
+	}
+
+	got, err := svc2.GetSwimmer(admin, testOrgID, swimmer.ID, true)
+	if err != nil {
+		t.Fatalf("GetSwimmer from second instance: %v", err)
+	}
+	if got.FirstName != "Casey" {
+		t.Fatalf("expected first_name Casey, got %q", got.FirstName)
+	}
+
+	renamed := "Casey Updated"
+	_, _, err = svc1.UpdateSwimmer(admin, testOrgID, swimmer.ID, members.UpdateSwimmerInput{
+		FirstName: &renamed,
+	})
+	if err != nil {
+		t.Fatalf("UpdateSwimmer: %v", err)
+	}
+
+	got, err = svc2.GetSwimmer(admin, testOrgID, swimmer.ID, true)
+	if err != nil {
+		t.Fatalf("GetSwimmer after update: %v", err)
+	}
+	if got.FirstName != renamed {
+		t.Fatalf("expected updated first_name %q, got %q", renamed, got.FirstName)
+	}
+
+	if err := svc1.LinkHouseholdToUser(testOrgID, household.ID, "kc-user-cross"); err != nil {
+		t.Fatalf("LinkHouseholdToUser: %v", err)
+	}
+	linked, found := svc2.GetHouseholdByKeycloakUserID("kc-user-cross")
+	if !found || linked.ID != household.ID {
+		t.Fatalf("expected linked household %q from second instance, got found=%t id=%q", household.ID, found, linked.ID)
+	}
+}
+
 func cleanupMembersFixtures(t *testing.T, pool *pgxpool.Pool, orgID string) {
 	t.Helper()
 	ctx := context.Background()
@@ -167,6 +235,117 @@ func TestDBRepoGroups_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestDBRepoGroups_CrossInstanceConflictAndVisibility(t *testing.T) {
+	t.Parallel()
+	pool := openTestPool(t)
+	_ = testutil.RequireDBHarness(t)
+
+	admin := testutil.AdminPrincipal()
+	admin.OrgID = testOrgID
+	cleanupMembersFixtures(t, pool, testOrgID)
+	cleanupGroupsFixtures(t, pool, testOrgID)
+
+	membersSvc := members.NewServiceWithPool(pool)
+	household, err := membersSvc.CreateHousehold(admin, members.CreateHouseholdInput{
+		OrgID:         testOrgID,
+		HouseholdName: "Groups Cross Instance",
+		PrimaryEmail:  "groups-cross@example.com",
+	})
+	if err != nil {
+		t.Fatalf("CreateHousehold: %v", err)
+	}
+	swimmer, _, err := membersSvc.CreateSwimmer(admin, testOrgID, members.CreateSwimmerInput{
+		HouseholdID:        household.ID,
+		FirstName:          "Jordan",
+		LastName:           "Reed",
+		DateOfBirth:        "2012-03-03",
+		Gender:             "male",
+		RegistrationStatus: "active",
+	})
+	if err != nil {
+		t.Fatalf("CreateSwimmer: %v", err)
+	}
+
+	svc1 := groups.NewServiceWithPool(pool)
+	svc2 := groups.NewServiceWithPool(pool)
+
+	group, _, err := svc1.CreateGroup(admin, testOrgID, groups.CreateGroupInput{
+		Code: "step32e-gold",
+		Name: "Step32E Gold",
+	})
+	if err != nil {
+		t.Fatalf("CreateGroup: %v", err)
+	}
+
+	groupsFromSvc2, err := svc2.ListGroups(admin, testOrgID, false)
+	if err != nil {
+		t.Fatalf("ListGroups from second instance: %v", err)
+	}
+	if len(groupsFromSvc2) != 1 || groupsFromSvc2[0].ID != group.ID {
+		t.Fatalf("expected second instance to see created group %q, got %+v", group.ID, groupsFromSvc2)
+	}
+
+	var (
+		wg      sync.WaitGroup
+		results = make(chan error, 2)
+	)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		_, _, err := svc1.CreateGroup(admin, testOrgID, groups.CreateGroupInput{Code: "step32e-dup", Name: "Dup A"})
+		results <- err
+	}()
+	go func() {
+		defer wg.Done()
+		_, _, err := svc2.CreateGroup(admin, testOrgID, groups.CreateGroupInput{Code: "step32e-dup", Name: "Dup B"})
+		results <- err
+	}()
+	wg.Wait()
+	close(results)
+
+	var successCount, conflictCount int
+	for err := range results {
+		if err == nil {
+			successCount++
+			continue
+		}
+		if err == groups.ErrGroupCodeConflict {
+			conflictCount++
+			continue
+		}
+		t.Fatalf("unexpected CreateGroup error: %v", err)
+	}
+	if successCount != 1 || conflictCount != 1 {
+		t.Fatalf("expected one success and one conflict, got success=%d conflict=%d", successCount, conflictCount)
+	}
+
+	registration, err := svc1.CreateRegistration(admin, testOrgID, groups.CreateRegistrationInput{
+		HouseholdID: household.ID,
+		SwimmerID:   swimmer.ID,
+		GroupID:     group.ID,
+		Season:      "2026",
+	})
+	if err != nil {
+		t.Fatalf("CreateRegistration: %v", err)
+	}
+
+	if _, err := svc2.CreateRegistration(admin, testOrgID, groups.CreateRegistrationInput{
+		HouseholdID: household.ID,
+		SwimmerID:   swimmer.ID,
+		GroupID:     group.ID,
+		Season:      "2026",
+	}); err != groups.ErrDuplicateRegistration {
+		t.Fatalf("expected ErrDuplicateRegistration from second instance, got %v", err)
+	}
+
+	if _, err := svc1.AcceptWaiver(admin, testOrgID, registration.ID, groups.AcceptWaiverInput{WaiverType: "code-of-conduct"}); err != nil {
+		t.Fatalf("AcceptWaiver: %v", err)
+	}
+	if _, err := svc2.AcceptWaiver(admin, testOrgID, registration.ID, groups.AcceptWaiverInput{WaiverType: "code-of-conduct"}); err != groups.ErrWaiverAlreadyAccepted {
+		t.Fatalf("expected ErrWaiverAlreadyAccepted from second instance, got %v", err)
+	}
+}
+
 func cleanupGroupsFixtures(t *testing.T, pool *pgxpool.Pool, orgID string) {
 	t.Helper()
 	ctx := context.Background()
@@ -179,6 +358,78 @@ func cleanupGroupsFixtures(t *testing.T, pool *pgxpool.Pool, orgID string) {
 		if _, err := pool.Exec(ctx, q, orgID); err != nil {
 			t.Logf("cleanup warning (%s): %v", q, err)
 		}
+	}
+}
+
+// ─── Training ───────────────────────────────────────────────────────────────
+
+func TestDBRepoTraining_CrossInstanceVisibilityWithoutRestart(t *testing.T) {
+	t.Parallel()
+	pool := openTestPool(t)
+	_ = testutil.RequireDBHarness(t)
+
+	cleanupPracticesFixtures(t, pool, testOrgID)
+
+	svc1 := training.NewServiceWithPool(pool)
+	svc2 := training.NewServiceWithPool(pool)
+
+	attendance := 18
+	practice, err := svc1.Create(
+		testOrgID,
+		"2026-03-26",
+		"group-training",
+		"water",
+		"Threshold set",
+		4800,
+		&attendance,
+		training.PracticeStrokes{Free: 3000, Back: 600, Breast: 400, Fly: 400, IM: 400},
+		"",
+		"coach-step32e",
+	)
+	if err != nil {
+		t.Fatalf("Create practice: %v", err)
+	}
+
+	practices, err := svc2.List(testOrgID)
+	if err != nil {
+		t.Fatalf("List practices from second instance: %v", err)
+	}
+	if len(practices) != 1 || practices[0].ID != practice.ID {
+		t.Fatalf("expected second instance to see created practice %q, got %+v", practice.ID, practices)
+	}
+
+	description := "Threshold set updated"
+	updated, err := svc1.Update(testOrgID, practice.ID, training.PracticeUpdates{
+		Description: &description,
+	}, "coach-step32e")
+	if err != nil {
+		t.Fatalf("Update practice: %v", err)
+	}
+	if updated.Description != description {
+		t.Fatalf("expected updated description %q, got %q", description, updated.Description)
+	}
+
+	got, err := svc2.Get(testOrgID, practice.ID)
+	if err != nil {
+		t.Fatalf("Get practice after update: %v", err)
+	}
+	if got.Description != description {
+		t.Fatalf("expected second instance to see description %q, got %q", description, got.Description)
+	}
+
+	if err := svc1.Delete(testOrgID, practice.ID); err != nil {
+		t.Fatalf("Delete practice: %v", err)
+	}
+	if _, err := svc2.Get(testOrgID, practice.ID); err != training.ErrNotFound {
+		t.Fatalf("expected ErrNotFound after delete from second instance, got %v", err)
+	}
+}
+
+func cleanupPracticesFixtures(t *testing.T, pool *pgxpool.Pool, orgID string) {
+	t.Helper()
+	ctx := context.Background()
+	if _, err := pool.Exec(ctx, `DELETE FROM practices WHERE org_id = $1::uuid`, orgID); err != nil {
+		t.Logf("cleanup warning (DELETE FROM practices): %v", err)
 	}
 }
 

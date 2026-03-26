@@ -12,8 +12,10 @@ import (
 	"time"
 
 	"github.com/dareaquatics/aquify/server/internal/app/meets"
+	"github.com/dareaquatics/aquify/server/internal/app/members"
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
 	"github.com/dareaquatics/aquify/server/internal/app/performance"
+	"github.com/dareaquatics/aquify/server/internal/testutil"
 )
 
 // ─── Envelope helpers ─────────────────────────────────────────────────────────
@@ -112,7 +114,15 @@ type timeStandardsListEnvelope struct {
 func newPerfRouter(t *testing.T, svc *performance.Service) http.Handler {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, nil, nil, nil, nil, nil, nil, svc, nil, nil, nil, nil, nil, nil, nil)
+	return NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, nil, nil, nil, nil, nil, nil, svc, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+}
+
+// newPerfWithMembersRouter builds a router with both performance and members
+// services pre-wired so that parent household scoping is exercised end-to-end.
+func newPerfWithMembersRouter(t *testing.T, perfSvc *performance.Service, memberSvc *members.Service) http.Handler {
+	t.Helper()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	return NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, nil, memberSvc, nil, nil, nil, nil, perfSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 // newPerfAndMeetsRouter builds a router with both performance and meets
@@ -120,7 +130,7 @@ func newPerfRouter(t *testing.T, svc *performance.Service) http.Handler {
 func newPerfAndMeetsRouter(t *testing.T, perfSvc *performance.Service, meetsSvc *meets.Service) http.Handler {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, nil, nil, nil, meetsSvc, nil, nil, perfSvc, nil, nil, nil, nil, nil, nil, nil)
+	return NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, nil, nil, nil, meetsSvc, nil, nil, perfSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 func minimalResultBody(swimmerID string) string {
@@ -540,21 +550,105 @@ func TestBillingRoleCannotReadCutQualification(t *testing.T) {
 	}
 }
 
-// TestParentRoleCanReadBestTimes verifies that the parent role has read access.
-func TestParentRoleCanReadBestTimes(t *testing.T) {
+// TestParentRoleCanReadBestTimesForOwnHousehold verifies that a parent can read
+// best-time data for a swimmer who belongs to their household.
+func TestParentRoleCanReadBestTimesForOwnHousehold(t *testing.T) {
 	t.Parallel()
-	svc := performance.NewService()
-	router := newPerfRouter(t, svc)
-	token := issueSessionToken(t, router, "org-demo", []string{"parent"}, false)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/swimmers/swimmer-x/best-times", nil)
+	perfSvc := performance.NewService()
+	memberSvc := members.NewService()
+	router := newPerfWithMembersRouter(t, perfSvc, memberSvc)
+
+	admin := testutil.AdminPrincipal()
+
+	// Create a household and swimmer that belong to the parent.
+	household, err := memberSvc.CreateHousehold(admin, members.CreateHouseholdInput{
+		OrgID:         "org-demo",
+		HouseholdName: "Parent Test Family",
+		PrimaryEmail:  "parent-perf@example.com",
+	})
+	if err != nil {
+		t.Fatalf("CreateHousehold: %v", err)
+	}
+	swimmer, _, err := memberSvc.CreateSwimmer(admin, "org-demo", members.CreateSwimmerInput{
+		HouseholdID:        household.ID,
+		FirstName:          "Test",
+		LastName:           "Swimmer",
+		DateOfBirth:        "2012-01-01",
+		Gender:             "female",
+		RegistrationStatus: "active",
+	})
+	if err != nil {
+		t.Fatalf("CreateSwimmer: %v", err)
+	}
+
+	// Issue a parent token with the correct household ID.
+	token := issueSessionTokenWithHousehold(t, router, "parent-test-user", "org-demo", household.ID, []string{"parent"}, false)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/swimmers/"+swimmer.ID+"/best-times", nil)
 	req.Header.Set("X-Org-Id", "org-demo")
 	req.Header.Set("Authorization", "Bearer "+token)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200 for parent role on best-times, got %d", rr.Code)
+		t.Fatalf("expected 200 for parent reading own household swimmer best-times, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+// TestParentRoleCannotReadBestTimesForOtherHousehold verifies that a parent is
+// denied access to best-time data for swimmers outside their household.
+func TestParentRoleCannotReadBestTimesForOtherHousehold(t *testing.T) {
+	t.Parallel()
+
+	perfSvc := performance.NewService()
+	memberSvc := members.NewService()
+	router := newPerfWithMembersRouter(t, perfSvc, memberSvc)
+
+	admin := testutil.AdminPrincipal()
+
+	// Household A owns the swimmer.
+	householdA, err := memberSvc.CreateHousehold(admin, members.CreateHouseholdInput{
+		OrgID:         "org-demo",
+		HouseholdName: "Household A",
+		PrimaryEmail:  "household-a@example.com",
+	})
+	if err != nil {
+		t.Fatalf("CreateHousehold A: %v", err)
+	}
+	swimmer, _, err := memberSvc.CreateSwimmer(admin, "org-demo", members.CreateSwimmerInput{
+		HouseholdID:        householdA.ID,
+		FirstName:          "Other",
+		LastName:           "Swimmer",
+		DateOfBirth:        "2013-03-15",
+		Gender:             "male",
+		RegistrationStatus: "active",
+	})
+	if err != nil {
+		t.Fatalf("CreateSwimmer: %v", err)
+	}
+
+	// Household B is a different family.
+	householdB, err := memberSvc.CreateHousehold(admin, members.CreateHouseholdInput{
+		OrgID:         "org-demo",
+		HouseholdName: "Household B",
+		PrimaryEmail:  "household-b@example.com",
+	})
+	if err != nil {
+		t.Fatalf("CreateHousehold B: %v", err)
+	}
+
+	// Parent belongs to household B, but requests swimmer in household A.
+	token := issueSessionTokenWithHousehold(t, router, "parent-b-user", "org-demo", householdB.ID, []string{"parent"}, false)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/swimmers/"+swimmer.ID+"/best-times", nil)
+	req.Header.Set("X-Org-Id", "org-demo")
+	req.Header.Set("Authorization", "Bearer "+token)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for parent reading other household swimmer best-times, got %d body=%s", rr.Code, rr.Body.String())
 	}
 }
 

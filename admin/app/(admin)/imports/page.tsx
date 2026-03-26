@@ -7,7 +7,7 @@ import { Table, type Column } from '@/components/ui/Table'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
 import { useApiClient, ApiError } from '@/lib/api'
-import { fetchImports, fetchMeets, type ImportRecord, type MeetRecord } from '@/lib/adminData'
+import { fetchImports, fetchMeets, requestImportUploadUrl, finalizeImport, type ImportRecord, type MeetRecord } from '@/lib/adminData'
 
 type ImportStatus = 'uploaded' | 'scanning' | 'parsing' | 'matching' | 'conflicts_pending' | 'applied' | 'failed' | 'archived'
 type FileType = 'SD3' | 'CL2' | 'ZIP' | 'HY3'
@@ -93,15 +93,24 @@ function mapRows(imports: ImportRecord[], meets: MeetRecord[]): FileImportRow[] 
   })).sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt))
 }
 
+const INPUT_STYLE: React.CSSProperties = { width: '100%', padding: '9px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none', boxSizing: 'border-box' }
+const LABEL_STYLE: React.CSSProperties = { fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '5px' }
+
 export default function ImportsPage() {
   const { session } = useSession()
   const api = useApiClient(session?.token)
   const [rows, setRows] = useState<FileImportRow[]>([])
+  const [meets, setMeets] = useState<MeetRecord[]>([])
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [typeFilter, setTypeFilter] = useState('all')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [showUpload, setShowUpload] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [uploadMeetId, setUploadMeetId] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -114,8 +123,8 @@ export default function ImportsPage() {
       try {
         setLoading(true)
         setError(null)
-        const [imports, meets] = await Promise.all([fetchImports(api, session.user.orgId), fetchMeets(api, session.user.orgId)])
-        if (!cancelled) setRows(mapRows(imports, meets))
+        const [imports, meetsData] = await Promise.all([fetchImports(api, session.user.orgId), fetchMeets(api, session.user.orgId)])
+        if (!cancelled) { setRows(mapRows(imports, meetsData)); setMeets(meetsData) }
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof ApiError ? err.message : 'Failed to load imports.')
@@ -140,6 +149,34 @@ export default function ImportsPage() {
     return matchesSearch && matchesStatus && matchesType
   }), [rows, search, statusFilter, typeFilter])
 
+  async function handleUpload(e: React.FormEvent) {
+    e.preventDefault()
+    if (!session?.user.orgId || !selectedFile) return
+    setUploading(true)
+    setUploadError(null)
+    try {
+      const { import_id, upload_url, object_key } = await requestImportUploadUrl(api, session.user.orgId, {
+        filename: selectedFile.name,
+        size_bytes: selectedFile.size,
+        mime_type: selectedFile.type || 'application/octet-stream',
+        meet_id: uploadMeetId || undefined,
+      })
+      const uploadRes = await fetch(upload_url, { method: 'PUT', body: selectedFile, headers: { 'Content-Type': selectedFile.type || 'application/octet-stream' } })
+      if (!uploadRes.ok) throw new Error(`File upload failed: ${uploadRes.status} ${uploadRes.statusText}`)
+      await finalizeImport(api, session.user.orgId, import_id, { object_key })
+      setShowUpload(false)
+      setSelectedFile(null)
+      setUploadMeetId('')
+      const [importsData, meetsData] = await Promise.all([fetchImports(api, session.user.orgId), fetchMeets(api, session.user.orgId)])
+      setRows(mapRows(importsData, meetsData))
+      setMeets(meetsData)
+    } catch (err) {
+      setUploadError(err instanceof ApiError ? err.message : 'Upload failed.')
+    } finally {
+      setUploading(false)
+    }
+  }
+
   return (
     <div style={{ padding: '24px', maxWidth: '1200px' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
@@ -147,6 +184,9 @@ export default function ImportsPage() {
           <h1 style={{ fontSize: '22px', fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.2, marginBottom: '4px' }}>Imports</h1>
           <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>Live file import jobs and conflict state</p>
         </div>
+        <button className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setShowUpload(true)}>
+          <Icon name="upload-cloud" size={14} /> Upload File
+        </button>
       </div>
 
       <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', alignItems: 'center' }}>
@@ -171,6 +211,36 @@ export default function ImportsPage() {
         <EmptyState icon="alert-circle" title="Unable to load imports" description={error} />
       ) : (
         <Table columns={COLUMNS} data={filtered} pageSize={10} emptyTitle="No imports found" emptyDescription="Try adjusting your filters." />
+      )}
+
+      {showUpload && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)' }} onClick={(e) => { if (e.target === e.currentTarget) setShowUpload(false) }}>
+          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '14px', padding: '28px', width: '100%', maxWidth: '440px', boxShadow: '0 24px 80px rgba(0,0,0,0.4)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+              <h2 style={{ fontSize: '18px', fontFamily: 'var(--font-display)', color: 'var(--text)', margin: 0 }}>Upload Import File</h2>
+              <button onClick={() => setShowUpload(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><Icon name="x" size={18} /></button>
+            </div>
+            {uploadError && <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px' }}>{uploadError}</div>}
+            <form onSubmit={handleUpload} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={LABEL_STYLE}>File *</label>
+                <input required type="file" accept=".sd3,.cl2,.zip,.hy3" style={{ ...INPUT_STYLE, padding: '7px 12px' }} onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)} />
+                <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>Accepted: SD3, CL2, ZIP, HY3</p>
+              </div>
+              <div>
+                <label style={LABEL_STYLE}>Associate with Meet</label>
+                <select style={INPUT_STYLE} value={uploadMeetId} onChange={(e) => setUploadMeetId(e.target.value)}>
+                  <option value="">No meet</option>
+                  {meets.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
+              </div>
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '4px' }}>
+                <button type="button" className="btn" onClick={() => setShowUpload(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary" disabled={uploading || !selectedFile}>{uploading ? 'Uploading…' : 'Upload'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   )

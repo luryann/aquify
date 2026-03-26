@@ -211,6 +211,28 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /auth/sessions/logout:
+    post:
+      tags: [Auth]
+      summary: Log out browser session
+      description: Clears Aquify session cookies, revokes the local refresh token when present, and returns either a Keycloak end-session URL or a fallback app redirect.
+      security: []
+      operationId: logoutSession
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh_token: { type: string }
+      responses:
+        "200":
+          description: Logout response
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LogoutResponse" }
+
   /auth/session:
     get:
       tags: [Auth]
@@ -3301,6 +3323,17 @@ components:
         csrf_token:
           type: string
           description: Returned via Secure CSRF cookie in browser flows; clients should echo it in the configured CSRF header for cookie-backed session mutations.
+
+    LogoutResponse:
+      type: object
+      properties:
+        status: { type: string, example: logged_out }
+        logout_url:
+          type: string
+          description: Keycloak end-session URL to visit in a top-level browser navigation when OIDC logout metadata is available.
+        redirect_url:
+          type: string
+          description: App fallback redirect used when an identity-provider logout URL is unavailable.
 
     SessionTokens:
       type: object

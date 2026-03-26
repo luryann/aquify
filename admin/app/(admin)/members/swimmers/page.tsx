@@ -7,7 +7,7 @@ import { Table, type Column } from '@/components/ui/Table'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
 import { useApiClient, ApiError } from '@/lib/api'
-import { fetchGroups, fetchHouseholds, fetchSwimmerGroups, fetchSwimmers, type GroupRecord, type HouseholdRecord, type SwimmerGroupLinkRecord, type SwimmerRecord } from '@/lib/adminData'
+import { fetchGroups, fetchHouseholds, fetchSwimmerGroups, fetchSwimmers, createSwimmer, type GroupRecord, type HouseholdRecord, type SwimmerGroupLinkRecord, type SwimmerRecord } from '@/lib/adminData'
 
 type SwimmerStatus = 'active' | 'inactive' | 'pending' | 'archived'
 
@@ -126,16 +126,26 @@ function deriveRows(swimmers: SwimmerRecord[], households: HouseholdRecord[], gr
     .sort((a, b) => a.name.localeCompare(b.name))
 }
 
+const INPUT_STYLE: React.CSSProperties = { width: '100%', padding: '9px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none', boxSizing: 'border-box' }
+const LABEL_STYLE: React.CSSProperties = { fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '5px' }
+
 export default function SwimmersPage() {
   const { session } = useSession()
   const api = useApiClient(session?.token)
   const [rows, setRows] = useState<SwimmerRow[]>([])
+  const [households, setHouseholds] = useState<HouseholdRecord[]>([])
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [genderFilter, setGenderFilter] = useState('all')
   const [groupFilter, setGroupFilter] = useState('all')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  // New Swimmer modal
+  const [showNew, setShowNew] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [form, setForm] = useState({ first_name: '', last_name: '', household_id: '', date_of_birth: '', gender: 'female', registration_status: 'active' })
 
   useEffect(() => {
     let cancelled = false
@@ -155,7 +165,10 @@ export default function SwimmersPage() {
           fetchGroups(api, session.user.orgId),
           fetchSwimmerGroups(api, session.user.orgId),
         ])
-        if (!cancelled) setRows(deriveRows(swimmers, households, groups, swimmerGroups))
+        if (!cancelled) {
+          setRows(deriveRows(swimmers, households, groups, swimmerGroups))
+          setHouseholds(households)
+        }
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof ApiError ? err.message : 'Failed to load swimmers.')
@@ -193,6 +206,30 @@ export default function SwimmersPage() {
 
   const selectStyle: React.CSSProperties = { padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none', cursor: 'pointer' }
 
+  async function handleCreateSwimmer(e: React.FormEvent) {
+    e.preventDefault()
+    if (!session?.user.orgId) return
+    setSubmitting(true)
+    setFormError(null)
+    try {
+      await createSwimmer(api, session.user.orgId, form)
+      setShowNew(false)
+      setForm({ first_name: '', last_name: '', household_id: '', date_of_birth: '', gender: 'female', registration_status: 'active' })
+      const [swimmers, hhs, grps, swimmerGroups] = await Promise.all([
+        fetchSwimmers(api, session.user.orgId),
+        fetchHouseholds(api, session.user.orgId),
+        fetchGroups(api, session.user.orgId),
+        fetchSwimmerGroups(api, session.user.orgId),
+      ])
+      setRows(deriveRows(swimmers, hhs, grps, swimmerGroups))
+      setHouseholds(hhs)
+    } catch (err) {
+      setFormError(err instanceof ApiError ? err.message : 'Failed to create swimmer.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   return (
     <div style={{ padding: '24px', maxWidth: '1200px' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
@@ -200,7 +237,7 @@ export default function SwimmersPage() {
           <h1 style={{ fontSize: '22px', fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.2, marginBottom: '4px' }}>Swimmers</h1>
           <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>Live roster membership and current group assignment data</p>
         </div>
-        <button className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <button className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setShowNew(true)}>
           <Icon name="plus" size={14} />
           Add Swimmer
         </button>
@@ -251,6 +288,65 @@ export default function SwimmersPage() {
         <EmptyState icon="alert-circle" title="Unable to load swimmers" description={error} />
       ) : (
         <Table columns={COLUMNS} data={filtered} pageSize={10} emptyTitle="No swimmers found" emptyDescription="Adjust your filters to see results." />
+      )}
+
+      {/* Add Swimmer Modal */}
+      {showNew && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)' }} onClick={(e) => { if (e.target === e.currentTarget) setShowNew(false) }}>
+          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '14px', padding: '28px', width: '100%', maxWidth: '500px', boxShadow: '0 24px 80px rgba(0,0,0,0.4)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+              <h2 style={{ fontSize: '18px', fontFamily: 'var(--font-display)', color: 'var(--text)', margin: 0 }}>Add Swimmer</h2>
+              <button onClick={() => setShowNew(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><Icon name="x" size={18} /></button>
+            </div>
+            {formError && <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px' }}>{formError}</div>}
+            <form onSubmit={handleCreateSwimmer} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={LABEL_STYLE}>First Name *</label>
+                  <input required style={INPUT_STYLE} value={form.first_name} onChange={(e) => setForm((f) => ({ ...f, first_name: e.target.value }))} placeholder="Jane" />
+                </div>
+                <div>
+                  <label style={LABEL_STYLE}>Last Name *</label>
+                  <input required style={INPUT_STYLE} value={form.last_name} onChange={(e) => setForm((f) => ({ ...f, last_name: e.target.value }))} placeholder="Smith" />
+                </div>
+              </div>
+              <div>
+                <label style={LABEL_STYLE}>Household *</label>
+                <select required style={INPUT_STYLE} value={form.household_id} onChange={(e) => setForm((f) => ({ ...f, household_id: e.target.value }))}>
+                  <option value="">Select household…</option>
+                  {households.map((hh) => <option key={hh.id} value={hh.id}>{hh.household_name}</option>)}
+                </select>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={LABEL_STYLE}>Date of Birth *</label>
+                  <input required type="date" style={INPUT_STYLE} value={form.date_of_birth} onChange={(e) => setForm((f) => ({ ...f, date_of_birth: e.target.value }))} />
+                </div>
+                <div>
+                  <label style={LABEL_STYLE}>Gender *</label>
+                  <select required style={INPUT_STYLE} value={form.gender} onChange={(e) => setForm((f) => ({ ...f, gender: e.target.value }))}>
+                    <option value="female">Female</option>
+                    <option value="male">Male</option>
+                    <option value="non_binary">Non-binary</option>
+                    <option value="undisclosed">Undisclosed</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label style={LABEL_STYLE}>Registration Status</label>
+                <select style={INPUT_STYLE} value={form.registration_status} onChange={(e) => setForm((f) => ({ ...f, registration_status: e.target.value }))}>
+                  <option value="active">Active</option>
+                  <option value="pending">Pending</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </div>
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '4px' }}>
+                <button type="button" className="btn" onClick={() => setShowNew(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary" disabled={submitting}>{submitting ? 'Adding…' : 'Add Swimmer'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   )

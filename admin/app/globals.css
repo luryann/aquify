@@ -15,6 +15,7 @@
   --bg:                   #0A0A0B;
   --bg-surface:           #1A1A1C;
   --bg-elevated:          #242426;
+  --bg-card:              #1A1A1C;
   --bg-sidebar:           #111113;
   --bg-overlay:           rgba(0, 0, 0, 0.60);
 
@@ -84,6 +85,7 @@
   --bg:                   #FAFAF8;
   --bg-surface:           #F0EDEA;
   --bg-elevated:          #ffffff;
+  --bg-card:              #F0EDEA;
   --bg-sidebar:           #F5F3F0;
   --bg-overlay:           rgba(0, 0, 0, 0.30);
 
@@ -320,7 +322,9 @@ input:focus, textarea:focus, select:focus {
   font-size: 13px;
   font-weight: 500;
   font-family: var(--font-body);
-  border: none;
+  background: var(--bg-elevated);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease),
               color var(--dur-fast) var(--ease),
@@ -328,6 +332,7 @@ input:focus, textarea:focus, select:focus {
   white-space: nowrap;
   user-select: none;
 }
+.btn:hover:not(:disabled) { background: var(--bg-surface); }
 
 .btn:disabled {
   opacity: 0.45;
@@ -338,6 +343,7 @@ input:focus, textarea:focus, select:focus {
 .btn-primary {
   background: var(--accent);
   color: #fff;
+  border: none;
 }
 .btn-primary:hover { background: var(--accent-hover); }
 .btn-primary:active { background: #c44710; }
@@ -352,6 +358,7 @@ input:focus, textarea:focus, select:focus {
 .btn-ghost {
   background: transparent;
   color: var(--text-subtle);
+  border: none;
 }
 .btn-ghost:hover { background: var(--bg-surface); color: var(--text); }
 

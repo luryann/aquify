@@ -41,6 +41,7 @@ func (h *MembershipHandlers) RegisterProtectedRoutes(router chi.Router) {
 	router.Get("/households", h.listHouseholds)
 	router.Get("/households/{householdID}", h.getHousehold)
 	router.Patch("/households/{householdID}", h.updateHousehold)
+	router.Delete("/households/{householdID}", h.deleteHousehold)
 	router.Post("/households/{householdID}/contacts", h.addContact)
 	router.Get("/households/{householdID}/contacts", h.listContacts)
 	router.Post("/swimmers", h.createSwimmer)
@@ -207,6 +208,44 @@ type addContactRequest struct {
 	CanPickUp          bool   `json:"can_pick_up"`
 	EmergencyPriority  *int   `json:"emergency_priority"`
 	Notes              string `json:"notes"`
+}
+
+func (h *MembershipHandlers) deleteHousehold(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := membershipScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+
+	householdID := strings.TrimSpace(chi.URLParam(r, "householdID"))
+	household, err := h.service.DeleteHousehold(principal, orgID, householdID)
+	if err != nil {
+		switch {
+		case errors.Is(err, members.ErrHouseholdNotFound):
+			httpx.WriteError(w, r, http.StatusNotFound, "household_not_found", "Household was not found.", nil)
+		case errors.Is(err, members.ErrForbidden):
+			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only owner or admin can delete households.", nil)
+		default:
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+		}
+		return
+	}
+
+	if h.auditService != nil {
+		_, _ = h.auditService.Append(audit.AppendRequest{
+			OrgID:        orgID,
+			ActorUserID:  principal.UserID,
+			ActorRoles:   principal.Roles,
+			Action:       audit.ActionMembersHouseholdDelete,
+			ResourceType: "household",
+			ResourceID:   householdID,
+			Before:       map[string]any{"household": household},
+		})
+	}
+
+	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"status": "deleted",
+		"id":     householdID,
+	})
 }
 
 func (h *MembershipHandlers) addContact(w http.ResponseWriter, r *http.Request) {

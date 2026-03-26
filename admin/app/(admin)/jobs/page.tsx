@@ -33,6 +33,7 @@ function formatDateTime(value?: string) {
 export default function JobsPage() {
   const { session } = useSession()
   const api = useApiClient(session?.token)
+  const orgId = session?.user.orgId ?? ''
   const [tasks, setTasks] = useState<WorkerTaskRecord[]>([])
   const [queues, setQueues] = useState<QueueStatsRecord[]>([])
   const [metrics, setMetrics] = useState<Record<string, JobMetricsTypeRecord>>({})
@@ -54,10 +55,10 @@ export default function JobsPage() {
         setLoading(true)
         setError(null)
         const [jobList, queueStats, metricSnapshot, dlqTasks] = await Promise.all([
-          fetchJobs(api),
-          fetchQueueStats(api),
-          fetchJobMetrics(api),
-          fetchDLQTasks(api),
+          fetchJobs(api, orgId),
+          fetchQueueStats(api, orgId),
+          fetchJobMetrics(api, orgId),
+          fetchDLQTasks(api, orgId),
         ])
         if (cancelled) return
         setTasks(jobList)
@@ -83,7 +84,7 @@ export default function JobsPage() {
     return () => {
       cancelled = true
     }
-  }, [api, session])
+  }, [api, orgId, session])
 
   const activeTasks = useMemo(() => tasks.filter((task) => ['pending', 'active', 'retrying'].includes(task.status)), [tasks])
   const metricRows = useMemo(() => Object.entries(metrics).sort(([a], [b]) => a.localeCompare(b)), [metrics])
@@ -91,10 +92,10 @@ export default function JobsPage() {
   async function refreshAll() {
     try {
       const [jobList, queueStats, metricSnapshot, dlqTasks] = await Promise.all([
-        fetchJobs(api),
-        fetchQueueStats(api),
-        fetchJobMetrics(api),
-        fetchDLQTasks(api),
+        fetchJobs(api, orgId),
+        fetchQueueStats(api, orgId),
+        fetchJobMetrics(api, orgId),
+        fetchDLQTasks(api, orgId),
       ])
       setTasks(jobList)
       setQueues(queueStats)
@@ -110,7 +111,7 @@ export default function JobsPage() {
     setWorkingTask(taskId)
     setError(null)
     try {
-      await retryDLQTask(api, taskId)
+      await retryDLQTask(api, orgId, taskId)
       await refreshAll()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Unable to retry dead-letter task.')
@@ -123,7 +124,7 @@ export default function JobsPage() {
     setWorkingTask(taskId)
     setError(null)
     try {
-      await deleteDLQTask(api, taskId)
+      await deleteDLQTask(api, orgId, taskId)
       await refreshAll()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Unable to delete dead-letter task.')

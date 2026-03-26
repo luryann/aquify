@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
-import { fetchMeets, type MeetRecord } from '@/lib/adminData'
+import { fetchMeets, fetchPractices, type MeetRecord, type PracticeRecord } from '@/lib/adminData'
 
 // ── Types ───────────────────────────────────────────────────────────────────
 type EventType = 'meet' | 'practice' | 'deadline' | 'holiday' | 'event'
@@ -65,6 +65,16 @@ function meetsToCalEvents(meets: MeetRecord[]): CalEvent[] {
   return events
 }
 
+
+function practicesToCalEvents(practices: PracticeRecord[]): CalEvent[] {
+  return practices.map((p) => ({
+    id: `practice-${p.id}`,
+    title: p.description ? `Practice — ${p.description.slice(0, 60)}` : 'Practice',
+    type: 'practice' as EventType,
+    date: p.date,
+    detail: p.yardage_target > 0 ? `${p.yardage_target.toLocaleString()} yds target` : undefined,
+  }))
+}
 
 // ── Config ─────────────────────────────────────────────────────────────────
 const EVENT_STYLE: Record<EventType, { dot: string; bg: string; border: string; color: string; label: string }> = {
@@ -220,8 +230,13 @@ export default function CalendarPage() {
 
   useEffect(() => {
     if (!orgId) return
-    fetchMeets(api, orgId)
-      .then((meets) => setEvents(meetsToCalEvents(meets)))
+    Promise.all([
+      fetchMeets(api, orgId),
+      fetchPractices(api, orgId).catch(() => [] as PracticeRecord[]),
+    ])
+      .then(([meets, practices]) => {
+        setEvents([...meetsToCalEvents(meets), ...practicesToCalEvents(practices)])
+      })
       .catch(console.error)
   }, [api, orgId])
 

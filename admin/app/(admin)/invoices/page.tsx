@@ -7,7 +7,7 @@ import { Table, type Column } from '@/components/ui/Table'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
 import { useApiClient, ApiError } from '@/lib/api'
-import { fetchHouseholds, fetchInvoicesForHousehold, type InvoiceRecord } from '@/lib/adminData'
+import { fetchHouseholds, fetchInvoicesForHousehold, createInvoice, type InvoiceRecord, type HouseholdRecord } from '@/lib/adminData'
 
 type InvoiceStatus = 'draft' | 'issued' | 'partially_paid' | 'paid' | 'refunded_partial' | 'refunded_full' | 'voided' | 'written_off'
 
@@ -111,14 +111,22 @@ async function loadInvoices(api: ReturnType<typeof useApiClient>, orgId: string)
   }))).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 }
 
+const INPUT_STYLE: React.CSSProperties = { width: '100%', padding: '9px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none', boxSizing: 'border-box' }
+const LABEL_STYLE: React.CSSProperties = { fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '5px' }
+
 export default function InvoicesPage() {
   const { session } = useSession()
   const api = useApiClient(session?.token)
   const [rows, setRows] = useState<InvoiceRow[]>([])
+  const [households, setHouseholds] = useState<HouseholdRecord[]>([])
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [showNew, setShowNew] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [form, setForm] = useState({ household_id: '', invoice_number: '', due_date: '', notes: '' })
 
   useEffect(() => {
     let cancelled = false
@@ -132,8 +140,8 @@ export default function InvoicesPage() {
       try {
         setLoading(true)
         setError(null)
-        const invoices = await loadInvoices(api, session.user.orgId)
-        if (!cancelled) setRows(invoices)
+        const [invoices, householdsData] = await Promise.all([loadInvoices(api, session.user.orgId), fetchHouseholds(api, session.user.orgId)])
+        if (!cancelled) { setRows(invoices); setHouseholds(householdsData) }
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof ApiError ? err.message : 'Failed to load invoices.')
@@ -157,6 +165,24 @@ export default function InvoicesPage() {
     return matchesSearch && matchesStatus
   }), [rows, search, statusFilter])
 
+  async function handleCreateInvoice(e: React.FormEvent) {
+    e.preventDefault()
+    if (!session?.user.orgId) return
+    setSubmitting(true)
+    setFormError(null)
+    try {
+      await createInvoice(api, session.user.orgId, { household_id: form.household_id || undefined, invoice_number: form.invoice_number, due_date: form.due_date || undefined, notes: form.notes || undefined })
+      setShowNew(false)
+      setForm({ household_id: '', invoice_number: '', due_date: '', notes: '' })
+      const [invoices, householdsData] = await Promise.all([loadInvoices(api, session.user.orgId), fetchHouseholds(api, session.user.orgId)])
+      setRows(invoices); setHouseholds(householdsData)
+    } catch (err) {
+      setFormError(err instanceof ApiError ? err.message : 'Failed to create invoice.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   return (
     <div style={{ padding: '24px', maxWidth: '1200px' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
@@ -164,6 +190,9 @@ export default function InvoicesPage() {
           <h1 style={{ fontSize: '22px', fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.2, marginBottom: '4px' }}>Invoices</h1>
           <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>Live billing invoices aggregated across persisted household accounts</p>
         </div>
+        <button className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setShowNew(true)}>
+          <Icon name="plus" size={14} /> New Invoice
+        </button>
       </div>
 
       <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', alignItems: 'center' }}>
@@ -184,6 +213,43 @@ export default function InvoicesPage() {
         <EmptyState icon="alert-circle" title="Unable to load invoices" description={error} />
       ) : (
         <Table columns={COLUMNS} data={filtered} pageSize={10} emptyTitle="No invoices found" emptyDescription="Issue an invoice to see it here." />
+      )}
+
+      {showNew && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)' }} onClick={(e) => { if (e.target === e.currentTarget) setShowNew(false) }}>
+          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '14px', padding: '28px', width: '100%', maxWidth: '440px', boxShadow: '0 24px 80px rgba(0,0,0,0.4)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+              <h2 style={{ fontSize: '18px', fontFamily: 'var(--font-display)', color: 'var(--text)', margin: 0 }}>New Invoice</h2>
+              <button onClick={() => setShowNew(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><Icon name="x" size={18} /></button>
+            </div>
+            {formError && <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px' }}>{formError}</div>}
+            <form onSubmit={handleCreateInvoice} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={LABEL_STYLE}>Invoice Number *</label>
+                <input required style={INPUT_STYLE} value={form.invoice_number} onChange={(e) => setForm((f) => ({ ...f, invoice_number: e.target.value }))} placeholder="INV-2026-001" />
+              </div>
+              <div>
+                <label style={LABEL_STYLE}>Household</label>
+                <select style={INPUT_STYLE} value={form.household_id} onChange={(e) => setForm((f) => ({ ...f, household_id: e.target.value }))}>
+                  <option value="">No household</option>
+                  {households.map((h) => <option key={h.id} value={h.id}>{h.household_name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={LABEL_STYLE}>Due Date</label>
+                <input type="date" style={INPUT_STYLE} value={form.due_date} onChange={(e) => setForm((f) => ({ ...f, due_date: e.target.value }))} />
+              </div>
+              <div>
+                <label style={LABEL_STYLE}>Notes</label>
+                <textarea style={{ ...INPUT_STYLE, resize: 'vertical' }} rows={3} value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} placeholder="Optional notes…" />
+              </div>
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '4px' }}>
+                <button type="button" className="btn" onClick={() => setShowNew(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary" disabled={submitting}>{submitting ? 'Creating…' : 'Create Invoice'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   )

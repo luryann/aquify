@@ -54,8 +54,11 @@ function CallbackInner() {
         if (!res.ok) {
           let message = 'Unable to complete sign-in.'
           try {
-            const payload = await res.json() as { message?: string; error?: string }
-            message = payload.message ?? payload.error ?? message
+            const payload = await res.json() as { message?: string; error?: { message?: string; code?: string } | string }
+            const errField = payload.error
+            message = payload.message
+              ?? (typeof errField === 'object' ? errField?.message : errField)
+              ?? message
           } catch {
             // Use default message.
           }

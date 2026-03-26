@@ -140,6 +140,7 @@ Credentials and ports can be overridden in `.env.local`, which is read by `docke
 
 - `AUTH_ENABLE_DEV_STUB_TOKENS` defaults to `true` in development and **must be `false` in all non-local environments**.
 - OIDC browser login requires: `OIDC_AUTHORIZE_URL`, `OIDC_TOKEN_URL`, `OIDC_JWKS_URL`, `OIDC_REDIRECT_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, and `OIDC_STATE_SIGNING_KEY`.
+- Cross-account logout also requires `OIDC_END_SESSION_URL`; set `OIDC_POST_LOGOUT_REDIRECT_URL` to the app route Keycloak should return to after ending the upstream SSO session.
 - Callback validation enforces signed `state` payload verification and cryptographic `id_token` validation (JWKS signature + `iss`/`aud`/`exp`/`iat`).
 - The frontend bootstraps auth state from `GET /api/v1/auth/session` and uses cookie-backed refresh/revoke flows. The `aquify_csrf_token` cookie value must be echoed in the `X-CSRF-Token` header.
 - Production builds must set `NEXT_PUBLIC_APP_ENV=production` and `NEXT_PUBLIC_AUTH_ENABLE_DEV_STUB_TOKENS=false` so stub login and role-switching affordances stay hidden.

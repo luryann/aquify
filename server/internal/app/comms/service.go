@@ -224,6 +224,13 @@ func (s *Service) SetPostmarkClient(client postmark.Client) {
 	s.postmarkClient = client
 }
 
+// PostmarkClient returns the currently configured Postmark client.
+func (s *Service) PostmarkClient() postmark.Client {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.postmarkClient
+}
+
 // NewServiceWithPool creates a DB-backed comms Service and loads existing data
 // from Postgres into memory on startup.
 func NewServiceWithPool(pool *pgxpool.Pool) *Service {

@@ -136,7 +136,7 @@ func (s *Server) RegisterHandler(taskType string, h Handler) {
 }
 
 // Metrics returns the job metrics store.
-func (s *Server) Metrics() *JobMetrics { return s.metrics }
+func (s *Server) Metrics() MetricsReader { return s.metrics }
 
 // Start launches worker goroutines. It is non-blocking: goroutines run until
 // Stop is called.
@@ -278,7 +278,7 @@ func (s *Server) enqueueAt(ctx context.Context, processAt time.Time, task *Task,
 // ─── Admin accessors ──────────────────────────────────────────────────────────
 
 // ListTasks returns all known tasks optionally filtered by queue and/or status.
-func (s *Server) ListTasks(queue string, status TaskStatus) []TaskInfo {
+func (s *Server) ListTasks(queue string, status TaskStatus) ([]TaskInfo, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]TaskInfo, 0, len(s.allTasks))
@@ -291,7 +291,7 @@ func (s *Server) ListTasks(queue string, status TaskStatus) []TaskInfo {
 		}
 		out = append(out, it.TaskInfo)
 	}
-	return out
+	return out, nil
 }
 
 // GetTask returns a single task by ID.
@@ -306,7 +306,7 @@ func (s *Server) GetTask(id string) (TaskInfo, error) {
 }
 
 // QueueStats returns per-queue depth and completion counters.
-func (s *Server) QueueStats() []QueueStats {
+func (s *Server) QueueStats() ([]QueueStats, error) {
 	s.mu.RLock()
 	counts := make(map[string]map[TaskStatus]int)
 	for _, it := range s.allTasks {
@@ -329,18 +329,18 @@ func (s *Server) QueueStats() []QueueStats {
 			DeadLetter: c[StatusDeadLetter],
 		})
 	}
-	return out
+	return out, nil
 }
 
 // DLQTasks returns all tasks in the dead-letter queue.
-func (s *Server) DLQTasks() []TaskInfo {
+func (s *Server) DLQTasks() ([]TaskInfo, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]TaskInfo, len(s.dlq))
 	for i, it := range s.dlq {
 		out[i] = it.TaskInfo
 	}
-	return out
+	return out, nil
 }
 
 // RetryDLQTask re-enqueues a dead-letter task for immediate processing.

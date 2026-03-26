@@ -26,19 +26,32 @@ func newRepository(pool *pgxpool.Pool) *Repository {
 func (r *Repository) UpsertHousehold(ctx context.Context, h Household) error {
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO households (id, org_id, household_name, primary_email, primary_phone_e164, status, notes,
-		                        created_at, updated_at)
-		VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9)
+		                        keycloak_user_id, created_at, updated_at)
+		VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (id) DO UPDATE SET
 		  household_name    = EXCLUDED.household_name,
 		  primary_email     = EXCLUDED.primary_email,
 		  primary_phone_e164= EXCLUDED.primary_phone_e164,
 		  status            = EXCLUDED.status,
 		  notes             = EXCLUDED.notes,
+		  keycloak_user_id  = EXCLUDED.keycloak_user_id,
 		  updated_at        = EXCLUDED.updated_at`,
 		h.ID, h.OrgID, h.HouseholdName,
 		nullableString(h.PrimaryEmail), nullableString(h.PrimaryPhoneE164),
 		h.Status, nullableString(h.Notes),
+		nullableString(h.KeycloakUserID),
 		h.CreatedAt, h.UpdatedAt,
+	)
+	return err
+}
+
+// SetHouseholdKeycloakUserID sets or clears the keycloak_user_id for a household.
+// Pass an empty string to clear (unlink).
+func (r *Repository) SetHouseholdKeycloakUserID(ctx context.Context, householdID, keycloakUserID string) error {
+	_, err := r.pool.Exec(ctx, `
+		UPDATE households SET keycloak_user_id = $2, updated_at = now()
+		WHERE id = $1::uuid AND deleted_at IS NULL`,
+		householdID, nullableString(keycloakUserID),
 	)
 	return err
 }
@@ -47,7 +60,7 @@ func (r *Repository) LoadHouseholds(ctx context.Context) ([]Household, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id::text, org_id::text, household_name,
 		       COALESCE(primary_email, ''), COALESCE(primary_phone_e164, ''),
-		       status, COALESCE(notes, ''),
+		       status, COALESCE(notes, ''), COALESCE(keycloak_user_id, ''),
 		       created_at, updated_at
 		FROM households WHERE deleted_at IS NULL`)
 	if err != nil {
@@ -60,13 +73,22 @@ func (r *Repository) LoadHouseholds(ctx context.Context) ([]Household, error) {
 		var h Household
 		if err := rows.Scan(&h.ID, &h.OrgID, &h.HouseholdName,
 			&h.PrimaryEmail, &h.PrimaryPhoneE164,
-			&h.Status, &h.Notes,
+			&h.Status, &h.Notes, &h.KeycloakUserID,
 			&h.CreatedAt, &h.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("members: scan household: %w", err)
 		}
 		out = append(out, h)
 	}
 	return out, rows.Err()
+}
+
+func (r *Repository) DeleteHousehold(ctx context.Context, id, deletedBy string) error {
+	_, err := r.pool.Exec(ctx, `
+		UPDATE households SET deleted_at = now(), deleted_by = $2::uuid
+		WHERE id = $1::uuid AND deleted_at IS NULL`,
+		id, deletedBy,
+	)
+	return err
 }
 
 // ───────────────────────────── Contacts ────────────────────────────────────
@@ -276,7 +298,7 @@ func loadHouseholdsInTx(ctx context.Context, tx pgx.Tx) ([]Household, error) {
 	rows, err := tx.Query(ctx, `
 		SELECT id::text, org_id::text, household_name,
 		       COALESCE(primary_email, ''), COALESCE(primary_phone_e164, ''),
-		       status, COALESCE(notes, ''), created_at, updated_at
+		       status, COALESCE(notes, ''), COALESCE(keycloak_user_id, ''), created_at, updated_at
 		FROM households WHERE deleted_at IS NULL`)
 	if err != nil {
 		return nil, err
@@ -287,7 +309,7 @@ func loadHouseholdsInTx(ctx context.Context, tx pgx.Tx) ([]Household, error) {
 		var h Household
 		if err := rows.Scan(&h.ID, &h.OrgID, &h.HouseholdName,
 			&h.PrimaryEmail, &h.PrimaryPhoneE164,
-			&h.Status, &h.Notes, &h.CreatedAt, &h.UpdatedAt); err != nil {
+			&h.Status, &h.Notes, &h.KeycloakUserID, &h.CreatedAt, &h.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, h)

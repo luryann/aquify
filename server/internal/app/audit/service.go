@@ -29,7 +29,17 @@ var (
 // Naming convention: <domain>.<resource>.<verb>
 
 const (
+	ActionAuthUserSelfRegister           = "auth.user.self_register"
+	ActionAuthUserApprove                = "auth.user.approve"
+	ActionAuthUserReject                 = "auth.user.reject"
 	ActionAuthRoleAssign                 = "auth.role.assign"
+	ActionAuthRoleRemove                 = "auth.role.remove"
+	ActionAuthUserInvite                 = "auth.user.invite"
+	ActionAuthUserUpdate                 = "auth.user.update"
+	ActionAuthUserDisable                = "auth.user.disable"
+	ActionAuthUserEnable                 = "auth.user.enable"
+	ActionAuthUserDelete                 = "auth.user.delete"
+	ActionAuthUserPasswordReset          = "auth.user.password_reset"
 	ActionBillingInvoiceIssue            = "billing.invoice.issue"
 	ActionBillingInvoiceVoid             = "billing.invoice.void"
 	ActionBillingInvoiceWriteOff         = "billing.invoice.write_off"
@@ -39,6 +49,7 @@ const (
 	ActionMeetCommitmentsLock            = "meet.commitments.lock"
 	ActionPerformanceBestTimeOverride    = "performance.best_time.override"
 	ActionImportConflictResolve          = "import.conflict.resolve"
+	ActionMembersHouseholdDelete         = "members.household.delete"
 	ActionMembersSwimmerUpdate           = "members.swimmer.update"
 	ActionComplianceDataExportRequest    = "compliance.data_export.request"
 	ActionComplianceDataDeletionRequest  = "compliance.data_deletion.request"

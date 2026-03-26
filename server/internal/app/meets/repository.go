@@ -54,8 +54,8 @@ func (r *Repository) UpsertMeet(ctx context.Context, m Meet) error {
 func (r *Repository) LoadMeets(ctx context.Context) ([]Meet, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id::text, org_id::text, name, meet_type, course,
-		       COALESCE(venue, ''), COALESCE(start_date, ''), COALESCE(end_date, ''),
-		       status, COALESCE(commitment_deadline, ''), COALESCE(entry_deadline, ''),
+		       COALESCE(venue, ''), COALESCE(start_date::text, ''), COALESCE(end_date::text, ''),
+		       status, COALESCE(commitment_deadline::text, ''), COALESCE(entry_deadline::text, ''),
 		       created_at, updated_at
 		FROM meets WHERE deleted_at IS NULL`)
 	if err != nil {
@@ -100,7 +100,7 @@ func (r *Repository) UpsertMeetSession(ctx context.Context, s MeetSession) error
 func (r *Repository) LoadMeetSessions(ctx context.Context) ([]MeetSession, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id::text, org_id::text, meet_id::text, session_number,
-		       COALESCE(session_date, ''), COALESCE(warm_up_time, ''), COALESCE(start_time, ''),
+		       COALESCE(session_date::text, ''), COALESCE(warm_up_time::text, ''), COALESCE(start_time::text, ''),
 		       created_at, updated_at
 		FROM meet_sessions`)
 	if err != nil {
@@ -126,13 +126,13 @@ func (r *Repository) LoadMeetSessions(ctx context.Context) ([]MeetSession, error
 
 func (r *Repository) UpsertMeetEvent(ctx context.Context, e MeetEvent) error {
 	_, err := r.pool.Exec(ctx, `
-		INSERT INTO meet_events (id, org_id, meet_id, session_id, event_number, distance, stroke, event_gender, age_group, course, created_at, updated_at)
+		INSERT INTO meet_events (id, org_id, meet_id, session_id, event_number, distance, stroke, gender, age_group, course, created_at, updated_at)
 		VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7, $8, $9, $10, $11, $12)
 		ON CONFLICT (id) DO UPDATE SET
 		  event_number = EXCLUDED.event_number,
 		  distance     = EXCLUDED.distance,
 		  stroke       = EXCLUDED.stroke,
-		  event_gender = EXCLUDED.event_gender,
+		  gender       = EXCLUDED.gender,
 		  course       = EXCLUDED.course,
 		  updated_at   = EXCLUDED.updated_at`,
 		e.ID, e.OrgID, e.MeetID, nullableString(e.SessionID),
@@ -147,7 +147,7 @@ func (r *Repository) LoadMeetEvents(ctx context.Context) ([]MeetEvent, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id::text, org_id::text, meet_id::text,
 		       COALESCE(session_id::text, ''), event_number, distance, stroke,
-		       COALESCE(event_gender, ''), COALESCE(course, ''),
+		       COALESCE(gender, ''), COALESCE(course, ''),
 		       created_at, updated_at
 		FROM meet_events`)
 	if err != nil {
@@ -173,13 +173,13 @@ func (r *Repository) LoadMeetEvents(ctx context.Context) ([]MeetEvent, error) {
 
 func (r *Repository) UpsertCommitment(ctx context.Context, c Commitment) error {
 	_, err := r.pool.Exec(ctx, `
-		INSERT INTO commitments (id, org_id, meet_id, household_id, swimmer_id, status, commitment_response, responded_at, created_at, updated_at)
+		INSERT INTO commitments (id, org_id, meet_id, household_id, swimmer_id, status, notes, committed_at, created_at, updated_at)
 		VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6, $7, $8, $9, $10)
 		ON CONFLICT (id) DO UPDATE SET
-		  status              = EXCLUDED.status,
-		  commitment_response = EXCLUDED.commitment_response,
-		  responded_at        = EXCLUDED.responded_at,
-		  updated_at          = EXCLUDED.updated_at`,
+		  status       = EXCLUDED.status,
+		  notes        = EXCLUDED.notes,
+		  committed_at = EXCLUDED.committed_at,
+		  updated_at   = EXCLUDED.updated_at`,
 		c.ID, c.OrgID, c.MeetID, c.HouseholdID, c.SwimmerID,
 		c.Status, nullableString(c.Notes), c.CommittedAt,
 		c.CreatedAt, c.UpdatedAt,
@@ -190,7 +190,7 @@ func (r *Repository) UpsertCommitment(ctx context.Context, c Commitment) error {
 func (r *Repository) LoadCommitments(ctx context.Context) ([]Commitment, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id::text, org_id::text, meet_id::text, household_id::text, swimmer_id::text,
-		       status, COALESCE(commitment_response, ''), responded_at,
+		       status, COALESCE(notes, ''), committed_at,
 		       created_at, updated_at
 		FROM commitments`)
 	if err != nil {

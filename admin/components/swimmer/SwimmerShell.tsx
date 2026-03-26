@@ -97,7 +97,7 @@ function PortalDisabled() {
 }
 
 export function SwimmerShell({ children }: { children: ReactNode }) {
-  const { session, signOut } = useSession()
+  const { session } = useSession()
   const router = useRouter()
 
   if (!session) return null
@@ -107,7 +107,6 @@ export function SwimmerShell({ children }: { children: ReactNode }) {
   }
 
   const handleSignOut = () => {
-    signOut()
     router.push('/logout')
   }
 

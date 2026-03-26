@@ -26,10 +26,10 @@ const mono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: 'DARE Admin',
-    template: '%s · DARE Admin',
+    default: 'Aquify',
+    template: '%s · Aquify',
   },
-  description: 'DARE Aquatics operations platform — admin portal.',
+  description: 'Aquify — swim club operations platform.',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

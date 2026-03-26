@@ -7,7 +7,9 @@ import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
 import {
   fetchMeets,
+  fetchPractices,
   type MeetRecord,
+  type PracticeRecord,
 } from '@/lib/adminData'
 
 // ── Design tokens ──────────────────────────────────────────────────────────
@@ -23,7 +25,7 @@ const C = {
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────
-type EventType = 'meet' | 'deadline'
+type EventType = 'meet' | 'deadline' | 'practice'
 
 type ScheduleEvent = {
   id: string
@@ -40,6 +42,7 @@ type ScheduleEvent = {
 const EVENT_STYLE: Record<EventType, { dot: string; bg: string; border: string; color: string; label: string; leftBorder: string }> = {
   meet:     { dot: '#00D4AA', bg: 'rgba(0,212,170,0.06)',  border: 'rgba(0,212,170,0.20)',   color: '#00D4AA', label: 'Meet',      leftBorder: '#00D4AA' },
   deadline: { dot: '#ef4444', bg: 'rgba(239,68,68,0.06)',  border: 'rgba(239,68,68,0.18)',  color: '#fca5a5', label: 'Deadline',  leftBorder: '#ef4444' },
+  practice: { dot: '#7FA8C9', bg: 'rgba(127,168,201,0.06)', border: 'rgba(127,168,201,0.18)', color: '#7FA8C9', label: 'Practice', leftBorder: '#7FA8C9' },
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -92,6 +95,22 @@ function buildScheduleFromMeets(meets: MeetRecord[]): ScheduleEvent[] {
   }
 
   return events.sort((a, b) => a.date.getTime() - b.date.getTime())
+}
+
+function buildScheduleFromPractices(practices: PracticeRecord[], now: Date): ScheduleEvent[] {
+  return practices
+    .filter((p) => new Date(p.date + 'T23:59:59') >= now)
+    .map((p) => {
+      const practiceDate = new Date(p.date + 'T00:00:00')
+      return {
+        id: `practice-${p.id}`,
+        title: p.description ? `Practice — ${p.description.slice(0, 60)}` : 'Practice',
+        type: 'practice' as EventType,
+        date: practiceDate,
+        dateLabel: fmtDayLabel(practiceDate),
+        detail: p.yardage_target > 0 ? `${p.yardage_target.toLocaleString()} yds target` : undefined,
+      }
+    })
 }
 
 // Group sorted events into weekly sections
@@ -257,20 +276,26 @@ export default function SwimmerSchedulePage() {
 
   const [schedule, setSchedule] = useState<ScheduleEvent[]>([])
   const [loading, setLoading] = useState(true)
-  const [typeFilter, setTypeFilter] = useState<EventType | 'all'>('all')
+  const [typeFilter, setTypeFilter] = useState<EventType | 'all' | 'practice'>('all')
 
   useEffect(() => {
     if (!orgId) { setLoading(false); return }
-    fetchMeets(api, orgId)
-      .then((meets) => {
-        // Only future or active meets
-        const now = new Date()
+    const now = new Date()
+    Promise.all([
+      fetchMeets(api, orgId),
+      fetchPractices(api, orgId).catch(() => [] as PracticeRecord[]),
+    ])
+      .then(([meets, practices]) => {
         const futureMeets = meets.filter(m => {
           if (m.end_date) return new Date(m.end_date) >= now
           if (m.start_date) return new Date(m.start_date) >= now
           return false
         })
-        setSchedule(buildScheduleFromMeets(futureMeets))
+        const allEvents = [
+          ...buildScheduleFromMeets(futureMeets),
+          ...buildScheduleFromPractices(practices, now),
+        ].sort((a, b) => a.date.getTime() - b.date.getTime())
+        setSchedule(allEvents)
       })
       .catch(console.error)
       .finally(() => setLoading(false))
@@ -308,26 +333,6 @@ export default function SwimmerSchedulePage() {
         </p>
       </div>
 
-      {/* Practice notice banner */}
-      <div
-        style={{
-          background: 'rgba(0,212,170,0.06)',
-          border: `1px solid ${C.accentBorder}`,
-          borderRadius: '10px',
-          padding: '11px 15px',
-          display: 'flex',
-          gap: '10px',
-          alignItems: 'flex-start',
-          marginBottom: '24px',
-          animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) 0.04s both',
-        }}
-      >
-        <Icon name="info" size={14} style={{ color: C.accent, marginTop: '1px', flexShrink: 0 }} />
-        <p style={{ fontSize: '12.5px', color: C.subtle, lineHeight: 1.5 }}>
-          Practice sessions are managed by your coach and are not shown here. Only meets and commitment deadlines are displayed.
-        </p>
-      </div>
-
       {/* Type filter */}
       <div
         style={{
@@ -338,7 +343,7 @@ export default function SwimmerSchedulePage() {
           animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) 0.05s both',
         }}
       >
-        {(['all', 'meet', 'deadline'] as const).map((type) => {
+        {(['all', 'meet', 'practice', 'deadline'] as const).map((type) => {
           const active = typeFilter === type
           const s = type !== 'all' ? EVENT_STYLE[type] : null
           return (

@@ -1,0 +1,182 @@
+{
+  "realm": "aquify",
+  "enabled": true,
+  "displayName": "Aquify Local",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": true,
+  "rememberMe": true,
+  "verifyEmail": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "bruteForceProtected": true,
+  "permanentLockout": false,
+  "maxFailureWaitSeconds": 900,
+  "minimumQuickLoginWaitSeconds": 60,
+  "waitIncrementSeconds": 60,
+  "quickLoginCheckMilliSeconds": 1000,
+  "maxDeltaTimeSeconds": 43200,
+  "failureFactor": 10,
+  "loginTheme": "aquify",
+  "roles": {
+    "realm": [
+      { "name": "owner", "description": "Full system access" },
+      { "name": "admin", "description": "Administrative access" },
+      { "name": "coach", "description": "Training and meets" },
+      { "name": "parent", "description": "Household portal access" },
+      { "name": "swimmer", "description": "Swimmer portal access" },
+      { "name": "billing", "description": "Financial access" },
+      { "name": "read-only", "description": "View-only staff access" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "aquify-id",
+      "name": "Aquify Admin SPA",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "aquify-local-dev-secret",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "frontchannelLogout": true,
+      "fullScopeAllowed": true,
+      "redirectUris": [
+        "http://localhost:3000/auth/callback",
+        "http://127.0.0.1:3000/auth/callback"
+      ],
+      "webOrigins": [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000"
+      ],
+      "attributes": {
+        "post.logout.redirect.uris": "http://localhost:3000/*##http://127.0.0.1:3000/*",
+        "oauth2.device.authorization.grant.enabled": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "realm roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "userinfo.token.claim": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "realm_access.roles",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "org_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "org_id",
+            "claim.name": "org_id",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "owner@dare.local",
+      "enabled": true,
+      "email": "owner@dare.local",
+      "emailVerified": true,
+      "firstName": "Dev",
+      "lastName": "Owner",
+      "attributes": { "org_id": ["org-demo"] },
+      "credentials": [
+        { "type": "password", "value": "ChangeMe123!", "temporary": false }
+      ],
+      "realmRoles": ["owner"]
+    },
+    {
+      "username": "admin@dare.local",
+      "enabled": true,
+      "email": "admin@dare.local",
+      "emailVerified": true,
+      "firstName": "Dev",
+      "lastName": "Admin",
+      "attributes": { "org_id": ["org-demo"] },
+      "credentials": [
+        { "type": "password", "value": "ChangeMe123!", "temporary": false }
+      ],
+      "realmRoles": ["admin"]
+    },
+    {
+      "username": "coach@dare.local",
+      "enabled": true,
+      "email": "coach@dare.local",
+      "emailVerified": true,
+      "firstName": "Dev",
+      "lastName": "Coach",
+      "attributes": { "org_id": ["org-demo"] },
+      "credentials": [
+        { "type": "password", "value": "ChangeMe123!", "temporary": false }
+      ],
+      "realmRoles": ["coach"]
+    },
+    {
+      "username": "parent@dare.local",
+      "enabled": true,
+      "email": "parent@dare.local",
+      "emailVerified": true,
+      "firstName": "Dev",
+      "lastName": "Parent",
+      "attributes": { "org_id": ["org-demo"] },
+      "credentials": [
+        { "type": "password", "value": "ChangeMe123!", "temporary": false }
+      ],
+      "realmRoles": ["parent"]
+    },
+    {
+      "username": "swimmer@dare.local",
+      "enabled": true,
+      "email": "swimmer@dare.local",
+      "emailVerified": true,
+      "firstName": "Emma",
+      "lastName": "Chen",
+      "attributes": { "org_id": ["org-demo"] },
+      "credentials": [
+        { "type": "password", "value": "ChangeMe123!", "temporary": false }
+      ],
+      "realmRoles": ["swimmer"]
+    },
+    {
+      "username": "billing@dare.local",
+      "enabled": true,
+      "email": "billing@dare.local",
+      "emailVerified": true,
+      "firstName": "Dev",
+      "lastName": "Billing",
+      "attributes": { "org_id": ["org-demo"] },
+      "credentials": [
+        { "type": "password", "value": "ChangeMe123!", "temporary": false }
+      ],
+      "realmRoles": ["billing"]
+    },
+    {
+      "username": "readonly@dare.local",
+      "enabled": true,
+      "email": "readonly@dare.local",
+      "emailVerified": true,
+      "firstName": "Dev",
+      "lastName": "Read Only",
+      "attributes": { "org_id": ["org-demo"] },
+      "credentials": [
+        { "type": "password", "value": "ChangeMe123!", "temporary": false }
+      ],
+      "realmRoles": ["read-only"]
+    }
+  ]
+}

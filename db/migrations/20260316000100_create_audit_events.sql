@@ -36,12 +36,14 @@ CREATE INDEX IF NOT EXISTS audit_events_action_idx
 -- Enforce immutability at the database level: any attempt to UPDATE or DELETE
 -- an audit record raises an exception. This protects the compliance audit trail
 -- from tampering by any DB user with table-level write access.
+-- +goose StatementBegin
 CREATE OR REPLACE FUNCTION audit_events_immutable()
 RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   RAISE EXCEPTION 'audit_events records are immutable and cannot be updated or deleted';
 END;
 $$;
+-- +goose StatementEnd
 
 CREATE TRIGGER audit_events_no_update
   BEFORE UPDATE ON audit_events FOR EACH ROW EXECUTE FUNCTION audit_events_immutable();

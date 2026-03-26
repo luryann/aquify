@@ -12,11 +12,11 @@ import (
 
 // JobsHandlers exposes admin HTTP endpoints for background job visibility.
 type JobsHandlers struct {
-	server *workers.Server
+	server workers.Backend
 }
 
 // NewJobsHandlers returns a new JobsHandlers backed by the given worker Server.
-func NewJobsHandlers(srv *workers.Server) *JobsHandlers {
+func NewJobsHandlers(srv workers.Backend) *JobsHandlers {
 	return &JobsHandlers{server: srv}
 }
 
@@ -51,7 +51,11 @@ func (h *JobsHandlers) listJobs(w http.ResponseWriter, r *http.Request) {
 		status = workers.TaskStatus(statusRaw)
 	}
 
-	tasks := h.server.ListTasks(queue, status)
+	tasks, err := h.server.ListTasks(queue, status)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load jobs.", nil)
+		return
+	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"tasks": tasks,
 		"count": len(tasks),
@@ -70,8 +74,13 @@ func (h *JobsHandlers) queueStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	queues, err := h.server.QueueStats()
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load queue stats.", nil)
+		return
+	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"queues": h.server.QueueStats(),
+		"queues": queues,
 	})
 }
 
@@ -106,7 +115,11 @@ func (h *JobsHandlers) listDLQ(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tasks := h.server.DLQTasks()
+	tasks, err := h.server.DLQTasks()
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load dead-letter queue.", nil)
+		return
+	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"dead_letter_tasks": tasks,
 		"count":             len(tasks),

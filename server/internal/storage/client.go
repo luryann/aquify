@@ -141,6 +141,10 @@ func (s *StubStorage) Delete(key string) error {
 	return nil
 }
 
+func (s *StubStorage) Ready(_ context.Context) error {
+	return nil
+}
+
 type S3Storage struct {
 	client *minio.Client
 	bucket string
@@ -252,6 +256,14 @@ func (s *S3Storage) Delete(key string) error {
 	err := s.client.RemoveObject(context.Background(), s.bucket, key, minio.RemoveObjectOptions{})
 	if err != nil && !isMinIOObjectMissing(err) {
 		return fmt.Errorf("delete object %s: %w", key, err)
+	}
+	return nil
+}
+
+func (s *S3Storage) Ready(ctx context.Context) error {
+	_, err := s.client.BucketExists(ctx, s.bucket)
+	if err != nil {
+		return fmt.Errorf("bucket probe failed: %w", err)
 	}
 	return nil
 }

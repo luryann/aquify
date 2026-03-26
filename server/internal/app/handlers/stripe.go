@@ -22,13 +22,16 @@ import (
 
 // StripeHandlers handles HTTP requests for Stripe payment and webhook endpoints.
 type StripeHandlers struct {
-	client                    stripelib.Client
-	billing                   *billing.Service
-	webhookSecret             string
-	currency                  string
+	client                       stripelib.Client
+	billing                      *billing.Service
+	webhookSecret                string
+	currency                     string
 	reconcileAlertThresholdCents int
-	validate                  *validator.Validate
-	logger                    *slog.Logger
+	validate                     *validator.Validate
+	logger                       *slog.Logger
+	// writeLimiter is an optional extra rate-limiting middleware applied only
+	// to cost-driving write endpoints (payment-intents, checkout-sessions).
+	writeLimiter func(http.Handler) http.Handler
 }
 
 // NewStripeHandlers returns a new StripeHandlers.
@@ -64,12 +67,29 @@ func (h *StripeHandlers) RegisterPublicRoutes(router chi.Router) {
 	router.Post("/webhooks/stripe", h.handleWebhook)
 }
 
+// SetWriteLimiter injects an extra rate-limiting middleware applied only to
+// cost-driving write routes (payment-intents, checkout-sessions).
+func (h *StripeHandlers) SetWriteLimiter(limiter func(http.Handler) http.Handler) {
+	h.writeLimiter = limiter
+}
+
 // RegisterProtectedRoutes mounts routes that require auth + org scope middleware.
 func (h *StripeHandlers) RegisterProtectedRoutes(router chi.Router) {
-	router.Post("/stripe/payment-intents", h.createPaymentIntent)
-	router.Post("/stripe/checkout-sessions", h.createCheckoutSession)
 	router.Get("/stripe/webhook-events", h.listWebhookEvents)
 	router.Get("/stripe/reconciliation", h.reconcile)
+
+	// Payment write routes receive an additional, tighter rate limiter to
+	// constrain authenticated abuse that would drive Stripe API costs.
+	if h.writeLimiter != nil {
+		router.Group(func(r chi.Router) {
+			r.Use(h.writeLimiter)
+			r.Post("/stripe/payment-intents", h.createPaymentIntent)
+			r.Post("/stripe/checkout-sessions", h.createCheckoutSession)
+		})
+	} else {
+		router.Post("/stripe/payment-intents", h.createPaymentIntent)
+		router.Post("/stripe/checkout-sessions", h.createCheckoutSession)
+	}
 }
 
 // ─── Request/response types ───────────────────────────────────────────────────

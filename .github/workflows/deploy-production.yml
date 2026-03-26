@@ -1,0 +1,184 @@
+name: Deploy to Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag to deploy (e.g. sha-abc1234 from a successful staging deploy)"
+        required: true
+        type: string
+      confirm:
+        description: "Type DEPLOY to confirm production deployment"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+env:
+  REGISTRY: ghcr.io
+  API_IMAGE: ghcr.io/dareaquatics/dare-api
+  ADMIN_IMAGE: ghcr.io/dareaquatics/dare-admin
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Safety pre-flight checks (runs without requiring manual approval)
+  # ---------------------------------------------------------------------------
+
+  safety-check:
+    name: Safety Pre-flight Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify confirmation string
+        run: |
+          if [ "${{ github.event.inputs.confirm }}" != "DEPLOY" ]; then
+            echo "ERROR: Confirmation string must be exactly 'DEPLOY'. Got: '${{ github.event.inputs.confirm }}'"
+            exit 1
+          fi
+          echo "Confirmation verified."
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify API image exists in GHCR
+        run: |
+          IMAGE="${{ env.API_IMAGE }}:${{ github.event.inputs.image_tag }}"
+          echo "Checking existence of ${IMAGE} ..."
+          docker manifest inspect "${IMAGE}" > /dev/null 2>&1 || {
+            echo "ERROR: Image ${IMAGE} not found in GHCR."
+            echo "Ensure this tag was built and pushed by the staging deploy workflow."
+            exit 1
+          }
+          echo "API image found: ${IMAGE}"
+
+      - name: Verify Admin image exists in GHCR
+        run: |
+          IMAGE="${{ env.ADMIN_IMAGE }}:${{ github.event.inputs.image_tag }}"
+          echo "Checking existence of ${IMAGE} ..."
+          docker manifest inspect "${IMAGE}" > /dev/null 2>&1 || {
+            echo "ERROR: Image ${IMAGE} not found in GHCR."
+            exit 1
+          }
+          echo "Admin image found: ${IMAGE}"
+
+  # ---------------------------------------------------------------------------
+  # Production deploy (requires manual approval via GitHub environment)
+  # ---------------------------------------------------------------------------
+
+  deploy:
+    name: Deploy to Production
+    needs: safety-check
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Promote image tag to production
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.PRODUCTION_SSH_HOST }}
+          username: ${{ secrets.PRODUCTION_SSH_USER }}
+          key: ${{ secrets.PRODUCTION_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            /opt/dare/scripts/promote.sh "${{ github.event.inputs.image_tag }}"
+
+      # -----------------------------------------------------------------------
+      # Health check
+      # -----------------------------------------------------------------------
+
+      - name: Wait for production API health
+        run: |
+          echo "Waiting for API health at https://api.dare.club/health/live ..."
+          for i in $(seq 1 24); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              --max-time 5 \
+              https://api.dare.club/health/live || echo "000")
+            if [ "${STATUS}" = "200" ]; then
+              echo "Production API healthy (attempt ${i})"
+              exit 0
+            fi
+            echo "Attempt ${i}/24: got HTTP ${STATUS}, retrying in 10s..."
+            sleep 10
+          done
+          echo "ERROR: Production API did not become healthy after 240s"
+          exit 1
+
+      # -----------------------------------------------------------------------
+      # Smoke tests
+      # -----------------------------------------------------------------------
+
+      - name: Run production smoke tests
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.PRODUCTION_SSH_HOST }}
+          username: ${{ secrets.PRODUCTION_SSH_USER }}
+          key: ${{ secrets.PRODUCTION_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            SMOKE_AUTH_TOKEN="${{ secrets.SMOKE_TEST_AUTH_TOKEN_PROD }}" \
+            SMOKE_ORG_ID="${{ secrets.SMOKE_TEST_ORG_ID_PROD }}" \
+            API_BASE_URL="https://api.dare.club" \
+              /opt/dare/scripts/smoke.sh
+
+      # -----------------------------------------------------------------------
+      # Notifications
+      # -----------------------------------------------------------------------
+
+      - name: Notify Slack on success
+        if: success()
+        uses: slackapi/slack-github-action@v2
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": ":rocket: *Production deploy succeeded*",
+              "attachments": [
+                {
+                  "color": "good",
+                  "fields": [
+                    {"title": "Image tag", "value": "${{ github.event.inputs.image_tag }}", "short": true},
+                    {"title": "Deployed by", "value": "${{ github.actor }}", "short": true},
+                    {"title": "Workflow run", "value": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}", "short": false}
+                  ]
+                }
+              ]
+            }
+
+      - name: Trigger automatic rollback on failure
+        if: failure()
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.PRODUCTION_SSH_HOST }}
+          username: ${{ secrets.PRODUCTION_SSH_USER }}
+          key: ${{ secrets.PRODUCTION_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            echo "Deploy failed — triggering automatic rollback..."
+            /opt/dare/scripts/rollback.sh
+
+      - name: Notify Slack on failure (with rollback)
+        if: failure()
+        uses: slackapi/slack-github-action@v2
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": ":sos: *Production deploy FAILED — automatic rollback initiated*",
+              "attachments": [
+                {
+                  "color": "danger",
+                  "fields": [
+                    {"title": "Failed image tag", "value": "${{ github.event.inputs.image_tag }}", "short": true},
+                    {"title": "Attempted by", "value": "${{ github.actor }}", "short": true},
+                    {"title": "Workflow run", "value": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}", "short": false},
+                    {"title": "Action required", "value": "Verify rollback succeeded and investigate root cause before next deploy attempt.", "short": false}
+                  ]
+                }
+              ]
+            }

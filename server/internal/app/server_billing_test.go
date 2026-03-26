@@ -128,7 +128,7 @@ type orgPaymentsEnvelope struct {
 func newBillingRouter(t *testing.T, svc *billing.Service) http.Handler {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, nil, nil, nil, nil, nil, nil, nil, svc, nil, nil, nil, nil, nil, nil)
+	return NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, nil, nil, nil, nil, nil, nil, nil, svc, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -915,7 +915,8 @@ func TestCreateRefundValidatesLocallyBeforeCallingStripe(t *testing.T) {
 	router := NewRouterWithServices(
 		Config{AppEnv: "test", Auth: AuthConfig{EnableDevStubTokens: true}},
 		logger,
-		nil, nil, nil, nil, nil, nil, nil, svc, stripeStub, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, svc, stripeStub, nil, nil, nil, nil, nil, nil,
+	nil,
 	)
 	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, true)
 

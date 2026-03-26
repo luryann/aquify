@@ -11,6 +11,7 @@ import {
   fetchSwimmerGroups,
   fetchGroups,
   fetchSwimmerBestTimes,
+  updateSwimmer,
   type SwimmerRecord,
   type BestTimeRecord,
 } from '@/lib/adminData'
@@ -114,8 +115,10 @@ export default function SwimmerProfilePage() {
 
   // Editable local state (initialized from swimmer data on load)
   const [emergencyNotes, setEmergencyNotes] = useState('')
-  const [jerseySize, setJerseySize] = useState('YM')
   const [preferredName, setPreferredName] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [saveSuccess, setSaveSuccess] = useState(false)
 
   useEffect(() => {
     if (!orgId || !swimmerId) { setLoading(false); return }
@@ -144,11 +147,32 @@ export default function SwimmerProfilePage() {
   }, [api, orgId, swimmerId])
 
   const [tab, setTab] = useState<Tab>('profile')
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
-  const [editingJersey, setEditingJersey] = useState(false)
   const [editingName, setEditingName] = useState(false)
   const [editingNotes, setEditingNotes] = useState(false)
+
+  async function handleSave() {
+    if (!orgId || !swimmerId) return
+    setSaving(true)
+    setSaveError(null)
+    setSaveSuccess(false)
+    try {
+      const updated = await updateSwimmer(api, orgId, swimmerId, {
+        preferred_name: preferredName,
+        notes: emergencyNotes,
+      })
+      setSwimmer(updated)
+      setEmergencyNotes(updated.notes ?? '')
+      setPreferredName(updated.preferred_name ?? '')
+      setEditingName(false)
+      setEditingNotes(false)
+      setSaveSuccess(true)
+      setTimeout(() => setSaveSuccess(false), 3000)
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Failed to save changes.')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const fullName = swimmer ? `${swimmer.first_name} ${swimmer.last_name}` : '—'
   const initials = swimmer
@@ -159,16 +183,6 @@ export default function SwimmerProfilePage() {
   const statusCfg = STATUS_CONFIG[statusKey] ?? STATUS_CONFIG['active']
   const gradient = GRADIENTS[0]
 
-  const handleSave = async () => {
-    setSaving(true)
-    await new Promise((r) => setTimeout(r, 700))
-    setSaving(false)
-    setSaved(true)
-    setEditingJersey(false)
-    setEditingName(false)
-    setEditingNotes(false)
-    setTimeout(() => setSaved(false), 2500)
-  }
 
   return (
     <div style={{ maxWidth: '820px' }}>
@@ -223,13 +237,6 @@ export default function SwimmerProfilePage() {
               </div>
             </div>
 
-            {/* Save feedback */}
-            {saved && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#059669', fontWeight: 500, animation: 'slideUp 0.2s ease both' }}>
-                <Icon name="check-circle" size={15} />
-                Saved
-              </div>
-            )}
           </>
         )}
       </div>
@@ -277,9 +284,11 @@ export default function SwimmerProfilePage() {
               [
                 { label: 'Full Name',           value: fullName },
                 { label: 'Date of Birth',        value: fmtDOB(swimmer?.date_of_birth) },
+                { label: 'Age',                  value: age !== null ? `${age} years old` : '—' },
                 { label: 'Gender',               value: swimmer?.gender ?? '—' },
                 { label: 'USS Number',           value: swimmer?.swimmer_external_id ?? '—', mono: true },
                 { label: 'Training Group',       value: groupName },
+                { label: 'Registration Status',  value: swimmer?.registration_status ?? '—' },
               ].map((field, i, arr) => (
                 <div key={field.label} style={{ display: 'flex', padding: '14px 20px', borderBottom: i < arr.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none', gap: '24px', alignItems: 'center' }}>
                   <span style={{ width: '160px', fontSize: '13px', color: '#9A9693', flexShrink: 0 }}>
@@ -327,28 +336,6 @@ export default function SwimmerProfilePage() {
               </div>
             </div>
 
-            {/* Jersey Size */}
-            <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: '12px', color: '#9A9693', marginBottom: '4px' }}>Jersey Size</div>
-                  {editingJersey ? (
-                    <select value={jerseySize} onChange={(e) => setJerseySize(e.target.value)} autoFocus style={{ padding: '7px 11px', border: '1.5px solid #eb5d1e', borderRadius: '8px', fontSize: '14px', color: '#1A1714', fontFamily: 'var(--font-body)', outline: 'none', background: '#fff', cursor: 'pointer' }}>
-                      {['YS', 'YM', 'YL', 'YXL', 'AS', 'AM', 'AL', 'AXL', 'AXXL'].map((s) => (
-                        <option key={s} value={s}>{s}</option>
-                      ))}
-                    </select>
-                  ) : (
-                    <div style={{ fontSize: '14px', color: '#1A1714', fontWeight: 500 }}>{jerseySize}</div>
-                  )}
-                </div>
-                <button onClick={() => setEditingJersey(!editingJersey)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#eb5d1e', fontSize: '12.5px', display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px', borderRadius: '6px', transition: 'background 100ms' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(235,93,30,0.06)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
-                  <Icon name="edit" size={12} />
-                  {editingJersey ? 'Cancel' : 'Edit'}
-                </button>
-              </div>
-            </div>
-
             {/* Emergency Notes */}
             <div style={{ padding: '16px 20px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -380,11 +367,40 @@ export default function SwimmerProfilePage() {
           </div>
 
           {/* Save Button */}
-          {(editingJersey || editingName || editingNotes) && (
-            <div style={{ display: 'flex', justifyContent: 'flex-end', animation: 'slideUp 0.2s ease both' }}>
-              <button onClick={handleSave} disabled={saving} style={{ padding: '10px 24px', background: '#eb5d1e', color: '#fff', border: 'none', borderRadius: '9px', fontSize: '14px', fontWeight: 600, cursor: saving ? 'wait' : 'pointer', opacity: saving ? 0.7 : 1, transition: 'opacity 120ms', fontFamily: 'var(--font-body)' }}>
-                {saving ? 'Saving…' : 'Save Changes'}
-              </button>
+          {(editingName || editingNotes) && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px', animation: 'slideUp 0.2s ease both' }}>
+              {saveError && (
+                <p style={{ fontSize: '12px', color: '#dc2626', fontFamily: 'var(--font-mono)', margin: 0 }}>{saveError}</p>
+              )}
+              {saveSuccess && (
+                <p style={{ fontSize: '12px', color: '#059669', fontFamily: 'var(--font-mono)', margin: 0 }}>Changes saved.</p>
+              )}
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button
+                  onClick={() => { setEditingName(false); setEditingNotes(false); setSaveError(null) }}
+                  style={{ padding: '10px 20px', background: 'transparent', color: '#6B6866', border: '1px solid rgba(0,0,0,0.12)', borderRadius: '9px', fontSize: '14px', fontWeight: 500, cursor: 'pointer', fontFamily: 'var(--font-body)' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  style={{
+                    padding: '10px 24px',
+                    background: saving ? 'rgba(235,93,30,0.6)' : '#eb5d1e',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '9px',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    cursor: saving ? 'wait' : 'pointer',
+                    fontFamily: 'var(--font-body)',
+                    transition: 'background 150ms',
+                  }}
+                >
+                  {saving ? 'Saving…' : 'Save Changes'}
+                </button>
+              </div>
             </div>
           )}
         </div>

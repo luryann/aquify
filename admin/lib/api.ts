@@ -2,13 +2,18 @@
 import { useMemo } from 'react'
 
 export class ApiError extends Error {
+  public readonly status: number
+  public readonly code: string
+
   constructor(
-    public readonly status: number,
-    public readonly code: string,
+    status: number,
+    code: string,
     message: string,
   ) {
     super(message)
     this.name = 'ApiError'
+    this.status = status
+    this.code = code
   }
 
   isUnauthorized()    { return this.status === 401 }
@@ -17,6 +22,10 @@ export class ApiError extends Error {
   isConflict()        { return this.status === 409 }
   isValidation()      { return this.status === 422 }
   isServerError()     { return this.status >= 500 }
+
+  static async fromResponse(res: Response): Promise<ApiError> {
+    return parseResponseError(res)
+  }
 }
 
 export type ApiRequestOptions = {

@@ -8,6 +8,7 @@ import {
   fetchSwimmers,
   fetchSwimmerBestTimes,
   type BestTimeRecord,
+  type SwimmerRecord,
 } from '@/lib/adminData'
 
 // ── Design tokens ──────────────────────────────────────────────────────────
@@ -184,12 +185,12 @@ export default function PerformancePage() {
 
   useEffect(() => {
     if (!orgId) { setLoading(false); return }
-    fetchSwimmers(api, orgId).then(async (swimmers) => {
+    fetchSwimmers(api, orgId).catch(() => [] as SwimmerRecord[]).then(async (swimmers) => {
       const mySwimmer = householdId
         ? (swimmers.find(s => s.household_id === householdId) ?? null)
         : null
       if (!mySwimmer) { setLoading(false); return }
-      const records = await fetchSwimmerBestTimes(api, orgId, mySwimmer.id)
+      const records = await fetchSwimmerBestTimes(api, orgId, mySwimmer.id).catch(() => [] as BestTimeRecord[])
       setRawRecords(records)
       // Set default progression event to first SCY record
       const firstSCY = records.find(r => r.course?.toUpperCase() === 'SCY' && r.best_time_ms)
@@ -197,7 +198,7 @@ export default function PerformancePage() {
         const key = `${eventName(firstSCY.event_distance, firstSCY.stroke)} SCY`
         setProgressEvent(key)
       }
-    }).catch(console.error).finally(() => setLoading(false))
+    }).finally(() => setLoading(false))
   }, [api, orgId, householdId])
 
   const pivotedRows = pivotBestTimes(rawRecords)

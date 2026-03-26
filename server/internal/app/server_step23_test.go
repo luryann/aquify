@@ -49,7 +49,7 @@ func TestHY3ImportFinalizationAndReportGeneration(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	importsService := imports.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-hy3", []string{"admin"}, false)
 	importID := requestUploadURL(t, router, "org-hy3", adminToken, "championship.hy3", "hy3")
@@ -99,7 +99,7 @@ func TestSensitiveRouteRBACMatrix(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, nil, nil, billing.NewService(), nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, nil, nil, billing.NewService(), nil, nil, nil, nil, nil, nil, nil, nil)
 
 	tokens := map[string]string{
 		"owner":     issueSessionTokenForUser(t, router, "owner-user", "org-rbac", []string{"owner"}, true),
@@ -181,7 +181,7 @@ func TestP0RegistrationToPaymentFlow(t *testing.T) {
 	memberSvc := members.NewService()
 	groupSvc := groups.NewService()
 	billingSvc := billing.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, memberSvc, groupSvc, nil, nil, nil, nil, billingSvc, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, memberSvc, groupSvc, nil, nil, nil, nil, billingSvc, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionTokenForUser(t, router, "admin-user", "org-p0-reg", []string{"admin"}, true)
 	parentToken := issueSessionTokenForUser(t, router, "parent-user", "org-p0-reg", []string{"parent"}, false)
@@ -297,7 +297,7 @@ func TestP0MeetCommitToSD3ExportFlow(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	meetsSvc := meets.NewService()
 	exportsSvc := exports.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsSvc, nil, exportsSvc, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsSvc, nil, exportsSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionTokenForUser(t, router, "admin-user", "org-p0-meet", []string{"admin"}, true)
 	parentToken := issueSessionTokenWithHousehold(t, router, "parent-user", "org-p0-meet", "household-p0", []string{"parent"}, false)
@@ -434,7 +434,7 @@ func TestDuplicateImportFinalizeChaos(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	importsService := imports.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	adminToken := issueSessionToken(t, router, "org-chaos", []string{"admin"}, false)
 	importID := requestUploadURL(t, router, "org-chaos", adminToken, "duplicate.sd3", "sd3")
 

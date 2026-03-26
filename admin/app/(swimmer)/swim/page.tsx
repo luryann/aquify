@@ -253,9 +253,9 @@ export default function SwimmerDashboardPage() {
     if (!orgId) { setLoading(false); return }
 
     Promise.all([
-      fetchSwimmers(api, orgId),
-      fetchMeets(api, orgId),
-      fetchAnnouncements(api, orgId, 'published'),
+      fetchSwimmers(api, orgId).catch(() => [] as SwimmerRecord[]),
+      fetchMeets(api, orgId).catch(() => []),
+      fetchAnnouncements(api, orgId, 'published').catch(() => [] as AnnouncementRecord[]),
     ]).then(async ([swimmers, allMeets, anns]) => {
       // Resolve swimmer
       const mySwimmer = householdId
@@ -270,7 +270,7 @@ export default function SwimmerDashboardPage() {
 
       if (mySwimmer) {
         // Fetch best times
-        const rawBT = await fetchSwimmerBestTimes(api, orgId, mySwimmer.id)
+        const rawBT = await fetchSwimmerBestTimes(api, orgId, mySwimmer.id).catch(() => [])
         const btDisplay: BestTimeDisplay[] = rawBT
           .filter(bt => bt.best_time_ms != null)
           .slice(0, 3)
@@ -317,7 +317,7 @@ export default function SwimmerDashboardPage() {
         }))
         setMeets(meetDisplays)
       }
-    }).catch(console.error).finally(() => setLoading(false))
+    }).finally(() => setLoading(false))
   }, [api, orgId, householdId])
 
   const firstName = swimmer

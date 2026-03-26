@@ -21,6 +21,7 @@ type SwimmerState = {
   commitment: 'pending' | 'yes' | 'no' | 'closed'
   commitmentId: string | null
   selectedEvents: string[]
+  note: string
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -134,6 +135,7 @@ export default function MeetDetailPage() {
   const [activeSwimmer, setActiveSwimmer] = useState<string>('')
   const [submitting, setSubmitting] = useState<string | null>(null)
   const [submitted, setSubmitted] = useState<Record<string, boolean>>({})
+  const [commitError, setCommitError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!orgId || !meetId) { setLoading(false); return }
@@ -163,6 +165,7 @@ export default function MeetDetailPage() {
             commitment: cmt ? mapCommitmentStatus(cmt.status) : 'pending',
             commitmentId: cmt?.id ?? null,
             selectedEvents: [],
+            note: cmt?.note ?? '',
           }
         }
         setSwimmerStates(initialStates)
@@ -247,9 +250,11 @@ export default function MeetDetailPage() {
     setSubmitting(swimmerId + val)
     try {
       if (commitmentId) {
+        const body: Record<string, string> = { response: val }
+        if (st.note.trim()) body.note = st.note.trim()
         await api.post(
           `/api/v1/orgs/${orgId}/meets/${meetId}/commitments/${commitmentId}/respond`,
-          { response: val },
+          body,
           { 'X-Org-Id': orgId }
         )
         setSwimmerStates((prev) => ({
@@ -263,13 +268,21 @@ export default function MeetDetailPage() {
         setSubmitted((prev) => ({ ...prev, [swimmerId]: true }))
         setTimeout(() => setSubmitted((prev) => ({ ...prev, [swimmerId]: false })), 2500)
       } else {
-        console.error('Cannot update commitment: no commitment record found. Please refresh and try again.')
+        setCommitError('Cannot update commitment — no commitment record found. Please refresh and try again.')
+        setTimeout(() => setCommitError(null), 4000)
       }
     } catch (err) {
       console.error(err)
     } finally {
       setSubmitting(null)
     }
+  }
+
+  const setNote = (swimmerId: string, note: string) => {
+    setSwimmerStates((prev) => ({
+      ...prev,
+      [swimmerId]: { ...prev[swimmerId], note },
+    }))
   }
 
   const toggleEvent = (eventId: string) => {
@@ -708,6 +721,73 @@ export default function MeetDetailPage() {
                 {submitting === swimmer.id + 'no' ? 'Saving…' : 'Not this time'}
               </button>
             </div>
+            {/* Note for coaches */}
+            {commitmentOpen && state.commitment !== 'closed' && (
+              <div style={{ marginTop: '14px' }}>
+                <label
+                  htmlFor={`note-${swimmer.id}`}
+                  style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#9A9693', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px', fontFamily: 'var(--font-mono)' }}
+                >
+                  Message for coaches <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(optional)</span>
+                </label>
+                <textarea
+                  id={`note-${swimmer.id}`}
+                  value={state.note}
+                  onChange={(e) => setNote(swimmer.id, e.target.value)}
+                  placeholder="Any notes for the coach — schedule conflicts, injury considerations, preferred events, etc."
+                  rows={3}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '9px',
+                    border: '1.5px solid rgba(0,0,0,0.10)',
+                    background: '#fafafa',
+                    color: '#1A1714',
+                    fontFamily: 'var(--font-body)',
+                    fontSize: '13px',
+                    lineHeight: 1.55,
+                    resize: 'vertical',
+                    outline: 'none',
+                    transition: 'border-color 0.15s',
+                    boxSizing: 'border-box',
+                  }}
+                  onFocus={(e) => { e.currentTarget.style.borderColor = 'rgba(235,93,30,0.45)' }}
+                  onBlur={(e) => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.10)' }}
+                />
+                <p style={{ fontSize: '11px', color: '#9A9693', marginTop: '5px', lineHeight: 1.5 }}>
+                  This message will be visible to coaches when reviewing commitments.
+                </p>
+              </div>
+            )}
+            {/* Show note read-only when commitment is closed */}
+            {state.commitment === 'closed' && state.note && (
+              <div style={{ marginTop: '12px', padding: '10px 12px', background: 'rgba(0,0,0,0.025)', borderRadius: '8px', border: '1px solid rgba(0,0,0,0.07)' }}>
+                <div style={{ fontSize: '10.5px', color: '#9A9693', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>Your note</div>
+                <p style={{ fontSize: '13px', color: '#4B5563', lineHeight: 1.55, margin: 0 }}>{state.note}</p>
+              </div>
+            )}
+
+            {commitError && (
+              <div
+                style={{
+                  marginTop: '12px',
+                  padding: '11px 14px',
+                  background: 'rgba(220,38,38,0.06)',
+                  border: '1px solid rgba(220,38,38,0.18)',
+                  borderRadius: '8px',
+                  fontSize: '12.5px',
+                  color: '#dc2626',
+                  lineHeight: 1.5,
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '8px',
+                  animation: 'slideUp 0.2s ease both',
+                }}
+              >
+                <Icon name="alert-circle" size={14} style={{ color: '#dc2626', flexShrink: 0, marginTop: '1px' }} />
+                {commitError}
+              </div>
+            )}
             {!commitmentOpen && state.commitment !== 'closed' && (
               <div
                 style={{

@@ -18,6 +18,7 @@ import {
   type MeetEventRecord,
   type CommitmentRecord,
   type BestTimeRecord,
+  type SwimmerRecord,
 } from '@/lib/adminData'
 
 const C = {
@@ -129,7 +130,7 @@ export default function SwimmerMeetDetailPage() {
 
     Promise.all([
       fetchMeet(api, orgId, meetId).catch(() => null),
-      fetchSwimmers(api, orgId),
+      fetchSwimmers(api, orgId).catch(() => [] as SwimmerRecord[]),
     ])
       .then(async ([meetData, allSwimmers]) => {
         if (!meetData) { setNotFound(true); setLoading(false); return }
@@ -154,7 +155,6 @@ export default function SwimmerMeetDetailPage() {
         const myCommitment = commitments.find((c) => c.swimmer_id === hhSwimmer.id)
         setCommitment(mapCommitStatus(myCommitment?.status))
       })
-      .catch(console.error)
       .finally(() => setLoading(false))
   }, [api, orgId, meetId, householdId])
 

@@ -2,26 +2,42 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"github.com/dareaquatics/aquify/server/internal/app/documents"
+	"github.com/dareaquatics/aquify/server/internal/storage"
 )
 
 // ─── Router helpers ───────────────────────────────────────────────────────────
 
 func newDocRouter(t *testing.T, svc *documents.Service) http.Handler {
 	t.Helper()
+	return newDocRouterWithStore(t, svc, storage.NewStubStorage(""))
+}
+
+func newDocRouterWithStore(t *testing.T, svc *documents.Service, store storage.ObjectStorage) http.Handler {
+	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	originalNewObjectStorageClient := newObjectStorageClient
+	newObjectStorageClient = func(_ storage.Config) (storage.ObjectStorage, error) {
+		return store, nil
+	}
+	t.Cleanup(func() {
+		newObjectStorageClient = originalNewObjectStorageClient
+	})
 	return NewRouterWithServices(
 		Config{Auth: AuthConfig{EnableDevStubTokens: true}},
 		logger,
 		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		svc,
+		nil, nil,
 		nil,
 	)
 }
@@ -66,6 +82,47 @@ func doDocReq(router http.Handler, method, path, token, orgID, body string) *htt
 	req.Header.Set("X-Org-Id", orgID)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
+	return rr
+}
+
+func requestDocumentUpload(t *testing.T, router http.Handler, token, orgID, submissionID, fileName, fileMIME string, fileSize int64) string {
+	t.Helper()
+
+	rr := doDocReq(router, http.MethodPost, "/api/v1/documents/"+submissionID+"/upload-url", token, orgID, `{
+		"file_name": "`+fileName+`",
+		"file_mime": "`+fileMIME+`",
+		"file_size_bytes": `+strconv.FormatInt(fileSize, 10)+`
+	}`)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("request upload url: got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var uploadPayload struct {
+		ObjectKey string `json:"object_key"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&uploadPayload); err != nil {
+		t.Fatalf("decode upload url response: %v", err)
+	}
+	if uploadPayload.ObjectKey == "" {
+		t.Fatal("expected object key in upload response")
+	}
+
+	return uploadPayload.ObjectKey
+}
+
+func attachUploadedDocument(t *testing.T, router http.Handler, store storage.ObjectStorage, token, orgID, submissionID, objectKey, fileName, fileMIME string, fileSize int64) *httptest.ResponseRecorder {
+	t.Helper()
+
+	if err := store.PutObject(context.Background(), objectKey, fileMIME, []byte("file")); err != nil {
+		t.Fatalf("seed uploaded object: %v", err)
+	}
+
+	rr := doDocReq(router, http.MethodPost, "/api/v1/documents/"+submissionID+"/attach", token, orgID, `{
+		"file_object_key": "`+objectKey+`",
+		"file_name": "`+fileName+`",
+		"file_mime": "`+fileMIME+`",
+		"file_size_bytes": `+strconv.FormatInt(fileSize, 10)+`
+	}`)
 	return rr
 }
 
@@ -149,6 +206,137 @@ func TestDocumentTypeCRUD(t *testing.T) {
 	}
 }
 
+func TestDocumentUploadURLAndAttachValidateObjectStorage(t *testing.T) {
+	svc := documents.NewService()
+	store := storage.NewStubStorage("")
+	router := newDocRouterWithStore(t, svc, store)
+	orgID := "org-doc-upload"
+
+	adminToken := issueDocToken(t, router, "admin-user", orgID, "admin", "")
+	parentToken := issueDocToken(t, router, "parent-user", orgID, "parent", "hh-001")
+
+	typeResp := doDocReq(router, http.MethodPost, "/api/v1/document-types", adminToken, orgID, `{
+		"name": "Medical Form",
+		"category": "medical",
+		"is_required": true,
+		"applies_to": "household",
+		"is_active": true
+	}`)
+	if typeResp.Code != http.StatusCreated {
+		t.Fatalf("create doc type: got %d body=%s", typeResp.Code, typeResp.Body.String())
+	}
+	var createdType struct {
+		DocumentType struct {
+			ID string `json:"id"`
+		} `json:"document_type"`
+	}
+	json.NewDecoder(typeResp.Body).Decode(&createdType)
+
+	createResp := doDocReq(router, http.MethodPost, "/api/v1/documents", parentToken, orgID, `{
+		"document_type_id": "`+createdType.DocumentType.ID+`",
+		"household_id": "hh-001"
+	}`)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("create submission: got %d body=%s", createResp.Code, createResp.Body.String())
+	}
+	var createdSub struct {
+		Document struct {
+			ID string `json:"id"`
+		} `json:"document"`
+	}
+	json.NewDecoder(createResp.Body).Decode(&createdSub)
+
+	uploadResp := doDocReq(router, http.MethodPost, "/api/v1/documents/"+createdSub.Document.ID+"/upload-url", parentToken, orgID, `{
+		"file_name": "medical.pdf",
+		"file_mime": "application/pdf",
+		"file_size_bytes": 1234
+	}`)
+	if uploadResp.Code != http.StatusCreated {
+		t.Fatalf("request upload url: got %d body=%s", uploadResp.Code, uploadResp.Body.String())
+	}
+	var uploadPayload struct {
+		ObjectKey string `json:"object_key"`
+	}
+	json.NewDecoder(uploadResp.Body).Decode(&uploadPayload)
+	if uploadPayload.ObjectKey == "" {
+		t.Fatal("expected object key in upload response")
+	}
+
+	missingAttachResp := doDocReq(router, http.MethodPost, "/api/v1/documents/"+createdSub.Document.ID+"/attach", parentToken, orgID, `{
+		"file_object_key": "`+uploadPayload.ObjectKey+`",
+		"file_name": "medical.pdf",
+		"file_mime": "application/pdf",
+		"file_size_bytes": 1234
+	}`)
+	if missingAttachResp.Code != http.StatusConflict {
+		t.Fatalf("attach without uploaded object: got %d body=%s", missingAttachResp.Code, missingAttachResp.Body.String())
+	}
+
+	if err := store.PutObject(context.Background(), uploadPayload.ObjectKey, "application/pdf", []byte("pdf")); err != nil {
+		t.Fatalf("seed uploaded object: %v", err)
+	}
+
+	attachResp := doDocReq(router, http.MethodPost, "/api/v1/documents/"+createdSub.Document.ID+"/attach", parentToken, orgID, `{
+		"file_object_key": "`+uploadPayload.ObjectKey+`",
+		"file_name": "medical.pdf",
+		"file_mime": "application/pdf",
+		"file_size_bytes": 1234
+	}`)
+	if attachResp.Code != http.StatusOK {
+		t.Fatalf("attach uploaded object: got %d body=%s", attachResp.Code, attachResp.Body.String())
+	}
+}
+
+func TestDocumentAttachRejectsObjectKeyOutsideSubmissionScope(t *testing.T) {
+	svc := documents.NewService()
+	store := storage.NewStubStorage("")
+	router := newDocRouterWithStore(t, svc, store)
+	orgID := "org-doc-scope"
+
+	adminToken := issueDocToken(t, router, "admin-user", orgID, "admin", "")
+	parentToken := issueDocToken(t, router, "parent-user", orgID, "parent", "hh-001")
+
+	typeResp := doDocReq(router, http.MethodPost, "/api/v1/document-types", adminToken, orgID, `{
+		"name": "Insurance Card",
+		"category": "insurance",
+		"is_required": true,
+		"applies_to": "household",
+		"is_active": true
+	}`)
+	var createdType struct {
+		DocumentType struct {
+			ID string `json:"id"`
+		} `json:"document_type"`
+	}
+	json.NewDecoder(typeResp.Body).Decode(&createdType)
+
+	createResp := doDocReq(router, http.MethodPost, "/api/v1/documents", parentToken, orgID, `{
+		"document_type_id": "`+createdType.DocumentType.ID+`",
+		"household_id": "hh-001"
+	}`)
+	var createdSub struct {
+		Document struct {
+			ID string `json:"id"`
+		} `json:"document"`
+	}
+	json.NewDecoder(createResp.Body).Decode(&createdSub)
+
+	foreignObjectKey := "documents/" + orgID + "/some-other-submission/foreign.pdf"
+	if err := store.PutObject(context.Background(), foreignObjectKey, "application/pdf", []byte("pdf")); err != nil {
+		t.Fatalf("seed foreign object: %v", err)
+	}
+
+	attachResp := doDocReq(router, http.MethodPost, "/api/v1/documents/"+createdSub.Document.ID+"/attach", parentToken, orgID, `{
+		"file_object_key": "`+foreignObjectKey+`",
+		"file_name": "foreign.pdf",
+		"file_mime": "application/pdf",
+		"file_size_bytes": 4
+	}`)
+	if attachResp.Code != http.StatusBadRequest {
+		t.Fatalf("attach foreign object key: got %d body=%s", attachResp.Code, attachResp.Body.String())
+	}
+}
+
 // TestDocumentTypeForbiddenForNonAdmin verifies that non-admin roles cannot
 // create or delete document types.
 func TestDocumentTypeForbiddenForNonAdmin(t *testing.T) {
@@ -171,7 +359,8 @@ func TestDocumentTypeForbiddenForNonAdmin(t *testing.T) {
 // create → attach file → verify.
 func TestDocumentSubmissionWorkflow(t *testing.T) {
 	svc := documents.NewService()
-	router := newDocRouter(t, svc)
+	store := storage.NewStubStorage("")
+	router := newDocRouterWithStore(t, svc, store)
 	orgID := "org-docs-workflow"
 	householdID := "hh-workflow-001"
 
@@ -190,7 +379,9 @@ func TestDocumentSubmissionWorkflow(t *testing.T) {
 		t.Fatalf("create doc type: %d %s", rr.Code, rr.Body.String())
 	}
 	var typeResp struct {
-		DocumentType struct{ ID string `json:"id"` } `json:"document_type"`
+		DocumentType struct {
+			ID string `json:"id"`
+		} `json:"document_type"`
 	}
 	json.NewDecoder(rr.Body).Decode(&typeResp)
 	typeID := typeResp.DocumentType.ID
@@ -215,13 +406,8 @@ func TestDocumentSubmissionWorkflow(t *testing.T) {
 		t.Errorf("expected status=pending, got %q", subResp.Document.Status)
 	}
 
-	// Parent attaches a file
-	rr = doDocReq(router, http.MethodPost, "/api/v1/documents/"+subID+"/attach", parentToken, orgID, `{
-		"file_object_key": "uploads/doc.pdf",
-		"file_name": "medical_auth.pdf",
-		"file_mime": "application/pdf",
-		"file_size_bytes": 12345
-	}`)
+	objectKey := requestDocumentUpload(t, router, parentToken, orgID, subID, "medical_auth.pdf", "application/pdf", 12345)
+	rr = attachUploadedDocument(t, router, store, parentToken, orgID, subID, objectKey, "medical_auth.pdf", "application/pdf", 12345)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("attach file: %d %s", rr.Code, rr.Body.String())
 	}
@@ -245,7 +431,8 @@ func TestDocumentSubmissionWorkflow(t *testing.T) {
 // resubmitted by attaching a new file.
 func TestDocumentRejectAndResubmit(t *testing.T) {
 	svc := documents.NewService()
-	router := newDocRouter(t, svc)
+	store := storage.NewStubStorage("")
+	router := newDocRouterWithStore(t, svc, store)
 	orgID := "org-docs-reject"
 	householdID := "hh-reject-001"
 
@@ -257,7 +444,9 @@ func TestDocumentRejectAndResubmit(t *testing.T) {
 		"name": "Insurance Card", "category": "insurance", "is_required": true, "is_active": true
 	}`)
 	var tr struct {
-		DocumentType struct{ ID string `json:"id"` } `json:"document_type"`
+		DocumentType struct {
+			ID string `json:"id"`
+		} `json:"document_type"`
 	}
 	json.NewDecoder(rr.Body).Decode(&tr)
 
@@ -267,15 +456,18 @@ func TestDocumentRejectAndResubmit(t *testing.T) {
 		"household_id": "`+householdID+`"
 	}`)
 	var sr struct {
-		Document struct{ ID string `json:"id"` } `json:"document"`
+		Document struct {
+			ID string `json:"id"`
+		} `json:"document"`
 	}
 	json.NewDecoder(rr.Body).Decode(&sr)
 	subID := sr.Document.ID
 
-	// Attach file
-	doDocReq(router, http.MethodPost, "/api/v1/documents/"+subID+"/attach", parentToken, orgID, `{
-		"file_object_key": "uploads/ins.pdf", "file_name": "ins.pdf"
-	}`)
+	objectKey := requestDocumentUpload(t, router, parentToken, orgID, subID, "ins.pdf", "application/pdf", 4096)
+	rr = attachUploadedDocument(t, router, store, parentToken, orgID, subID, objectKey, "ins.pdf", "application/pdf", 4096)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("attach initial file: %d %s", rr.Code, rr.Body.String())
+	}
 
 	// Admin rejects
 	rr = doDocReq(router, http.MethodPost, "/api/v1/documents/"+subID+"/reject", adminToken, orgID, `{"review_notes": "Image is too blurry"}`)
@@ -283,17 +475,17 @@ func TestDocumentRejectAndResubmit(t *testing.T) {
 		t.Fatalf("reject: %d %s", rr.Code, rr.Body.String())
 	}
 	var subResp struct {
-		Document struct{ Status string `json:"status"` } `json:"document"`
+		Document struct {
+			Status string `json:"status"`
+		} `json:"document"`
 	}
 	json.NewDecoder(rr.Body).Decode(&subResp)
 	if subResp.Document.Status != "rejected" {
 		t.Errorf("expected status=rejected, got %q", subResp.Document.Status)
 	}
 
-	// Parent re-attaches
-	rr = doDocReq(router, http.MethodPost, "/api/v1/documents/"+subID+"/attach", parentToken, orgID, `{
-		"file_object_key": "uploads/ins_v2.pdf", "file_name": "ins_v2.pdf"
-	}`)
+	retryObjectKey := requestDocumentUpload(t, router, parentToken, orgID, subID, "ins_v2.pdf", "application/pdf", 5120)
+	rr = attachUploadedDocument(t, router, store, parentToken, orgID, subID, retryObjectKey, "ins_v2.pdf", "application/pdf", 5120)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("re-attach after reject: %d %s", rr.Code, rr.Body.String())
 	}
@@ -319,7 +511,9 @@ func TestDocumentHouseholdScopeEnforcement(t *testing.T) {
 		"name": "Photo Release", "category": "release", "is_required": false, "is_active": true
 	}`)
 	var tr struct {
-		DocumentType struct{ ID string `json:"id"` } `json:"document_type"`
+		DocumentType struct {
+			ID string `json:"id"`
+		} `json:"document_type"`
 	}
 	json.NewDecoder(rr.Body).Decode(&tr)
 	typeID := tr.DocumentType.ID
@@ -332,7 +526,9 @@ func TestDocumentHouseholdScopeEnforcement(t *testing.T) {
 		t.Fatalf("parent1 create submission: %d %s", rr.Code, rr.Body.String())
 	}
 	var sr struct {
-		Document struct{ ID string `json:"id"` } `json:"document"`
+		Document struct {
+			ID string `json:"id"`
+		} `json:"document"`
 	}
 	json.NewDecoder(rr.Body).Decode(&sr)
 	subID := sr.Document.ID
@@ -355,7 +551,9 @@ func TestDocumentHouseholdScopeEnforcement(t *testing.T) {
 		t.Fatalf("parent1 list own docs: want 200, got %d", rr.Code)
 	}
 	var listResp struct {
-		Documents []struct{ ID string `json:"id"` } `json:"documents"`
+		Documents []struct {
+			ID string `json:"id"`
+		} `json:"documents"`
 	}
 	json.NewDecoder(rr.Body).Decode(&listResp)
 	if len(listResp.Documents) != 1 {
@@ -381,7 +579,9 @@ func TestGetSubmissionRoleEnforcement(t *testing.T) {
 		"name": "Role Check Waiver", "category": "waiver", "is_required": true, "is_active": true
 	}`)
 	var tr struct {
-		DocumentType struct{ ID string `json:"id"` } `json:"document_type"`
+		DocumentType struct {
+			ID string `json:"id"`
+		} `json:"document_type"`
 	}
 	json.NewDecoder(rr.Body).Decode(&tr)
 
@@ -390,7 +590,9 @@ func TestGetSubmissionRoleEnforcement(t *testing.T) {
 		"document_type_id": "`+tr.DocumentType.ID+`", "household_id": "`+householdID+`"
 	}`)
 	var sr struct {
-		Document struct{ ID string `json:"id"` } `json:"document"`
+		Document struct {
+			ID string `json:"id"`
+		} `json:"document"`
 	}
 	json.NewDecoder(rr.Body).Decode(&sr)
 	subID := sr.Document.ID
@@ -430,7 +632,9 @@ func TestDocumentVerifyRequiresAdmin(t *testing.T) {
 		"name": "USS Registration", "category": "registration", "is_required": true, "is_active": true
 	}`)
 	var tr struct {
-		DocumentType struct{ ID string `json:"id"` } `json:"document_type"`
+		DocumentType struct {
+			ID string `json:"id"`
+		} `json:"document_type"`
 	}
 	json.NewDecoder(rr.Body).Decode(&tr)
 
@@ -438,7 +642,9 @@ func TestDocumentVerifyRequiresAdmin(t *testing.T) {
 		"document_type_id": "`+tr.DocumentType.ID+`", "household_id": "`+householdID+`"
 	}`)
 	var sr struct {
-		Document struct{ ID string `json:"id"` } `json:"document"`
+		Document struct {
+			ID string `json:"id"`
+		} `json:"document"`
 	}
 	json.NewDecoder(rr.Body).Decode(&sr)
 	subID := sr.Document.ID

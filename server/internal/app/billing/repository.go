@@ -52,7 +52,7 @@ func (r *Repository) LoadInvoices(ctx context.Context) ([]*Invoice, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id::text, org_id::text, COALESCE(household_id::text, ''),
 		       invoice_number, status, subtotal_cents, total_cents,
-		       issued_at, COALESCE(due_date, ''), COALESCE(notes, ''),
+		       issued_at, COALESCE(due_date::text, ''), COALESCE(notes, ''),
 		       created_at, updated_at
 		FROM invoices WHERE deleted_at IS NULL`)
 	if err != nil {
@@ -217,11 +217,11 @@ func (r *Repository) LoadRefunds(ctx context.Context) ([]*Refund, error) {
 
 func (r *Repository) InsertLedgerEvent(ctx context.Context, ev *LedgerEvent) error {
 	_, err := r.pool.Exec(ctx, `
-		INSERT INTO ledger_events (id, org_id, event_type, reference_id, amount_cents, description, created_at)
+		INSERT INTO ledger_events (id, org_id, event_type, invoice_id, amount_cents, description, created_at)
 		VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7)
 		ON CONFLICT (id) DO NOTHING`,
 		ev.ID, ev.OrgID, ev.EventType,
-		nullableString(ev.InvoiceID), // use invoice_id as reference_id
+		nullableString(ev.InvoiceID),
 		ev.AmountCents, nullableString(ev.Description),
 		ev.CreatedAt,
 	)
@@ -231,7 +231,7 @@ func (r *Repository) InsertLedgerEvent(ctx context.Context, ev *LedgerEvent) err
 func (r *Repository) LoadLedgerEvents(ctx context.Context) ([]*LedgerEvent, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id::text, org_id::text, event_type,
-		       COALESCE(reference_id::text, ''), amount_cents, COALESCE(description, ''),
+		       COALESCE(invoice_id::text, ''), amount_cents, COALESCE(description, ''),
 		       created_at
 		FROM ledger_events ORDER BY created_at`)
 	if err != nil {

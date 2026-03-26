@@ -255,6 +255,13 @@ type EntrySeedTimeUpdater interface {
 	UpdateSeedTimesForSwimmer(orgID, swimmerID string, distance int, stroke, course string, newBestTimeMs *int) int
 }
 
+// SwimmerHouseholdChecker can look up which household a swimmer belongs to.
+// It is implemented by the members service and injected into the performance
+// service to enforce parent-scoped data isolation on per-swimmer reads.
+type SwimmerHouseholdChecker interface {
+	SwimmerHouseholdID(orgID, swimmerID string) (householdID string, ok bool)
+}
+
 // ─── Service ─────────────────────────────────────────────────────────────────
 
 // Service is the performance/best-times domain service.
@@ -267,7 +274,8 @@ type Service struct {
 	btByKey          map[string]*BestTime     // composite key → BestTime (secondary index for O(1) lookups)
 	standards        map[string]*TimeStandard // id → TimeStandard
 	auditEvents      []*BestTimeAuditEvent
-	entrySeedUpdater EntrySeedTimeUpdater // optional; wired after construction
+	entrySeedUpdater EntrySeedTimeUpdater    // optional; wired after construction
+	householdChecker SwimmerHouseholdChecker // optional; enforces parent household scoping
 }
 
 // AuditEvents returns a snapshot of all audit events recorded by the service.
@@ -345,6 +353,15 @@ func (s *Service) SetEntrySeedTimeUpdater(u EntrySeedTimeUpdater) {
 	s.entrySeedUpdater = u
 }
 
+// SetHouseholdChecker injects the SwimmerHouseholdChecker used to enforce
+// parent-scoped isolation on per-swimmer reads. Must be called before the
+// service handles requests (e.g. during server wiring).
+func (s *Service) SetHouseholdChecker(checker SwimmerHouseholdChecker) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.householdChecker = checker
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 func newID() string {
@@ -374,11 +391,9 @@ func (s *Service) requireAdmin(principal *appmiddleware.Principal) error {
 }
 
 // requireReadAccess allows owner, admin, coach, and parent roles to read
-// swimmer performance data. For the parent role, household scoping
-// (restricting parents to swimmers in their own household) is deferred to the
-// production DB layer.
-// TODO(production): for principal.Role == "parent", verify that swimmerID
-// belongs to a swimmer in principal's household before returning nil.
+// swimmer performance data. For per-swimmer endpoints, call
+// checkParentHouseholdForSwimmer after this check to enforce household
+// isolation for the parent role.
 func (s *Service) requireReadAccess(principal *appmiddleware.Principal) error {
 	for _, r := range principal.Roles {
 		switch strings.ToLower(r) {
@@ -387,6 +402,38 @@ func (s *Service) requireReadAccess(principal *appmiddleware.Principal) error {
 		}
 	}
 	return ErrForbidden
+}
+
+// checkParentHouseholdForSwimmer returns ErrForbidden when the principal has
+// the parent role but the requested swimmerID does not belong to the
+// principal's household. Non-parent roles pass through unchecked.
+// This enforces the parent-scoped isolation policy on per-swimmer read paths.
+func (s *Service) checkParentHouseholdForSwimmer(principal *appmiddleware.Principal, orgID, swimmerID string) error {
+	if principal == nil {
+		return ErrForbidden
+	}
+	isParent := false
+	for _, r := range principal.Roles {
+		if strings.ToLower(r) == "parent" {
+			isParent = true
+			break
+		}
+	}
+	if !isParent {
+		return nil
+	}
+	// Household checker is required; deny if not wired.
+	if s.householdChecker == nil {
+		return ErrForbidden
+	}
+	swimmerHouseholdID, ok := s.householdChecker.SwimmerHouseholdID(orgID, swimmerID)
+	if !ok {
+		return ErrForbidden
+	}
+	if principal.HouseholdID == "" || swimmerHouseholdID != principal.HouseholdID {
+		return ErrForbidden
+	}
+	return nil
 }
 
 // btKey returns the composite map key for a best-time record.
@@ -617,9 +664,12 @@ func (s *Service) RecomputeBestTime(orgID, actorID string, principal *appmiddlew
 
 // ListBestTimes returns all best-time records for the given swimmer.
 // Allowed roles: owner, admin, coach, parent.
-// Parent household scoping is deferred to the production DB layer (see requireReadAccess).
+// For the parent role, household ownership is enforced via checkParentHouseholdForSwimmer.
 func (s *Service) ListBestTimes(orgID string, principal *appmiddleware.Principal, swimmerID string, filters ListBestTimesFilters) ([]*BestTime, error) {
 	if err := s.requireReadAccess(principal); err != nil {
+		return nil, err
+	}
+	if err := s.checkParentHouseholdForSwimmer(principal, orgID, swimmerID); err != nil {
 		return nil, err
 	}
 
@@ -786,9 +836,12 @@ func (s *Service) OverrideBestTime(orgID, actorID string, principal *appmiddlewa
 // ListProgression returns all official results for a swimmer, optionally
 // filtered by event/stroke/course, sorted chronologically (oldest first).
 // Allowed roles: owner, admin, coach, parent.
-// Parent household scoping is deferred to the production DB layer (see requireReadAccess).
+// For the parent role, household ownership is enforced via checkParentHouseholdForSwimmer.
 func (s *Service) ListProgression(orgID string, principal *appmiddleware.Principal, swimmerID string, filters ListResultsFilters) ([]*Result, error) {
 	if err := s.requireReadAccess(principal); err != nil {
+		return nil, err
+	}
+	if err := s.checkParentHouseholdForSwimmer(principal, orgID, swimmerID); err != nil {
 		return nil, err
 	}
 

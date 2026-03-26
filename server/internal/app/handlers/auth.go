@@ -41,13 +41,15 @@ func NewAuthHandlersWithAudit(service *authn.Service, auditSvc *audit.Service, a
 }
 
 func (h *AuthHandlers) RegisterPublicRoutes(router chi.Router) {
-	router.Get("/oidc/authorize", h.oidcAuthorize)
-	router.Post("/oidc/callback", h.oidcCallback)
 	if h.allowDevSessionIssue {
 		router.Post("/sessions/issue", h.issueSession)
 	}
 	router.Post("/sessions/refresh", h.refreshSession)
 	router.Post("/sessions/revoke", h.revokeSession)
+}
+
+func (h *AuthHandlers) RegisterNoCSRFRoutes(router chi.Router) {
+	router.Post("/sessions/logout", h.logoutSession)
 }
 
 func (h *AuthHandlers) RegisterProtectedRoutes(router chi.Router) {
@@ -57,6 +59,14 @@ func (h *AuthHandlers) RegisterProtectedRoutes(router chi.Router) {
 	router.Post("/mfa/challenge", h.challengeMFA)
 	router.Get("/roles/assignments", h.listRoleAssignments)
 	router.Post("/roles/assign", h.assignRole)
+}
+
+func (h *AuthHandlers) OIDCAuthorize(w http.ResponseWriter, r *http.Request) {
+	h.oidcAuthorize(w, r)
+}
+
+func (h *AuthHandlers) OIDCCallback(w http.ResponseWriter, r *http.Request) {
+	h.oidcCallback(w, r)
 }
 
 func (h *AuthHandlers) oidcAuthorize(w http.ResponseWriter, r *http.Request) {
@@ -272,22 +282,49 @@ type revokeSessionRequest struct {
 }
 
 func (h *AuthHandlers) revokeSession(w http.ResponseWriter, r *http.Request) {
+	// Clear session cookies FIRST — before any WriteHeader call.
+	// Go's net/http ignores w.Header().Add(...) after WriteHeader is called,
+	// so a defer would silently drop the Set-Cookie headers on every code path.
+	appmiddleware.ClearSessionCookies(w)
+
 	refreshToken := readRefreshToken(r)
 	if refreshToken == "" {
+		// Try to read from body as a fallback (some clients send the token in JSON).
 		var req revokeSessionRequest
-		if !h.decodeAndValidate(w, r, &req) {
-			return
+		if err := decodeJSONBody(r, &req); err == nil {
+			refreshToken = req.RefreshToken
 		}
-		refreshToken = req.RefreshToken
 	}
 
-	if err := h.service.RevokeSession(refreshToken); err != nil {
-		httpx.WriteError(w, r, http.StatusNotFound, "session_not_found", "No matching session was found to revoke.", nil)
-		return
+	// Attempt to revoke the server-side session record. Ignore not-found errors:
+	// the session may not exist after a server restart, but the cookies have
+	// already been cleared above so the client is effectively signed out.
+	if refreshToken != "" {
+		_ = h.service.RevokeSession(refreshToken)
 	}
 
-	appmiddleware.ClearSessionCookies(w)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *AuthHandlers) logoutSession(w http.ResponseWriter, r *http.Request) {
+	// Clear session cookies FIRST — before any WriteHeader call.
+	appmiddleware.ClearSessionCookies(w)
+
+	refreshToken := readRefreshToken(r)
+	if refreshToken == "" {
+		// Try to read from body as a fallback (some clients send the token in JSON).
+		var req revokeSessionRequest
+		if err := decodeJSONBody(r, &req); err == nil {
+			refreshToken = req.RefreshToken
+		}
+	}
+
+	result := h.service.LogoutSession(refreshToken)
+	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"status":       "logged_out",
+		"logout_url":   result.LogoutURL,
+		"redirect_url": result.RedirectURL,
+	})
 }
 
 type enrollMFARequest struct {
@@ -307,7 +344,7 @@ func (h *AuthHandlers) enrollMFA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	factor, err := h.service.EnrollMFA(principal.UserID, principal.OrgID, req.FactorType, req.Label)
+	factor, err := h.service.EnrollMFA(principal.UserID, principal.Email, principal.OrgID, req.FactorType, req.Label)
 	if err != nil {
 		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_mfa_factor", err.Error(), nil)
 		return
@@ -337,7 +374,8 @@ func (h *AuthHandlers) challengeMFA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, err := h.service.ChallengeMFA(principal, req.FactorID, req.ChallengeCode)
+	accessToken, _, _ := appmiddleware.ExtractAuthToken(r)
+	session, err := h.service.ChallengeMFA(accessToken, principal, req.FactorID, req.ChallengeCode)
 	if err != nil {
 		status := http.StatusUnauthorized
 		code := "mfa_challenge_failed"

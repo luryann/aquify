@@ -37,6 +37,8 @@ func newReportsRouter(t *testing.T, memberSvc *members.Service, groupSvc *groups
 		nil,
 		nil,
 		nil,
+		nil,
+	nil,
 	)
 }
 

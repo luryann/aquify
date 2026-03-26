@@ -33,6 +33,7 @@ export const NAV_SECTIONS = [
   'Overview',
   'Members',
   'Competition',
+  'Training',
   'Performance',
   'Files',
   'Billing',
@@ -71,6 +72,11 @@ export const NAV_ITEMS: NavItem[] = [
     allowedRoles: ['owner', 'admin', 'coach', 'read-only'],
     section: 'Members',
   },
+  {
+    id: 'approvals', label: 'Approvals', path: '/members/approvals', icon: 'check-circle',
+    allowedRoles: ['owner', 'admin'],
+    section: 'Members',
+  },
   // Competition
   {
     id: 'meets', label: 'Meets', path: '/meets', icon: 'calendar',
@@ -87,10 +93,11 @@ export const NAV_ITEMS: NavItem[] = [
     allowedRoles: ['owner', 'admin', 'coach', 'read-only'],
     section: 'Competition',
   },
+  // Training
   {
-    id: 'practices', label: 'Practice Scheduler', path: '/practices', icon: 'clock',
+    id: 'training', label: 'Training', path: '/training', icon: 'activity',
     allowedRoles: ['owner', 'admin', 'coach'],
-    section: 'Competition',
+    section: 'Training',
   },
   // Performance
   {
@@ -189,12 +196,22 @@ export const NAV_ITEMS: NavItem[] = [
     section: 'System',
   },
   {
+    id: 'seasons', label: 'Seasons', path: '/seasons', icon: 'calendar',
+    allowedRoles: ['owner', 'admin'],
+    section: 'System',
+  },
+  {
     id: 'settings', label: 'Settings', path: '/settings', icon: 'settings',
     allowedRoles: ['owner', 'admin'],
     section: 'System',
   },
   {
     id: 'roles', label: 'Role Management', path: '/settings/roles', icon: 'users',
+    allowedRoles: ['owner', 'admin'],
+    section: 'System',
+  },
+  {
+    id: 'users', label: 'Users', path: '/users', icon: 'user-check',
     allowedRoles: ['owner', 'admin'],
     section: 'System',
   },

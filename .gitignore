@@ -1,3 +1,6 @@
+# Keycloak local installation
+keycloak-*/
+
 # OS / editor
 .DS_Store
 ._*

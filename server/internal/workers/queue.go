@@ -130,6 +130,12 @@ type QueueStats struct {
 	DeadLetter int    `json:"dead_letter"`
 }
 
+// MetricsReader exposes queue execution counters and recent execution history.
+type MetricsReader interface {
+	TypeSnapshot() map[string]TypeMetricSnapshot
+	RecentExecutions(limit int) []JobExecution
+}
+
 // Queue is the interface for enqueuing background tasks. The in-memory
 // implementation is used for local development and tests; the real Asynq
 // client satisfies the same interface when Redis is available.
@@ -138,6 +144,20 @@ type Queue interface {
 	Enqueue(ctx context.Context, task *Task, opts ...Option) (*TaskInfo, error)
 	// EnqueueIn adds a task that will not be processed before the delay elapses.
 	EnqueueIn(ctx context.Context, delay time.Duration, task *Task, opts ...Option) (*TaskInfo, error)
+}
+
+// Backend is the app-facing background-job interface used by HTTP handlers and
+// domain services. Both the in-memory worker server and the Redis/Asynq-backed
+// runtime satisfy this contract.
+type Backend interface {
+	Queue
+	RegisterHandler(taskType string, h Handler)
+	ListTasks(queue string, status TaskStatus) ([]TaskInfo, error)
+	QueueStats() ([]QueueStats, error)
+	DLQTasks() ([]TaskInfo, error)
+	RetryDLQTask(ctx context.Context, taskID string) error
+	DeleteDLQTask(taskID string) error
+	Metrics() MetricsReader
 }
 
 // Sentinel errors.

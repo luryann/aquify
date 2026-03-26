@@ -1,15 +1,22 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
+	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dareaquatics/aquify/server/internal/app/audit"
 	"github.com/dareaquatics/aquify/server/internal/app/documents"
 	"github.com/dareaquatics/aquify/server/internal/app/httpx"
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	"github.com/dareaquatics/aquify/server/internal/storage"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
 )
@@ -18,14 +25,16 @@ import (
 type DocumentHandlers struct {
 	service      *documents.Service
 	auditService *audit.Service
+	store        storage.ObjectStorage
 	validate     *validator.Validate
 }
 
 // NewDocumentHandlers returns a new DocumentHandlers.
-func NewDocumentHandlers(svc *documents.Service, auditSvc *audit.Service) *DocumentHandlers {
+func NewDocumentHandlers(svc *documents.Service, auditSvc *audit.Service, store storage.ObjectStorage) *DocumentHandlers {
 	return &DocumentHandlers{
 		service:      svc,
 		auditService: auditSvc,
+		store:        store,
 		validate:     validator.New(),
 	}
 }
@@ -42,6 +51,7 @@ func (h *DocumentHandlers) RegisterRoutes(router chi.Router) {
 	router.Get("/documents", h.listSubmissions)
 	router.Post("/documents", h.createSubmission)
 	router.Get("/documents/{id}", h.getSubmission)
+	router.Post("/documents/{id}/upload-url", h.requestUploadURL)
 	router.Post("/documents/{id}/attach", h.attachFile)
 	router.Post("/documents/{id}/verify", h.verifySubmission)
 	router.Post("/documents/{id}/reject", h.rejectSubmission)
@@ -208,6 +218,10 @@ func (h *DocumentHandlers) updateDocumentType(w http.ResponseWriter, r *http.Req
 	if err != nil {
 		if errors.Is(err, documents.ErrTypeNotFound) {
 			httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Document type not found.", nil)
+			return
+		}
+		if errors.Is(err, documents.ErrDuplicateName) {
+			httpx.WriteError(w, r, http.StatusConflict, "conflict", "A document type with this name already exists.", nil)
 			return
 		}
 		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to update document type.", err)
@@ -396,6 +410,107 @@ type attachFileBody struct {
 	FileSizeBytes int64  `json:"file_size_bytes"`
 }
 
+type documentUploadURLBody struct {
+	FileName      string `json:"file_name"       validate:"required"`
+	FileMIME      string `json:"file_mime"       validate:"required"`
+	FileSizeBytes int64  `json:"file_size_bytes" validate:"required,gt=0"`
+}
+
+func sanitizeDocumentFilename(name string) (string, error) {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return "", errors.New("filename is required")
+	}
+	base := filepath.Base(trimmed)
+	if base == "." || base == "/" || base == `\` || base != trimmed {
+		return "", errors.New("filename must be a safe basename")
+	}
+	if strings.Contains(base, "..") {
+		return "", errors.New("filename must not contain traversal segments")
+	}
+	return base, nil
+}
+
+func (h *DocumentHandlers) validateUploadAccess(principal *appmiddleware.Principal, orgID, submissionID string) (*documents.DocumentSubmission, bool) {
+	existing, err := h.service.GetSubmission(orgID, submissionID)
+	if err != nil {
+		return nil, false
+	}
+	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "owner", "admin") {
+		if existing.HouseholdID != principal.HouseholdID {
+			return nil, false
+		}
+	}
+	return existing, true
+}
+
+func documentObjectKey(orgID, submissionID, fileName string) string {
+	stamp := strconv.FormatInt(time.Now().UTC().UnixNano(), 10)
+	return fmt.Sprintf("documents/%s/%s/%s-%s", orgID, submissionID, stamp, fileName)
+}
+
+func validateDocumentObjectKey(orgID, submissionID, objectKey string) error {
+	prefix := fmt.Sprintf("documents/%s/%s/", strings.TrimSpace(orgID), strings.TrimSpace(submissionID))
+	if !strings.HasPrefix(strings.TrimSpace(objectKey), prefix) {
+		return fmt.Errorf("object key %q does not belong to this submission", objectKey)
+	}
+	return nil
+}
+
+// requestUploadURL handles POST /api/v1/documents/{id}/upload-url
+func (h *DocumentHandlers) requestUploadURL(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := docScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+	if !hasAnyRole(principal, "owner", "admin", "parent") {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role.", nil)
+		return
+	}
+	submissionID := chi.URLParam(r, "id")
+
+	if _, ok := h.validateUploadAccess(principal, orgID, submissionID); !ok {
+		httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Document submission not found.", nil)
+		return
+	}
+
+	if h.store == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, "storage_unavailable", "Object storage is not configured.", nil)
+		return
+	}
+
+	var body documentUploadURLBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", err)
+		return
+	}
+	if err := h.validate.Struct(body); err != nil {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "validation_error", "Validation failed.", httpx.FormatValidationErrors(err))
+		return
+	}
+	fileName, err := sanitizeDocumentFilename(body.FileName)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_filename", err.Error(), nil)
+		return
+	}
+
+	objectKey := documentObjectKey(orgID, submissionID, fileName)
+	expiresIn := 15 * time.Minute
+	uploadURL, err := h.store.PresignedPutURL(objectKey, expiresIn)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to create upload URL.", err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{
+		"upload_url":         uploadURL,
+		"object_key":         objectKey,
+		"upload_expires_at":  time.Now().UTC().Add(expiresIn),
+		"submission_id":      submissionID,
+		"expected_file_name": fileName,
+	})
+}
+
 // attachFile handles POST /api/v1/documents/{id}/attach
 func (h *DocumentHandlers) attachFile(w http.ResponseWriter, r *http.Request) {
 	principal, orgID, ok := docScopeFromRequest(w, r)
@@ -409,16 +524,9 @@ func (h *DocumentHandlers) attachFile(w http.ResponseWriter, r *http.Request) {
 	submissionID := chi.URLParam(r, "id")
 
 	// Verify access before update.
-	existing, err := h.service.GetSubmission(orgID, submissionID)
-	if err != nil {
+	if _, ok := h.validateUploadAccess(principal, orgID, submissionID); !ok {
 		httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Document submission not found.", nil)
 		return
-	}
-	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "owner", "admin") {
-		if existing.HouseholdID != principal.HouseholdID {
-			httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Document submission not found.", nil)
-			return
-		}
 	}
 
 	var body attachFileBody
@@ -430,8 +538,30 @@ func (h *DocumentHandlers) attachFile(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "validation_error", "Validation failed.", httpx.FormatValidationErrors(err))
 		return
 	}
+	fileName, err := sanitizeDocumentFilename(body.FileName)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_filename", err.Error(), nil)
+		return
+	}
+	if err := validateDocumentObjectKey(orgID, submissionID, body.FileObjectKey); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_object_key", "Attached file object key is not valid for this submission.", nil)
+		return
+	}
+	if h.store == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, "storage_unavailable", "Object storage is not configured.", nil)
+		return
+	}
+	exists, err := h.store.Exists(context.Background(), body.FileObjectKey)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to validate uploaded file.", err)
+		return
+	}
+	if !exists {
+		httpx.WriteError(w, r, http.StatusConflict, "missing_uploaded_file", "Uploaded file was not found in object storage.", nil)
+		return
+	}
 
-	sub, err := h.service.AttachFile(orgID, submissionID, body.FileObjectKey, body.FileName, body.FileMIME, body.FileSizeBytes, principal.UserID)
+	sub, err := h.service.AttachFile(orgID, submissionID, body.FileObjectKey, fileName, body.FileMIME, body.FileSizeBytes, principal.UserID)
 	if err != nil {
 		if errors.Is(err, documents.ErrInvalidTransition) {
 			httpx.WriteError(w, r, http.StatusConflict, "invalid_transition", "Cannot attach file to a submission in its current state.", nil)
@@ -473,7 +603,10 @@ func (h *DocumentHandlers) verifySubmission(w http.ResponseWriter, r *http.Reque
 	submissionID := chi.URLParam(r, "id")
 
 	var body reviewBody
-	_ = json.NewDecoder(r.Body).Decode(&body)
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", err)
+		return
+	}
 
 	sub, err := h.service.VerifySubmission(orgID, submissionID, principal.UserID, body.ReviewNotes)
 	if err != nil {
@@ -517,7 +650,10 @@ func (h *DocumentHandlers) rejectSubmission(w http.ResponseWriter, r *http.Reque
 	submissionID := chi.URLParam(r, "id")
 
 	var body reviewBody
-	_ = json.NewDecoder(r.Body).Decode(&body)
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", err)
+		return
+	}
 
 	sub, err := h.service.RejectSubmission(orgID, submissionID, principal.UserID, body.ReviewNotes)
 	if err != nil {

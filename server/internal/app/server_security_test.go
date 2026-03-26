@@ -6,10 +6,12 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/dareaquatics/aquify/server/internal/app/authn"
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
 )
 
@@ -131,6 +133,151 @@ func TestRefreshSessionWithCookieAndCSRFSucceeds(t *testing.T) {
 	}
 }
 
+func TestLogoutSessionWithCookieNoCSRFSucceedsAndClearsCookies(t *testing.T) {
+	t.Parallel()
+
+	router := NewRouter(Config{AppEnv: "test"}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	session := issueSessionWithCookies(t, router)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/sessions/logout", nil)
+	req.AddCookie(session.accessCookie)
+	req.AddCookie(session.refreshCookie)
+	req.AddCookie(session.csrfCookie)
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	assertSessionCookiesCleared(t, rr)
+
+	var response logoutEnvelope
+	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode logout response: %v", err)
+	}
+	if response.Status != "logged_out" {
+		t.Fatalf("expected logged_out, got %q", response.Status)
+	}
+	if response.RedirectURL != "/login" {
+		t.Fatalf("expected /login redirect, got %q", response.RedirectURL)
+	}
+	if response.LogoutURL != "" {
+		t.Fatalf("expected empty logout_url without oidc metadata, got %q", response.LogoutURL)
+	}
+
+	currentReq := httptest.NewRequest(http.MethodGet, "/api/v1/auth/session", nil)
+	currentReq.AddCookie(session.accessCookie)
+	currentRR := httptest.NewRecorder()
+	router.ServeHTTP(currentRR, currentReq)
+	if currentRR.Code != http.StatusUnauthorized {
+		t.Fatalf("expected old access token to be unauthorized after logout, got %d: %s", currentRR.Code, currentRR.Body.String())
+	}
+}
+
+func TestLogoutSessionWithoutRefreshCookieStillClearsCookies(t *testing.T) {
+	t.Parallel()
+
+	router := NewRouter(Config{AppEnv: "test"}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	session := issueSessionWithCookies(t, router)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/sessions/logout", nil)
+	req.AddCookie(session.accessCookie)
+	req.AddCookie(session.csrfCookie)
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	assertSessionCookiesCleared(t, rr)
+
+	var response logoutEnvelope
+	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode logout response: %v", err)
+	}
+	if response.RedirectURL != "/login" {
+		t.Fatalf("expected /login redirect, got %q", response.RedirectURL)
+	}
+}
+
+func TestLogoutSessionReturnsOIDCLogoutURLWhenConfigured(t *testing.T) {
+	t.Parallel()
+
+	authService := authn.NewService(authn.Config{
+		OIDC: authn.OIDCConfig{
+			EndSessionURL:         "https://issuer.example.com/logout",
+			PostLogoutRedirectURL: "http://localhost:3000/login",
+		},
+	})
+	session, err := authService.IssueSession(authn.SessionInput{
+		UserID:      "cookie-user",
+		OrgID:       "org-demo",
+		Roles:       []string{"admin"},
+		OIDCIDToken: "provider-id-token",
+	})
+	if err != nil {
+		t.Fatalf("issue session: %v", err)
+	}
+
+	router := NewRouterWithServices(
+		Config{AppEnv: "test"},
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		authService,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/sessions/logout", nil)
+	req.AddCookie(&http.Cookie{Name: appmiddleware.AccessTokenCookieName, Value: session.AccessToken})
+	req.AddCookie(&http.Cookie{Name: appmiddleware.RefreshTokenCookieName, Value: session.RefreshToken})
+	req.AddCookie(&http.Cookie{Name: appmiddleware.CSRFTokenCookieName, Value: appmiddleware.NewCSRFToken()})
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	assertSessionCookiesCleared(t, rr)
+
+	var response logoutEnvelope
+	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode logout response: %v", err)
+	}
+	if response.LogoutURL == "" {
+		t.Fatal("expected oidc logout_url in response")
+	}
+
+	logoutURL, err := url.Parse(response.LogoutURL)
+	if err != nil {
+		t.Fatalf("parse logout url: %v", err)
+	}
+	if got := logoutURL.Query().Get("id_token_hint"); got != "provider-id-token" {
+		t.Fatalf("expected id_token_hint=provider-id-token, got %q", got)
+	}
+	if got := logoutURL.Query().Get("post_logout_redirect_uri"); got != "http://localhost:3000/login" {
+		t.Fatalf("expected post_logout_redirect_uri, got %q", got)
+	}
+}
+
 func TestSecurityHeadersMiddlewareAddsBaselineHeaders(t *testing.T) {
 	t.Parallel()
 
@@ -191,6 +338,12 @@ type issuedSessionCookies struct {
 	csrfCookie    *http.Cookie
 }
 
+type logoutEnvelope struct {
+	Status      string `json:"status"`
+	LogoutURL   string `json:"logout_url"`
+	RedirectURL string `json:"redirect_url"`
+}
+
 func TestCurrentSessionEndpointAcceptsCookieAuthWithoutOrgHeader(t *testing.T) {
 	t.Parallel()
 
@@ -209,8 +362,8 @@ func TestCurrentSessionEndpointAcceptsCookieAuthWithoutOrgHeader(t *testing.T) {
 
 	var response struct {
 		User struct {
-			UserID string `json:"user_id"`
-			OrgID  string `json:"org_id"`
+			UserID string   `json:"user_id"`
+			OrgID  string   `json:"org_id"`
 			Roles  []string `json:"roles"`
 		} `json:"user"`
 	}
@@ -255,17 +408,20 @@ func TestMFAChallengeSetsReplacementSessionCookies(t *testing.T) {
 
 	var enrollResp struct {
 		Factor struct {
-			ID            string `json:"id"`
-			ChallengeHint string `json:"challenge_hint"`
+			ID    string   `json:"id"`
+			Codes []string `json:"codes"`
 		} `json:"factor"`
 	}
 	if err := json.Unmarshal(rrEnroll.Body.Bytes(), &enrollResp); err != nil {
 		t.Fatalf("decode enroll response: %v", err)
 	}
+	if len(enrollResp.Factor.Codes) == 0 {
+		t.Fatalf("enroll mfa: expected backup codes in response, got none")
+	}
 
 	challengeReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/mfa/challenge", encodeJSONBody(t, map[string]any{
 		"factor_id":      enrollResp.Factor.ID,
-		"challenge_code": enrollResp.Factor.ChallengeHint,
+		"challenge_code": enrollResp.Factor.Codes[0],
 	}))
 	challengeReq.Header.Set("Content-Type", "application/json")
 	challengeReq.Header.Set("X-CSRF-Token", session.csrfCookie.Value)
@@ -316,4 +472,27 @@ func issueSessionWithCookies(t *testing.T, router http.Handler) issuedSessionCoo
 		t.Fatal("expected access, refresh, and csrf cookies to be issued")
 	}
 	return out
+}
+
+func assertSessionCookiesCleared(t *testing.T, rr *httptest.ResponseRecorder) {
+	t.Helper()
+
+	found := map[string]*http.Cookie{}
+	for _, cookie := range rr.Result().Cookies() {
+		found[cookie.Name] = cookie
+	}
+
+	for _, name := range []string{
+		appmiddleware.AccessTokenCookieName,
+		appmiddleware.RefreshTokenCookieName,
+		appmiddleware.CSRFTokenCookieName,
+	} {
+		cookie := found[name]
+		if cookie == nil {
+			t.Fatalf("expected %s clear cookie to be set", name)
+		}
+		if cookie.MaxAge >= 0 {
+			t.Fatalf("expected %s clear cookie MaxAge < 0, got %d", name, cookie.MaxAge)
+		}
+	}
 }

@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import type { ApiClient } from './api.ts'
+import { ApiError } from './api.ts'
 import {
   archiveAnnouncement,
   createAnnouncement,
@@ -35,6 +36,7 @@ import {
   fetchRegistrationStatusReport,
   fetchRuntimeSettings,
   fetchSuppression,
+  fetchSwimmers,
   fetchSwimmerBestTimes,
   fetchSwimmerProgression,
   fetchTimeStandards,
@@ -125,21 +127,21 @@ test('Step 29E audit and jobs helpers cover the live operational admin endpoints
   const api = mock as unknown as ApiClient
 
   assert.equal((await fetchAuditEvents(api, 'org_ops', { action: 'announcement.publish' })).next_cursor, 'next_1')
-  assert.equal((await fetchJobs(api))[0]?.id, 'job_1')
-  assert.equal((await fetchQueueStats(api))[0]?.queue, 'default')
-  assert.equal((await fetchJobMetrics(api)).by_type.billing_reconcile?.succeeded, 1)
-  assert.equal((await fetchDLQTasks(api))[0]?.id, 'dlq_1')
-  await retryDLQTask(api, 'dlq_1')
-  await deleteDLQTask(api, 'dlq_1')
+  assert.equal((await fetchJobs(api, 'org_ops'))[0]?.id, 'job_1')
+  assert.equal((await fetchQueueStats(api, 'org_ops'))[0]?.queue, 'default')
+  assert.equal((await fetchJobMetrics(api, 'org_ops')).by_type.billing_reconcile?.succeeded, 1)
+  assert.equal((await fetchDLQTasks(api, 'org_ops'))[0]?.id, 'dlq_1')
+  await retryDLQTask(api, 'org_ops', 'dlq_1')
+  await deleteDLQTask(api, 'org_ops', 'dlq_1')
 
   assert.deepEqual(mock.calls, [
     { method: 'GET', path: '/api/v1/audit-events?action=announcement.publish', headers: { 'X-Org-Id': 'org_ops' } },
-    { method: 'GET', path: '/api/v1/jobs', headers: undefined },
-    { method: 'GET', path: '/api/v1/jobs/queues', headers: undefined },
-    { method: 'GET', path: '/api/v1/jobs/metrics', headers: undefined },
-    { method: 'GET', path: '/api/v1/jobs/dlq', headers: undefined },
-    { method: 'POST', path: '/api/v1/jobs/dlq/dlq_1/retry', body: undefined, headers: undefined },
-    { method: 'DELETE', path: '/api/v1/jobs/dlq/dlq_1', headers: undefined },
+    { method: 'GET', path: '/api/v1/jobs', headers: { 'X-Org-Id': 'org_ops' } },
+    { method: 'GET', path: '/api/v1/jobs/queues', headers: { 'X-Org-Id': 'org_ops' } },
+    { method: 'GET', path: '/api/v1/jobs/metrics', headers: { 'X-Org-Id': 'org_ops' } },
+    { method: 'GET', path: '/api/v1/jobs/dlq', headers: { 'X-Org-Id': 'org_ops' } },
+    { method: 'POST', path: '/api/v1/jobs/dlq/dlq_1/retry', body: undefined, headers: { 'X-Org-Id': 'org_ops' } },
+    { method: 'DELETE', path: '/api/v1/jobs/dlq/dlq_1', headers: { 'X-Org-Id': 'org_ops' } },
   ])
 })
 
@@ -333,4 +335,31 @@ test('Step 29E billing helpers support org-wide invoice and payment reads withou
     { method: 'GET', path: '/api/v1/invoices', headers: { 'X-Org-Id': orgId } },
     { method: 'GET', path: '/api/v1/payments', headers: { 'X-Org-Id': orgId } },
   ])
+})
+
+test('fetchSwimmers returns empty list on role-based forbidden response', async () => {
+  const api = {
+    get: async () => {
+      throw new ApiError(403, 'forbidden', 'You are not allowed to list swimmers.')
+    },
+  } as unknown as ApiClient
+
+  const swimmers = await fetchSwimmers(api, 'org_demo')
+  assert.deepEqual(swimmers, [])
+})
+
+test('fetchSwimmers rethrows non-forbidden 403 responses', async () => {
+  const api = {
+    get: async () => {
+      throw new ApiError(403, 'scope_violation', 'Principal org_id must match X-Org-Id scope.')
+    },
+  } as unknown as ApiClient
+
+  await assert.rejects(
+    fetchSwimmers(api, 'org_demo'),
+    (error: unknown) =>
+      error instanceof ApiError &&
+      error.status === 403 &&
+      error.code === 'scope_violation',
+  )
 })

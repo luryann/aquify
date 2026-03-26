@@ -3,6 +3,8 @@
 import { useState, useCallback, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
+
 type Role = 'parent' | 'coach' | 'staff'
 
 const ROLE_OPTIONS: { value: Role; label: string; desc: string }[] = [
@@ -21,6 +23,7 @@ type FormState = {
 }
 
 type FieldError = Partial<Record<keyof FormState, string>>
+type SubmitStatus = 'idle' | 'loading' | 'conflict' | 'error'
 
 function validate(f: FormState): FieldError {
   const e: FieldError = {}
@@ -38,31 +41,60 @@ export default function RegisterPage() {
     firstName: '', lastName: '', email: '', role: '', clubCode: '', message: '',
   })
   const [errors, setErrors] = useState<FieldError>({})
-  const [submitting, setSubmitting] = useState(false)
+  const [submitStatus, setSubmitStatus] = useState<SubmitStatus>('idle')
+  const [apiError, setApiError] = useState('')
   const [submitted, setSubmitted] = useState(false)
 
   const set = useCallback((k: keyof FormState) => (
     (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
       setForm(f => ({ ...f, [k]: e.target.value }))
       setErrors(er => ({ ...er, [k]: undefined }))
+      setSubmitStatus('idle')
     }
   ), [])
 
   const setRole = useCallback((r: Role) => {
     setForm(f => ({ ...f, role: r }))
     setErrors(er => ({ ...er, role: undefined }))
+    setSubmitStatus('idle')
   }, [])
 
   const handleSubmit = useCallback(async (e: FormEvent) => {
     e.preventDefault()
     const errs = validate(form)
     if (Object.keys(errs).length > 0) { setErrors(errs); return }
-    setSubmitting(true)
-    // In production this would call POST /api/v1/auth/access-requests
-    await new Promise(r => setTimeout(r, 900))
-    setSubmitting(false)
-    setSubmitted(true)
+    setSubmitStatus('loading')
+    setApiError('')
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          first_name: form.firstName.trim(),
+          last_name: form.lastName.trim(),
+          email: form.email.trim().toLowerCase(),
+          org_id: 'org-demo',
+        }),
+      })
+      if (res.status === 201 || res.status === 200) {
+        setSubmitStatus('idle')
+        setSubmitted(true)
+        return
+      }
+      if (res.status === 409) {
+        setSubmitStatus('conflict')
+        return
+      }
+      const data = await res.json().catch(() => ({}))
+      setApiError((data as { message?: string }).message ?? 'Something went wrong. Please try again.')
+      setSubmitStatus('error')
+    } catch {
+      setApiError('Unable to connect. Please check your connection and try again.')
+      setSubmitStatus('error')
+    }
   }, [form])
+
+  const submitting = submitStatus === 'loading'
 
   // ── Success state ────────────────────────────────────────────────────────────
   if (submitted) {
@@ -131,7 +163,19 @@ export default function RegisterPage() {
             </p>
           </div>
 
-          <form className="rp-form" onSubmit={handleSubmit} noValidate>
+          <form className="rp-form" onSubmit={(e) => void handleSubmit(e)} noValidate>
+            {/* API error alerts */}
+            {submitStatus === 'error' && (
+              <div className="rp-api-alert rp-api-alert-error" role="alert">
+                {apiError || 'Something went wrong. Please try again.'}
+              </div>
+            )}
+            {submitStatus === 'conflict' && (
+              <div className="rp-api-alert rp-api-alert-conflict" role="alert">
+                An account with that email already exists.{' '}
+                <a href="/login" className="rp-link">Sign in instead →</a>
+              </div>
+            )}
             {/* Name row */}
             <div className="rp-row">
               <div className="rp-field">
@@ -643,6 +687,25 @@ const SHARED_CSS = `
   .rp-btn-ghost:hover {
     border-color: rgba(235,93,30,0.35);
     color: rgba(237,233,227,0.8);
+  }
+
+  /* API alert banners */
+  .rp-api-alert {
+    padding: 11px 14px;
+    border-radius: 9px;
+    font-family: var(--font-body);
+    font-size: 13px;
+    line-height: 1.55;
+  }
+  .rp-api-alert-error {
+    background: rgba(248,113,113,0.1);
+    border: 1px solid rgba(248,113,113,0.25);
+    color: #fca5a5;
+  }
+  .rp-api-alert-conflict {
+    background: rgba(235,93,30,0.08);
+    border: 1px solid rgba(235,93,30,0.22);
+    color: rgba(237,233,227,0.7);
   }
 
   /* Reveal animation */

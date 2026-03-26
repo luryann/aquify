@@ -21,7 +21,6 @@ import (
 var (
 	ErrTypeNotFound       = errors.New("document type not found")
 	ErrSubmissionNotFound = errors.New("document submission not found")
-	ErrForbidden          = errors.New("forbidden")
 	ErrInvalidTransition  = errors.New("invalid status transition")
 	ErrDuplicateName      = errors.New("a document type with this name already exists for the org")
 )
@@ -185,7 +184,14 @@ func (s *Service) UpdateDocumentType(orgID, typeID string, updates map[string]in
 	}
 	cp := *dt
 	if v, ok := updates["name"].(string); ok && v != "" {
-		cp.Name = strings.TrimSpace(v)
+		newName := strings.TrimSpace(v)
+		// Check for duplicate name within the org (excluding the current record).
+		for _, existing := range s.docTypes {
+			if existing.ID != typeID && existing.OrgID == orgID && strings.EqualFold(existing.Name, newName) {
+				return nil, ErrDuplicateName
+			}
+		}
+		cp.Name = newName
 	}
 	if v, ok := updates["category"].(string); ok && v != "" {
 		cp.Category = v
@@ -233,18 +239,6 @@ func (s *Service) DeleteDocumentType(orgID, typeID, deletedBy string) error {
 	}
 	delete(s.docTypes, typeID)
 	return nil
-}
-
-// GetDocumentType returns the document type by ID.
-func (s *Service) GetDocumentType(orgID, typeID string) (*DocumentType, error) {
-	s.mu.RLock()
-	dt, ok := s.docTypes[typeID]
-	s.mu.RUnlock()
-	if !ok || dt.OrgID != orgID {
-		return nil, ErrTypeNotFound
-	}
-	cp := *dt
-	return &cp, nil
 }
 
 // ListDocumentTypes returns all (active) document types for an org.

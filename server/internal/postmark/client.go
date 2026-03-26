@@ -60,6 +60,7 @@ type SendEmailResponse struct {
 
 // Client is the minimal Postmark interface required by the comms service.
 type Client interface {
+	Ready(ctx context.Context) error
 	SendEmail(ctx context.Context, req SendEmailRequest) (SendEmailResponse, error)
 }
 
@@ -85,6 +86,11 @@ type SentMessage struct {
 // NewStubClient returns a new StubClient ready for use.
 func NewStubClient() *StubClient {
 	return &StubClient{}
+}
+
+// Ready reports the stub as available for local/test environments.
+func (s *StubClient) Ready(_ context.Context) error {
+	return nil
 }
 
 // SendEmail records the request and returns a deterministic message ID.
@@ -162,6 +168,37 @@ func NewHTTPClient(cfg Config) (*HTTPClient, error) {
 		fromEmail:   cfg.FromEmail,
 		httpClient:  &http.Client{Timeout: timeout},
 	}, nil
+}
+
+// Ready performs a lightweight authenticated probe against the Postmark API.
+func (c *HTTPClient) Ready(ctx context.Context) error {
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, postmarkAPIBase+"/server", nil)
+	if err != nil {
+		return fmt.Errorf("postmark: build readiness request: %w", err)
+	}
+	httpReq.Header.Set("Accept", "application/json")
+	httpReq.Header.Set("X-Postmark-Server-Token", c.serverToken)
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("postmark: readiness http: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices {
+		return nil
+	}
+
+	var apiErr struct {
+		ErrorCode int    `json:"ErrorCode"`
+		Message   string `json:"Message"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&apiErr)
+
+	if apiErr.Message != "" {
+		return fmt.Errorf("postmark: readiness status %d: %s", resp.StatusCode, apiErr.Message)
+	}
+	return fmt.Errorf("postmark: readiness status %d", resp.StatusCode)
 }
 
 // postmarkSendRequest is the Postmark REST API payload shape.

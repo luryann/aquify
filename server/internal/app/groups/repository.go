@@ -191,7 +191,7 @@ func (r *Repository) UpsertWaiverAcceptance(ctx context.Context, w WaiverAccepta
 func (r *Repository) LoadWaiverAcceptances(ctx context.Context) ([]WaiverAcceptance, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id::text, org_id::text, registration_id::text, waiver_type,
-		       COALESCE(accepted_by, ''), accepted_at, accepted_at
+		       COALESCE(accepted_by::text, ''), accepted_at, accepted_at
 		FROM waiver_acceptances`)
 	if err != nil {
 		return nil, fmt.Errorf("groups: load waiver_acceptances: %w", err)
@@ -216,6 +216,8 @@ func (r *Repository) LoadAll(ctx context.Context) (
 	rules []EligibilityRule,
 	registrations []Registration,
 	waivers []WaiverAcceptance,
+	swimmers []swimmerRef,
+	households []householdRef,
 	err error,
 ) {
 	if groups, err = r.LoadGroups(ctx); err != nil {
@@ -227,6 +229,57 @@ func (r *Repository) LoadAll(ctx context.Context) (
 	if registrations, err = r.LoadRegistrations(ctx); err != nil {
 		return
 	}
-	waivers, err = r.LoadWaiverAcceptances(ctx)
+	if waivers, err = r.LoadWaiverAcceptances(ctx); err != nil {
+		return
+	}
+	if swimmers, err = r.LoadSwimmerRefs(ctx); err != nil {
+		return
+	}
+	households, err = r.LoadHouseholdRefs(ctx)
 	return
+}
+
+func (r *Repository) LoadSwimmerRefs(ctx context.Context) ([]swimmerRef, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, org_id::text, household_id::text, date_of_birth::text, gender, registration_status
+		FROM swimmers
+		WHERE deleted_at IS NULL`)
+	if err != nil {
+		return nil, fmt.Errorf("groups: load swimmer refs: %w", err)
+	}
+	defer rows.Close()
+
+	var out []swimmerRef
+	for rows.Next() {
+		var swimmer swimmerRef
+		if err := rows.Scan(
+			&swimmer.ID, &swimmer.OrgID, &swimmer.HouseholdID,
+			&swimmer.DateOfBirth, &swimmer.Gender, &swimmer.RegistrationStatus,
+		); err != nil {
+			return nil, fmt.Errorf("groups: scan swimmer ref: %w", err)
+		}
+		out = append(out, swimmer)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) LoadHouseholdRefs(ctx context.Context) ([]householdRef, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, org_id::text
+		FROM households
+		WHERE deleted_at IS NULL`)
+	if err != nil {
+		return nil, fmt.Errorf("groups: load household refs: %w", err)
+	}
+	defer rows.Close()
+
+	var out []householdRef
+	for rows.Next() {
+		var household householdRef
+		if err := rows.Scan(&household.ID, &household.OrgID); err != nil {
+			return nil, fmt.Errorf("groups: scan household ref: %w", err)
+		}
+		out = append(out, household)
+	}
+	return out, rows.Err()
 }

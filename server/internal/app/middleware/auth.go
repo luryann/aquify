@@ -73,6 +73,10 @@ func extractAuthToken(r *http.Request) (string, string, string) {
 	return "", "unauthorized", "Missing Authorization header or session cookie."
 }
 
+func ExtractAuthToken(r *http.Request) (string, string, string) {
+	return extractAuthToken(r)
+}
+
 func PrincipalFromContext(ctx context.Context) (*Principal, bool) {
 	principal, ok := ctx.Value(principalContextKey{}).(*Principal)
 	return principal, ok

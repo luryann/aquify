@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
@@ -9,11 +9,13 @@ import {
   fetchDocumentSubmissions,
   fetchSwimmers,
   createDocumentSubmission,
+  requestDocumentUploadUrl,
   attachDocumentFile,
   type DocumentTypeRecord,
   type DocumentSubmissionRecord,
   type SwimmerRecord,
 } from '@/lib/adminData'
+import { getPortalDocumentAction, selectLatestSubmission } from '@/lib/document-submissions'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -95,7 +97,7 @@ function mergeDocuments(
       // Generate one row per swimmer so multi-swimmer households are not collapsed
       if (swimmers.length === 0) {
         // No swimmers fetched yet — show a single placeholder row
-        const sub = submissions.filter(s => s.document_type_id === dt.id).slice(-1)[0] ?? null
+        const sub = selectLatestSubmission(submissions, dt.id)
         docs.push({
           typeId: dt.id,
           rawTypeId: dt.id,
@@ -114,11 +116,7 @@ function mergeDocuments(
         })
       } else {
         for (const sw of swimmers) {
-          // Match submission by BOTH typeId AND swimmerId
-          const matching = submissions.filter(
-            s => s.document_type_id === dt.id && s.swimmer_id === sw.id,
-          )
-          const sub = matching.length > 0 ? matching[matching.length - 1] : null
+          const sub = selectLatestSubmission(submissions, dt.id, sw.id)
           docs.push({
             typeId: `${dt.id}::${sw.id}`,
             rawTypeId: dt.id,
@@ -139,8 +137,7 @@ function mergeDocuments(
       }
     } else {
       // household or all — one row per type
-      const matching = submissions.filter(s => s.document_type_id === dt.id)
-      const sub = matching.length > 0 ? matching[matching.length - 1] : null
+      const sub = selectLatestSubmission(submissions, dt.id)
       docs.push({
         typeId: dt.id,
         rawTypeId: dt.id,
@@ -170,6 +167,7 @@ export default function DocumentsPage() {
   const api = useApiClient(session?.token)
   const orgId = session?.user.orgId ?? ''
   const householdId = session?.user.householdId ?? ''
+  const uploadInputRef = useRef<HTMLInputElement>(null)
 
   const [docTypes, setDocTypes] = useState<DocumentTypeRecord[]>([])
   const [submissions, setSubmissions] = useState<DocumentSubmissionRecord[]>([])
@@ -177,6 +175,7 @@ export default function DocumentsPage() {
   const [loading, setLoading] = useState(true)
   const [uploadingId, setUploadingId] = useState<string | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [pendingUploadTarget, setPendingUploadTarget] = useState<{ typeId: string; swimmerId?: string } | null>(null)
   const [filter, setFilter] = useState<'all' | 'pending'>('all')
 
   useEffect(() => {
@@ -220,23 +219,19 @@ export default function DocumentsPage() {
     return days !== null && days >= 0 && days <= 30
   }).length
 
-  const handleUploadStub = async (typeId: string, swimmerId?: string) => {
+  const handleUploadClick = (typeId: string, swimmerId?: string) => {
+    setPendingUploadTarget({ typeId, swimmerId })
+    uploadInputRef.current?.click()
+  }
+
+  const handleFileSelected = async (file: File | null) => {
+    if (!file || !pendingUploadTarget) return
+    const { typeId, swimmerId } = pendingUploadTarget
     if (!orgId || !householdId || uploadingId) return
     setUploadError(null)
-
-    // Guard: stub upload must not run in production or staging environments
-    const appEnv = process.env.NEXT_PUBLIC_APP_ENV
-    if (appEnv === 'production' || appEnv === 'staging') {
-      setUploadError('File upload is not yet available. Please contact your club administrator.')
-      return
-    }
-
-    setUploadingId(typeId)
+    setUploadingId(swimmerId ? `${typeId}::${swimmerId}` : typeId)
     try {
-      // Find an existing submission for this type+swimmer combination
-      const existingSub = submissions.find(
-        s => s.document_type_id === typeId && (!swimmerId || s.swimmer_id === swimmerId),
-      )
+      const existingSub = selectLatestSubmission(submissions, typeId, swimmerId)
       let subId = existingSub?.id
       if (!subId) {
         const newSub = await createDocumentSubmission(api, orgId, {
@@ -246,21 +241,33 @@ export default function DocumentsPage() {
         })
         subId = newSub.id
       }
-      // In a real flow this would upload to S3 then call attachDocumentFile.
-      // For now we mark it submitted with a stub object key (dev/test only).
-      await attachDocumentFile(api, orgId, subId, {
-        file_object_key: `stub/${householdId}/${typeId}/upload.pdf`,
-        file_name: 'upload.pdf',
-        file_mime: 'application/pdf',
-        file_size_bytes: 0,
+      const mimeType = file.type || 'application/octet-stream'
+      const upload = await requestDocumentUploadUrl(api, orgId, subId, {
+        file_name: file.name,
+        file_mime: mimeType,
+        file_size_bytes: file.size,
       })
-      // Refresh
+      const uploadRes = await fetch(upload.upload_url, {
+        method: 'PUT',
+        body: file,
+        headers: { 'Content-Type': mimeType },
+      })
+      if (!uploadRes.ok) {
+        throw new Error(`upload failed: ${uploadRes.status}`)
+      }
+      await attachDocumentFile(api, orgId, subId, {
+        file_object_key: upload.object_key,
+        file_name: file.name,
+        file_mime: mimeType,
+        file_size_bytes: file.size,
+      })
       const subs = await fetchDocumentSubmissions(api, orgId, householdId)
       setSubmissions(subs)
     } catch {
       setUploadError('Upload failed. Please try again.')
     } finally {
       setUploadingId(null)
+      setPendingUploadTarget(null)
     }
   }
 
@@ -299,6 +306,18 @@ export default function DocumentsPage() {
           <button onClick={() => setUploadError(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#b91c1c', fontSize: '16px', lineHeight: 1, padding: 0 }}>✕</button>
         </div>
       )}
+
+      <input
+        ref={uploadInputRef}
+        type="file"
+        accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          const file = e.target.files?.[0] ?? null
+          e.currentTarget.value = ''
+          void handleFileSelected(file)
+        }}
+      />
 
       {/* Action needed alert */}
       {pendingDocs.length > 0 && (
@@ -375,6 +394,10 @@ export default function DocumentsPage() {
                   const statusCfg = STATUS_CONFIG[doc.effectiveStatus]
                   const isUploading = uploadingId === doc.typeId
                   const needsAction = doc.effectiveStatus === 'missing' || doc.effectiveStatus === 'rejected' || doc.effectiveStatus === 'expired'
+                  const actionKind = getPortalDocumentAction({
+                    effectiveStatus: doc.effectiveStatus,
+                    typeCategory: doc.typeCategory,
+                  })
                   const days = daysUntil(doc.expiresAt)
                   const expiringUrgent = days !== null && days >= 0 && days <= 14
 
@@ -424,27 +447,21 @@ export default function DocumentsPage() {
                           {statusCfg.label}
                         </span>
 
-                        {needsAction && (
-                          doc.typeCategory === 'waiver' || doc.typeCategory === 'medical' ? (
-                            <button style={{ padding: '6px 14px', background: '#eb5d1e', color: '#fff', border: 'none', borderRadius: '7px', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
-                              Sign Online →
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => void handleUploadStub(doc.rawTypeId, doc.swimmerId || undefined)}
-                              disabled={isUploading}
-                              style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 14px', background: isUploading ? 'rgba(235,93,30,0.5)' : '#eb5d1e', color: '#fff', border: 'none', borderRadius: '7px', fontSize: '12.5px', fontWeight: 600, cursor: isUploading ? 'wait' : 'pointer', fontFamily: 'var(--font-body)' }}
-                            >
-                              <Icon name="upload" size={12} />
-                              {isUploading ? 'Uploading…' : 'Upload File'}
-                            </button>
-                          )
+                        {actionKind === 'upload' && needsAction && (
+                          <button
+                            onClick={() => handleUploadClick(doc.rawTypeId, doc.swimmerId || undefined)}
+                            disabled={isUploading}
+                            style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 14px', background: isUploading ? 'rgba(235,93,30,0.5)' : '#eb5d1e', color: '#fff', border: 'none', borderRadius: '7px', fontSize: '12.5px', fontWeight: 600, cursor: isUploading ? 'wait' : 'pointer', fontFamily: 'var(--font-body)' }}
+                          >
+                            <Icon name="upload" size={12} />
+                            {isUploading ? 'Uploading…' : 'Upload File'}
+                          </button>
                         )}
 
                         {(doc.effectiveStatus === 'verified' || doc.effectiveStatus === 'submitted') && doc.submission?.file_name && (
-                          <button style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: '#9A9693', fontFamily: 'var(--font-body)', padding: 0 }}>
-                            View File
-                          </button>
+                          <span style={{ fontSize: '12px', color: '#9A9693', fontFamily: 'var(--font-body)' }}>
+                            Uploaded: {doc.submission.file_name}
+                          </span>
                         )}
                       </div>
                     </div>

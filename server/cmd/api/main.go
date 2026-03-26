@@ -43,24 +43,71 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/dareaquatics/aquify/server/internal/app"
 	"github.com/dareaquatics/aquify/server/internal/telemetry"
+	"github.com/dareaquatics/aquify/server/internal/workers"
 )
 
+// loadDotEnv reads a .env-style file and sets any unset environment variables.
+// Lines starting with # are ignored. Existing env vars are never overwritten.
+func loadDotEnv(path string) {
+	f, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		idx := strings.IndexByte(line, '=')
+		if idx <= 0 {
+			continue
+		}
+		key := strings.TrimSpace(line[:idx])
+		val := strings.TrimSpace(line[idx+1:])
+		// Strip inline comments
+		if ci := strings.Index(val, " #"); ci >= 0 {
+			val = strings.TrimSpace(val[:ci])
+		}
+		// Strip surrounding quotes
+		if len(val) >= 2 && ((val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'')) {
+			val = val[1 : len(val)-1]
+		}
+		if key != "" && os.Getenv(key) == "" {
+			_ = os.Setenv(key, val)
+		}
+	}
+}
+
 func main() {
+	// Load .env.local from the project root (one level up from server/).
+	// Existing environment variables always take precedence.
+	loadDotEnv("../.env.local")
+	loadDotEnv(".env.local")
+
 	cfg := app.LoadConfig()
 	logger := slog.New(slog.NewJSONHandler(
 		os.Stdout,
 		&slog.HandlerOptions{Level: slog.LevelInfo},
 	))
+	mode := "api"
+	if len(os.Args) > 1 && strings.TrimSpace(os.Args[1]) != "" {
+		mode = strings.ToLower(strings.TrimSpace(os.Args[1]))
+	}
 
 	// Initialise OpenTelemetry tracing.
 	telCfg := telemetry.Config{
@@ -75,28 +122,101 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Build background workers (not started yet).
-	ws, sched := app.BuildWorkers(cfg, logger, nil, nil, nil)
+	if err := app.ValidateDevAuthConfig(cfg); err != nil {
+		logger.Error("startup config error", "error", err)
+		os.Exit(1)
+	}
+
+	if err := app.ValidateOIDCLogoutConfig(cfg, logger); err != nil {
+		logger.Error("startup config error", "error", err)
+		os.Exit(1)
+	}
+
+	if err := app.ValidateWorkerConfig(cfg); err != nil {
+		logger.Error("startup config error", "error", err)
+		os.Exit(1)
+	}
 
 	if err := app.ValidateProviderConfig(cfg); err != nil {
 		logger.Error("startup config error", "error", err)
 		os.Exit(1)
 	}
 
-	// Build the HTTP router with the pre-configured worker server.
-	handler := app.NewRouterWithServices(cfg, logger,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		ws,
-	)
+	if err := app.ValidateKeycloakStartup(cfg, logger); err != nil {
+		logger.Error("keycloak startup validation failed", "error", err)
+		os.Exit(1)
+	}
 
-	// Validate non-development storage credentials before starting.
-	if cfg.AppEnv != "development" && cfg.AppEnv != "local" {
-		if cfg.Storage.AccessKey == "" || cfg.Storage.SecretKey == "" {
-			logger.Error("startup config error",
-				"error", "STORAGE_ACCESS_KEY and STORAGE_SECRET_KEY must be explicitly set in non-development environments")
-			os.Exit(1)
+	startupCtx, startupCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer startupCancel()
+	if err := app.ValidateStartupDependencies(startupCtx, cfg, logger); err != nil {
+		logger.Error("startup dependency validation failed", "error", err)
+		os.Exit(1)
+	}
+
+	var backend *workers.RedisBackend
+	if strings.TrimSpace(cfg.Worker.RedisURL) != "" {
+		backend, err = workers.NewRedisBackend(workers.RedisBackendConfig{
+			RedisURL:    cfg.Worker.RedisURL,
+			Logger:      logger,
+			Concurrency: cfg.Worker.ConcurrencyPerQueue,
+		})
+		if err != nil {
+			cfg, _, err = app.MaybeApplyDevelopmentRedisFallback(cfg, logger, err)
+			if err != nil {
+				logger.Error("worker backend init failed", "error", err)
+				os.Exit(1)
+			}
+		}
+		if backend != nil {
+			defer func() {
+				if err := backend.Close(); err != nil {
+					logger.Warn("worker backend close failed", "error", err)
+				}
+			}()
 		}
 	}
+
+	if mode == "worker" {
+		if backend == nil {
+			logger.Error("worker mode requires REDIS_URL")
+			os.Exit(1)
+		}
+		app.NewRouterWithServices(cfg, logger,
+			nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+			nil,
+			backend,
+			nil,
+		)
+		app.RegisterDurableScheduledJobs(backend, cfg)
+		if err := backend.Start(); err != nil {
+			logger.Error("worker start failed", "error", err)
+			os.Exit(1)
+		}
+
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+		sig := <-sigCh
+		logger.Info("worker shutdown signal received", "signal", sig)
+
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer shutdownCancel()
+		if err := backend.Stop(shutdownCtx); err != nil {
+			logger.Error("worker shutdown error", "error", err)
+		}
+		if flushErr := telShutdown(shutdownCtx); flushErr != nil {
+			logger.Warn("telemetry shutdown error", "error", flushErr)
+		}
+		return
+	}
+
+	// Build the HTTP router with the configured durable backend when available.
+	handler := app.NewRouterWithServices(cfg, logger,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil,
+		backend,
+		nil,
+	)
 
 	httpServer := &http.Server{
 		Addr:              cfg.Addr,
@@ -106,10 +226,6 @@ func main() {
 		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
-
-	// Start background workers.
-	ws.Start()
-	sched.Start()
 
 	// Handle OS signals for graceful shutdown.
 	sigCh := make(chan os.Signal, 1)
@@ -130,9 +246,6 @@ func main() {
 		if flushErr := telShutdown(shutdownCtx); flushErr != nil {
 			logger.Warn("telemetry shutdown error", "error", flushErr)
 		}
-
-		sched.Stop()
-		ws.Stop()
 	}()
 
 	logger.Info("api listening", "addr", cfg.Addr)

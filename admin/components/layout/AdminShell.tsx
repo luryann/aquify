@@ -6,9 +6,10 @@ import { useSession } from '@/lib/session'
 import { useRouter } from 'next/navigation'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { Topbar } from '@/components/layout/Topbar'
+import { buildSidebarSessionProps } from '@/lib/sidebar-badge'
 
 export function AdminShell({ children }: { children: ReactNode }) {
-  const { session, signOut } = useSession()
+  const { session } = useSession()
   const router = useRouter()
 
   // Restore saved theme preference on mount
@@ -22,18 +23,18 @@ export function AdminShell({ children }: { children: ReactNode }) {
   }, [])
 
   const handleSignOut = () => {
-    signOut()
     router.push('/logout')
   }
 
   if (!session) return null
 
+  const sidebarProps = buildSidebarSessionProps(session)
+
   return (
     <div className="admin-shell">
       <div className="admin-sidebar-wrap">
         <Sidebar
-          role={session.user.role}
-          userName={session.user.avatarInitials ?? session.user.name?.slice(0, 2)}
+          {...sidebarProps}
           onSignOut={handleSignOut}
         />
       </div>

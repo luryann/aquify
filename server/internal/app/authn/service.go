@@ -22,6 +22,7 @@
 package authn
 
 import (
+	"context"
 	"crypto"
 	"crypto/hmac"
 	"crypto/rand"
@@ -37,6 +38,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -47,6 +49,7 @@ import (
 	"time"
 
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 var (
@@ -63,18 +66,22 @@ var (
 type Config struct {
 	EnableDevStubTokens bool
 	OIDC                OIDCConfig
+	// Logger is used for diagnostic warnings (e.g. org_id fallback). If nil, slog.Default() is used.
+	Logger *slog.Logger
 }
 
 type OIDCConfig struct {
-	AuthorizeURL    string
-	TokenURL        string
-	JWKSURL         string
-	RedirectURL     string
-	ClientID        string
-	ClientSecret    string
-	ExpectedIssuer  string
-	StateSigningKey string
-	HTTPTimeout     time.Duration
+	AuthorizeURL          string
+	TokenURL              string
+	JWKSURL               string
+	EndSessionURL         string
+	RedirectURL           string
+	PostLogoutRedirectURL string
+	ClientID              string
+	ClientSecret          string
+	ExpectedIssuer        string
+	StateSigningKey       string
+	HTTPTimeout           time.Duration
 }
 
 type Service struct {
@@ -86,16 +93,129 @@ type Service struct {
 	staticPrincipals map[string]*appmiddleware.Principal
 	cfg              Config
 	httpClient       *http.Client
+	logger           *slog.Logger
+	pool             *pgxpool.Pool
+
+	// householdLookup is an optional function injected from the members service
+	// that resolves a Keycloak user ID to a household ID. It is called during
+	// OIDCCallback to attach household_id to the newly-issued session.
+	householdLookup func(keycloakUserID string) string
 
 	// TOTP replay prevention: "factorID|code" → time the code was last accepted.
 	usedTOTPCodes map[string]time.Time
 
 	// JWKS cache — keyed independently with its own mutex so JWKS fetches do
 	// not block unrelated session operations.
-	jwksMu      sync.RWMutex
-	jwksCache   *oidcJWKSet
+	jwksMu       sync.RWMutex
+	jwksCache    *oidcJWKSet
 	jwksCachedAt time.Time
 	jwksCacheTTL time.Duration
+}
+
+// SetHouseholdLookup wires a household-lookup function into the service.
+// The function receives a Keycloak user ID and should return the corresponding
+// household ID, or an empty string if no household is linked.
+func (s *Service) SetHouseholdLookup(fn func(keycloakUserID string) string) {
+	s.householdLookup = fn
+}
+
+// SetPool wires a DB pool into the service and loads any previously persisted
+// MFA factors from the mfa_factors table. This must be called after the pool
+// is available and before the service handles requests.
+func (s *Service) SetPool(pool *pgxpool.Pool) {
+	if pool == nil {
+		return
+	}
+	s.pool = pool
+	s.loadMFAFactorsFromDB()
+}
+
+func (s *Service) loadMFAFactorsFromDB() {
+	ctx := context.Background()
+	rows, err := s.pool.Query(ctx, `
+		SELECT id::text, user_id::text, COALESCE(org_id::text, ''), factor_type,
+		       COALESCE(label, ''), is_verified,
+		       COALESCE(totp_secret, ''), COALESCE(backup_codes, '[]'::jsonb),
+		       COALESCE(created_at, now()), last_challenged_at
+		FROM mfa_factors`)
+	if err != nil {
+		s.logger.Warn("authn: failed to load MFA factors from DB", "error", err)
+		return
+	}
+	defer rows.Close()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for rows.Next() {
+		var r mfaFactorRecord
+		var backupCodesJSON []byte
+		if err := rows.Scan(
+			&r.Factor.ID, &r.Factor.UserID, &r.Factor.OrgID, &r.Factor.FactorType,
+			&r.Factor.Label, &r.Factor.IsVerified, &r.TOTPSecret,
+			&backupCodesJSON, &r.Factor.CreatedAt, &r.Factor.LastChallengedAt,
+		); err != nil {
+			s.logger.Warn("authn: scan MFA factor row", "error", err)
+			continue
+		}
+		if len(backupCodesJSON) > 0 {
+			_ = json.Unmarshal(backupCodesJSON, &r.BackupCodes)
+		}
+		s.mfaFactorsByUser[r.Factor.UserID] = append(s.mfaFactorsByUser[r.Factor.UserID], r)
+	}
+}
+
+func (s *Service) saveMFAFactorToDB(r mfaFactorRecord) {
+	if s.pool == nil {
+		return
+	}
+	var backupCodesJSON []byte
+	if len(r.BackupCodes) > 0 {
+		backupCodesJSON, _ = json.Marshal(r.BackupCodes)
+	}
+	var totpSecret *string
+	if r.TOTPSecret != "" {
+		totpSecret = &r.TOTPSecret
+	}
+	ctx := context.Background()
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO mfa_factors (id, user_id, org_id, factor_type, label, is_verified,
+		                         totp_secret, backup_codes, created_at, last_challenged_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		ON CONFLICT (id) DO UPDATE SET
+		    is_verified        = EXCLUDED.is_verified,
+		    backup_codes       = EXCLUDED.backup_codes,
+		    last_challenged_at = EXCLUDED.last_challenged_at`,
+		r.Factor.ID, r.Factor.UserID, r.Factor.OrgID, r.Factor.FactorType,
+		r.Factor.Label, r.Factor.IsVerified,
+		totpSecret, backupCodesJSON,
+		r.Factor.CreatedAt, r.Factor.LastChallengedAt,
+	)
+	if err != nil {
+		s.logger.Warn("authn: save MFA factor to DB", "error", err)
+	}
+}
+
+func (s *Service) updateMFAFactorInDB(r mfaFactorRecord) {
+	if s.pool == nil {
+		return
+	}
+	var backupCodesJSON []byte
+	if len(r.BackupCodes) > 0 {
+		backupCodesJSON, _ = json.Marshal(r.BackupCodes)
+	}
+	ctx := context.Background()
+	_, err := s.pool.Exec(ctx, `
+		UPDATE mfa_factors
+		SET is_verified        = $2,
+		    backup_codes       = $3,
+		    last_challenged_at = $4
+		WHERE id = $1`,
+		r.Factor.ID, r.Factor.IsVerified, backupCodesJSON, r.Factor.LastChallengedAt,
+	)
+	if err != nil {
+		s.logger.Warn("authn: update MFA factor in DB", "error", err)
+	}
 }
 
 type SessionInput struct {
@@ -107,6 +227,7 @@ type SessionInput struct {
 	Roles            []string
 	MFAAuthenticated bool
 	ExpiresIn        time.Duration
+	OIDCIDToken      string
 }
 
 type SessionTokens struct {
@@ -124,6 +245,11 @@ type OIDCCallbackResult struct {
 	SessionTokens
 }
 
+type LogoutResult struct {
+	LogoutURL   string `json:"logout_url,omitempty"`
+	RedirectURL string `json:"redirect_url"`
+}
+
 type MFAFactor struct {
 	ID               string     `json:"id"`
 	UserID           string     `json:"user_id"`
@@ -134,6 +260,12 @@ type MFAFactor struct {
 	CreatedAt        time.Time  `json:"created_at"`
 	LastChallengedAt *time.Time `json:"last_challenged_at,omitempty"`
 	ChallengeHint    string     `json:"challenge_hint,omitempty"`
+	// ProvisioningURI is the otpauth:// URI for TOTP enrollment. Only populated
+	// in the enroll response — never returned from list or challenge endpoints.
+	ProvisioningURI string `json:"provisioning_uri,omitempty"`
+	// Codes is the one-time plaintext list of backup codes, returned only at
+	// enrollment time. Never stored in plaintext; only hashes are retained.
+	Codes []string `json:"codes,omitempty"`
 }
 
 type RoleAssignmentInput struct {
@@ -160,16 +292,21 @@ type RoleAssignment struct {
 type sessionRecord struct {
 	AccessToken  string
 	RefreshToken string
+	IDToken      string
 	Principal    appmiddleware.Principal
 	ExpiresAt    time.Time
 	RevokedAt    *time.Time
 }
 
+type backupCodeRecord struct {
+	Hash string
+	Used bool
+}
+
 type mfaFactorRecord struct {
-	Factor         MFAFactor
-	TOTPSecret     string
-	BackupCodeHash string
-	BackupCodeUsed bool
+	Factor      MFAFactor
+	TOTPSecret  string
+	BackupCodes []backupCodeRecord
 }
 
 type oidcTokenResponse struct {
@@ -223,6 +360,11 @@ func NewService(cfg Config) *Service {
 		cfg.OIDC.HTTPTimeout = 10 * time.Second
 	}
 
+	l := cfg.Logger
+	if l == nil {
+		l = slog.Default()
+	}
+
 	service := &Service{
 		sessionsByAccess: make(map[string]*sessionRecord),
 		byRefresh:        make(map[string]*sessionRecord),
@@ -231,8 +373,9 @@ func NewService(cfg Config) *Service {
 		staticPrincipals: map[string]*appmiddleware.Principal{},
 		cfg:              cfg,
 		httpClient:       &http.Client{Timeout: cfg.OIDC.HTTPTimeout},
-		usedTOTPCodes:   make(map[string]time.Time),
-		jwksCacheTTL:    5 * time.Minute,
+		logger:           l,
+		usedTOTPCodes:    make(map[string]time.Time),
+		jwksCacheTTL:     5 * time.Minute,
 	}
 	if cfg.EnableDevStubTokens {
 		service.staticPrincipals = map[string]*appmiddleware.Principal{
@@ -271,6 +414,10 @@ func (s *Service) BeginOIDCLogin(loginHint, orgID string) (string, error) {
 	q.Set("scope", "openid profile email")
 	q.Set("state", state)
 	q.Set("nonce", nonce)
+	// Force Keycloak to always show the login screen. Without this, an active
+	// Keycloak SSO session from a previous login survives our app-level logout
+	// and silently re-authenticates the old user, bypassing the login page.
+	q.Set("prompt", "login")
 	if hint := strings.TrimSpace(loginHint); hint != "" {
 		q.Set("login_hint", hint)
 	}
@@ -324,6 +471,10 @@ func (s *Service) OIDCCallback(code, state, _ string) (OIDCCallbackResult, error
 
 	resolvedOrgID := strings.TrimSpace(claims.OrgID)
 	if resolvedOrgID == "" {
+		s.logger.Warn("oidc: org_id absent from ID token claims — falling back to state parameter; verify Keycloak protocol mapper (User Attribute 'org_id' → ID token claim 'org_id') is configured",
+			"user_id", claims.Subject,
+			"issuer", claims.Issuer,
+		)
 		resolvedOrgID = strings.TrimSpace(statePayload.OrgID)
 	}
 	if resolvedOrgID == "" {
@@ -335,14 +486,22 @@ func (s *Service) OIDCCallback(code, state, _ string) (OIDCCallbackResult, error
 		roles = []string{"parent"}
 	}
 
+	// Resolve linked household for this Keycloak user, if one exists.
+	var householdID string
+	if s.householdLookup != nil {
+		householdID = s.householdLookup(claims.Subject)
+	}
+
 	session, err := s.IssueSession(SessionInput{
 		UserID:           claims.Subject,
 		Email:            claims.Email,
 		Name:             claims.Name,
 		OrgID:            resolvedOrgID,
+		HouseholdID:      householdID,
 		Roles:            roles,
 		ExpiresIn:        24 * time.Hour,
 		MFAAuthenticated: false,
+		OIDCIDToken:      tokenResponse.IDToken,
 	})
 	if err != nil {
 		return OIDCCallbackResult{}, err
@@ -376,6 +535,7 @@ func (s *Service) IssueSession(input SessionInput) (SessionTokens, error) {
 	record := &sessionRecord{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
+		IDToken:      strings.TrimSpace(input.OIDCIDToken),
 		Principal: appmiddleware.Principal{
 			UserID:           input.UserID,
 			Email:            strings.TrimSpace(input.Email),
@@ -430,6 +590,7 @@ func (s *Service) RefreshSession(refreshToken string) (SessionTokens, error) {
 	next := &sessionRecord{
 		AccessToken:  nextAccess,
 		RefreshToken: nextRefresh,
+		IDToken:      record.IDToken,
 		Principal: appmiddleware.Principal{
 			UserID:           record.Principal.UserID,
 			Email:            record.Principal.Email,
@@ -475,6 +636,33 @@ func (s *Service) RevokeSession(refreshToken string) error {
 	return nil
 }
 
+func (s *Service) LogoutSession(refreshToken string) LogoutResult {
+	result := LogoutResult{RedirectURL: "/login"}
+	refreshToken = strings.TrimSpace(refreshToken)
+	if refreshToken == "" {
+		return result
+	}
+
+	var idToken string
+
+	s.mu.Lock()
+	record, ok := s.byRefresh[refreshToken]
+	if ok {
+		idToken = record.IDToken
+		if record.RevokedAt == nil {
+			now := time.Now().UTC()
+			record.RevokedAt = &now
+		}
+	}
+	s.mu.Unlock()
+
+	if logoutURL, ok := s.buildOIDCLogoutURL(idToken); ok {
+		result.LogoutURL = logoutURL
+	}
+
+	return result
+}
+
 func (s *Service) ResolvePrincipal(token string) (*appmiddleware.Principal, bool) {
 	token = strings.TrimSpace(token)
 	if token == "" {
@@ -515,7 +703,7 @@ func (s *Service) ListMFAFactors(userID string) []MFAFactor {
 	return out
 }
 
-func (s *Service) EnrollMFA(userID, orgID, factorType, label string) (MFAFactor, error) {
+func (s *Service) EnrollMFA(userID, email, orgID, factorType, label string) (MFAFactor, error) {
 	factorType = strings.TrimSpace(strings.ToLower(factorType))
 	if !slices.Contains([]string{"totp", "backup_code"}, factorType) {
 		return MFAFactor{}, errors.New("unsupported factor type")
@@ -534,15 +722,29 @@ func (s *Service) EnrollMFA(userID, orgID, factorType, label string) (MFAFactor,
 	switch factorType {
 	case "totp":
 		record.TOTPSecret = generateTOTPSecret()
+		// Always return the provisioning URI on enrollment so the user can add it to
+		// their authenticator app. Prefer email as the account name; fall back to userID.
+		accountName := strings.TrimSpace(email)
+		if accountName == "" {
+			accountName = userID
+		}
 		if s.cfg.EnableDevStubTokens {
 			factor.ChallengeHint = record.TOTPSecret
 		}
+		factor.ProvisioningURI = fmt.Sprintf(
+			"otpauth://totp/aquify:%s?secret=%s&issuer=aquify&algorithm=SHA1&digits=6&period=30",
+			url.QueryEscape(accountName), record.TOTPSecret,
+		)
 	case "backup_code":
-		oneTimeCode := strings.ToUpper(randomAlphaNumeric(10))
-		record.BackupCodeHash = hashChallengeCode(oneTimeCode)
-		if s.cfg.EnableDevStubTokens {
-			factor.ChallengeHint = oneTimeCode
+		const numCodes = 8
+		plainCodes := make([]string, numCodes)
+		record.BackupCodes = make([]backupCodeRecord, numCodes)
+		for i := range numCodes {
+			code := strings.ToUpper(randomAlphaNumeric(10))
+			plainCodes[i] = code
+			record.BackupCodes[i] = backupCodeRecord{Hash: hashChallengeCode(code)}
 		}
+		factor.Codes = plainCodes
 	}
 	record.Factor = factor
 
@@ -550,13 +752,17 @@ func (s *Service) EnrollMFA(userID, orgID, factorType, label string) (MFAFactor,
 	s.mfaFactorsByUser[userID] = append(s.mfaFactorsByUser[userID], record)
 	s.mu.Unlock()
 
+	s.saveMFAFactorToDB(record)
+
 	return factor, nil
 }
 
-func (s *Service) ChallengeMFA(principal *appmiddleware.Principal, factorID, challengeCode string) (SessionTokens, error) {
+func (s *Service) ChallengeMFA(currentAccessToken string, principal *appmiddleware.Principal, factorID, challengeCode string) (SessionTokens, error) {
 	if principal == nil {
 		return SessionTokens{}, ErrInvalidMFAFactor
 	}
+
+	currentAccessToken = strings.TrimSpace(currentAccessToken)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -586,14 +792,21 @@ func (s *Service) ChallengeMFA(principal *appmiddleware.Principal, factorID, cha
 			}
 			s.usedTOTPCodes[replayKey] = now
 		case "backup_code":
-			if factors[i].BackupCodeUsed {
-				return SessionTokens{}, ErrInvalidMFACode
-			}
 			providedHash := hashChallengeCode(strings.ToUpper(strings.TrimSpace(challengeCode)))
-			if subtle.ConstantTimeCompare([]byte(providedHash), []byte(factors[i].BackupCodeHash)) != 1 {
+			matched := false
+			for j := range factors[i].BackupCodes {
+				if factors[i].BackupCodes[j].Used {
+					continue
+				}
+				if subtle.ConstantTimeCompare([]byte(providedHash), []byte(factors[i].BackupCodes[j].Hash)) == 1 {
+					factors[i].BackupCodes[j].Used = true
+					matched = true
+					break
+				}
+			}
+			if !matched {
 				return SessionTokens{}, ErrInvalidMFACode
 			}
-			factors[i].BackupCodeUsed = true
 		default:
 			return SessionTokens{}, ErrUnsupportedMFAFactor
 		}
@@ -602,6 +815,15 @@ func (s *Service) ChallengeMFA(principal *appmiddleware.Principal, factorID, cha
 		factors[i].Factor.IsVerified = true
 		factors[i].Factor.LastChallengedAt = &now
 		s.mfaFactorsByUser[principal.UserID] = factors
+		updated := factors[i]
+		go s.updateMFAFactorInDB(updated)
+
+		var idToken string
+		if currentAccessToken != "" {
+			if currentRecord, ok := s.sessionsByAccess[currentAccessToken]; ok {
+				idToken = currentRecord.IDToken
+			}
+		}
 
 		accessToken := "atk_" + randomToken(32)
 		refreshToken := "rtk_" + randomToken(32)
@@ -610,6 +832,7 @@ func (s *Service) ChallengeMFA(principal *appmiddleware.Principal, factorID, cha
 		record := &sessionRecord{
 			AccessToken:  accessToken,
 			RefreshToken: refreshToken,
+			IDToken:      idToken,
 			Principal: appmiddleware.Principal{
 				UserID:           principal.UserID,
 				Email:            principal.Email,
@@ -695,6 +918,28 @@ func (s *Service) oidcAuthorizeConfigured() bool {
 		strings.TrimSpace(oidc.RedirectURL) != "" &&
 		strings.TrimSpace(oidc.ClientID) != "" &&
 		strings.TrimSpace(oidc.StateSigningKey) != ""
+}
+
+func (s *Service) buildOIDCLogoutURL(idToken string) (string, bool) {
+	endSessionURL := strings.TrimSpace(s.cfg.OIDC.EndSessionURL)
+	idToken = strings.TrimSpace(idToken)
+	if endSessionURL == "" || idToken == "" {
+		return "", false
+	}
+
+	base, err := url.Parse(endSessionURL)
+	if err != nil {
+		return "", false
+	}
+
+	query := base.Query()
+	query.Set("id_token_hint", idToken)
+	if postLogoutRedirectURL := strings.TrimSpace(s.cfg.OIDC.PostLogoutRedirectURL); postLogoutRedirectURL != "" {
+		query.Set("post_logout_redirect_uri", postLogoutRedirectURL)
+	}
+	base.RawQuery = query.Encode()
+
+	return base.String(), true
 }
 
 func (s *Service) exchangeOIDCAuthorizationCode(code string) (oidcTokenResponse, error) {

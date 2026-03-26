@@ -2,20 +2,23 @@
 
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useRef, useCallback, useEffect } from 'react'
 import { filterNavItems, groupNavItems, ROLE_LABELS, type Role } from '@/lib/roles'
 import { Icon, type IconName } from '@/components/ui/icons'
+import { pendingApprovalsRequestInit, shouldFetchPendingApprovals } from '@/lib/sidebar-badge'
 
 type SidebarProps = {
   role: Role
   userName?: string
   onSignOut?: () => void
+  orgId?: string
 }
 
 const SECTION_ORDER = [
   'Overview',
   'Members',
   'Competition',
+  'Training',
   'Performance',
   'Files',
   'Billing',
@@ -24,9 +27,66 @@ const SECTION_ORDER = [
   'System',
 ]
 
-export function Sidebar({ role, userName, onSignOut }: SidebarProps) {
+const MIN_WIDTH = 160
+const MAX_WIDTH = 380
+const DEFAULT_WIDTH = 224
+const COLLAPSED_WIDTH = 52
+
+function loadStoredWidth(): number {
+  if (typeof window === 'undefined') return DEFAULT_WIDTH
+  try {
+    const v = localStorage.getItem('aquify-sidebar-width')
+    if (v) {
+      const n = parseInt(v, 10)
+      if (n >= MIN_WIDTH && n <= MAX_WIDTH) return n
+    }
+  } catch { /* ignore */ }
+  return DEFAULT_WIDTH
+}
+
+export function Sidebar({ role, userName, onSignOut, orgId }: SidebarProps) {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
+  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_WIDTH)
+  const [isDragging, setIsDragging] = useState(false)
+  const [pendingCount, setPendingCount] = useState(0)
+
+  const isResizing = useRef(false)
+  const startX = useRef(0)
+  const startWidth = useRef(0)
+  const currentWidthRef = useRef(sidebarWidth)
+
+  // Load stored width on mount (client-only)
+  useEffect(() => {
+    const w = loadStoredWidth()
+    setSidebarWidth(w)
+    currentWidthRef.current = w
+  }, [])
+
+  // Sync CSS variable whenever width or collapsed state changes
+  useEffect(() => {
+    const w = collapsed ? COLLAPSED_WIDTH : sidebarWidth
+    document.documentElement.style.setProperty('--sidebar-w', `${w}px`)
+  }, [sidebarWidth, collapsed])
+
+  // Fetch pending approvals count (owner/admin only)
+  useEffect(() => {
+    if (!shouldFetchPendingApprovals(role, orgId)) return
+    const controller = new AbortController()
+    fetch('/api/v1/users?status=pending_approval', {
+      ...pendingApprovalsRequestInit(orgId),
+      signal: controller.signal,
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { count?: number; users?: unknown[] } | null) => {
+        if (data) {
+          const count = typeof data.count === 'number' ? data.count : (data.users?.length ?? 0)
+          setPendingCount(count)
+        }
+      })
+      .catch(() => { /* silent */ })
+    return () => controller.abort()
+  }, [orgId, role])
 
   const grouped = useMemo(() => {
     const items = filterNavItems(role)
@@ -35,17 +95,52 @@ export function Sidebar({ role, userName, onSignOut }: SidebarProps) {
 
   const isActive = (path: string) => pathname === path || pathname.startsWith(path + '/')
 
+  const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    isResizing.current = true
+    startX.current = e.clientX
+    startWidth.current = currentWidthRef.current
+    setIsDragging(true)
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+
+    const onMove = (ev: MouseEvent) => {
+      if (!isResizing.current) return
+      const delta = ev.clientX - startX.current
+      const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startWidth.current + delta))
+      currentWidthRef.current = newWidth
+      setSidebarWidth(newWidth)
+    }
+
+    const onUp = () => {
+      isResizing.current = false
+      setIsDragging(false)
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      try {
+        localStorage.setItem('aquify-sidebar-width', String(currentWidthRef.current))
+      } catch { /* ignore */ }
+    }
+
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }, [])
+
+  const effectiveWidth = collapsed ? COLLAPSED_WIDTH : sidebarWidth
+
   return (
     <aside
       style={{
-        width: collapsed ? '52px' : 'var(--sidebar-w)',
+        width: `${effectiveWidth}px`,
         height: '100vh',
         background: 'var(--bg-sidebar)',
         borderRight: '1px solid var(--border)',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
-        transition: 'width 250ms var(--ease-out)',
+        transition: isDragging ? 'none' : 'width 250ms var(--ease-out)',
         flexShrink: 0,
         position: 'relative',
         zIndex: 10,
@@ -64,8 +159,7 @@ export function Sidebar({ role, userName, onSignOut }: SidebarProps) {
         }}
       >
         {!collapsed && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            {/* Accent dot */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, overflow: 'hidden' }}>
             <div
               style={{
                 width: '7px',
@@ -76,16 +170,16 @@ export function Sidebar({ role, userName, onSignOut }: SidebarProps) {
                 flexShrink: 0,
               }}
             />
-            {/* Wordmark */}
             <span
               style={{
                 fontFamily: 'var(--font-display)',
-                fontStyle: 'bold',
+                fontWeight: 'bold',
                 fontSize: '18px',
                 color: 'var(--text)',
                 letterSpacing: '-0.01em',
                 lineHeight: 1,
                 userSelect: 'none',
+                whiteSpace: 'nowrap',
               }}
             >
               aquify
@@ -98,6 +192,7 @@ export function Sidebar({ role, userName, onSignOut }: SidebarProps) {
                 letterSpacing: '0.08em',
                 textTransform: 'uppercase',
                 paddingTop: '2px',
+                whiteSpace: 'nowrap',
               }}
             >
               admin
@@ -121,7 +216,7 @@ export function Sidebar({ role, userName, onSignOut }: SidebarProps) {
           onClick={() => setCollapsed((c) => !c)}
           className="btn-icon"
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          style={{ marginLeft: collapsed ? 'auto' : '0', marginRight: collapsed ? 'auto' : '0' }}
+          style={{ marginLeft: collapsed ? 'auto' : '0', marginRight: collapsed ? 'auto' : '0', flexShrink: 0 }}
         >
           <Icon name={collapsed ? 'chevron-right' : 'chevron-left'} size={14} />
         </button>
@@ -133,7 +228,7 @@ export function Sidebar({ role, userName, onSignOut }: SidebarProps) {
           flex: 1,
           overflowY: 'auto',
           overflowX: 'hidden',
-          padding: collapsed ? '8px 0' : '8px 0',
+          padding: '8px 0',
         }}
         aria-label="Main navigation"
       >
@@ -145,7 +240,6 @@ export function Sidebar({ role, userName, onSignOut }: SidebarProps) {
               animation: `slideUp 0.35s var(--ease-out) ${sectionIdx * 40}ms both`,
             }}
           >
-            {/* Section label */}
             {!collapsed && (
               <div
                 style={{
@@ -156,13 +250,14 @@ export function Sidebar({ role, userName, onSignOut }: SidebarProps) {
                   color: 'var(--text-muted)',
                   letterSpacing: '0.10em',
                   textTransform: 'uppercase',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
                 }}
               >
                 {section}
               </div>
             )}
 
-            {/* Items */}
             {grouped[section]!.map((item, itemIdx) => {
               const active = isActive(item.path)
               return (
@@ -209,8 +304,28 @@ export function Sidebar({ role, userName, onSignOut }: SidebarProps) {
                     style={{ flexShrink: 0, opacity: active ? 1 : 0.7 }}
                   />
                   {!collapsed && (
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>
                       {item.label}
+                    </span>
+                  )}
+                  {!collapsed && item.id === 'approvals' && pendingCount > 0 && (
+                    <span style={{
+                      flexShrink: 0,
+                      minWidth: '18px',
+                      height: '18px',
+                      borderRadius: '9px',
+                      background: 'var(--accent)',
+                      color: '#fff',
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      fontFamily: 'var(--font-mono)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '0 5px',
+                      lineHeight: 1,
+                    }}>
+                      {pendingCount > 99 ? '99+' : pendingCount}
                     </span>
                   )}
                 </Link>
@@ -230,9 +345,9 @@ export function Sidebar({ role, userName, onSignOut }: SidebarProps) {
           gap: '8px',
           flexShrink: 0,
           justifyContent: collapsed ? 'center' : 'flex-start',
+          overflow: 'hidden',
         }}
       >
-        {/* Avatar */}
         <div
           style={{
             width: '28px',
@@ -274,6 +389,7 @@ export function Sidebar({ role, userName, onSignOut }: SidebarProps) {
                 className="btn-icon"
                 title="Sign out"
                 aria-label="Sign out"
+                style={{ flexShrink: 0 }}
               >
                 <Icon name="log-out" size={14} />
               </button>
@@ -281,6 +397,31 @@ export function Sidebar({ role, userName, onSignOut }: SidebarProps) {
           </>
         )}
       </div>
+
+      {/* Resize handle — only visible when not collapsed */}
+      {!collapsed && (
+        <div
+          onMouseDown={handleResizeMouseDown}
+          style={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            width: '4px',
+            height: '100%',
+            cursor: 'col-resize',
+            zIndex: 20,
+            background: isDragging ? 'var(--accent)' : 'transparent',
+            transition: 'background 150ms ease',
+          }}
+          onMouseEnter={(e) => {
+            if (!isDragging) e.currentTarget.style.background = 'var(--accent-border)'
+          }}
+          onMouseLeave={(e) => {
+            if (!isDragging) e.currentTarget.style.background = 'transparent'
+          }}
+          title="Drag to resize sidebar"
+        />
+      )}
     </aside>
   )
 }

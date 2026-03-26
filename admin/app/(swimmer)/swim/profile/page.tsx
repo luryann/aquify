@@ -112,15 +112,14 @@ export default function SwimmerProfilePage() {
   const [group, setGroup] = useState<GroupRecord | null>(null)
   const [loading, setLoading] = useState(true)
   const [bio, setBio] = useState('')
-  const [saved, setSaved] = useState(false)
 
   useEffect(() => {
     if (!orgId) { setLoading(false); return }
 
     Promise.all([
-      fetchSwimmers(api, orgId),
-      fetchSwimmerGroups(api, orgId),
-      fetchGroups(api, orgId),
+      fetchSwimmers(api, orgId).catch(() => [] as SwimmerRecord[]),
+      fetchSwimmerGroups(api, orgId).catch(() => []),
+      fetchGroups(api, orgId).catch(() => [] as GroupRecord[]),
     ]).then(([swimmers, swimmerGroupLinks, groups]) => {
       // Resolve swimmer
       const mySwimmer = householdId
@@ -137,13 +136,9 @@ export default function SwimmerProfilePage() {
           setGroup(matchedGroup)
         }
       }
-    }).catch(console.error).finally(() => setLoading(false))
+    }).finally(() => setLoading(false))
   }, [api, orgId, householdId])
 
-  const handleSave = () => {
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
-  }
 
   const initials = swimmer
     ? `${swimmer.first_name[0]}${swimmer.last_name[0]}`.toUpperCase()
@@ -395,34 +390,30 @@ export default function SwimmerProfilePage() {
                 <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: C.muted }}>
                   {bio.length}/400
                 </span>
-                <button
-                  onClick={handleSave}
-                  style={{
-                    padding: '8px 20px',
-                    background: saved ? 'rgba(0,212,170,0.20)' : C.accent,
-                    color: saved ? C.accent : '#061623',
-                    border: `1px solid ${saved ? C.accentBorder : 'transparent'}`,
-                    borderRadius: '8px',
-                    fontSize: '13px',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    transition: 'all 200ms ease',
-                  }}
-                  onMouseEnter={(e) => { if (!saved) e.currentTarget.style.background = '#00b896' }}
-                  onMouseLeave={(e) => { if (!saved) e.currentTarget.style.background = C.accent }}
-                >
-                  {saved ? (
-                    <>
-                      <Icon name="check-circle" size={14} />
-                      Saved
-                    </>
-                  ) : (
-                    'Save Bio'
-                  )}
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: C.muted }}>
+                    Coming soon
+                  </span>
+                  <button
+                    disabled
+                    title="Bio saving coming soon — this field will be persisted in an upcoming update"
+                    style={{
+                      padding: '8px 20px',
+                      background: 'rgba(0,212,170,0.06)',
+                      color: C.muted,
+                      border: `1px solid rgba(0,212,170,0.12)`,
+                      borderRadius: '8px',
+                      fontSize: '13px',
+                      fontWeight: 700,
+                      cursor: 'not-allowed',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    Save Bio
+                  </button>
+                </div>
               </div>
             </div>
           </div>

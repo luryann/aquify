@@ -227,3 +227,120 @@ func TestParentCannotAccessCrossHouseholdMemberData(t *testing.T) {
 		}
 	})
 }
+
+func TestSwimmerRoleCanListUpcomingMeets(t *testing.T) {
+	t.Parallel()
+
+	router := NewRouter(Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	adminToken := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
+	swimmerToken := issueSessionToken(t, router, "org-demo", []string{"swimmer"}, false)
+
+	createMeetReq := httptest.NewRequest(http.MethodPost, "/api/v1/meets",
+		encodeJSONBody(t, map[string]any{
+			"name":      "Spring Invite",
+			"meet_type": "invitational",
+			"course":    "SCY",
+		}))
+	createMeetReq.Header.Set("Content-Type", "application/json")
+	createMeetReq.Header.Set("X-Org-Id", "org-demo")
+	createMeetReq.Header.Set("Authorization", "Bearer "+adminToken)
+	createMeetRes := httptest.NewRecorder()
+	router.ServeHTTP(createMeetRes, createMeetReq)
+	if createMeetRes.Code != http.StatusCreated {
+		t.Fatalf("expected status %d creating meet, got %d body=%s", http.StatusCreated, createMeetRes.Code, createMeetRes.Body.String())
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/meets", nil)
+	req.Header.Set("X-Org-Id", "org-demo")
+	req.Header.Set("Authorization", "Bearer "+swimmerToken)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status %d for swimmer listing meets, got %d body=%s", http.StatusOK, rr.Code, rr.Body.String())
+	}
+}
+
+func TestSwimmerRoleListSwimmersIsScopedToOwnHousehold(t *testing.T) {
+	t.Parallel()
+
+	router := NewRouter(Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	adminToken := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
+
+	createHousehold := func(name string) string {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/members/households",
+			encodeJSONBody(t, map[string]any{
+				"org_id":         "org-demo",
+				"household_name": name,
+			}))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Org-Id", "org-demo")
+		req.Header.Set("Authorization", "Bearer "+adminToken)
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		if rr.Code != http.StatusCreated {
+			t.Fatalf("expected status %d creating household, got %d body=%s", http.StatusCreated, rr.Code, rr.Body.String())
+		}
+
+		var env householdEnvelope
+		if err := json.Unmarshal(rr.Body.Bytes(), &env); err != nil {
+			t.Fatalf("decode household response: %v", err)
+		}
+		if env.Household.ID == "" {
+			t.Fatal("expected household id in response")
+		}
+		return env.Household.ID
+	}
+
+	createSwimmer := func(householdID, firstName string) {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/members/swimmers",
+			encodeJSONBody(t, map[string]any{
+				"org_id":        "org-demo",
+				"household_id":  householdID,
+				"first_name":    firstName,
+				"last_name":     "Test",
+				"date_of_birth": "2013-02-14",
+				"gender":        "female",
+			}))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Org-Id", "org-demo")
+		req.Header.Set("Authorization", "Bearer "+adminToken)
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		if rr.Code != http.StatusCreated {
+			t.Fatalf("expected status %d creating swimmer, got %d body=%s", http.StatusCreated, rr.Code, rr.Body.String())
+		}
+	}
+
+	householdA := createHousehold("Family A")
+	householdB := createHousehold("Family B")
+	createSwimmer(householdA, "Alice")
+	createSwimmer(householdB, "Bri")
+
+	swimmerToken := issueSessionTokenWithHousehold(t, router, "swimmer-a", "org-demo", householdA, []string{"swimmer"}, false)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/members/swimmers", nil)
+	req.Header.Set("X-Org-Id", "org-demo")
+	req.Header.Set("Authorization", "Bearer "+swimmerToken)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status %d for swimmer listing swimmers, got %d body=%s", http.StatusOK, rr.Code, rr.Body.String())
+	}
+
+	var envelope struct {
+		Swimmers []struct {
+			ID          string `json:"id"`
+			HouseholdID string `json:"household_id"`
+		} `json:"swimmers"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode swimmers response: %v", err)
+	}
+	if len(envelope.Swimmers) != 1 {
+		t.Fatalf("expected exactly 1 swimmer for swimmer household scope, got %d", len(envelope.Swimmers))
+	}
+	if envelope.Swimmers[0].HouseholdID != householdA {
+		t.Fatalf("expected swimmer household_id %q, got %q", householdA, envelope.Swimmers[0].HouseholdID)
+	}
+}

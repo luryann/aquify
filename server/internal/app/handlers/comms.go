@@ -151,6 +151,8 @@ func (h *CommsHandlers) handlePostmarkWebhook(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MiB hard cap to prevent body-based DoS
+
 	var body struct {
 		RecordType        string         `json:"RecordType"`
 		MessageID         string         `json:"MessageID"`

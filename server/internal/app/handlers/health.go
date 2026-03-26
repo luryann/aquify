@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -19,9 +20,18 @@ type readinessResponse struct {
 	Timestamp string            `json:"timestamp"`
 }
 
-func RegisterHealthRoutes(router chi.Router) {
+type ReadinessReport struct {
+	Ready  bool
+	Checks map[string]string
+}
+
+type ReadinessChecker interface {
+	CheckReadiness(ctx context.Context) ReadinessReport
+}
+
+func RegisterHealthRoutes(router chi.Router, checker ReadinessChecker) {
 	router.Get("/live", live)
-	router.Get("/ready", ready)
+	router.Get("/ready", ready(checker))
 }
 
 func live(w http.ResponseWriter, _ *http.Request) {
@@ -31,13 +41,29 @@ func live(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
-func ready(w http.ResponseWriter, _ *http.Request) {
-	_ = httpx.WriteJSON(w, http.StatusOK, readinessResponse{
-		Status: "ready",
-		Checks: map[string]string{
-			"database": "not-configured",
-			"redis":    "not-configured",
-		},
-		Timestamp: time.Now().UTC().Format(time.RFC3339),
-	})
+func ready(checker ReadinessChecker) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		report := ReadinessReport{
+			Ready: false,
+			Checks: map[string]string{
+				"server": "not_ready: readiness checker not configured",
+			},
+		}
+		if checker != nil {
+			report = checker.CheckReadiness(r.Context())
+		}
+
+		statusCode := http.StatusOK
+		status := "ready"
+		if !report.Ready {
+			statusCode = http.StatusServiceUnavailable
+			status = "not_ready"
+		}
+
+		_ = httpx.WriteJSON(w, statusCode, readinessResponse{
+			Status:    status,
+			Checks:    report.Checks,
+			Timestamp: time.Now().UTC().Format(time.RFC3339),
+		})
+	}
 }

@@ -5,12 +5,14 @@ import { useRouter } from 'next/navigation'
 import { useSession } from '@/lib/session'
 import type { Role } from '@/lib/roles'
 import { canAccess } from '@/lib/roles'
+import { roleRequiresMFA } from '@/lib/auth-routing'
 
 type AuthGuardProps = {
   children: ReactNode
   redirectTo?: string
   requiredRoles?: Role[]
   fallback?: ReactNode
+  requireMFA?: boolean
 }
 
 // Full-screen loading splash shown during session hydration
@@ -153,9 +155,14 @@ export function AuthGuard({
   redirectTo = '/login',
   requiredRoles,
   fallback,
+  requireMFA,
 }: AuthGuardProps) {
   const { session, loading } = useSession()
   const router = useRouter()
+
+  // Derive whether MFA is needed: explicit prop or role-based inference
+  const mfaRequired = requireMFA ?? (session ? roleRequiresMFA(session.user.role) : false)
+  const mfaIncomplete = mfaRequired && session && !session.user.mfaAuthenticated
 
   // Redirect unauthenticated users
   useEffect(() => {
@@ -164,11 +171,18 @@ export function AuthGuard({
     }
   }, [loading, session, router, redirectTo])
 
+  // Redirect to MFA step-up if session exists but MFA is not yet completed
+  useEffect(() => {
+    if (!loading && session && mfaIncomplete) {
+      router.replace('/mfa')
+    }
+  }, [loading, session, mfaIncomplete, router])
+
   if (loading) {
     return fallback ?? <LoadingSplash />
   }
 
-  if (!session) {
+  if (!session || mfaIncomplete) {
     // Keep showing splash while useEffect fires the redirect
     return fallback ?? <LoadingSplash />
   }

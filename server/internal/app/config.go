@@ -26,6 +26,20 @@ type Config struct {
 	Worker         WorkerConfig
 	Security       SecurityConfig
 	Telemetry      TelemetryConfig
+	Keycloak       KeycloakAdminConfig
+}
+
+// KeycloakAdminConfig holds credentials for the Keycloak Admin REST API.
+// Used by the keycloak.AdminClient to manage users and roles on behalf of admins.
+type KeycloakAdminConfig struct {
+	// AdminURL is the base URL of the Keycloak instance (e.g. "http://localhost:8180").
+	AdminURL string
+	// Realm is the target Keycloak realm name (e.g. "dare").
+	Realm string
+	// ClientID is the service-account OAuth2 client ID for admin operations.
+	ClientID string `json:"-"`
+	// ClientSecret is the service-account OAuth2 client secret.
+	ClientSecret string `json:"-"`
 }
 
 // TelemetryConfig holds OpenTelemetry and Prometheus observability settings.
@@ -45,6 +59,8 @@ type TelemetryConfig struct {
 
 // WorkerConfig holds background job worker settings.
 type WorkerConfig struct {
+	// RedisURL points at the durable Redis broker used by Asynq workers.
+	RedisURL string
 	// ConcurrencyPerQueue is the number of goroutines processing each queue.
 	// Default: 2.
 	ConcurrencyPerQueue int
@@ -151,6 +167,13 @@ type RateLimitConfig struct {
 	GlobalWindow   time.Duration
 	AuthRequests   int
 	AuthWindow     time.Duration
+	// StripeRequests / StripeWindow apply a tighter per-IP limit on
+	// cost-driving Stripe write endpoints (payment-intents, checkout-sessions).
+	StripeRequests int
+	StripeWindow   time.Duration
+	// TrustedProxyCIDRs is the list of CIDR ranges whose requests may set
+	// X-Forwarded-For. When empty, X-Forwarded-For is never trusted.
+	TrustedProxyCIDRs []string
 }
 
 type UploadSecurityConfig struct {
@@ -164,20 +187,25 @@ type ImpersonationConfig struct {
 }
 
 type OIDCConfig struct {
-	AuthorizeURL    string
-	TokenURL        string
-	JWKSURL         string
-	RedirectURL     string
-	ClientID        string
-	ClientSecret    string
-	ExpectedIssuer  string
-	StateSigningKey string
-	HTTPTimeout     time.Duration
+	AuthorizeURL          string
+	TokenURL              string
+	JWKSURL               string
+	EndSessionURL         string
+	RedirectURL           string
+	PostLogoutRedirectURL string
+	ClientID              string
+	ClientSecret          string
+	ExpectedIssuer        string
+	StateSigningKey       string
+	HTTPTimeout           time.Duration
 }
 
 func LoadConfig() Config {
-	appEnv := strings.ToLower(strings.TrimSpace(getEnv("APP_ENV", "development")))
-	enableDevStubTokensDefault := appEnv == "development" || appEnv == "local"
+	// Default to empty (production-safe) when APP_ENV is not explicitly set.
+	// Dev auth flags are only enabled when the environment is explicitly
+	// "development", "local", or "test".
+	appEnv := strings.ToLower(strings.TrimSpace(getEnv("APP_ENV", "")))
+	enableDevStubTokensDefault := isExplicitDevelopmentEnv(appEnv)
 	return Config{
 		Addr:           getEnv("API_ADDR", defaultAPIAddr),
 		AllowedOrigins: splitCSV(getEnv("API_ALLOWED_ORIGINS", defaultAllowedOrigin)),
@@ -195,15 +223,17 @@ func LoadConfig() Config {
 			EnableDevStubTokens:  getEnvBool("AUTH_ENABLE_DEV_STUB_TOKENS", enableDevStubTokensDefault),
 			AllowDevSessionIssue: getEnvBool("AUTH_ALLOW_DEV_SESSION_ISSUE", enableDevStubTokensDefault),
 			OIDC: OIDCConfig{
-				AuthorizeURL:    strings.TrimSpace(getEnv("OIDC_AUTHORIZE_URL", "")),
-				TokenURL:        strings.TrimSpace(getEnv("OIDC_TOKEN_URL", "")),
-				JWKSURL:         strings.TrimSpace(getEnv("OIDC_JWKS_URL", "")),
-				RedirectURL:     strings.TrimSpace(getEnv("OIDC_REDIRECT_URL", "")),
-				ClientID:        strings.TrimSpace(getEnv("OIDC_CLIENT_ID", "")),
-				ClientSecret:    strings.TrimSpace(getEnv("OIDC_CLIENT_SECRET", "")),
-				ExpectedIssuer:  strings.TrimSpace(getEnv("OIDC_EXPECTED_ISSUER", "")),
-				StateSigningKey: strings.TrimSpace(getEnv("OIDC_STATE_SIGNING_KEY", "")),
-				HTTPTimeout:     getEnvDuration("OIDC_HTTP_TIMEOUT", 10*time.Second),
+				AuthorizeURL:          strings.TrimSpace(getEnv("OIDC_AUTHORIZE_URL", "")),
+				TokenURL:              strings.TrimSpace(getEnv("OIDC_TOKEN_URL", "")),
+				JWKSURL:               strings.TrimSpace(getEnv("OIDC_JWKS_URL", "")),
+				EndSessionURL:         strings.TrimSpace(getEnv("OIDC_END_SESSION_URL", "")),
+				RedirectURL:           strings.TrimSpace(getEnv("OIDC_REDIRECT_URL", "")),
+				PostLogoutRedirectURL: strings.TrimSpace(getEnv("OIDC_POST_LOGOUT_REDIRECT_URL", "")),
+				ClientID:              strings.TrimSpace(getEnv("OIDC_CLIENT_ID", "")),
+				ClientSecret:          strings.TrimSpace(getEnv("OIDC_CLIENT_SECRET", "")),
+				ExpectedIssuer:        strings.TrimSpace(getEnv("OIDC_EXPECTED_ISSUER", "")),
+				StateSigningKey:       strings.TrimSpace(getEnv("OIDC_STATE_SIGNING_KEY", "")),
+				HTTPTimeout:           getEnvDuration("OIDC_HTTP_TIMEOUT", 10*time.Second),
 			},
 		},
 		Stripe: StripeConfig{
@@ -227,6 +257,7 @@ func LoadConfig() Config {
 			DeletionReviewDays: getEnvInt("COMPLIANCE_DELETION_REVIEW_DAYS", 30),
 		},
 		Worker: WorkerConfig{
+			RedisURL:            strings.TrimSpace(getEnv("REDIS_URL", "")),
 			ConcurrencyPerQueue: getEnvInt("WORKER_CONCURRENCY_PER_QUEUE", 2),
 			ReconcileInterval:   getEnv("WORKER_RECONCILE_INTERVAL", "24h"),
 			IntegrityInterval:   getEnv("WORKER_INTEGRITY_INTERVAL", "24h"),
@@ -235,10 +266,13 @@ func LoadConfig() Config {
 		Security: SecurityConfig{
 			CSRFHeaderName: strings.TrimSpace(getEnv("SECURITY_CSRF_HEADER_NAME", "X-CSRF-Token")),
 			RateLimit: RateLimitConfig{
-				GlobalRequests: getEnvInt("SECURITY_RATE_LIMIT_GLOBAL_REQUESTS", 240),
-				GlobalWindow:   getEnvDuration("SECURITY_RATE_LIMIT_GLOBAL_WINDOW", time.Minute),
-				AuthRequests:   getEnvInt("SECURITY_RATE_LIMIT_AUTH_REQUESTS", 20),
-				AuthWindow:     getEnvDuration("SECURITY_RATE_LIMIT_AUTH_WINDOW", time.Minute),
+				GlobalRequests:    getEnvInt("SECURITY_RATE_LIMIT_GLOBAL_REQUESTS", 240),
+				GlobalWindow:      getEnvDuration("SECURITY_RATE_LIMIT_GLOBAL_WINDOW", time.Minute),
+				AuthRequests:      getEnvInt("SECURITY_RATE_LIMIT_AUTH_REQUESTS", 20),
+				AuthWindow:        getEnvDuration("SECURITY_RATE_LIMIT_AUTH_WINDOW", time.Minute),
+				StripeRequests:    getEnvInt("SECURITY_RATE_LIMIT_STRIPE_REQUESTS", 10),
+				StripeWindow:      getEnvDuration("SECURITY_RATE_LIMIT_STRIPE_WINDOW", time.Minute),
+				TrustedProxyCIDRs: splitCSV(getEnv("SECURITY_TRUSTED_PROXY_CIDRS", "")),
 			},
 			Uploads: UploadSecurityConfig{
 				MaxBytes:               getEnvInt64("SECURITY_UPLOAD_MAX_BYTES", 25<<20),
@@ -256,7 +290,38 @@ func LoadConfig() Config {
 			SampleRate:     getEnvFloat64("OTEL_TRACES_SAMPLER_ARG", 1.0),
 			MetricsAddr:    strings.TrimSpace(getEnv("METRICS_ADDR", ":9090")),
 		},
+		Keycloak: KeycloakAdminConfig{
+			AdminURL:     strings.TrimSpace(getEnv("KEYCLOAK_ADMIN_URL", "")),
+			Realm:        strings.TrimSpace(getEnv("KEYCLOAK_REALM", "")),
+			ClientID:     strings.TrimSpace(getEnv("KEYCLOAK_ADMIN_CLIENT_ID", "")),
+			ClientSecret: strings.TrimSpace(getEnv("KEYCLOAK_ADMIN_CLIENT_SECRET", "")),
+		},
 	}
+}
+
+// ValidateDevAuthConfig returns an error when dev auth shortcuts
+// (AUTH_ENABLE_DEV_STUB_TOKENS or AUTH_ALLOW_DEV_SESSION_ISSUE) are enabled
+// outside of explicitly designated dev/local/test environments. This prevents
+// misconfigured deployments from accidentally exposing unauthenticated access.
+func ValidateDevAuthConfig(cfg Config) error {
+	appEnv := strings.ToLower(strings.TrimSpace(cfg.AppEnv))
+	isDevEnv := isExplicitDevelopmentEnv(appEnv)
+	if isDevEnv {
+		return nil
+	}
+	if cfg.Auth.EnableDevStubTokens {
+		return fmt.Errorf(
+			"AUTH_ENABLE_DEV_STUB_TOKENS=true is not permitted when APP_ENV=%q; set APP_ENV=development for local development",
+			cfg.AppEnv,
+		)
+	}
+	if cfg.Auth.AllowDevSessionIssue {
+		return fmt.Errorf(
+			"AUTH_ALLOW_DEV_SESSION_ISSUE=true is not permitted when APP_ENV=%q; set APP_ENV=development for local development",
+			cfg.AppEnv,
+		)
+	}
+	return nil
 }
 
 func getEnv(key, fallback string) string {

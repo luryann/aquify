@@ -1,6 +1,6 @@
 'use client'
 
-import type { ApiClient } from './api'
+import { ApiError, type ApiClient } from '#lib/api'
 
 export type HouseholdRecord = {
   id: string
@@ -120,6 +120,7 @@ export type CommitmentRecord = {
   meet_id: string
   swimmer_id: string
   status: string
+  note?: string
 }
 
 export type MeetEventRecord = {
@@ -158,6 +159,26 @@ export type MeetSessionRecord = {
   start_at?: string
   created_at: string
   updated_at: string
+}
+
+export type ParsedMeetSessionDraft = {
+  session_number: number
+  section: string
+  name: string
+  session_date?: string
+  warmup_time?: string
+  start_time?: string
+}
+
+export type ParsedMeetFileRecord = {
+  file_type: string
+  source_file: string
+  meet_name?: string
+  course?: string
+  start_date?: string
+  end_date?: string
+  sessions: ParsedMeetSessionDraft[]
+  parse_warnings?: string[]
 }
 
 export type ImportRecord = {
@@ -737,8 +758,18 @@ export async function fetchHouseholdContacts(api: ApiClient, orgId: string, hous
 }
 
 export async function fetchSwimmers(api: ApiClient, orgId: string): Promise<SwimmerRecord[]> {
-  const res = await api.get<{ swimmers?: SwimmerRecord[] }>(`/api/v1/members/swimmers`, undefined, withOrgHeaders(orgId))
-  return res.swimmers ?? []
+  try {
+    const res = await api.get<{ swimmers?: SwimmerRecord[] }>(`/api/v1/members/swimmers`, undefined, withOrgHeaders(orgId))
+    return res.swimmers ?? []
+  } catch (error) {
+    // Swimmer-role sessions are not allowed to list org-wide swimmers.
+    // Treat that specific permission denial as "no scoped swimmers" so
+    // swimmer portal pages can continue rendering.
+    if (error instanceof ApiError && error.status === 403 && error.code === 'forbidden') {
+      return []
+    }
+    throw error
+  }
 }
 
 export async function fetchSwimmer(api: ApiClient, orgId: string, swimmerId: string): Promise<SwimmerRecord> {
@@ -778,6 +809,16 @@ export async function fetchMeets(api: ApiClient, orgId: string): Promise<MeetRec
 
 export async function fetchMeet(api: ApiClient, orgId: string, meetId: string): Promise<MeetRecord> {
   const res = await api.get<{ meet: MeetRecord }>(`/api/v1/meets/${meetId}`, undefined, withOrgHeaders(orgId))
+  return res.meet
+}
+
+export async function transitionMeet(api: ApiClient, orgId: string, meetId: string, status: string): Promise<MeetRecord> {
+  const res = await api.post<{ meet: MeetRecord }>(`/api/v1/meets/${meetId}/transition`, { status }, withOrgHeaders(orgId))
+  return res.meet
+}
+
+export async function openMeetCommitments(api: ApiClient, orgId: string, meetId: string): Promise<MeetRecord> {
+  const res = await api.post<{ meet: MeetRecord }>(`/api/v1/meets/${meetId}/commitment-request`, {}, withOrgHeaders(orgId))
   return res.meet
 }
 
@@ -964,31 +1005,31 @@ export async function fetchAuditEvents(api: ApiClient, orgId: string, params: Re
   return api.get<{ events: AuditEventRecord[]; next_cursor?: string }>(`/api/v1/audit-events${query ? `?${query}` : ''}`, undefined, withOrgHeaders(orgId))
 }
 
-export async function fetchJobs(api: ApiClient): Promise<WorkerTaskRecord[]> {
-  const res = await api.get<{ tasks?: WorkerTaskRecord[] }>('/api/v1/jobs')
+export async function fetchJobs(api: ApiClient, orgId: string): Promise<WorkerTaskRecord[]> {
+  const res = await api.get<{ tasks?: WorkerTaskRecord[] }>('/api/v1/jobs', undefined, withOrgHeaders(orgId))
   return res.tasks ?? []
 }
 
-export async function fetchQueueStats(api: ApiClient): Promise<QueueStatsRecord[]> {
-  const res = await api.get<{ queues?: QueueStatsRecord[] }>('/api/v1/jobs/queues')
+export async function fetchQueueStats(api: ApiClient, orgId: string): Promise<QueueStatsRecord[]> {
+  const res = await api.get<{ queues?: QueueStatsRecord[] }>('/api/v1/jobs/queues', undefined, withOrgHeaders(orgId))
   return res.queues ?? []
 }
 
-export async function fetchJobMetrics(api: ApiClient): Promise<{ by_type: Record<string, JobMetricsTypeRecord>; recent_executions: JobExecutionRecord[] }> {
-  return api.get<{ by_type: Record<string, JobMetricsTypeRecord>; recent_executions: JobExecutionRecord[] }>('/api/v1/jobs/metrics')
+export async function fetchJobMetrics(api: ApiClient, orgId: string): Promise<{ by_type: Record<string, JobMetricsTypeRecord>; recent_executions: JobExecutionRecord[] }> {
+  return api.get<{ by_type: Record<string, JobMetricsTypeRecord>; recent_executions: JobExecutionRecord[] }>('/api/v1/jobs/metrics', undefined, withOrgHeaders(orgId))
 }
 
-export async function fetchDLQTasks(api: ApiClient): Promise<WorkerTaskRecord[]> {
-  const res = await api.get<{ dead_letter_tasks?: WorkerTaskRecord[] }>('/api/v1/jobs/dlq')
+export async function fetchDLQTasks(api: ApiClient, orgId: string): Promise<WorkerTaskRecord[]> {
+  const res = await api.get<{ dead_letter_tasks?: WorkerTaskRecord[] }>('/api/v1/jobs/dlq', undefined, withOrgHeaders(orgId))
   return res.dead_letter_tasks ?? []
 }
 
-export async function retryDLQTask(api: ApiClient, taskId: string): Promise<void> {
-  await api.post(`/api/v1/jobs/dlq/${taskId}/retry`)
+export async function retryDLQTask(api: ApiClient, orgId: string, taskId: string): Promise<void> {
+  await api.post(`/api/v1/jobs/dlq/${taskId}/retry`, undefined, withOrgHeaders(orgId))
 }
 
-export async function deleteDLQTask(api: ApiClient, taskId: string): Promise<void> {
-  await api.delete(`/api/v1/jobs/dlq/${taskId}`)
+export async function deleteDLQTask(api: ApiClient, orgId: string, taskId: string): Promise<void> {
+  await api.delete(`/api/v1/jobs/dlq/${taskId}`, withOrgHeaders(orgId))
 }
 
 export async function fetchAnnouncements(api: ApiClient, orgId: string, status?: string): Promise<AnnouncementRecord[]> {
@@ -1187,6 +1228,18 @@ export async function attachDocumentFile(api: ApiClient, orgId: string, submissi
   return res.document
 }
 
+export async function requestDocumentUploadUrl(api: ApiClient, orgId: string, submissionId: string, input: {
+  file_name: string
+  file_mime: string
+  file_size_bytes: number
+}): Promise<{ upload_url: string; object_key: string; upload_expires_at: string }> {
+  return api.post<{ upload_url: string; object_key: string; upload_expires_at: string }>(
+    `/api/v1/documents/${submissionId}/upload-url`,
+    input,
+    withOrgHeaders(orgId),
+  )
+}
+
 export async function verifyDocumentSubmission(api: ApiClient, orgId: string, submissionId: string, reviewNotes?: string): Promise<DocumentSubmissionRecord> {
   const res = await api.post<{ document: DocumentSubmissionRecord }>(`/api/v1/documents/${submissionId}/verify`, { review_notes: reviewNotes ?? '' }, withOrgHeaders(orgId))
   return res.document
@@ -1195,4 +1248,550 @@ export async function verifyDocumentSubmission(api: ApiClient, orgId: string, su
 export async function rejectDocumentSubmission(api: ApiClient, orgId: string, submissionId: string, reviewNotes?: string): Promise<DocumentSubmissionRecord> {
   const res = await api.post<{ document: DocumentSubmissionRecord }>(`/api/v1/documents/${submissionId}/reject`, { review_notes: reviewNotes ?? '' }, withOrgHeaders(orgId))
   return res.document
+}
+
+// ── Training / Practices ─────────────────────────────────────────────────────
+
+export type PracticeRecord = {
+  id: string
+  org_id: string
+  date: string // YYYY-MM-DD
+  group_id?: string
+  type: 'water' | 'dryland' | 'video' | 'rest'
+  description: string
+  yardage_target: number
+  attendance?: number
+  strokes: { free: number; back: number; breast: number; fly: number; im: number }
+  notes?: string
+  created_at: string
+  updated_at: string
+  created_by: string
+  updated_by: string
+}
+
+export async function fetchPractices(api: ApiClient, orgId: string): Promise<PracticeRecord[]> {
+  const res = await api.get<{ practices?: PracticeRecord[] }>('/api/v1/practices', undefined, withOrgHeaders(orgId))
+  return res.practices ?? []
+}
+
+export async function createPractice(api: ApiClient, orgId: string, body: {
+  date: string
+  group_id?: string
+  type: string
+  description?: string
+  yardage_target?: number
+  attendance?: number
+  strokes?: { free: number; back: number; breast: number; fly: number; im: number }
+  notes?: string
+}): Promise<PracticeRecord> {
+  const res = await api.post<{ practice: PracticeRecord }>('/api/v1/practices', body, withOrgHeaders(orgId))
+  return res.practice
+}
+
+export async function updatePractice(api: ApiClient, orgId: string, practiceId: string, body: Partial<{
+  date: string
+  group_id: string
+  type: string
+  description: string
+  yardage_target: number
+  attendance: number
+  strokes: { free: number; back: number; breast: number; fly: number; im: number }
+  notes: string
+}>): Promise<PracticeRecord> {
+  const res = await api.put<{ practice: PracticeRecord }>(`/api/v1/practices/${practiceId}`, body, withOrgHeaders(orgId))
+  return res.practice
+}
+
+export async function deletePractice(api: ApiClient, orgId: string, practiceId: string): Promise<void> {
+  await api.delete(`/api/v1/practices/${practiceId}`, withOrgHeaders(orgId))
+}
+
+// ── Commitment Event Selections ───────────────────────────────────────────────
+
+export type CommitmentEventSelectionRecord = {
+  id: string
+  org_id: string
+  commitment_id: string
+  meet_event_id: string
+  seed_time_ms?: number
+  created_at: string
+  created_by: string
+}
+
+export async function fetchCommitmentEventSelections(
+  api: ApiClient,
+  orgId: string,
+  meetId: string,
+  commitmentId: string,
+): Promise<CommitmentEventSelectionRecord[]> {
+  const res = await api.get<{ selections?: CommitmentEventSelectionRecord[] }>(
+    `/api/v1/meets/${meetId}/commitments/${commitmentId}/event-selections`,
+    undefined,
+    withOrgHeaders(orgId),
+  )
+  return res.selections ?? []
+}
+
+export async function addCommitmentEventSelection(
+  api: ApiClient,
+  orgId: string,
+  meetId: string,
+  commitmentId: string,
+  meetEventId: string,
+): Promise<CommitmentEventSelectionRecord> {
+  const res = await api.post<{ selection: CommitmentEventSelectionRecord }>(
+    `/api/v1/meets/${meetId}/commitments/${commitmentId}/event-selections`,
+    { meet_event_id: meetEventId },
+    withOrgHeaders(orgId),
+  )
+  return res.selection
+}
+
+export async function deleteCommitmentEventSelection(
+  api: ApiClient,
+  orgId: string,
+  meetId: string,
+  commitmentId: string,
+  selectionId: string,
+): Promise<void> {
+  await api.delete(
+    `/api/v1/meets/${meetId}/commitments/${commitmentId}/event-selections/${selectionId}`,
+    withOrgHeaders(orgId),
+  )
+}
+
+export async function approveEntry(
+  api: ApiClient,
+  orgId: string,
+  meetId: string,
+  entryId: string,
+): Promise<EntryRecord> {
+  const res = await api.post<{ entry: EntryRecord }>(
+    `/api/v1/meets/${meetId}/entries/${entryId}/approve`,
+    undefined,
+    withOrgHeaders(orgId),
+  )
+  return res.entry
+}
+
+export async function lockMeetCommitments(
+  api: ApiClient,
+  orgId: string,
+  meetId: string,
+): Promise<void> {
+  await api.post(
+    `/api/v1/meets/${meetId}/lock-commitments`,
+    undefined,
+    withOrgHeaders(orgId),
+  )
+}
+
+// ── Create / Mutate helpers ───────────────────────────────────────────────────
+
+export async function createHousehold(
+  api: ApiClient,
+  orgId: string,
+  input: {
+    household_name: string
+    primary_email?: string
+    primary_phone_e164?: string
+    status?: string
+    notes?: string
+  },
+): Promise<HouseholdRecord> {
+  const res = await api.post<{ household: HouseholdRecord }>(
+    '/api/v1/members/households',
+    { org_id: orgId, ...input },
+    withOrgHeaders(orgId),
+  )
+  return res.household
+}
+
+export async function deleteHousehold(
+  api: ApiClient,
+  orgId: string,
+  householdId: string,
+): Promise<void> {
+  await api.delete(`/api/v1/members/households/${householdId}`, withOrgHeaders(orgId))
+}
+
+export async function updateHousehold(
+  api: ApiClient,
+  orgId: string,
+  householdId: string,
+  input: {
+    household_name?: string
+    primary_email?: string
+    primary_phone_e164?: string
+    status?: string
+    notes?: string
+  },
+): Promise<HouseholdRecord> {
+  const res = await api.patch<{ household: HouseholdRecord }>(
+    `/api/v1/members/households/${householdId}`,
+    input,
+    withOrgHeaders(orgId),
+  )
+  return res.household
+}
+
+export async function createSwimmer(
+  api: ApiClient,
+  orgId: string,
+  input: {
+    household_id: string
+    first_name: string
+    last_name: string
+    preferred_name?: string
+    date_of_birth: string
+    gender: string
+    swimmer_external_id?: string
+    registration_status?: string
+    notes?: string
+  },
+): Promise<SwimmerRecord> {
+  const res = await api.post<{ swimmer: SwimmerRecord }>(
+    '/api/v1/members/swimmers',
+    { org_id: orgId, ...input },
+    withOrgHeaders(orgId),
+  )
+  return res.swimmer
+}
+
+export async function createGroup(
+  api: ApiClient,
+  orgId: string,
+  input: {
+    code: string
+    name: string
+    description?: string
+    type?: string
+    min_age?: number
+    max_age?: number
+    coach_user_id?: string
+  },
+): Promise<GroupRecord> {
+  const res = await api.post<{ group: GroupRecord }>(
+    '/api/v1/groups',
+    input,
+    withOrgHeaders(orgId),
+  )
+  return res.group
+}
+
+export async function createRegistration(
+  api: ApiClient,
+  orgId: string,
+  input: {
+    household_id: string
+    swimmer_id: string
+    group_id?: string
+    season: string
+    registration_date?: string
+    notes?: string
+  },
+): Promise<RegistrationRecord> {
+  const res = await api.post<{ registration: RegistrationRecord }>(
+    '/api/v1/registrations',
+    input,
+    withOrgHeaders(orgId),
+  )
+  return res.registration
+}
+
+export async function updateSwimmer(
+  api: ApiClient,
+  orgId: string,
+  swimmerId: string,
+  input: {
+    preferred_name?: string
+    notes?: string
+  },
+): Promise<SwimmerRecord> {
+  const res = await api.patch<{ swimmer: SwimmerRecord }>(
+    `/api/v1/members/swimmers/${swimmerId}`,
+    input,
+    withOrgHeaders(orgId),
+  )
+  return res.swimmer
+}
+
+export async function createMeetSession(
+  api: ApiClient,
+  orgId: string,
+  meetId: string,
+  input: {
+    session_number: number
+    name: string
+    session_date?: string
+    warmup_time?: string
+    start_time?: string
+  },
+): Promise<MeetSessionRecord> {
+  const res = await api.post<{ session: MeetSessionRecord }>(
+    `/api/v1/meets/${meetId}/sessions`,
+    input,
+    withOrgHeaders(orgId),
+  )
+  return res.session
+}
+
+export async function createMeet(
+  api: ApiClient,
+  orgId: string,
+  input: {
+    name: string
+    meet_type?: string
+    course?: string
+    start_date?: string
+    end_date?: string
+    entry_deadline?: string
+    commitment_deadline?: string
+    host_org?: string
+    location?: string
+  },
+): Promise<MeetRecord> {
+  const res = await api.post<{ meet: MeetRecord }>(
+    '/api/v1/meets',
+    input,
+    withOrgHeaders(orgId),
+  )
+  return res.meet
+}
+
+export async function parseMeetEntryFile(
+  token: string | undefined,
+  orgId: string,
+  file: File,
+): Promise<ParsedMeetFileRecord> {
+  const form = new FormData()
+  form.append('file', file, file.name)
+
+  const headers: Record<string, string> = {
+    'X-Org-Id': orgId,
+  }
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+
+  const res = await fetch('/api/v1/meets/parse-entry-file', {
+    method: 'POST',
+    body: form,
+    headers,
+    credentials: 'include',
+  })
+  if (!res.ok) {
+    throw await ApiError.fromResponse(res)
+  }
+  const payload = await res.json() as { parsed: ParsedMeetFileRecord }
+  return payload.parsed
+}
+
+export async function createInvoice(
+  api: ApiClient,
+  orgId: string,
+  input: {
+    household_id?: string
+    invoice_number: string
+    due_date?: string
+    notes?: string
+    external_ref?: string
+  },
+): Promise<InvoiceRecord> {
+  const res = await api.post<{ invoice: InvoiceRecord }>(
+    '/api/v1/invoices',
+    input,
+    withOrgHeaders(orgId),
+  )
+  return res.invoice
+}
+
+export async function requestImportUploadUrl(
+  api: ApiClient,
+  orgId: string,
+  input: {
+    filename: string
+    size_bytes: number
+    mime_type: string
+    meet_id?: string
+  },
+): Promise<{ import_id: string; upload_url: string; object_key: string }> {
+  const res = await api.post<{ import_id: string; upload_url: string; object_key: string }>(
+    '/api/v1/imports/upload-url',
+    input,
+    withOrgHeaders(orgId),
+  )
+  return res
+}
+
+export async function finalizeImport(
+  api: ApiClient,
+  orgId: string,
+  importId: string,
+  input: { object_key: string },
+): Promise<ImportRecord> {
+  const res = await api.post<{ import: ImportRecord }>(
+    `/api/v1/imports/${importId}/finalize`,
+    input,
+    withOrgHeaders(orgId),
+  )
+  return res.import
+}
+
+export async function generateExport(
+  api: ApiClient,
+  orgId: string,
+  meetId: string,
+  input: {
+    export_type: string
+    filename?: string
+  },
+): Promise<ExportRecord> {
+  const res = await api.post<{ export: ExportRecord }>(
+    `/api/v1/meets/${meetId}/exports`,
+    input,
+    withOrgHeaders(orgId),
+  )
+  return res.export
+}
+
+// ── User Management (Keycloak) ─────────────────────────────────────────────────
+
+export type UserRecord = {
+  id: string
+  username: string
+  email: string
+  firstName: string
+  lastName: string
+  enabled: boolean
+  emailVerified: boolean
+  roles?: string[]
+  lastLoginAt?: string
+  householdId?: string
+  attributes?: Record<string, string[]>
+}
+
+export type UserRoleRecord = {
+  id: string
+  name: string
+  description?: string
+}
+
+export async function fetchUsers(
+  api: ApiClient,
+  orgId: string,
+  params?: { search?: string; role?: string; status?: string; limit?: number; offset?: number },
+): Promise<{ users: UserRecord[]; count: number }> {
+  const qs = new URLSearchParams()
+  if (params?.search) qs.set('search', params.search)
+  if (params?.role) qs.set('role', params.role)
+  if (params?.status) qs.set('status', params.status)
+  if (params?.limit) qs.set('limit', String(params.limit))
+  if (params?.offset) qs.set('offset', String(params.offset))
+  const query = qs.toString() ? `?${qs.toString()}` : ''
+  const res = await api.get<{ status: string; count: number; users: UserRecord[] }>(
+    `/api/v1/users${query}`,
+    undefined,
+    withOrgHeaders(orgId),
+  )
+  return { users: res.users ?? [], count: res.count ?? 0 }
+}
+
+export async function fetchUser(
+  api: ApiClient,
+  orgId: string,
+  userId: string,
+): Promise<{ user: UserRecord; roles: UserRoleRecord[] }> {
+  const res = await api.get<{ status: string; user: UserRecord; roles: UserRoleRecord[] }>(
+    `/api/v1/users/${userId}`,
+    undefined,
+    withOrgHeaders(orgId),
+  )
+  return { user: res.user, roles: res.roles ?? [] }
+}
+
+export async function fetchUserRoles(
+  api: ApiClient,
+  orgId: string,
+  userId: string,
+): Promise<UserRoleRecord[]> {
+  const res = await api.get<{ status: string; roles: UserRoleRecord[] }>(
+    `/api/v1/users/${userId}/roles`,
+    undefined,
+    withOrgHeaders(orgId),
+  )
+  return res.roles ?? []
+}
+
+export async function createUser(
+  api: ApiClient,
+  orgId: string,
+  input: { first_name: string; last_name: string; email: string; password: string; role: string; temporary_password?: boolean; create_household?: boolean },
+): Promise<{ user_id: string }> {
+  const res = await api.post<{ status: string; user_id: string }>(
+    '/api/v1/users',
+    input,
+    withOrgHeaders(orgId),
+  )
+  return { user_id: res.user_id }
+}
+
+export async function inviteUser(
+  api: ApiClient,
+  orgId: string,
+  input: { first_name: string; last_name: string; email: string; role: string; create_household?: boolean },
+): Promise<{ user_id: string }> {
+  const res = await api.post<{ status: string; user_id: string }>(
+    '/api/v1/users/invite',
+    input,
+    withOrgHeaders(orgId),
+  )
+  return { user_id: res.user_id }
+}
+
+export async function updateUser(
+  api: ApiClient,
+  orgId: string,
+  userId: string,
+  input: { first_name?: string; last_name?: string; email?: string },
+): Promise<void> {
+  await api.put(`/api/v1/users/${userId}`, input, withOrgHeaders(orgId))
+}
+
+export async function disableUser(api: ApiClient, orgId: string, userId: string): Promise<void> {
+  await api.post(`/api/v1/users/${userId}/disable`, {}, withOrgHeaders(orgId))
+}
+
+export async function enableUser(api: ApiClient, orgId: string, userId: string): Promise<void> {
+  await api.post(`/api/v1/users/${userId}/enable`, {}, withOrgHeaders(orgId))
+}
+
+export async function deleteUser(api: ApiClient, orgId: string, userId: string): Promise<void> {
+  await api.delete(`/api/v1/users/${userId}`, withOrgHeaders(orgId))
+}
+
+export async function assignUserRole(
+  api: ApiClient,
+  orgId: string,
+  userId: string,
+  role: string,
+): Promise<void> {
+  await api.post(`/api/v1/users/${userId}/roles`, { role }, withOrgHeaders(orgId))
+}
+
+export async function removeUserRole(
+  api: ApiClient,
+  orgId: string,
+  userId: string,
+  role: string,
+): Promise<void> {
+  await api.delete(`/api/v1/users/${userId}/roles/${role}`, withOrgHeaders(orgId))
+}
+
+export async function sendPasswordReset(
+  api: ApiClient,
+  orgId: string,
+  userId: string,
+): Promise<void> {
+  await api.post(`/api/v1/users/${userId}/password-reset`, {}, withOrgHeaders(orgId))
 }

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 
@@ -41,6 +42,7 @@ func NewMeetsHandlersWithAudit(service *meets.Service, auditSvc *audit.Service) 
 func (h *MeetsHandlers) RegisterRoutes(router chi.Router) {
 	// Meet CRUD and lifecycle.
 	router.Post("/meets", h.createMeet)
+	router.Post("/meets/parse-entry-file", h.parseEntryFile)
 	router.Get("/meets", h.listMeets)
 	router.Get("/meets/{meetID}", h.getMeet)
 	router.Post("/meets/{meetID}/sessions", h.createMeetSession)
@@ -81,6 +83,55 @@ type createMeetRequest struct {
 	CommitmentDeadline string `json:"commitment_deadline"`
 	HostOrg            string `json:"host_org"`
 	Location           string `json:"location"`
+}
+
+func (h *MeetsHandlers) parseEntryFile(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := meetScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+	if !hasAnyRole(principal, "owner", "admin", "coach") {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to parse meet files.", nil)
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "missing_file", "Multipart field 'file' is required.", nil)
+		return
+	}
+	defer file.Close()
+
+	const maxBytes = 25 << 20
+	data, err := io.ReadAll(io.LimitReader(file, maxBytes+1))
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_file", "Failed to read uploaded file.", err)
+		return
+	}
+	if int64(len(data)) > maxBytes {
+		httpx.WriteError(w, r, http.StatusRequestEntityTooLarge, "file_too_large", "Meet file exceeds the 25 MB upload cap.", nil)
+		return
+	}
+
+	parsed, err := h.service.ParseMeetFile(principal, orgID, meets.ParseMeetFileInput{
+		Filename: header.Filename,
+		Data:     data,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, meets.ErrForbidden):
+			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to parse meet files.", nil)
+		case errors.Is(err, meets.ErrInvalidMeetFile):
+			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_meet_file", err.Error(), nil)
+		default:
+			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_meet_file", err.Error(), nil)
+		}
+		return
+	}
+
+	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"parsed": parsed,
+	})
 }
 
 func (h *MeetsHandlers) createMeet(w http.ResponseWriter, r *http.Request) {

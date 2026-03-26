@@ -16,14 +16,16 @@ import (
 
 // ─── Router helpers ───────────────────────────────────────────────────────────
 
-func newStep17Router(t *testing.T, ws *workers.Server) http.Handler {
+func newStep17Router(t *testing.T, ws workers.Backend) http.Handler {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	return NewRouterWithServices(
 		Config{Auth: AuthConfig{EnableDevStubTokens: true}},
 		logger,
 		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil,
 		ws,
+	nil,
 	)
 }
 
@@ -160,7 +162,10 @@ func TestWorker_DLQ(t *testing.T) {
 	// MaxRetries=1 means at most 2 attempts total, with 5ms backoff.
 	deadline := time.After(2 * time.Second)
 	for {
-		dlq := srv.DLQTasks()
+		dlq, err := srv.DLQTasks()
+		if err != nil {
+			t.Fatalf("DLQTasks: %v", err)
+		}
 		if len(dlq) > 0 {
 			return // success
 		}

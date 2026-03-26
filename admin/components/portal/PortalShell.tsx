@@ -6,11 +6,10 @@ import { useRouter } from 'next/navigation'
 import { PortalNav } from './PortalNav'
 
 export function PortalShell({ children }: { children: ReactNode }) {
-  const { session, signOut } = useSession()
+  const { session } = useSession()
   const router = useRouter()
 
   const handleSignOut = () => {
-    signOut()
     router.push('/logout')
   }
 

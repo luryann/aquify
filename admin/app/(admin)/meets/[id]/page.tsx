@@ -17,6 +17,9 @@ import {
   fetchMeetEvents,
   fetchMeetSessions,
   fetchSwimmers,
+  lockMeetCommitments,
+  openMeetCommitments,
+  transitionMeet,
   type MeetRecord,
 } from '@/lib/adminData'
 
@@ -131,6 +134,153 @@ const ENTRY_COLS: Column<EntryRow>[] = [
   { key: 'status', label: 'Status', render: (row) => <StatusBadge status={row.status} /> },
 ]
 
+// ─── Lifecycle bar ────────────────────────────────────────────────────────────
+
+const LIFECYCLE_STAGES = [
+  { key: 'draft', label: 'Draft' },
+  { key: 'published', label: 'Published' },
+  { key: 'commitment_open', label: 'Commitments Open' },
+  { key: 'commitment_closed', label: 'Commitments Closed' },
+  { key: 'entry_finalized', label: 'Entries Finalized' },
+  { key: 'completed', label: 'Completed' },
+  { key: 'archived', label: 'Archived' },
+]
+
+type LifecycleAction = {
+  label: string
+  toStatus: string
+  variant: 'primary' | 'danger' | 'ghost'
+  confirm?: string
+}
+
+function getLifecycleActions(status: string): LifecycleAction[] {
+  switch (status) {
+    case 'draft':
+      return [{ label: 'Publish Meet', toStatus: 'published', variant: 'primary' }]
+    case 'published':
+      return [
+        { label: 'Open Commitments', toStatus: 'commitment_open', variant: 'primary' },
+        { label: 'Revert to Draft', toStatus: 'draft', variant: 'danger', confirm: 'Revert this meet back to draft? It will no longer be visible to swimmers.' },
+      ]
+    case 'commitment_open':
+      return [{ label: 'Close Commitments', toStatus: 'commitment_closed', variant: 'primary', confirm: 'Close commitments? Swimmers will no longer be able to respond.' }]
+    case 'commitment_closed':
+      return [{ label: 'Finalize Entries', toStatus: 'entry_finalized', variant: 'primary' }]
+    case 'entry_finalized':
+      return [{ label: 'Mark Complete', toStatus: 'completed', variant: 'primary', confirm: 'Mark this meet as completed?' }]
+    case 'completed':
+      return [{ label: 'Archive', toStatus: 'archived', variant: 'ghost', confirm: 'Archive this meet? This cannot be undone.' }]
+    default:
+      return []
+  }
+}
+
+function MeetLifecycleBar({
+  meet,
+  onTransition,
+  transitioning,
+}: {
+  meet: MeetRecord
+  onTransition: (toStatus: string) => void
+  transitioning: boolean
+}) {
+  const stageIndex = LIFECYCLE_STAGES.findIndex((s) => s.key === meet.status)
+  const actions = getLifecycleActions(meet.status)
+
+  if (meet.status === 'archived') return null
+
+  return (
+    <div style={{
+      background: 'var(--bg-elevated)',
+      border: '1px solid var(--border)',
+      borderRadius: '10px',
+      padding: '16px 20px',
+      marginBottom: '24px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '20px',
+      flexWrap: 'wrap',
+    }}>
+      {/* Progress track */}
+      <div style={{ flex: 1, minWidth: '260px', display: 'flex', alignItems: 'center', gap: 0 }}>
+        {LIFECYCLE_STAGES.filter((s) => s.key !== 'archived').map((stage, i, arr) => {
+          const idx = LIFECYCLE_STAGES.findIndex((s2) => s2.key === stage.key)
+          const isPast = idx < stageIndex
+          const isCurrent = idx === stageIndex
+          const isLast = i === arr.length - 1
+          const dotColor = isPast ? 'var(--success)' : isCurrent ? 'var(--accent)' : 'var(--border)'
+          const lineColor = isPast ? 'var(--success)' : 'var(--border)'
+          return (
+            <div key={stage.key} style={{ display: 'flex', alignItems: 'center', flex: isLast ? 0 : 1, minWidth: 0 }}>
+              <div title={stage.label} style={{
+                width: isCurrent ? '10px' : '8px',
+                height: isCurrent ? '10px' : '8px',
+                borderRadius: '50%',
+                background: dotColor,
+                border: isCurrent ? `2px solid var(--accent)` : 'none',
+                boxShadow: isCurrent ? '0 0 0 3px var(--accent-subtle)' : 'none',
+                flexShrink: 0,
+                transition: 'all 0.2s',
+              }} />
+              {!isLast && (
+                <div style={{ flex: 1, height: '2px', background: lineColor, minWidth: '8px', transition: 'background 0.2s' }} />
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Current label */}
+      <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+        {LIFECYCLE_STAGES[stageIndex]?.label ?? meet.status}
+      </div>
+
+      {/* Action buttons */}
+      {actions.length > 0 && (
+        <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+          {actions.map((action) => (
+            <button
+              key={action.toStatus}
+              disabled={transitioning}
+              onClick={() => {
+                if (action.confirm) {
+                  if (!window.confirm(action.confirm)) return
+                }
+                onTransition(action.toStatus)
+              }}
+              style={{
+                padding: '7px 14px',
+                borderRadius: '6px',
+                fontSize: '12px',
+                fontWeight: 600,
+                fontFamily: 'var(--font-mono)',
+                cursor: transitioning ? 'not-allowed' : 'pointer',
+                opacity: transitioning ? 0.6 : 1,
+                transition: 'all 0.15s',
+                border: action.variant === 'ghost' ? '1px solid var(--border)' : 'none',
+                background: action.variant === 'primary'
+                  ? 'var(--accent)'
+                  : action.variant === 'danger'
+                  ? 'var(--error-bg)'
+                  : 'transparent',
+                color: action.variant === 'primary'
+                  ? '#fff'
+                  : action.variant === 'danger'
+                  ? 'var(--error)'
+                  : 'var(--text-subtle)',
+              }}
+            >
+              {transitioning ? '…' : action.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
 export default function MeetDetailPage() {
   const params = useParams<{ id: string }>()
   const meetId = typeof params?.id === 'string' ? params.id : ''
@@ -144,6 +294,8 @@ export default function MeetDetailPage() {
   const [entries, setEntries] = useState<EntryRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [transitioning, setTransitioning] = useState(false)
+  const [transitionError, setTransitionError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -231,6 +383,28 @@ export default function MeetDetailPage() {
     }
   }, [api, meetId, session?.user.orgId])
 
+  async function handleTransition(toStatus: string) {
+    if (!session?.user.orgId || !meetId) return
+    setTransitioning(true)
+    setTransitionError(null)
+    try {
+      let updated: MeetRecord
+      if (toStatus === 'commitment_open') {
+        updated = await openMeetCommitments(api, session.user.orgId, meetId)
+      } else if (toStatus === 'commitment_closed') {
+        await lockMeetCommitments(api, session.user.orgId, meetId)
+        updated = await fetchMeet(api, session.user.orgId, meetId)
+      } else {
+        updated = await transitionMeet(api, session.user.orgId, meetId, toStatus)
+      }
+      setMeet(updated)
+    } catch (err) {
+      setTransitionError(err instanceof Error ? err.message : 'Transition failed.')
+    } finally {
+      setTransitioning(false)
+    }
+  }
+
   const tabs = useMemo(() => [
     { id: 'overview', label: 'Overview' },
     { id: 'sessions', label: 'Sessions', count: sessions.length },
@@ -264,6 +438,14 @@ export default function MeetDetailPage() {
           </div>
         </div>
       </div>
+
+      <MeetLifecycleBar meet={meet} onTransition={handleTransition} transitioning={transitioning} />
+
+      {transitionError && (
+        <div style={{ marginBottom: '16px', padding: '10px 14px', borderRadius: '6px', background: 'var(--error-bg)', color: 'var(--error)', fontSize: '13px', fontFamily: 'var(--font-mono)', border: '1px solid var(--error)' }}>
+          {transitionError}
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '28px' }}>
         {[
