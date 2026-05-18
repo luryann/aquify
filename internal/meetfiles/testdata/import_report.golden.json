@@ -1,0 +1,26 @@
+{
+  "total_rows": 2,
+  "matched_rows": 1,
+  "error_rows": 2,
+  "conflict_rows": 1,
+  "errors": [
+    {
+      "line_number": 3,
+      "error_code": "malformed_record",
+      "message": "another bad line"
+    },
+    {
+      "line_number": 10,
+      "error_code": "malformed_record",
+      "message": "bad line"
+    }
+  ],
+  "conflicts": [
+    {
+      "line_number": 8,
+      "error_code": "unknown_athlete",
+      "message": "no roster swimmer matched \"Doe, Jane\" (DOB: 2005-01-01, gender: M) via name_dob_gender",
+      "raw_data": "Doe, Jane | event 0002 | 100m free"
+    }
+  ]
+}

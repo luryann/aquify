@@ -1,0 +1,153 @@
+## DARE Platform — Prometheus Alert Rules
+## Deploy to your Prometheus instance's rules directory.
+## Adjust thresholds, team routing, and silences as required.
+
+groups:
+  # ---------------------------------------------------------------------------
+  # Import Pipeline Alerts
+  # ---------------------------------------------------------------------------
+  - name: dare_imports
+    rules:
+      - alert: ImportFailureSpike
+        expr: |
+          sum(increase(dare_import_files_total{status="failure"}[5m])) > 10
+        for: 2m
+        labels:
+          severity: warning
+          team: engineering
+        annotations:
+          summary: "Import failure spike detected"
+          description: |
+            More than 10 import file failures occurred in the last 5 minutes.
+            This may indicate corrupt uploads, a parser regression, or a storage
+            connectivity issue.
+            Check /api/v1/imports and the parse_import worker logs immediately.
+          runbook_url: "https://github.com/dareaquatics/aquify/blob/main/docs/runbooks/on-call.md#import-failures"
+
+      - alert: ImportFailureRateHigh
+        expr: |
+          sum(rate(dare_import_files_total{status="failure"}[15m]))
+            /
+          sum(rate(dare_import_files_total[15m])) > 0.30
+        for: 5m
+        labels:
+          severity: critical
+          team: engineering
+        annotations:
+          summary: "Import failure rate exceeds 30% (15-minute window)"
+          description: |
+            More than 30% of import files are failing over the past 15 minutes.
+            Investigate the parse_import worker, object storage, and the meetfiles parser.
+          runbook_url: "https://github.com/dareaquatics/aquify/blob/main/docs/runbooks/on-call.md#import-failures"
+
+  # ---------------------------------------------------------------------------
+  # Webhook / Payment Alerts
+  # ---------------------------------------------------------------------------
+  - name: dare_webhooks
+    rules:
+      - alert: PaymentWebhookFailureSpike
+        expr: |
+          sum(increase(dare_job_executions_total{type="billing_reconcile",status="failure"}[5m])) > 5
+        for: 2m
+        labels:
+          severity: critical
+          team: engineering
+        annotations:
+          summary: "Payment/billing webhook processing failures spiked"
+          description: |
+            More than 5 billing reconcile or webhook processing failures in the
+            last 5 minutes. Stripe webhook delivery may be failing; check the
+            webhook_events table and the billing worker logs.
+            Immediate action required to avoid ledger inconsistency.
+          runbook_url: "https://github.com/dareaquatics/aquify/blob/main/docs/runbooks/on-call.md#billing-webhook-failures"
+
+      - alert: WebhookProcessingLagHigh
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(dare_webhook_processing_lag_seconds_bucket[5m]))) > 30
+        for: 5m
+        labels:
+          severity: warning
+          team: engineering
+        annotations:
+          summary: "Stripe webhook processing lag p95 > 30s"
+          description: |
+            The 95th percentile of webhook receipt-to-processing lag is above 30 seconds.
+            This may cause delayed payment confirmations for households.
+          runbook_url: "https://github.com/dareaquatics/aquify/blob/main/docs/runbooks/on-call.md#billing-webhook-failures"
+
+  # ---------------------------------------------------------------------------
+  # Database Alerts
+  # ---------------------------------------------------------------------------
+  - name: dare_database
+    rules:
+      - alert: DBConnectionSaturation
+        expr: |
+          (
+            pg_stat_activity_count{state!="idle"}
+              /
+            pg_settings_max_connections
+          ) > 0.80
+        for: 5m
+        labels:
+          severity: critical
+          team: engineering
+        annotations:
+          summary: "PostgreSQL connection pool nearing saturation (>80%)"
+          description: |
+            Active (non-idle) connections represent more than 80% of
+            max_connections. The application may begin rejecting new connections
+            soon. Consider increasing the connection pool size, adding a PgBouncer
+            instance, or reducing idle-connection timeouts.
+          runbook_url: "https://github.com/dareaquatics/aquify/blob/main/docs/runbooks/on-call.md#database-saturation"
+
+      - alert: DBConnectionSaturationWarning
+        expr: |
+          (
+            pg_stat_activity_count{state!="idle"}
+              /
+            pg_settings_max_connections
+          ) > 0.65
+        for: 10m
+        labels:
+          severity: warning
+          team: engineering
+        annotations:
+          summary: "PostgreSQL connection pool above 65% capacity"
+          description: |
+            Active connection ratio has been above 65% for 10 minutes. Monitor
+            closely; adjust pool settings if the trend continues upward.
+
+  # ---------------------------------------------------------------------------
+  # API Health Alerts
+  # ---------------------------------------------------------------------------
+  - name: dare_api
+    rules:
+      - alert: APIErrorRateHigh
+        expr: |
+          sum(rate(dare_http_requests_total{status=~"5.."}[5m]))
+            /
+          sum(rate(dare_http_requests_total[5m])) > 0.05
+        for: 3m
+        labels:
+          severity: critical
+          team: engineering
+        annotations:
+          summary: "API 5xx error rate exceeds 5%"
+          description: |
+            More than 5% of API requests are returning 5xx errors over a 5-minute
+            window. Check application logs and recent deploys.
+          runbook_url: "https://github.com/dareaquatics/aquify/blob/main/docs/runbooks/on-call.md#api-errors"
+
+      - alert: APIHighLatency
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(dare_http_request_duration_seconds_bucket[5m]))) > 2
+        for: 5m
+        labels:
+          severity: warning
+          team: engineering
+        annotations:
+          summary: "API p95 request latency > 2s"
+          description: |
+            The 95th percentile of HTTP request duration has exceeded 2 seconds
+            for 5 minutes. Investigate slow queries, lock contention, or external
+            service timeouts (Stripe, Postmark).

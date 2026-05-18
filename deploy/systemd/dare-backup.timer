@@ -1,0 +1,18 @@
+[Unit]
+Description=DARE Platform Daily Backup Timer
+Documentation=https://github.com/dareaquatics/aquify
+
+[Timer]
+# Run daily at 02:00 local time
+OnCalendar=*-*-* 02:00:00
+
+# If the system was off at the scheduled time, run as soon as it comes back up
+Persistent=true
+
+# Add a random delay up to 5 minutes to avoid thundering herd on shared infra
+RandomizedDelaySec=300
+
+Unit=dare-backup.service
+
+[Install]
+WantedBy=timers.target

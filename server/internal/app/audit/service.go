@@ -1,0 +1,300 @@
+// Package audit provides the in-memory audit-log service.
+//
+// Every privileged or sensitive action in the platform must emit an AuditEvent
+// via Service.Append. Events are immutable once written.
+//
+// Production note: all data is held in-memory slices protected by a RWMutex.
+// Replace with an sqlc/pgx append-only insert when the DB layer is wired.
+package audit
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+)
+
+// ─── Sentinel errors ──────────────────────────────────────────────────────────
+
+var (
+	ErrEventNotFound = errors.New("audit event not found")
+	ErrForbidden     = errors.New("forbidden")
+)
+
+// ─── Well-known action constants ──────────────────────────────────────────────
+// Naming convention: <domain>.<resource>.<verb>
+
+const (
+	ActionAuthUserSelfRegister           = "auth.user.self_register"
+	ActionAuthUserApprove                = "auth.user.approve"
+	ActionAuthUserReject                 = "auth.user.reject"
+	ActionAuthRoleAssign                 = "auth.role.assign"
+	ActionAuthRoleRemove                 = "auth.role.remove"
+	ActionAuthUserInvite                 = "auth.user.invite"
+	ActionAuthUserUpdate                 = "auth.user.update"
+	ActionAuthUserDisable                = "auth.user.disable"
+	ActionAuthUserEnable                 = "auth.user.enable"
+	ActionAuthUserDelete                 = "auth.user.delete"
+	ActionAuthUserPasswordReset          = "auth.user.password_reset"
+	ActionBillingInvoiceIssue            = "billing.invoice.issue"
+	ActionBillingInvoiceVoid             = "billing.invoice.void"
+	ActionBillingInvoiceWriteOff         = "billing.invoice.write_off"
+	ActionBillingRefundCreate            = "billing.refund.create"
+	ActionMeetEntryOverride              = "meet.entry.override"
+	ActionMeetEntryApprove               = "meet.entry.approve"
+	ActionMeetCommitmentsLock            = "meet.commitments.lock"
+	ActionPerformanceBestTimeOverride    = "performance.best_time.override"
+	ActionImportConflictResolve          = "import.conflict.resolve"
+	ActionMembersHouseholdDelete         = "members.household.delete"
+	ActionMembersSwimmerDelete           = "members.swimmer.delete"
+	ActionMembersSwimmerUpdate           = "members.swimmer.update"
+	ActionComplianceDataExportRequest    = "compliance.data_export.request"
+	ActionComplianceDataDeletionRequest  = "compliance.data_deletion.request"
+	ActionReportMembershipStatusRun      = "report.membership_status.run"
+	ActionReportMeetFeesRun              = "report.meet_fees.run"
+	ActionReportInvoiceAgingRun          = "report.invoice_aging.run"
+	ActionReportPaymentReconciliationRun = "report.payment_reconciliation.run"
+	ActionReportRegistrationStatusRun    = "report.registration_status.run"
+)
+
+// ─── Domain types ─────────────────────────────────────────────────────────────
+
+// AuditEvent is an immutable record of a privileged or sensitive action.
+type AuditEvent struct {
+	ID           string            `json:"id"`
+	OrgID        string            `json:"org_id"`
+	ActorUserID  string            `json:"actor_user_id"`
+	ActorRoles   []string          `json:"actor_roles"`
+	Action       string            `json:"action"`
+	ResourceType string            `json:"resource_type"`
+	ResourceID   string            `json:"resource_id"`
+	BeforeState  json.RawMessage   `json:"before_state,omitempty"`
+	AfterState   json.RawMessage   `json:"after_state,omitempty"`
+	Metadata     map[string]string `json:"metadata,omitempty"`
+	OccurredAt   time.Time         `json:"occurred_at"`
+}
+
+// AppendRequest carries all fields required to create a new AuditEvent.
+type AppendRequest struct {
+	OrgID        string
+	ActorUserID  string
+	ActorRoles   []string
+	Action       string
+	ResourceType string
+	ResourceID   string
+	// Before is an optional snapshot of the resource state before the action.
+	Before interface{}
+	// After is an optional snapshot of the resource state after the action.
+	After interface{}
+	// Metadata holds arbitrary key-value context (reason, request_id, etc.).
+	Metadata map[string]string
+}
+
+// Filter specifies which audit events to return.
+type Filter struct {
+	OrgID        string
+	ActorUserID  string
+	Action       string
+	ResourceType string
+	ResourceID   string
+	// From and To bound the occurred_at range (both inclusive).
+	From  *time.Time
+	To    *time.Time
+	Limit int
+	// Cursor is an opaque value (event ID) for cursor-based pagination.
+	Cursor string
+}
+
+// ─── Service ──────────────────────────────────────────────────────────────────
+
+// Service is the in-memory audit log store.
+type Service struct {
+	mu     sync.RWMutex
+	events []AuditEvent
+}
+
+// NewService returns an empty Service.
+func NewService() *Service {
+	return &Service{}
+}
+
+// Append adds an immutable audit event. Returns the created event.
+func (s *Service) Append(req AppendRequest) (*AuditEvent, error) {
+	id, err := newID()
+	if err != nil {
+		return nil, err
+	}
+
+	var beforeRaw, afterRaw json.RawMessage
+	if req.Before != nil {
+		beforeRaw, err = json.Marshal(req.Before)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if req.After != nil {
+		afterRaw, err = json.Marshal(req.After)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	roles := req.ActorRoles
+	if roles == nil {
+		roles = []string{}
+	}
+	meta := req.Metadata
+	if meta == nil {
+		meta = map[string]string{}
+	}
+
+	ev := AuditEvent{
+		ID:           id,
+		OrgID:        req.OrgID,
+		ActorUserID:  req.ActorUserID,
+		ActorRoles:   roles,
+		Action:       req.Action,
+		ResourceType: req.ResourceType,
+		ResourceID:   req.ResourceID,
+		BeforeState:  beforeRaw,
+		AfterState:   afterRaw,
+		Metadata:     meta,
+		OccurredAt:   time.Now().UTC(),
+	}
+
+	s.mu.Lock()
+	s.events = append(s.events, ev)
+	s.mu.Unlock()
+
+	return &ev, nil
+}
+
+// Query returns audit events matching the filter, sorted newest-first.
+func (s *Service) Query(f Filter) ([]AuditEvent, error) {
+	s.mu.RLock()
+	all := make([]AuditEvent, len(s.events))
+	copy(all, s.events)
+	s.mu.RUnlock()
+
+	// Sort newest-first.
+	sort.Slice(all, func(i, j int) bool {
+		return all[i].OccurredAt.After(all[j].OccurredAt)
+	})
+
+	// Apply filters.
+	var out []AuditEvent
+	pastCursor := f.Cursor == ""
+	for _, ev := range all {
+		if !pastCursor {
+			if ev.ID == f.Cursor {
+				pastCursor = true
+			}
+			continue
+		}
+		if f.OrgID != "" && ev.OrgID != f.OrgID {
+			continue
+		}
+		if f.ActorUserID != "" && ev.ActorUserID != f.ActorUserID {
+			continue
+		}
+		if f.Action != "" && !strings.EqualFold(ev.Action, f.Action) {
+			continue
+		}
+		if f.ResourceType != "" && !strings.EqualFold(ev.ResourceType, f.ResourceType) {
+			continue
+		}
+		if f.ResourceID != "" && ev.ResourceID != f.ResourceID {
+			continue
+		}
+		if f.From != nil && ev.OccurredAt.Before(*f.From) {
+			continue
+		}
+		if f.To != nil && ev.OccurredAt.After(*f.To) {
+			continue
+		}
+		out = append(out, ev)
+		if f.Limit > 0 && len(out) >= f.Limit {
+			break
+		}
+	}
+	if out == nil {
+		out = []AuditEvent{}
+	}
+	return out, nil
+}
+
+// ─── Diff helper ──────────────────────────────────────────────────────────────
+
+// Diff computes a field-level diff between before and after.
+// Both values must be JSON-marshallable flat objects (i.e., a struct or map
+// whose top-level values are scalars or simple types). Nested objects and
+// slices are compared as opaque JSON strings — if the nested structure changes
+// at all, the entire key is reported as changed rather than recursively diffed.
+// Callers that pass structs with deeply nested slices (e.g. []string fields)
+// may see whole-key diffs rather than element-level diffs; this is by design.
+// Returns a map of field names to DiffEntry{Before, After}.
+// Fields that are identical in both snapshots are omitted.
+func Diff(before, after interface{}) (map[string]DiffEntry, error) {
+	beforeMap, err := toStringMap(before)
+	if err != nil {
+		return nil, err
+	}
+	afterMap, err := toStringMap(after)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make(map[string]DiffEntry)
+
+	// Keys in before.
+	for k, bv := range beforeMap {
+		av, exists := afterMap[k]
+		if !exists {
+			out[k] = DiffEntry{Before: bv, After: nil}
+		} else if string(bv) != string(av) {
+			out[k] = DiffEntry{Before: bv, After: av}
+		}
+	}
+
+	// Keys only in after (added fields).
+	for k, av := range afterMap {
+		if _, exists := beforeMap[k]; !exists {
+			out[k] = DiffEntry{Before: nil, After: av}
+		}
+	}
+
+	return out, nil
+}
+
+// DiffEntry represents the before and after values of a single field.
+type DiffEntry struct {
+	Before json.RawMessage `json:"before"`
+	After  json.RawMessage `json:"after"`
+}
+
+// toStringMap marshals v to JSON then unmarshals into a flat map[string]json.RawMessage.
+func toStringMap(v interface{}) (map[string]json.RawMessage, error) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+func newID() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}

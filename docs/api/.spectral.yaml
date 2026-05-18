@@ -1,0 +1,22 @@
+extends:
+  - spectral:oas
+
+rules:
+  # Require operationId on every operation
+  operation-operationId: error
+
+  # Require at least one tag per operation
+  operation-tags: error
+
+  # All paths must have at least a GET, POST, etc.
+  oas3-api-servers: warn
+
+  # Require a description on every schema property
+  # (set to warn to avoid breaking CI while iterating)
+  oas3-schema: error
+
+  # No unused components
+  oas3-unused-component: warn
+
+  # Require contact in info
+  info-contact: warn

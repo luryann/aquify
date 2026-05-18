@@ -1,0 +1,3 @@
+module github.com/dareaquatics/aquify/meetfiles
+
+go 1.24.4

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800">
+  <rect width="1200" height="800" fill="#f5fbff"/>
+  <rect x="70" y="70" width="1060" height="660" rx="24" fill="#ffffff" stroke="rgba(15,23,42,0.12)"/>
+  <text x="110" y="150" font-size="42" font-family="Georgia, serif" fill="#0f172a">Regional Spring Invite Deck Map</text>
+  <rect x="140" y="220" width="920" height="180" rx="30" fill="#dbeafe" stroke="#3b82f6" stroke-width="4"/>
+  <text x="500" y="320" font-size="40" font-family="sans-serif" fill="#1d4ed8">50M Competition Pool</text>
+  <rect x="140" y="470" width="240" height="160" rx="18" fill="#ecfeff" stroke="#06b6d4"/>
+  <text x="175" y="555" font-size="28" font-family="sans-serif" fill="#0f172a">Clerk of Course</text>
+  <rect x="470" y="470" width="240" height="160" rx="18" fill="#fef3c7" stroke="#f59e0b"/>
+  <text x="540" y="555" font-size="28" font-family="sans-serif" fill="#0f172a">DARE Seating</text>
+  <rect x="800" y="470" width="240" height="160" rx="18" fill="#eefcf4" stroke="#10b981"/>
+  <text x="865" y="555" font-size="28" font-family="sans-serif" fill="#0f172a">Hospitality</text>
+</svg>
