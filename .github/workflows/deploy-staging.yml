@@ -1,0 +1,217 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+env:
+  REGISTRY: ghcr.io
+  API_IMAGE: ghcr.io/dareaquatics/dare-api
+  ADMIN_IMAGE: ghcr.io/dareaquatics/dare-admin
+
+jobs:
+  deploy:
+    name: Build, Push, and Deploy to Staging
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      # Container Registry Login
+      # -----------------------------------------------------------------------
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # -----------------------------------------------------------------------
+      # Build metadata
+      # -----------------------------------------------------------------------
+
+      - name: Extract metadata for API image
+        id: api-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.API_IMAGE }}
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest-staging
+
+      - name: Extract metadata for Admin image
+        id: admin-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.ADMIN_IMAGE }}
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest-staging
+
+      # -----------------------------------------------------------------------
+      # Build and push API image
+      # -----------------------------------------------------------------------
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push API Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: server
+          file: server/Dockerfile
+          push: true
+          tags: ${{ steps.api-meta.outputs.tags }}
+          labels: ${{ steps.api-meta.outputs.labels }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+          build-args: |
+            BUILD_SHA=${{ github.sha }}
+            BUILD_REF=${{ github.ref_name }}
+
+      # -----------------------------------------------------------------------
+      # Build and push Admin image
+      # -----------------------------------------------------------------------
+
+      - name: Build and push Admin Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: admin
+          file: admin/Dockerfile
+          push: true
+          tags: ${{ steps.admin-meta.outputs.tags }}
+          labels: ${{ steps.admin-meta.outputs.labels }}
+          cache-from: type=gha,scope=admin
+          cache-to: type=gha,mode=max,scope=admin
+          build-args: |
+            BUILD_SHA=${{ github.sha }}
+            NEXT_PUBLIC_APP_ENV=staging
+            NEXT_PUBLIC_AUTH_ENABLE_DEV_STUB_TOKENS=false
+
+      # -----------------------------------------------------------------------
+      # Deploy to staging server
+      # -----------------------------------------------------------------------
+
+      - name: Deploy to staging via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.STAGING_SSH_HOST }}
+          username: ${{ secrets.STAGING_SSH_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          script: |
+            set -euo pipefail
+
+            IMAGE_TAG="sha-$(echo "${{ github.sha }}" | cut -c1-7)"
+            DEPLOY_DIR=/opt/dare
+
+            echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Deploying IMAGE_TAG=${IMAGE_TAG} to staging" \
+              >> /var/log/dare/deploys.log
+
+            cd "${DEPLOY_DIR}"
+
+            # Pull new images
+            IMAGE_TAG="${IMAGE_TAG}" docker compose \
+              -f docker-compose.staging.yml pull dare-api dare-admin dare-worker
+
+            # Rolling restart of application containers only
+            IMAGE_TAG="${IMAGE_TAG}" docker compose \
+              -f docker-compose.staging.yml up -d \
+              --no-deps --remove-orphans \
+              dare-api dare-admin dare-worker
+
+            echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Deploy complete IMAGE_TAG=${IMAGE_TAG}" \
+              >> /var/log/dare/deploys.log
+
+      # -----------------------------------------------------------------------
+      # Health check — wait for API to come up
+      # -----------------------------------------------------------------------
+
+      - name: Wait for API health
+        run: |
+          echo "Waiting for API health at https://api-staging.dare.club/health/live ..."
+          for i in $(seq 1 18); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              --max-time 5 \
+              https://api-staging.dare.club/health/live || echo "000")
+            if [ "${STATUS}" = "200" ]; then
+              echo "API healthy (attempt ${i})"
+              exit 0
+            fi
+            echo "Attempt ${i}/18: got HTTP ${STATUS}, retrying in 10s..."
+            sleep 10
+          done
+          echo "ERROR: API did not become healthy after 180s"
+          exit 1
+
+      # -----------------------------------------------------------------------
+      # Smoke tests
+      # -----------------------------------------------------------------------
+
+      - name: Run smoke tests on staging
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.STAGING_SSH_HOST }}
+          username: ${{ secrets.STAGING_SSH_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            SMOKE_AUTH_TOKEN="${{ secrets.SMOKE_TEST_AUTH_TOKEN }}" \
+            SMOKE_ORG_ID="${{ secrets.SMOKE_TEST_ORG_ID }}" \
+            API_BASE_URL="https://api-staging.dare.club" \
+              /opt/dare/scripts/smoke.sh
+
+      # -----------------------------------------------------------------------
+      # Failure notification
+      # -----------------------------------------------------------------------
+
+      - name: Notify Slack on failure
+        if: failure()
+        uses: slackapi/slack-github-action@v2
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": ":red_circle: *Staging deploy FAILED*",
+              "attachments": [
+                {
+                  "color": "danger",
+                  "fields": [
+                    {"title": "Branch", "value": "${{ github.ref_name }}", "short": true},
+                    {"title": "Commit", "value": "${{ github.sha }}", "short": true},
+                    {"title": "Triggered by", "value": "${{ github.actor }}", "short": true},
+                    {"title": "Workflow run", "value": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}", "short": false}
+                  ]
+                }
+              ]
+            }
+
+      - name: Notify Slack on success
+        if: success()
+        uses: slackapi/slack-github-action@v2
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": ":white_check_mark: *Staging deploy succeeded*",
+              "attachments": [
+                {
+                  "color": "good",
+                  "fields": [
+                    {"title": "Branch", "value": "${{ github.ref_name }}", "short": true},
+                    {"title": "Image tag", "value": "sha-${{ github.sha }}", "short": true},
+                    {"title": "Triggered by", "value": "${{ github.actor }}", "short": true}
+                  ]
+                }
+              ]
+            }

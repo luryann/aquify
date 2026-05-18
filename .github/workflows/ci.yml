@@ -1,0 +1,112 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  secret-scan:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Run gitleaks
+        uses: docker://ghcr.io/gitleaks/gitleaks:latest
+        with:
+          args: git --redact --no-banner --verbose .
+
+  openapi-lint:
+    name: Validate OpenAPI Schema
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Spectral
+        run: npm install -g @stoplight/spectral-cli
+
+      - name: Lint OpenAPI spec
+        run: spectral lint docs/api/openapi.yaml --ruleset docs/api/.spectral.yaml
+
+  server-test:
+    name: Server Tests & Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Run meetfiles tests
+        working-directory: internal/meetfiles
+        run: go test ./...
+
+      - name: Run server tests
+        working-directory: server
+        run: go test ./...
+
+      - name: Run P0 gate
+        working-directory: server
+        run: go test ./internal/app -run 'TestP0'
+
+      - name: Run meetfiles vet
+        working-directory: internal/meetfiles
+        run: go vet ./...
+
+      - name: Run server vet
+        working-directory: server
+        run: go vet ./...
+
+      - name: Run meetfiles govulncheck
+        working-directory: internal/meetfiles
+        run: govulncheck ./...
+
+      - name: Run server govulncheck
+        working-directory: server
+        run: govulncheck ./...
+
+  admin-build:
+    name: Admin Build & Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: admin/package-lock.json
+
+      - name: Install dependencies
+        working-directory: admin
+        run: npm ci
+
+      - name: Dependency vulnerability scan
+        working-directory: admin
+        run: npm audit --audit-level=high
+
+      - name: Lint
+        working-directory: admin
+        run: npm run lint
+
+      - name: Production build
+        working-directory: admin
+        run: npm run build
