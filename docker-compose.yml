@@ -58,9 +58,32 @@ services:
     volumes:
       - mailpit_data:/data
 
+  # Realm config + login theme live in deploy/keycloak/. The realm is imported
+  # on first start only (data persists in the keycloak_data volume).
+  # Note: the imported realm's SMTP host is "localhost:1025" (native-dev
+  # default). When Keycloak runs in this compose stack, point realm SMTP at
+  # "mailpit:1025" instead (Realm settings -> Email in the admin console).
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.5
+    container_name: aquify-keycloak
+    restart: unless-stopped
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+    ports:
+      - "${KEYCLOAK_PORT:-8180}:8080"
+    volumes:
+      - keycloak_data:/opt/keycloak/data
+      - ./deploy/keycloak/realm-aquify-local.json:/opt/keycloak/data/import/realm-aquify-local.json:ro
+      - ./deploy/keycloak/themes/aquify:/opt/keycloak/themes/aquify:ro
+    depends_on:
+      - mailpit
+
 
 volumes:
   postgres_data:
   redis_data:
   minio_data:
   mailpit_data:
+  keycloak_data:

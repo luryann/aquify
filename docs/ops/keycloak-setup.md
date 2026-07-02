@@ -22,38 +22,64 @@ development bootstrapping to production realm setup.
 
 ## 1. Local Development (Automated Bootstrap)
 
-The repository includes a reproducible local Keycloak bootstrap that does not
-require any manual UI configuration.
+All local Keycloak configuration lives in `deploy/keycloak/`:
+
+- `realm-aquify-local.json` — the realm import: clients, protocol mappers,
+  realm roles, seed users (with `org_id` attributes), the `aquify-admin`
+  service account with `realm-admin` rights, SMTP (Mailpit), password policy,
+  brute-force protection, session timeouts, and audit event settings. There is
+  no separate bootstrap script — the import file is the whole realm.
+- `themes/aquify/` — the branded login theme (DARE design language, bundled
+  fonts). Synced into the server's theme directory on every start.
 
 ### What is provisioned
-
-From `keycloak/realm-aquify-local.json`:
 
 | Resource | Value |
 |---|---|
 | Realm | `aquify` |
 | OIDC client | `aquify-id` (confidential) |
 | Client secret | `aquify-local-dev-secret` |
+| Admin service account | `aquify-admin` / `aquify-local-admin-secret` (realm-admin) |
 | Redirect URIs | `http://localhost:3000/auth/callback`, `http://127.0.0.1:3000/auth/callback` |
 | Protocol mappers | realm roles → `realm_access.roles`; user attribute `org_id` → token claim `org_id` |
-| Realm roles | `owner`, `admin`, `coach`, `parent`, `swimmer`, `billing`, `read_only_staff` |
+| Realm roles | `owner`, `admin`, `coach`, `parent`, `swimmer`, `billing`, `read-only`, `read_only_staff` |
+| SMTP | `localhost:1025` (Mailpit — inbox UI at http://localhost:8025) |
+| Password policy | min length 10, not username, not email |
+| Sessions | SSO idle 8h, max 24h; access tokens 15m; reset links valid 30m |
 
 Seed users (password: `ChangeMe123!`):
 - `owner@dare.local`, `admin@dare.local`, `coach@dare.local`
 - `parent@dare.local`, `swimmer@dare.local`, `billing@dare.local`, `readonly@dare.local`
 
-### Bootstrap commands
+### Start commands
 
-```sh
-# Start local infrastructure (Postgres, Redis, MinIO, Keycloak, Mailpit):
-make infra-up
+**Windows (native — no Docker required):**
 
-# Re-run only Keycloak bootstrap if needed (idempotent):
-make keycloak-bootstrap
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/start-keycloak-local.ps1
 ```
 
-The bootstrap is implemented by `scripts/keycloak-bootstrap.sh` and re-creates
-the `aquify` realm on each run (safe for local dev; never run against production).
+Downloads the Keycloak distribution (and Mailpit) into `.tools/` on first run,
+syncs the login theme, imports the realm on first start, and serves on
+`http://localhost:8180`. Users/passwords/MFA created locally survive restarts;
+pass `-Reset` to wipe data and re-import the realm from scratch.
+
+**macOS/Linux (native):**
+
+```sh
+make keycloak-local-up      # auto-downloads dist into .tools/, syncs theme, starts on :8180
+make keycloak-local-reset   # wipe local Keycloak data; next start re-imports the realm
+```
+
+**Docker:**
+
+```sh
+make infra-up               # Postgres, Redis, MinIO, Mailpit, Keycloak (realm auto-imported)
+```
+
+> When Keycloak runs inside Docker, change the realm SMTP host from
+> `localhost` to `mailpit` (Realm settings → Email) so reset emails reach the
+> Mailpit container.
 
 ### Required local env vars
 
@@ -72,7 +98,7 @@ OIDC_EXPECTED_ISSUER=http://localhost:8180/realms/aquify
 KEYCLOAK_ADMIN_URL=http://localhost:8180
 KEYCLOAK_REALM=aquify
 KEYCLOAK_ADMIN_CLIENT_ID=aquify-admin
-KEYCLOAK_ADMIN_CLIENT_SECRET=<admin-service-account-secret>
+KEYCLOAK_ADMIN_CLIENT_SECRET=aquify-local-admin-secret
 ```
 
 ---

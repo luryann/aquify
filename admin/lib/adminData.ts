@@ -1542,6 +1542,53 @@ export async function deletePractice(api: ApiClient, orgId: string, practiceId: 
   await api.delete(`/api/v1/practices/${practiceId}`, withOrgHeaders(orgId))
 }
 
+// ── Seasons ───────────────────────────────────────────────────────────────────
+
+export type SeasonRecord = {
+  id: string
+  org_id: string
+  name: string
+  start_date: string // YYYY-MM-DD, '' when unset
+  end_date: string // YYYY-MM-DD, '' when unset
+  status: 'active' | 'upcoming' | 'completed'
+  goals: string
+  created_at: string
+  updated_at: string
+  created_by: string
+  updated_by: string
+}
+
+export async function fetchSeasons(api: ApiClient, orgId: string): Promise<SeasonRecord[]> {
+  const res = await api.get<{ seasons?: SeasonRecord[] }>('/api/v1/seasons', undefined, withOrgHeaders(orgId))
+  return res.seasons ?? []
+}
+
+export async function createSeason(api: ApiClient, orgId: string, body: {
+  name: string
+  start_date?: string
+  end_date?: string
+  status: string
+  goals?: string
+}): Promise<SeasonRecord> {
+  const res = await api.post<{ season: SeasonRecord }>('/api/v1/seasons', body, withOrgHeaders(orgId))
+  return res.season
+}
+
+export async function updateSeason(api: ApiClient, orgId: string, seasonId: string, body: Partial<{
+  name: string
+  start_date: string
+  end_date: string
+  status: string
+  goals: string
+}>): Promise<SeasonRecord> {
+  const res = await api.put<{ season: SeasonRecord }>(`/api/v1/seasons/${seasonId}`, body, withOrgHeaders(orgId))
+  return res.season
+}
+
+export async function deleteSeason(api: ApiClient, orgId: string, seasonId: string): Promise<void> {
+  await api.delete(`/api/v1/seasons/${seasonId}`, withOrgHeaders(orgId))
+}
+
 // ── Commitment Event Selections ───────────────────────────────────────────────
 
 export type CommitmentEventSelectionRecord = {

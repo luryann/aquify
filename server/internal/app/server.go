@@ -26,6 +26,7 @@ import (
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
 	"github.com/dareaquatics/aquify/server/internal/app/performance"
 	"github.com/dareaquatics/aquify/server/internal/app/reports"
+	"github.com/dareaquatics/aquify/server/internal/app/seasons"
 	"github.com/dareaquatics/aquify/server/internal/app/training"
 	"github.com/dareaquatics/aquify/server/internal/db"
 	"github.com/dareaquatics/aquify/server/internal/keycloak"
@@ -606,6 +607,13 @@ func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.M
 		}
 	}
 	trainingHandlers := handlers.NewTrainingHandlers(trainingService, auditService)
+	var seasonsService *seasons.Service
+	if dbPool != nil {
+		seasonsService = seasons.NewServiceWithPool(dbPool)
+	} else {
+		seasonsService = seasons.NewService()
+	}
+	seasonsHandlers := handlers.NewSeasonsHandlers(seasonsService, auditService)
 
 	// Keycloak client — prefer injected, then real from config, then stub fallback.
 	if kcClient == nil {
@@ -809,6 +817,7 @@ func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.M
 			complianceHandlers.RegisterRoutes(protected)
 			documentHandlers.RegisterRoutes(protected)
 			trainingHandlers.RegisterRoutes(protected)
+			seasonsHandlers.RegisterRoutes(protected)
 			reportsHandlers.RegisterRoutes(protected)
 			jobsHandlers.RegisterRoutes(protected)
 			settingsHandlers.RegisterRoutes(protected)

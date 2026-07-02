@@ -1,13 +1,15 @@
 {
   "realm": "aquify",
   "enabled": true,
-  "displayName": "Aquify Local",
+  "displayName": "DARE Swim Club",
+  "displayNameHtml": "<div class=\"aq-wordmark\"><span class=\"aq-wordmark-name\">DARE</span><span class=\"aq-wordmark-sub\">Swim Club Operations</span></div>",
   "registrationAllowed": false,
   "resetPasswordAllowed": true,
   "rememberMe": true,
   "verifyEmail": false,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
+  "editUsernameAllowed": false,
   "bruteForceProtected": true,
   "permanentLockout": false,
   "maxFailureWaitSeconds": 900,
@@ -16,22 +18,55 @@
   "quickLoginCheckMilliSeconds": 1000,
   "maxDeltaTimeSeconds": 43200,
   "failureFactor": 10,
+  "passwordPolicy": "length(10) and notUsername and notEmail",
+  "ssoSessionIdleTimeout": 28800,
+  "ssoSessionMaxLifespan": 86400,
+  "accessTokenLifespan": 900,
+  "actionTokenGeneratedByUserLifespan": 1800,
+  "actionTokenGeneratedByAdminLifespan": 43200,
+  "eventsEnabled": true,
+  "eventsExpiration": 604800,
+  "adminEventsEnabled": true,
+  "adminEventsDetailsEnabled": true,
   "loginTheme": "aquify",
+  "smtpServer": {
+    "host": "localhost",
+    "port": "1025",
+    "from": "noreply@dare.local",
+    "fromDisplayName": "DARE Swim Club",
+    "auth": "false",
+    "ssl": "false",
+    "starttls": "false"
+  },
   "roles": {
     "realm": [
-      { "name": "owner", "description": "Full system access" },
-      { "name": "admin", "description": "Administrative access" },
-      { "name": "coach", "description": "Training and meets" },
-      { "name": "parent", "description": "Household portal access" },
-      { "name": "swimmer", "description": "Swimmer portal access" },
-      { "name": "billing", "description": "Financial access" },
-      { "name": "read-only", "description": "View-only staff access" }
+      { "name": "owner", "description": "Full platform access — manage all users, billing, and configuration" },
+      { "name": "admin", "description": "Administrative access — cannot assign or remove the owner role" },
+      { "name": "coach", "description": "Meet management, entry approval, group assignment" },
+      { "name": "parent", "description": "Parent portal access, scoped to household" },
+      { "name": "swimmer", "description": "Swimmer portal access, scoped to swimmer record" },
+      { "name": "billing", "description": "Invoice and payment management" },
+      { "name": "read-only", "description": "View-only staff access (token claim form)" },
+      { "name": "read_only_staff", "description": "View-only staff access (canonical API form)" }
+    ]
+  },
+  "components": {
+    "org.keycloak.userprofile.UserProfileProvider": [
+      {
+        "providerId": "declarative-user-profile",
+        "subComponents": {},
+        "config": {
+          "kc.user.profile.config": [
+            "{\"attributes\":[{\"name\":\"username\",\"displayName\":\"${username}\",\"validations\":{\"length\":{\"min\":3,\"max\":255},\"username-prohibited-characters\":{},\"up-username-not-idn-homograph\":{}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"email\",\"displayName\":\"${email}\",\"validations\":{\"email\":{},\"length\":{\"max\":255}},\"required\":{\"roles\":[\"user\"]},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"firstName\",\"displayName\":\"${firstName}\",\"validations\":{\"length\":{\"max\":255},\"person-name-prohibited-characters\":{}},\"required\":{\"roles\":[\"user\"]},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"lastName\",\"displayName\":\"${lastName}\",\"validations\":{\"length\":{\"max\":255},\"person-name-prohibited-characters\":{}},\"required\":{\"roles\":[\"user\"]},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"org_id\",\"displayName\":\"Organization ID\",\"validations\":{\"length\":{\"max\":64}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\"]},\"multivalued\":false}],\"groups\":[{\"name\":\"user-metadata\",\"displayHeader\":\"User metadata\",\"displayDescription\":\"Attributes, which refer to user metadata\"}],\"unmanagedAttributePolicy\":\"ENABLED\"}"
+          ]
+        }
+      }
     ]
   },
   "clients": [
     {
       "clientId": "aquify-id",
-      "name": "Aquify Admin SPA",
+      "name": "DARE Platform (admin + portals)",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": false,
@@ -87,7 +122,7 @@
     },
     {
       "clientId": "aquify-admin",
-      "name": "Aquify Admin Service Account",
+      "name": "DARE Admin Service Account",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": false,
@@ -101,6 +136,14 @@
     }
   ],
   "users": [
+    {
+      "username": "service-account-aquify-admin",
+      "enabled": true,
+      "serviceAccountClientId": "aquify-admin",
+      "clientRoles": {
+        "realm-management": ["realm-admin"]
+      }
+    },
     {
       "id": "00000000-0000-0000-0000-00000000a101",
       "username": "owner@dare.local",
@@ -197,7 +240,7 @@
       "credentials": [
         { "type": "password", "value": "ChangeMe123!", "temporary": false }
       ],
-      "realmRoles": ["read-only"]
+      "realmRoles": ["read-only", "read_only_staff"]
     }
   ]
 }

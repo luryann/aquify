@@ -33,7 +33,7 @@ var localDevUsers = []LocalDevUser{
 	{Token: "stub-parent", UserID: LocalDevParentUserID, Email: "parent@dare.local", Name: "Dev Parent", Roles: []string{"parent"}},
 	{Token: "stub-billing", UserID: LocalDevBillingUserID, Email: "billing@dare.local", Name: "Dev Billing", Roles: []string{"billing"}},
 	{Token: "stub-readonly", UserID: LocalDevReadOnlyUserID, Email: "readonly@dare.local", Name: "Dev Read-Only", Roles: []string{"read-only"}},
-	{Token: "stub-swimmer", UserID: LocalDevSwimmerUserID, Email: "swimmer@dare.local", Name: "Emma Chen", Roles: []string{"swimmer"}},
+	{Token: "stub-swimmer", UserID: LocalDevSwimmerUserID, Email: "swimmer@dare.local", Name: "Dev Swimmer", Roles: []string{"swimmer"}},
 }
 
 var localDevUserIDs = map[string]struct{}{

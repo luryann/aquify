@@ -83,12 +83,6 @@ export default function StripePage() {
           <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '28px', fontWeight: 400, color: 'var(--text)', letterSpacing: '-0.01em' }}>
             Stripe Integration
           </h1>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 14px', background: 'rgba(99,91,255,0.08)', border: '1px solid rgba(99,91,255,0.2)', borderRadius: '20px' }}>
-            <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#635bff', boxShadow: '0 0 8px rgba(99,91,255,0.5)' }} />
-            <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#635bff', fontWeight: 600, letterSpacing: '0.04em' }}>
-              STRIPE CONNECTED
-            </span>
-          </div>
         </div>
       </div>
 

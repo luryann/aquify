@@ -1,0 +1,295 @@
+/* ────────────────────────────────────────────────────────────────────────────
+   DARE Swim Club — Keycloak login theme
+   Design language: design-language-guide.html
+   Accent #eb5d1e · Instrument Serif (display) · Plus Jakarta Sans (body)
+   ──────────────────────────────────────────────────────────────────────────── */
+
+@font-face {
+  font-family: "Instrument Serif";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../fonts/instrument-serif-latin-400-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Instrument Serif";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../fonts/instrument-serif-latin-400-italic.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Plus Jakarta Sans";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../fonts/plus-jakarta-sans-latin-400-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Plus Jakarta Sans";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("../fonts/plus-jakarta-sans-latin-500-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Plus Jakarta Sans";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("../fonts/plus-jakarta-sans-latin-600-normal.woff2") format("woff2");
+}
+
+:root {
+  --aq-accent: #eb5d1e;
+  --aq-accent-bright: #ff7a3d;
+  --aq-accent-deep: #c2470f;
+  --aq-ink: #07131d;
+  --aq-ink-2: #0b1b29;
+  --aq-surface: #0f2233;
+  --aq-surface-2: #14293c;
+  --aq-line: rgba(148, 190, 220, 0.16);
+  --aq-text: #e8f1f7;
+  --aq-text-dim: #93aabb;
+  --aq-sans: "Plus Jakarta Sans", "Segoe UI", system-ui, sans-serif;
+  --aq-serif: "Instrument Serif", Georgia, "Times New Roman", serif;
+}
+
+/* ── Page background: deep water with lane lines and an ember glow ───────── */
+
+html.login-pf,
+html.login-pf body {
+  height: 100%;
+  background: var(--aq-ink);
+  font-family: var(--aq-sans);
+}
+
+body.pf-v5-c-login__body,
+.pf-v5-c-login {
+  background:
+    radial-gradient(90rem 42rem at 85% -12%, rgba(235, 93, 30, 0.17), transparent 58%),
+    radial-gradient(70rem 46rem at -12% 108%, rgba(38, 108, 152, 0.28), transparent 60%),
+    repeating-linear-gradient(
+      100deg,
+      transparent 0,
+      transparent 88px,
+      rgba(126, 178, 214, 0.045) 88px,
+      rgba(126, 178, 214, 0.045) 90px
+    ),
+    linear-gradient(178deg, var(--aq-ink-2) 0%, var(--aq-ink) 55%, #050d15 100%);
+  background-attachment: fixed;
+}
+
+/* ── Realm wordmark (realm displayNameHtml renders .aq-wordmark) ─────────── */
+
+#kc-header-wrapper,
+.pf-v5-c-login__header,
+.pf-v5-c-brand {
+  color: var(--aq-text);
+  font-family: var(--aq-serif);
+  text-shadow: none;
+}
+
+.aq-wordmark {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 1.25rem 0 0.5rem;
+  animation: aq-rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.aq-wordmark-name {
+  font-family: var(--aq-serif);
+  font-size: 3.4rem;
+  line-height: 1;
+  letter-spacing: 0.14em;
+  color: var(--aq-text);
+}
+
+.aq-wordmark-name::first-letter {
+  color: var(--aq-accent);
+}
+
+.aq-wordmark-sub {
+  font-family: var(--aq-sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  color: var(--aq-text-dim);
+}
+
+/* ── Login card ──────────────────────────────────────────────────────────── */
+
+.pf-v5-c-login__main {
+  background: linear-gradient(180deg, var(--aq-surface-2), var(--aq-surface));
+  border: 1px solid var(--aq-line);
+  border-top: 3px solid var(--aq-accent);
+  border-radius: 14px;
+  box-shadow:
+    0 30px 60px -18px rgba(0, 0, 0, 0.65),
+    0 0 0 1px rgba(0, 0, 0, 0.25);
+  color: var(--aq-text);
+  animation: aq-rise 0.7s 0.08s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.pf-v5-c-login__main-header,
+.pf-v5-c-login__main-body,
+.pf-v5-c-login__main-footer {
+  color: var(--aq-text);
+}
+
+.pf-v5-c-title,
+h1#kc-page-title {
+  font-family: var(--aq-serif);
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  color: var(--aq-text);
+}
+
+/* ── Form controls ───────────────────────────────────────────────────────── */
+
+.pf-v5-c-form__label-text,
+.pf-v5-c-form__label,
+.pf-v5-c-check__label {
+  font-family: var(--aq-sans);
+  font-weight: 500;
+  color: var(--aq-text-dim);
+  letter-spacing: 0.02em;
+}
+
+.pf-v5-c-form-control {
+  background: rgba(4, 13, 21, 0.6);
+  border-radius: 8px;
+  --pf-v5-c-form-control--BackgroundColor: transparent;
+  --pf-v5-c-form-control--Color: var(--aq-text);
+  --pf-v5-c-form-control--BorderColor: var(--aq-line);
+  --pf-v5-c-form-control--after--BorderBottomColor: var(--aq-line);
+  --pf-v5-c-form-control--hover--after--BorderBottomColor: var(--aq-accent);
+  --pf-v5-c-form-control--focus--after--BorderBottomColor: var(--aq-accent);
+}
+
+.pf-v5-c-form-control > input,
+.pf-v5-c-form-control input {
+  background: transparent;
+  color: var(--aq-text);
+  font-family: var(--aq-sans);
+}
+
+.pf-v5-c-form-control > input:-webkit-autofill,
+.pf-v5-c-form-control input:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 1000px #0a1926 inset;
+  -webkit-text-fill-color: var(--aq-text);
+}
+
+.pf-v5-c-button.pf-m-control {
+  --pf-v5-c-button--m-control--BackgroundColor: rgba(4, 13, 21, 0.6);
+  color: var(--aq-text-dim);
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+
+.pf-v5-c-button.pf-m-primary {
+  background: linear-gradient(180deg, var(--aq-accent-bright), var(--aq-accent));
+  border-radius: 8px;
+  color: #fff7f2;
+  font-family: var(--aq-sans);
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  border: none;
+  box-shadow: 0 10px 24px -10px rgba(235, 93, 30, 0.6);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+}
+
+.pf-v5-c-button.pf-m-primary:hover {
+  background: linear-gradient(180deg, var(--aq-accent-bright), var(--aq-accent));
+  filter: brightness(1.07);
+  transform: translateY(-1px);
+  box-shadow: 0 14px 28px -10px rgba(235, 93, 30, 0.7);
+}
+
+.pf-v5-c-button.pf-m-primary:active {
+  transform: translateY(0);
+  filter: brightness(0.96);
+}
+
+/* ── Links, footer, misc ─────────────────────────────────────────────────── */
+
+.pf-v5-c-login a,
+.pf-v5-c-login__main a,
+.pf-v5-c-button.pf-m-link {
+  color: var(--aq-accent-bright);
+  font-family: var(--aq-sans);
+  text-decoration: none;
+}
+
+.pf-v5-c-login a:hover,
+.pf-v5-c-login__main a:hover,
+.pf-v5-c-button.pf-m-link:hover {
+  color: #ffa070;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.pf-v5-c-login__main-footer-band,
+.pf-v5-c-login__main-footer-band-item,
+.pf-v5-c-helper-text__item-text,
+.pf-v5-c-form__helper-text {
+  color: var(--aq-text-dim);
+}
+
+.pf-v5-c-check__input {
+  accent-color: var(--aq-accent);
+}
+
+/* Focus states */
+.pf-v5-c-login *:focus-visible {
+  outline: 2px solid var(--aq-accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* ── Alerts ──────────────────────────────────────────────────────────────── */
+
+.pf-v5-c-alert {
+  border-radius: 10px;
+  background: rgba(4, 13, 21, 0.55);
+  color: var(--aq-text);
+}
+
+.pf-v5-c-alert__title {
+  font-family: var(--aq-sans);
+}
+
+.pf-v5-c-alert.pf-m-danger {
+  border-left: 3px solid #e5484d;
+}
+
+.pf-v5-c-alert.pf-m-success {
+  border-left: 3px solid #46a758;
+}
+
+.pf-v5-c-alert.pf-m-warning {
+  border-left: 3px solid var(--aq-accent);
+}
+
+/* ── Motion ──────────────────────────────────────────────────────────────── */
+
+@keyframes aq-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aq-wordmark,
+  .pf-v5-c-login__main {
+    animation: none;
+  }
+}

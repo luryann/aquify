@@ -54,6 +54,8 @@ Interpret creatively and make unexpected choices that feel genuinely designed fo
 | Capture post-launch stability evidence | `make stability-report-evidence API_BASE_URL=<url> AUTH_TOKEN=<token> ORG_ID=<org> STABILITY_WINDOW_LABEL=+24h NO_OPEN_P0_P1_ATTESTATION=true SUPPORT_INCIDENTS_FILE=/path/to/incidents.csv` |
 | Start local infra (Docker) | `make infra-up` |
 | Destroy local infra + volumes | `make infra-reset` |
+| Start local Keycloak (Windows, native) | `powershell -ExecutionPolicy Bypass -File scripts/start-keycloak-local.ps1` (add `-Reset` to wipe data + re-import realm) |
+| Start local Keycloak (macOS/Linux, native) | `make keycloak-local-up` / `make keycloak-local-reset` |
 
 > **`internal/meetfiles` is a separate Go module** — always `cd` into it before running `go test` or `go vet`.
 
@@ -99,7 +101,7 @@ root/
   docs/               # Planning docs, OpenAPI spec, runbooks
   tests/              # k6 load tests
   Makefile
-  docker-compose.yml  # Local infra: Postgres, Redis, MinIO, Mailpit
+  docker-compose.yml  # Local infra: Postgres, Redis, MinIO, Mailpit, Keycloak
 ```
 
 ### Backend Domain Pattern
@@ -108,7 +110,9 @@ Each domain lives in `server/internal/app/<domain>/` and follows the same struct
 - `repository.go` — pgx/v5 DB read/write; loaded into in-memory maps on startup (write-through cache)
 - `runtime_snapshot.go` — legacy JSON snapshot bridge (backward compat; DB writes are canonical)
 
-Domains: `members`, `groups`, `meets`, `imports`, `exports`, `performance`, `billing`, `comms`, `compliance`, `documents`, `training`, `audit`
+Domains: `members`, `groups`, `meets`, `imports`, `exports`, `performance`, `billing`, `comms`, `compliance`, `documents`, `training`, `audit`, `seasons`
+
+- Admin `/seasons` is API-backed via `GET/POST /api/v1/seasons` and `GET/PUT/DELETE /api/v1/seasons/{id}` (read: owner/admin/coach/read-only; write: owner/admin, audit-logged). Season records live in `server/internal/app/seasons/` with helpers in `admin/lib/adminData.ts` (`fetchSeasons`/`createSeason`/`updateSeason`/`deleteSeason`); do not reintroduce local-only season state on that page.
 
 HTTP handlers live in `server/internal/app/handlers/<domain>.go` and are thin: validate → call service → respond.
 
@@ -151,7 +155,8 @@ HTTP handlers live in `server/internal/app/handlers/<domain>.go` and are thin: v
 - Billing autopay is now live through `GET/PUT /api/v1/households/{householdID}/autopay`, `POST /api/v1/households/{householdID}/autopay/opt-out`, and `GET /api/v1/autopay/households`. Keep portal/admin UI state aligned with `admin/lib/autopay.ts`, treat parent access as household-scoped only, and preserve the backend next-charge preview contract that derives scheduled date/amount from the earliest open issued invoice plus `trigger_days_before_due`.
 
 ### Auth / RBAC
-- OIDC via Keycloak. Dev stub tokens controlled by `AUTH_ENABLE_DEV_STUB_TOKENS` (default `true` only when `APP_ENV` is explicitly `development`, `local`, or `test`; must be `false` in prod).
+- OIDC via Keycloak. All local Keycloak configuration (realm import JSON + branded login theme) lives in `deploy/keycloak/`; the server distribution itself is auto-downloaded into gitignored `.tools/` by `scripts/start-keycloak-local.ps1` (Windows) or `make keycloak-local-up` (macOS/Linux), or runs as the `keycloak` docker-compose service. The realm import is self-contained (clients, roles, seed users with `org_id`, `aquify-admin` service account with realm-admin, Mailpit SMTP) — there is no separate bootstrap script. See `docs/ops/keycloak-setup.md`.
+- Dev stub tokens controlled by `AUTH_ENABLE_DEV_STUB_TOKENS` (default `true` only when `APP_ENV` is explicitly `development`, `local`, or `test`; must be `false` in prod).
 - `middleware.Auth` accepts `Authorization: Bearer ...` or `aquify_access_token` cookie.
 - All protected routes require `X-Org-Id` header matching the principal's `OrgID`. The `membershipScopeFromRequest` helper enforces this — mismatches return 403.
 - Protected router wiring now enforces org scope centrally with `RequireOrgScope` immediately after auth middleware. Handler-level scope helpers should treat `OrgIDFromContext` as already validated against the principal and only add narrower domain/body scope checks on top.

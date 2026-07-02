@@ -65,9 +65,9 @@ export const LOCAL_DEV_USERS: Record<string, LocalDevUser> = {
   'stub-swimmer': {
     id: '00000000-0000-0000-0000-00000000a107',
     email: 'swimmer@dare.local',
-    name: 'Emma Chen',
+    name: 'Dev Swimmer',
     role: 'swimmer',
     orgId: LOCAL_DEV_ORG_ID,
-    avatarInitials: 'EC',
+    avatarInitials: 'DS',
   },
 }
