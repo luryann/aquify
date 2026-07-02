@@ -419,7 +419,6 @@ func (s *Service) checkParentHouseholdForSwimmer(principal *appmiddleware.Princi
 		switch strings.ToLower(r) {
 		case "parent", "swimmer":
 			requiresHouseholdScope = true
-			break
 		}
 	}
 	if !requiresHouseholdScope {
