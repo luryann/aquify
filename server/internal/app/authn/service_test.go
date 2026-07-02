@@ -88,6 +88,75 @@ func TestIssueSessionPreservesLegacyOrgIDForNonLocalUsers(t *testing.T) {
 	}
 }
 
+func TestBeginOIDCLoginCarriesRequestedOrgIDInSignedState(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(Config{
+		OIDC: OIDCConfig{
+			AuthorizeURL:    "https://issuer.example.com/auth",
+			RedirectURL:     "https://app.example.com/api/v1/auth/oidc/callback",
+			ClientID:        "aquify-admin",
+			StateSigningKey: "state-signing-key",
+		},
+	})
+
+	location, err := service.BeginOIDCLogin("parent@club.example", "org-bluefish")
+	if err != nil {
+		t.Fatalf("begin oidc login: %v", err)
+	}
+
+	parsed, err := url.Parse(location)
+	if err != nil {
+		t.Fatalf("parse authorize url: %v", err)
+	}
+	query := parsed.Query()
+	if got := query.Get("login_hint"); got != "parent@club.example" {
+		t.Fatalf("expected login_hint to be preserved, got %q", got)
+	}
+	if got := query.Get("prompt"); got != "login" {
+		t.Fatalf("expected prompt=login, got %q", got)
+	}
+
+	state, err := validateOIDCState(query.Get("state"), "state-signing-key", time.Now().UTC())
+	if err != nil {
+		t.Fatalf("validate oidc state: %v", err)
+	}
+	if state.OrgID != "org-bluefish" {
+		t.Fatalf("expected signed state org_id %q, got %q", "org-bluefish", state.OrgID)
+	}
+}
+
+func TestBeginOIDCLoginDoesNotInjectDefaultDemoOrgID(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(Config{
+		OIDC: OIDCConfig{
+			AuthorizeURL:    "https://issuer.example.com/auth",
+			RedirectURL:     "https://app.example.com/api/v1/auth/oidc/callback",
+			ClientID:        "aquify-admin",
+			StateSigningKey: "state-signing-key",
+		},
+	})
+
+	location, err := service.BeginOIDCLogin("", "")
+	if err != nil {
+		t.Fatalf("begin oidc login: %v", err)
+	}
+
+	parsed, err := url.Parse(location)
+	if err != nil {
+		t.Fatalf("parse authorize url: %v", err)
+	}
+
+	state, err := validateOIDCState(parsed.Query().Get("state"), "state-signing-key", time.Now().UTC())
+	if err != nil {
+		t.Fatalf("validate oidc state: %v", err)
+	}
+	if state.OrgID != "" {
+		t.Fatalf("expected empty org_id when none requested, got %q", state.OrgID)
+	}
+}
+
 func TestChallengeMFARejectsStaticCodeAndAcceptsTOTP(t *testing.T) {
 	t.Parallel()
 

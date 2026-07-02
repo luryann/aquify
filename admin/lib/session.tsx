@@ -19,6 +19,7 @@ export type User = {
   email: string
   name: string
   role: Role
+  roles: Role[]
   orgId: string
   householdId?: string
   mfaAuthenticated?: boolean
@@ -68,6 +69,7 @@ export const DEV_SESSIONS: Record<string, Session> = {
           email: user.email,
           name: user.name,
           role: user.role,
+          roles: [user.role],
           orgId: user.orgId,
           avatarInitials: user.avatarInitials,
           mfaAuthenticated: user.mfaAuthenticated,
@@ -91,7 +93,8 @@ function resolvePrimaryRole(roles: string[]): Role {
 }
 
 function sessionFromCurrentResponse(payload: CurrentSessionResponse): Session {
-  const role = resolvePrimaryRole(payload.user.roles)
+  const roles = payload.user.roles.filter((nextRole): nextRole is Role => nextRole in ROLE_HIERARCHY)
+  const role = resolvePrimaryRole(roles)
   const name = payload.user.name?.trim() || payload.user.email?.trim() || payload.user.user_id
   const email = payload.user.email?.trim() || ''
   return {
@@ -102,6 +105,7 @@ function sessionFromCurrentResponse(payload: CurrentSessionResponse): Session {
       email,
       name,
       role,
+      roles: roles.length > 0 ? roles : [role],
       orgId: payload.user.org_id,
       householdId: payload.user.household_id,
       mfaAuthenticated: payload.user.mfa_authenticated,

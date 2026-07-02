@@ -191,10 +191,15 @@ func (h *GroupsHandlers) listGroups(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	pagination := parseListPagination(r, listPaginationOptions{})
+	result, total := paginateSlice(result, pagination)
 
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status": "ok",
 		"count":  len(result),
+		"total":  total,
+		"limit":  pagination.Limit,
+		"offset": pagination.Offset,
 		"groups": result,
 	})
 }
@@ -264,6 +269,9 @@ func (h *GroupsHandlers) listEligibilityRules(w http.ResponseWriter, r *http.Req
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":   "ok",
 		"count":    len(rules),
+		"total":    len(rules),
+		"limit":    len(rules),
+		"offset":   0,
 		"group_id": groupID,
 		"rules":    rules,
 	})
@@ -310,14 +318,20 @@ func (h *GroupsHandlers) listRegistrations(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	registrations := h.service.SnapshotRegistrations(orgID)
-	if registrations == nil {
-		registrations = []groups.Registration{}
+	registrations, err := h.service.ListRegistrations(principal, orgID)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to list registrations.", nil)
+		return
 	}
+	pagination := parseListPagination(r, listPaginationOptions{})
+	registrations, total := paginateSlice(registrations, pagination)
 
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":        "ok",
 		"count":         len(registrations),
+		"total":         total,
+		"limit":         pagination.Limit,
+		"offset":        pagination.Offset,
 		"registrations": registrations,
 	})
 }
@@ -458,15 +472,13 @@ func (h *GroupsHandlers) acceptWaiver(w http.ResponseWriter, r *http.Request) {
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
 func (h *GroupsHandlers) decodeAndValidate(w http.ResponseWriter, r *http.Request, dst any) bool {
-	if err := decodeJSONBody(r, dst); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request_body", err.Error(), nil)
-		return false
-	}
-	if err := h.validate.Struct(dst); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "validation_failed", "One or more request fields are invalid.", httpx.FormatValidationErrors(err))
-		return false
-	}
-	return true
+	return decodeAndValidateJSON(w, r, dst, h.validate, decodeAndValidateOptions{
+		InvalidStatus:     http.StatusBadRequest,
+		InvalidCode:       "invalid_request_body",
+		ValidationStatus:  http.StatusBadRequest,
+		ValidationCode:    "validation_failed",
+		ValidationMessage: "One or more request fields are invalid.",
+	})
 }
 
 func groupScopeFromRequest(w http.ResponseWriter, r *http.Request) (*appmiddleware.Principal, string, bool) {
@@ -479,7 +491,7 @@ func hasRegistrationListAccess(principal *appmiddleware.Principal) bool {
 	}
 	for _, role := range principal.Roles {
 		switch strings.TrimSpace(strings.ToLower(role)) {
-		case "owner", "admin", "coach", "read-only":
+		case "owner", "admin", "coach", "parent", "read-only":
 			return true
 		}
 	}

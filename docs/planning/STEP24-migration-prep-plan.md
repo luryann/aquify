@@ -71,8 +71,13 @@ Finish the non-blocked implementation work in `TODO.md` section `24) Migration p
 - source-system billing total parity
 - manual remediation log from actual dry-run output
 
+The CLI now accepts `-source-counts`, `-source-billing-total-cents`, and
+`-remediation-log` so those parity checks and remediation items are captured in
+the dry-run artifact set once real source exports are available.
+
 ## Verification target
 
 - `go test ./internal/migration/... ./cmd/migrate/...` in `server/`
 - manual `go run ./cmd/migrate plan`
 - manual `go run ./cmd/migrate dry-run -input-dir <dir> -report <file>`
+- manual `go run ./cmd/migrate dry-run -input-dir <dir> -report <file> -source-counts <source-counts.json> -source-billing-total-cents <cents> -remediation-log <file>`

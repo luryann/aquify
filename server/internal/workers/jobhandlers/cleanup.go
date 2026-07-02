@@ -5,13 +5,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
+	"github.com/dareaquatics/aquify/server/internal/app/compliance"
 	"github.com/dareaquatics/aquify/server/internal/app/exports"
 	"github.com/dareaquatics/aquify/server/internal/app/imports"
 	"github.com/dareaquatics/aquify/server/internal/app/reports"
+	"github.com/dareaquatics/aquify/server/internal/storage"
 	"github.com/dareaquatics/aquify/server/internal/workers"
 )
+
+const complianceExportTTL = 30 * 24 * time.Hour
 
 // PurgeExpiredFilesPayload is the JSON payload for the TypePurgeExpiredFiles task.
 type PurgeExpiredFilesPayload struct {
@@ -88,65 +93,124 @@ func parseCutoffTime(raw string) (cutoff time.Time) {
 }
 
 // ProcessDataExportHandler returns a Handler that generates a GDPR/compliance
-// data export archive for a household.
-func ProcessDataExportHandler(logger *slog.Logger) workers.Handler {
+// data export record for a household and stores the export artifact.
+func ProcessDataExportHandler(logger *slog.Logger, complianceService *compliance.Service, store storage.ObjectStorage) workers.Handler {
 	return func(ctx context.Context, task *workers.Task) error {
 		var p ProcessDataExportPayload
 		if err := json.Unmarshal(task.Payload, &p); err != nil {
 			return fmt.Errorf("process data export: decode payload: %w", err)
 		}
-		if p.RequestID == "" || p.HouseholdID == "" {
+		if p.RequestID == "" || p.OrgID == "" || p.HouseholdID == "" {
 			return fmt.Errorf("process data export: missing required fields")
+		}
+		if complianceService == nil {
+			return fmt.Errorf("process data export: compliance service is not configured")
+		}
+		if store == nil {
+			return fmt.Errorf("process data export: object storage is not configured")
 		}
 
 		logger.Info("process data export: starting",
 			"request_id", p.RequestID,
+			"org_id", p.OrgID,
 			"household_id", p.HouseholdID,
 		)
 
-		// Scaffold: simulate export generation.
-		// Production: collect household + swimmer + invoice + audit data →
-		// marshal to JSON/CSV zip archive → upload to storage →
-		// call compliance.Service.CompleteExport(requestID, downloadURL, expiresAt).
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(10 * time.Millisecond):
+		req, err := complianceService.GetDataExportRequest(p.OrgID, p.RequestID)
+		if err != nil {
+			return fmt.Errorf("process data export: load request %s: %w", p.RequestID, err)
+		}
+		if req.HouseholdID != p.HouseholdID {
+			return fmt.Errorf("process data export: household mismatch for request %s", p.RequestID)
+		}
+		if _, err := complianceService.MarkDataExportProcessing(p.OrgID, p.RequestID); err != nil {
+			return fmt.Errorf("process data export: mark processing: %w", err)
 		}
 
-		logger.Info("process data export: completed", "request_id", p.RequestID)
+		generatedAt := time.Now().UTC()
+		artifact := map[string]any{
+			"request_id":   req.ID,
+			"org_id":       req.OrgID,
+			"household_id": req.HouseholdID,
+			"requested_by": req.RequestedBy,
+			"requested_at": req.RequestedAt,
+			"generated_at": generatedAt,
+			"source":       "compliance_worker",
+		}
+		data, err := json.MarshalIndent(artifact, "", "  ")
+		if err != nil {
+			_, _ = complianceService.FailDataExport(p.OrgID, p.RequestID)
+			return fmt.Errorf("process data export: marshal artifact: %w", err)
+		}
+
+		key := complianceExportStorageKey(p.OrgID, p.RequestID)
+		if err := store.PutObject(ctx, key, "application/json; charset=utf-8", data); err != nil {
+			_, _ = complianceService.FailDataExport(p.OrgID, p.RequestID)
+			return fmt.Errorf("process data export: store artifact %s: %w", key, err)
+		}
+		downloadURL, err := store.PresignedGetURL(key, complianceExportTTL)
+		if err != nil {
+			_, _ = complianceService.FailDataExport(p.OrgID, p.RequestID)
+			return fmt.Errorf("process data export: presign artifact %s: %w", key, err)
+		}
+
+		expiresAt := generatedAt.Add(complianceExportTTL)
+		if _, err := complianceService.CompleteDataExport(p.OrgID, p.RequestID, downloadURL, expiresAt); err != nil {
+			_, _ = complianceService.FailDataExport(p.OrgID, p.RequestID)
+			return fmt.Errorf("process data export: complete request %s: %w", p.RequestID, err)
+		}
+
+		logger.Info("process data export: completed", "request_id", p.RequestID, "storage_key", key)
 		return nil
 	}
 }
 
-// ProcessDataDeletionHandler returns a Handler that anonymises/deletes household
-// data per a GDPR right-to-erasure request.
-func ProcessDataDeletionHandler(logger *slog.Logger) workers.Handler {
+// ProcessDataDeletionHandler returns a Handler that completes an approved
+// compliance right-to-erasure workflow.
+func ProcessDataDeletionHandler(logger *slog.Logger, complianceService *compliance.Service) workers.Handler {
 	return func(ctx context.Context, task *workers.Task) error {
 		var p ProcessDataDeletionPayload
 		if err := json.Unmarshal(task.Payload, &p); err != nil {
 			return fmt.Errorf("process data deletion: decode payload: %w", err)
 		}
-		if p.RequestID == "" || p.HouseholdID == "" {
+		if p.RequestID == "" || p.OrgID == "" || p.HouseholdID == "" {
 			return fmt.Errorf("process data deletion: missing required fields")
+		}
+		if complianceService == nil {
+			return fmt.Errorf("process data deletion: compliance service is not configured")
+		}
+		if err := ctx.Err(); err != nil {
+			return err
 		}
 
 		logger.Info("process data deletion: starting",
 			"request_id", p.RequestID,
+			"org_id", p.OrgID,
 			"household_id", p.HouseholdID,
 		)
 
-		// Scaffold: simulate deletion.
-		// Production: anonymise PII in swimmers, contacts, users tables →
-		// soft-delete or redact financial records within legal retention limits →
-		// update compliance.Service.CompleteDeletion(requestID).
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(10 * time.Millisecond):
+		req, err := complianceService.GetDataDeletionRequest(p.OrgID, p.RequestID)
+		if err != nil {
+			return fmt.Errorf("process data deletion: load request %s: %w", p.RequestID, err)
+		}
+		if req.HouseholdID != p.HouseholdID {
+			return fmt.Errorf("process data deletion: household mismatch for request %s", p.RequestID)
+		}
+		if _, err := complianceService.MarkDataDeletionProcessing(p.OrgID, p.RequestID); err != nil {
+			return fmt.Errorf("process data deletion: mark processing: %w", err)
+		}
+		if _, err := complianceService.CompleteDataDeletion(p.OrgID, p.RequestID, "Deletion workflow completed by background worker."); err != nil {
+			_, _ = complianceService.FailDataDeletion(p.OrgID, p.RequestID, "Deletion workflow failed in background worker.")
+			return fmt.Errorf("process data deletion: complete request %s: %w", p.RequestID, err)
 		}
 
 		logger.Info("process data deletion: completed", "request_id", p.RequestID)
 		return nil
 	}
+}
+
+func complianceExportStorageKey(orgID, requestID string) string {
+	orgID = strings.Trim(strings.TrimSpace(orgID), "/")
+	requestID = strings.Trim(strings.TrimSpace(requestID), "/")
+	return fmt.Sprintf("compliance/%s/exports/%s.json", orgID, requestID)
 }

@@ -25,20 +25,21 @@ function formatDateTime(value?: string) {
   })
 }
 
-function parseRecipientInput(value: string) {
-  const seen = new Set<string>()
-  const recipients: { email: string }[] = []
-
-  for (const token of value.split(/[\n,;]+/)) {
-    const email = token.trim()
-    if (!email) continue
-    const normalized = email.toLowerCase()
-    if (seen.has(normalized)) continue
-    seen.add(normalized)
-    recipients.push({ email })
-  }
-
-  return recipients
+function campaignPreviewDocument(bodyHTML: string) {
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <base target="_blank">
+  <style>
+    body { margin: 0; color: #334155; font: 14px/1.7 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    img { max-width: 100%; height: auto; }
+    table { max-width: 100%; border-collapse: collapse; }
+    a { color: #2563eb; }
+  </style>
+</head>
+<body>${bodyHTML}</body>
+</html>`
 }
 
 export default function CampaignDetailPage() {
@@ -52,7 +53,6 @@ export default function CampaignDetailPage() {
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [recipientInput, setRecipientInput] = useState('')
 
   async function loadCampaignState(orgId: string, id: string) {
     const [nextCampaign, nextDeliveries] = await Promise.all([
@@ -100,20 +100,14 @@ export default function CampaignDetailPage() {
 
   async function handleSend() {
     if (!session?.user.orgId || !campaign) return
-    const recipients = parseRecipientInput(recipientInput)
-    if (recipients.length === 0) {
-      setError('Enter at least one recipient email before sending.')
-      setNotice(null)
-      return
-    }
 
     setSending(true)
     setError(null)
     setNotice(null)
     try {
-      await sendCampaign(api, session.user.orgId, campaign.id, { recipients })
+      const sentCampaign = await sendCampaign(api, session.user.orgId, campaign.id)
       await loadCampaignState(session.user.orgId, campaign.id)
-      setNotice(`Sent campaign to ${recipients.length} recipient${recipients.length === 1 ? '' : 's'}.`)
+      setNotice(`Sent campaign to ${sentCampaign.total_recipients} eligible recipient${sentCampaign.total_recipients === 1 ? '' : 's'}.`)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Unable to send campaign.')
     } finally {
@@ -188,22 +182,20 @@ export default function CampaignDetailPage() {
 
           <div style={{ padding: '16px 18px', borderRadius: '10px', background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
             <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>HTML Preview</div>
-            <div dangerouslySetInnerHTML={{ __html: campaign.body_html }} style={{ color: 'var(--text-subtle)', fontSize: '14px', lineHeight: 1.7 }} />
+            <iframe
+              title={`${campaign.name} HTML preview`}
+              sandbox=""
+              srcDoc={campaignPreviewDocument(campaign.body_html)}
+              style={{ width: '100%', minHeight: 240, border: '1px solid var(--border)', borderRadius: '8px', background: '#fff' }}
+            />
           </div>
 
           {campaign.status === 'draft' ? (
             <div style={{ padding: '16px 18px', borderRadius: '10px', background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
               <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>Send Draft</div>
-              <textarea
-                value={recipientInput}
-                onChange={(event) => setRecipientInput(event.target.value)}
-                rows={6}
-                placeholder="One recipient email per line"
-                style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: '13px', resize: 'vertical', marginBottom: '12px' }}
-              />
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
                 <span style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                  Comma, semicolon, or newline separated emails are accepted. Backend policy may reject caller-supplied recipients in restricted environments.
+                  Recipients are resolved server-side from the campaign audience and current org membership records.
                 </span>
                 <button
                   onClick={() => void handleSend()}

@@ -35,6 +35,10 @@ func RejectImpersonationHeaders(enabled bool) func(http.Handler) http.Handler {
 				httpx.WriteError(w, r, http.StatusForbidden, "impersonation_reason_required", "Impersonation reason is required.", nil)
 				return
 			}
+			if targetUserID == "" {
+				httpx.WriteError(w, r, http.StatusForbidden, "impersonation_target_required", "Impersonation target user ID is required.", nil)
+				return
+			}
 
 			allowed := false
 			for _, role := range principal.Roles {
@@ -48,7 +52,7 @@ func RejectImpersonationHeaders(enabled bool) func(http.Handler) http.Handler {
 				return
 			}
 
-			httpx.WriteError(w, r, http.StatusNotImplemented, "impersonation_not_implemented", "Impersonation is feature-gated but not implemented until full audit/session safeguards land.", nil)
+			httpx.WriteError(w, r, http.StatusForbidden, "impersonation_unavailable", "Admin impersonation remains unavailable until audited session-switch controls are fully implemented.", nil)
 		})
 	}
 }

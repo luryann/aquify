@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
+import { shouldShowCollectionEmptyState } from '@/lib/collection-load-state'
+import { reportUIError } from '@/lib/frontend-telemetry'
 import {
   fetchMeets,
   fetchPractices,
@@ -277,13 +279,21 @@ export default function SwimmerSchedulePage() {
   const [schedule, setSchedule] = useState<ScheduleEvent[]>([])
   const [loading, setLoading] = useState(true)
   const [typeFilter, setTypeFilter] = useState<EventType | 'all' | 'practice'>('all')
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
-    if (!orgId) { setLoading(false); return }
+    if (!orgId) {
+      setLoading(false)
+      setLoadError('Swimmer schedule is unavailable because no organization is selected.')
+      return
+    }
     const now = new Date()
+    setLoading(true)
+    setLoadError(null)
     Promise.all([
       fetchMeets(api, orgId),
-      fetchPractices(api, orgId).catch(() => [] as PracticeRecord[]),
+      fetchPractices(api, orgId),
     ])
       .then(([meets, practices]) => {
         const futureMeets = meets.filter(m => {
@@ -297,9 +307,17 @@ export default function SwimmerSchedulePage() {
         ].sort((a, b) => a.date.getTime() - b.date.getTime())
         setSchedule(allEvents)
       })
-      .catch(console.error)
+      .catch((error) => {
+        setSchedule([])
+        setLoadError(reportUIError(
+          'swimmer-schedule-load',
+          error,
+          'Swimmer schedule data is unavailable right now.',
+          { orgId },
+        ))
+      })
       .finally(() => setLoading(false))
-  }, [api, orgId])
+  }, [api, orgId, reloadKey])
 
   const filtered = typeFilter === 'all'
     ? schedule
@@ -332,6 +350,34 @@ export default function SwimmerSchedulePage() {
           Upcoming meets and commitment deadlines.
         </p>
       </div>
+
+      {loadError && (
+        <div
+          style={{
+            marginBottom: '24px',
+            background: 'rgba(245,158,11,0.10)',
+            border: '1px solid rgba(245,158,11,0.25)',
+            borderRadius: '10px',
+            padding: '12px 16px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: '12px',
+          }}
+        >
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+            <Icon name="alert-circle" size={15} style={{ color: '#f59e0b', marginTop: '1px', flexShrink: 0 }} />
+            <p style={{ margin: 0, fontSize: '12.5px', color: C.text, lineHeight: 1.5 }}>{loadError}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setReloadKey((key) => key + 1)}
+            style={{ background: 'transparent', border: '1px solid rgba(245,158,11,0.25)', borderRadius: '8px', cursor: 'pointer', color: C.text, fontSize: '12px', fontWeight: 600, padding: '8px 14px', whiteSpace: 'nowrap' }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* Type filter */}
       <div
@@ -447,7 +493,23 @@ export default function SwimmerSchedulePage() {
             </section>
           ))}
 
-          {sections.length === 0 && (
+          {loadError ? (
+            <div
+              style={{
+                background: C.card,
+                border: `1px solid ${C.border}`,
+                borderRadius: '14px',
+                padding: '60px 20px',
+                textAlign: 'center',
+              }}
+            >
+              <Icon name="calendar" size={32} style={{ color: C.muted, marginBottom: '16px' }} />
+              <p style={{ fontSize: '15px', color: C.subtle, fontWeight: 500 }}>Schedule data is unavailable right now.</p>
+              <p style={{ fontSize: '13px', color: C.muted, marginTop: '4px' }}>
+                Reload to see upcoming meets, practices, and deadlines.
+              </p>
+            </div>
+          ) : shouldShowCollectionEmptyState(loading, loadError, sections.length) && (
             <div
               style={{
                 background: C.card,

@@ -5,8 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"time"
+	"strings"
 
+	"github.com/dareaquatics/aquify/server/internal/app/comms"
 	"github.com/dareaquatics/aquify/server/internal/workers"
 )
 
@@ -21,7 +22,7 @@ type SendCampaignBatchPayload struct {
 }
 
 // SendCampaignBatchHandler returns a Handler that sends a batch of campaign emails.
-func SendCampaignBatchHandler(logger *slog.Logger) workers.Handler {
+func SendCampaignBatchHandler(logger *slog.Logger, commsService *comms.Service) workers.Handler {
 	return func(ctx context.Context, task *workers.Task) error {
 		var p SendCampaignBatchPayload
 		if err := json.Unmarshal(task.Payload, &p); err != nil {
@@ -29,6 +30,9 @@ func SendCampaignBatchHandler(logger *slog.Logger) workers.Handler {
 		}
 		if p.CampaignID == "" || p.OrgID == "" {
 			return fmt.Errorf("send campaign batch: missing required fields")
+		}
+		if commsService == nil {
+			return fmt.Errorf("send campaign batch: communications service is not configured")
 		}
 
 		logger.Info("send campaign batch: starting",
@@ -38,14 +42,23 @@ func SendCampaignBatchHandler(logger *slog.Logger) workers.Handler {
 			"batch", fmt.Sprintf("%d/%d", p.BatchIndex+1, p.BatchTotal),
 		)
 
-		// Scaffold: simulate batch send.
-		// Production: fetch campaign content from comms.Service →
-		// filter suppressed addresses → send via postmark.Client.SendBatch →
-		// record delivery statuses back to comms.Service.
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(10 * time.Millisecond):
+		recipients := make([]comms.Recipient, 0, len(p.Recipients))
+		for _, raw := range p.Recipients {
+			email := strings.TrimSpace(raw)
+			if email == "" {
+				continue
+			}
+			recipients = append(recipients, comms.Recipient{Email: email})
+		}
+		if len(recipients) == 0 {
+			return fmt.Errorf("send campaign batch: recipients are required")
+		}
+
+		if _, err := commsService.SendCampaign(ctx, p.OrgID, p.CampaignID, comms.SendCampaignInput{
+			Recipients: recipients,
+			ActorID:    "worker:" + workers.TypeSendCampaignBatch,
+		}); err != nil {
+			return fmt.Errorf("send campaign batch: send campaign %s: %w", p.CampaignID, err)
 		}
 
 		logger.Info("send campaign batch: completed",

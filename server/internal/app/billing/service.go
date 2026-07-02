@@ -49,21 +49,22 @@ import (
 // ─── Sentinel errors ──────────────────────────────────────────────────────────
 
 var (
-	ErrForbidden              = errors.New("forbidden")
-	ErrInvoiceNotFound        = errors.New("invoice not found")
-	ErrInvoiceItemNotFound    = errors.New("invoice item not found")
-	ErrPaymentNotFound        = errors.New("payment not found")
-	ErrRefundNotFound         = errors.New("refund not found")
-	ErrInvalidTransition      = errors.New("invalid invoice state transition")
-	ErrInvoiceNotDraft        = errors.New("invoice must be in draft status to modify items")
-	ErrInvoiceNotIssuable     = errors.New("invoice must be in draft status to issue")
-	ErrInvoiceNotVoidable     = errors.New("invoice must be in issued status to void")
-	ErrInvoiceNotWriteOffable = errors.New("invoice must be in issued or partially_paid status to write off")
-	ErrPaymentExceedsBalance  = errors.New("payment amount exceeds outstanding balance")
-	ErrRefundExceedsPayment   = errors.New("refund amount exceeds original payment amount")
-	ErrRefundRequiresReason   = errors.New("a reason is required for refund requests")
-	ErrDuplicateInvoiceNumber = errors.New("invoice number already exists for this organisation")
-	ErrWebhookNotFound        = errors.New("webhook event not found")
+	ErrForbidden                    = errors.New("forbidden")
+	ErrInvoiceNotFound              = errors.New("invoice not found")
+	ErrInvoiceItemNotFound          = errors.New("invoice item not found")
+	ErrPaymentNotFound              = errors.New("payment not found")
+	ErrRefundNotFound               = errors.New("refund not found")
+	ErrInvalidTransition            = errors.New("invalid invoice state transition")
+	ErrInvoiceNotDraft              = errors.New("invoice must be in draft status to modify items")
+	ErrInvoiceNotIssuable           = errors.New("invoice must be in draft status to issue")
+	ErrInvoiceNotVoidable           = errors.New("invoice must be in issued status to void")
+	ErrInvoiceNotWriteOffable       = errors.New("invoice must be in issued or partially_paid status to write off")
+	ErrPaymentExceedsBalance        = errors.New("payment amount exceeds outstanding balance")
+	ErrRefundExceedsPayment         = errors.New("refund amount exceeds original payment amount")
+	ErrRefundRequiresReason         = errors.New("a reason is required for refund requests")
+	ErrDuplicateInvoiceNumber       = errors.New("invoice number already exists for this organisation")
+	ErrWebhookNotFound              = errors.New("webhook event not found")
+	ErrAutopayPaymentMethodRequired = errors.New("autopay payment method metadata is required")
 )
 
 // ─── Domain types ─────────────────────────────────────────────────────────────
@@ -192,6 +193,40 @@ type ReconciliationReport struct {
 	GeneratedAt            time.Time `json:"generated_at"`
 }
 
+type HouseholdAutopayProfile struct {
+	ID                       string    `json:"id"`
+	OrgID                    string    `json:"org_id"`
+	HouseholdID              string    `json:"household_id"`
+	Enabled                  bool      `json:"enabled"`
+	PaymentMethodType        string    `json:"payment_method_type"`
+	PaymentMethodBrand       string    `json:"payment_method_brand,omitempty"`
+	PaymentMethodLast4       string    `json:"payment_method_last4,omitempty"`
+	PaymentMethodLabel       string    `json:"payment_method_label"`
+	PaymentMethodExternalRef string    `json:"payment_method_external_ref,omitempty"`
+	PaymentMethodExpMonth    int       `json:"payment_method_exp_month,omitempty"`
+	PaymentMethodExpYear     int       `json:"payment_method_exp_year,omitempty"`
+	TriggerDaysBeforeDue     int       `json:"trigger_days_before_due"`
+	CreatedAt                time.Time `json:"created_at"`
+	UpdatedAt                time.Time `json:"updated_at"`
+	UpdatedBy                string    `json:"updated_by,omitempty"`
+}
+
+type HouseholdAutopayStatus struct {
+	HouseholdID              string `json:"household_id"`
+	Enabled                  bool   `json:"enabled"`
+	PaymentMethodType        string `json:"payment_method_type,omitempty"`
+	PaymentMethodBrand       string `json:"payment_method_brand,omitempty"`
+	PaymentMethodLast4       string `json:"payment_method_last4,omitempty"`
+	PaymentMethodLabel       string `json:"payment_method_label,omitempty"`
+	PaymentMethodExternalRef string `json:"payment_method_external_ref,omitempty"`
+	PaymentMethodExpMonth    int    `json:"payment_method_exp_month,omitempty"`
+	PaymentMethodExpYear     int    `json:"payment_method_exp_year,omitempty"`
+	TriggerDaysBeforeDue     int    `json:"trigger_days_before_due"`
+	NextChargeDate           string `json:"next_charge_date,omitempty"`
+	NextChargeAmountCents    int    `json:"next_charge_amount_cents,omitempty"`
+	NextInvoiceID            string `json:"next_invoice_id,omitempty"`
+}
+
 // ─── Input types ─────────────────────────────────────────────────────────────
 
 // CreateInvoiceInput holds fields for creating an invoice.
@@ -256,6 +291,17 @@ type ListPaymentsFilters struct {
 	Status    string
 }
 
+type UpsertHouseholdAutopayInput struct {
+	PaymentMethodType        string `json:"payment_method_type" validate:"required,oneof=card ach"`
+	PaymentMethodBrand       string `json:"payment_method_brand"`
+	PaymentMethodLast4       string `json:"payment_method_last4"`
+	PaymentMethodLabel       string `json:"payment_method_label" validate:"required,max=120"`
+	PaymentMethodExternalRef string `json:"payment_method_external_ref"`
+	PaymentMethodExpMonth    int    `json:"payment_method_exp_month"`
+	PaymentMethodExpYear     int    `json:"payment_method_exp_year"`
+	TriggerDaysBeforeDue     int    `json:"trigger_days_before_due" validate:"oneof=0 3 7"`
+}
+
 // ─── Service ─────────────────────────────────────────────────────────────────
 
 // Service is the billing domain service.
@@ -273,6 +319,7 @@ type Service struct {
 	ledger            []*LedgerEvent
 	invoiceNums       map[string]bool                // "orgID|invoiceNumber" → true
 	webhookEvents     map[string]*WebhookEventRecord // "provider|eventID" → record
+	autopayProfiles   map[string]*HouseholdAutopayProfile
 }
 
 // NewService creates a new in-memory billing Service.
@@ -288,6 +335,7 @@ func NewService() *Service {
 		refundsByID:       make(map[string]*Refund),
 		invoiceNums:       make(map[string]bool),
 		webhookEvents:     make(map[string]*WebhookEventRecord),
+		autopayProfiles:   make(map[string]*HouseholdAutopayProfile),
 	}
 }
 
@@ -306,7 +354,7 @@ func NewServiceWithPool(pool *pgxpool.Pool) *Service {
 }
 
 func (s *Service) loadFromDB(ctx context.Context) error {
-	invoices, items, payments, refunds, ledger, err := s.repo.LoadAll(ctx)
+	invoices, items, payments, refunds, ledger, autopayProfiles, err := s.repo.LoadAll(ctx)
 	if err != nil {
 		return err
 	}
@@ -332,6 +380,9 @@ func (s *Service) loadFromDB(ctx context.Context) error {
 		s.refundsByID[r.ID] = r
 	}
 	s.ledger = ledger
+	for _, profile := range autopayProfiles {
+		s.autopayProfiles[autopayProfileKey(profile.OrgID, profile.HouseholdID)] = profile
+	}
 	return nil
 }
 
@@ -346,7 +397,9 @@ func (s *Service) newID() string {
 
 func newID() string {
 	b := make([]byte, 16)
-	_, _ = rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		panic(fmt.Errorf("secure random unavailable for billing ID generation: %w", err))
+	}
 	return hex.EncodeToString(b)
 }
 
@@ -387,6 +440,36 @@ func (s *Service) requireBillingReadAccess(principal *appmiddleware.Principal) e
 	return ErrForbidden
 }
 
+func (s *Service) parentHouseholdScope(principal *appmiddleware.Principal) (string, bool) {
+	if principal == nil {
+		return "", false
+	}
+	parentOnly := false
+	for _, r := range principal.Roles {
+		switch strings.ToLower(r) {
+		case "parent":
+			parentOnly = true
+		case "admin", "owner", "billing":
+			return "", false
+		}
+	}
+	if !parentOnly {
+		return "", false
+	}
+	return strings.TrimSpace(principal.HouseholdID), true
+}
+
+func (s *Service) ensureParentHouseholdAccess(principal *appmiddleware.Principal, householdID string) error {
+	scopedHouseholdID, parentScoped := s.parentHouseholdScope(principal)
+	if !parentScoped {
+		return nil
+	}
+	if scopedHouseholdID == "" || strings.TrimSpace(householdID) != scopedHouseholdID {
+		return ErrForbidden
+	}
+	return nil
+}
+
 func (s *Service) requireLedgerReadAccess(principal *appmiddleware.Principal) error {
 	for _, r := range principal.Roles {
 		switch strings.ToLower(r) {
@@ -399,6 +482,10 @@ func (s *Service) requireLedgerReadAccess(principal *appmiddleware.Principal) er
 
 func invoiceNumKey(orgID, number string) string {
 	return orgID + "|" + number
+}
+
+func autopayProfileKey(orgID, householdID string) string {
+	return orgID + "|" + householdID
 }
 
 // recomputeTotals updates subtotal, total, amount_due on an invoice from its items.
@@ -437,6 +524,83 @@ func (s *Service) appendLedger(orgID, invoiceID, paymentID, refundID, eventType 
 	}
 	s.ledger = append(s.ledger, ev)
 	return ev, nil
+}
+
+func normalizeAutopayInput(input UpsertHouseholdAutopayInput) UpsertHouseholdAutopayInput {
+	input.PaymentMethodType = strings.ToLower(strings.TrimSpace(input.PaymentMethodType))
+	input.PaymentMethodBrand = strings.TrimSpace(input.PaymentMethodBrand)
+	input.PaymentMethodLast4 = strings.TrimSpace(input.PaymentMethodLast4)
+	input.PaymentMethodLabel = strings.TrimSpace(input.PaymentMethodLabel)
+	input.PaymentMethodExternalRef = strings.TrimSpace(input.PaymentMethodExternalRef)
+	return input
+}
+
+func (s *Service) requireAutopayReadAccess(principal *appmiddleware.Principal, householdID string) error {
+	if err := s.requireBillingReadAccess(principal); err != nil {
+		return ErrForbidden
+	}
+	return s.ensureParentHouseholdAccess(principal, householdID)
+}
+
+func (s *Service) requireAutopayWriteAccess(principal *appmiddleware.Principal, householdID string) error {
+	if principal == nil {
+		return ErrForbidden
+	}
+	for _, role := range principal.Roles {
+		switch strings.ToLower(role) {
+		case "admin", "owner", "billing":
+			return nil
+		}
+	}
+	if err := s.ensureParentHouseholdAccess(principal, householdID); err != nil {
+		return err
+	}
+	for _, role := range principal.Roles {
+		if strings.EqualFold(role, "parent") {
+			return nil
+		}
+	}
+	return ErrForbidden
+}
+
+func (s *Service) buildAutopayStatusLocked(orgID, householdID string, profile *HouseholdAutopayProfile) *HouseholdAutopayStatus {
+	status := &HouseholdAutopayStatus{
+		HouseholdID: householdID,
+	}
+	if profile != nil {
+		status.Enabled = profile.Enabled
+		status.PaymentMethodType = profile.PaymentMethodType
+		status.PaymentMethodBrand = profile.PaymentMethodBrand
+		status.PaymentMethodLast4 = profile.PaymentMethodLast4
+		status.PaymentMethodLabel = profile.PaymentMethodLabel
+		status.PaymentMethodExternalRef = profile.PaymentMethodExternalRef
+		status.PaymentMethodExpMonth = profile.PaymentMethodExpMonth
+		status.PaymentMethodExpYear = profile.PaymentMethodExpYear
+		status.TriggerDaysBeforeDue = profile.TriggerDaysBeforeDue
+	}
+
+	var nextInvoice *Invoice
+	for _, invoice := range s.invoices {
+		if invoice.OrgID != orgID || invoice.HouseholdID != householdID {
+			continue
+		}
+		if !slices.Contains([]string{"issued", "partially_paid"}, invoice.Status) || invoice.AmountDueCents <= 0 || strings.TrimSpace(invoice.DueDate) == "" {
+			continue
+		}
+		if nextInvoice == nil || invoice.DueDate < nextInvoice.DueDate {
+			nextInvoice = invoice
+		}
+	}
+	if nextInvoice != nil {
+		status.NextInvoiceID = nextInvoice.ID
+		status.NextChargeAmountCents = nextInvoice.AmountDueCents
+		if dueDate, err := time.Parse("2006-01-02", nextInvoice.DueDate); err == nil {
+			status.NextChargeDate = dueDate.AddDate(0, 0, -status.TriggerDaysBeforeDue).Format("2006-01-02")
+		} else {
+			status.NextChargeDate = nextInvoice.DueDate
+		}
+	}
+	return status
 }
 
 // updateInvoiceStatusAfterPayment recalculates invoice status based on paid vs total.
@@ -513,6 +677,9 @@ func (s *Service) GetInvoice(orgID string, principal *appmiddleware.Principal, i
 	if !ok || inv.OrgID != orgID {
 		return nil, ErrInvoiceNotFound
 	}
+	if err := s.ensureParentHouseholdAccess(principal, inv.HouseholdID); err != nil {
+		return nil, err
+	}
 	cp := *inv
 	return &cp, nil
 }
@@ -521,6 +688,15 @@ func (s *Service) GetInvoice(orgID string, principal *appmiddleware.Principal, i
 func (s *Service) ListInvoices(orgID string, principal *appmiddleware.Principal, filters ListInvoicesFilters) ([]*Invoice, error) {
 	if err := s.requireBillingReadAccess(principal); err != nil {
 		return nil, err
+	}
+	if scopedHouseholdID, parentScoped := s.parentHouseholdScope(principal); parentScoped {
+		if scopedHouseholdID == "" {
+			return nil, ErrForbidden
+		}
+		if filters.HouseholdID != "" && filters.HouseholdID != scopedHouseholdID {
+			return nil, ErrForbidden
+		}
+		filters.HouseholdID = scopedHouseholdID
 	}
 
 	s.mu.RLock()
@@ -651,6 +827,9 @@ func (s *Service) ListInvoiceItems(orgID string, principal *appmiddleware.Princi
 	inv, ok := s.invoices[invoiceID]
 	if !ok || inv.OrgID != orgID {
 		return nil, ErrInvoiceNotFound
+	}
+	if err := s.ensureParentHouseholdAccess(principal, inv.HouseholdID); err != nil {
+		return nil, err
 	}
 
 	items := s.items[invoiceID]
@@ -869,6 +1048,9 @@ func (s *Service) ListPayments(orgID string, principal *appmiddleware.Principal,
 	if !ok || inv.OrgID != orgID {
 		return nil, ErrInvoiceNotFound
 	}
+	if err := s.ensureParentHouseholdAccess(principal, inv.HouseholdID); err != nil {
+		return nil, err
+	}
 
 	pyts := s.payments[invoiceID]
 	out := make([]*Payment, len(pyts))
@@ -888,10 +1070,21 @@ func (s *Service) ListPaymentsForOrg(orgID string, principal *appmiddleware.Prin
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	scopedHouseholdID, parentScoped := s.parentHouseholdScope(principal)
+	if parentScoped && scopedHouseholdID == "" {
+		return nil, ErrForbidden
+	}
+
 	var out []*Payment
 	for _, payment := range s.paymentsByID {
 		if payment.OrgID != orgID {
 			continue
+		}
+		if parentScoped {
+			invoice, ok := s.invoices[payment.InvoiceID]
+			if !ok || invoice.OrgID != orgID || invoice.HouseholdID != scopedHouseholdID {
+				continue
+			}
 		}
 		if filters.InvoiceID != "" && payment.InvoiceID != filters.InvoiceID {
 			continue
@@ -930,6 +1123,9 @@ func (s *Service) GetPayment(orgID string, principal *appmiddleware.Principal, i
 	if !ok || inv.OrgID != orgID {
 		return nil, ErrInvoiceNotFound
 	}
+	if err := s.ensureParentHouseholdAccess(principal, inv.HouseholdID); err != nil {
+		return nil, err
+	}
 	payment, ok := s.paymentsByID[paymentID]
 	if !ok || payment.InvoiceID != invoiceID || payment.OrgID != orgID {
 		return nil, ErrPaymentNotFound
@@ -940,6 +1136,146 @@ func (s *Service) GetPayment(orgID string, principal *appmiddleware.Principal, i
 }
 
 // ─── Refunds ─────────────────────────────────────────────────────────────────
+
+// GetHouseholdAutopayStatus returns the current autopay configuration and next-charge preview for a household.
+func (s *Service) GetHouseholdAutopayStatus(orgID string, principal *appmiddleware.Principal, householdID string) (*HouseholdAutopayStatus, error) {
+	if err := s.requireAutopayReadAccess(principal, householdID); err != nil {
+		return nil, err
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.buildAutopayStatusLocked(orgID, householdID, s.autopayProfiles[autopayProfileKey(orgID, householdID)]), nil
+}
+
+// ListHouseholdAutopayStatuses returns autopay statuses for the provided households.
+func (s *Service) ListHouseholdAutopayStatuses(orgID string, principal *appmiddleware.Principal, householdIDs []string) ([]*HouseholdAutopayStatus, error) {
+	if err := s.requireBillingReadAccess(principal); err != nil {
+		return nil, err
+	}
+
+	scopedHouseholdID, parentScoped := s.parentHouseholdScope(principal)
+	if parentScoped {
+		if scopedHouseholdID == "" {
+			return nil, ErrForbidden
+		}
+		householdIDs = []string{scopedHouseholdID}
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	seen := make(map[string]struct{}, len(householdIDs))
+	normalized := make([]string, 0, len(householdIDs))
+	for _, householdID := range householdIDs {
+		householdID = strings.TrimSpace(householdID)
+		if householdID == "" {
+			continue
+		}
+		if _, ok := seen[householdID]; ok {
+			continue
+		}
+		seen[householdID] = struct{}{}
+		normalized = append(normalized, householdID)
+	}
+	if len(normalized) == 0 {
+		for _, profile := range s.autopayProfiles {
+			if profile == nil || profile.OrgID != orgID {
+				continue
+			}
+			normalized = append(normalized, profile.HouseholdID)
+		}
+		sort.Strings(normalized)
+	}
+
+	out := make([]*HouseholdAutopayStatus, 0, len(normalized))
+	for _, householdID := range normalized {
+		out = append(out, s.buildAutopayStatusLocked(orgID, householdID, s.autopayProfiles[autopayProfileKey(orgID, householdID)]))
+	}
+	return out, nil
+}
+
+// UpsertHouseholdAutopay enables autopay and persists payment-method metadata for a household.
+func (s *Service) UpsertHouseholdAutopay(orgID, actorID string, principal *appmiddleware.Principal, householdID string, input UpsertHouseholdAutopayInput) (*HouseholdAutopayStatus, error) {
+	if err := s.requireAutopayWriteAccess(principal, householdID); err != nil {
+		return nil, err
+	}
+
+	input = normalizeAutopayInput(input)
+	if input.PaymentMethodLabel == "" || input.PaymentMethodType == "" {
+		return nil, ErrAutopayPaymentMethodRequired
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now().UTC()
+	key := autopayProfileKey(orgID, householdID)
+	profile := s.autopayProfiles[key]
+	if profile == nil {
+		profile = &HouseholdAutopayProfile{
+			ID:          s.newID(),
+			OrgID:       orgID,
+			HouseholdID: householdID,
+			CreatedAt:   now,
+		}
+	}
+	profile.Enabled = true
+	profile.PaymentMethodType = input.PaymentMethodType
+	profile.PaymentMethodBrand = input.PaymentMethodBrand
+	profile.PaymentMethodLast4 = input.PaymentMethodLast4
+	profile.PaymentMethodLabel = input.PaymentMethodLabel
+	profile.PaymentMethodExternalRef = input.PaymentMethodExternalRef
+	profile.PaymentMethodExpMonth = input.PaymentMethodExpMonth
+	profile.PaymentMethodExpYear = input.PaymentMethodExpYear
+	profile.TriggerDaysBeforeDue = input.TriggerDaysBeforeDue
+	profile.UpdatedAt = now
+	profile.UpdatedBy = actorID
+
+	if s.repo != nil {
+		if err := s.repo.UpsertHouseholdAutopayProfile(context.Background(), profile); err != nil {
+			return nil, fmt.Errorf("persist autopay profile: %w", err)
+		}
+	}
+	s.autopayProfiles[key] = profile
+
+	return s.buildAutopayStatusLocked(orgID, householdID, profile), nil
+}
+
+// OptOutHouseholdAutopay disables autopay while keeping saved payment metadata.
+func (s *Service) OptOutHouseholdAutopay(orgID, actorID string, principal *appmiddleware.Principal, householdID string) (*HouseholdAutopayStatus, error) {
+	if err := s.requireAutopayWriteAccess(principal, householdID); err != nil {
+		return nil, err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now().UTC()
+	key := autopayProfileKey(orgID, householdID)
+	profile := s.autopayProfiles[key]
+	if profile == nil {
+		profile = &HouseholdAutopayProfile{
+			ID:          s.newID(),
+			OrgID:       orgID,
+			HouseholdID: householdID,
+			CreatedAt:   now,
+		}
+	}
+	profile.Enabled = false
+	profile.UpdatedAt = now
+	profile.UpdatedBy = actorID
+
+	if s.repo != nil {
+		if err := s.repo.UpsertHouseholdAutopayProfile(context.Background(), profile); err != nil {
+			return nil, fmt.Errorf("persist autopay opt-out: %w", err)
+		}
+	}
+	s.autopayProfiles[key] = profile
+
+	return s.buildAutopayStatusLocked(orgID, householdID, profile), nil
+}
 
 // ValidateRefundPreflight verifies whether a refund is locally eligible before
 // any external provider call is made.
@@ -1115,6 +1451,9 @@ func (s *Service) ListRefunds(orgID string, principal *appmiddleware.Principal, 
 	inv, ok := s.invoices[invoiceID]
 	if !ok || inv.OrgID != orgID {
 		return nil, ErrInvoiceNotFound
+	}
+	if err := s.ensureParentHouseholdAccess(principal, inv.HouseholdID); err != nil {
+		return nil, err
 	}
 
 	rfs := s.refunds[invoiceID]

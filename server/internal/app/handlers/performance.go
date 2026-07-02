@@ -1,14 +1,19 @@
 package handlers
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dareaquatics/aquify/server/internal/app/audit"
+	"github.com/dareaquatics/aquify/server/internal/app/documents"
+	"github.com/dareaquatics/aquify/server/internal/app/groups"
 	"github.com/dareaquatics/aquify/server/internal/app/httpx"
+	"github.com/dareaquatics/aquify/server/internal/app/meets"
+	"github.com/dareaquatics/aquify/server/internal/app/members"
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
 	"github.com/dareaquatics/aquify/server/internal/app/performance"
 	"github.com/go-chi/chi/v5"
@@ -17,9 +22,13 @@ import (
 
 // PerformanceHandlers handles HTTP requests for the performance/best-times domain.
 type PerformanceHandlers struct {
-	service      *performance.Service
-	auditService *audit.Service
-	validate     *validator.Validate
+	service          *performance.Service
+	membersService   *members.Service
+	groupsService    *groups.Service
+	meetsService     *meets.Service
+	documentsService *documents.Service
+	auditService     *audit.Service
+	validate         *validator.Validate
 }
 
 // NewPerformanceHandlers returns a new PerformanceHandlers.
@@ -32,10 +41,27 @@ func NewPerformanceHandlers(svc *performance.Service) *PerformanceHandlers {
 
 // NewPerformanceHandlersWithAudit returns a PerformanceHandlers with audit logging enabled.
 func NewPerformanceHandlersWithAudit(svc *performance.Service, auditSvc *audit.Service) *PerformanceHandlers {
+	return NewPerformanceHandlersWithAuditAndContext(svc, nil, nil, nil, nil, auditSvc)
+}
+
+// NewPerformanceHandlersWithAuditAndContext returns a PerformanceHandlers with
+// the additional domain services needed to synthesize swimmer activity feeds.
+func NewPerformanceHandlersWithAuditAndContext(
+	svc *performance.Service,
+	membersSvc *members.Service,
+	groupsSvc *groups.Service,
+	meetsSvc *meets.Service,
+	documentsSvc *documents.Service,
+	auditSvc *audit.Service,
+) *PerformanceHandlers {
 	return &PerformanceHandlers{
-		service:      svc,
-		auditService: auditSvc,
-		validate:     validator.New(),
+		service:          svc,
+		membersService:   membersSvc,
+		groupsService:    groupsSvc,
+		meetsService:     meetsSvc,
+		documentsService: documentsSvc,
+		auditService:     auditSvc,
+		validate:         validator.New(),
 	}
 }
 
@@ -50,6 +76,7 @@ func (h *PerformanceHandlers) RegisterRoutes(router chi.Router) {
 	router.Get("/swimmers/{swimmerID}/best-times", h.listBestTimes)
 	router.Post("/swimmers/{swimmerID}/best-times/override", h.overrideBestTime)
 	router.Get("/swimmers/{swimmerID}/progression", h.listProgression)
+	router.Get("/swimmers/{swimmerID}/activity", h.listActivity)
 	router.Get("/swimmers/{swimmerID}/cut-qualification", h.evaluateCutQualification)
 
 	// Time standards management
@@ -67,15 +94,13 @@ func perfScopeFromRequest(w http.ResponseWriter, r *http.Request) (*appmiddlewar
 }
 
 func (h *PerformanceHandlers) decodeAndValidate(w http.ResponseWriter, r *http.Request, dst any) bool {
-	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request_body", err.Error(), nil)
-		return false
-	}
-	if err := h.validate.Struct(dst); err != nil {
-		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "validation_error", "Request validation failed.", httpx.FormatValidationErrors(err))
-		return false
-	}
-	return true
+	return decodeAndValidateJSON(w, r, dst, h.validate, decodeAndValidateOptions{
+		InvalidStatus:     http.StatusBadRequest,
+		InvalidCode:       "invalid_request_body",
+		ValidationStatus:  http.StatusUnprocessableEntity,
+		ValidationCode:    "validation_error",
+		ValidationMessage: "Request validation failed.",
+	})
 }
 
 // ─── Request body types ───────────────────────────────────────────────────────
@@ -138,6 +163,17 @@ type updateTimeStandardBody struct {
 	Description *string `json:"description"`
 	TimeMs      *int    `json:"time_ms"`
 	IsActive    *bool   `json:"is_active"`
+}
+
+type swimmerActivityRecord struct {
+	ID         string    `json:"id"`
+	Type       string    `json:"type"`
+	OccurredAt time.Time `json:"occurred_at"`
+	Title      string    `json:"title"`
+	Detail     string    `json:"detail,omitempty"`
+	Status     string    `json:"status,omitempty"`
+	SourceID   string    `json:"source_id,omitempty"`
+	MeetID     string    `json:"meet_id,omitempty"`
 }
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
@@ -353,6 +389,56 @@ func (h *PerformanceHandlers) listProgression(w http.ResponseWriter, r *http.Req
 	})
 }
 
+// listActivity GET /swimmers/{swimmerID}/activity
+func (h *PerformanceHandlers) listActivity(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := perfScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+	if h.membersService == nil || h.groupsService == nil || h.meetsService == nil || h.documentsService == nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "activity_unavailable", "Swimmer activity service is not configured.", nil)
+		return
+	}
+	swimmerID := chi.URLParam(r, "swimmerID")
+
+	swimmers, err := h.membersService.ListSwimmers(principal, orgID, members.ListSwimmersInput{})
+	if err != nil {
+		if errors.Is(err, members.ErrForbidden) || errors.Is(err, members.ErrParentHouseholdScope) {
+			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role to read swimmer activity.", nil)
+			return
+		}
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+		return
+	}
+	visible := false
+	for _, swimmer := range swimmers {
+		if swimmer.ID == swimmerID {
+			visible = true
+			break
+		}
+	}
+	if !visible {
+		httpx.WriteError(w, r, http.StatusNotFound, "swimmer_not_found", "Swimmer was not found.", nil)
+		return
+	}
+
+	activities, err := h.buildActivityFeed(orgID, principal, swimmerID)
+	if err != nil {
+		if errors.Is(err, performance.ErrForbidden) || errors.Is(err, meets.ErrForbidden) {
+			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role to read swimmer activity.", nil)
+			return
+		}
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"swimmer_id": swimmerID,
+		"count":      len(activities),
+		"activities": activities,
+	})
+}
+
 // listOrgProgression GET /performance/progression
 func (h *PerformanceHandlers) listOrgProgression(w http.ResponseWriter, r *http.Request) {
 	principal, orgID, ok := perfScopeFromRequest(w, r)
@@ -389,6 +475,168 @@ func (h *PerformanceHandlers) listOrgProgression(w http.ResponseWriter, r *http.
 		"count":   len(results),
 		"results": results,
 	})
+}
+
+func (h *PerformanceHandlers) buildActivityFeed(orgID string, principal *appmiddleware.Principal, swimmerID string) ([]swimmerActivityRecord, error) {
+	activities := make([]swimmerActivityRecord, 0)
+
+	results, err := h.service.ListProgression(orgID, principal, swimmerID, performance.ListResultsFilters{})
+	if err != nil {
+		return nil, err
+	}
+	for _, result := range results {
+		detail := "Recorded progression result."
+		if result.FinTimeMs != nil {
+			detail = "Finished in " + formatActivityTime(*result.FinTimeMs) + "."
+		} else if result.DQ {
+			detail = "Marked as disqualified."
+		} else if strings.TrimSpace(result.OverrideReason) != "" {
+			detail = strings.TrimSpace(result.OverrideReason)
+		}
+		activities = append(activities, swimmerActivityRecord{
+			ID:         "result:" + result.ID,
+			Type:       "result",
+			OccurredAt: result.UpdatedAt,
+			Title:      strconv.Itoa(result.Distance) + " " + strings.ToUpper(result.Course) + " " + strokeActivityLabel(result.Stroke),
+			Detail:     detail,
+			Status:     result.Status,
+			SourceID:   result.ID,
+			MeetID:     result.MeetID,
+		})
+	}
+
+	registrations := h.groupsService.SnapshotRegistrations(orgID)
+	registrationByID := make(map[string]groups.Registration, len(registrations))
+	for _, registration := range registrations {
+		if registration.SwimmerID != swimmerID {
+			continue
+		}
+		registrationByID[registration.ID] = registration
+		activities = append(activities, swimmerActivityRecord{
+			ID:         "registration:" + registration.ID,
+			Type:       "registration",
+			OccurredAt: registration.UpdatedAt,
+			Title:      "Registration " + strings.ReplaceAll(registration.Status, "_", " "),
+			Detail:     "Season " + registration.Season + " registration recorded.",
+			Status:     registration.Status,
+			SourceID:   registration.ID,
+		})
+	}
+
+	for _, waiver := range h.groupsService.SnapshotWaivers(orgID) {
+		registration, ok := registrationByID[waiver.RegistrationID]
+		if !ok {
+			continue
+		}
+		activities = append(activities, swimmerActivityRecord{
+			ID:         "waiver:" + waiver.ID,
+			Type:       "waiver",
+			OccurredAt: waiver.AcceptedAt,
+			Title:      "Waiver accepted",
+			Detail:     strings.TrimSpace(waiver.WaiverType) + " waiver accepted for " + registration.Season + ".",
+			Status:     "accepted",
+			SourceID:   waiver.ID,
+		})
+	}
+
+	householdID, ok := h.membersService.SwimmerHouseholdID(orgID, swimmerID)
+	if !ok {
+		return activities, nil
+	}
+	submissions, err := h.documentsService.ListSubmissions(orgID, householdID)
+	if err != nil {
+		return nil, err
+	}
+	for _, submission := range submissions {
+		if strings.TrimSpace(submission.SwimmerID) != swimmerID {
+			continue
+		}
+		occurredAt := submission.UpdatedAt
+		if submission.SubmittedAt != nil {
+			occurredAt = *submission.SubmittedAt
+		}
+		if submission.VerifiedAt != nil {
+			occurredAt = *submission.VerifiedAt
+		}
+		detail := "Document record updated."
+		if strings.TrimSpace(submission.DocumentTypeName) != "" {
+			detail = submission.DocumentTypeName + " document " + strings.ReplaceAll(submission.Status, "_", " ") + "."
+		}
+		activities = append(activities, swimmerActivityRecord{
+			ID:         "document:" + submission.ID,
+			Type:       "document",
+			OccurredAt: occurredAt,
+			Title:      "Document " + strings.ReplaceAll(submission.Status, "_", " "),
+			Detail:     detail,
+			Status:     submission.Status,
+			SourceID:   submission.ID,
+		})
+	}
+
+	for _, meet := range h.meetsService.SnapshotMeets(orgID) {
+		commitments, err := h.meetsService.ListCommitments(principal, orgID, meet.ID)
+		if err != nil {
+			if errors.Is(err, meets.ErrMeetNotFound) {
+				continue
+			}
+			return nil, err
+		}
+		for _, commitment := range commitments {
+			if commitment.SwimmerID != swimmerID {
+				continue
+			}
+			meetName := meet.Name
+			if strings.TrimSpace(meetName) == "" {
+				meetName = "meet"
+			}
+			activities = append(activities, swimmerActivityRecord{
+				ID:         "commitment:" + commitment.ID,
+				Type:       "commitment",
+				OccurredAt: commitment.UpdatedAt,
+				Title:      "Meet commitment " + strings.ReplaceAll(commitment.Status, "_", " "),
+				Detail:     "Response recorded for " + meetName + ".",
+				Status:     commitment.Status,
+				SourceID:   commitment.ID,
+				MeetID:     commitment.MeetID,
+			})
+		}
+	}
+
+	sort.SliceStable(activities, func(i, j int) bool {
+		if activities[i].OccurredAt.Equal(activities[j].OccurredAt) {
+			return activities[i].ID > activities[j].ID
+		}
+		return activities[i].OccurredAt.After(activities[j].OccurredAt)
+	})
+	return activities, nil
+}
+
+func strokeActivityLabel(stroke string) string {
+	switch strings.ToLower(strings.TrimSpace(stroke)) {
+	case "free", "freestyle":
+		return "Freestyle"
+	case "back", "backstroke":
+		return "Backstroke"
+	case "breast", "breaststroke":
+		return "Breaststroke"
+	case "fly", "butterfly":
+		return "Butterfly"
+	case "im", "individual_medley":
+		return "IM"
+	default:
+		return stroke
+	}
+}
+
+func formatActivityTime(ms int) string {
+	totalHundredths := ms / 10
+	minutes := totalHundredths / 6000
+	seconds := (totalHundredths % 6000) / 100
+	hundredths := totalHundredths % 100
+	if minutes > 0 {
+		return strconv.Itoa(minutes) + ":" + strconv.Itoa(seconds/10) + strconv.Itoa(seconds%10) + "." + strconv.Itoa(hundredths/10) + strconv.Itoa(hundredths%10)
+	}
+	return strconv.Itoa(seconds/10) + strconv.Itoa(seconds%10) + "." + strconv.Itoa(hundredths/10) + strconv.Itoa(hundredths%10)
 }
 
 // evaluateCutQualification GET /swimmers/{swimmerID}/cut-qualification?standard_id=...
@@ -531,7 +779,7 @@ func (h *PerformanceHandlers) updateTimeStandard(w http.ResponseWriter, r *http.
 	standardID := chi.URLParam(r, "standardID")
 
 	var body updateTimeStandardBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := decodeJSONBody(w, r, &body); err != nil {
 		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request_body", err.Error(), nil)
 		return
 	}

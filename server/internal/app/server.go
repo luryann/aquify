@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dareaquatics/aquify/meetfiles"
 	"github.com/dareaquatics/aquify/server/internal/app/audit"
 	"github.com/dareaquatics/aquify/server/internal/app/authn"
 	"github.com/dareaquatics/aquify/server/internal/app/billing"
@@ -49,6 +50,13 @@ func NewRouter(cfg Config, logger *slog.Logger) http.Handler {
 	return NewRouterWithServices(cfg, logger, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
+// NewRouterWithServicesAndMetrics constructs the HTTP router with a caller-
+// supplied Prometheus registry. exposePrometheus controls whether the scrape
+// endpoint itself is mounted on the returned router.
+func NewRouterWithServicesAndMetrics(cfg Config, logger *slog.Logger, metrics *telemetry.Metrics, exposePrometheus bool, authService *authn.Service, membershipService *members.Service, groupsService *groups.Service, meetsService *meets.Service, importsService *imports.Service, exportsService *exports.Service, performanceService *performance.Service, billingService *billing.Service, stripeClient stripelib.Client, commsService *comms.Service, auditService *audit.Service, complianceService *compliance.Service, documentsService *documents.Service, trainingService *training.Service, workerBackend workers.Backend, kcClient keycloak.Client) http.Handler {
+	return newRouterWithServices(cfg, logger, metrics, exposePrometheus, authService, membershipService, groupsService, meetsService, importsService, exportsService, performanceService, billingService, stripeClient, commsService, auditService, complianceService, documentsService, trainingService, workerBackend, kcClient)
+}
+
 func allowsProviderStubFallback(appEnv string) bool {
 	return isExplicitDevelopmentEnv(appEnv)
 }
@@ -63,6 +71,42 @@ func canonicalUserManagementRole(role string) string {
 		return "read_only_staff"
 	default:
 		return strings.TrimSpace(strings.ToLower(role))
+	}
+}
+
+func normalizedImportGender(raw string) string {
+	switch strings.TrimSpace(strings.ToLower(raw)) {
+	case "male", "m":
+		return "M"
+	case "female", "f":
+		return "F"
+	case "mixed", "x":
+		return "X"
+	default:
+		return strings.ToUpper(strings.TrimSpace(raw))
+	}
+}
+
+func importStrokeFromMeetEvent(raw string, isRelay bool) meetfiles.Stroke {
+	switch strings.TrimSpace(strings.ToLower(raw)) {
+	case "free", "freestyle":
+		if isRelay {
+			return meetfiles.StrokeFreestyleRelay
+		}
+		return meetfiles.StrokeFreestyle
+	case "back", "backstroke":
+		return meetfiles.StrokeBackstroke
+	case "breast", "breaststroke":
+		return meetfiles.StrokeBreaststroke
+	case "fly", "butterfly":
+		return meetfiles.StrokeButterfly
+	case "im", "medley":
+		if isRelay {
+			return meetfiles.StrokeMedleyRelay
+		}
+		return meetfiles.StrokeIM
+	default:
+		return meetfiles.StrokeUnknown
 	}
 }
 
@@ -284,6 +328,10 @@ func isNilWorkerBackend(backend workers.Backend) bool {
 // kcClient may be nil; when nil a StubClient is used in dev/test and a real
 // AdminClient is constructed from cfg.Keycloak in non-dev environments.
 func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.Service, membershipService *members.Service, groupsService *groups.Service, meetsService *meets.Service, importsService *imports.Service, exportsService *exports.Service, performanceService *performance.Service, billingService *billing.Service, stripeClient stripelib.Client, commsService *comms.Service, auditService *audit.Service, complianceService *compliance.Service, documentsService *documents.Service, trainingService *training.Service, workerBackend workers.Backend, kcClient keycloak.Client) http.Handler {
+	return newRouterWithServices(cfg, logger, telemetry.NewMetrics(), false, authService, membershipService, groupsService, meetsService, importsService, exportsService, performanceService, billingService, stripeClient, commsService, auditService, complianceService, documentsService, trainingService, workerBackend, kcClient)
+}
+
+func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.Metrics, exposePrometheus bool, authService *authn.Service, membershipService *members.Service, groupsService *groups.Service, meetsService *meets.Service, importsService *imports.Service, exportsService *exports.Service, performanceService *performance.Service, billingService *billing.Service, stripeClient stripelib.Client, commsService *comms.Service, auditService *audit.Service, complianceService *compliance.Service, documentsService *documents.Service, trainingService *training.Service, workerBackend workers.Backend, kcClient keycloak.Client) http.Handler {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -380,6 +428,55 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.S
 			RequireMalwareScanHook: cfg.Security.Uploads.RequireMalwareScanHook,
 		})
 	}
+	importsService.SetRosterLoader(func(orgID string) []meetfiles.RosterSwimmer {
+		if membershipService == nil || strings.TrimSpace(orgID) == "" {
+			return nil
+		}
+		principal := &appmiddleware.Principal{UserID: "system-imports", OrgID: orgID, Roles: []string{"admin"}}
+		swimmers, err := membershipService.ListSwimmers(principal, orgID, members.ListSwimmersInput{})
+		if err != nil {
+			logger.Warn("imports: failed to load swimmer roster for matching", "org_id", orgID, "error", err)
+			return nil
+		}
+		roster := make([]meetfiles.RosterSwimmer, 0, len(swimmers))
+		for _, swimmer := range swimmers {
+			var dob *time.Time
+			if parsedDOB, err := time.Parse("2006-01-02", strings.TrimSpace(swimmer.DateOfBirth)); err == nil {
+				parsedDOB = parsedDOB.UTC()
+				dob = &parsedDOB
+			}
+			roster = append(roster, meetfiles.RosterSwimmer{
+				ID:        swimmer.ID,
+				USSNumber: strings.TrimSpace(swimmer.SwimmerExternalID),
+				LastName:  strings.TrimSpace(swimmer.LastName),
+				FirstName: strings.TrimSpace(swimmer.FirstName),
+				DOB:       dob,
+				Gender:    normalizedImportGender(swimmer.Gender),
+			})
+		}
+		return roster
+	})
+	importsService.SetKnownEventsLoader(func(orgID, meetID string) []meetfiles.KnownEvent {
+		if meetsService == nil || strings.TrimSpace(orgID) == "" || strings.TrimSpace(meetID) == "" {
+			return nil
+		}
+		principal := &appmiddleware.Principal{UserID: "system-imports", OrgID: orgID, Roles: []string{"admin"}}
+		events, err := meetsService.ListMeetEvents(principal, orgID, meetID)
+		if err != nil {
+			logger.Warn("imports: failed to load meet events for validation", "org_id", orgID, "meet_id", meetID, "error", err)
+			return nil
+		}
+		known := make([]meetfiles.KnownEvent, 0, len(events))
+		for _, event := range events {
+			known = append(known, meetfiles.KnownEvent{
+				EventNumber: strings.TrimSpace(event.EventNumber),
+				Distance:    event.Distance,
+				Stroke:      importStrokeFromMeetEvent(event.Stroke, event.IsRelay),
+				EventGender: normalizedImportGender(event.Gender),
+			})
+		}
+		return known
+	})
 	importsHandlers := handlers.NewImportsHandlersWithAudit(importsService, auditService)
 	if exportsService == nil {
 		if dbPool != nil {
@@ -388,7 +485,7 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.S
 			exportsService = exports.NewServiceWithStorage(objectStore)
 		}
 	}
-	exportsHandlers := handlers.NewExportsHandlers(exportsService)
+	exportsHandlers := handlers.NewExportsHandlersWithMeetAccess(exportsService, meetsService)
 	if performanceService == nil {
 		if dbPool != nil {
 			performanceService = performance.NewServiceWithPool(dbPool)
@@ -402,7 +499,14 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.S
 	// Wire members service as the household checker so that per-swimmer
 	// performance reads enforce parent household scoping at the service layer.
 	performanceService.SetHouseholdChecker(membershipService)
-	performanceHandlers := handlers.NewPerformanceHandlersWithAudit(performanceService, auditService)
+	performanceHandlers := handlers.NewPerformanceHandlersWithAuditAndContext(
+		performanceService,
+		membershipService,
+		groupsService,
+		meetsService,
+		documentsService,
+		auditService,
+	)
 	if billingService == nil {
 		if dbPool != nil {
 			billingService = billing.NewServiceWithPool(dbPool)
@@ -466,8 +570,11 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.S
 	} else {
 		postmarkClient = commsService.PostmarkClient()
 	}
-	commsHandlers := handlers.NewCommsHandlersWithWebhookAuth(
+	commsHandlers := handlers.NewCommsHandlersWithAuditAndWebhookAuth(
 		commsService,
+		auditService,
+		membershipService,
+		groupsService,
 		cfg.Postmark.WebhookAuthHeaderName,
 		cfg.Postmark.WebhookAuthHeaderValue,
 		cfg.Postmark.WebhookBasicUser,
@@ -609,19 +716,19 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.S
 
 	// ── Workers ────────────────────────────────────────────────────────────────
 	if isNilWorkerBackend(workerBackend) {
-		workerServer, _ := BuildWorkers(cfg, logger, importsService, exportsService, reportsService)
+		workerServer, _ := BuildWorkers(cfg, logger, importsService, exportsService, reportsService, billingService, stripeClient, commsService, complianceService, objectStore)
 		workerServer.Start()
 		workerBackend = workerServer
 	} else {
-		registerWorkerHandlers(workerBackend, logger, importsService, exportsService, reportsService)
+		registerWorkerHandlers(workerBackend, logger, importsService, exportsService, reportsService, billingService, stripeClient, commsService, complianceService, objectStore, cfg.Stripe.ReconciliationAlertThresholdCents)
 	}
 	readinessChecker := buildReadinessChecker(cfg, dbPool, objectStore, stripeClient, postmarkClient, workerBackend, kcClient)
 	exportsService.SetQueue(workerBackend)
 	jobsHandlers := handlers.NewJobsHandlers(workerBackend)
 
-	// Initialise Prometheus metrics. A no-op instance is used in tests when
-	// the metrics address is blank.
-	metrics := telemetry.NewMetrics()
+	if metrics == nil {
+		metrics = telemetry.NewMetrics()
+	}
 
 	router.Use(chimiddleware.RequestID)
 	router.Use(appmiddleware.OTelTracing(cfg.Telemetry.ServiceName))
@@ -640,10 +747,9 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.S
 		MaxAge:           300,
 	}))
 
-	// Prometheus metrics endpoint — served on the API port at /metrics.
-	// This endpoint is intentionally unauthenticated; in production it should
-	// be firewalled to only allow the Prometheus scraper IP range.
-	router.Get("/metrics", metrics.Handler().ServeHTTP)
+	if exposePrometheus {
+		router.Get("/metrics", metrics.Handler().ServeHTTP)
+	}
 
 	router.Route("/api/v1", func(api chi.Router) {
 		api.Route("/health", func(healthRouter chi.Router) {
@@ -731,7 +837,7 @@ func allowedCORSHeaders(cfg Config) []string {
 // BuildWorkers creates and configures the worker server and scheduler without
 // starting either. Callers must invoke ws.Start() and sched.Start() and call
 // the corresponding Stop() methods on shutdown.
-func BuildWorkers(cfg Config, logger *slog.Logger, importsService *imports.Service, exportsService *exports.Service, reportsService *reports.Service) (*workers.Server, *workers.Scheduler) {
+func BuildWorkers(cfg Config, logger *slog.Logger, importsService *imports.Service, exportsService *exports.Service, reportsService *reports.Service, billingService *billing.Service, stripeClient stripelib.Client, commsService *comms.Service, complianceService *compliance.Service, objectStore storage.ObjectStorage) (*workers.Server, *workers.Scheduler) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -739,7 +845,7 @@ func BuildWorkers(cfg Config, logger *slog.Logger, importsService *imports.Servi
 		Concurrency: cfg.Worker.ConcurrencyPerQueue,
 		Logger:      logger,
 	})
-	registerWorkerHandlers(ws, logger, importsService, exportsService, reportsService)
+	registerWorkerHandlers(ws, logger, importsService, exportsService, reportsService, billingService, stripeClient, commsService, complianceService, objectStore, cfg.Stripe.ReconciliationAlertThresholdCents)
 
 	sched := workers.NewScheduler(ws, logger)
 	registerScheduledJobs(sched, cfg)
@@ -766,39 +872,42 @@ type workerHandlerRegistrar interface {
 	RegisterHandler(taskType string, h workers.Handler)
 }
 
-func registerWorkerHandlers(registrar workerHandlerRegistrar, logger *slog.Logger, importsService *imports.Service, exportsService *exports.Service, reportsService *reports.Service) {
+func registerWorkerHandlers(registrar workerHandlerRegistrar, logger *slog.Logger, importsService *imports.Service, exportsService *exports.Service, reportsService *reports.Service, billingService *billing.Service, stripeClient stripelib.Client, commsService *comms.Service, complianceService *compliance.Service, objectStore storage.ObjectStorage, reconciliationAlertThresholdCents int) {
 	if registrar == nil {
 		return
 	}
-	registrar.RegisterHandler(workers.TypeParseImport, jobhandlers.ParseImportHandler(logger))
+	registrar.RegisterHandler(workers.TypeParseImport, jobhandlers.ParseImportHandler(logger, importsService))
 	registrar.RegisterHandler(workers.TypeGenerateExport, jobhandlers.GenerateExportHandler(logger, exportsService))
-	registrar.RegisterHandler(workers.TypeSendCampaignBatch, jobhandlers.SendCampaignBatchHandler(logger))
-	registrar.RegisterHandler(workers.TypeBillingReconcile, jobhandlers.BillingReconcileHandler(logger))
-	registrar.RegisterHandler(workers.TypeNightlyIntegrity, jobhandlers.NightlyIntegrityHandler(logger))
+	registrar.RegisterHandler(workers.TypeSendCampaignBatch, jobhandlers.SendCampaignBatchHandler(logger, commsService))
+	registrar.RegisterHandler(workers.TypeBillingReconcile, jobhandlers.BillingReconcileHandler(logger, billingService, stripeClient, reconciliationAlertThresholdCents))
+	registrar.RegisterHandler(workers.TypeNightlyIntegrity, jobhandlers.NightlyIntegrityHandler(logger, billingService))
 	registrar.RegisterHandler(workers.TypePurgeExpiredFiles, jobhandlers.PurgeExpiredFilesHandler(logger, importsService, exportsService, reportsService))
-	registrar.RegisterHandler(workers.TypeProcessDataExport, jobhandlers.ProcessDataExportHandler(logger))
-	registrar.RegisterHandler(workers.TypeProcessDataDeletion, jobhandlers.ProcessDataDeletionHandler(logger))
+	registrar.RegisterHandler(workers.TypeProcessDataExport, jobhandlers.ProcessDataExportHandler(logger, complianceService, objectStore))
+	registrar.RegisterHandler(workers.TypeProcessDataDeletion, jobhandlers.ProcessDataDeletionHandler(logger, complianceService))
 }
 
 func registerScheduledJobs(s scheduledJobRegistrar, cfg Config) {
 	type entry struct {
-		name     string
-		taskType string
-		queue    string
-		interval string
+		name      string
+		taskType  string
+		queue     string
+		interval  string
+		orgScoped bool
 	}
 	jobs := []entry{
 		{
-			name:     "billing-reconcile",
-			taskType: workers.TypeBillingReconcile,
-			queue:    workers.QueueReconcile,
-			interval: cfg.Worker.ReconcileInterval,
+			name:      "billing-reconcile",
+			taskType:  workers.TypeBillingReconcile,
+			queue:     workers.QueueReconcile,
+			interval:  cfg.Worker.ReconcileInterval,
+			orgScoped: true,
 		},
 		{
-			name:     "nightly-integrity",
-			taskType: workers.TypeNightlyIntegrity,
-			queue:    workers.QueueBilling,
-			interval: cfg.Worker.IntegrityInterval,
+			name:      "nightly-integrity",
+			taskType:  workers.TypeNightlyIntegrity,
+			queue:     workers.QueueBilling,
+			interval:  cfg.Worker.IntegrityInterval,
+			orgScoped: true,
 		},
 		{
 			name:     "purge-expired-files",
@@ -812,6 +921,18 @@ func registerScheduledJobs(s scheduledJobRegistrar, cfg Config) {
 		if d <= 0 {
 			continue
 		}
+		if j.orgScoped {
+			for _, orgID := range scheduledOrgIDs(cfg) {
+				s.Register(workers.ScheduledJob{
+					Name:     j.name + ":" + orgID,
+					TaskType: j.taskType,
+					Queue:    j.queue,
+					Interval: d,
+					Payload:  map[string]string{"triggered_by": "scheduler", "org_id": orgID},
+				})
+			}
+			continue
+		}
 		s.Register(workers.ScheduledJob{
 			Name:     j.name,
 			TaskType: j.taskType,
@@ -820,6 +941,30 @@ func registerScheduledJobs(s scheduledJobRegistrar, cfg Config) {
 			Payload:  map[string]string{"triggered_by": "scheduler"},
 		})
 	}
+}
+
+func scheduledOrgIDs(cfg Config) []string {
+	seen := make(map[string]struct{}, len(cfg.Worker.ScheduledOrgIDs))
+	orgIDs := make([]string, 0, len(cfg.Worker.ScheduledOrgIDs))
+	for _, orgID := range cfg.Worker.ScheduledOrgIDs {
+		orgID = strings.TrimSpace(orgID)
+		if orgID == "" {
+			continue
+		}
+		if _, ok := seen[orgID]; ok {
+			continue
+		}
+		seen[orgID] = struct{}{}
+		orgIDs = append(orgIDs, orgID)
+	}
+	appEnv := strings.TrimSpace(cfg.AppEnv)
+	if appEnv == "" {
+		appEnv = "test"
+	}
+	if len(orgIDs) == 0 && allowsProviderStubFallback(appEnv) {
+		return []string{"org-demo"}
+	}
+	return orgIDs
 }
 
 // parseDurationSafe parses a Go duration string and returns 0 on any error.

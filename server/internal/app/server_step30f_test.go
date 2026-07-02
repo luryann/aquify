@@ -71,7 +71,7 @@ func TestSelfRegister_Success(t *testing.T) {
 	kc := keycloak.NewStubClient()
 	router := newStep30FRouter(t, kc)
 
-	body := `{"first_name":"Jane","last_name":"Doe","email":"jane@example.com","org_id":"org-1"}`
+	body := `{"first_name":"Jane","last_name":"Doe","email":"jane@example.com","org_id":"org-1","requested_role":"coach","club_code":"dare2026","note":"Parent volunteer"}`
 	rr := do30F(router, http.MethodPost, "/api/v1/register", "", body, "")
 
 	if rr.Code != http.StatusCreated {
@@ -94,6 +94,18 @@ func TestSelfRegister_Success(t *testing.T) {
 	}
 	if u.Attributes == nil || len(u.Attributes["registration_status"]) == 0 || u.Attributes["registration_status"][0] != "pending_approval" {
 		t.Errorf("expected registration_status=pending_approval, got attrs=%v", u.Attributes)
+	}
+	if got := u.Attributes["requested_role"][0]; got != "coach" {
+		t.Errorf("expected requested_role=coach, got %q", got)
+	}
+	if got := u.Attributes["registration_club_code"][0]; got != "DARE2026" {
+		t.Errorf("expected registration_club_code=DARE2026, got %q", got)
+	}
+	if got := u.Attributes["registration_note"][0]; got != "Parent volunteer" {
+		t.Errorf("expected registration_note to persist, got %q", got)
+	}
+	if got := u.Attributes["registration_submitted_at"][0]; got == "" {
+		t.Error("expected registration_submitted_at to be set")
 	}
 }
 
@@ -197,6 +209,8 @@ func TestApproveUser_Success(t *testing.T) {
 		Attributes: map[string][]string{
 			"org_id":              {"org-1"},
 			"registration_status": {"pending_approval"},
+			"requested_role":      {"coach"},
+			"registration_note":   {"Volunteer family"},
 		},
 	})
 
@@ -221,6 +235,16 @@ func TestApproveUser_Success(t *testing.T) {
 	// Verify registration_status updated.
 	if u.Attributes["registration_status"][0] != "active" {
 		t.Errorf("expected registration_status=active, got %v", u.Attributes["registration_status"])
+	}
+	if got := u.Attributes["registration_note"][0]; got != "Volunteer family" {
+		t.Errorf("expected registration metadata to be preserved, got %q", got)
+	}
+	roles, err := kc.GetUserRealmRoles(nil, "pending-user") //nolint:staticcheck
+	if err != nil {
+		t.Fatalf("GetUserRealmRoles: %v", err)
+	}
+	if len(roles) != 1 || roles[0].Name != "coach" {
+		t.Errorf("expected requested role coach to be assigned, got %+v", roles)
 	}
 }
 

@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"encoding/json"
 	"net/http"
 	"strings"
 
@@ -68,8 +67,8 @@ func (h *ComplianceHandlers) createDataExportRequest(w http.ResponseWriter, r *h
 	}
 
 	var body createDataExportRequestBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", err)
+	if err := decodeJSONBody(w, r, &body); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", nil)
 		return
 	}
 	if err := h.validate.Struct(body); err != nil {
@@ -171,8 +170,8 @@ func (h *ComplianceHandlers) createDataDeletionRequest(w http.ResponseWriter, r 
 	}
 
 	var body createDataDeletionRequestBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", err)
+	if err := decodeJSONBody(w, r, &body); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", nil)
 		return
 	}
 	if err := h.validate.Struct(body); err != nil {

@@ -127,6 +127,34 @@ type SuppressionEntry struct {
 	CreatedBy string    `json:"created_by"`
 }
 
+// NotificationPreference stores a user's portal communication settings.
+type NotificationPreference struct {
+	ID           string    `json:"id"`
+	OrgID        string    `json:"org_id"`
+	UserID       string    `json:"user_id"`
+	HouseholdID  string    `json:"household_id,omitempty"`
+	EventID      string    `json:"event_id"`
+	EmailEnabled bool      `json:"email_enabled"`
+	PushEnabled  bool      `json:"push_enabled"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	UpdatedBy    string    `json:"updated_by,omitempty"`
+}
+
+type NotificationPreferenceSetting struct {
+	EventID      string `json:"event_id"`
+	EmailEnabled bool   `json:"email_enabled"`
+	PushEnabled  bool   `json:"push_enabled"`
+}
+
+type NotificationPreferenceView struct {
+	EventID      string `json:"event_id"`
+	Label        string `json:"label"`
+	Description  string `json:"description"`
+	EmailEnabled bool   `json:"email_enabled"`
+	PushEnabled  bool   `json:"push_enabled"`
+}
+
 // ─── Input types ──────────────────────────────────────────────────────────────
 
 type CreateAnnouncementInput struct {
@@ -185,6 +213,22 @@ type PostmarkEventInput struct {
 	SuppressSending   bool
 }
 
+type notificationPreferenceDefinition struct {
+	EventID      string
+	Label        string
+	Description  string
+	DefaultEmail bool
+	DefaultPush  bool
+}
+
+var notificationPreferenceDefinitions = []notificationPreferenceDefinition{
+	{EventID: "meet_commitment", Label: "Meet Commitment Requests", Description: "When a coach sends a new meet invitation", DefaultEmail: true, DefaultPush: true},
+	{EventID: "invoice_due", Label: "Invoice Due Reminders", Description: "When an invoice is due or overdue", DefaultEmail: true, DefaultPush: true},
+	{EventID: "announcement", Label: "Club Announcements", Description: "General announcements from club staff", DefaultEmail: true, DefaultPush: false},
+	{EventID: "doc_reminder", Label: "Document Reminders", Description: "When a required document is expiring", DefaultEmail: true, DefaultPush: false},
+	{EventID: "entry_update", Label: "Entry Updates", Description: "When your swimmer's meet entries change", DefaultEmail: false, DefaultPush: true},
+}
+
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 // Service is the in-memory communications service.
@@ -195,6 +239,7 @@ type Service struct {
 	campaigns     map[string]*EmailCampaign
 	deliveries    map[string]*EmailDelivery
 	suppression   map[string]*SuppressionEntry // key: orgID|email (lowercase)
+	preferences   map[string]*NotificationPreference
 
 	postmarkClient postmark.Client
 }
@@ -206,6 +251,7 @@ func NewService() *Service {
 		campaigns:      make(map[string]*EmailCampaign),
 		deliveries:     make(map[string]*EmailDelivery),
 		suppression:    make(map[string]*SuppressionEntry),
+		preferences:    make(map[string]*NotificationPreference),
 		postmarkClient: postmark.NewStubClient(),
 	}
 }
@@ -243,7 +289,7 @@ func NewServiceWithPool(pool *pgxpool.Pool) *Service {
 }
 
 func (s *Service) loadFromDB(ctx context.Context) error {
-	announcements, campaigns, suppressions, err := s.repo.LoadAll(ctx)
+	announcements, campaigns, deliveries, suppressions, preferences, err := s.repo.LoadAll(ctx)
 	if err != nil {
 		return err
 	}
@@ -255,8 +301,14 @@ func (s *Service) loadFromDB(ctx context.Context) error {
 	for _, c := range campaigns {
 		s.campaigns[c.ID] = c
 	}
+	for _, d := range deliveries {
+		s.deliveries[d.ID] = d
+	}
 	for _, e := range suppressions {
 		s.suppression[suppressionKey(e.OrgID, e.Email)] = e
+	}
+	for _, pref := range preferences {
+		s.preferences[notificationPreferenceKey(pref.OrgID, pref.UserID, pref.EventID)] = pref
 	}
 	return nil
 }
@@ -272,7 +324,9 @@ func (s *Service) newID() string {
 
 func newID() string {
 	b := make([]byte, 16)
-	_, _ = rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		panic(fmt.Errorf("secure random unavailable for communications ID generation: %w", err))
+	}
 	return hex.EncodeToString(b)
 }
 
@@ -280,11 +334,98 @@ func suppressionKey(orgID, email string) string {
 	return orgID + "|" + strings.ToLower(strings.TrimSpace(email))
 }
 
+func notificationPreferenceKey(orgID, userID, eventID string) string {
+	return strings.TrimSpace(orgID) + "|" + strings.TrimSpace(userID) + "|" + strings.TrimSpace(eventID)
+}
+
+func notificationPreferenceDefinitionByID(eventID string) (notificationPreferenceDefinition, bool) {
+	needle := strings.TrimSpace(eventID)
+	for _, definition := range notificationPreferenceDefinitions {
+		if definition.EventID == needle {
+			return definition, true
+		}
+	}
+	return notificationPreferenceDefinition{}, false
+}
+
 // isSuppressed returns true when the given email is in the suppression list.
 // Caller must hold s.mu (at minimum RLock) before calling.
 func (s *Service) isSuppressed(orgID, email string) bool {
 	_, ok := s.suppression[suppressionKey(orgID, email)]
 	return ok
+}
+
+func (s *Service) listNotificationPreferencesLocked(orgID, userID string) []NotificationPreferenceView {
+	out := make([]NotificationPreferenceView, 0, len(notificationPreferenceDefinitions))
+	for _, definition := range notificationPreferenceDefinitions {
+		view := NotificationPreferenceView{
+			EventID:      definition.EventID,
+			Label:        definition.Label,
+			Description:  definition.Description,
+			EmailEnabled: definition.DefaultEmail,
+			PushEnabled:  definition.DefaultPush,
+		}
+		if pref, ok := s.preferences[notificationPreferenceKey(orgID, userID, definition.EventID)]; ok && pref != nil {
+			view.EmailEnabled = pref.EmailEnabled
+			view.PushEnabled = pref.PushEnabled
+		}
+		out = append(out, view)
+	}
+	return out
+}
+
+// ListNotificationPreferences returns the caller's effective notification settings.
+func (s *Service) ListNotificationPreferences(orgID, userID string) []NotificationPreferenceView {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.listNotificationPreferencesLocked(orgID, userID)
+}
+
+// ReplaceNotificationPreferences upserts the caller's notification settings.
+func (s *Service) ReplaceNotificationPreferences(orgID, userID, householdID, actorID string, settings []NotificationPreferenceSetting) ([]NotificationPreferenceView, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	seen := make(map[string]struct{}, len(settings))
+	now := time.Now().UTC()
+	for _, setting := range settings {
+		definition, ok := notificationPreferenceDefinitionByID(setting.EventID)
+		if !ok {
+			return nil, fmt.Errorf("unsupported notification event %q", setting.EventID)
+		}
+		if _, exists := seen[definition.EventID]; exists {
+			return nil, fmt.Errorf("duplicate notification event %q", definition.EventID)
+		}
+		seen[definition.EventID] = struct{}{}
+
+		key := notificationPreferenceKey(orgID, userID, definition.EventID)
+		pref, exists := s.preferences[key]
+		if !exists || pref == nil {
+			pref = &NotificationPreference{
+				ID:        s.newID(),
+				OrgID:     orgID,
+				UserID:    userID,
+				CreatedAt: now,
+			}
+		}
+		pref.HouseholdID = strings.TrimSpace(householdID)
+		pref.EventID = definition.EventID
+		pref.EmailEnabled = setting.EmailEnabled
+		pref.PushEnabled = setting.PushEnabled
+		pref.UpdatedAt = now
+		pref.UpdatedBy = actorID
+		if pref.CreatedAt.IsZero() {
+			pref.CreatedAt = now
+		}
+		if s.repo != nil {
+			if err := s.repo.UpsertNotificationPreference(context.Background(), pref); err != nil {
+				return nil, fmt.Errorf("persist notification preference: %w", err)
+			}
+		}
+		s.preferences[key] = pref
+	}
+
+	return s.listNotificationPreferencesLocked(orgID, userID), nil
 }
 
 // ─── Announcement operations ─────────────────────────────────────────────────
@@ -508,7 +649,7 @@ func (s *Service) SendCampaign(ctx context.Context, orgID, campaignID string, in
 		processedCount++
 
 		d := &EmailDelivery{
-			ID:              newID(),
+			ID:              s.newID(),
 			OrgID:           orgID,
 			CampaignID:      campaignID,
 			RecipientEmail:  email,
@@ -553,6 +694,12 @@ func (s *Service) SendCampaign(ctx context.Context, orgID, campaignID string, in
 
 		s.mu.Lock()
 		s.deliveries[d.ID] = d
+		if s.repo != nil {
+			if err := s.repo.UpsertDelivery(context.Background(), d); err != nil {
+				s.mu.Unlock()
+				return nil, fmt.Errorf("persist email delivery: %w", err)
+			}
+		}
 		s.mu.Unlock()
 	}
 
@@ -643,6 +790,11 @@ func (s *Service) ApplyPostmarkEvent(inp PostmarkEventInput) error {
 		delivery.DeliveredAt = &now
 		delivery.UpdatedAt = now
 		delivery.ErrorMessage = inp.Details
+		if s.repo != nil {
+			if err := s.repo.UpsertDelivery(context.Background(), delivery); err != nil {
+				return fmt.Errorf("persist delivered email delivery: %w", err)
+			}
+		}
 		return nil
 	case "Bounce":
 		if delivery == nil && (orgID == "" || email == "") {
@@ -654,6 +806,11 @@ func (s *Service) ApplyPostmarkEvent(inp PostmarkEventInput) error {
 			delivery.BouncedAt = &now
 			delivery.UpdatedAt = now
 			delivery.ErrorMessage = inp.Details
+			if s.repo != nil {
+				if err := s.repo.UpsertDelivery(context.Background(), delivery); err != nil {
+					return fmt.Errorf("persist bounced email delivery: %w", err)
+				}
+			}
 		}
 		if orgID != "" && email != "" {
 			s.upsertSuppressionLocked(orgID, email, "bounce", "postmark-webhook")
@@ -669,6 +826,11 @@ func (s *Service) ApplyPostmarkEvent(inp PostmarkEventInput) error {
 			delivery.BouncedAt = &now
 			delivery.UpdatedAt = now
 			delivery.ErrorMessage = inp.Details
+			if s.repo != nil {
+				if err := s.repo.UpsertDelivery(context.Background(), delivery); err != nil {
+					return fmt.Errorf("persist complained email delivery: %w", err)
+				}
+			}
 		}
 		if orgID != "" && email != "" {
 			s.upsertSuppressionLocked(orgID, email, "complaint", "postmark-webhook")

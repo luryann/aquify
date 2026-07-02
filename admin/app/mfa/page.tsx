@@ -510,7 +510,7 @@ export default function MfaPage() {
 
       const next = await refreshSession()
       setLoading(false)
-      router.replace(destinationForRole(next?.user.role ?? session?.user.role ?? 'admin'))
+      router.replace(destinationForRole(next?.user.roles ?? session?.user.roles ?? ['admin']))
     } catch (err) {
       setLoading(false)
       setError(err instanceof Error ? err.message : 'Verification failed.')
@@ -521,7 +521,7 @@ export default function MfaPage() {
   async function handleFinishSetup() {
     try {
       const next = await refreshSession()
-      router.replace(destinationForRole(next?.user.role ?? session?.user.role ?? 'admin'))
+      router.replace(destinationForRole(next?.user.roles ?? session?.user.roles ?? ['admin']))
     } catch {
       setError('Session refresh failed. Please sign in again.')
     }

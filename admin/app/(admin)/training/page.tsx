@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useCallback } from 'react'
 import { useSession } from '@/lib/session'
-import { useApiClient } from '@/lib/api'
+import { ApiError, useApiClient } from '@/lib/api'
 import { fetchGroups, fetchPractices, createPractice, deletePractice, type GroupRecord, type PracticeRecord } from '@/lib/adminData'
 import { useEffect } from 'react'
 import { Icon } from '@/components/ui/icons'
@@ -34,12 +34,6 @@ type Workout = {
   attendance?: number
   strokes: { free: number; back: number; breast: number; fly: number; im: number }
 }
-
-const DEMO_GROUPS = [
-  { id: 'group-senior', code: 'SR', name: 'Senior Group' },
-  { id: 'group-junior', code: 'JR', name: 'Junior Group' },
-  { id: 'group-developmental', code: 'DEV', name: 'Developmental' },
-]
 
 function practiceToWorkout(p: PracticeRecord): Workout {
   return {
@@ -145,6 +139,12 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
   )
 }
 
+function errorMessage(error: unknown, fallback: string) {
+  if (error instanceof ApiError) return error.message
+  if (error instanceof Error && error.message) return error.message
+  return fallback
+}
+
 export default function TrainingPage() {
   const { session } = useSession()
   const api = useApiClient(session?.token)
@@ -157,6 +157,8 @@ export default function TrainingPage() {
   const [showAddForm, setShowAddForm] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [mutationError, setMutationError] = useState<string | null>(null)
 
   const [newWorkout, setNewWorkout] = useState({
     date: new Date().toISOString().slice(0, 10),
@@ -171,15 +173,23 @@ export default function TrainingPage() {
   const loadPractices = useCallback(async () => {
     if (!orgId) return
     setLoading(true)
+    setLoadError(null)
     try {
       const [practices, fetchedGroups] = await Promise.all([
         fetchPractices(api, orgId),
-        fetchGroups(api, orgId).catch(() => [] as GroupRecord[]),
+        fetchGroups(api, orgId),
       ])
       setWorkouts(practices.map(practiceToWorkout))
       setGroups(fetchedGroups)
-    } catch {
-      // keep existing state
+      setFilterGroup((current) => current === 'all' || fetchedGroups.some((group) => group.id === current) ? current : 'all')
+      setNewWorkout((current) => ({
+        ...current,
+        groupId: current.groupId || fetchedGroups[0]?.id || '',
+      }))
+    } catch (error) {
+      setWorkouts([])
+      setGroups([])
+      setLoadError(errorMessage(error, 'Unable to load training data.'))
     } finally {
       setLoading(false)
     }
@@ -189,11 +199,8 @@ export default function TrainingPage() {
     loadPractices()
   }, [loadPractices])
 
-  // Use live groups if available, otherwise demo
-  const displayGroups = groups.length > 0 ? groups : DEMO_GROUPS as unknown as GroupRecord[]
-
   function getGroupName(groupId: string) {
-    const g = displayGroups.find((g) => g.id === groupId)
+    const g = groups.find((g) => g.id === groupId)
     return g ? g.name : groupId
   }
 
@@ -205,6 +212,7 @@ export default function TrainingPage() {
   async function handleAddWorkout() {
     if (!newWorkout.date || !newWorkout.groupId || !newWorkout.description) return
     setSaving(true)
+    setMutationError(null)
     try {
       const p = await createPractice(api, orgId, {
         date: newWorkout.date,
@@ -225,26 +233,27 @@ export default function TrainingPage() {
       setShowAddForm(false)
       setNewWorkout({
         date: new Date().toISOString().slice(0, 10),
-        groupId: displayGroups[0]?.id ?? '',
+        groupId: groups[0]?.id ?? '',
         type: 'water',
         description: '',
         yardageTarget: '',
         attendance: '',
         freeYds: '', backYds: '', breastYds: '', flyYds: '', imYds: '',
       })
-    } catch {
-      // silently fail — keep form open
+    } catch (error) {
+      setMutationError(errorMessage(error, 'Unable to save workout.'))
     } finally {
       setSaving(false)
     }
   }
 
   async function handleDeleteWorkout(id: string) {
+    setMutationError(null)
     try {
       await deletePractice(api, orgId, id)
       setWorkouts((ws) => ws.filter((w) => w.id !== id))
-    } catch {
-      // silently fail
+    } catch (error) {
+      setMutationError(errorMessage(error, 'Unable to delete workout.'))
     }
   }
 
@@ -257,7 +266,7 @@ export default function TrainingPage() {
 
     const thisWeek = workouts.filter((w) => new Date(w.date + 'T00:00:00') >= weekStart)
 
-    return displayGroups.map((g) => {
+    return groups.map((g) => {
       const gWorkouts = thisWeek.filter((w) => w.groupId === g.id)
       const totalYards = gWorkouts.reduce((sum, w) => {
         return sum + Object.values(w.strokes).reduce((a, b) => a + b, 0)
@@ -273,7 +282,7 @@ export default function TrainingPage() {
       const totalAtt = gWorkouts.reduce((s, w) => s + (w.attendance ?? 0), 0)
       return { group: g, totalYards, strokes, sessions, totalAtt, workouts: gWorkouts.length }
     })
-  }, [workouts, displayGroups])
+  }, [workouts, groups])
 
   const tab = (t: 'schedule' | 'stats', label: string) => (
     <button
@@ -304,6 +313,7 @@ export default function TrainingPage() {
         {activeTab === 'schedule' && (
           <button
             onClick={() => setShowAddForm((v) => !v)}
+            disabled={loading || groups.length === 0}
             className="btn btn-primary"
             style={{ gap: '7px', fontSize: '13px' }}
           >
@@ -320,6 +330,17 @@ export default function TrainingPage() {
       </div>
 
       {/* ── Schedule Tab ── */}
+      {(loadError || mutationError) && (
+        <div style={{ marginBottom: '16px', padding: '12px 14px', borderRadius: '8px', border: '1px solid rgba(220,38,38,0.22)', background: 'rgba(220,38,38,0.08)', color: 'var(--error)', fontSize: '13px', display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center' }}>
+          <span>{mutationError ?? loadError}</span>
+          {loadError && (
+            <button type="button" className="btn btn-secondary" onClick={loadPractices} style={{ fontSize: '12px', padding: '6px 10px' }}>
+              Retry
+            </button>
+          )}
+        </div>
+      )}
+
       {activeTab === 'schedule' && (
         <div>
           {/* Add workout form */}
@@ -348,7 +369,7 @@ export default function TrainingPage() {
                     onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)' }}
                   >
                     <option value="">Select group…</option>
-                    {displayGroups.map((g) => (
+                    {groups.map((g) => (
                       <option key={g.id} value={g.id}>{g.name}</option>
                     ))}
                   </select>
@@ -419,7 +440,7 @@ export default function TrainingPage() {
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <button
                   onClick={handleAddWorkout}
-                  disabled={!newWorkout.date || !newWorkout.groupId || !newWorkout.description || saving}
+                  disabled={!newWorkout.date || !newWorkout.groupId || !newWorkout.description || saving || groups.length === 0}
                   className="btn btn-primary"
                   style={{ fontSize: '13px', gap: '7px' }}
                 >
@@ -444,7 +465,7 @@ export default function TrainingPage() {
                 fontFamily: 'var(--font-body)', transition: 'all 0.15s',
               }}
             >All Groups</button>
-            {displayGroups.map((g) => (
+            {groups.map((g) => (
               <button
                 key={g.id}
                 onClick={() => setFilterGroup(g.id)}

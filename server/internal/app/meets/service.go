@@ -2150,7 +2150,7 @@ func hasAnyRole(principal *appmiddleware.Principal, required ...string) bool {
 func randomToken(byteLen int) string {
 	raw := make([]byte, byteLen)
 	if _, err := rand.Read(raw); err != nil {
-		return fmt.Sprintf("fallback%x", time.Now().UTC().UnixNano())
+		panic(fmt.Errorf("secure random unavailable for meet token generation: %w", err))
 	}
 	return hex.EncodeToString(raw)
 }

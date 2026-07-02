@@ -2,12 +2,17 @@ import type { Role } from './roles'
 
 const MFA_REQUIRED_ROLES: Role[] = ['owner', 'admin', 'coach', 'billing']
 
-export function roleRequiresMFA(role: Role): boolean {
-  return MFA_REQUIRED_ROLES.includes(role)
+function normalizeRoles(roles: Role | Role[]): Role[] {
+  return Array.isArray(roles) ? roles : [roles]
 }
 
-export function destinationForRole(role: string): string {
-  if (role === 'parent') return '/portal/dashboard'
-  if (role === 'swimmer') return '/swim'
+export function roleRequiresMFA(roles: Role | Role[]): boolean {
+  return normalizeRoles(roles).some((role) => MFA_REQUIRED_ROLES.includes(role))
+}
+
+export function destinationForRole(roles: string | string[]): string {
+  const allRoles = Array.isArray(roles) ? roles : [roles]
+  if (allRoles.includes('parent')) return '/portal/dashboard'
+  if (allRoles.includes('swimmer')) return '/swim'
   return '/dashboard'
 }

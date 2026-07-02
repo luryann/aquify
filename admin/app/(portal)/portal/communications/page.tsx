@@ -4,7 +4,16 @@ import { useState, useEffect } from 'react'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
+import { reportUIError } from '@/lib/frontend-telemetry'
 import { fetchAnnouncements, type AnnouncementRecord } from '@/lib/adminData'
+import {
+  DEFAULT_PORTAL_COMMUNICATION_PREFERENCES,
+  loadPortalCommunicationPreferences,
+  portalCommunicationPreferencesChanged,
+  portalCommunicationPreferencesErrorMessage,
+  savePortalCommunicationPreferences,
+  type PortalCommunicationPreference,
+} from '@/lib/portal-communications-preferences'
 
 // ── Category config ─────────────────────────────────────────────────────────
 const CATEGORY_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
@@ -18,21 +27,6 @@ const CATEGORY_CONFIG: Record<string, { label: string; color: string; bg: string
 }
 
 type NotifChannel = 'email' | 'push'
-type NotifEvent = {
-  id: string
-  label: string
-  description: string
-  email: boolean
-  push: boolean
-}
-
-const INITIAL_PREFS: NotifEvent[] = [
-  { id: 'meet_commitment', label: 'Meet Commitment Requests', description: 'When a coach sends a new meet invitation', email: true, push: true },
-  { id: 'invoice_due',     label: 'Invoice Due Reminders',   description: 'When an invoice is due or overdue',         email: true, push: true },
-  { id: 'announcement',   label: 'Club Announcements',       description: 'General announcements from club staff',     email: true, push: false },
-  { id: 'doc_reminder',   label: 'Document Reminders',       description: 'When a required document is expiring',      email: true, push: false },
-  { id: 'entry_update',   label: 'Entry Updates',            description: 'When your swimmer\'s meet entries change',  email: false, push: true },
-]
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 function fmtDate(dateStr?: string): string {
@@ -81,19 +75,65 @@ export default function CommunicationsPage() {
 
   const [announcements, setAnnouncements] = useState<AnnouncementRecord[]>([])
   const [loading, setLoading] = useState(true)
+  const [announcementsError, setAnnouncementsError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'inbox' | 'preferences'>('inbox')
   const [filter, setFilter] = useState('all')
   const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [prefs, setPrefs] = useState<NotifEvent[]>(INITIAL_PREFS)
-  const [savedPrefs, setSavedPrefs] = useState(false)
+  const [prefs, setPrefs] = useState<PortalCommunicationPreference[]>(DEFAULT_PORTAL_COMMUNICATION_PREFERENCES)
+  const [savedPrefs, setSavedPrefs] = useState<PortalCommunicationPreference[]>(DEFAULT_PORTAL_COMMUNICATION_PREFERENCES)
+  const [prefsLoading, setPrefsLoading] = useState(true)
+  const [prefsSaving, setPrefsSaving] = useState(false)
+  const [prefsSaved, setPrefsSaved] = useState(false)
+  const [prefsError, setPrefsError] = useState<string | null>(null)
+  const [announcementsRetryKey, setAnnouncementsRetryKey] = useState(0)
 
   useEffect(() => {
-    if (!orgId) { setLoading(false); return }
+    if (!orgId) {
+      setAnnouncementsError('Your portal session is missing club context. Refresh and sign in again.')
+      setLoading(false)
+      return
+    }
     setLoading(true)
+    setAnnouncementsError(null)
     fetchAnnouncements(api, orgId, 'published')
       .then(setAnnouncements)
-      .catch(console.error)
+      .catch((error) => {
+        reportUIError('portal.communications.announcements.load', error, 'Unable to load announcements right now. Please try again.', {
+          orgId,
+        })
+        setAnnouncementsError('Unable to load announcements right now. Please try again.')
+      })
       .finally(() => setLoading(false))
+  }, [api, orgId, announcementsRetryKey])
+
+  useEffect(() => {
+    let cancelled = false
+    if (!orgId) {
+      setPrefsLoading(false)
+      return
+    }
+
+    setPrefsLoading(true)
+    setPrefsError(null)
+    loadPortalCommunicationPreferences(api, orgId)
+      .then((nextPrefs) => {
+        if (cancelled) return
+        setPrefs(nextPrefs)
+        setSavedPrefs(nextPrefs)
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return
+        setPrefs(DEFAULT_PORTAL_COMMUNICATION_PREFERENCES)
+        setSavedPrefs(DEFAULT_PORTAL_COMMUNICATION_PREFERENCES)
+        setPrefsError(portalCommunicationPreferencesErrorMessage(error))
+      })
+      .finally(() => {
+        if (!cancelled) setPrefsLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
   }, [api, orgId])
 
   const filtered = announcements.filter((a) => {
@@ -102,15 +142,28 @@ export default function CommunicationsPage() {
   })
 
   const togglePref = (id: string, channel: NotifChannel) => {
+    setPrefsSaved(false)
     setPrefs((prev) =>
       prev.map((p) => (p.id === id ? { ...p, [channel]: !p[channel] } : p)),
     )
   }
 
   const savePrefs = async () => {
-    await new Promise((r) => setTimeout(r, 500))
-    setSavedPrefs(true)
-    setTimeout(() => setSavedPrefs(false), 2500)
+    if (!orgId || prefsSaving) return
+    setPrefsSaving(true)
+    setPrefsError(null)
+    setPrefsSaved(false)
+    try {
+      const nextPrefs = await savePortalCommunicationPreferences(api, orgId, prefs)
+      setPrefs(nextPrefs)
+      setSavedPrefs(nextPrefs)
+      setPrefsSaved(true)
+      setTimeout(() => setPrefsSaved(false), 2500)
+    } catch (error) {
+      setPrefsError(portalCommunicationPreferencesErrorMessage(error))
+    } finally {
+      setPrefsSaving(false)
+    }
   }
 
   return (
@@ -210,6 +263,43 @@ export default function CommunicationsPage() {
           {/* Loading / content */}
           {loading ? (
             <Skeleton />
+          ) : announcementsError ? (
+            <div
+              style={{
+                background: '#fef2f2',
+                borderRadius: '14px',
+                border: '1px solid rgba(220,38,38,0.18)',
+                padding: '20px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '16px',
+                animation: 'slideUp 0.3s ease both',
+              }}
+            >
+              <div>
+                <p style={{ fontSize: '14px', color: '#991b1b', fontWeight: 600, marginBottom: '4px' }}>
+                  Announcements are unavailable
+                </p>
+                <p style={{ fontSize: '13px', color: '#b91c1c' }}>{announcementsError}</p>
+              </div>
+              <button
+                onClick={() => setAnnouncementsRetryKey((current) => current + 1)}
+                style={{
+                  padding: '9px 16px',
+                  borderRadius: '9px',
+                  border: 'none',
+                  background: '#991b1b',
+                  color: '#fff',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                }}
+              >
+                Retry
+              </button>
+            </div>
           ) : filtered.length === 0 ? (
             <div
               style={{
@@ -362,6 +452,21 @@ export default function CommunicationsPage() {
       {/* ── PREFERENCES TAB ────────────────────────────────────────────────── */}
       {activeTab === 'preferences' && (
         <div style={{ maxWidth: '640px', animation: 'slideUp 0.35s ease both' }}>
+          {prefsError && (
+            <div
+              style={{
+                marginBottom: '16px',
+                padding: '12px 14px',
+                borderRadius: '12px',
+                border: '1px solid rgba(220,38,38,0.18)',
+                background: '#fef2f2',
+                color: '#991b1b',
+                fontSize: '13px',
+              }}
+            >
+              {prefsError}
+            </div>
+          )}
           <div
             style={{
               background: '#ffffff',
@@ -416,13 +521,15 @@ export default function CommunicationsPage() {
                   <div key={ch} style={{ display: 'flex', justifyContent: 'center' }}>
                     <button
                       onClick={() => togglePref(pref.id, ch)}
+                      disabled={prefsLoading || prefsSaving}
                       style={{
                         width: '40px',
                         height: '22px',
                         borderRadius: '999px',
                         background: pref[ch] ? '#eb5d1e' : 'rgba(0,0,0,0.12)',
                         border: 'none',
-                        cursor: 'pointer',
+                        cursor: prefsLoading || prefsSaving ? 'not-allowed' : 'pointer',
+                        opacity: prefsLoading || prefsSaving ? 0.55 : 1,
                         position: 'relative',
                         transition: 'background 150ms ease',
                         flexShrink: 0,
@@ -451,24 +558,29 @@ export default function CommunicationsPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <button
               onClick={savePrefs}
+              disabled={prefsLoading || prefsSaving || !portalCommunicationPreferencesChanged(prefs, savedPrefs)}
               style={{
                 padding: '10px 24px',
-                background: '#1A1714',
+                background: prefsLoading || prefsSaving || !portalCommunicationPreferencesChanged(prefs, savedPrefs) ? '#6B6866' : '#1A1714',
                 color: '#fff',
                 border: 'none',
                 borderRadius: '9px',
                 fontSize: '14px',
                 fontWeight: 600,
-                cursor: 'pointer',
+                cursor: prefsLoading || prefsSaving || !portalCommunicationPreferencesChanged(prefs, savedPrefs) ? 'not-allowed' : 'pointer',
                 fontFamily: 'var(--font-body)',
                 transition: 'background 120ms ease',
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = '#eb5d1e')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = '#1A1714')}
+              onMouseEnter={(e) => {
+                if (!e.currentTarget.disabled) e.currentTarget.style.background = '#eb5d1e'
+              }}
+              onMouseLeave={(e) => {
+                if (!e.currentTarget.disabled) e.currentTarget.style.background = '#1A1714'
+              }}
             >
-              Save Preferences
+              {prefsLoading ? 'Loading…' : prefsSaving ? 'Saving…' : 'Save Preferences'}
             </button>
-            {savedPrefs && (
+            {prefsSaved && (
               <div
                 style={{
                   display: 'flex',

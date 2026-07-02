@@ -96,27 +96,42 @@ func TestValidateStartupDependenciesRequiresDatabaseAndStorageOutsideDev(t *test
 	}
 }
 
-func TestValidateStartupDependenciesRequiresDatabaseAndStorageWhenAppEnvUnset(t *testing.T) {
+func TestValidateAppEnvConfigRequiresExplicitAppEnv(t *testing.T) {
 	t.Parallel()
 
-	err := ValidateStartupDependencies(context.Background(), Config{}, slog.Default())
+	err := ValidateAppEnvConfig(Config{})
 	if err == nil {
-		t.Fatal("expected strict startup validation to fail when APP_ENV is unset")
+		t.Fatal("expected startup config validation to fail when APP_ENV is unset")
 	}
-	if got := err.Error(); !strings.Contains(got, "DATABASE_URL must be set") || !strings.Contains(got, "STORAGE_ENDPOINT") {
-		t.Fatalf("expected actionable missing dependency errors, got %q", got)
+	if got := err.Error(); !strings.Contains(got, "APP_ENV must be set explicitly") || !strings.Contains(got, "production") {
+		t.Fatalf("expected actionable APP_ENV error, got %q", got)
 	}
 }
 
-func TestValidateStartupDependenciesRequiresDatabaseAndStorageWhenAppEnvInvalid(t *testing.T) {
+func TestValidateAppEnvConfigRejectsInvalidAppEnv(t *testing.T) {
 	t.Parallel()
 
-	err := ValidateStartupDependencies(context.Background(), Config{AppEnv: "prodution"}, slog.Default())
+	err := ValidateAppEnvConfig(Config{AppEnv: "prodution"})
 	if err == nil {
-		t.Fatal("expected strict startup validation to fail when APP_ENV is invalid")
+		t.Fatal("expected startup config validation to fail when APP_ENV is invalid")
 	}
-	if got := err.Error(); !strings.Contains(got, "DATABASE_URL must be set") || !strings.Contains(got, "STORAGE_ENDPOINT") {
-		t.Fatalf("expected actionable missing dependency errors, got %q", got)
+	if got := err.Error(); !strings.Contains(got, `APP_ENV="prodution" is invalid`) || !strings.Contains(got, "staging") {
+		t.Fatalf("expected actionable APP_ENV validation error, got %q", got)
+	}
+}
+
+func TestValidateAppEnvConfigAllowsRecognizedRuntimeModes(t *testing.T) {
+	t.Parallel()
+
+	for _, appEnv := range []string{"development", "local", "test", "staging", "production"} {
+		appEnv := appEnv
+		t.Run(appEnv, func(t *testing.T) {
+			t.Parallel()
+
+			if err := ValidateAppEnvConfig(Config{AppEnv: appEnv}); err != nil {
+				t.Fatalf("expected %s to be accepted, got %v", appEnv, err)
+			}
+		})
 	}
 }
 
@@ -352,5 +367,56 @@ func TestValidateKeycloakAdminConfigAllowsStubAuthModeWithoutAdminClient(t *test
 	})
 	if err != nil {
 		t.Fatalf("expected stub-auth mode to allow missing Keycloak admin config, got %v", err)
+	}
+}
+
+func TestValidateMetricsConfigAllowsMetricsDisabled(t *testing.T) {
+	t.Parallel()
+
+	if err := ValidateMetricsConfig(Config{AppEnv: "production"}, slog.Default()); err != nil {
+		t.Fatalf("expected disabled metrics to pass validation, got %v", err)
+	}
+}
+
+func TestValidateMetricsConfigRejectsMetricsAddrMatchingAPIAddr(t *testing.T) {
+	t.Parallel()
+
+	err := ValidateMetricsConfig(Config{
+		AppEnv: "production",
+		Addr:   ":8080",
+		Telemetry: TelemetryConfig{
+			MetricsAddr: ":8080",
+		},
+	}, slog.Default())
+	if err == nil {
+		t.Fatal("expected metrics validation to fail when METRICS_ADDR matches API_ADDR")
+	}
+	if got := err.Error(); !strings.Contains(got, "METRICS_ADDR must not match API_ADDR") {
+		t.Fatalf("expected actionable metrics validation error, got %q", got)
+	}
+}
+
+func TestValidateMetricsConfigWarnsForWildcardExposureOutsideDevelopment(t *testing.T) {
+	t.Parallel()
+
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
+
+	err := ValidateMetricsConfig(Config{
+		AppEnv: "production",
+		Telemetry: TelemetryConfig{
+			MetricsAddr: ":9090",
+		},
+	}, logger)
+	if err != nil {
+		t.Fatalf("expected wildcard metrics exposure to warn only, got %v", err)
+	}
+
+	logOutput := logs.String()
+	if !strings.Contains(logOutput, "metrics endpoint enabled outside development") {
+		t.Fatalf("expected metrics exposure warning, got %q", logOutput)
+	}
+	if !strings.Contains(logOutput, "wildcard") || !strings.Contains(logOutput, "restrict the metrics listener") {
+		t.Fatalf("expected warning to describe wildcard exposure risk, got %q", logOutput)
 	}
 }

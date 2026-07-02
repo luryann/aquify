@@ -7,6 +7,7 @@ type runtimeSnapshot struct {
 	Campaigns     map[string]*EmailCampaign     `json:"campaigns"`
 	Deliveries    map[string]*EmailDelivery     `json:"deliveries"`
 	Suppression   map[string]*SuppressionEntry  `json:"suppression"`
+	Preferences   map[string]*NotificationPreference `json:"preferences"`
 }
 
 func (s *Service) ExportRuntimeSnapshot() ([]byte, error) {
@@ -18,6 +19,7 @@ func (s *Service) ExportRuntimeSnapshot() ([]byte, error) {
 		Campaigns:     cloneCampaigns(s.campaigns),
 		Deliveries:    cloneDeliveries(s.deliveries),
 		Suppression:   cloneSuppressionEntries(s.suppression),
+		Preferences:   cloneNotificationPreferences(s.preferences),
 	}
 	return json.Marshal(snapshot)
 }
@@ -38,6 +40,7 @@ func (s *Service) LoadRuntimeSnapshot(data []byte) error {
 	s.campaigns = cloneCampaigns(snapshot.Campaigns)
 	s.deliveries = cloneDeliveries(snapshot.Deliveries)
 	s.suppression = cloneSuppressionEntries(snapshot.Suppression)
+	s.preferences = cloneNotificationPreferences(snapshot.Preferences)
 	return nil
 }
 
@@ -82,6 +85,19 @@ func cloneDeliveries(in map[string]*EmailDelivery) map[string]*EmailDelivery {
 
 func cloneSuppressionEntries(in map[string]*SuppressionEntry) map[string]*SuppressionEntry {
 	out := make(map[string]*SuppressionEntry, len(in))
+	for k, v := range in {
+		if v == nil {
+			out[k] = nil
+			continue
+		}
+		cp := *v
+		out[k] = &cp
+	}
+	return out
+}
+
+func cloneNotificationPreferences(in map[string]*NotificationPreference) map[string]*NotificationPreference {
+	out := make(map[string]*NotificationPreference, len(in))
 	for k, v := range in {
 		if v == nil {
 			out[k] = nil

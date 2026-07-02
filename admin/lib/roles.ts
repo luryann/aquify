@@ -29,6 +29,10 @@ export type NavItem = {
   section?: string
 }
 
+function normalizeRoles(userRoles: Role | Role[]): Role[] {
+  return Array.isArray(userRoles) ? userRoles : [userRoles]
+}
+
 export const NAV_SECTIONS = [
   'Overview',
   'Members',
@@ -217,16 +221,16 @@ export const NAV_ITEMS: NavItem[] = [
   },
 ]
 
-export function hasRole(userRole: Role, requiredRole: Role): boolean {
-  return ROLE_HIERARCHY[userRole] >= ROLE_HIERARCHY[requiredRole]
+export function hasRole(userRoles: Role | Role[], requiredRole: Role): boolean {
+  return normalizeRoles(userRoles).some((userRole) => ROLE_HIERARCHY[userRole] >= ROLE_HIERARCHY[requiredRole])
 }
 
-export function canAccess(userRole: Role, allowedRoles: Role[]): boolean {
-  return allowedRoles.includes(userRole)
+export function canAccess(userRoles: Role | Role[], allowedRoles: Role[]): boolean {
+  return normalizeRoles(userRoles).some((userRole) => allowedRoles.includes(userRole))
 }
 
-export function filterNavItems(userRole: Role): NavItem[] {
-  return NAV_ITEMS.filter((item) => canAccess(userRole, item.allowedRoles))
+export function filterNavItems(userRoles: Role | Role[]): NavItem[] {
+  return NAV_ITEMS.filter((item) => canAccess(userRoles, item.allowedRoles))
 }
 
 export function groupNavItems(items: NavItem[]): Record<string, NavItem[]> {

@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -69,6 +70,42 @@ func TestIssueSessionSetsSecureCookies(t *testing.T) {
 	}
 }
 
+func TestIssueSessionFailsWhenCSRFTokenGenerationFails(t *testing.T) {
+	originalNewCSRFToken := appmiddleware.CSRFTokenFactory
+	appmiddleware.CSRFTokenFactory = func() (string, error) {
+		return "", errors.New("rng unavailable")
+	}
+	t.Cleanup(func() {
+		appmiddleware.CSRFTokenFactory = originalNewCSRFToken
+	})
+
+	router := NewRouter(Config{AppEnv: "test"}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/sessions/issue", encodeJSONBody(t, map[string]any{
+		"user_id": "cookie-user",
+		"org_id":  "org-demo",
+		"roles":   []string{"admin"},
+	}))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if len(rr.Result().Cookies()) != 0 {
+		t.Fatalf("expected no cookies when csrf generation fails, got %#v", rr.Result().Cookies())
+	}
+
+	var envelope apiErrorEnvelope
+	if err := json.Unmarshal(rr.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if envelope.Error.Code != "csrf_generation_failed" {
+		t.Fatalf("expected csrf_generation_failed, got %q", envelope.Error.Code)
+	}
+}
+
 func TestIssueSessionDisabledOutsideDevMode(t *testing.T) {
 	t.Parallel()
 
@@ -85,6 +122,55 @@ func TestIssueSessionDisabledOutsideDevMode(t *testing.T) {
 
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("expected 404 when session issuance is disabled, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestIssueSessionRejectsUnknownFieldsTrailingPayloadAndOversizedBodies(t *testing.T) {
+	t.Parallel()
+
+	router := NewRouter(Config{AppEnv: "test"}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	tests := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "unknown field",
+			body: `{"user_id":"cookie-user","org_id":"org-demo","roles":["admin"],"unexpected":true}`,
+		},
+		{
+			name: "trailing payload",
+			body: `{"user_id":"cookie-user","org_id":"org-demo","roles":["admin"]}{"extra":true}`,
+		},
+		{
+			name: "oversized body",
+			body: `{"user_id":"cookie-user","org_id":"org-demo","roles":["admin"],"name":"` + strings.Repeat("x", 1<<20) + `"}`,
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/sessions/issue", strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+			rr := httptest.NewRecorder()
+
+			router.ServeHTTP(rr, req)
+
+			if rr.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400, got %d: %s", rr.Code, rr.Body.String())
+			}
+
+			var env apiErrorEnvelope
+			if err := json.Unmarshal(rr.Body.Bytes(), &env); err != nil {
+				t.Fatalf("decode error response: %v", err)
+			}
+			if env.Error.Code != "invalid_request_body" {
+				t.Fatalf("expected invalid_request_body, got %q", env.Error.Code)
+			}
+		})
 	}
 }
 
@@ -111,6 +197,42 @@ func TestRefreshSessionWithCookieRequiresCSRF(t *testing.T) {
 	}
 	if envelope.Error.Code != "csrf_required" {
 		t.Fatalf("expected csrf_required, got %q", envelope.Error.Code)
+	}
+}
+
+func TestRefreshSessionWithoutCookieFailsWhenCSRFTokenGenerationFails(t *testing.T) {
+	router := NewRouter(Config{AppEnv: "test"}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	session := issueSessionWithCookies(t, router)
+
+	originalNewCSRFToken := appmiddleware.CSRFTokenFactory
+	appmiddleware.CSRFTokenFactory = func() (string, error) {
+		return "", errors.New("rng unavailable")
+	}
+	t.Cleanup(func() {
+		appmiddleware.CSRFTokenFactory = originalNewCSRFToken
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/sessions/refresh", encodeJSONBody(t, map[string]any{
+		"refresh_token": session.refreshCookie.Value,
+	}))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if len(rr.Result().Cookies()) != 0 {
+		t.Fatalf("expected no replacement cookies when csrf generation fails, got %#v", rr.Result().Cookies())
+	}
+
+	var envelope apiErrorEnvelope
+	if err := json.Unmarshal(rr.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if envelope.Error.Code != "csrf_generation_failed" {
+		t.Fatalf("expected csrf_generation_failed, got %q", envelope.Error.Code)
 	}
 }
 
@@ -179,6 +301,52 @@ func TestCORSPreflightAllowsCSRFHeaderForCookieAuthMutation(t *testing.T) {
 	}
 	if got := mutationRR.Header().Get("Access-Control-Allow-Credentials"); got != "true" {
 		t.Fatalf("expected mutation credentials to be allowed, got %q", got)
+	}
+}
+
+func TestCORSPreflightAllowsConfiguredCSRFHeaderForCookieAuthMutation(t *testing.T) {
+	t.Parallel()
+
+	const (
+		origin         = "https://admin.example.test"
+		customCSRFName = "X-Aquify-CSRF"
+	)
+	router := NewRouter(Config{
+		AppEnv:         "test",
+		AllowedOrigins: []string{origin},
+		Security: SecurityConfig{
+			CSRFHeaderName: customCSRFName,
+		},
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	session := issueSessionWithCookies(t, router)
+
+	preflight := httptest.NewRequest(http.MethodOptions, "/api/v1/auth/sessions/refresh", nil)
+	preflight.Header.Set("Origin", origin)
+	preflight.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	preflight.Header.Set("Access-Control-Request-Headers", "Content-Type, "+customCSRFName)
+	preflightRR := httptest.NewRecorder()
+	router.ServeHTTP(preflightRR, preflight)
+
+	if preflightRR.Code != http.StatusOK {
+		t.Fatalf("expected preflight 200, got %d: %s", preflightRR.Code, preflightRR.Body.String())
+	}
+	if got := preflightRR.Header().Get("Access-Control-Allow-Headers"); !headerListContains(got, customCSRFName) {
+		t.Fatalf("expected %s in Access-Control-Allow-Headers, got %q", customCSRFName, got)
+	}
+
+	mutation := httptest.NewRequest(http.MethodPost, "/api/v1/auth/sessions/refresh", nil)
+	mutation.Header.Set("Origin", origin)
+	mutation.Header.Set(customCSRFName, session.csrfCookie.Value)
+	mutation.AddCookie(session.refreshCookie)
+	mutation.AddCookie(session.csrfCookie)
+	mutationRR := httptest.NewRecorder()
+	router.ServeHTTP(mutationRR, mutation)
+
+	if mutationRR.Code != http.StatusOK {
+		t.Fatalf("expected mutation 200, got %d: %s", mutationRR.Code, mutationRR.Body.String())
+	}
+	if got := mutationRR.Header().Get("Access-Control-Allow-Origin"); got != origin {
+		t.Fatalf("expected mutation allow origin %q, got %q", origin, got)
 	}
 }
 
@@ -253,6 +421,51 @@ func TestLogoutSessionWithoutRefreshCookieStillClearsCookies(t *testing.T) {
 	}
 }
 
+func TestLogoutSessionRejectsMalformedOptionalJSONBody(t *testing.T) {
+	t.Parallel()
+
+	router := NewRouter(Config{AppEnv: "test"}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	tests := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "unknown field",
+			body: `{"refresh_token":"token","unexpected":true}`,
+		},
+		{
+			name: "trailing payload",
+			body: `{"refresh_token":"token"}{"extra":true}`,
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/sessions/logout", strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+			rr := httptest.NewRecorder()
+
+			router.ServeHTTP(rr, req)
+
+			if rr.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400, got %d: %s", rr.Code, rr.Body.String())
+			}
+
+			var env apiErrorEnvelope
+			if err := json.Unmarshal(rr.Body.Bytes(), &env); err != nil {
+				t.Fatalf("decode error response: %v", err)
+			}
+			if env.Error.Code != "invalid_request_body" {
+				t.Fatalf("expected invalid_request_body, got %q", env.Error.Code)
+			}
+		})
+	}
+}
+
 func TestLogoutSessionReturnsOIDCLogoutURLWhenConfigured(t *testing.T) {
 	t.Parallel()
 
@@ -296,7 +509,11 @@ func TestLogoutSessionReturnsOIDCLogoutURLWhenConfigured(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/sessions/logout", nil)
 	req.AddCookie(&http.Cookie{Name: appmiddleware.AccessTokenCookieName, Value: session.AccessToken})
 	req.AddCookie(&http.Cookie{Name: appmiddleware.RefreshTokenCookieName, Value: session.RefreshToken})
-	req.AddCookie(&http.Cookie{Name: appmiddleware.CSRFTokenCookieName, Value: appmiddleware.NewCSRFToken()})
+	csrfToken, err := appmiddleware.NewCSRFToken()
+	if err != nil {
+		t.Fatalf("generate csrf token: %v", err)
+	}
+	req.AddCookie(&http.Cookie{Name: appmiddleware.CSRFTokenCookieName, Value: csrfToken})
 	rr := httptest.NewRecorder()
 
 	router.ServeHTTP(rr, req)

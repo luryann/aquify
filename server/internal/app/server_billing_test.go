@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dareaquatics/aquify/server/internal/app/audit"
 	"github.com/dareaquatics/aquify/server/internal/app/billing"
 	stripelib "github.com/dareaquatics/aquify/server/internal/stripe"
 )
@@ -125,10 +126,37 @@ type orgPaymentsEnvelope struct {
 
 // ─── Router helper ────────────────────────────────────────────────────────────
 
+type householdAutopayEnvelope struct {
+	Autopay struct {
+		HouseholdID           string `json:"household_id"`
+		Enabled               bool   `json:"enabled"`
+		PaymentMethodType     string `json:"payment_method_type"`
+		PaymentMethodLabel    string `json:"payment_method_label"`
+		TriggerDaysBeforeDue  int    `json:"trigger_days_before_due"`
+		NextChargeDate        string `json:"next_charge_date"`
+		NextChargeAmountCents int    `json:"next_charge_amount_cents"`
+		NextInvoiceID         string `json:"next_invoice_id"`
+	} `json:"autopay"`
+}
+
+type householdAutopayListEnvelope struct {
+	Count   int `json:"count"`
+	Autopay []struct {
+		HouseholdID string `json:"household_id"`
+		Enabled     bool   `json:"enabled"`
+	} `json:"autopay"`
+}
+
 func newBillingRouter(t *testing.T, svc *billing.Service) http.Handler {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	return NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, nil, nil, nil, nil, nil, nil, nil, svc, nil, nil, nil, nil, nil, nil, nil, nil)
+}
+
+func newBillingRouterWithAudit(t *testing.T, svc *billing.Service, auditSvc *audit.Service) http.Handler {
+	t.Helper()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	return NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, nil, nil, nil, nil, nil, nil, nil, svc, nil, nil, auditSvc, nil, nil, nil, nil, nil)
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -157,6 +185,30 @@ func createInvoiceForHousehold(t *testing.T, router http.Handler, token, orgID, 
 	var env invoiceEnvelope
 	if err := json.NewDecoder(rr.Body).Decode(&env); err != nil {
 		t.Fatalf("createInvoiceForHousehold decode: %v", err)
+	}
+	return env
+}
+
+func createInvoiceForHouseholdWithDueDate(t *testing.T, router http.Handler, token, orgID, householdID, number, dueDate string) invoiceEnvelope {
+	t.Helper()
+	body := billingBody(map[string]any{
+		"household_id":   householdID,
+		"invoice_number": number,
+		"due_date":       dueDate,
+		"notes":          "autopay invoice",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/invoices", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Org-Id", orgID)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("createInvoiceForHouseholdWithDueDate: expected 201, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var env invoiceEnvelope
+	if err := json.NewDecoder(rr.Body).Decode(&env); err != nil {
+		t.Fatalf("createInvoiceForHouseholdWithDueDate decode: %v", err)
 	}
 	return env
 }
@@ -916,7 +968,7 @@ func TestCreateRefundValidatesLocallyBeforeCallingStripe(t *testing.T) {
 		Config{AppEnv: "test", Auth: AuthConfig{EnableDevStubTokens: true}},
 		logger,
 		nil, nil, nil, nil, nil, nil, nil, svc, stripeStub, nil, nil, nil, nil, nil, nil,
-	nil,
+		nil,
 	)
 	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, true)
 
@@ -1092,20 +1144,251 @@ func TestListHouseholdInvoices(t *testing.T) {
 func TestListHouseholdInvoicesParentAllowed(t *testing.T) {
 	t.Parallel()
 	router := newBillingRouter(t, nil)
-	token := issueSessionToken(t, router, "org-demo", []string{"parent"}, false)
+	token := issueSessionTokenWithHousehold(t, router, "parent-billing-household", "org-demo", "hh-parent", []string{"parent"}, false)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/households/hh-parent/invoices", nil)
 	req.Header.Set("X-Org-Id", "org-demo")
 	req.Header.Set("Authorization", "Bearer "+token)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
-	// Parent can read (returns empty list, not forbidden).
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200 for parent listing own invoices, got %d", rr.Code)
 	}
 }
 
+func TestParentBillingReadScopeIsLimitedToOwnHousehold(t *testing.T) {
+	t.Parallel()
+
+	svc := billing.NewService()
+	router := newBillingRouter(t, svc)
+	adminToken := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
+	parentToken := issueSessionTokenWithHousehold(t, router, "parent-billing-scope", "org-demo", "hh-parent", []string{"parent"}, false)
+
+	ownInvoice := createInvoiceForHousehold(t, router, adminToken, "org-demo", "hh-parent", "INV-PARENT-OWN")
+	addItem(t, router, adminToken, "org-demo", ownInvoice.Invoice.ID, 5000)
+	issueInvoiceReq(t, router, adminToken, "org-demo", ownInvoice.Invoice.ID)
+
+	foreignInvoice := createInvoiceForHousehold(t, router, adminToken, "org-demo", "hh-foreign", "INV-PARENT-FOREIGN")
+	addItem(t, router, adminToken, "org-demo", foreignInvoice.Invoice.ID, 7000)
+	issueInvoiceReq(t, router, adminToken, "org-demo", foreignInvoice.Invoice.ID)
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/invoices", nil)
+	listReq.Header.Set("X-Org-Id", "org-demo")
+	listReq.Header.Set("Authorization", "Bearer "+parentToken)
+	listRes := httptest.NewRecorder()
+	router.ServeHTTP(listRes, listReq)
+	if listRes.Code != http.StatusOK {
+		t.Fatalf("expected 200 for parent invoice list, got %d: %s", listRes.Code, listRes.Body.String())
+	}
+	var listEnv struct {
+		Count    int `json:"count"`
+		Invoices []struct {
+			ID string `json:"id"`
+		} `json:"invoices"`
+	}
+	if err := json.NewDecoder(listRes.Body).Decode(&listEnv); err != nil {
+		t.Fatalf("decode invoice list: %v", err)
+	}
+	if listEnv.Count != 1 || listEnv.Invoices[0].ID != ownInvoice.Invoice.ID {
+		t.Fatalf("expected parent invoice list to include only own invoice, got %#v", listEnv.Invoices)
+	}
+
+	getOwnReq := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/invoices/%s", ownInvoice.Invoice.ID), nil)
+	getOwnReq.Header.Set("X-Org-Id", "org-demo")
+	getOwnReq.Header.Set("Authorization", "Bearer "+parentToken)
+	getOwnRes := httptest.NewRecorder()
+	router.ServeHTTP(getOwnRes, getOwnReq)
+	if getOwnRes.Code != http.StatusOK {
+		t.Fatalf("expected 200 for parent own invoice, got %d: %s", getOwnRes.Code, getOwnRes.Body.String())
+	}
+
+	getForeignReq := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/invoices/%s", foreignInvoice.Invoice.ID), nil)
+	getForeignReq.Header.Set("X-Org-Id", "org-demo")
+	getForeignReq.Header.Set("Authorization", "Bearer "+parentToken)
+	getForeignRes := httptest.NewRecorder()
+	router.ServeHTTP(getForeignRes, getForeignReq)
+	if getForeignRes.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for parent foreign invoice, got %d: %s", getForeignRes.Code, getForeignRes.Body.String())
+	}
+}
+
 // ─── Tests: Ledger events ─────────────────────────────────────────────────────
+
+func TestHouseholdAutopayParentCanManageOwnHouseholdAndPreviewNextCharge(t *testing.T) {
+	t.Parallel()
+
+	svc := billing.NewService()
+	router := newBillingRouter(t, svc)
+	adminToken := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
+	parentToken := issueSessionTokenWithHousehold(t, router, "parent-autopay", "org-demo", "hh-parent", []string{"parent"}, false)
+
+	inv := createInvoiceForHouseholdWithDueDate(t, router, adminToken, "org-demo", "hh-parent", "INV-AUTO-001", "2026-06-10")
+	addItem(t, router, adminToken, "org-demo", inv.Invoice.ID, 6400)
+	issueInvoiceReq(t, router, adminToken, "org-demo", inv.Invoice.ID)
+
+	body := billingBody(map[string]any{
+		"payment_method_type":     "card",
+		"payment_method_brand":    "Visa",
+		"payment_method_last4":    "4242",
+		"payment_method_label":    "Visa •••• 4242",
+		"trigger_days_before_due": 3,
+	})
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/households/hh-parent/autopay", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Org-Id", "org-demo")
+	req.Header.Set("Authorization", "Bearer "+parentToken)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 when parent updates own household autopay, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var env householdAutopayEnvelope
+	if err := json.NewDecoder(rr.Body).Decode(&env); err != nil {
+		t.Fatalf("decode autopay response: %v", err)
+	}
+	if !env.Autopay.Enabled || env.Autopay.TriggerDaysBeforeDue != 3 {
+		t.Fatalf("expected enabled autopay with 3-day trigger, got %#v", env.Autopay)
+	}
+	if env.Autopay.NextInvoiceID != inv.Invoice.ID || env.Autopay.NextChargeAmountCents != 6400 || env.Autopay.NextChargeDate != "2026-06-07" {
+		t.Fatalf("unexpected next-charge preview: %#v", env.Autopay)
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/households/hh-parent/autopay", nil)
+	getReq.Header.Set("X-Org-Id", "org-demo")
+	getReq.Header.Set("Authorization", "Bearer "+parentToken)
+	getRes := httptest.NewRecorder()
+	router.ServeHTTP(getRes, getReq)
+	if getRes.Code != http.StatusOK {
+		t.Fatalf("expected 200 when parent reads own household autopay, got %d: %s", getRes.Code, getRes.Body.String())
+	}
+}
+
+func TestHouseholdAutopayParentCannotManageForeignHousehold(t *testing.T) {
+	t.Parallel()
+
+	router := newBillingRouter(t, billing.NewService())
+	parentToken := issueSessionTokenWithHousehold(t, router, "parent-autopay-scope", "org-demo", "hh-parent", []string{"parent"}, false)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/households/hh-foreign/autopay", strings.NewReader(billingBody(map[string]any{
+		"payment_method_type":  "ach",
+		"payment_method_label": "Checking account",
+	})))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Org-Id", "org-demo")
+	req.Header.Set("Authorization", "Bearer "+parentToken)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 when parent updates foreign household autopay, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestListHouseholdAutopayBillingCanReadAll(t *testing.T) {
+	t.Parallel()
+
+	svc := billing.NewService()
+	router := newBillingRouter(t, svc)
+	adminToken := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
+	billingToken := issueSessionToken(t, router, "org-demo", []string{"billing"}, false)
+
+	for _, householdID := range []string{"hh-001", "hh-002"} {
+		req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v1/households/%s/autopay", householdID), strings.NewReader(billingBody(map[string]any{
+			"payment_method_type":  "card",
+			"payment_method_label": fmt.Sprintf("Saved method %s", householdID),
+		})))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Org-Id", "org-demo")
+		req.Header.Set("Authorization", "Bearer "+adminToken)
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("seed autopay for %s: expected 200, got %d: %s", householdID, rr.Code, rr.Body.String())
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/autopay/households", nil)
+	req.Header.Set("X-Org-Id", "org-demo")
+	req.Header.Set("Authorization", "Bearer "+billingToken)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 for billing autopay list, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var env householdAutopayListEnvelope
+	if err := json.NewDecoder(rr.Body).Decode(&env); err != nil {
+		t.Fatalf("decode autopay list: %v", err)
+	}
+	if env.Count < 2 {
+		t.Fatalf("expected at least 2 autopay rows, got %d", env.Count)
+	}
+}
+
+func TestHouseholdAutopayActionsEmitAuditEvents(t *testing.T) {
+	t.Parallel()
+
+	svc := billing.NewService()
+	auditSvc := audit.NewService()
+	router := newBillingRouterWithAudit(t, svc, auditSvc)
+	adminToken := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
+
+	enrollReq := httptest.NewRequest(http.MethodPut, "/api/v1/households/hh-audit/autopay", strings.NewReader(billingBody(map[string]any{
+		"payment_method_type":  "card",
+		"payment_method_label": "Visa •••• 1111",
+	})))
+	enrollReq.Header.Set("Content-Type", "application/json")
+	enrollReq.Header.Set("X-Org-Id", "org-demo")
+	enrollReq.Header.Set("Authorization", "Bearer "+adminToken)
+	enrollRes := httptest.NewRecorder()
+	router.ServeHTTP(enrollRes, enrollReq)
+	if enrollRes.Code != http.StatusOK {
+		t.Fatalf("expected 200 for autopay enroll, got %d: %s", enrollRes.Code, enrollRes.Body.String())
+	}
+
+	optOutReq := httptest.NewRequest(http.MethodPost, "/api/v1/households/hh-audit/autopay/opt-out", nil)
+	optOutReq.Header.Set("X-Org-Id", "org-demo")
+	optOutReq.Header.Set("Authorization", "Bearer "+adminToken)
+	optOutRes := httptest.NewRecorder()
+	router.ServeHTTP(optOutRes, optOutReq)
+	if optOutRes.Code != http.StatusOK {
+		t.Fatalf("expected 200 for autopay opt-out, got %d: %s", optOutRes.Code, optOutRes.Body.String())
+	}
+
+	auditReq := httptest.NewRequest(http.MethodGet, "/api/v1/audit-events?action=billing.autopay.enroll", nil)
+	auditReq.Header.Set("X-Org-Id", "org-demo")
+	auditReq.Header.Set("Authorization", "Bearer "+adminToken)
+	auditRes := httptest.NewRecorder()
+	router.ServeHTTP(auditRes, auditReq)
+	if auditRes.Code != http.StatusOK {
+		t.Fatalf("expected 200 for audit list, got %d: %s", auditRes.Code, auditRes.Body.String())
+	}
+	var auditEnv struct {
+		Events []struct {
+			Action     string `json:"action"`
+			ResourceID string `json:"resource_id"`
+		} `json:"events"`
+	}
+	if err := json.NewDecoder(auditRes.Body).Decode(&auditEnv); err != nil {
+		t.Fatalf("decode audit list: %v", err)
+	}
+	if len(auditEnv.Events) != 1 || auditEnv.Events[0].Action != "billing.autopay.enroll" || auditEnv.Events[0].ResourceID != "hh-audit" {
+		t.Fatalf("unexpected audit enroll events: %#v", auditEnv.Events)
+	}
+
+	auditReq = httptest.NewRequest(http.MethodGet, "/api/v1/audit-events?action=billing.autopay.opt_out", nil)
+	auditReq.Header.Set("X-Org-Id", "org-demo")
+	auditReq.Header.Set("Authorization", "Bearer "+adminToken)
+	auditRes = httptest.NewRecorder()
+	router.ServeHTTP(auditRes, auditReq)
+	if auditRes.Code != http.StatusOK {
+		t.Fatalf("expected 200 for audit opt-out list, got %d: %s", auditRes.Code, auditRes.Body.String())
+	}
+	if err := json.NewDecoder(auditRes.Body).Decode(&auditEnv); err != nil {
+		t.Fatalf("decode audit opt-out list: %v", err)
+	}
+	if len(auditEnv.Events) != 1 || auditEnv.Events[0].Action != "billing.autopay.opt_out" || auditEnv.Events[0].ResourceID != "hh-audit" {
+		t.Fatalf("unexpected audit opt-out events: %#v", auditEnv.Events)
+	}
+}
 
 func TestListLedgerEventsAdminCanRead(t *testing.T) {
 	t.Parallel()

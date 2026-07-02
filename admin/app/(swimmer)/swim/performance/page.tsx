@@ -4,12 +4,23 @@ import { useState, useEffect } from 'react'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
+import { reportUIError } from '@/lib/frontend-telemetry'
 import {
+  fetchSwimmerCutQualification,
   fetchSwimmers,
   fetchSwimmerBestTimes,
+  fetchTimeStandards,
   type BestTimeRecord,
-  type SwimmerRecord,
 } from '@/lib/adminData'
+import {
+  filterApplicableTimeStandards,
+  sortCutQualificationCards,
+  type SwimmerCutQualificationCard,
+} from '@/lib/swimmer-cut-qualifications'
+import {
+  buildSwimmerCutsViewModel,
+  describeCutQualification,
+} from '@/lib/swimmer-performance-cuts'
 
 // ── Design tokens ──────────────────────────────────────────────────────────
 const C = {
@@ -62,6 +73,29 @@ function fmtSec(s: number): string {
   const m = Math.floor(s / 60)
   const rem = (s % 60).toFixed(2).padStart(5, '0')
   return `${m}:${rem}`
+}
+
+function toneColors(tone: 'success' | 'warning' | 'muted') {
+  switch (tone) {
+    case 'success':
+      return {
+        text: C.accent,
+        bg: 'rgba(0,212,170,0.10)',
+        border: 'rgba(0,212,170,0.22)',
+      }
+    case 'warning':
+      return {
+        text: '#F59E0B',
+        bg: 'rgba(245,158,11,0.12)',
+        border: 'rgba(245,158,11,0.22)',
+      }
+    default:
+      return {
+        text: C.subtle,
+        bg: 'rgba(127,168,201,0.10)',
+        border: 'rgba(127,168,201,0.18)',
+      }
+  }
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -172,7 +206,11 @@ export default function PerformancePage() {
   const householdId = session?.user.householdId ?? ''
 
   const [rawRecords, setRawRecords] = useState<BestTimeRecord[]>([])
+  const [cutCards, setCutCards] = useState<SwimmerCutQualificationCard[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [cutLoading, setCutLoading] = useState(true)
+  const [cutError, setCutError] = useState<string | null>(null)
 
   const [courseFilter, setCourseFilter] = useState<Course>('SCY')
   const [tab, setTab] = useState<'times' | 'cuts' | 'progression'>('times')
@@ -182,26 +220,105 @@ export default function PerformancePage() {
   const [editingGoal, setEditingGoal] = useState(false)
   const [goalError, setGoalError] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<'chart' | 'table' | 'monthly'>('chart')
+  const [retryKey, setRetryKey] = useState(0)
 
   useEffect(() => {
-    if (!orgId) { setLoading(false); return }
-    fetchSwimmers(api, orgId).catch(() => [] as SwimmerRecord[]).then(async (swimmers) => {
-      const mySwimmer = householdId
-        ? (swimmers.find(s => s.household_id === householdId) ?? null)
-        : null
-      if (!mySwimmer) { setLoading(false); return }
-      const records = await fetchSwimmerBestTimes(api, orgId, mySwimmer.id).catch(() => [] as BestTimeRecord[])
-      setRawRecords(records)
-      // Set default progression event to first SCY record
-      const firstSCY = records.find(r => r.course?.toUpperCase() === 'SCY' && r.best_time_ms)
-      if (firstSCY) {
-        const key = `${eventName(firstSCY.event_distance, firstSCY.stroke)} SCY`
-        setProgressEvent(key)
+    if (!orgId || !householdId) {
+      setLoadError('Swimmer performance is unavailable because household context is missing.')
+      setLoading(false)
+      setCutLoading(false)
+      return
+    }
+
+    let cancelled = false
+
+    async function loadPerformance() {
+      setLoading(true)
+      setCutLoading(true)
+      setLoadError(null)
+      setCutError(null)
+      setRawRecords([])
+      setCutCards([])
+
+      try {
+        const swimmers = await fetchSwimmers(api, orgId)
+        if (cancelled) return
+
+        const mySwimmer = swimmers.find((swimmer) => swimmer.household_id === householdId) ?? null
+        if (!mySwimmer) {
+          setLoadError('Swimmer performance is unavailable because your household swimmer could not be loaded.')
+          return
+        }
+
+        const [records, standards] = await Promise.all([
+          fetchSwimmerBestTimes(api, orgId, mySwimmer.id),
+          fetchTimeStandards(api, orgId, { active_only: 'true' }),
+        ])
+        if (cancelled) return
+
+        setRawRecords(records)
+
+        const firstSCY = records.find((record) => record.course?.toUpperCase() === 'SCY' && record.best_time_ms)
+        if (firstSCY) {
+          const key = `${eventName(firstSCY.event_distance, firstSCY.stroke)} SCY`
+          setProgressEvent(key)
+        }
+
+        const applicableStandards = filterApplicableTimeStandards(standards, mySwimmer)
+        if (applicableStandards.length === 0) {
+          setCutCards([])
+          return
+        }
+
+        try {
+          const qualifications = await Promise.all(
+            applicableStandards.map(async (standard) => ({
+              standard,
+              qualification: await fetchSwimmerCutQualification(api, orgId, mySwimmer.id, standard.id),
+            })),
+          )
+          if (cancelled) return
+          setCutCards(sortCutQualificationCards(qualifications))
+        } catch (error) {
+          if (cancelled) return
+          setCutCards([])
+          setCutError(reportUIError(
+            'swimmer.performance.cuts.load',
+            error,
+            'Failed to load cut qualifications.',
+            { orgId, householdId, swimmerId: mySwimmer.id },
+          ))
+        }
+      } catch (error) {
+        if (cancelled) return
+        reportUIError(
+          'swimmer.performance.load',
+          error,
+          'Unable to load swimmer performance right now. Please try again.',
+          { orgId, householdId },
+        )
+        setLoadError('Unable to load swimmer performance right now. Please try again.')
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+          setCutLoading(false)
+        }
       }
-    }).finally(() => setLoading(false))
-  }, [api, orgId, householdId])
+    }
+
+    void loadPerformance()
+
+    return () => {
+      cancelled = true
+    }
+  }, [api, orgId, householdId, retryKey])
 
   const pivotedRows = pivotBestTimes(rawRecords)
+  const cutsView = buildSwimmerCutsViewModel({
+    loading: cutLoading,
+    error: cutError,
+    cards: cutCards,
+  })
 
   // Build progression event keys (unique event+course combos with data)
   const progressionKeys: string[] = Array.from(
@@ -231,6 +348,42 @@ export default function PerformancePage() {
     if (!monthMap[d.date]) monthMap[d.date] = []
     monthMap[d.date].push(d.time)
   })
+
+  if (!loading && loadError) {
+    return (
+      <div>
+        <style>{`
+          @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.45} }
+          @keyframes slideUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+        `}</style>
+        <div style={{ marginBottom: '32px', animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both' }}>
+          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(26px, 4vw, 34px)', color: C.text, letterSpacing: '-0.02em', lineHeight: 1.1, marginBottom: '6px' }}>
+            Performance
+          </h1>
+          <p style={{ fontSize: '14px', color: C.subtle }}>
+            Best times, cut qualifications, and progression history.
+          </p>
+        </div>
+        <div style={{ background: C.card, border: '1px solid rgba(239,68,68,0.2)', borderRadius: '14px', padding: '24px 22px' }}>
+          <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#fca5a5', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
+            Swimmer Performance
+          </div>
+          <p style={{ fontSize: '18px', color: C.text, fontWeight: 600, marginBottom: '8px' }}>
+            Performance data is unavailable right now.
+          </p>
+          <p style={{ fontSize: '13px', color: C.subtle, lineHeight: 1.6, marginBottom: '16px' }}>
+            {loadError}
+          </p>
+          <button
+            onClick={() => setRetryKey((current) => current + 1)}
+            style={{ padding: '10px 16px', borderRadius: '9px', border: 'none', background: '#dc2626', color: '#fff', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div>
@@ -390,13 +543,78 @@ export default function PerformancePage() {
       {/* ── CUT QUALIFICATION TAB ──────────────────────────────────── */}
       {tab === 'cuts' && (
         <div style={{ animation: 'slideUp 0.25s cubic-bezier(0.16,1,0.3,1) both' }}>
-          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '12px', padding: '32px 20px', textAlign: 'center' }}>
-            <Icon name="zap" size={28} style={{ color: C.muted, marginBottom: '12px' }} />
-            <p style={{ fontSize: '15px', color: C.subtle, fontWeight: 500, marginBottom: '6px' }}>Cut qualifications coming soon</p>
-            <p style={{ fontSize: '13px', color: C.muted, lineHeight: 1.5 }}>
-              Time standard tables are managed by your coach. Check back after your next meet.
-            </p>
-          </div>
+          {(cutsView.state === 'loading' || cutsView.state === 'error' || cutsView.state === 'empty') && (
+            <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '12px', padding: '32px 20px', textAlign: 'center' }}>
+              <Icon name={cutsView.state === 'error' ? 'alert-circle' : 'zap'} size={28} style={{ color: cutsView.state === 'error' ? '#F59E0B' : C.muted, marginBottom: '12px' }} />
+              <p style={{ fontSize: '15px', color: C.subtle, fontWeight: 500, marginBottom: '6px' }}>{cutsView.title}</p>
+              <p style={{ fontSize: '13px', color: C.muted, lineHeight: 1.5 }}>
+                {cutsView.message}
+              </p>
+            </div>
+          )}
+
+          {cutsView.state === 'ready' && (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '12px', marginBottom: '20px' }}>
+                {[
+                  { label: 'Qualified', value: String(cutsView.qualifiedCount), accent: C.accent },
+                  { label: 'Active Standards', value: String(cutsView.totalCount), accent: C.text },
+                  { label: 'Still Chasing', value: String(cutsView.totalCount - cutsView.qualifiedCount), accent: '#F59E0B' },
+                ].map((stat) => (
+                  <div key={stat.label} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '12px', padding: '14px 16px' }}>
+                    <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', color: C.muted, fontFamily: 'var(--font-mono)', marginBottom: '6px' }}>{stat.label}</div>
+                    <div style={{ fontSize: '20px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: stat.accent }}>{stat.value}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ marginBottom: '16px', background: 'rgba(0,212,170,0.05)', border: `1px solid ${C.border}`, borderRadius: '12px', padding: '14px 16px' }}>
+                <p style={{ fontSize: '14px', color: C.subtle, fontWeight: 600, marginBottom: '4px' }}>{cutsView.title}</p>
+                <p style={{ fontSize: '12px', color: C.muted, lineHeight: 1.5 }}>{cutsView.message}</p>
+              </div>
+
+              <div style={{ display: 'grid', gap: '12px' }}>
+                {cutCards.map((card) => {
+                  const status = describeCutQualification(card)
+                  const colors = toneColors(status.tone)
+                  const standard = card.standard
+                  const qualification = card.qualification
+                  return (
+                    <div key={standard.id} style={{ background: C.card, border: `1px solid ${colors.border}`, borderRadius: '14px', padding: '16px 18px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: '10px' }}>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '6px' }}>
+                            <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: colors.text, background: colors.bg, border: `1px solid ${colors.border}`, padding: '3px 8px', borderRadius: '999px' }}>
+                              {status.badge}
+                            </span>
+                            <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: C.subtle }}>
+                              {standard.standard_code}
+                            </span>
+                          </div>
+                          <p style={{ fontSize: '16px', fontWeight: 700, color: C.text, marginBottom: '4px' }}>
+                            {standard.event_distance} {standard.stroke.charAt(0).toUpperCase() + standard.stroke.slice(1)} {standard.course}
+                          </p>
+                          <p style={{ fontSize: '12px', color: C.muted, lineHeight: 1.5 }}>
+                            {status.detail}
+                          </p>
+                        </div>
+                        <div style={{ minWidth: '170px', textAlign: 'right' }}>
+                          <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', color: C.muted, fontFamily: 'var(--font-mono)', marginBottom: '4px' }}>Cut Time</div>
+                          <div style={{ fontSize: '18px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: C.text, marginBottom: '8px' }}>
+                            {fmtTime(standard.time_ms)}
+                          </div>
+                          <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', color: C.muted, fontFamily: 'var(--font-mono)', marginBottom: '4px' }}>Best Time</div>
+                          <div style={{ fontSize: '15px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: qualification.best_time_ms != null ? colors.text : C.muted }}>
+                            {qualification.best_time_ms != null ? fmtTime(qualification.best_time_ms) : 'NT'}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </>
+          )}
         </div>
       )}
 

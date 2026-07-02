@@ -1,10 +1,8 @@
 package handlers
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 
@@ -81,6 +79,10 @@ func (h *BillingHandlers) RegisterRoutes(router chi.Router) {
 
 	// Household invoices
 	router.Get("/households/{householdID}/invoices", h.listHouseholdInvoices)
+	router.Get("/households/{householdID}/autopay", h.getHouseholdAutopay)
+	router.Put("/households/{householdID}/autopay", h.upsertHouseholdAutopay)
+	router.Post("/households/{householdID}/autopay/opt-out", h.optOutHouseholdAutopay)
+	router.Get("/autopay/households", h.listHouseholdAutopay)
 
 	// Ledger
 	router.Get("/ledger-events", h.listLedgerEvents)
@@ -93,17 +95,13 @@ func billingScopeFromRequest(w http.ResponseWriter, r *http.Request) (*appmiddle
 }
 
 func (h *BillingHandlers) decodeAndValidate(w http.ResponseWriter, r *http.Request, dst any) bool {
-	dec := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(dst); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request_body", err.Error(), nil)
-		return false
-	}
-	if err := h.validate.Struct(dst); err != nil {
-		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "validation_error", "Request validation failed.", httpx.FormatValidationErrors(err))
-		return false
-	}
-	return true
+	return decodeAndValidateJSON(w, r, dst, h.validate, decodeAndValidateOptions{
+		InvalidStatus:     http.StatusBadRequest,
+		InvalidCode:       "invalid_request_body",
+		ValidationStatus:  http.StatusUnprocessableEntity,
+		ValidationCode:    "validation_error",
+		ValidationMessage: "Request validation failed.",
+	})
 }
 
 func mapBillingError(w http.ResponseWriter, r *http.Request, err error) {
@@ -136,6 +134,8 @@ func mapBillingError(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "refund_requires_reason", "A reason is required for refund requests.", nil)
 	case errors.Is(err, billing.ErrDuplicateInvoiceNumber):
 		httpx.WriteError(w, r, http.StatusConflict, "duplicate_invoice_number", "Invoice number already exists for this organisation.", nil)
+	case errors.Is(err, billing.ErrAutopayPaymentMethodRequired):
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "autopay_payment_method_required", "Payment method details are required to enable autopay.", nil)
 	default:
 		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An unexpected error occurred.", nil)
 	}
@@ -533,6 +533,112 @@ func (h *BillingHandlers) listHouseholdInvoices(w http.ResponseWriter, r *http.R
 }
 
 // ─── Ledger handler ───────────────────────────────────────────────────────────
+
+func (h *BillingHandlers) getHouseholdAutopay(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := billingScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+	householdID := chi.URLParam(r, "householdID")
+
+	status, err := h.service.GetHouseholdAutopayStatus(orgID, principal, householdID)
+	if err != nil {
+		mapBillingError(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"autopay": status})
+}
+
+func (h *BillingHandlers) listHouseholdAutopay(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := billingScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+
+	statuses, err := h.service.ListHouseholdAutopayStatuses(orgID, principal, r.URL.Query()["household_id"])
+	if err != nil {
+		mapBillingError(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"count": len(statuses), "autopay": statuses})
+}
+
+func (h *BillingHandlers) upsertHouseholdAutopay(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := billingScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+	householdID := chi.URLParam(r, "householdID")
+
+	var beforeState interface{}
+	if h.auditService != nil {
+		if before, err := h.service.GetHouseholdAutopayStatus(orgID, principal, householdID); err == nil {
+			beforeState = before
+		}
+	}
+
+	var input billing.UpsertHouseholdAutopayInput
+	if !h.decodeAndValidate(w, r, &input) {
+		return
+	}
+
+	status, err := h.service.UpsertHouseholdAutopay(orgID, principal.UserID, principal, householdID, input)
+	if err != nil {
+		mapBillingError(w, r, err)
+		return
+	}
+
+	if h.auditService != nil {
+		_, _ = h.auditService.Append(audit.AppendRequest{
+			OrgID:        orgID,
+			ActorUserID:  principal.UserID,
+			ActorRoles:   principal.Roles,
+			Action:       audit.ActionBillingAutopayEnroll,
+			ResourceType: "household_autopay",
+			ResourceID:   householdID,
+			Before:       beforeState,
+			After:        status,
+		})
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"autopay": status})
+}
+
+func (h *BillingHandlers) optOutHouseholdAutopay(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := billingScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+	householdID := chi.URLParam(r, "householdID")
+
+	var beforeState interface{}
+	if h.auditService != nil {
+		if before, err := h.service.GetHouseholdAutopayStatus(orgID, principal, householdID); err == nil {
+			beforeState = before
+		}
+	}
+
+	status, err := h.service.OptOutHouseholdAutopay(orgID, principal.UserID, principal, householdID)
+	if err != nil {
+		mapBillingError(w, r, err)
+		return
+	}
+
+	if h.auditService != nil {
+		_, _ = h.auditService.Append(audit.AppendRequest{
+			OrgID:        orgID,
+			ActorUserID:  principal.UserID,
+			ActorRoles:   principal.Roles,
+			Action:       audit.ActionBillingAutopayOptOut,
+			ResourceType: "household_autopay",
+			ResourceID:   householdID,
+			Before:       beforeState,
+			After:        status,
+		})
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"autopay": status})
+}
 
 func (h *BillingHandlers) listLedgerEvents(w http.ResponseWriter, r *http.Request) {
 	principal, orgID, ok := billingScopeFromRequest(w, r)

@@ -14,10 +14,35 @@ type PendingUser = {
   enabled: boolean
   username: string
   emailVerified: boolean
-  attributes?: { org_id?: string[]; registration_status?: string[] }
+  attributes?: {
+    org_id?: string[]
+    registration_status?: string[]
+    requested_role?: string[]
+    registration_club_code?: string[]
+    registration_note?: string[]
+    registration_submitted_at?: string[]
+  }
 }
 
 function orgHeaders(orgId: string) { return { 'X-Org-Id': orgId } }
+
+function attr(user: PendingUser, key: keyof NonNullable<PendingUser['attributes']>) {
+  return user.attributes?.[key]?.[0] ?? ''
+}
+
+function requestedRoleLabel(role: string): string {
+  switch (role) {
+    case 'parent':
+      return 'Parent / Guardian'
+    case 'coach':
+      return 'Coach'
+    case 'read_only_staff':
+    case 'staff':
+      return 'Admin Staff'
+    default:
+      return role || 'Unspecified'
+  }
+}
 
 export default function ApprovalsPage() {
   const { session } = useSession()
@@ -129,6 +154,10 @@ export default function ApprovalsPage() {
             const displayName = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email
             const busyState = working[user.id]
             const isRejectOpen = showRejectId === user.id
+            const requestedRole = attr(user, 'requested_role')
+            const clubCode = attr(user, 'registration_club_code')
+            const registrationNote = attr(user, 'registration_note')
+            const submittedAt = attr(user, 'registration_submitted_at')
             return (
               <div key={user.id} className="card" style={{ padding: '20px' }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px' }}>
@@ -146,6 +175,28 @@ export default function ApprovalsPage() {
                     <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
                       ID: {user.id}
                     </div>
+                    {(requestedRole || clubCode || registrationNote || submittedAt) && (
+                      <div style={{ marginTop: '12px', display: 'grid', gap: '6px' }}>
+                        <div style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>
+                          Requested role: <strong style={{ color: 'var(--text)' }}>{requestedRoleLabel(requestedRole)}</strong>
+                        </div>
+                        {clubCode && (
+                          <div style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>
+                            Club code: <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>{clubCode}</span>
+                          </div>
+                        )}
+                        {submittedAt && (
+                          <div style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>
+                            Submitted: <span style={{ color: 'var(--text)' }}>{new Date(submittedAt).toLocaleString()}</span>
+                          </div>
+                        )}
+                        {registrationNote && (
+                          <div style={{ fontSize: '12px', color: 'var(--text-subtle)', lineHeight: 1.5 }}>
+                            Note: <span style={{ color: 'var(--text)' }}>{registrationNote}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
                     <button

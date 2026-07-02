@@ -20,6 +20,11 @@ func RequireOrgScope(next http.Handler) http.Handler {
 
 		orgID := strings.TrimSpace(r.Header.Get("X-Org-Id"))
 		if orgID == "" {
+			if r.URL.Path == "/api/v1/auth/session" && strings.TrimSpace(principal.OrgID) != "" {
+				ctx := context.WithValue(r.Context(), orgContextKey{}, strings.TrimSpace(principal.OrgID))
+				next.ServeHTTP(w, r.WithContext(ctx))
+				return
+			}
 			httpx.WriteError(w, r, http.StatusBadRequest, "missing_org_scope", "Missing X-Org-Id header.", nil)
 			return
 		}

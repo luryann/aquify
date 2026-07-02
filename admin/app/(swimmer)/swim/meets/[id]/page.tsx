@@ -5,21 +5,33 @@ import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
-import { useApiClient } from '@/lib/api'
+import { ApiError, useApiClient } from '@/lib/api'
+import { reportUIError } from '@/lib/frontend-telemetry'
 import {
+  addCommitmentEventSelection,
+  deleteCommitmentEventSelection,
   fetchMeet,
   fetchMeetSessions,
   fetchMeetCommitments,
+  fetchCommitmentEventSelections,
   fetchMeetEvents,
+  fetchExportsForMeet,
+  respondToMeetCommitment,
   fetchSwimmers,
   fetchSwimmerBestTimes,
   type MeetRecord,
   type MeetSessionRecord,
   type MeetEventRecord,
-  type CommitmentRecord,
   type BestTimeRecord,
-  type SwimmerRecord,
+  type ExportRecord,
 } from '@/lib/adminData'
+import {
+  buildSwimmerMeetDetailState,
+  canEditSwimmerMeetSelections,
+  type SwimmerMeetDetailState,
+  withAddedSwimmerMeetSelection,
+  withRemovedSwimmerMeetSelection,
+} from '@/lib/swimmer-meet-detail-state'
 
 const C = {
   bg: '#061623',
@@ -83,10 +95,17 @@ function getBestTimeMs(times: BestTimeRecord[], ev: MeetEventRecord, course: str
   return match?.best_time_ms ?? null
 }
 
-function mapCommitStatus(status?: string): 'pending' | 'yes' | 'no' {
-  if (status === 'committed_yes') return 'yes'
-  if (status === 'committed_no') return 'no'
-  return 'pending'
+function formatMeetFileSize(sizeBytes?: number): string {
+  if (!sizeBytes) return 'Unknown size'
+  if (sizeBytes < 1024) return `${sizeBytes} B`
+  return `${Math.round(sizeBytes / 1024)} KB`
+}
+
+function formatMeetFileType(exportType: string): string {
+  if (exportType === 'standard_sd3') return 'Standard SD3 export'
+  if (exportType === 'extended_sd3') return 'Extended SD3 export'
+  if (exportType === 'sdif_roster') return 'Roster export'
+  return exportType.replace(/_/g, ' ')
 }
 
 function Skeleton({ w = '100%', h = 16, r = 8 }: { w?: string | number; h?: number; r?: number }) {
@@ -115,57 +134,255 @@ export default function SwimmerMeetDetailPage() {
   const [meet, setMeet] = useState<MeetRecord | null>(null)
   const [sessions, setSessions] = useState<MeetSessionRecord[]>([])
   const [events, setEvents] = useState<MeetEventRecord[]>([])
+  const [meetFiles, setMeetFiles] = useState<ExportRecord[]>([])
   const [bestTimes, setBestTimes] = useState<BestTimeRecord[]>([])
+  const [swimmerId, setSwimmerId] = useState<string | null>(null)
   const [swimmerName, setSwimmerName] = useState<string>('')
   const [swimmerGender, setSwimmerGender] = useState<string>('')
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [notFound, setNotFound] = useState(false)
+  const [filesLoading, setFilesLoading] = useState(true)
+  const [filesError, setFilesError] = useState<string | null>(null)
 
   const [commitment, setCommitment] = useState<'pending' | 'yes' | 'no'>('pending')
+  const [commitmentId, setCommitmentId] = useState<string | null>(null)
   const [selectedEvents, setSelectedEvents] = useState<string[]>([])
+  const [selectedEventSelectionIds, setSelectedEventSelectionIds] = useState<Record<string, string>>({})
+  const [submittingCommitment, setSubmittingCommitment] = useState<'yes' | 'no' | null>(null)
+  const [selectionSubmitting, setSelectionSubmitting] = useState<string | null>(null)
+  const [commitError, setCommitError] = useState<string | null>(null)
+  const [selectionError, setSelectionError] = useState<string | null>(null)
+  const [retryKey, setRetryKey] = useState(0)
 
   useEffect(() => {
-    if (!orgId || !meetId || !householdId) { setLoading(false); return }
-    setLoading(true)
+    if (!orgId || !meetId || !householdId) {
+      setLoadError('Your swimmer portal session is missing meet or household context. Refresh and sign in again.')
+      setLoading(false)
+      setFilesLoading(false)
+      return
+    }
 
-    Promise.all([
-      fetchMeet(api, orgId, meetId).catch(() => null),
-      fetchSwimmers(api, orgId).catch(() => [] as SwimmerRecord[]),
-    ])
-      .then(async ([meetData, allSwimmers]) => {
-        if (!meetData) { setNotFound(true); setLoading(false); return }
-        setMeet(meetData)
+    let cancelled = false
+
+    async function loadMeetDetail() {
+      setLoading(true)
+      setLoadError(null)
+      setNotFound(false)
+      setFilesLoading(true)
+      setFilesError(null)
+      setMeet(null)
+      setSessions([])
+      setEvents([])
+      setMeetFiles([])
+      setBestTimes([])
+      setSwimmerId(null)
+      setSwimmerName('')
+      setSwimmerGender('')
+      setCommitment('pending')
+      setCommitmentId(null)
+      setSelectedEvents([])
+      setSelectedEventSelectionIds({})
+      setCommitError(null)
+      setSelectionError(null)
+
+      try {
+        const meetData = await fetchMeet(api, orgId, meetId)
+        if (cancelled) return
+
+        const allSwimmers = await fetchSwimmers(api, orgId)
+        if (cancelled) return
 
         const hhSwimmer = allSwimmers.find((s) => s.household_id === householdId)
-        if (!hhSwimmer) { setLoading(false); return }
-        setSwimmerName(`${hhSwimmer.first_name} ${hhSwimmer.last_name}`)
-        setSwimmerGender(hhSwimmer.gender ?? '')
+        if (!hhSwimmer) {
+          setLoadError('Your swimmer household could not be loaded for this meet. Refresh and try again.')
+          return
+        }
 
-        const [meetSessions, meetEvents, commitments, times] = await Promise.all([
-          fetchMeetSessions(api, orgId, meetId).catch(() => [] as MeetSessionRecord[]),
-          fetchMeetEvents(api, orgId, meetId).catch(() => [] as MeetEventRecord[]),
-          fetchMeetCommitments(api, orgId, meetId).catch(() => [] as CommitmentRecord[]),
-          fetchSwimmerBestTimes(api, orgId, hhSwimmer.id).catch(() => [] as BestTimeRecord[]),
+        const [meetSessions, meetEvents, commitments, times, files] = await Promise.all([
+          fetchMeetSessions(api, orgId, meetId),
+          fetchMeetEvents(api, orgId, meetId),
+          fetchMeetCommitments(api, orgId, meetId),
+          fetchSwimmerBestTimes(api, orgId, hhSwimmer.id),
+          fetchExportsForMeet(api, orgId, meetId).catch((error) => {
+            if (error instanceof ApiError && error.isForbidden()) {
+              setFilesError('Meet files become available when this meet is tied to your swimmer household.')
+            } else {
+              setFilesError(reportUIError(
+                'swimmer.meetDetail.files.load',
+                error,
+                'Failed to load meet files.',
+                { orgId, meetId, householdId },
+              ))
+            }
+            return [] as ExportRecord[]
+          }),
         ])
-
-        setSessions(meetSessions)
-        setEvents(meetEvents)
-        setBestTimes(times)
+        if (cancelled) return
 
         const myCommitment = commitments.find((c) => c.swimmer_id === hhSwimmer.id)
-        setCommitment(mapCommitStatus(myCommitment?.status))
-      })
-      .finally(() => setLoading(false))
-  }, [api, orgId, meetId, householdId])
+        const persistedSelections = myCommitment
+          ? await fetchCommitmentEventSelections(api, orgId, meetId, myCommitment.id)
+          : []
+        if (cancelled) return
+
+        const swimmerState = buildSwimmerMeetDetailState(myCommitment, persistedSelections)
+        setMeet(meetData)
+        setSessions(meetSessions)
+        setEvents(meetEvents)
+        setMeetFiles(files)
+        setBestTimes(times)
+        setSwimmerId(hhSwimmer.id)
+        setSwimmerName(`${hhSwimmer.first_name} ${hhSwimmer.last_name}`)
+        setSwimmerGender(hhSwimmer.gender ?? '')
+        setCommitment(swimmerState.commitment)
+        setCommitmentId(swimmerState.commitmentId)
+        setSelectedEvents(swimmerState.selectedEvents)
+        setSelectedEventSelectionIds(swimmerState.selectedEventSelectionIds)
+      } catch (error) {
+        if (cancelled) return
+        if (error instanceof ApiError && error.status === 404) {
+          setNotFound(true)
+          return
+        }
+        reportUIError(
+          'swimmer.meetDetail.load',
+          error,
+          'Unable to load meet details right now. Please try again.',
+          { orgId, meetId, householdId },
+        )
+        setLoadError('Unable to load meet details right now. Please try again.')
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+          setFilesLoading(false)
+        }
+      }
+    }
+
+    void loadMeetDetail()
+
+    return () => {
+      cancelled = true
+    }
+  }, [api, orgId, meetId, householdId, retryKey])
 
   const commitmentOpen = meet?.status === 'commitment_open'
   const deadlineDate = meet?.commitment_deadline ? new Date(meet.commitment_deadline) : null
 
-  const toggleEvent = (eventId: string) => {
+  const toggleCommitment = async (next: 'yes' | 'no') => {
     if (!commitmentOpen) return
-    setSelectedEvents((prev) =>
-      prev.includes(eventId) ? prev.filter((item) => item !== eventId) : [...prev, eventId],
-    )
+    setCommitError(null)
+
+    if (!swimmerId) {
+      setCommitError('Cannot update this meet commitment until the swimmer record is available.')
+      return
+    }
+
+    const currentCommitmentId = commitmentId
+    if (!currentCommitmentId) {
+      const meetCommitments = await fetchMeetCommitments(api, orgId, meetId)
+      const myCommitment = meetCommitments.find((item) => item.swimmer_id === swimmerId)
+      if (!myCommitment) {
+        setCommitError('Cannot update commitment because no backend commitment record was found. Refresh and try again.')
+        return
+      }
+      setCommitmentId(myCommitment.id)
+      setSubmittingCommitment(next)
+      try {
+        await respondToMeetCommitment(api, orgId, meetId, myCommitment.id, {
+          response: next === 'yes' ? 'committed_yes' : 'committed_no',
+        })
+        setCommitment(next)
+        if (next === 'no') {
+          setSelectedEvents([])
+          setSelectedEventSelectionIds({})
+        }
+      } catch (error) {
+        reportUIError('swimmer.meetDetail.commitment.update', error, 'Failed to save your commitment response.', {
+          orgId,
+          meetId,
+          commitmentId: myCommitment.id,
+          swimmerId,
+        })
+        setCommitError('Failed to save your commitment response. Refresh to confirm the current saved state before trying again.')
+      } finally {
+        setSubmittingCommitment(null)
+      }
+      return
+    }
+
+    setSubmittingCommitment(next)
+    try {
+      await respondToMeetCommitment(api, orgId, meetId, currentCommitmentId, {
+        response: next === 'yes' ? 'committed_yes' : 'committed_no',
+      })
+      setCommitment(next)
+      if (next === 'no') {
+        setSelectedEvents([])
+        setSelectedEventSelectionIds({})
+      }
+    } catch (error) {
+      reportUIError('swimmer.meetDetail.commitment.update', error, 'Failed to save your commitment response.', {
+        orgId,
+        meetId,
+        commitmentId: currentCommitmentId,
+        swimmerId,
+      })
+      setCommitError('Failed to save your commitment response. Refresh to confirm the current saved state before trying again.')
+    } finally {
+      setSubmittingCommitment(null)
+    }
+  }
+
+  const toggleEvent = (eventId: string) => {
+    const swimmerState: SwimmerMeetDetailState = {
+      commitment,
+      commitmentId,
+      selectedEvents,
+      selectedEventSelectionIds,
+    }
+    if (!canEditSwimmerMeetSelections(commitmentOpen, swimmerState)) return
+
+    const currentCommitmentId = swimmerState.commitmentId
+    if (!currentCommitmentId) {
+      setSelectionError('Cannot update event selections without a commitment record. Please refresh and try again.')
+      return
+    }
+
+    setSelectionSubmitting(eventId)
+    setSelectionError(null)
+
+    const existingSelectionId = selectedEventSelectionIds[eventId]
+    const request = existingSelectionId
+      ? deleteCommitmentEventSelection(api, orgId, meetId, currentCommitmentId, existingSelectionId).then(() => ({ remove: true as const }))
+      : addCommitmentEventSelection(api, orgId, meetId, currentCommitmentId, eventId).then((selection) => ({ remove: false as const, selection }))
+
+    request
+      .then((result) => {
+        const currentState: SwimmerMeetDetailState = {
+          commitment,
+          commitmentId: currentCommitmentId,
+          selectedEvents,
+          selectedEventSelectionIds,
+        }
+        const nextState = result.remove
+          ? withRemovedSwimmerMeetSelection(currentState, eventId)
+          : withAddedSwimmerMeetSelection(currentState, result.selection)
+        setSelectedEvents(nextState.selectedEvents)
+        setSelectedEventSelectionIds(nextState.selectedEventSelectionIds)
+      })
+      .catch((error) => {
+        reportUIError('swimmer.meetDetail.selection.update', error, 'Failed to save event selections.', {
+          orgId,
+          meetId,
+          commitmentId: currentCommitmentId,
+          eventId,
+          swimmerId,
+        })
+        setSelectionError('Failed to save event selections. Refresh the page to confirm the current saved events before trying again.')
+      })
+      .finally(() => setSelectionSubmitting(null))
   }
 
   // Group events by session, filtered by swimmer gender
@@ -205,6 +422,35 @@ export default function SwimmerMeetDetailPage() {
           <p style={{ fontSize: '13px', color: C.subtle, lineHeight: 1.7 }}>
             No meet was found for <span style={{ fontFamily: 'var(--font-mono)', color: C.text }}>{meetId || 'this route'}</span>.
           </p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!loading && loadError) {
+    return (
+      <div style={{ maxWidth: '720px' }}>
+        <style>{`@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }`}</style>
+        <Link href="/swim/schedule" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', color: C.subtle, textDecoration: 'none', fontSize: '13px', marginBottom: '22px' }}>
+          <Icon name="chevron-left" size={14} />
+          Schedule
+        </Link>
+        <div style={{ background: C.card, border: `1px solid rgba(239,68,68,0.2)`, borderRadius: '16px', padding: '24px 26px' }}>
+          <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#fca5a5', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>
+            Athlete Meet Center
+          </div>
+          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '30px', color: C.text, lineHeight: 1.05, marginBottom: '10px' }}>
+            Meet details are unavailable right now.
+          </h1>
+          <p style={{ fontSize: '13px', color: C.subtle, lineHeight: 1.7, marginBottom: '18px' }}>
+            {loadError}
+          </p>
+          <button
+            onClick={() => setRetryKey((current) => current + 1)}
+            style={{ borderRadius: '10px', border: 'none', background: '#dc2626', color: '#fff', padding: '10px 16px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)' }}
+          >
+            Retry
+          </button>
         </div>
       </div>
     )
@@ -306,18 +552,19 @@ export default function SwimmerMeetDetailPage() {
               ].map((option) => (
                 <button
                   key={option.id}
-                  onClick={() => {
-                    if (!commitmentOpen) return
-                    const next = option.id as 'yes' | 'no'
-                    setCommitment(next)
-                    if (next === 'no') setSelectedEvents([])
-                  }}
-                  style={{ borderRadius: '10px', border: `1px solid ${commitment === option.id ? option.border : C.border}`, background: commitment === option.id ? option.bg : 'transparent', color: commitment === option.id ? option.color : C.text, padding: '10px 16px', fontSize: '13px', fontWeight: 600, cursor: commitmentOpen ? 'pointer' : 'not-allowed', opacity: commitmentOpen ? 1 : 0.6, fontFamily: 'var(--font-body)' }}
+                  onClick={() => void toggleCommitment(option.id as 'yes' | 'no')}
+                  style={{ borderRadius: '10px', border: `1px solid ${commitment === option.id ? option.border : C.border}`, background: commitment === option.id ? option.bg : 'transparent', color: commitment === option.id ? option.color : C.text, padding: '10px 16px', fontSize: '13px', fontWeight: 600, cursor: commitmentOpen && !submittingCommitment ? 'pointer' : 'not-allowed', opacity: commitmentOpen && !submittingCommitment ? 1 : 0.6, fontFamily: 'var(--font-body)' }}
+                  disabled={!commitmentOpen || submittingCommitment !== null}
                 >
                   {option.label}
                 </button>
               ))}
             </div>
+            {commitError && (
+              <div style={{ marginTop: '12px', fontSize: '12px', color: '#fca5a5', lineHeight: 1.6 }}>
+                {commitError}
+              </div>
+            )}
             {!commitmentOpen && (
               <div style={{ marginTop: '12px', fontSize: '12px', color: '#93c5fd', lineHeight: 1.6 }}>
                 {meet?.status === 'published'
@@ -333,6 +580,11 @@ export default function SwimmerMeetDetailPage() {
               <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: C.subtle, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '12px' }}>
                 Session-Split Signup
               </div>
+              {selectionError && (
+                <div style={{ marginBottom: '12px', fontSize: '12px', color: '#fca5a5', lineHeight: 1.6 }}>
+                  {selectionError}
+                </div>
+              )}
 
               {loading ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -361,7 +613,7 @@ export default function SwimmerMeetDetailPage() {
                         </span>
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {session.events.map((ev) => <EventButton key={ev.id} ev={ev} meet={meet} bestTimes={bestTimes} selectedEvents={selectedEvents} toggleEvent={toggleEvent} />)}
+                        {session.events.map((ev) => <EventButton key={ev.id} ev={ev} meet={meet} bestTimes={bestTimes} selectedEvents={selectedEvents} toggleEvent={toggleEvent} selectionSubmitting={selectionSubmitting === ev.id} />)}
                       </div>
                     </div>
                   ))}
@@ -369,12 +621,12 @@ export default function SwimmerMeetDetailPage() {
                   {/* Unsessioned events */}
                   {unsessionedEvents.length > 0 && (
                     <div style={{ borderRadius: '14px', border: `1px solid ${C.border}`, background: 'rgba(255,255,255,0.02)', padding: '14px' }}>
-                      <div style={{ fontSize: '14px', fontWeight: 700, color: C.text, marginBottom: '10px' }}>Events</div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {unsessionedEvents.map((ev) => <EventButton key={ev.id} ev={ev} meet={meet} bestTimes={bestTimes} selectedEvents={selectedEvents} toggleEvent={toggleEvent} />)}
-                      </div>
+                    <div style={{ fontSize: '14px', fontWeight: 700, color: C.text, marginBottom: '10px' }}>Events</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {unsessionedEvents.map((ev) => <EventButton key={ev.id} ev={ev} meet={meet} bestTimes={bestTimes} selectedEvents={selectedEvents} toggleEvent={toggleEvent} selectionSubmitting={selectionSubmitting === ev.id} />)}
                     </div>
-                  )}
+                  </div>
+                )}
                 </div>
               )}
             </div>
@@ -383,15 +635,63 @@ export default function SwimmerMeetDetailPage() {
 
         {/* Right: summary */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {/* Meet files placeholder */}
+          {/* Meet files */}
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '16px', padding: '18px' }}>
             <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: C.subtle, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '10px' }}>
               Meet Files
             </div>
-            <div style={{ fontSize: '13px', color: C.muted, textAlign: 'center', padding: '10px 0', lineHeight: 1.6 }}>
-              <Icon name="file-text" size={18} style={{ display: 'block', margin: '0 auto 8px', color: C.muted }} />
-              Files will appear here when available.
-            </div>
+            {filesLoading ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '10px 0' }}>
+                <Skeleton h={14} r={999} />
+                <Skeleton w="72%" h={14} r={999} />
+              </div>
+            ) : filesError ? (
+              <div style={{ fontSize: '12px', color: '#fcd34d', lineHeight: 1.6 }}>
+                {filesError}
+              </div>
+            ) : meetFiles.length === 0 ? (
+              <div style={{ fontSize: '13px', color: C.muted, textAlign: 'center', padding: '10px 0', lineHeight: 1.6 }}>
+                <Icon name="file-text" size={18} style={{ display: 'block', margin: '0 auto 8px', color: C.muted }} />
+                No meet files available yet.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {meetFiles.map((file) => (
+                  <div
+                    key={file.id}
+                    style={{
+                      borderRadius: '12px',
+                      border: `1px solid ${C.border}`,
+                      background: 'rgba(255,255,255,0.03)',
+                      padding: '12px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'flex-start' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: '13px', fontWeight: 600, color: C.text, wordBreak: 'break-word' }}>{file.filename}</div>
+                        <div style={{ marginTop: '4px', fontSize: '11.5px', color: C.subtle, lineHeight: 1.5 }}>
+                          {formatMeetFileType(file.export_type)} · {formatMeetFileSize(file.size_bytes)}
+                        </div>
+                      </div>
+                      {file.download_url ? (
+                        <a
+                          href={file.download_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ color: C.accent, fontSize: '12px', fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap' }}
+                        >
+                          Download
+                        </a>
+                      ) : (
+                        <span style={{ color: C.subtle, fontSize: '12px', whiteSpace: 'nowrap' }}>
+                          {file.status === 'ready' ? 'Link pending' : file.status.replace(/_/g, ' ')}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Summary */}
@@ -418,12 +718,14 @@ function EventButton({
   meet,
   bestTimes,
   selectedEvents,
+  selectionSubmitting,
   toggleEvent,
 }: {
   ev: MeetEventRecord
   meet: MeetRecord | null
   bestTimes: BestTimeRecord[]
   selectedEvents: string[]
+  selectionSubmitting: boolean
   toggleEvent: (id: string) => void
 }) {
   const selected = selectedEvents.includes(ev.id)
@@ -438,7 +740,8 @@ function EventButton({
   return (
     <button
       onClick={() => toggleEvent(ev.id)}
-      style={{ textAlign: 'left', borderRadius: '12px', border: `1px solid ${selected ? C.accentBorder : C.border}`, background: selected ? C.accentDim : 'rgba(255,255,255,0.03)', padding: '12px 14px', cursor: 'pointer', color: C.text, fontFamily: 'var(--font-body)' }}
+      disabled={selectionSubmitting}
+      style={{ textAlign: 'left', borderRadius: '12px', border: `1px solid ${selected ? C.accentBorder : C.border}`, background: selected ? C.accentDim : 'rgba(255,255,255,0.03)', padding: '12px 14px', cursor: selectionSubmitting ? 'progress' : 'pointer', opacity: selectionSubmitting ? 0.65 : 1, color: C.text, fontFamily: 'var(--font-body)' }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center' }}>
         <div>

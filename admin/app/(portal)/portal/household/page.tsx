@@ -5,6 +5,8 @@ import { useState, useEffect } from 'react'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
+import { shouldShowCollectionEmptyState } from '@/lib/collection-load-state'
+import { reportUIError } from '@/lib/frontend-telemetry'
 import {
   fetchHousehold,
   fetchHouseholdContacts,
@@ -378,10 +380,17 @@ export default function HouseholdProfilePage() {
   const [groups, setGroups] = useState<GroupRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<Tab>('overview')
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
-    if (!orgId || !householdId) { setLoading(false); return }
+    if (!orgId || !householdId) {
+      setLoading(false)
+      setLoadError('Household profile is unavailable because household context is missing.')
+      return
+    }
     setLoading(true)
+    setLoadError(null)
     Promise.all([
       fetchHousehold(api, orgId, householdId),
       fetchHouseholdContacts(api, orgId, householdId),
@@ -396,9 +405,21 @@ export default function HouseholdProfilePage() {
         setSwimmerGroups(sGroups)
         setGroups(grps)
       })
-      .catch(console.error)
+      .catch((error) => {
+        setHousehold(null)
+        setContacts([])
+        setSwimmers([])
+        setSwimmerGroups([])
+        setGroups([])
+        setLoadError(reportUIError(
+          'portal-household-load',
+          error,
+          'Household profile data is unavailable right now.',
+          { orgId, householdId },
+        ))
+      })
       .finally(() => setLoading(false))
-  }, [api, orgId, householdId])
+  }, [api, orgId, householdId, reloadKey])
 
   function getGroupName(swimmerId: string): string {
     const primaryLink = swimmerGroups.find(
@@ -522,6 +543,34 @@ export default function HouseholdProfilePage() {
           Edit Profile
         </button>
       </div>
+
+      {loadError && (
+        <div
+          style={{
+            background: '#fff7ed',
+            border: '1px solid #fdba74',
+            borderRadius: '10px',
+            padding: '12px 16px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: '12px',
+            marginBottom: '24px',
+          }}
+        >
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+            <Icon name="alert-circle" size={15} style={{ color: '#ea580c', marginTop: '1px', flexShrink: 0 }} />
+            <p style={{ margin: 0, fontSize: '12.5px', color: '#9a3412', lineHeight: 1.5 }}>{loadError}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setReloadKey((key) => key + 1)}
+            style={{ background: '#ffffff', border: '1px solid #fdba74', borderRadius: '8px', cursor: 'pointer', color: '#9a3412', fontSize: '12px', fontWeight: 600, padding: '8px 14px', whiteSpace: 'nowrap' }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* Tabs */}
       <div
@@ -706,7 +755,9 @@ export default function HouseholdProfilePage() {
                 </div>
               </div>
             ))
-          ) : contacts.length === 0 ? (
+          ) : loadError ? (
+            <div style={{ color: '#9A9693', fontSize: '14px', padding: '20px 0' }}>Contact data is unavailable right now.</div>
+          ) : shouldShowCollectionEmptyState(loading, loadError, contacts.length) ? (
             <div style={{ color: '#9A9693', fontSize: '14px', padding: '20px 0' }}>No contacts on file.</div>
           ) : (
             contacts.map((contact) => (
@@ -766,7 +817,9 @@ export default function HouseholdProfilePage() {
                 </div>
               </div>
             ))
-          ) : swimmers.length === 0 ? (
+          ) : loadError ? (
+            <div style={{ color: '#9A9693', fontSize: '14px', padding: '20px 0' }}>Swimmer data is unavailable right now.</div>
+          ) : shouldShowCollectionEmptyState(loading, loadError, swimmers.length) ? (
             <div style={{ color: '#9A9693', fontSize: '14px', padding: '20px 0' }}>No swimmers found for this household.</div>
           ) : (
             swimmers.map((swimmer, idx) => (

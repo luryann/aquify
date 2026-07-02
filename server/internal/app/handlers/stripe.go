@@ -2,12 +2,12 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/dareaquatics/aquify/server/internal/app/billing"
 	"github.com/dareaquatics/aquify/server/internal/app/httpx"
@@ -109,24 +109,49 @@ type createCheckoutSessionRequest struct {
 	Metadata    map[string]string `json:"metadata"`
 }
 
+const stripeIdempotencyHeader = "Idempotency-Key"
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 func (h *StripeHandlers) decodeAndValidate(w http.ResponseWriter, r *http.Request, dst any) bool {
-	dec := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(dst); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request_body", err.Error(), nil)
-		return false
-	}
-	if err := h.validate.Struct(dst); err != nil {
-		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "validation_error", "Request validation failed.", httpx.FormatValidationErrors(err))
-		return false
-	}
-	return true
+	return decodeAndValidateJSON(w, r, dst, h.validate, decodeAndValidateOptions{
+		InvalidStatus:     http.StatusBadRequest,
+		InvalidCode:       "invalid_request_body",
+		ValidationStatus:  http.StatusUnprocessableEntity,
+		ValidationCode:    "validation_error",
+		ValidationMessage: "Request validation failed.",
+	})
 }
 
 func stripeScopeFromRequest(w http.ResponseWriter, r *http.Request) (*appmiddleware.Principal, string, bool) {
 	return scopedRequestFromContext(w, r)
+}
+
+func stripeIdempotencyKeyFromRequest(w http.ResponseWriter, r *http.Request) (string, bool) {
+	key := strings.TrimSpace(r.Header.Get(stripeIdempotencyHeader))
+	if key == "" {
+		httpx.WriteError(w, r, http.StatusBadRequest, "missing_idempotency_key", "Idempotency-Key header is required.", nil)
+		return "", false
+	}
+	return key, true
+}
+
+func (h *StripeHandlers) authorizeCheckoutSessionPrincipal(principal *appmiddleware.Principal, orgID string, req *createCheckoutSessionRequest) (*billing.Invoice, bool) {
+	if err := h.billing.RequireBillingWriteAccess(principal); err == nil {
+		return nil, true
+	}
+
+	invoice, err := h.billing.GetInvoice(orgID, principal, req.InvoiceID)
+	if err != nil {
+		return nil, false
+	}
+	if invoice.AmountDueCents <= 0 {
+		return nil, false
+	}
+	if req.AmountCents != invoice.AmountDueCents {
+		return nil, false
+	}
+	return invoice, true
 }
 
 // ─── Protected handlers ───────────────────────────────────────────────────────
@@ -146,6 +171,10 @@ func (h *StripeHandlers) createPaymentIntent(w http.ResponseWriter, r *http.Requ
 	if !h.decodeAndValidate(w, r, &req) {
 		return
 	}
+	idempotencyKey, ok := stripeIdempotencyKeyFromRequest(w, r)
+	if !ok {
+		return
+	}
 
 	// Build metadata for Stripe so webhook handlers can route the event back.
 	meta := map[string]string{
@@ -157,10 +186,11 @@ func (h *StripeHandlers) createPaymentIntent(w http.ResponseWriter, r *http.Requ
 	}
 
 	result, err := h.client.CreatePaymentIntent(r.Context(), stripelib.PaymentIntentParams{
-		AmountCents: req.AmountCents,
-		Currency:    h.currency,
-		Description: req.Description,
-		Metadata:    meta,
+		AmountCents:    req.AmountCents,
+		Currency:       h.currency,
+		Description:    req.Description,
+		Metadata:       meta,
+		IdempotencyKey: idempotencyKey,
 	})
 	if err != nil {
 		h.logger.Error("stripe: create payment intent failed", "error", err)
@@ -179,13 +209,18 @@ func (h *StripeHandlers) createCheckoutSession(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
-	if err := h.billing.RequireBillingWriteAccess(principal); err != nil {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient permissions.", nil)
-		return
-	}
 
 	var req createCheckoutSessionRequest
 	if !h.decodeAndValidate(w, r, &req) {
+		return
+	}
+	idempotencyKey, ok := stripeIdempotencyKeyFromRequest(w, r)
+	if !ok {
+		return
+	}
+	invoice, ok := h.authorizeCheckoutSessionPrincipal(principal, orgID, &req)
+	if !ok {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient permissions.", nil)
 		return
 	}
 
@@ -197,13 +232,21 @@ func (h *StripeHandlers) createCheckoutSession(w http.ResponseWriter, r *http.Re
 		meta[k] = v
 	}
 
+	description := req.Description
+	if invoice != nil {
+		description = strings.TrimSpace(invoice.Notes)
+		if description == "" {
+			description = invoice.InvoiceNumber
+		}
+	}
 	result, err := h.client.CreateCheckoutSession(r.Context(), stripelib.CheckoutSessionParams{
-		AmountCents: req.AmountCents,
-		Currency:    h.currency,
-		Description: req.Description,
-		Metadata:    meta,
-		SuccessURL:  req.SuccessURL,
-		CancelURL:   req.CancelURL,
+		AmountCents:    req.AmountCents,
+		Currency:       h.currency,
+		Description:    description,
+		Metadata:       meta,
+		SuccessURL:     req.SuccessURL,
+		CancelURL:      req.CancelURL,
+		IdempotencyKey: idempotencyKey,
 	})
 	if err != nil {
 		h.logger.Error("stripe: create checkout session failed", "error", err)

@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
+import { shouldShowCollectionEmptyState } from '@/lib/collection-load-state'
+import { reportUIError } from '@/lib/frontend-telemetry'
 import { fetchMeets, fetchPractices, type MeetRecord, type PracticeRecord } from '@/lib/adminData'
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -227,18 +229,32 @@ export default function CalendarPage() {
   const orgId = session?.user.orgId ?? ''
 
   const [events, setEvents] = useState<CalEvent[]>([])
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
-    if (!orgId) return
+    if (!orgId) {
+      setLoadError('Calendar is unavailable because no organization is selected.')
+      return
+    }
+    setLoadError(null)
     Promise.all([
       fetchMeets(api, orgId),
-      fetchPractices(api, orgId).catch(() => [] as PracticeRecord[]),
+      fetchPractices(api, orgId),
     ])
       .then(([meets, practices]) => {
         setEvents([...meetsToCalEvents(meets), ...practicesToCalEvents(practices)])
       })
-      .catch(console.error)
-  }, [api, orgId])
+      .catch((error) => {
+        setEvents([])
+        setLoadError(reportUIError(
+          'portal-calendar-load',
+          error,
+          'Calendar data is unavailable right now.',
+          { orgId },
+        ))
+      })
+  }, [api, orgId, reloadKey])
 
   const today = new Date()
   const [viewYear, setViewYear] = useState(today.getFullYear())
@@ -388,6 +404,34 @@ export default function CalendarPage() {
           ))}
         </div>
       </div>
+
+      {loadError && (
+        <div
+          style={{
+            marginBottom: '20px',
+            padding: '12px 16px',
+            background: '#fff7ed',
+            border: '1px solid #fdba74',
+            borderRadius: '10px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: '12px',
+          }}
+        >
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+            <Icon name="alert-circle" size={15} style={{ color: '#ea580c', marginTop: '1px', flexShrink: 0 }} />
+            <span style={{ fontSize: '13px', color: '#9a3412', lineHeight: 1.5 }}>{loadError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setReloadKey((key) => key + 1)}
+            style={{ background: '#ffffff', border: '1px solid #fdba74', borderRadius: '8px', cursor: 'pointer', color: '#9a3412', fontSize: '12px', fontWeight: 600, padding: '8px 14px', whiteSpace: 'nowrap' }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* Legend + type filter */}
       <div
@@ -852,7 +896,11 @@ export default function CalendarPage() {
               </p>
             </div>
 
-            {upcomingEvents.length === 0 ? (
+            {loadError ? (
+              <div style={{ padding: '32px 16px', textAlign: 'center' }}>
+                <p style={{ fontSize: '13px', color: '#A09D9B' }}>Upcoming calendar events are unavailable right now.</p>
+              </div>
+            ) : shouldShowCollectionEmptyState(false, loadError, upcomingEvents.length) ? (
               <div style={{ padding: '32px 16px', textAlign: 'center' }}>
                 <p style={{ fontSize: '13px', color: '#A09D9B' }}>No upcoming events</p>
               </div>

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -17,26 +18,9 @@ import (
 )
 
 func TestRuntimePersistenceMiddlewareReturns500WhenSnapshotSaveFails(t *testing.T) {
-	t.Setenv("PATH", prependFakePSQL(t, `#!/bin/sh
-sql=""
-prev=""
-for arg in "$@"; do
-  if [ "$prev" = "-c" ]; then
-    sql="$arg"
-    break
-  fi
-  prev="$arg"
-done
-case "$sql" in
-  *"BEGIN;"*)
-    echo "simulated save failure" >&2
-    exit 1
-    ;;
-  *)
-    exit 0
-    ;;
-esac
-`))
+	t.Setenv("PATH", prependFakePSQL(t, fakePSQLBehavior{
+		failOnBegin: true,
+	}))
 
 	repo := runtimepersist.NewRepository("postgres://runtime-test")
 	participants := []runtimeParticipant{{
@@ -69,26 +53,9 @@ esac
 }
 
 func TestLoadRuntimeSnapshotsKeepsExistingStateWhenSnapshotPayloadIsInvalid(t *testing.T) {
-	t.Setenv("PATH", prependFakePSQL(t, `#!/bin/sh
-sql=""
-prev=""
-for arg in "$@"; do
-  if [ "$prev" = "-c" ]; then
-    sql="$arg"
-    break
-  fi
-  prev="$arg"
-done
-case "$sql" in
-  *"SELECT domain"* )
-    printf 'members\t6e6f742d6a736f6e\n'
-    exit 0
-    ;;
-  *)
-    exit 0
-    ;;
-esac
-`))
+	t.Setenv("PATH", prependFakePSQL(t, fakePSQLBehavior{
+		selectOutput: "members\t6e6f742d6a736f6e",
+	}))
 
 	svc := members.NewService()
 	parent := testutil.ParentPrincipal("parent-runtime", "")
@@ -129,13 +96,79 @@ func (snapshotStub) LoadRuntimeSnapshot([]byte) error {
 	return nil
 }
 
-func prependFakePSQL(t *testing.T, script string) string {
+type fakePSQLBehavior struct {
+	selectOutput string
+	failOnBegin  bool
+}
+
+func prependFakePSQL(t *testing.T, behavior fakePSQLBehavior) string {
 	t.Helper()
 
 	dir := t.TempDir()
-	path := filepath.Join(dir, "psql")
-	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake psql: %v", err)
+
+	if runtime.GOOS == "windows" {
+		path := filepath.Join(dir, "psql.cmd")
+		script := "@echo off\r\n" +
+			"setlocal EnableDelayedExpansion\r\n" +
+			"set \"sql=\"\r\n" +
+			":loop\r\n" +
+			"if \"%~1\"==\"\" goto after\r\n" +
+			"if \"%~1\"==\"-c\" (\r\n" +
+			"  set \"sql=%~2\"\r\n" +
+			"  goto after\r\n" +
+			")\r\n" +
+			"shift\r\n" +
+			"goto loop\r\n" +
+			":after\r\n"
+		if behavior.failOnBegin {
+			script += "echo(!sql!| findstr /C:\"BEGIN;\" >nul && (\r\n" +
+				"  echo simulated save failure 1>&2\r\n" +
+				"  exit /b 1\r\n" +
+				")\r\n"
+		}
+		if strings.TrimSpace(behavior.selectOutput) != "" {
+			script += "echo(!sql!| findstr /C:\"SELECT domain\" >nul && (\r\n" +
+				fmt.Sprintf("  echo %s\r\n", behavior.selectOutput) +
+				"  exit /b 0\r\n" +
+				")\r\n"
+		}
+		script += "exit /b 0\r\n"
+		if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+			t.Fatalf("write fake psql: %v", err)
+		}
+	} else {
+		path := filepath.Join(dir, "psql")
+		var script strings.Builder
+		script.WriteString("#!/bin/sh\n")
+		script.WriteString("sql=\"\"\n")
+		script.WriteString("prev=\"\"\n")
+		script.WriteString("for arg in \"$@\"; do\n")
+		script.WriteString("  if [ \"$prev\" = \"-c\" ]; then\n")
+		script.WriteString("    sql=\"$arg\"\n")
+		script.WriteString("    break\n")
+		script.WriteString("  fi\n")
+		script.WriteString("  prev=\"$arg\"\n")
+		script.WriteString("done\n")
+		if behavior.failOnBegin {
+			script.WriteString("case \"$sql\" in\n")
+			script.WriteString("  *\"BEGIN;\"*)\n")
+			script.WriteString("    echo \"simulated save failure\" >&2\n")
+			script.WriteString("    exit 1\n")
+			script.WriteString("    ;;\n")
+			script.WriteString("esac\n")
+		}
+		if strings.TrimSpace(behavior.selectOutput) != "" {
+			script.WriteString("case \"$sql\" in\n")
+			script.WriteString("  *\"SELECT domain\"*)\n")
+			script.WriteString(fmt.Sprintf("    printf '%s\\n'\n", strings.ReplaceAll(behavior.selectOutput, "'", "'\\''")))
+			script.WriteString("    exit 0\n")
+			script.WriteString("    ;;\n")
+			script.WriteString("esac\n")
+		}
+		script.WriteString("exit 0\n")
+		if err := os.WriteFile(path, []byte(script.String()), 0o755); err != nil {
+			t.Fatalf("write fake psql: %v", err)
+		}
 	}
 
 	current := os.Getenv("PATH")

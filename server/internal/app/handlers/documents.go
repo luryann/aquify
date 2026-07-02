@@ -2,10 +2,8 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -107,8 +105,8 @@ func (h *DocumentHandlers) createDocumentType(w http.ResponseWriter, r *http.Req
 	}
 
 	var body createDocumentTypeBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", err)
+	if err := decodeJSONBody(w, r, &body); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", nil)
 		return
 	}
 	if err := h.validate.Struct(body); err != nil {
@@ -172,8 +170,8 @@ func (h *DocumentHandlers) updateDocumentType(w http.ResponseWriter, r *http.Req
 	typeID := chi.URLParam(r, "typeID")
 
 	var body updateDocumentTypeBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", err)
+	if err := decodeJSONBody(w, r, &body); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", nil)
 		return
 	}
 
@@ -318,8 +316,8 @@ func (h *DocumentHandlers) createSubmission(w http.ResponseWriter, r *http.Reque
 	}
 
 	var body createSubmissionBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", err)
+	if err := decodeJSONBody(w, r, &body); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", nil)
 		return
 	}
 	if err := h.validate.Struct(body); err != nil {
@@ -466,8 +464,8 @@ func (h *DocumentHandlers) requestUploadURL(w http.ResponseWriter, r *http.Reque
 	}
 
 	var body documentUploadURLBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", err)
+	if err := decodeJSONBody(w, r, &body); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", nil)
 		return
 	}
 	if err := h.validate.Struct(body); err != nil {
@@ -516,8 +514,8 @@ func (h *DocumentHandlers) attachFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body attachFileBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", err)
+	if err := decodeJSONBody(w, r, &body); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", nil)
 		return
 	}
 	if err := h.validate.Struct(body); err != nil {
@@ -589,8 +587,8 @@ func (h *DocumentHandlers) verifySubmission(w http.ResponseWriter, r *http.Reque
 	submissionID := chi.URLParam(r, "id")
 
 	var body reviewBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
-		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", err)
+	if err := decodeOptionalJSONBody(w, r, &body); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", nil)
 		return
 	}
 
@@ -636,8 +634,8 @@ func (h *DocumentHandlers) rejectSubmission(w http.ResponseWriter, r *http.Reque
 	submissionID := chi.URLParam(r, "id")
 
 	var body reviewBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
-		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", err)
+	if err := decodeOptionalJSONBody(w, r, &body); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", nil)
 		return
 	}
 

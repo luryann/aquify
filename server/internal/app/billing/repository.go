@@ -253,6 +253,86 @@ func (r *Repository) LoadLedgerEvents(ctx context.Context) ([]*LedgerEvent, erro
 	return out, rows.Err()
 }
 
+func (r *Repository) UpsertHouseholdAutopayProfile(ctx context.Context, profile *HouseholdAutopayProfile) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO household_autopay_profiles (
+			id, org_id, household_id, enabled, payment_method_type, payment_method_brand,
+			payment_method_last4, payment_method_label, payment_method_external_ref,
+			payment_method_exp_month, payment_method_exp_year, trigger_days_before_due,
+			created_at, updated_at, updated_by
+		)
+		VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		ON CONFLICT (org_id, household_id) DO UPDATE SET
+			enabled = EXCLUDED.enabled,
+			payment_method_type = EXCLUDED.payment_method_type,
+			payment_method_brand = EXCLUDED.payment_method_brand,
+			payment_method_last4 = EXCLUDED.payment_method_last4,
+			payment_method_label = EXCLUDED.payment_method_label,
+			payment_method_external_ref = EXCLUDED.payment_method_external_ref,
+			payment_method_exp_month = EXCLUDED.payment_method_exp_month,
+			payment_method_exp_year = EXCLUDED.payment_method_exp_year,
+			trigger_days_before_due = EXCLUDED.trigger_days_before_due,
+			updated_at = EXCLUDED.updated_at,
+			updated_by = EXCLUDED.updated_by`,
+		profile.ID,
+		profile.OrgID,
+		profile.HouseholdID,
+		profile.Enabled,
+		profile.PaymentMethodType,
+		nullableString(profile.PaymentMethodBrand),
+		nullableString(profile.PaymentMethodLast4),
+		profile.PaymentMethodLabel,
+		nullableString(profile.PaymentMethodExternalRef),
+		profile.PaymentMethodExpMonth,
+		profile.PaymentMethodExpYear,
+		profile.TriggerDaysBeforeDue,
+		profile.CreatedAt,
+		profile.UpdatedAt,
+		nullableString(profile.UpdatedBy),
+	)
+	return err
+}
+
+func (r *Repository) LoadHouseholdAutopayProfiles(ctx context.Context) ([]*HouseholdAutopayProfile, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, org_id::text, household_id, enabled, payment_method_type,
+		       COALESCE(payment_method_brand, ''), COALESCE(payment_method_last4, ''),
+		       payment_method_label, COALESCE(payment_method_external_ref, ''),
+		       COALESCE(payment_method_exp_month, 0), COALESCE(payment_method_exp_year, 0),
+		       trigger_days_before_due, created_at, updated_at, COALESCE(updated_by, '')
+		FROM household_autopay_profiles`)
+	if err != nil {
+		return nil, fmt.Errorf("billing: load household_autopay_profiles: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*HouseholdAutopayProfile
+	for rows.Next() {
+		profile := &HouseholdAutopayProfile{}
+		if err := rows.Scan(
+			&profile.ID,
+			&profile.OrgID,
+			&profile.HouseholdID,
+			&profile.Enabled,
+			&profile.PaymentMethodType,
+			&profile.PaymentMethodBrand,
+			&profile.PaymentMethodLast4,
+			&profile.PaymentMethodLabel,
+			&profile.PaymentMethodExternalRef,
+			&profile.PaymentMethodExpMonth,
+			&profile.PaymentMethodExpYear,
+			&profile.TriggerDaysBeforeDue,
+			&profile.CreatedAt,
+			&profile.UpdatedAt,
+			&profile.UpdatedBy,
+		); err != nil {
+			return nil, fmt.Errorf("billing: scan household_autopay_profile: %w", err)
+		}
+		out = append(out, profile)
+	}
+	return out, rows.Err()
+}
+
 // ─── Batch load ───────────────────────────────────────────────────────────────
 
 func (r *Repository) LoadAll(ctx context.Context) (
@@ -261,6 +341,7 @@ func (r *Repository) LoadAll(ctx context.Context) (
 	payments []*Payment,
 	refunds []*Refund,
 	ledger []*LedgerEvent,
+	autopayProfiles []*HouseholdAutopayProfile,
 	err error,
 ) {
 	if invoices, err = r.LoadInvoices(ctx); err != nil {
@@ -275,6 +356,9 @@ func (r *Repository) LoadAll(ctx context.Context) (
 	if refunds, err = r.LoadRefunds(ctx); err != nil {
 		return
 	}
-	ledger, err = r.LoadLedgerEvents(ctx)
+	if ledger, err = r.LoadLedgerEvents(ctx); err != nil {
+		return
+	}
+	autopayProfiles, err = r.LoadHouseholdAutopayProfiles(ctx)
 	return
 }

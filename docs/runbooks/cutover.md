@@ -62,7 +62,126 @@ Acceptance criteria:
 - warnings are reviewed and assigned owners
 - row-count and billing-total deltas are documented for Finance review
 
+For migration dry-run evidence capture, prefer the bundle command so the dry-run
+report, source row-count comparison, billing-total comparison, remediation log,
+and command output are archived together. This is a partial diagnostic bundle,
+not enough to pass final launch evidence verification:
+
+```bash
+make launch-evidence-bundle \
+  INPUT_DIR=/absolute/path/to/final-export \
+  SOURCE_COUNTS=/absolute/path/to/source-counts.json \
+  SOURCE_BILLING_TOTAL_CENTS=<source-outstanding-cents> \
+  ORG_ID=<prod-org-id> \
+  API_BASE_URL=https://api.example.com \
+  AUTH_TOKEN=<admin-token> \
+  RUN_PROVIDER_VALIDATION=false
+```
+
+Archive the generated `evidence/launch-<timestamp>/` directory with the staging
+or rehearsal record. A clean partial migration bundle contains
+`migration-report.json`, `remediation-log.md`, `cutover-certification.log`,
+`cutover-smoke.log`, and `cutover-billing-check.log`.
+
+Provider validation can be captured as part of the same bundle. For staging,
+run with real Stripe test-mode credentials and the Postmark sandbox stream.
+Provider validation is complete-evidence mode by default, so webhook, refund,
+and Postmark inputs are required unless `REQUIRE_COMPLETE_PROVIDER_VALIDATION=false`
+is set for a diagnostic-only run:
+
+```bash
+make launch-evidence-bundle \
+  INPUT_DIR=/absolute/path/to/final-export \
+  SOURCE_COUNTS=/absolute/path/to/source-counts.json \
+  SOURCE_BILLING_TOTAL_CENTS=<source-outstanding-cents> \
+  ORG_ID=<staging-org-id> \
+  API_BASE_URL=https://staging-api.example.com \
+  AUTH_TOKEN=<admin-token> \
+  EXPECT_STRIPE_WEBHOOK_EVENT_ID=<evt_from_stripe_dashboard> \
+  CONFIRM_STRIPE_REFUND=true \
+  REFUND_INVOICE_ID=<invoice-id> \
+  REFUND_PAYMENT_ID=<payment-id> \
+  REFUND_AMOUNT_CENTS=<small-refund-cents> \
+  POSTMARK_CAMPAIGN_ID=<sandbox-campaign-id> \
+  CONFIRM_POSTMARK_SEND=true \
+  REQUIRE_COMPLETE_PROVIDER_VALIDATION=true
+```
+
+Two full parallel meet cycles are captured by listing the completed meet IDs
+and explicitly attesting that no manual data patching was used:
+
+```bash
+make launch-evidence-bundle \
+  INPUT_DIR=/absolute/path/to/final-export \
+  ORG_ID=<staging-org-id> \
+  API_BASE_URL=https://staging-api.example.com \
+  AUTH_TOKEN=<admin-token> \
+  RUN_PARALLEL_MEET_EVIDENCE=true \
+  MEET_IDS=<completed-meet-id-1>,<completed-meet-id-2> \
+  NO_MANUAL_PATCHING_ATTESTATION=true
+```
+
+For final TODO closeout, generate one complete bundle that contains migration,
+provider, two-meet-cycle, and stability evidence, then run the verifier:
+
+On Windows workstations, run the native preflight first to catch missing
+environment variables, input files, and source-count keys before moving the
+bundle run to a Bash-capable environment:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/evidence-preflight.ps1 -Mode final
+```
+
+```bash
+make launch-evidence-bundle \
+  INPUT_DIR=/absolute/path/to/final-export \
+  SOURCE_COUNTS=/absolute/path/to/source-counts.json \
+  SOURCE_BILLING_TOTAL_CENTS=<source-outstanding-cents> \
+  ORG_ID=<prod-org-id> \
+  API_BASE_URL=https://api.example.com \
+  AUTH_TOKEN=<admin-token> \
+  EXPECT_STRIPE_WEBHOOK_EVENT_ID=<evt_from_stripe_dashboard> \
+  CONFIRM_STRIPE_REFUND=true \
+  REFUND_INVOICE_ID=<invoice-id> \
+  REFUND_PAYMENT_ID=<payment-id> \
+  REFUND_AMOUNT_CENTS=<small-refund-cents> \
+  POSTMARK_CAMPAIGN_ID=<campaign-id> \
+  CONFIRM_POSTMARK_SEND=true \
+  RUN_PARALLEL_MEET_EVIDENCE=true \
+  MEET_IDS=<completed-meet-id-1>,<completed-meet-id-2> \
+  NO_MANUAL_PATCHING_ATTESTATION=true \
+  RUN_STABILITY_REPORT=true \
+  STABILITY_WINDOW_LABEL=+24h \
+  NO_OPEN_P0_P1_ATTESTATION=true \
+  SUPPORT_INCIDENTS_FILE=/absolute/path/to/support-incidents.csv \
+  PROMETHEUS_URL=https://prometheus.example.com
+```
+
+```bash
+make verify-launch-evidence EVIDENCE_DIR=/absolute/path/to/evidence/launch-<timestamp>
+```
+
+The verifier is intentionally strict by default. For a partial diagnostic bundle
+only, run the Go verifier directly or pass explicit opt-out flags through
+`VERIFY_LAUNCH_EVIDENCE_FLAGS`; do not use those opt-outs to close `TODO.md`
+launch evidence items.
+
 ## Phase 2 — Pre-cutover backup
+
+Post-launch stability reports can be generated as standalone evidence or as
+part of the bundle after the first +30m/+2h/+8h/+24h checkpoints:
+
+```bash
+make stability-report-evidence \
+  API_BASE_URL=https://api.example.com \
+  AUTH_TOKEN=<admin-token> \
+  ORG_ID=<prod-org-id> \
+  STABILITY_WINDOW_LABEL=+24h \
+  NO_OPEN_P0_P1_ATTESTATION=true \
+  SUPPORT_INCIDENTS_FILE=/absolute/path/to/support-incidents.csv \
+  PROMETHEUS_URL=https://prometheus.example.com \
+  REQUIRE_SUPPORT_INCIDENTS_FILE=true
+```
 
 Take a database snapshot immediately before the production migration.
 
@@ -187,11 +306,18 @@ Follow the first-24-hours monitoring plan in [hypercare.md](./hypercare.md).
 
 ## Evidence to archive
 
+- launch evidence bundle directory from `make launch-evidence-bundle`
 - rehearsal report
 - pre-cutover backup path
 - production validation report
 - smoke test output
 - billing reconciliation output
 - certification suite output
+- provider validation output from `make provider-validation-evidence` or
+  `provider-validation/` in the launch evidence bundle
+- two-meet-cycle output from `make parallel-meet-cycle-evidence` or
+  `parallel-meet-cycles/` in the launch evidence bundle
+- post-launch stability report output from `make stability-report-evidence` or
+  `stability-report/` in the launch evidence bundle
 - final signoff record
 - cutover start/end timestamps

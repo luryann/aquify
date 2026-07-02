@@ -15,6 +15,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dareaquatics/aquify/meetfiles"
+	"github.com/dareaquatics/aquify/meetfiles/cl2"
+	"github.com/dareaquatics/aquify/meetfiles/sdif"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -75,6 +78,7 @@ type ImportReport struct {
 	ErrorRows    int                `json:"error_rows"`
 	ConflictRows int                `json:"conflict_rows"`
 	Errors       []ImportErrorEntry `json:"errors,omitempty"`
+	Conflicts    []ImportErrorEntry `json:"conflicts,omitempty"`
 }
 
 // ImportErrorEntry is a single parse/match error captured in the report.
@@ -82,6 +86,7 @@ type ImportErrorEntry struct {
 	RowNumber    int    `json:"row_number,omitempty"`
 	ErrorCode    string `json:"error_code"`
 	ErrorMessage string `json:"error_message"`
+	RawData      string `json:"raw_data,omitempty"`
 }
 
 // MatchConflict represents an identity-matching ambiguity found during import.
@@ -133,6 +138,9 @@ type ResolveConflictInput struct {
 	ResolutionNote    string
 }
 
+type RosterLoader func(orgID string) []meetfiles.RosterSwimmer
+type KnownEventsLoader func(orgID, meetID string) []meetfiles.KnownEvent
+
 // ─── Service ─────────────────────────────────────────────────────────────────
 
 // Service manages file import jobs and match conflicts in memory.
@@ -144,6 +152,8 @@ type Service struct {
 	store          storage.ObjectStorage
 	securityConfig SecurityConfig
 	scanner        MalwareScanner
+	rosterLoader   RosterLoader
+	eventsLoader   KnownEventsLoader
 }
 
 type SecurityConfig struct {
@@ -240,6 +250,18 @@ func (s *Service) SetMalwareScanner(scanner MalwareScanner) {
 	s.scanner = scanner
 }
 
+func (s *Service) SetRosterLoader(loader RosterLoader) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.rosterLoader = loader
+}
+
+func (s *Service) SetKnownEventsLoader(loader KnownEventsLoader) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.eventsLoader = loader
+}
+
 // ─── RequestUploadURL ─────────────────────────────────────────────────────────
 
 // RequestUploadURL creates a new file import record and returns a presigned
@@ -329,42 +351,32 @@ func (s *Service) RequestUploadURL(principal *appmiddleware.Principal, orgID str
 
 // ─── FinalizeImport ───────────────────────────────────────────────────────────
 
-// FinalizeImport marks an import as received and simulates processing through
-// the state machine.  In the stub, it immediately advances to
-// conflicts_pending with synthetic data.  Only owner, admin, and coach may
-// finalize.
+// FinalizeImport marks an uploaded artifact as ready for parsing, runs the
+// configured malware scan gate, and then processes the import artifact into a
+// real report/conflict set. Only owner, admin, and coach may finalize.
 func (s *Service) FinalizeImport(principal *appmiddleware.Principal, orgID, importID string, _ FinalizeImportInput) (*FileImport, *ImportAuditEvent, error) {
 	if !hasAnyRole(principal, "owner", "admin", "coach") {
 		return nil, nil, ErrForbidden
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	imp, ok := s.imports[importID]
 	if !ok || imp.OrgID != orgID {
+		s.mu.Unlock()
 		return nil, nil, ErrImportNotFound
 	}
 	if imp.Status != "uploaded" {
+		s.mu.Unlock()
 		return nil, nil, fmt.Errorf("%w: cannot finalize an import with status %q", ErrInvalidTransition, imp.Status)
 	}
 
 	exists, err := s.store.Exists(context.Background(), imp.StorageKey)
 	if err != nil {
+		s.mu.Unlock()
 		return nil, nil, fmt.Errorf("storage: verify upload exists: %w", err)
 	}
 	if !exists {
-		if _, ok := s.store.(*storage.StubStorage); ok {
-			if err := s.store.PutObject(context.Background(), imp.StorageKey, imp.DeclaredMIMEType, nil); err != nil {
-				return nil, nil, fmt.Errorf("storage: seed stub upload: %w", err)
-			}
-		}
-		exists, err = s.store.Exists(context.Background(), imp.StorageKey)
-		if err != nil {
-			return nil, nil, fmt.Errorf("storage: verify upload exists after stub seed: %w", err)
-		}
-	}
-	if !exists {
+		s.mu.Unlock()
 		return nil, nil, fmt.Errorf("%w: uploaded object not found in storage", ErrInvalidTransition)
 	}
 
@@ -388,6 +400,7 @@ func (s *Service) FinalizeImport(principal *appmiddleware.Principal, orgID, impo
 		}
 		provider := strings.TrimSpace(scanResult.Provider)
 		if s.securityConfig.RequireMalwareScanHook && !isCompliantScannerProvider(provider) {
+			s.mu.Unlock()
 			return nil, nil, ErrMalwareScanRequired
 		}
 		scanStatus := strings.TrimSpace(strings.ToLower(scanResult.Status))
@@ -412,64 +425,113 @@ func (s *Service) FinalizeImport(principal *appmiddleware.Principal, orgID, impo
 			imp.Status = "failed"
 			imp.UpdatedAt = now
 			imp.UpdatedBy = principal.UserID
+			if s.repo != nil {
+				_ = s.repo.UpsertFileImport(context.Background(), imp)
+			}
+			s.mu.Unlock()
 			return nil, nil, ErrMalwareDetected
 		}
 	}
 
-	// Stub: immediately advance to conflicts_pending with synthetic rows.
-	imp.Status = "conflicts_pending"
-	imp.RowCount = 10
-	imp.ErrorCount = 1
-	imp.ConflictCount = 1
-	imp.UploadURL = "" // revoke the presigned URL reference once finalized
+	imp.Status = "parsing"
+	imp.RowCount = 0
+	imp.ErrorCount = 0
+	imp.ConflictCount = 0
+	imp.ImportReport = nil
+	imp.UploadURL = ""
 	imp.UploadURLExpiresAt = nil
 	imp.UpdatedAt = now
 	imp.UpdatedBy = principal.UserID
-	imp.ImportReport = &ImportReport{
-		TotalRows:    10,
-		MatchedRows:  8,
-		ErrorRows:    1,
-		ConflictRows: 1,
-		Errors: []ImportErrorEntry{
-			{
-				RowNumber:    3,
-				ErrorCode:    "bad_event_code",
-				ErrorMessage: "event code '999' is not defined in the meet",
-			},
-		},
-	}
-
-	// Seed one synthetic conflict.
-	conflictID := "conflict_" + randomToken(12)
-	conflict := &MatchConflict{
-		ID:                  conflictID,
-		ImportID:            importID,
-		OrgID:               orgID,
-		RowNumber:           7,
-		RawData:             "SMITH,JOHN,2010-01-15,M,100FR,58.23",
-		Status:              "open",
-		ConflictType:        "ambiguous_match",
-		CandidateSwimmerIDs: []string{},
-		CreatedAt:           now,
-		UpdatedAt:           now,
-	}
-	s.conflicts[conflictID] = conflict
 
 	if s.repo != nil {
 		if err := s.repo.UpsertFileImport(context.Background(), imp); err != nil {
-			return nil, nil, fmt.Errorf("persist finalized file import: %w", err)
-		}
-		if err := s.repo.UpsertMatchConflict(context.Background(), conflict); err != nil {
-			return nil, nil, fmt.Errorf("persist match conflict: %w", err)
+			s.mu.Unlock()
+			return nil, nil, fmt.Errorf("persist parsing file import: %w", err)
 		}
 	}
 	audit := newAuditEvent(orgID, principal.UserID, "import.finalized", "file_import", importID, map[string]string{
 		"status":      imp.Status,
 		"scan_status": imp.ScanStatus,
 	})
+	s.mu.Unlock()
+	processErr := s.ProcessImport(context.Background(), importID)
+	if processErr != nil {
+		return nil, audit, processErr
+	}
 
-	cp := *imp
-	return &cp, audit, nil
+	current, err := s.GetImport(principal, orgID, importID)
+	if err != nil {
+		return nil, audit, err
+	}
+	return current, audit, nil
+}
+
+// ProcessImport reads a finalized artifact from object storage, parses it with
+// the meetfiles package, matches parsed rows to roster swimmers when a loader
+// is configured, and persists the resulting report/conflicts.
+func (s *Service) ProcessImport(ctx context.Context, importID string) error {
+	s.mu.RLock()
+	imp, ok := s.imports[importID]
+	if !ok {
+		s.mu.RUnlock()
+		return ErrImportNotFound
+	}
+	storageKey := imp.StorageKey
+	filename := imp.Filename
+	orgID := imp.OrgID
+	meetID := strings.TrimSpace(imp.MeetID)
+	status := imp.Status
+	rosterLoader := s.rosterLoader
+	eventsLoader := s.eventsLoader
+	s.mu.RUnlock()
+
+	if status != "parsing" && status != "matching" {
+		return fmt.Errorf("%w: cannot process an import with status %q", ErrInvalidTransition, status)
+	}
+
+	data, _, err := s.store.GetObject(ctx, storageKey)
+	if err != nil {
+		s.markImportFailed(importID, fmt.Sprintf("read uploaded artifact: %v", err))
+		return fmt.Errorf("read uploaded artifact: %w", err)
+	}
+
+	parsed, err := parseImportArtifact(filename, data)
+	if err != nil {
+		s.markImportFailed(importID, err.Error())
+		return err
+	}
+
+	s.markImportStatus(importID, "matching")
+
+	roster := []meetfiles.RosterSwimmer{}
+	if rosterLoader != nil {
+		roster = rosterLoader(orgID)
+	}
+	withMatches := make([]meetfiles.ResultWithMatch, 0, len(parsed.IndividualResults))
+	for _, result := range parsed.IndividualResults {
+		match := meetfiles.MatchResult{
+			Outcome:  meetfiles.MatchExact,
+			Strategy: "unmatched_not_required",
+		}
+		if rosterLoader != nil {
+			match = meetfiles.MatchSwimmer(result.Swimmer, roster)
+		}
+		withMatches = append(withMatches, meetfiles.ResultWithMatch{
+			Result: result,
+			Match:  match,
+		})
+	}
+
+	knownEvents := []meetfiles.KnownEvent{}
+	if eventsLoader != nil && meetID != "" {
+		knownEvents = eventsLoader(orgID, meetID)
+	}
+	additionalErrors := append([]meetfiles.ParseError{}, meetfiles.ClassifyEventErrors(parsed.IndividualResults, knownEvents)...)
+	additionalErrors = append(additionalErrors, meetfiles.ClassifyDuplicates(withMatches)...)
+
+	report := meetfiles.BuildReport(parsed, withMatches, additionalErrors)
+	conflictEntries := meetfiles.BuildConflictQueue(withMatches)
+	return s.applyParseOutcome(importID, report, conflictEntries)
 }
 
 // ─── ListImports ──────────────────────────────────────────────────────────────
@@ -679,6 +741,191 @@ func (s *Service) DeleteArtifact(storageKey string) error {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+func (s *Service) markImportStatus(importID, status string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	imp, ok := s.imports[importID]
+	if !ok {
+		return
+	}
+	imp.Status = status
+	imp.UpdatedAt = time.Now().UTC()
+	if s.repo != nil {
+		_ = s.repo.UpsertFileImport(context.Background(), imp)
+	}
+}
+
+func (s *Service) markImportFailed(importID, message string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	imp, ok := s.imports[importID]
+	if !ok {
+		return
+	}
+	now := time.Now().UTC()
+	imp.Status = "failed"
+	imp.UpdatedAt = now
+	imp.ErrorCount = 1
+	imp.ImportReport = &ImportReport{
+		ErrorRows: 1,
+		Errors: []ImportErrorEntry{{
+			ErrorCode:    "import_failed",
+			ErrorMessage: strings.TrimSpace(message),
+		}},
+	}
+	if s.repo != nil {
+		_ = s.repo.UpsertFileImport(context.Background(), imp)
+	}
+}
+
+func (s *Service) applyParseOutcome(importID string, report meetfiles.ImportReport, conflictEntries []meetfiles.ConflictEntry) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	imp, ok := s.imports[importID]
+	if !ok {
+		return ErrImportNotFound
+	}
+
+	for id, conflict := range s.conflicts {
+		if conflict.ImportID == importID {
+			delete(s.conflicts, id)
+		}
+	}
+
+	now := time.Now().UTC()
+	imp.RowCount = report.TotalRows
+	imp.ErrorCount = report.ErrorRows
+	imp.ConflictCount = report.ConflictRows
+	imp.ImportReport = &ImportReport{
+		TotalRows:    report.TotalRows,
+		MatchedRows:  report.MatchedRows,
+		ErrorRows:    report.ErrorRows,
+		ConflictRows: report.ConflictRows,
+		Errors:       translateReportEntries(report.Errors),
+		Conflicts:    translateReportEntries(report.Conflicts),
+	}
+	if len(conflictEntries) > 0 {
+		imp.Status = "conflicts_pending"
+	} else {
+		imp.Status = "applied"
+	}
+	imp.UpdatedAt = now
+
+	newConflicts := make([]*MatchConflict, 0, len(conflictEntries))
+	for _, entry := range conflictEntries {
+		conflict := &MatchConflict{
+			ID:                  s.newID("conflict_"),
+			ImportID:            importID,
+			OrgID:               imp.OrgID,
+			RowNumber:           entry.LineNumber,
+			RawData:             strings.TrimSpace(entry.RawData),
+			Status:              "open",
+			ConflictType:        string(entry.Code),
+			CandidateSwimmerIDs: append([]string{}, entry.CandidateSwimmerIDs...),
+			CreatedAt:           now,
+			UpdatedAt:           now,
+		}
+		s.conflicts[conflict.ID] = conflict
+		newConflicts = append(newConflicts, conflict)
+	}
+
+	if s.repo != nil {
+		if err := s.repo.UpsertFileImport(context.Background(), imp); err != nil {
+			return fmt.Errorf("persist parsed file import: %w", err)
+		}
+		for _, conflict := range newConflicts {
+			if err := s.repo.UpsertMatchConflict(context.Background(), conflict); err != nil {
+				return fmt.Errorf("persist parsed match conflict: %w", err)
+			}
+		}
+	}
+	return nil
+}
+
+func translateReportEntries(lines []meetfiles.ReportLine) []ImportErrorEntry {
+	if len(lines) == 0 {
+		return nil
+	}
+	out := make([]ImportErrorEntry, 0, len(lines))
+	for _, line := range lines {
+		out = append(out, ImportErrorEntry{
+			RowNumber:    line.LineNumber,
+			ErrorCode:    string(line.ErrorCode),
+			ErrorMessage: line.Message,
+			RawData:      strings.TrimSpace(line.RawData),
+		})
+	}
+	return out
+}
+
+func parseImportArtifact(filename string, data []byte) (*meetfiles.ParseResult, error) {
+	switch meetfiles.DetectFileType(filename, data) {
+	case meetfiles.FileTypeSD3:
+		return sdif.Parse(data)
+	case meetfiles.FileTypeCL2:
+		return cl2.Parse(data)
+	case meetfiles.FileTypeHY3:
+		ingest := meetfiles.ReadHY3(filename, data)
+		if ingest.SelectedPayload == nil {
+			if ingest.Error != nil {
+				return nil, fmt.Errorf("parse hy3: %s", ingest.Error.Message)
+			}
+			return nil, fmt.Errorf("parse hy3: archive did not contain a parseable payload")
+		}
+		result, err := parseImportArtifact(ingest.SelectedPayload.Name, ingest.SelectedPayload.Content)
+		if err != nil {
+			return nil, err
+		}
+		if ingest.Error != nil {
+			result.ParseErrors = append([]meetfiles.ParseError{*ingest.Error}, result.ParseErrors...)
+		}
+		return result, nil
+	case meetfiles.FileTypeZIP:
+		entries, err := meetfiles.ReadMeetZip(data)
+		if err != nil {
+			return nil, fmt.Errorf("parse zip: %w", err)
+		}
+		if len(entries) == 0 {
+			return nil, fmt.Errorf("parse zip: archive did not contain a parseable payload")
+		}
+		merged := &meetfiles.ParseResult{FileType: meetfiles.FileTypeZIP}
+		for _, entry := range entries {
+			result, err := parseImportArtifact(entry.Name, entry.Content)
+			if err != nil {
+				return nil, err
+			}
+			mergeParseResult(merged, result)
+		}
+		return merged, nil
+	default:
+		return nil, fmt.Errorf("unsupported import artifact type for %s", filename)
+	}
+}
+
+func mergeParseResult(dst, src *meetfiles.ParseResult) {
+	if dst == nil || src == nil {
+		return
+	}
+	if dst.MeetName == "" {
+		dst.MeetName = src.MeetName
+	}
+	if dst.MeetStartDate == nil {
+		dst.MeetStartDate = src.MeetStartDate
+	}
+	if dst.MeetEndDate == nil {
+		dst.MeetEndDate = src.MeetEndDate
+	}
+	if dst.Course == meetfiles.CourseUnknown {
+		dst.Course = src.Course
+	}
+	dst.IndividualResults = append(dst.IndividualResults, src.IndividualResults...)
+	dst.RelayResults = append(dst.RelayResults, src.RelayResults...)
+	dst.ParseErrors = append(dst.ParseErrors, src.ParseErrors...)
+}
+
 func hasAnyRole(principal *appmiddleware.Principal, required ...string) bool {
 	if principal == nil {
 		return false
@@ -694,7 +941,7 @@ func hasAnyRole(principal *appmiddleware.Principal, required ...string) bool {
 func randomToken(byteLen int) string {
 	raw := make([]byte, byteLen)
 	if _, err := rand.Read(raw); err != nil {
-		return fmt.Sprintf("fallback%x", time.Now().UTC().UnixNano())
+		panic(fmt.Errorf("secure random unavailable for import token generation: %w", err))
 	}
 	return hex.EncodeToString(raw)
 }

@@ -7,10 +7,13 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/dareaquatics/aquify/server/internal/app/documents"
+	"github.com/dareaquatics/aquify/server/internal/app/groups"
 	"github.com/dareaquatics/aquify/server/internal/app/meets"
 	"github.com/dareaquatics/aquify/server/internal/app/members"
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
@@ -64,6 +67,21 @@ type progressionEnvelope struct {
 		Distance int    `json:"distance"`
 		Stroke   string `json:"stroke"`
 	} `json:"results"`
+}
+
+type activityEnvelope struct {
+	SwimmerID  string `json:"swimmer_id"`
+	Count      int    `json:"count"`
+	Activities []struct {
+		ID         string    `json:"id"`
+		Type       string    `json:"type"`
+		OccurredAt time.Time `json:"occurred_at"`
+		Title      string    `json:"title"`
+		Detail     string    `json:"detail"`
+		Status     string    `json:"status"`
+		SourceID   string    `json:"source_id"`
+		MeetID     string    `json:"meet_id"`
+	} `json:"activities"`
 }
 
 type orgBestTimesEnvelope struct {
@@ -131,6 +149,38 @@ func newPerfAndMeetsRouter(t *testing.T, perfSvc *performance.Service, meetsSvc 
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	return NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, nil, nil, nil, meetsSvc, nil, nil, perfSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+}
+
+func newPerfActivityRouter(
+	t *testing.T,
+	perfSvc *performance.Service,
+	memberSvc *members.Service,
+	groupSvc *groups.Service,
+	meetsSvc *meets.Service,
+	documentSvc *documents.Service,
+) http.Handler {
+	t.Helper()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	return NewRouterWithServices(
+		Config{Auth: AuthConfig{EnableDevStubTokens: true}},
+		logger,
+		nil,
+		memberSvc,
+		groupSvc,
+		meetsSvc,
+		nil,
+		nil,
+		perfSvc,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		documentSvc,
+		nil,
+		nil,
+		nil,
+	)
 }
 
 func minimalResultBody(swimmerID string) string {
@@ -559,7 +609,11 @@ func TestParentRoleCanReadBestTimesForOwnHousehold(t *testing.T) {
 	memberSvc := members.NewService()
 	router := newPerfWithMembersRouter(t, perfSvc, memberSvc)
 
-	admin := testutil.AdminPrincipal()
+	admin := testutil.Principal(testutil.PrincipalOptions{
+		UserID: "admin-user",
+		OrgID:  "org-demo",
+		Roles:  []string{"admin"},
+	})
 
 	// Create a household and swimmer that belong to the parent.
 	household, err := memberSvc.CreateHousehold(admin, members.CreateHouseholdInput{
@@ -605,7 +659,11 @@ func TestParentRoleCannotReadBestTimesForOtherHousehold(t *testing.T) {
 	memberSvc := members.NewService()
 	router := newPerfWithMembersRouter(t, perfSvc, memberSvc)
 
-	admin := testutil.AdminPrincipal()
+	admin := testutil.Principal(testutil.PrincipalOptions{
+		UserID: "admin-user",
+		OrgID:  "org-demo",
+		Roles:  []string{"admin"},
+	})
 
 	// Household A owns the swimmer.
 	householdA, err := memberSvc.CreateHousehold(admin, members.CreateHouseholdInput{
@@ -649,6 +707,205 @@ func TestParentRoleCannotReadBestTimesForOtherHousehold(t *testing.T) {
 
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("expected 403 for parent reading other household swimmer best-times, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestParentRoleCanReadSwimmerActivityForOwnHousehold(t *testing.T) {
+	t.Parallel()
+
+	perfSvc := performance.NewService()
+	memberSvc := members.NewService()
+	groupSvc := groups.NewService()
+	meetsSvc := meets.NewService()
+	documentSvc := documents.NewService()
+	router := newPerfActivityRouter(t, perfSvc, memberSvc, groupSvc, meetsSvc, documentSvc)
+
+	admin := testutil.Principal(testutil.PrincipalOptions{
+		UserID: "admin-user",
+		OrgID:  "org-demo",
+		Roles:  []string{"admin"},
+	})
+	household, err := memberSvc.CreateHousehold(admin, members.CreateHouseholdInput{
+		OrgID:         "org-demo",
+		HouseholdName: "History Family",
+		PrimaryEmail:  "history-parent@example.com",
+	})
+	if err != nil {
+		t.Fatalf("CreateHousehold: %v", err)
+	}
+	swimmer, _, err := memberSvc.CreateSwimmer(admin, "org-demo", members.CreateSwimmerInput{
+		HouseholdID:        household.ID,
+		FirstName:          "History",
+		LastName:           "Swimmer",
+		DateOfBirth:        "2012-06-01",
+		Gender:             "female",
+		RegistrationStatus: "active",
+	})
+	if err != nil {
+		t.Fatalf("CreateSwimmer: %v", err)
+	}
+	if err := memberSvc.AssociateParentToHousehold(admin, "org-demo", "history-parent", household.ID); err != nil {
+		t.Fatalf("AssociateParentToHousehold: %v", err)
+	}
+	groupSvc.SeedSwimmer("org-demo", swimmer.ID, household.ID, swimmer.DateOfBirth, swimmer.Gender, swimmer.RegistrationStatus)
+	meetsSvc.SeedSwimmer("org-demo", swimmer.ID, household.ID)
+
+	groupRecord, _, err := groupSvc.CreateGroup(admin, "org-demo", groups.CreateGroupInput{
+		Code: "JR1",
+		Name: "Juniors 1",
+		Type: "developmental",
+	})
+	if err != nil {
+		t.Fatalf("CreateGroup: %v", err)
+	}
+	registration, err := groupSvc.CreateRegistration(admin, "org-demo", groups.CreateRegistrationInput{
+		HouseholdID: household.ID,
+		SwimmerID:   swimmer.ID,
+		GroupID:     groupRecord.ID,
+		Season:      "2026",
+	})
+	if err != nil {
+		t.Fatalf("CreateRegistration: %v", err)
+	}
+	if _, err := groupSvc.AcceptWaiver(admin, "org-demo", registration.ID, groups.AcceptWaiverInput{WaiverType: "annual"}); err != nil {
+		t.Fatalf("AcceptWaiver: %v", err)
+	}
+
+	docType, err := documentSvc.CreateDocumentType("org-demo", "Birth Certificate", "identity", "", "swimmer", true, true, nil, admin.UserID)
+	if err != nil {
+		t.Fatalf("CreateDocumentType: %v", err)
+	}
+	if _, err := documentSvc.CreateSubmission("org-demo", docType.ID, household.ID, swimmer.ID, admin.UserID); err != nil {
+		t.Fatalf("CreateSubmission: %v", err)
+	}
+
+	meetRecord, _, err := meetsSvc.CreateMeet(admin, "org-demo", meets.CreateMeetInput{
+		Name:     "Spring Invite",
+		MeetType: "invitational",
+		Course:   "SCY",
+	})
+	if err != nil {
+		t.Fatalf("CreateMeet: %v", err)
+	}
+	if _, _, err := meetsSvc.TransitionMeetStatus(admin, "org-demo", meetRecord.ID, "published"); err != nil {
+		t.Fatalf("TransitionMeetStatus published: %v", err)
+	}
+	_, commitments, _, err := meetsSvc.PublishCommitmentRequest(admin, "org-demo", meetRecord.ID)
+	if err != nil {
+		t.Fatalf("PublishCommitmentRequest: %v", err)
+	}
+	if len(commitments) != 1 {
+		t.Fatalf("expected 1 commitment, got %d", len(commitments))
+	}
+
+	coachToken := issueSessionToken(t, router, "org-demo", []string{"coach"}, false)
+	resultReq := httptest.NewRequest(http.MethodPost, "/api/v1/results", strings.NewReader(fmt.Sprintf(`{
+		"swimmer_id": %q,
+		"distance": 100,
+		"stroke": "free",
+		"course": "SCY",
+		"gender": "F",
+		"fin_time_ms": 59800,
+		"is_official": true
+	}`, swimmer.ID)))
+	resultReq.Header.Set("Content-Type", "application/json")
+	resultReq.Header.Set("X-Org-Id", "org-demo")
+	resultReq.Header.Set("Authorization", "Bearer "+coachToken)
+	resultRes := httptest.NewRecorder()
+	router.ServeHTTP(resultRes, resultReq)
+	if resultRes.Code != http.StatusCreated {
+		t.Fatalf("create result: expected 201, got %d body=%s", resultRes.Code, resultRes.Body.String())
+	}
+
+	if _, _, err := meetsSvc.RespondToCommitment(testutil.ParentPrincipal("history-parent", household.ID), "org-demo", meetRecord.ID, commitments[0].ID, meets.CommitmentRespondInput{
+		Response: "committed_yes",
+		Notes:    "Available all weekend",
+	}); err != nil {
+		t.Fatalf("RespondToCommitment: %v", err)
+	}
+
+	parentToken := issueSessionTokenWithHousehold(t, router, "history-parent", "org-demo", household.ID, []string{"parent"}, false)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/swimmers/"+swimmer.ID+"/activity", nil)
+	req.Header.Set("X-Org-Id", "org-demo")
+	req.Header.Set("Authorization", "Bearer "+parentToken)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 for parent reading own swimmer activity, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	var env activityEnvelope
+	if err := json.NewDecoder(rr.Body).Decode(&env); err != nil {
+		t.Fatalf("decode activity response: %v", err)
+	}
+	if env.SwimmerID != swimmer.ID {
+		t.Fatalf("expected swimmer_id %s, got %s", swimmer.ID, env.SwimmerID)
+	}
+	if env.Count < 5 {
+		t.Fatalf("expected at least 5 activity items, got %d", env.Count)
+	}
+	var types []string
+	for i := range env.Activities {
+		types = append(types, env.Activities[i].Type)
+		if i > 0 && env.Activities[i].OccurredAt.After(env.Activities[i-1].OccurredAt) {
+			t.Fatalf("activities not sorted descending by occurred_at: %s after %s", env.Activities[i].OccurredAt, env.Activities[i-1].OccurredAt)
+		}
+	}
+	for _, requiredType := range []string{"result", "registration", "waiver", "document", "commitment"} {
+		if !slices.Contains(types, requiredType) {
+			t.Fatalf("expected activity feed to include %s, got %v", requiredType, types)
+		}
+	}
+}
+
+func TestParentRoleCannotReadSwimmerActivityForOtherHousehold(t *testing.T) {
+	t.Parallel()
+
+	perfSvc := performance.NewService()
+	memberSvc := members.NewService()
+	groupSvc := groups.NewService()
+	meetsSvc := meets.NewService()
+	documentSvc := documents.NewService()
+	router := newPerfActivityRouter(t, perfSvc, memberSvc, groupSvc, meetsSvc, documentSvc)
+
+	admin := testutil.AdminPrincipal()
+	householdA, err := memberSvc.CreateHousehold(admin, members.CreateHouseholdInput{
+		OrgID:         "org-demo",
+		HouseholdName: "Household A",
+		PrimaryEmail:  "household-a@example.com",
+	})
+	if err != nil {
+		t.Fatalf("CreateHousehold A: %v", err)
+	}
+	swimmer, _, err := memberSvc.CreateSwimmer(admin, "org-demo", members.CreateSwimmerInput{
+		HouseholdID:        householdA.ID,
+		FirstName:          "Foreign",
+		LastName:           "Swimmer",
+		DateOfBirth:        "2013-03-15",
+		Gender:             "male",
+		RegistrationStatus: "active",
+	})
+	if err != nil {
+		t.Fatalf("CreateSwimmer: %v", err)
+	}
+	householdB, err := memberSvc.CreateHousehold(admin, members.CreateHouseholdInput{
+		OrgID:         "org-demo",
+		HouseholdName: "Household B",
+		PrimaryEmail:  "household-b@example.com",
+	})
+	if err != nil {
+		t.Fatalf("CreateHousehold B: %v", err)
+	}
+
+	token := issueSessionTokenWithHousehold(t, router, "history-parent-b", "org-demo", householdB.ID, []string{"parent"}, false)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/swimmers/"+swimmer.ID+"/activity", nil)
+	req.Header.Set("X-Org-Id", "org-demo")
+	req.Header.Set("Authorization", "Bearer "+token)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for parent reading other household swimmer activity, got %d body=%s", rr.Code, rr.Body.String())
 	}
 }
 
@@ -1085,6 +1342,157 @@ func TestEvaluateCutQualificationMissingStandardIDReturns400(t *testing.T) {
 
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", rr.Code)
+	}
+}
+
+func TestSwimmerRoleCanReadOwnHouseholdCutQualification(t *testing.T) {
+	t.Parallel()
+
+	perfSvc := performance.NewService()
+	memberSvc := members.NewService()
+	router := newPerfWithMembersRouter(t, perfSvc, memberSvc)
+	adminToken := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
+
+	adminPrincipal := testutil.AdminPrincipal()
+	household, err := memberSvc.CreateHousehold(adminPrincipal, members.CreateHouseholdInput{
+		OrgID:         "org-demo",
+		HouseholdName: "Cut Family",
+	})
+	if err != nil {
+		t.Fatalf("CreateHousehold returned error: %v", err)
+	}
+	swimmer, _, err := memberSvc.CreateSwimmer(adminPrincipal, "org-demo", members.CreateSwimmerInput{
+		HouseholdID: household.ID,
+		FirstName:   "Cut",
+		LastName:    "Swimmer",
+		DateOfBirth: "2012-01-01",
+		Gender:      "female",
+	})
+	if err != nil {
+		t.Fatalf("CreateSwimmer returned error: %v", err)
+	}
+
+	createStandardReq := httptest.NewRequest(http.MethodPost, "/api/v1/time-standards",
+		strings.NewReader(`{
+			"name":"A Standards",
+			"season_year":2025,
+			"standard_code":"A",
+			"event_distance":100,
+			"stroke":"free",
+			"course":"SCY",
+			"gender":"F",
+			"time_ms":60000,
+			"is_active":true
+		}`))
+	createStandardReq.Header.Set("Content-Type", "application/json")
+	createStandardReq.Header.Set("X-Org-Id", "org-demo")
+	createStandardReq.Header.Set("Authorization", "Bearer "+adminToken)
+	createStandardRes := httptest.NewRecorder()
+	router.ServeHTTP(createStandardRes, createStandardReq)
+	if createStandardRes.Code != http.StatusCreated {
+		t.Fatalf("create time standard: expected 201, got %d body=%s", createStandardRes.Code, createStandardRes.Body.String())
+	}
+	var standardEnv timeStandardEnvelope
+	if err := json.NewDecoder(createStandardRes.Body).Decode(&standardEnv); err != nil {
+		t.Fatalf("decode standard response: %v", err)
+	}
+
+	resultReq := httptest.NewRequest(http.MethodPost, "/api/v1/results", strings.NewReader(fmt.Sprintf(`{
+		"swimmer_id": %q,
+		"distance": 100,
+		"stroke": "free",
+		"course": "SCY",
+		"gender": "F",
+		"fin_time_ms": 59800,
+		"is_official": true
+	}`, swimmer.ID)))
+	resultReq.Header.Set("Content-Type", "application/json")
+	resultReq.Header.Set("X-Org-Id", "org-demo")
+	resultReq.Header.Set("Authorization", "Bearer "+adminToken)
+	resultRes := httptest.NewRecorder()
+	router.ServeHTTP(resultRes, resultReq)
+	if resultRes.Code != http.StatusCreated {
+		t.Fatalf("create result: expected 201, got %d body=%s", resultRes.Code, resultRes.Body.String())
+	}
+
+	swimmerToken := issueSessionTokenWithHousehold(t, router, "swimmer-cut", "org-demo", household.ID, []string{"swimmer"}, false)
+	qualReq := httptest.NewRequest(http.MethodGet, "/api/v1/swimmers/"+swimmer.ID+"/cut-qualification?standard_id="+standardEnv.TimeStandard.ID, nil)
+	qualReq.Header.Set("X-Org-Id", "org-demo")
+	qualReq.Header.Set("Authorization", "Bearer "+swimmerToken)
+	qualRes := httptest.NewRecorder()
+	router.ServeHTTP(qualRes, qualReq)
+	if qualRes.Code != http.StatusOK {
+		t.Fatalf("swimmer cut qualification: expected 200, got %d body=%s", qualRes.Code, qualRes.Body.String())
+	}
+}
+
+func TestSwimmerRoleCannotReadForeignHouseholdCutQualification(t *testing.T) {
+	t.Parallel()
+
+	perfSvc := performance.NewService()
+	memberSvc := members.NewService()
+	router := newPerfWithMembersRouter(t, perfSvc, memberSvc)
+	adminToken := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
+
+	adminPrincipal := testutil.AdminPrincipal()
+	householdA, err := memberSvc.CreateHousehold(adminPrincipal, members.CreateHouseholdInput{
+		OrgID:         "org-demo",
+		HouseholdName: "Household A",
+	})
+	if err != nil {
+		t.Fatalf("CreateHousehold A returned error: %v", err)
+	}
+	swimmer, _, err := memberSvc.CreateSwimmer(adminPrincipal, "org-demo", members.CreateSwimmerInput{
+		HouseholdID: householdA.ID,
+		FirstName:   "Far",
+		LastName:    "Lane",
+		DateOfBirth: "2012-01-01",
+		Gender:      "female",
+	})
+	if err != nil {
+		t.Fatalf("CreateSwimmer returned error: %v", err)
+	}
+	householdB, err := memberSvc.CreateHousehold(adminPrincipal, members.CreateHouseholdInput{
+		OrgID:         "org-demo",
+		HouseholdName: "Household B",
+	})
+	if err != nil {
+		t.Fatalf("CreateHousehold B returned error: %v", err)
+	}
+
+	createStandardReq := httptest.NewRequest(http.MethodPost, "/api/v1/time-standards",
+		strings.NewReader(`{
+			"name":"A Standards",
+			"season_year":2025,
+			"standard_code":"A",
+			"event_distance":100,
+			"stroke":"free",
+			"course":"SCY",
+			"gender":"F",
+			"time_ms":60000,
+			"is_active":true
+		}`))
+	createStandardReq.Header.Set("Content-Type", "application/json")
+	createStandardReq.Header.Set("X-Org-Id", "org-demo")
+	createStandardReq.Header.Set("Authorization", "Bearer "+adminToken)
+	createStandardRes := httptest.NewRecorder()
+	router.ServeHTTP(createStandardRes, createStandardReq)
+	if createStandardRes.Code != http.StatusCreated {
+		t.Fatalf("create time standard: expected 201, got %d body=%s", createStandardRes.Code, createStandardRes.Body.String())
+	}
+	var standardEnv timeStandardEnvelope
+	if err := json.NewDecoder(createStandardRes.Body).Decode(&standardEnv); err != nil {
+		t.Fatalf("decode standard response: %v", err)
+	}
+
+	swimmerToken := issueSessionTokenWithHousehold(t, router, "swimmer-cut-other", "org-demo", householdB.ID, []string{"swimmer"}, false)
+	qualReq := httptest.NewRequest(http.MethodGet, "/api/v1/swimmers/"+swimmer.ID+"/cut-qualification?standard_id="+standardEnv.TimeStandard.ID, nil)
+	qualReq.Header.Set("X-Org-Id", "org-demo")
+	qualReq.Header.Set("Authorization", "Bearer "+swimmerToken)
+	qualRes := httptest.NewRecorder()
+	router.ServeHTTP(qualRes, qualReq)
+	if qualRes.Code != http.StatusForbidden {
+		t.Fatalf("foreign swimmer cut qualification: expected 403, got %d body=%s", qualRes.Code, qualRes.Body.String())
 	}
 }
 

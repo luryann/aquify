@@ -25,22 +25,6 @@ function formatDateTime(value?: string) {
   })
 }
 
-function parseRecipientInput(value: string) {
-  const seen = new Set<string>()
-  const recipients: { email: string }[] = []
-
-  for (const token of value.split(/[\n,;]+/)) {
-    const email = token.trim()
-    if (!email) continue
-    const normalized = email.toLowerCase()
-    if (seen.has(normalized)) continue
-    seen.add(normalized)
-    recipients.push({ email })
-  }
-
-  return recipients
-}
-
 export default function CampaignsPage() {
   const { session } = useSession()
   const api = useApiClient(session?.token)
@@ -52,7 +36,6 @@ export default function CampaignsPage() {
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [recipientInput, setRecipientInput] = useState('')
   const [form, setForm] = useState({
     name: '',
     subject: '',
@@ -159,22 +142,16 @@ export default function CampaignsPage() {
 
   async function handleSend() {
     if (!session?.user.orgId || !selectedCampaign) return
-    const recipients = parseRecipientInput(recipientInput)
-    if (recipients.length === 0) {
-      setError('Enter at least one recipient email before sending.')
-      setNotice(null)
-      return
-    }
 
     setSending(true)
     setError(null)
     setNotice(null)
     try {
-      await sendCampaign(api, session.user.orgId, selectedCampaign.id, { recipients })
+      const sentCampaign = await sendCampaign(api, session.user.orgId, selectedCampaign.id)
       await loadCampaigns()
       const nextDeliveries = await fetchCampaignDeliveries(api, session.user.orgId, selectedCampaign.id)
       setDeliveries(nextDeliveries)
-      setNotice(`Sent campaign to ${recipients.length} recipient${recipients.length === 1 ? '' : 's'}.`)
+      setNotice(`Sent campaign to ${sentCampaign.total_recipients} eligible recipient${sentCampaign.total_recipients === 1 ? '' : 's'}.`)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Unable to send campaign.')
     } finally {
@@ -301,16 +278,9 @@ export default function CampaignsPage() {
                 <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                   Status {selectedCampaign.status} · Created {formatDateTime(selectedCampaign.created_at)} · Sent {formatDateTime(selectedCampaign.sent_at)}
                 </div>
-                <textarea
-                  value={recipientInput}
-                  onChange={(event) => setRecipientInput(event.target.value)}
-                  rows={6}
-                  placeholder="One recipient email per line"
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: '13px', resize: 'vertical' }}
-                />
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
                   <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                    Comma, semicolon, or newline separated emails are accepted.
+                    Recipients are resolved server-side from the campaign audience and current org membership records.
                   </span>
                   <button
                     onClick={() => void handleSend()}
@@ -321,7 +291,7 @@ export default function CampaignsPage() {
                   </button>
                 </div>
                 <div style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                  If backend policy disables caller-supplied recipients for this environment, the API will reject the send and the error will appear above.
+                  Group campaigns send only to households with active or pending registrations in the selected group. Suppressed addresses are skipped automatically.
                 </div>
               </div>
             ) : deliveries.length === 0 ? (

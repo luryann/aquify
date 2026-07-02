@@ -19,7 +19,7 @@ func main() {
 	dir := filepath.Dir(file)
 
 	writeFile := func(name, content string) {
-		path := filepath.Join(dir, name)
+		path := filepath.Join(dir, "fixtures", name)
 		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 			fmt.Fprintf(os.Stderr, "error writing %s: %v\n", name, err)
 			os.Exit(1)
@@ -34,28 +34,51 @@ func main() {
 		}
 		return s + strings.Repeat(" ", width-len(s))
 	}
+	sdifLine := func(parts ...any) string {
+		var sb strings.Builder
+		for i := 0; i+1 < len(parts); i += 2 {
+			sb.WriteString(pad(parts[i].(string), parts[i+1].(int)))
+		}
+		line := sb.String()
+		if len(line) < 160 {
+			line += strings.Repeat(" ", 160-len(line))
+		}
+		return line[:160]
+	}
 
 	// Build a minimal valid SD3 result file.
 	// File type 02 = meet results.
-	a0 := "A0" + "1" + pad("", 8) + "02" + pad("", 30) +
-		pad("TestSoftware", 20) + pad("v1.0", 10) +
-		pad("Test Contact", 20) + "000-000-0000" +
-		"03152026" + pad("", 42) + "AZ" + pad("", 3)
-	a0 = pad(a0, 160)
+	a0 := sdifLine(
+		"A0", 2, "1", 1, "", 8,
+		"02", 2,
+		"", 30,
+		"TestSoftware", 20, "v1.0", 10,
+		"Test Contact", 20, "000-000-0000", 12,
+		"03152026", 8,
+		"", 42, "AZ", 2, "", 3,
+	)
 
-	b1 := "B1" + "1" + pad("", 8) + pad("Spring Invitational", 30) +
-		pad("100 Pool Lane", 22) + pad("", 22) +
-		pad("Springfield", 20) + "AZ" + pad("85001", 10) +
-		"USA" + "1" + "03152026" + "03162026" +
-		pad("0", 4) + pad("", 8) + "2" + pad("", 10)
-	b1 = pad(b1, 160)
+	b1 := sdifLine(
+		"B1", 2, "1", 1, "", 8,
+		"Spring Invitational", 30,
+		"100 Pool Lane", 22, "", 22,
+		"Springfield", 20, "AZ", 2, "85001", 10,
+		"USA", 3, "1", 1,
+		"03152026", 8, "03162026", 8,
+		"0000", 4, "", 8,
+		"2", 1,
+		"", 10,
+	)
 
-	c1 := "C1" + "1" + pad("", 8) + pad("TESTA", 6) +
-		pad("Test Aquatics Club", 30) + pad("Test Aquatics", 16) +
-		pad("100 Club Rd", 22) + pad("", 22) +
-		pad("Springfield", 20) + "AZ" + pad("85001", 10) +
-		"USA" + "0" + pad("", 6) + " " + pad("", 10)
-	c1 = pad(c1, 160)
+	c1 := sdifLine(
+		"C1", 2, "1", 1, "", 8,
+		"TESTA", 6,
+		"Test Aquatics Club", 30,
+		"Test Aquatics", 16,
+		"100 Club Rd", 22, "", 22,
+		"Springfield", 20, "AZ", 2, "85001", 10,
+		"USA", 3, "0", 1, "", 6, " ", 1, "", 10,
+	)
 
 	// D0 for John Smith, 100 Free SCY, finals 58.12
 	//                         12345678901234567890123456789012345678901234567890
@@ -85,36 +108,44 @@ func main() {
 	// PrelimPlace 133-135: "   "
 	// FinalsPlace 136-138: "  1"
 	d0smith := buildD0("Smith, John", "", "02151999", "25", "M", "M", "0100", "1", "0001", "1824", "03152026", "  59.10 ", "2", "  58.12 ", "2", " 1", " 4", "  1")
-	d0smith = pad(d0smith, 160)
-
 	// D0 for Jane Doe, 200 Back SCY, finals 2:12.45
 	d0doe := buildD0("Doe, Jane", "", "05102008", "17", "F", "F", "0200", "2", "0002", "1517", "03152026", "2:15.00 ", "2", "2:12.45 ", "2", " 2", " 3", "  1")
-	d0doe = pad(d0doe, 160)
 
 	// E0 relay: mixed 200 medley relay, event 10
-	e0 := "E0" + "1" + pad("", 8) + "A" + pad("TESTA", 6) + "04" +
-		"X" + "0200" + "7" + pad("10  ", 4) + pad("OPEN", 4) +
-		pad("", 7) + "03152026" +
-		pad("NT", 8) + "2" + pad("", 8) + "2" + pad("", 8) + "2" +
-		pad("1:55.34 ", 8) + "2" +
-		pad("", 2) + pad("", 2) + pad("", 2) + pad("", 2) +
-		pad("", 3) + pad("", 3) + pad("", 4) + pad("", 2) +
-		pad("", 59)
-	e0 = pad(e0, 160)
+	e0 := sdifLine(
+		"E0", 2, "1", 1, "", 8,
+		"A", 1,
+		"TESTA", 6,
+		"04", 2,
+		"X", 1, "0200", 4, "7", 1,
+		"0010", 4, "OPEN", 4,
+		"   ", 3,
+		"03152026", 8,
+		"NT", 8, "2", 1,
+		"", 8, "2", 1,
+		"", 8, "2", 1,
+		"1:55.34 ", 8, "2", 1,
+		"  ", 2, "  ", 2, " 1", 2, " 2", 2,
+		"   ", 3, "  1", 3,
+		"    ", 4, "  ", 2,
+		"", 59,
+	)
 
 	// F0 leg 1: Smith
 	f0a := buildF0("TESTA", "Smith, John", "", "02151999", "M", "1", "  58.12 ")
-	f0a = pad(f0a, 160)
 	// F0 leg 2: Doe
 	f0b := buildF0("TESTA", "Doe, Jane", "", "05102008", "F", "2", "  32.01 ")
-	f0b = pad(f0b, 160)
 
-	z0 := "Z0" + "1" + pad("", 8) + "02" + pad("test file", 30) +
-		pad("1", 3) + pad("1", 3) + pad("1", 4) + pad("1", 4) +
-		pad("2", 6) + pad("2", 6) + pad("1", 5) + pad("2", 6) +
-		pad("0", 6) + pad("0", 5) + pad("0", 3) + pad("0", 3) +
-		pad("0", 3) + pad("0", 3) + pad("", 57)
-	z0 = pad(z0, 160)
+	z0 := sdifLine(
+		"Z0", 2, "1", 1, "", 8,
+		"02", 2,
+		"test file", 30,
+		"1", 3, "1", 3, "1", 4, "1", 4,
+		"2", 6, "2", 6,
+		"1", 5, "2", 6, "0", 6,
+		"0", 5, "0", 3, "0", 3, "0", 3, "0", 3,
+		"", 57,
+	)
 
 	crlf := "\r\n"
 	validSD3 := a0 + crlf + b1 + crlf + c1 + crlf +
@@ -136,7 +167,8 @@ func main() {
 	cl2Content := "CL2 SCAFFOLD SAMPLE FILE - proprietary format\r\n" +
 		"EVENT 001 100 FREE SCY\r\n" +
 		"HEAT  1  LANE  1  SMITH     JOHN    58.12\r\n" +
-		"HEAT  1  LANE  2  DOE       JANE    32.01\r\n"
+		"HEAT  1  LANE  2  DOE       JANE    32.01\r\n" +
+		"MYSTERY vendor-specific payload\r\n"
 	writeFile("sample.cl2", cl2Content)
 
 	fmt.Println("all fixtures written")
@@ -154,6 +186,17 @@ func buildD0(name, ussNum, dob, ageClass, swimmerGender, eventGender,
 			return s[:n]
 		}
 		return s + strings.Repeat(" ", n-len(s))
+	}
+	sdifLine := func(parts ...any) string {
+		var sb strings.Builder
+		for i := 0; i+1 < len(parts); i += 2 {
+			sb.WriteString(pad(parts[i].(string), parts[i+1].(int)))
+		}
+		line := sb.String()
+		if len(line) < 160 {
+			line += strings.Repeat(" ", 160-len(line))
+		}
+		return line[:160]
 	}
 
 	// col 1-2: record ID
@@ -191,26 +234,32 @@ func buildD0(name, ussNum, dob, ageClass, swimmerGender, eventGender,
 	// col 145: flight
 	// col 146-160: future use (15)
 
-	return "D0" + "1" + pad("", 8) +
-		pad(name, 28) +
-		pad(ussNum, 12) +
-		"A" + pad("   ", 3) + // attach + citizen
-		pad(dob, 8) +
-		pad(ageClass, 2) +
-		swimmerGender + eventGender +
-		pad(distance, 4) + stroke +
-		pad(eventNum, 4) + pad(ageGroup, 4) +
-		pad(dateSwum, 8) +
-		pad(seedTime, 8) + seedCourse +
-		pad("", 8) + " " + // prelim time + course
-		pad("", 8) + " " + // swimoff time + course
-		pad(finalsTime, 8) + finalsCourse +
-		pad("", 2) + pad("", 2) + // prelim heat + lane
-		finalsHeat + finalsLane + // finals heat + lane
-		pad("", 3) + // prelim place
-		finalsPlace + // finals place
-		pad("", 4) + pad("", 2) + " " + // points + time class + flight
-		pad("", 15) // future use
+	return sdifLine(
+		"D0", 2, "1", 1, "", 8,
+		name, 28,
+		ussNum, 12,
+		"A", 1,
+		"   ", 3,
+		dob, 8,
+		ageClass, 2,
+		swimmerGender, 1,
+		eventGender, 1,
+		distance, 4,
+		stroke, 1,
+		eventNum, 4,
+		ageGroup, 4,
+		dateSwum, 8,
+		seedTime, 8, seedCourse, 1,
+		"", 8, " ", 1,
+		"", 8, " ", 1,
+		finalsTime, 8, finalsCourse, 1,
+		"  ", 2, "  ", 2,
+		finalsHeat, 2, finalsLane, 2,
+		"   ", 3,
+		finalsPlace, 3,
+		"    ", 4, "  ", 2, " ", 1,
+		"", 15,
+	)
 }
 
 // buildF0 constructs an F0 relay-leg line.
@@ -220,6 +269,17 @@ func buildF0(teamCode, name, ussNum, dob, gender, legOrder, legTime string) stri
 			return s[:n]
 		}
 		return s + strings.Repeat(" ", n-len(s))
+	}
+	sdifLine := func(parts ...any) string {
+		var sb strings.Builder
+		for i := 0; i+1 < len(parts); i += 2 {
+			sb.WriteString(pad(parts[i].(string), parts[i+1].(int)))
+		}
+		line := sb.String()
+		if len(line) < 160 {
+			line += strings.Repeat(" ", 160-len(line))
+		}
+		return line[:160]
 	}
 
 	// col 1-2: F0
@@ -243,19 +303,20 @@ func buildF0(teamCode, name, ussNum, dob, gender, legOrder, legTime string) stri
 	// col 107-121: preferred first name (15)
 	// col 122-160: future use (39)
 
-	return "F0" + "1" + pad("", 12) +
-		pad(teamCode, 6) + "A" +
-		pad(name, 28) +
-		pad(ussNum, 12) +
-		pad("   ", 3) + // citizen
-		pad(dob, 8) +
-		pad("", 2) + // age/class
-		gender +
-		" " + " " + // prelim and swimoff order
-		legOrder + // finals order
-		pad(legTime, 8) + "2" + // leg time + course (SCY)
-		pad("", 4) + // auto takeof
-		pad("", 14) + // uss# new
-		pad("", 15) + // preferred first name
-		pad("", 39) // future use
+	return sdifLine(
+		"F0", 2, "1", 1, "", 12,
+		teamCode, 6, "A", 1,
+		name, 28,
+		ussNum, 12,
+		"   ", 3,
+		dob, 8, "  ", 2,
+		gender, 1,
+		" ", 1, " ", 1,
+		legOrder, 1,
+		legTime, 8, "2", 1,
+		"    ", 4,
+		"", 14,
+		"", 15,
+		"", 39,
+	)
 }

@@ -4,6 +4,8 @@ import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
+import { shouldShowCollectionEmptyState } from '@/lib/collection-load-state'
+import { reportUIError } from '@/lib/frontend-telemetry'
 import {
   fetchDocumentTypes,
   fetchDocumentSubmissions,
@@ -177,14 +179,21 @@ export default function DocumentsPage() {
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [pendingUploadTarget, setPendingUploadTarget] = useState<{ typeId: string; swimmerId?: string } | null>(null)
   const [filter, setFilter] = useState<'all' | 'pending'>('all')
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
-    if (!orgId || !householdId) { setLoading(false); return }
+    if (!orgId || !householdId) {
+      setLoading(false)
+      setLoadError('Document portal is unavailable because household context is missing.')
+      return
+    }
     let cancelled = false
 
     async function run() {
       try {
         setLoading(true)
+        setLoadError(null)
         const [types, subs, allSwimmers] = await Promise.all([
           fetchDocumentTypes(api, orgId, true),
           fetchDocumentSubmissions(api, orgId, householdId),
@@ -195,9 +204,18 @@ export default function DocumentsPage() {
         setSubmissions(subs)
         // Only keep swimmers that belong to this household
         setSwimmers(allSwimmers.filter(s => s.household_id === householdId))
-      } catch {
-        // Show empty state gracefully if API is not yet connected
-        if (!cancelled) { setDocTypes([]); setSubmissions([]); setSwimmers([]) }
+      } catch (error) {
+        if (!cancelled) {
+          setDocTypes([])
+          setSubmissions([])
+          setSwimmers([])
+          setLoadError(reportUIError(
+            'portal-documents-load',
+            error,
+            'Document data is unavailable right now.',
+            { orgId, householdId },
+          ))
+        }
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -205,7 +223,7 @@ export default function DocumentsPage() {
 
     void run()
     return () => { cancelled = true }
-  }, [api, orgId, householdId])
+  }, [api, orgId, householdId, reloadKey])
 
   const merged = mergeDocuments(docTypes, submissions, swimmers)
   const pendingDocs = merged.filter(d => d.effectiveStatus === 'missing' || d.effectiveStatus === 'rejected' || d.effectiveStatus === 'expired')
@@ -299,6 +317,22 @@ export default function DocumentsPage() {
         </p>
       </div>
 
+      {loadError && (
+        <div style={{ padding: '12px 16px', background: '#fff7ed', border: '1px solid #fdba74', borderRadius: '10px', marginBottom: '16px', fontSize: '13px', color: '#9a3412', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+            <Icon name="alert-circle" size={15} style={{ color: '#ea580c', marginTop: '1px', flexShrink: 0 }} />
+            <span>{loadError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setReloadKey((key) => key + 1)}
+            style={{ background: '#ffffff', border: '1px solid #fdba74', borderRadius: '8px', cursor: 'pointer', color: '#9a3412', fontSize: '12px', fontWeight: 600, padding: '8px 14px', whiteSpace: 'nowrap' }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Upload error */}
       {uploadError && (
         <div style={{ padding: '12px 16px', background: 'rgba(220,38,38,0.07)', border: '1px solid rgba(220,38,38,0.18)', borderRadius: '10px', marginBottom: '16px', fontSize: '13px', color: '#b91c1c', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -320,7 +354,7 @@ export default function DocumentsPage() {
       />
 
       {/* Action needed alert */}
-      {pendingDocs.length > 0 && (
+      {!loadError && pendingDocs.length > 0 && (
         <div style={{ background: 'linear-gradient(135deg, #fef2f2 0%, #fff7f5 100%)', border: '1px solid rgba(220,38,38,0.18)', borderRadius: '14px', padding: '18px 22px', marginBottom: '24px', animation: 'slideUp 0.35s ease both' }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
             <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(220,38,38,0.10)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -371,7 +405,7 @@ export default function DocumentsPage() {
       </div>
 
       {/* Empty state */}
-      {merged.length === 0 && !loading && (
+      {shouldShowCollectionEmptyState(loading, loadError, merged.length) && (
         <div style={{ textAlign: 'center', padding: '60px 20px', background: '#ffffff', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.07)' }}>
           <div style={{ fontSize: '32px', marginBottom: '12px' }}>📄</div>
           <div style={{ fontFamily: 'var(--font-display)', fontSize: '20px', color: '#1A1714', marginBottom: '6px' }}>No documents required yet</div>
@@ -380,7 +414,8 @@ export default function DocumentsPage() {
       )}
 
       {/* Documents by category */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      {!loadError ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
         {categories.map((cat, catIdx) => {
           const catDocs = visibleDocs.filter(d => d.typeCategory === cat)
           return (
@@ -471,7 +506,12 @@ export default function DocumentsPage() {
             </section>
           )
         })}
-      </div>
+        </div>
+      ) : (
+        <div style={{ textAlign: 'center', padding: '40px 20px', background: '#ffffff', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.07)', color: '#9A9693', fontSize: '14px' }}>
+          Document requirements will appear here after a successful reload.
+        </div>
+      )}
 
       {/* Help notice */}
       <div style={{ marginTop: '28px', padding: '14px 18px', background: 'rgba(0,0,0,0.03)', borderRadius: '10px', fontSize: '13px', color: '#9A9693', lineHeight: 1.5, animation: 'slideUp 0.7s ease both', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>

@@ -3,6 +3,7 @@ package middleware
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -14,12 +15,18 @@ const (
 	CSRFTokenCookieName    = "aquify_csrf_token"
 )
 
-func NewCSRFToken() string {
+var csrfTokenRandRead = rand.Read
+
+// CSRFTokenFactory allows callers/tests to override CSRF token generation.
+// Production code should leave this pointed at NewCSRFToken.
+var CSRFTokenFactory = NewCSRFToken
+
+func NewCSRFToken() (string, error) {
 	raw := make([]byte, 32)
-	if _, err := rand.Read(raw); err != nil {
-		return hex.EncodeToString([]byte(time.Now().UTC().Format(time.RFC3339Nano)))
+	if _, err := csrfTokenRandRead(raw); err != nil {
+		return "", fmt.Errorf("csrf token generation failed: %w", err)
 	}
-	return hex.EncodeToString(raw)
+	return hex.EncodeToString(raw), nil
 }
 
 func RequestUsesCookieAuth(r *http.Request) bool {

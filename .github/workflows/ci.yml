@@ -62,6 +62,10 @@ jobs:
         working-directory: server
         run: go test ./...
 
+      - name: Enforce critical package coverage
+        working-directory: server
+        run: go run ./scripts/check_critical_coverage.go
+
       - name: Run P0 gate
         working-directory: server
         run: go test ./internal/app -run 'TestP0'
@@ -73,6 +77,10 @@ jobs:
       - name: Run server vet
         working-directory: server
         run: go vet ./...
+
+      - name: Run evidence preflight tests
+        shell: pwsh
+        run: ./scripts/test-evidence-preflight.ps1
 
       - name: Run meetfiles govulncheck
         working-directory: internal/meetfiles
@@ -110,3 +118,34 @@ jobs:
       - name: Production build
         working-directory: admin
         run: npm run build
+
+  admin-e2e:
+    name: Admin Browser E2E
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: admin/package-lock.json
+
+      - name: Install admin dependencies
+        working-directory: admin
+        run: npm ci
+
+      - name: Install Playwright browser
+        working-directory: admin
+        run: npm run test:e2e:install
+
+      - name: Run admin E2E suite
+        working-directory: admin
+        run: npm run test:e2e

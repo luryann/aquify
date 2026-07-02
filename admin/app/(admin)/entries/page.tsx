@@ -17,6 +17,7 @@ import {
   type MeetRecord,
   type SwimmerRecord,
 } from '@/lib/adminData'
+import { formatMeetEntriesSaveError, saveMeetEntriesBatch } from '@/lib/meet-entry-save'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -115,6 +116,7 @@ function AddEntryPanel({
   const [loadingEvents, setLoadingEvents] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   const eligibleMeets = meets.filter((m) => ENTRY_STATUSES.has(m.status))
 
@@ -128,11 +130,13 @@ function AddEntryPanel({
   const handleSelectMeet = async (meet: MeetRecord) => {
     setSelectedMeet(meet)
     setSelectedEvents(new Set())
+    setSaveError(null)
     await loadEvents(meet)
     setStep(3)
   }
 
   const toggleEvent = (evId: string) => {
+    setSaveError(null)
     setSelectedEvents((prev) => {
       const next = new Set(prev)
       if (next.has(evId)) next.delete(evId)
@@ -144,22 +148,23 @@ function AddEntryPanel({
   const handleSave = async () => {
     if (!selectedSwimmer || !selectedMeet || selectedEvents.size === 0) return
     setSaving(true)
+    setSaveError(null)
     try {
-      // Create entries for each selected event
-      await Promise.all(
-        [...selectedEvents].map((evId) =>
-          api.post(
-            `/api/v1/orgs/${orgId}/meets/${selectedMeet.id}/entries`,
-            { swimmer_id: selectedSwimmer.id, meet_event_id: evId, status: 'draft' },
-            { 'X-Org-Id': orgId }
-          ).catch((e: unknown) => console.warn('Entry create failed:', e))
-        )
+      await saveMeetEntriesBatch(
+        api,
+        orgId,
+        selectedMeet.id,
+        selectedSwimmer.id,
+        [...selectedEvents],
       )
       setSaved(true)
       setTimeout(() => {
         onSaved()
         onClose()
       }, 1000)
+    } catch (error) {
+      setSaved(false)
+      setSaveError(formatMeetEntriesSaveError(error, selectedEvents.size))
     } finally {
       setSaving(false)
     }
@@ -410,6 +415,22 @@ function AddEntryPanel({
                           </div>
                         </div>
                       ))}
+                    </div>
+                  )}
+                  {saveError && (
+                    <div
+                      style={{
+                        marginTop: '14px',
+                        padding: '11px 12px',
+                        borderRadius: '8px',
+                        border: '1px solid var(--error-border)',
+                        background: 'var(--error-bg)',
+                        color: 'var(--error)',
+                        fontSize: '12px',
+                        lineHeight: 1.45,
+                      }}
+                    >
+                      {saveError}
                     </div>
                   )}
                 </>

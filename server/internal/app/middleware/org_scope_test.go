@@ -34,6 +34,31 @@ func TestRequireOrgScopeRejectsMissingHeader(t *testing.T) {
 	}
 }
 
+func TestRequireOrgScopeUsesPrincipalOrgForSessionBootstrap(t *testing.T) {
+	t.Parallel()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/session", nil)
+	req = req.WithContext(context.WithValue(req.Context(), principalContextKey{}, &Principal{UserID: "admin-user", OrgID: "org-demo", Roles: []string{"admin"}}))
+	rr := httptest.NewRecorder()
+
+	h := RequireOrgScope(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		orgID, ok := OrgIDFromContext(r.Context())
+		if !ok {
+			t.Fatal("expected org id in context")
+		}
+		if orgID != "org-demo" {
+			t.Fatalf("expected principal org id org-demo, got %q", orgID)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("expected status %d, got %d", http.StatusNoContent, rr.Code)
+	}
+}
+
 func TestRequireOrgScopeRejectsCrossOrgPrincipal(t *testing.T) {
 	t.Parallel()
 

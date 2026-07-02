@@ -106,19 +106,25 @@ func (h *MembershipHandlers) listHouseholds(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if !hasMembershipListAccess(principal) {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to list households.", nil)
+	households, err := h.service.ListHouseholds(principal, orgID)
+	if err != nil {
+		switch {
+		case errors.Is(err, members.ErrForbidden):
+			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to list households.", nil)
+		default:
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+		}
 		return
 	}
-
-	households := h.service.SnapshotHouseholds(orgID)
-	if households == nil {
-		households = []members.Household{}
-	}
+	pagination := parseListPagination(r, listPaginationOptions{})
+	households, total := paginateSlice(households, pagination)
 
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":     "ok",
 		"count":      len(households),
+		"total":      total,
+		"limit":      pagination.Limit,
+		"offset":     pagination.Offset,
 		"households": households,
 	})
 }
@@ -320,6 +326,9 @@ func (h *MembershipHandlers) listContacts(w http.ResponseWriter, r *http.Request
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":       "ok",
 		"count":        len(contacts),
+		"total":        len(contacts),
+		"limit":        len(contacts),
+		"offset":       0,
 		"household_id": householdID,
 		"contacts":     contacts,
 	})
@@ -609,10 +618,15 @@ func (h *MembershipHandlers) listSwimmers(w http.ResponseWriter, r *http.Request
 		}
 		return
 	}
+	pagination := parseListPagination(r, listPaginationOptions{})
+	swimmers, total := paginateSlice(swimmers, pagination)
 
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":   "ok",
 		"count":    len(swimmers),
+		"total":    total,
+		"limit":    pagination.Limit,
+		"offset":   pagination.Offset,
 		"swimmers": swimmers,
 	})
 }
@@ -623,50 +637,34 @@ func (h *MembershipHandlers) listSwimmerGroupLinks(w http.ResponseWriter, r *htt
 		return
 	}
 
-	if !hasMembershipListAccess(principal) {
+	links, err := h.service.ListSwimmerGroupLinks(principal, orgID)
+	if err != nil {
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to list swimmer groups.", nil)
 		return
 	}
-
-	links := h.service.SnapshotSwimmerGroupLinks(orgID)
-	if links == nil {
-		links = []members.SwimmerGroupLink{}
-	}
+	pagination := parseListPagination(r, listPaginationOptions{})
+	links, total := paginateSlice(links, pagination)
 
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":         "ok",
 		"count":          len(links),
+		"total":          total,
+		"limit":          pagination.Limit,
+		"offset":         pagination.Offset,
 		"swimmer_groups": links,
 	})
 }
 
 func (h *MembershipHandlers) decodeAndValidate(w http.ResponseWriter, r *http.Request, dst any) bool {
-	if err := decodeJSONBody(r, dst); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request_body", err.Error(), nil)
-		return false
-	}
-
-	if err := h.validate.Struct(dst); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "validation_failed", "One or more request fields are invalid.", httpx.FormatValidationErrors(err))
-		return false
-	}
-
-	return true
+	return decodeAndValidateJSON(w, r, dst, h.validate, decodeAndValidateOptions{
+		InvalidStatus:     http.StatusBadRequest,
+		InvalidCode:       "invalid_request_body",
+		ValidationStatus:  http.StatusBadRequest,
+		ValidationCode:    "validation_failed",
+		ValidationMessage: "One or more request fields are invalid.",
+	})
 }
 
 func membershipScopeFromRequest(w http.ResponseWriter, r *http.Request) (*appmiddleware.Principal, string, bool) {
 	return scopedRequestFromContext(w, r)
-}
-
-func hasMembershipListAccess(principal *appmiddleware.Principal) bool {
-	if principal == nil {
-		return false
-	}
-	for _, role := range principal.Roles {
-		switch strings.TrimSpace(strings.ToLower(role)) {
-		case "owner", "admin", "coach", "billing", "read-only":
-			return true
-		}
-	}
-	return false
 }

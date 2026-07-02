@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
+import { shouldShowCollectionEmptyState } from '@/lib/collection-load-state'
+import { reportUIError } from '@/lib/frontend-telemetry'
 import {
   fetchSwimmers,
   fetchMeets,
@@ -244,18 +246,27 @@ export default function SwimmerDashboardPage() {
   const [bestTimes, setBestTimes] = useState<BestTimeDisplay[]>([])
   const [announcements, setAnnouncements] = useState<AnnouncementRecord[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
   const now = new Date()
   const hour = now.getHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
 
   useEffect(() => {
-    if (!orgId) { setLoading(false); return }
+    if (!orgId) {
+      setLoading(false)
+      setLoadError('Swimmer portal is unavailable because no organization is selected.')
+      return
+    }
+
+    setLoading(true)
+    setLoadError(null)
 
     Promise.all([
-      fetchSwimmers(api, orgId).catch(() => [] as SwimmerRecord[]),
-      fetchMeets(api, orgId).catch(() => []),
-      fetchAnnouncements(api, orgId, 'published').catch(() => [] as AnnouncementRecord[]),
+      fetchSwimmers(api, orgId),
+      fetchMeets(api, orgId),
+      fetchAnnouncements(api, orgId, 'published'),
     ]).then(async ([swimmers, allMeets, anns]) => {
       // Resolve swimmer
       const mySwimmer = householdId
@@ -270,7 +281,7 @@ export default function SwimmerDashboardPage() {
 
       if (mySwimmer) {
         // Fetch best times
-        const rawBT = await fetchSwimmerBestTimes(api, orgId, mySwimmer.id).catch(() => [])
+        const rawBT = await fetchSwimmerBestTimes(api, orgId, mySwimmer.id)
         const btDisplay: BestTimeDisplay[] = rawBT
           .filter(bt => bt.best_time_ms != null)
           .slice(0, 3)
@@ -317,8 +328,19 @@ export default function SwimmerDashboardPage() {
         }))
         setMeets(meetDisplays)
       }
+    }).catch((error) => {
+      setSwimmer(null)
+      setMeets([])
+      setBestTimes([])
+      setAnnouncements([])
+      setLoadError(reportUIError(
+        'swimmer-dashboard-load',
+        error,
+        'Swimmer dashboard data is unavailable right now.',
+        { orgId, householdId },
+      ))
     }).finally(() => setLoading(false))
-  }, [api, orgId, householdId])
+  }, [api, orgId, householdId, reloadKey])
 
   const firstName = swimmer
     ? (swimmer.preferred_name || swimmer.first_name)
@@ -451,6 +473,44 @@ export default function SwimmerDashboardPage() {
         )}
       </div>
 
+      {loadError && (
+        <div
+          style={{
+            marginBottom: '24px',
+            background: C.warnBg,
+            border: `1px solid ${C.warnBorder}`,
+            borderRadius: '12px',
+            padding: '14px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '16px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+            <Icon name="alert-circle" size={16} style={{ color: C.warn, marginTop: '1px', flexShrink: 0 }} />
+            <p style={{ margin: 0, fontSize: '13px', color: C.text, lineHeight: 1.5 }}>{loadError}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setReloadKey((key) => key + 1)}
+            style={{
+              padding: '8px 14px',
+              borderRadius: '8px',
+              border: `1px solid ${C.warnBorder}`,
+              background: 'transparent',
+              color: C.text,
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       <div
         style={{
           display: 'grid',
@@ -499,7 +559,19 @@ export default function SwimmerDashboardPage() {
                   <SkeletonCard />
                   <SkeletonCard />
                 </>
-              ) : meets.length === 0 ? (
+              ) : loadError ? (
+                <div
+                  style={{
+                    background: C.card,
+                    border: `1px solid ${C.border}`,
+                    borderRadius: '12px',
+                    padding: '32px 20px',
+                    textAlign: 'center',
+                  }}
+                >
+                  <p style={{ fontSize: '14px', color: C.subtle }}>Meet data is unavailable right now.</p>
+                </div>
+              ) : shouldShowCollectionEmptyState(loading, loadError, meets.length) ? (
                 <div
                   style={{
                     background: C.card,
@@ -595,7 +667,11 @@ export default function SwimmerDashboardPage() {
                   <SkeletonLine />
                   <SkeletonLine />
                 </div>
-              ) : bestTimes.length === 0 ? (
+              ) : loadError ? (
+                <div style={{ padding: '24px 18px', textAlign: 'center' }}>
+                  <p style={{ fontSize: '13px', color: C.muted }}>Best-time data is unavailable right now.</p>
+                </div>
+              ) : shouldShowCollectionEmptyState(loading, loadError, bestTimes.length) ? (
                 <div style={{ padding: '24px 18px', textAlign: 'center' }}>
                   <p style={{ fontSize: '13px', color: C.muted }}>No best times recorded yet.</p>
                 </div>
@@ -661,7 +737,11 @@ export default function SwimmerDashboardPage() {
               <SkeletonLine width="80%" />
               <SkeletonLine width="90%" />
             </div>
-          ) : announcements.length === 0 ? (
+          ) : loadError ? (
+            <div style={{ padding: '24px 18px', textAlign: 'center' }}>
+              <p style={{ fontSize: '13px', color: C.muted }}>Announcements are unavailable right now.</p>
+            </div>
+          ) : shouldShowCollectionEmptyState(loading, loadError, announcements.length) ? (
             <div style={{ padding: '24px 18px', textAlign: 'center' }}>
               <p style={{ fontSize: '13px', color: C.muted }}>No announcements.</p>
             </div>

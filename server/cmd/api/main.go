@@ -58,6 +58,8 @@ import (
 	"github.com/dareaquatics/aquify/server/internal/workers"
 )
 
+var loadDotEnvFile = loadDotEnv
+
 // loadDotEnv reads a .env-style file and sets any unset environment variables.
 // Lines starting with # are ignored. Existing env vars are never overwritten.
 func loadDotEnv(path string) {
@@ -93,11 +95,27 @@ func loadDotEnv(path string) {
 	}
 }
 
-func main() {
+func shouldLoadLocalEnvFiles(appEnv string) bool {
+	switch strings.ToLower(strings.TrimSpace(appEnv)) {
+	case "development", "local":
+		return true
+	default:
+		return false
+	}
+}
+
+func loadLocalEnvFiles(appEnv string) {
+	if !shouldLoadLocalEnvFiles(appEnv) {
+		return
+	}
 	// Load .env.local from the project root (one level up from server/).
 	// Existing environment variables always take precedence.
-	loadDotEnv("../.env.local")
-	loadDotEnv(".env.local")
+	loadDotEnvFile("../.env.local")
+	loadDotEnvFile(".env.local")
+}
+
+func main() {
+	loadLocalEnvFiles(os.Getenv("APP_ENV"))
 
 	cfg := app.LoadConfig()
 	logger := slog.New(slog.NewJSONHandler(
@@ -122,6 +140,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := app.ValidateAppEnvConfig(cfg); err != nil {
+		logger.Error("startup config error", "error", err)
+		os.Exit(1)
+	}
+
 	if err := app.ValidateDevAuthConfig(cfg); err != nil {
 		logger.Error("startup config error", "error", err)
 		os.Exit(1)
@@ -143,6 +166,10 @@ func main() {
 	}
 
 	if err := app.ValidateProviderConfig(cfg); err != nil {
+		logger.Error("startup config error", "error", err)
+		os.Exit(1)
+	}
+	if err := app.ValidateMetricsConfig(cfg, logger); err != nil {
 		logger.Error("startup config error", "error", err)
 		os.Exit(1)
 	}
@@ -215,8 +242,10 @@ func main() {
 		return
 	}
 
+	metrics := telemetry.NewMetrics()
+
 	// Build the HTTP router with the configured durable backend when available.
-	handler := app.NewRouterWithServices(cfg, logger,
+	handler := app.NewRouterWithServicesAndMetrics(cfg, logger, metrics, false,
 		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		nil,
 		backend,
@@ -230,6 +259,18 @@ func main() {
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       120 * time.Second,
+	}
+
+	var metricsServer *http.Server
+	if strings.TrimSpace(cfg.Telemetry.MetricsAddr) != "" {
+		metricsServer = &http.Server{
+			Addr:              cfg.Telemetry.MetricsAddr,
+			Handler:           metrics.Handler(),
+			ReadHeaderTimeout: 10 * time.Second,
+			ReadTimeout:       15 * time.Second,
+			WriteTimeout:      30 * time.Second,
+			IdleTimeout:       120 * time.Second,
+		}
 	}
 
 	// Handle OS signals for graceful shutdown.
@@ -246,12 +287,26 @@ func main() {
 		if err := httpServer.Shutdown(shutdownCtx); err != nil {
 			logger.Error("http server shutdown error", "error", err)
 		}
+		if metricsServer != nil {
+			if err := metricsServer.Shutdown(shutdownCtx); err != nil {
+				logger.Error("metrics server shutdown error", "error", err)
+			}
+		}
 
 		// Flush remaining OTel spans before exit.
 		if flushErr := telShutdown(shutdownCtx); flushErr != nil {
 			logger.Warn("telemetry shutdown error", "error", flushErr)
 		}
 	}()
+
+	if metricsServer != nil {
+		go func() {
+			logger.Info("metrics listening", "addr", metricsServer.Addr)
+			if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				logger.Error("metrics server failed", "error", err)
+			}
+		}()
+	}
 
 	logger.Info("api listening", "addr", cfg.Addr)
 	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {

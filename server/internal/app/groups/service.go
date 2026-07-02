@@ -108,19 +108,23 @@ type RuleEvaluation struct {
 
 // Registration links a swimmer to a group for a season.
 type Registration struct {
-	ID               string    `json:"id"`
-	OrgID            string    `json:"org_id"`
-	HouseholdID      string    `json:"household_id"`
-	SwimmerID        string    `json:"swimmer_id"`
-	GroupID          string    `json:"group_id"`
-	Season           string    `json:"season"`
-	Status           string    `json:"status"`
-	RegistrationDate string    `json:"registration_date"`
-	Notes            string    `json:"notes,omitempty"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
-	CreatedBy        string    `json:"created_by"`
-	UpdatedBy        string    `json:"updated_by"`
+	ID               string     `json:"id"`
+	OrgID            string     `json:"org_id"`
+	HouseholdID      string     `json:"household_id"`
+	SwimmerID        string     `json:"swimmer_id"`
+	GroupID          string     `json:"group_id"`
+	Season           string     `json:"season"`
+	Status           string     `json:"status"`
+	RegistrationDate string     `json:"registration_date"`
+	Notes            string     `json:"notes,omitempty"`
+	WaiverAccepted   bool       `json:"waiver_accepted"`
+	WaiverCount      int        `json:"waiver_count"`
+	WaiverTypes      []string   `json:"waiver_types,omitempty"`
+	LastWaiverAt     *time.Time `json:"last_waiver_accepted_at,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+	CreatedBy        string     `json:"created_by"`
+	UpdatedBy        string     `json:"updated_by"`
 }
 
 // CreateRegistrationInput holds fields for registration creation.
@@ -456,7 +460,7 @@ func (s *Service) UpdateGroup(principal *appmiddleware.Principal, orgID, groupID
 
 // GetGroup retrieves a single group by ID.
 func (s *Service) GetGroup(principal *appmiddleware.Principal, orgID, groupID string) (Group, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "billing", "read-only") {
+	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "billing", "read-only", "swimmer") {
 		return Group{}, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -475,7 +479,7 @@ func (s *Service) GetGroup(principal *appmiddleware.Principal, orgID, groupID st
 
 // ListGroups returns groups in an org. Coaches without admin access only see their own groups.
 func (s *Service) ListGroups(principal *appmiddleware.Principal, orgID string, activeOnly bool) ([]Group, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "billing", "read-only") {
+	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "billing", "read-only", "swimmer") {
 		return nil, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -998,7 +1002,7 @@ func hasAnyRole(principal *appmiddleware.Principal, required ...string) bool {
 func randomToken(byteLen int) string {
 	raw := make([]byte, byteLen)
 	if _, err := rand.Read(raw); err != nil {
-		return fmt.Sprintf("fallback%x", time.Now().UTC().UnixNano())
+		panic(fmt.Errorf("secure random unavailable for group token generation: %w", err))
 	}
 	return hex.EncodeToString(raw)
 }
@@ -1044,6 +1048,79 @@ func (s *Service) SnapshotRegistrations(orgID string) []Registration {
 		out = append(out, registration)
 	}
 	return out
+}
+
+// ListRegistrations returns registration rows visible to the principal. Parent
+// access is strictly limited to households linked to the parent principal.
+func (s *Service) ListRegistrations(principal *appmiddleware.Principal, orgID string) ([]Registration, error) {
+	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "read-only") {
+		return nil, ErrForbidden
+	}
+	if err := s.syncFromDB(context.Background()); err != nil {
+		return []Registration{}, nil
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	parentScoped := hasAnyRole(principal, "parent") && !hasAnyRole(principal, "owner", "admin", "coach", "read-only")
+	allowedHouseholds := make(map[string]struct{})
+	if parentScoped {
+		if householdID := strings.TrimSpace(principal.HouseholdID); householdID != "" {
+			allowedHouseholds[householdID] = struct{}{}
+		}
+		for householdID := range s.parentHousehold[principal.UserID] {
+			allowedHouseholds[householdID] = struct{}{}
+		}
+	}
+
+	waiverTypesByRegistration := make(map[string][]string)
+	lastWaiverByRegistration := make(map[string]time.Time)
+	for _, waiver := range s.waivers {
+		if waiver.OrgID != orgID {
+			continue
+		}
+		waiverTypesByRegistration[waiver.RegistrationID] = append(waiverTypesByRegistration[waiver.RegistrationID], waiver.WaiverType)
+		if waiver.AcceptedAt.After(lastWaiverByRegistration[waiver.RegistrationID]) {
+			lastWaiverByRegistration[waiver.RegistrationID] = waiver.AcceptedAt
+		}
+	}
+
+	out := make([]Registration, 0, len(s.registrations))
+	for _, registration := range s.registrations {
+		if registration.OrgID != orgID {
+			continue
+		}
+		if parentScoped {
+			if _, ok := allowedHouseholds[registration.HouseholdID]; !ok {
+				continue
+			}
+		}
+		cp := registration
+		cp.WaiverTypes = slices.Clone(waiverTypesByRegistration[registration.ID])
+		slices.Sort(cp.WaiverTypes)
+		cp.WaiverCount = len(cp.WaiverTypes)
+		cp.WaiverAccepted = cp.WaiverCount > 0
+		if lastWaiverAt, ok := lastWaiverByRegistration[registration.ID]; ok {
+			timestamp := lastWaiverAt
+			cp.LastWaiverAt = &timestamp
+		}
+		out = append(out, cp)
+	}
+
+	slices.SortFunc(out, func(a, b Registration) int {
+		if a.RegistrationDate != b.RegistrationDate {
+			return strings.Compare(b.RegistrationDate, a.RegistrationDate)
+		}
+		if !a.CreatedAt.Equal(b.CreatedAt) {
+			if a.CreatedAt.After(b.CreatedAt) {
+				return -1
+			}
+			return 1
+		}
+		return strings.Compare(a.ID, b.ID)
+	})
+	return out, nil
 }
 
 // SnapshotWaivers returns a copy of all waiver acceptances for the given org.

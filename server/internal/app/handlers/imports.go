@@ -70,15 +70,13 @@ func importScopeFromRequest(w http.ResponseWriter, r *http.Request) (*appmiddlew
 }
 
 func (h *ImportsHandlers) decodeAndValidate(w http.ResponseWriter, r *http.Request, dst any) bool {
-	if err := decodeJSONBody(r, dst); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request_body", err.Error(), nil)
-		return false
-	}
-	if err := h.validate.Struct(dst); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "validation_failed", "One or more request fields are invalid.", httpx.FormatValidationErrors(err))
-		return false
-	}
-	return true
+	return decodeAndValidateJSON(w, r, dst, h.validate, decodeAndValidateOptions{
+		InvalidStatus:     http.StatusBadRequest,
+		InvalidCode:       "invalid_request_body",
+		ValidationStatus:  http.StatusBadRequest,
+		ValidationCode:    "validation_failed",
+		ValidationMessage: "One or more request fields are invalid.",
+	})
 }
 
 func importErrorToHTTP(w http.ResponseWriter, r *http.Request, err error) {

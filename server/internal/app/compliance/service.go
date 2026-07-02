@@ -22,9 +22,6 @@
 // Package compliance provides the in-memory service for GDPR/compliance
 // household data-export and data-deletion request management.
 //
-// Data exports and deletions are skeletal job records; the actual async
-// processing jobs (file generation, anonymisation) are wired in STEP 17.
-//
 // Production note: all data is held in-memory maps protected by a RWMutex.
 // Replace with sqlc/pgx queries when the DB layer is wired.
 package compliance
@@ -34,6 +31,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sort"
 	"strings"
@@ -47,9 +45,9 @@ import (
 // ─── Sentinel errors ──────────────────────────────────────────────────────────
 
 var (
-	ErrExportNotFound   = errors.New("data export request not found")
-	ErrDeletionNotFound = errors.New("data deletion request not found")
-	ErrForbidden        = errors.New("forbidden")
+	ErrExportNotFound    = errors.New("data export request not found")
+	ErrDeletionNotFound  = errors.New("data deletion request not found")
+	ErrForbidden         = errors.New("forbidden")
 	ErrInvalidTransition = errors.New("invalid status transition")
 )
 
@@ -57,10 +55,10 @@ var (
 
 // DataExportRequest represents a household's request for a copy of their data.
 type DataExportRequest struct {
-	ID          string     `json:"id"`
-	OrgID       string     `json:"org_id"`
-	HouseholdID string     `json:"household_id"`
-	RequestedBy string     `json:"requested_by"`
+	ID          string `json:"id"`
+	OrgID       string `json:"org_id"`
+	HouseholdID string `json:"household_id"`
+	RequestedBy string `json:"requested_by"`
 	// Status values: pending | processing | ready | failed | expired
 	Status      string     `json:"status"`
 	DownloadURL string     `json:"download_url,omitempty"`
@@ -73,11 +71,11 @@ type DataExportRequest struct {
 
 // DataDeletionRequest represents a household's right-to-erasure request.
 type DataDeletionRequest struct {
-	ID          string     `json:"id"`
-	OrgID       string     `json:"org_id"`
-	HouseholdID string     `json:"household_id"`
-	RequestedBy string     `json:"requested_by"`
-	// Status values: pending | reviewing | approved | processing | completed | rejected
+	ID          string `json:"id"`
+	OrgID       string `json:"org_id"`
+	HouseholdID string `json:"household_id"`
+	RequestedBy string `json:"requested_by"`
+	// Status values: pending | reviewing | approved | processing | completed | rejected | failed
 	Status      string     `json:"status"`
 	Reason      string     `json:"reason,omitempty"`
 	ReviewNotes string     `json:"review_notes,omitempty"`
@@ -85,9 +83,9 @@ type DataDeletionRequest struct {
 	CompletedAt *time.Time `json:"completed_at,omitempty"`
 	// ExpiresAt is the review deadline (now + deletionReviewDays). Admin must act
 	// on the request before this date.
-	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
 }
 
 // ─── Service ──────────────────────────────────────────────────────────────────
@@ -156,7 +154,10 @@ func (s *Service) genID() string {
 	if s.repo != nil {
 		return uuid.New().String()
 	}
-	id, _ := newID()
+	id, err := newID()
+	if err != nil {
+		panic(fmt.Errorf("secure random unavailable for compliance ID generation: %w", err))
+	}
 	return id
 }
 
@@ -227,6 +228,76 @@ func (s *Service) ListDataExportRequests(orgID, householdID string) ([]DataExpor
 	return out, nil
 }
 
+func (s *Service) MarkDataExportProcessing(orgID, requestID string) (*DataExportRequest, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	req, ok := s.exports[requestID]
+	if !ok || req.OrgID != orgID {
+		return nil, ErrExportNotFound
+	}
+	if req.Status != "pending" && req.Status != "failed" {
+		return nil, ErrInvalidTransition
+	}
+	cp := *req
+	cp.Status = "processing"
+	cp.UpdatedAt = time.Now().UTC()
+	if s.repo != nil {
+		if err := s.repo.UpsertDataExportRequest(context.Background(), &cp); err != nil {
+			return nil, err
+		}
+	}
+	s.exports[requestID] = &cp
+	return &cp, nil
+}
+
+func (s *Service) CompleteDataExport(orgID, requestID, downloadURL string, expiresAt time.Time) (*DataExportRequest, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	req, ok := s.exports[requestID]
+	if !ok || req.OrgID != orgID {
+		return nil, ErrExportNotFound
+	}
+	if req.Status != "processing" {
+		return nil, ErrInvalidTransition
+	}
+	now := time.Now().UTC()
+	cp := *req
+	cp.Status = "ready"
+	cp.DownloadURL = strings.TrimSpace(downloadURL)
+	cp.CompletedAt = &now
+	cp.ExpiresAt = &expiresAt
+	cp.UpdatedAt = now
+	if s.repo != nil {
+		if err := s.repo.UpsertDataExportRequest(context.Background(), &cp); err != nil {
+			return nil, err
+		}
+	}
+	s.exports[requestID] = &cp
+	return &cp, nil
+}
+
+func (s *Service) FailDataExport(orgID, requestID string) (*DataExportRequest, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	req, ok := s.exports[requestID]
+	if !ok || req.OrgID != orgID {
+		return nil, ErrExportNotFound
+	}
+	cp := *req
+	cp.Status = "failed"
+	cp.UpdatedAt = time.Now().UTC()
+	if s.repo != nil {
+		if err := s.repo.UpsertDataExportRequest(context.Background(), &cp); err != nil {
+			return nil, err
+		}
+	}
+	s.exports[requestID] = &cp
+	return &cp, nil
+}
+
 // ─── Data Deletion Requests ───────────────────────────────────────────────────
 
 // CreateDataDeletionRequest opens a new pending data-deletion request.
@@ -292,6 +363,76 @@ func (s *Service) ListDataDeletionRequests(orgID, householdID string) ([]DataDel
 		out = []DataDeletionRequest{}
 	}
 	return out, nil
+}
+
+func (s *Service) MarkDataDeletionProcessing(orgID, requestID string) (*DataDeletionRequest, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	req, ok := s.deletions[requestID]
+	if !ok || req.OrgID != orgID {
+		return nil, ErrDeletionNotFound
+	}
+	if req.Status != "pending" && req.Status != "approved" && req.Status != "failed" {
+		return nil, ErrInvalidTransition
+	}
+	cp := *req
+	cp.Status = "processing"
+	cp.UpdatedAt = time.Now().UTC()
+	if s.repo != nil {
+		if err := s.repo.UpsertDataDeletionRequest(context.Background(), &cp); err != nil {
+			return nil, err
+		}
+	}
+	s.deletions[requestID] = &cp
+	return &cp, nil
+}
+
+func (s *Service) CompleteDataDeletion(orgID, requestID, reviewNotes string) (*DataDeletionRequest, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	req, ok := s.deletions[requestID]
+	if !ok || req.OrgID != orgID {
+		return nil, ErrDeletionNotFound
+	}
+	if req.Status != "processing" {
+		return nil, ErrInvalidTransition
+	}
+	now := time.Now().UTC()
+	cp := *req
+	cp.Status = "completed"
+	cp.ReviewNotes = strings.TrimSpace(reviewNotes)
+	cp.CompletedAt = &now
+	cp.UpdatedAt = now
+	if s.repo != nil {
+		if err := s.repo.UpsertDataDeletionRequest(context.Background(), &cp); err != nil {
+			return nil, err
+		}
+	}
+	s.deletions[requestID] = &cp
+	return &cp, nil
+}
+
+func (s *Service) FailDataDeletion(orgID, requestID, reviewNotes string) (*DataDeletionRequest, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	req, ok := s.deletions[requestID]
+	if !ok || req.OrgID != orgID {
+		return nil, ErrDeletionNotFound
+	}
+	cp := *req
+	cp.Status = "failed"
+	cp.ReviewNotes = strings.TrimSpace(reviewNotes)
+	cp.UpdatedAt = time.Now().UTC()
+	if s.repo != nil {
+		if err := s.repo.UpsertDataDeletionRequest(context.Background(), &cp); err != nil {
+			return nil, err
+		}
+	}
+	s.deletions[requestID] = &cp
+	return &cp, nil
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

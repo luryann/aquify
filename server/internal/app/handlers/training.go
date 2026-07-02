@@ -1,9 +1,7 @@
 package handlers
 
 import (
-	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 
 	"github.com/dareaquatics/aquify/server/internal/app/audit"
@@ -97,8 +95,8 @@ func (h *TrainingHandlers) createPractice(w http.ResponseWriter, r *http.Request
 	}
 
 	var body createPracticeBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", err)
+	if err := decodeJSONBody(w, r, &body); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", nil)
 		return
 	}
 	if err := h.validate.Struct(body); err != nil {
@@ -190,8 +188,8 @@ func (h *TrainingHandlers) updatePractice(w http.ResponseWriter, r *http.Request
 	id := chi.URLParam(r, "id")
 
 	var body updatePracticeBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
-		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", err)
+	if err := decodeOptionalJSONBody(w, r, &body); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", nil)
 		return
 	}
 

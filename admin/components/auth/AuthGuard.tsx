@@ -161,7 +161,7 @@ export function AuthGuard({
   const router = useRouter()
 
   // Derive whether MFA is needed: explicit prop or role-based inference
-  const mfaRequired = requireMFA ?? (session ? roleRequiresMFA(session.user.role) : false)
+  const mfaRequired = requireMFA ?? (session ? roleRequiresMFA(session.user.roles) : false)
   const mfaIncomplete = mfaRequired && session && !session.user.mfaAuthenticated
 
   // Redirect unauthenticated users
@@ -189,7 +189,7 @@ export function AuthGuard({
 
   // Role-based access check
   if (requiredRoles && requiredRoles.length > 0) {
-    if (!canAccess(session.user.role, requiredRoles)) {
+    if (!canAccess(session.user.roles, requiredRoles)) {
       return <UnauthorizedScreen reason="forbidden" />
     }
   }

@@ -31,8 +31,11 @@ type meetEnvelope struct {
 }
 
 type meetListEnvelope struct {
-	Count int `json:"count"`
-	Meets []struct {
+	Count  int `json:"count"`
+	Total  int `json:"total"`
+	Limit  int `json:"limit"`
+	Offset int `json:"offset"`
+	Meets  []struct {
 		ID     string `json:"id"`
 		Status string `json:"status"`
 	} `json:"meets"`
@@ -1361,6 +1364,9 @@ func TestListMeetSessions(t *testing.T) {
 	}
 	var env struct {
 		Count    int `json:"count"`
+		Total    int `json:"total"`
+		Limit    int `json:"limit"`
+		Offset   int `json:"offset"`
 		Sessions []struct {
 			ID            string `json:"id"`
 			SessionNumber int    `json:"session_number"`
@@ -1371,6 +1377,40 @@ func TestListMeetSessions(t *testing.T) {
 	}
 	if env.Count != 2 {
 		t.Fatalf("expected 2 sessions, got %d", env.Count)
+	}
+	if env.Total != 2 || env.Limit != 100 || env.Offset != 0 {
+		t.Fatalf("expected default pagination metadata total=2 limit=100 offset=0, got total=%d limit=%d offset=%d", env.Total, env.Limit, env.Offset)
+	}
+}
+
+func TestListMeetsEnforcesPaginationCeiling(t *testing.T) {
+	t.Parallel()
+
+	router := NewRouter(Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	adminToken := issueSessionToken(t, router, "org-paginated-meets", []string{"admin"}, false)
+
+	for _, name := range []string{"Meet A", "Meet B", "Meet C"} {
+		createMeet(t, router, "org-paginated-meets", adminToken, name)
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/meets?limit=999&offset=1", nil)
+	listReq.Header.Set("X-Org-Id", "org-paginated-meets")
+	listReq.Header.Set("Authorization", "Bearer "+adminToken)
+	listRes := httptest.NewRecorder()
+	router.ServeHTTP(listRes, listReq)
+	if listRes.Code != http.StatusOK {
+		t.Fatalf("expected meet list status %d, got %d body=%s", http.StatusOK, listRes.Code, listRes.Body.String())
+	}
+
+	var env meetListEnvelope
+	if err := json.Unmarshal(listRes.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode meet list: %v", err)
+	}
+	if env.Total != 3 || env.Count != 2 {
+		t.Fatalf("expected total=3 and count=2, got total=%d count=%d", env.Total, env.Count)
+	}
+	if env.Limit != 200 || env.Offset != 1 {
+		t.Fatalf("expected clamped pagination limit=200 offset=1, got limit=%d offset=%d", env.Limit, env.Offset)
 	}
 }
 

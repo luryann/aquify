@@ -1,52 +1,70 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useEffect, useState, useCallback } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useSession, DEV_SESSIONS } from '@/lib/session'
 import { destinationForRole } from '@/lib/auth-routing'
 import { DEV_STUB_TOKENS_ENABLED } from '@/lib/featureFlags'
+import { resolvePublicOrg } from '@/lib/public-org'
 
 const STUB_ROLES = [
-  { id: 'stub-owner',    label: 'Owner',     color: '#eb5d1e', rgb: '235,93,30',   desc: 'Full system access' },
-  { id: 'stub-admin',    label: 'Admin',     color: '#60a5fa', rgb: '96,165,250',  desc: 'Administrative access' },
-  { id: 'stub-coach',    label: 'Coach',     color: '#34d399', rgb: '52,211,153',  desc: 'Training & meets' },
-  { id: 'stub-parent',   label: 'Parent',    color: '#a78bfa', rgb: '167,139,250', desc: 'Household portal' },
-  { id: 'stub-billing',  label: 'Billing',   color: '#fbbf24', rgb: '251,191,36',  desc: 'Financial access' },
+  { id: 'stub-owner', label: 'Owner', color: '#eb5d1e', rgb: '235,93,30', desc: 'Full system access' },
+  { id: 'stub-admin', label: 'Admin', color: '#60a5fa', rgb: '96,165,250', desc: 'Administrative access' },
+  { id: 'stub-coach', label: 'Coach', color: '#34d399', rgb: '52,211,153', desc: 'Training & meets' },
+  { id: 'stub-parent', label: 'Parent', color: '#a78bfa', rgb: '167,139,250', desc: 'Household portal' },
+  { id: 'stub-billing', label: 'Billing', color: '#fbbf24', rgb: '251,191,36', desc: 'Financial access' },
   { id: 'stub-readonly', label: 'Read-Only', color: '#9ca3af', rgb: '156,163,175', desc: 'View-only staff' },
-  { id: 'stub-swimmer',  label: 'Swimmer',   color: '#22d3ee', rgb: '34,211,238',  desc: 'Swimmer portal' },
+  { id: 'stub-swimmer', label: 'Swimmer', color: '#22d3ee', rgb: '34,211,238', desc: 'Swimmer portal' },
 ] as const
 
-const DEFAULT_OIDC_ORG_ID = process.env.NEXT_PUBLIC_DEFAULT_OIDC_ORG_ID?.trim() ?? ''
-
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginPageContent />
+    </Suspense>
+  )
+}
+
+function LoginPageContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { session, loading, setSession } = useSession()
   const [email, setEmail] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [devOpen, setDevOpen] = useState(false)
   const [mounted, setMounted] = useState(false)
+  const [orgError, setOrgError] = useState('')
 
   useEffect(() => { setMounted(true) }, [])
 
   useEffect(() => {
     if (!loading && session) {
-      router.replace(destinationForRole(session.user.role))
+      router.replace(destinationForRole(session.user.roles))
     }
   }, [loading, session, router])
 
   const handleSSO = useCallback(() => {
+    const resolved = resolvePublicOrg({
+      searchParams,
+      host: typeof window === 'undefined' ? '' : window.location.hostname,
+    })
+    if (!resolved.orgId) {
+      setOrgError('We could not determine your club. Retry with your club link or ask your administrator for the correct sign-in URL.')
+      return
+    }
     setSubmitting(true)
+    setOrgError('')
     const q = new URLSearchParams()
     if (email.trim()) q.set('login_hint', email.trim())
-    if (DEFAULT_OIDC_ORG_ID) q.set('org_id', DEFAULT_OIDC_ORG_ID)
+    q.set('org_id', resolved.orgId)
     window.location.href = `/api/v1/auth/oidc/authorize?${q}`
-  }, [email])
+  }, [email, searchParams])
 
   const handleStub = useCallback((id: string) => {
     const s = DEV_SESSIONS[id]
     if (!s) return
     setSession(s)
-    router.push(destinationForRole(s.user.role))
+    router.push(destinationForRole(s.user.roles))
   }, [setSession, router])
 
   if (!mounted || loading) {
@@ -93,6 +111,20 @@ export default function LoginPage() {
 
           {/* Form */}
           <div className="sl-fields">
+            {orgError && (
+              <div style={{
+                padding: '11px 12px',
+                borderRadius: '9px',
+                background: 'rgba(248,113,113,0.1)',
+                border: '1px solid rgba(248,113,113,0.25)',
+                color: '#fca5a5',
+                fontFamily: 'var(--font-body)',
+                fontSize: '12.5px',
+                lineHeight: 1.5,
+              }}>
+                {orgError}
+              </div>
+            )}
             <div className="sl-field">
               <label htmlFor="sl-email" className="sl-label">Email address</label>
               <input
@@ -101,7 +133,7 @@ export default function LoginPage() {
                 className="sl-input"
                 placeholder="you@yourclub.com"
                 value={email}
-                onChange={e => setEmail(e.target.value)}
+                onChange={e => { setEmail(e.target.value); setOrgError('') }}
                 onKeyDown={e => { if (e.key === 'Enter') handleSSO() }}
                 autoComplete="email"
                 autoFocus

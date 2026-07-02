@@ -88,6 +88,9 @@ func TestUserMgmt_ListUsers_OwnerCanList(t *testing.T) {
 	if len(users) != 1 {
 		t.Fatalf("want 1 user, got %d", len(users))
 	}
+	if int(resp["limit"].(float64)) != 50 || int(resp["offset"].(float64)) != 0 {
+		t.Fatalf("expected default pagination metadata limit=50 offset=0, got limit=%v offset=%v", resp["limit"], resp["offset"])
+	}
 }
 
 func TestUserMgmt_ListUsers_SeedsDevStubUsersAndIncludesSourceMetadata(t *testing.T) {
@@ -158,6 +161,38 @@ func TestUserMgmt_ListUsers_NoAuth(t *testing.T) {
 	rr := do30B(router, http.MethodGet, "/api/v1/users", "", "", "org-test")
 	if rr.Code != http.StatusUnauthorized {
 		t.Fatalf("want 401, got %d", rr.Code)
+	}
+}
+
+func TestUserMgmt_ListUsers_ClampsPaginationLimit(t *testing.T) {
+	kc := keycloak.NewStubClient()
+	kc.AddUser(keycloak.User{ID: "u1", Email: "a@example.com", Attributes: map[string][]string{"org_id": {"org-test"}}})
+	kc.AddUser(keycloak.User{ID: "u2", Email: "b@example.com", Attributes: map[string][]string{"org_id": {"org-test"}}})
+	kc.AddUser(keycloak.User{ID: "u3", Email: "c@example.com", Attributes: map[string][]string{"org_id": {"org-test"}}})
+	router := newStep30BRouter(t, kc)
+	token := issueStep30BToken(t, router, "owner1", "org-test", []string{"owner"}, false)
+
+	rr := do30B(router, http.MethodGet, "/api/v1/users?limit=999&offset=1", token, "", "org-test")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp struct {
+		Count  int `json:"count"`
+		Limit  int `json:"limit"`
+		Offset int `json:"offset"`
+		Users  []struct {
+			ID string `json:"id"`
+		} `json:"users"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Limit != 200 || resp.Offset != 1 {
+		t.Fatalf("expected clamped pagination limit=200 offset=1, got limit=%d offset=%d", resp.Limit, resp.Offset)
+	}
+	if resp.Count != 2 || len(resp.Users) != 2 {
+		t.Fatalf("expected paginated user page count=2 len=2, got count=%d len=%d", resp.Count, len(resp.Users))
 	}
 }
 

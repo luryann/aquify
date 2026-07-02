@@ -1,15 +1,17 @@
 package handlers
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
-	"os"
+	"slices"
 	"strings"
 	"time"
 
+	"github.com/dareaquatics/aquify/server/internal/app/audit"
 	"github.com/dareaquatics/aquify/server/internal/app/comms"
+	"github.com/dareaquatics/aquify/server/internal/app/groups"
 	"github.com/dareaquatics/aquify/server/internal/app/httpx"
+	"github.com/dareaquatics/aquify/server/internal/app/members"
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
@@ -18,6 +20,9 @@ import (
 // CommsHandlers handles HTTP requests for the communications domain.
 type CommsHandlers struct {
 	service              *comms.Service
+	auditService         *audit.Service
+	membersService       *members.Service
+	groupsService        *groups.Service
 	validate             *validator.Validate
 	postmarkHeaderName   string
 	postmarkHeaderValue  string
@@ -27,15 +32,22 @@ type CommsHandlers struct {
 }
 
 // NewCommsHandlers returns a new CommsHandlers.
-func NewCommsHandlers(svc *comms.Service) *CommsHandlers {
-	return &CommsHandlers{service: svc, validate: validator.New()}
+func NewCommsHandlers(svc *comms.Service, membersSvc *members.Service, groupsSvc *groups.Service) *CommsHandlers {
+	return &CommsHandlers{service: svc, membersService: membersSvc, groupsService: groupsSvc, validate: validator.New()}
+}
+
+// NewCommsHandlersWithAudit returns a CommsHandlers with audit logging enabled.
+func NewCommsHandlersWithAudit(svc *comms.Service, auditSvc *audit.Service, membersSvc *members.Service, groupsSvc *groups.Service) *CommsHandlers {
+	return &CommsHandlers{service: svc, auditService: auditSvc, membersService: membersSvc, groupsService: groupsSvc, validate: validator.New()}
 }
 
 // NewCommsHandlersWithWebhookAuth returns a CommsHandlers configured to verify
 // Postmark webhook requests via custom header and/or HTTP basic auth.
-func NewCommsHandlersWithWebhookAuth(svc *comms.Service, headerName, headerValue, basicUser, basicPass, appEnv string) *CommsHandlers {
+func NewCommsHandlersWithWebhookAuth(svc *comms.Service, membersSvc *members.Service, groupsSvc *groups.Service, headerName, headerValue, basicUser, basicPass, appEnv string) *CommsHandlers {
 	return &CommsHandlers{
 		service:              svc,
+		membersService:       membersSvc,
+		groupsService:        groupsSvc,
 		validate:             validator.New(),
 		postmarkHeaderName:   strings.TrimSpace(headerName),
 		postmarkHeaderValue:  strings.TrimSpace(headerValue),
@@ -43,6 +55,14 @@ func NewCommsHandlersWithWebhookAuth(svc *comms.Service, headerName, headerValue
 		postmarkBasicPass:    strings.TrimSpace(basicPass),
 		allowInsecureWebhook: strings.EqualFold(strings.TrimSpace(appEnv), "development") || strings.EqualFold(strings.TrimSpace(appEnv), "local") || strings.EqualFold(strings.TrimSpace(appEnv), "test"),
 	}
+}
+
+// NewCommsHandlersWithAuditAndWebhookAuth returns a CommsHandlers configured
+// for audit logging and Postmark webhook verification.
+func NewCommsHandlersWithAuditAndWebhookAuth(svc *comms.Service, auditSvc *audit.Service, membersSvc *members.Service, groupsSvc *groups.Service, headerName, headerValue, basicUser, basicPass, appEnv string) *CommsHandlers {
+	handler := NewCommsHandlersWithWebhookAuth(svc, membersSvc, groupsSvc, headerName, headerValue, basicUser, basicPass, appEnv)
+	handler.auditService = auditSvc
+	return handler
 }
 
 // RegisterPublicRoutes mounts unauthenticated provider webhook routes.
@@ -70,6 +90,8 @@ func (h *CommsHandlers) RegisterRoutes(router chi.Router) {
 	router.Post("/suppression", h.addSuppression)
 	router.Get("/suppression", h.listSuppression)
 	router.Delete("/suppression/{suppressionID}", h.removeSuppression)
+	router.Get("/communication-preferences", h.listNotificationPreferences)
+	router.Put("/communication-preferences", h.updateNotificationPreferences)
 }
 
 // ─── Scope helper ─────────────────────────────────────────────────────────────
@@ -88,6 +110,22 @@ func hasAnyRole(principal *appmiddleware.Principal, roles ...string) bool {
 		}
 	}
 	return false
+}
+
+func (h *CommsHandlers) emitAudit(principal *appmiddleware.Principal, action, resourceID string, metadata map[string]string, after any) {
+	if h.auditService == nil || principal == nil {
+		return
+	}
+	_, _ = h.auditService.Append(audit.AppendRequest{
+		OrgID:        principal.OrgID,
+		ActorUserID:  principal.UserID,
+		ActorRoles:   append([]string{}, principal.Roles...),
+		Action:       action,
+		ResourceType: "communication_preferences",
+		ResourceID:   resourceID,
+		After:        after,
+		Metadata:     metadata,
+	})
 }
 
 func (h *CommsHandlers) verifyPostmarkWebhook(r *http.Request) bool {
@@ -131,13 +169,72 @@ func metadataString(metadata map[string]any, key string) string {
 	return ""
 }
 
+func (h *CommsHandlers) resolveCampaignRecipients(orgID string, campaign *comms.EmailCampaign) ([]comms.Recipient, error) {
+	if campaign == nil {
+		return nil, comms.ErrCampaignNotFound
+	}
+	if h.membersService == nil {
+		return nil, errors.New("member recipient resolution is unavailable")
+	}
+
+	allowedHouseholds := map[string]struct{}{}
+	switch strings.TrimSpace(strings.ToLower(campaign.Audience)) {
+	case "all":
+		for _, household := range h.membersService.SnapshotHouseholds(orgID) {
+			allowedHouseholds[household.ID] = struct{}{}
+		}
+	case "group":
+		if h.groupsService == nil {
+			return nil, errors.New("group recipient resolution is unavailable")
+		}
+		for _, registration := range h.groupsService.SnapshotRegistrations(orgID) {
+			if registration.GroupID != campaign.GroupID {
+				continue
+			}
+			if !slices.Contains([]string{"pending", "active"}, strings.TrimSpace(strings.ToLower(registration.Status))) {
+				continue
+			}
+			allowedHouseholds[registration.HouseholdID] = struct{}{}
+		}
+	default:
+		return nil, errors.New("campaign audience is unsupported for recipient resolution")
+	}
+
+	recipients := make([]comms.Recipient, 0, len(allowedHouseholds))
+	seen := make(map[string]struct{})
+	appendRecipient := func(email string) {
+		normalized := strings.ToLower(strings.TrimSpace(email))
+		if normalized == "" {
+			return
+		}
+		if _, exists := seen[normalized]; exists {
+			return
+		}
+		seen[normalized] = struct{}{}
+		recipients = append(recipients, comms.Recipient{Email: normalized})
+	}
+
+	for _, household := range h.membersService.SnapshotHouseholds(orgID) {
+		if _, ok := allowedHouseholds[household.ID]; !ok {
+			continue
+		}
+		appendRecipient(household.PrimaryEmail)
+	}
+	for _, contact := range h.membersService.SnapshotContacts(orgID) {
+		if _, ok := allowedHouseholds[contact.HouseholdID]; !ok {
+			continue
+		}
+		appendRecipient(contact.Email)
+	}
+
+	return recipients, nil
+}
+
 func (h *CommsHandlers) handlePostmarkWebhook(w http.ResponseWriter, r *http.Request) {
 	if !h.verifyPostmarkWebhook(r) {
 		httpx.WriteError(w, r, http.StatusUnauthorized, "invalid_webhook_auth", "Postmark webhook authentication failed.", nil)
 		return
 	}
-
-	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MiB hard cap to prevent body-based DoS
 
 	var body struct {
 		RecordType        string         `json:"RecordType"`
@@ -152,7 +249,7 @@ func (h *CommsHandlers) handlePostmarkWebhook(w http.ResponseWriter, r *http.Req
 		SuppressSending   bool           `json:"SuppressSending"`
 		SuppressionReason string         `json:"SuppressionReason"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := decodeJSONBody(w, r, &body); err != nil {
 		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Could not parse request body.", nil)
 		return
 	}
@@ -193,6 +290,45 @@ func (h *CommsHandlers) handlePostmarkWebhook(w http.ResponseWriter, r *http.Req
 
 // ─── Announcement handlers ────────────────────────────────────────────────────
 
+func (h *CommsHandlers) listNotificationPreferences(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := commsScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+	preferences := h.service.ListNotificationPreferences(orgID, principal.UserID)
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"preferences": preferences})
+}
+
+func (h *CommsHandlers) updateNotificationPreferences(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := commsScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+
+	var body struct {
+		Preferences []comms.NotificationPreferenceSetting `json:"preferences" validate:"required,min=1,dive"`
+	}
+	if err := decodeJSONBody(w, r, &body); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Could not parse request body.", nil)
+		return
+	}
+	if err := h.validate.Struct(body); err != nil {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "validation_error", "Request validation failed.", httpx.FormatValidationErrors(err))
+		return
+	}
+
+	preferences, err := h.service.ReplaceNotificationPreferences(orgID, principal.UserID, principal.HouseholdID, principal.UserID, body.Preferences)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "update_failed", err.Error(), nil)
+		return
+	}
+
+	h.emitAudit(principal, audit.ActionCommsNotificationPreferencesUpdate, principal.UserID, map[string]string{
+		"household_id": principal.HouseholdID,
+	}, preferences)
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"preferences": preferences})
+}
+
 func (h *CommsHandlers) createAnnouncement(w http.ResponseWriter, r *http.Request) {
 	principal, orgID, ok := commsScopeFromRequest(w, r)
 	if !ok {
@@ -209,7 +345,7 @@ func (h *CommsHandlers) createAnnouncement(w http.ResponseWriter, r *http.Reques
 		Audience string `json:"audience" validate:"required,oneof=all group"`
 		GroupID  string `json:"group_id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := decodeJSONBody(w, r, &body); err != nil {
 		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Could not parse request body.", nil)
 		return
 	}
@@ -339,7 +475,7 @@ func (h *CommsHandlers) createCampaign(w http.ResponseWriter, r *http.Request) {
 		Audience  string `json:"audience"   validate:"required,oneof=all group"`
 		GroupID   string `json:"group_id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := decodeJSONBody(w, r, &body); err != nil {
 		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Could not parse request body.", nil)
 		return
 	}
@@ -418,35 +554,30 @@ func (h *CommsHandlers) sendCampaign(w http.ResponseWriter, r *http.Request) {
 
 	id := chi.URLParam(r, "campaignID")
 
-	// Feature flag guard: arbitrary (caller-supplied) recipient lists are disabled
-	// by default. Set COMMS_ALLOW_ARBITRARY_RECIPIENTS=true only in development or
-	// when a full server-side org-member validation layer has been implemented.
-	// In production, recipients MUST be resolved server-side from org membership
-	// to prevent org-branded email from being sent to arbitrary external addresses.
-	if os.Getenv("COMMS_ALLOW_ARBITRARY_RECIPIENTS") != "true" {
-		httpx.WriteError(w, r, http.StatusForbidden, "arbitrary_recipients_disabled",
-			"Sending to a caller-supplied recipient list is disabled. Set COMMS_ALLOW_ARBITRARY_RECIPIENTS=true only after implementing server-side org-member recipient resolution.", nil)
-		return
-	}
-
-	var body struct {
-		Recipients []struct {
-			Email  string `json:"email"  validate:"required,email"`
-			UserID string `json:"user_id"`
-		} `json:"recipients" validate:"required,min=1"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	var body struct{}
+	if err := decodeOptionalJSONBody(w, r, &body); err != nil {
 		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Could not parse request body.", nil)
 		return
 	}
-	if err := h.validate.Struct(body); err != nil {
-		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "validation_error", "Request validation failed.", httpx.FormatValidationErrors(err))
+
+	campaignRecord, err := h.service.GetCampaign(orgID, id)
+	if err != nil {
+		if errors.Is(err, comms.ErrCampaignNotFound) {
+			httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Campaign not found.", nil)
+			return
+		}
+		httpx.WriteError(w, r, http.StatusInternalServerError, "send_failed", err.Error(), nil)
 		return
 	}
 
-	recipients := make([]comms.Recipient, len(body.Recipients))
-	for i, rec := range body.Recipients {
-		recipients[i] = comms.Recipient{Email: rec.Email, UserID: rec.UserID}
+	recipients, err := h.resolveCampaignRecipients(orgID, campaignRecord)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "recipient_resolution_failed", err.Error(), nil)
+		return
+	}
+	if len(recipients) == 0 {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "no_eligible_recipients", "No eligible org-member recipients were resolved for this campaign.", nil)
+		return
 	}
 
 	campaign, err := h.service.SendCampaign(r.Context(), orgID, id, comms.SendCampaignInput{
@@ -506,7 +637,7 @@ func (h *CommsHandlers) addSuppression(w http.ResponseWriter, r *http.Request) {
 		Email  string `json:"email"  validate:"required,email"`
 		Reason string `json:"reason" validate:"required,oneof=bounce complaint manual"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := decodeJSONBody(w, r, &body); err != nil {
 		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Could not parse request body.", nil)
 		return
 	}

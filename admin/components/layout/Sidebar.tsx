@@ -9,6 +9,7 @@ import { pendingApprovalsRequestInit, shouldFetchPendingApprovals } from '@/lib/
 
 type SidebarProps = {
   role: Role
+  roles: Role[]
   userName?: string
   onSignOut?: () => void
   orgId?: string
@@ -44,7 +45,7 @@ function loadStoredWidth(): number {
   return DEFAULT_WIDTH
 }
 
-export function Sidebar({ role, userName, onSignOut, orgId }: SidebarProps) {
+export function Sidebar({ role, roles, userName, onSignOut, orgId }: SidebarProps) {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_WIDTH)
@@ -71,7 +72,7 @@ export function Sidebar({ role, userName, onSignOut, orgId }: SidebarProps) {
 
   // Fetch pending approvals count (owner/admin only)
   useEffect(() => {
-    if (!shouldFetchPendingApprovals(role, orgId)) return
+    if (!shouldFetchPendingApprovals(roles, orgId)) return
     const controller = new AbortController()
     fetch('/api/v1/users?status=pending_approval', {
       ...pendingApprovalsRequestInit(orgId),
@@ -86,12 +87,12 @@ export function Sidebar({ role, userName, onSignOut, orgId }: SidebarProps) {
       })
       .catch(() => { /* silent */ })
     return () => controller.abort()
-  }, [orgId, role])
+  }, [orgId, roles])
 
   const grouped = useMemo(() => {
-    const items = filterNavItems(role)
+    const items = filterNavItems(roles)
     return groupNavItems(items)
-  }, [role])
+  }, [roles])
 
   const isActive = (path: string) => pathname === path || pathname.startsWith(path + '/')
 

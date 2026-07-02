@@ -20,6 +20,7 @@ security:
 tags:
   - name: Health
   - name: Auth
+  - name: Users
   - name: Members
   - name: Groups
   - name: Registrations
@@ -381,6 +382,483 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /register:
+    post:
+      tags: [Users]
+      summary: Submit public self-registration request
+      description: Creates a pending-approval Keycloak user for the provided organization and records the requested role and registration metadata for admin review.
+      security: []
+      operationId: selfRegister
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SelfRegisterRequest" }
+      responses:
+        "201":
+          description: Registration request created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SelfRegisterResponse" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /users:
+    get:
+      tags: [Users]
+      summary: List users in org
+      description: Lists users in the caller's org with optional search, role, status, and pagination filters. Owner/admin only.
+      operationId: listUsers
+      parameters:
+        - in: query
+          name: search
+          schema: { type: string }
+        - in: query
+          name: role
+          schema:
+            type: string
+            enum: [owner, admin, coach, billing, parent, swimmer, read_only_staff]
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [active, disabled, pending_approval]
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - in: query
+          name: offset
+          schema: { type: integer, minimum: 0, default: 0 }
+      responses:
+        "200":
+          description: User list
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserListResponse" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    post:
+      tags: [Users]
+      summary: Create user with direct password
+      description: Creates a Keycloak user, sets a password directly, optionally assigns a role, and can auto-create a linked household. Owner/admin only.
+      operationId: createUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateUserRequest" }
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserMutationResponse" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /users/invite:
+    post:
+      tags: [Users]
+      summary: Invite user
+      description: Provisions a Keycloak user, optionally assigns a role, optionally creates a linked household, and sends a verification or welcome email. Owner/admin only.
+      operationId: inviteUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/InviteUserRequest" }
+      responses:
+        "201":
+          description: User invited
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserMutationResponse" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /users/{id}:
+    get:
+      tags: [Users]
+      summary: Get user detail
+      description: Returns the Keycloak profile plus normalized realm roles for a user in the caller's org. Owner/admin only.
+      operationId: getUser
+      parameters:
+        - $ref: "#/components/parameters/UserID"
+      responses:
+        "200":
+          description: User detail
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserDetailResponse" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    put:
+      tags: [Users]
+      summary: Update user profile fields
+      description: Updates email and display-name fields for an existing user in the caller's org. Owner/admin only.
+      operationId: updateUser
+      parameters:
+        - $ref: "#/components/parameters/UserID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateUserRequest" }
+      responses:
+        "200":
+          description: User updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserStatusResponse" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    delete:
+      tags: [Users]
+      summary: Delete user
+      description: Deletes a Keycloak user in the caller's org. Owner only and requires MFA-authenticated session state.
+      operationId: deleteUser
+      parameters:
+        - $ref: "#/components/parameters/UserID"
+      responses:
+        "200":
+          description: User deleted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserStatusResponse" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /users/{id}/disable:
+    post:
+      tags: [Users]
+      summary: Disable user
+      description: Disables a Keycloak user in the caller's org. Owner/admin only.
+      operationId: disableUser
+      parameters:
+        - $ref: "#/components/parameters/UserID"
+      responses:
+        "200":
+          description: User disabled
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserStatusResponse" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /users/{id}/enable:
+    post:
+      tags: [Users]
+      summary: Enable user
+      description: Re-enables a Keycloak user in the caller's org. Owner/admin only.
+      operationId: enableUser
+      parameters:
+        - $ref: "#/components/parameters/UserID"
+      responses:
+        "200":
+          description: User enabled
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserStatusResponse" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /users/{id}/approve:
+    post:
+      tags: [Users]
+      summary: Approve self-registration
+      description: Activates a pending self-registration request, assigns the requested role when no roles exist yet, and sends the welcome or verification email. Owner/admin only.
+      operationId: approveUser
+      parameters:
+        - $ref: "#/components/parameters/UserID"
+      responses:
+        "200":
+          description: Registration approved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserStatusResponse" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /users/{id}/reject:
+    post:
+      tags: [Users]
+      summary: Reject self-registration
+      description: Rejects a pending self-registration request and disables the user account. Owner/admin only.
+      operationId: rejectUser
+      parameters:
+        - $ref: "#/components/parameters/UserID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RejectUserRequest" }
+      responses:
+        "200":
+          description: Registration rejected
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserStatusResponse" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /users/{id}/roles:
+    get:
+      tags: [Users]
+      summary: List user roles
+      description: Lists normalized Keycloak realm roles for a user in the caller's org. Owner/admin only.
+      operationId: listUserRoles
+      parameters:
+        - $ref: "#/components/parameters/UserID"
+      responses:
+        "200":
+          description: User roles
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserRolesResponse" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    post:
+      tags: [Users]
+      summary: Assign user role
+      description: Assigns a realm role at or below the actor's privilege tier. Owner/admin only.
+      operationId: assignUserRole
+      parameters:
+        - $ref: "#/components/parameters/UserID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UserRoleAssignRequest" }
+      responses:
+        "200":
+          description: Role assigned
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserStatusResponse" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /users/{id}/roles/{role}:
+    delete:
+      tags: [Users]
+      summary: Remove user role
+      description: Removes a realm role at or below the actor's privilege tier. Prevents removing the final owner role in an org. Owner/admin only.
+      operationId: removeUserRole
+      parameters:
+        - $ref: "#/components/parameters/UserID"
+        - $ref: "#/components/parameters/UserRoleName"
+      responses:
+        "200":
+          description: Role removed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserStatusResponse" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /users/{id}/password-reset:
+    post:
+      tags: [Users]
+      summary: Send password reset email
+      description: Triggers the Keycloak password-reset flow for a user in the caller's org. Owner/admin only.
+      operationId: passwordResetUser
+      parameters:
+        - $ref: "#/components/parameters/UserID"
+      responses:
+        "200":
+          description: Password reset email sent
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserStatusResponse" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /users/{id}/household:
+    get:
+      tags: [Users]
+      summary: Get linked household
+      description: Returns the household linked to the user when it belongs to the same org; otherwise returns `null`. Owner/admin only.
+      operationId: getUserHousehold
+      parameters:
+        - $ref: "#/components/parameters/UserID"
+      responses:
+        "200":
+          description: Linked household summary or null
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserHouseholdResponse" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /users/{id}/household/link:
+    post:
+      tags: [Users]
+      summary: Link household to user
+      description: Links an existing household in the caller's org to the specified Keycloak user. Owner/admin only.
+      operationId: linkUserHousehold
+      parameters:
+        - $ref: "#/components/parameters/UserID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/HouseholdLinkRequest" }
+      responses:
+        "200":
+          description: Household linked
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserHouseholdLinkResponse" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /users/{id}/household/unlink:
+    post:
+      tags: [Users]
+      summary: Unlink household from user
+      description: Removes the Keycloak user linkage from the specified household in the caller's org. Owner/admin only.
+      operationId: unlinkUserHousehold
+      parameters:
+        - $ref: "#/components/parameters/UserID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/HouseholdLinkRequest" }
+      responses:
+        "200":
+          description: Household unlinked
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserHouseholdLinkResponse" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /authz/ping:
     get:
       tags: [Auth]
@@ -1935,6 +2413,31 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /swimmers/{swimmerID}/activity:
+    get:
+      tags: [Performance]
+      summary: Swimmer household activity feed
+      operationId: getSwimmerActivity
+      parameters:
+        - $ref: "#/components/parameters/SwimmerID"
+      responses:
+        "200":
+          description: Swimmer activity items in reverse chronological order
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  swimmer_id: { type: string }
+                  count: { type: integer }
+                  activities:
+                    type: array
+                    items: { $ref: "#/components/schemas/SwimmerActivity" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /swimmers/{swimmerID}/cut-qualification:
     get:
       tags: [Performance]
@@ -2410,6 +2913,96 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /households/{householdID}/autopay:
+    get:
+      tags: [Billing]
+      summary: Get household autopay status
+      operationId: getHouseholdAutopay
+      parameters:
+        - $ref: "#/components/parameters/HouseholdID"
+      responses:
+        "200":
+          description: Household autopay status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  autopay: { $ref: "#/components/schemas/HouseholdAutopayStatus" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    put:
+      tags: [Billing]
+      summary: Enroll or update household autopay
+      operationId: upsertHouseholdAutopay
+      parameters:
+        - $ref: "#/components/parameters/HouseholdID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpsertHouseholdAutopayRequest" }
+      responses:
+        "200":
+          description: Household autopay updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  autopay: { $ref: "#/components/schemas/HouseholdAutopayStatus" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /households/{householdID}/autopay/opt-out:
+    post:
+      tags: [Billing]
+      summary: Disable household autopay
+      operationId: optOutHouseholdAutopay
+      parameters:
+        - $ref: "#/components/parameters/HouseholdID"
+      responses:
+        "200":
+          description: Household autopay opted out
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  autopay: { $ref: "#/components/schemas/HouseholdAutopayStatus" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /autopay/households:
+    get:
+      tags: [Billing]
+      summary: List household autopay statuses
+      operationId: listHouseholdAutopay
+      parameters:
+        - name: household_id
+          in: query
+          schema:
+            type: array
+            items: { type: string }
+          style: form
+          explode: true
+      responses:
+        "200":
+          description: Household autopay status list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: { type: integer }
+                  autopay:
+                    type: array
+                    items: { $ref: "#/components/schemas/HouseholdAutopayStatus" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /ledger-events:
     get:
       tags: [Billing]
@@ -2739,27 +3332,10 @@ paths:
   /email-campaigns/{campaignID}/send:
     post:
       tags: [Communications]
-      summary: Send email campaign to recipients
+      summary: Send email campaign to resolved org-member recipients
       operationId: sendEmailCampaign
       parameters:
         - $ref: "#/components/parameters/CampaignID"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [recipients]
-              properties:
-                recipients:
-                  type: array
-                  minItems: 1
-                  items:
-                    type: object
-                    required: [email]
-                    properties:
-                      email: { type: string, format: email }
-                      user_id: { type: string }
       responses:
         "200":
           description: Campaign send initiated
@@ -2861,6 +3437,47 @@ paths:
           $ref: "#/components/responses/NotFound"
 
   # ── Audit ────────────────────────────────────────────────────────────────────
+
+  /communication-preferences:
+    get:
+      tags: [Communications]
+      summary: Get the current user's portal communication preferences
+      operationId: getCommunicationPreferences
+      responses:
+        "200":
+          description: Effective communication preferences
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  preferences:
+                    type: array
+                    items: { $ref: "#/components/schemas/CommunicationPreference" }
+    put:
+      tags: [Communications]
+      summary: Update the current user's portal communication preferences
+      operationId: updateCommunicationPreferences
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateCommunicationPreferencesRequest" }
+      responses:
+        "200":
+          description: Updated communication preferences
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  preferences:
+                    type: array
+                    items: { $ref: "#/components/schemas/CommunicationPreference" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
 
   /audit-events:
     get:
@@ -3182,6 +3799,18 @@ components:
       in: path
       required: true
       schema: { type: string }
+    UserID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+    UserRoleName:
+      name: role
+      in: path
+      required: true
+      schema:
+        type: string
+        enum: [owner, admin, coach, billing, parent, swimmer, read_only_staff]
     SwimmerID:
       name: swimmerID
       in: path
@@ -3425,6 +4054,179 @@ components:
       properties:
         status: { type: string }
         assignment: { type: object }
+
+    UserAttributes:
+      type: object
+      additionalProperties:
+        type: array
+        items: { type: string }
+
+    UserRole:
+      type: object
+      properties:
+        id: { type: string }
+        name:
+          type: string
+          enum: [owner, admin, coach, billing, parent, swimmer, read_only_staff]
+        description: { type: string }
+        composite: { type: boolean }
+        clientRole: { type: boolean }
+        containerId: { type: string }
+
+    UserSummary:
+      type: object
+      properties:
+        id: { type: string }
+        username: { type: string }
+        email: { type: string, format: email }
+        firstName: { type: string }
+        lastName: { type: string }
+        enabled: { type: boolean }
+        emailVerified: { type: boolean }
+        attributes: { $ref: "#/components/schemas/UserAttributes" }
+        roles:
+          type: array
+          items:
+            type: string
+            enum: [owner, admin, coach, billing, parent, swimmer, read_only_staff]
+
+    UserDetail:
+      allOf:
+        - $ref: "#/components/schemas/UserSummary"
+        - type: object
+          properties:
+            createdTimestamp: { type: integer, format: int64 }
+
+    UserListResponse:
+      type: object
+      properties:
+        status: { type: string, example: ok }
+        count: { type: integer }
+        limit: { type: integer }
+        offset: { type: integer }
+        source: { type: string, enum: [stub, keycloak] }
+        is_stubbed: { type: boolean }
+        users:
+          type: array
+          items: { $ref: "#/components/schemas/UserSummary" }
+
+    UserDetailResponse:
+      type: object
+      properties:
+        status: { type: string, example: ok }
+        user: { $ref: "#/components/schemas/UserDetail" }
+        roles:
+          type: array
+          items: { $ref: "#/components/schemas/UserRole" }
+
+    CreateUserRequest:
+      type: object
+      required: [email, password]
+      properties:
+        first_name: { type: string }
+        last_name: { type: string }
+        email: { type: string, format: email }
+        password: { type: string, minLength: 8 }
+        role:
+          type: string
+          enum: [owner, admin, coach, billing, parent, swimmer, read_only_staff]
+        temporary_password: { type: boolean, default: false }
+        create_household: { type: boolean, default: false }
+
+    InviteUserRequest:
+      type: object
+      required: [email]
+      properties:
+        first_name: { type: string }
+        last_name: { type: string }
+        email: { type: string, format: email }
+        role:
+          type: string
+          enum: [owner, admin, coach, billing, parent, swimmer, read_only_staff]
+        create_household: { type: boolean, default: false }
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        first_name: { type: string }
+        last_name: { type: string }
+        email: { type: string, format: email }
+
+    UserMutationResponse:
+      type: object
+      properties:
+        status: { type: string, enum: [created] }
+        user_id: { type: string }
+        household_id: { type: string }
+
+    UserStatusResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [updated, disabled, enabled, approved, rejected, deleted, assigned, removed, password_reset_sent]
+
+    SelfRegisterRequest:
+      type: object
+      required: [email, org_id]
+      properties:
+        first_name: { type: string }
+        last_name: { type: string }
+        email: { type: string, format: email }
+        org_id: { type: string }
+        requested_role:
+          type: string
+          enum: [owner, admin, coach, billing, parent, swimmer, read_only_staff]
+        club_code: { type: string, maxLength: 20 }
+        note: { type: string, maxLength: 500 }
+
+    SelfRegisterResponse:
+      type: object
+      properties:
+        status: { type: string, enum: [pending_approval] }
+        user_id: { type: string }
+
+    RejectUserRequest:
+      type: object
+      properties:
+        reason: { type: string }
+
+    UserRoleAssignRequest:
+      type: object
+      required: [role]
+      properties:
+        role:
+          type: string
+          enum: [owner, admin, coach, billing, parent, swimmer, read_only_staff]
+
+    UserRolesResponse:
+      type: object
+      properties:
+        status: { type: string, example: ok }
+        roles:
+          type: array
+          items: { $ref: "#/components/schemas/UserRole" }
+
+    UserHouseholdResponse:
+      type: object
+      properties:
+        status: { type: string, example: ok }
+        household:
+          oneOf:
+            - { $ref: "#/components/schemas/Household" }
+            - { type: "null" }
+
+    HouseholdLinkRequest:
+      type: object
+      required: [household_id]
+      properties:
+        household_id: { type: string }
+
+    UserHouseholdLinkResponse:
+      type: object
+      properties:
+        status: { type: string, enum: [linked, unlinked] }
+        household_id: { type: string }
 
     # Members ──────────────────────────────────────────────────────────────────
     Household:
@@ -4107,6 +4909,18 @@ components:
         recorded_at: { type: string, format: date-time }
         result_id: { type: [string, "null"] }
 
+    SwimmerActivity:
+      type: object
+      properties:
+        id: { type: string }
+        type: { type: string }
+        occurred_at: { type: string, format: date-time }
+        title: { type: string }
+        detail: { type: string }
+        status: { type: string }
+        source_id: { type: string }
+        meet_id: { type: string }
+
     OverrideBestTimeRequest:
       type: object
       required: [event_distance, stroke, course, reason]
@@ -4272,6 +5086,46 @@ components:
         amount_cents: { type: integer, minimum: 1 }
         reason: { type: string }
 
+    HouseholdAutopayStatus:
+      type: object
+      properties:
+        household_id: { type: string }
+        enabled: { type: boolean }
+        payment_method_type:
+          type: string
+          enum: [card, ach]
+        payment_method_brand: { type: string }
+        payment_method_last4: { type: string }
+        payment_method_label: { type: string }
+        payment_method_external_ref: { type: string }
+        payment_method_exp_month: { type: integer }
+        payment_method_exp_year: { type: integer }
+        trigger_days_before_due:
+          type: integer
+          enum: [0, 3, 7]
+        next_charge_date:
+          type: string
+          format: date
+        next_charge_amount_cents: { type: integer }
+        next_invoice_id: { type: string }
+
+    UpsertHouseholdAutopayRequest:
+      type: object
+      required: [payment_method_type, payment_method_label]
+      properties:
+        payment_method_type:
+          type: string
+          enum: [card, ach]
+        payment_method_brand: { type: string }
+        payment_method_last4: { type: string }
+        payment_method_label: { type: string, maxLength: 120 }
+        payment_method_external_ref: { type: string }
+        payment_method_exp_month: { type: integer }
+        payment_method_exp_year: { type: integer }
+        trigger_days_before_due:
+          type: integer
+          enum: [0, 3, 7]
+
     LedgerEvent:
       type: object
       properties:
@@ -4388,6 +5242,31 @@ components:
               enum: [bounce, complaint, manual]
 
     # Audit ────────────────────────────────────────────────────────────────────
+    CommunicationPreference:
+      type: object
+      required: [event_id, label, description, email_enabled, push_enabled]
+      properties:
+        event_id: { type: string }
+        label: { type: string }
+        description: { type: string }
+        email_enabled: { type: boolean }
+        push_enabled: { type: boolean }
+
+    UpdateCommunicationPreferencesRequest:
+      type: object
+      required: [preferences]
+      properties:
+        preferences:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [event_id, email_enabled, push_enabled]
+            properties:
+              event_id: { type: string }
+              email_enabled: { type: boolean }
+              push_enabled: { type: boolean }
+
     AuditEvent:
       type: object
       properties:

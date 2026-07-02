@@ -1,9 +1,9 @@
 A01        02                              TestSoftware        v1.0      Test Contact        000-000-000003152026                                          AZ   
-B11        Spring Invitational            100 Pool Lane                                Springfield         AZ85001     USA103152026031620260000        2          
-C11        TESTATest Aquatics Club           Test Aquatics  100 Club Rd                                   Springfield         AZ85001     USA0            
-D01        Smith, John                 A   0215199925MM010010001182403152026  59.10  2                  58.12 2     1 4     1                     
-D01        Doe, Jane                   A   0510200817FF0200200021517031520262:15.00 22:12.45 2     2 3     1                     
-E01        ATESTA04X020070010OPEN   03152026NT      2        2        21:55.34 2     1 2     1                                                       
-F01            TESTAA Smith, John                 02151999  M  1  58.12 2                                                                          
-F01            TESTAA Doe, Jane                   05102008  F  2  32.01 2                                                                          
-Z01        02test file                     1  1  1   1   2     2     1    2     0     0    0  0  0  0                                                         
+B11        Spring Invitational           100 Pool Lane                               Springfield         AZ85001     USA103152026031620260000        2          
+C11        TESTA Test Aquatics Club            Test Aquatics   100 Club Rd                                 Springfield         AZ85001     USA0                 
+D01        Smith, John                             A   0215199925MM010010001182403152026  59.10 2                    58.12 2     1 4     1                      
+D01        Doe, Jane                               A   0510200817FF0200200021517031520262:15.00 2                  2:12.45 2     2 3     1                      
+E01        ATESTA 04X020070010OPEN   03152026NT      2        2        21:55.34 2     1 2     1                                                                 
+F01            TESTA ASmith, John                                02151999  M  1  58.12 2                                                                        
+F01            TESTA ADoe, Jane                                  05102008  F  2  32.01 2                                                                        
+Z01        02test file                     1  1  1   1   2     2     1    2     0     0    0  0  0  0                                                           

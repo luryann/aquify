@@ -4,26 +4,36 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/dareaquatics/aquify/server/internal/app/exports"
 	"github.com/dareaquatics/aquify/server/internal/app/httpx"
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	"github.com/dareaquatics/aquify/server/internal/app/meets"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
 )
 
 // ExportsHandlers handles HTTP requests for SD3/SDIF file export generation.
 type ExportsHandlers struct {
-	service  *exports.Service
-	validate *validator.Validate
+	service      *exports.Service
+	meetsService *meets.Service
+	validate     *validator.Validate
 }
 
 // NewExportsHandlers returns a new ExportsHandlers.
 func NewExportsHandlers(service *exports.Service) *ExportsHandlers {
+	return NewExportsHandlersWithMeetAccess(service, nil)
+}
+
+// NewExportsHandlersWithMeetAccess returns export handlers with optional
+// meet-scoped portal/swimmer read authorization support.
+func NewExportsHandlersWithMeetAccess(service *exports.Service, meetsService *meets.Service) *ExportsHandlers {
 	return &ExportsHandlers{
-		service:  service,
-		validate: validator.New(),
+		service:      service,
+		meetsService: meetsService,
+		validate:     validator.New(),
 	}
 }
 
@@ -79,16 +89,54 @@ func exportScopeFromRequest(w http.ResponseWriter, r *http.Request) (*appmiddlew
 	return scopedRequestFromContext(w, r)
 }
 
+func exportPrincipalHasAnyRole(principal *appmiddleware.Principal, roles ...string) bool {
+	if principal == nil {
+		return false
+	}
+	for _, role := range principal.Roles {
+		if slices.Contains(roles, role) {
+			return true
+		}
+	}
+	return false
+}
+
+func (h *ExportsHandlers) authorizeMeetExportListing(principal *appmiddleware.Principal, orgID, meetID string) error {
+	if exportPrincipalHasAnyRole(principal, "owner", "admin", "coach") {
+		return nil
+	}
+	if !exportPrincipalHasAnyRole(principal, "parent", "swimmer") {
+		return exports.ErrForbidden
+	}
+	if h.meetsService == nil {
+		return exports.ErrForbidden
+	}
+
+	commitments, err := h.meetsService.ListCommitments(principal, orgID, meetID)
+	if err != nil {
+		switch {
+		case errors.Is(err, meets.ErrForbidden):
+			return exports.ErrForbidden
+		case errors.Is(err, meets.ErrMeetNotFound):
+			return exports.ErrExportNotFound
+		default:
+			return err
+		}
+	}
+	if len(commitments) == 0 {
+		return exports.ErrForbidden
+	}
+	return nil
+}
+
 func (h *ExportsHandlers) decodeAndValidate(w http.ResponseWriter, r *http.Request, dst any) bool {
-	if err := decodeJSONBody(r, dst); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request_body", err.Error(), nil)
-		return false
-	}
-	if err := h.validate.Struct(dst); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "validation_failed", "One or more request fields are invalid.", httpx.FormatValidationErrors(err))
-		return false
-	}
-	return true
+	return decodeAndValidateJSON(w, r, dst, h.validate, decodeAndValidateOptions{
+		InvalidStatus:     http.StatusBadRequest,
+		InvalidCode:       "invalid_request_body",
+		ValidationStatus:  http.StatusBadRequest,
+		ValidationCode:    "validation_failed",
+		ValidationMessage: "One or more request fields are invalid.",
+	})
 }
 
 // ─── POST /meets/{meetID}/exports ─────────────────────────────────────────────
@@ -168,15 +216,19 @@ func (h *ExportsHandlers) listMeetExports(w http.ResponseWriter, r *http.Request
 	}
 	meetID := chi.URLParam(r, "meetID")
 
-	list, err := h.service.ListExports(principal, orgID, meetID)
-	if err != nil {
-		if errors.Is(err, exports.ErrForbidden) {
+	if err := h.authorizeMeetExportListing(principal, orgID, meetID); err != nil {
+		switch {
+		case errors.Is(err, exports.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient permissions.", nil)
-			return
+		case errors.Is(err, exports.ErrExportNotFound):
+			httpx.WriteError(w, r, http.StatusNotFound, "meet_not_found", "Meet was not found.", nil)
+		default:
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to authorize meet file access.", nil)
 		}
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to list exports.", nil)
 		return
 	}
+
+	list := h.service.ListExportsForAuthorizedMeet(orgID, meetID)
 
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"count":   len(list),

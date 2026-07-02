@@ -1874,7 +1874,7 @@ func hashChallengeCode(code string) string {
 func generateTOTPSecret() string {
 	raw := make([]byte, 20)
 	if _, err := rand.Read(raw); err != nil {
-		return randomBase32(32)
+		panic(fmt.Errorf("secure random unavailable for TOTP secret: %w", err))
 	}
 	return base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(raw)
 }
@@ -1897,8 +1897,7 @@ func clonePrincipal(in *appmiddleware.Principal) *appmiddleware.Principal {
 func randomToken(byteLen int) string {
 	raw := make([]byte, byteLen)
 	if _, err := rand.Read(raw); err != nil {
-		now := time.Now().UTC().UnixNano()
-		return fmt.Sprintf("fallback%x", now)
+		panic(fmt.Errorf("secure random unavailable for token generation: %w", err))
 	}
 	return hex.EncodeToString(raw)
 }
@@ -1914,7 +1913,7 @@ func randomAlphaNumeric(length int) string {
 	for i := range out {
 		n, err := rand.Int(rand.Reader, charsetLen)
 		if err != nil {
-			return randomToken(length)
+			panic(fmt.Errorf("secure random unavailable for alphanumeric token generation: %w", err))
 		}
 		out[i] = charset[n.Int64()]
 	}
@@ -1929,7 +1928,7 @@ func randomBase32(length int) string {
 
 	buffer := make([]byte, length)
 	if _, err := rand.Read(buffer); err != nil {
-		return "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+		panic(fmt.Errorf("secure random unavailable for base32 token generation: %w", err))
 	}
 
 	out := make([]byte, length)

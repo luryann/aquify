@@ -72,13 +72,13 @@ function CallbackInner() {
           throw new Error('Sign-in completed but no active session could be loaded.')
         }
 
-        if (roleRequiresMFA(next.user.role) && !next.user.mfaAuthenticated) {
+        if (roleRequiresMFA(next.user.roles) && !next.user.mfaAuthenticated) {
           setStage('mfa')
           setTimeout(() => router.replace('/mfa'), 400)
           return
         }
 
-        router.replace(destinationForRole(next.user.role))
+        router.replace(destinationForRole(next.user.roles))
       } catch (error) {
         if (cancelled) return
         setStage('error')

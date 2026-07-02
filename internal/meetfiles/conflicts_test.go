@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -254,7 +255,9 @@ func TestBuildReport_GoldenFile(t *testing.T) {
 		t.Fatalf("read golden report: %v", err)
 	}
 
-	if string(got)+"\n" != string(want) {
+	normalizedGot := strings.ReplaceAll(string(got)+"\n", "\r\n", "\n")
+	normalizedWant := strings.ReplaceAll(string(want), "\r\n", "\n")
+	if normalizedGot != normalizedWant {
 		t.Fatalf("import report golden mismatch\n--- got ---\n%s\n--- want ---\n%s", got, want)
 	}
 }

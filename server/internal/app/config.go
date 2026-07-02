@@ -52,8 +52,9 @@ type TelemetryConfig struct {
 	OTLPEndpoint string
 	// SampleRate is the OTel trace sampling rate (0.0–1.0). Default: 1.0.
 	SampleRate float64
-	// MetricsAddr is the address to serve the Prometheus /metrics endpoint.
-	// Default: ":9090". Set to "" to disable.
+	// MetricsAddr is the dedicated address for the Prometheus /metrics listener.
+	// Default: ":9090" only in explicit development/local/test environments.
+	// Set to "" to disable the Prometheus endpoint entirely.
 	MetricsAddr string
 }
 
@@ -73,6 +74,9 @@ type WorkerConfig struct {
 	// CleanupInterval is how often the expired-file purge job runs.
 	// Default: 6h. Set to 0 to disable.
 	CleanupInterval string
+	// ScheduledOrgIDs is the list of orgs that receive org-scoped scheduled
+	// jobs such as billing reconciliation and integrity checks.
+	ScheduledOrgIDs []string
 }
 
 // ComplianceConfig holds retention and compliance job settings.
@@ -206,6 +210,10 @@ func LoadConfig() Config {
 	// "development", "local", or "test".
 	appEnv := strings.ToLower(strings.TrimSpace(getEnv("APP_ENV", "")))
 	enableDevStubTokensDefault := isExplicitDevelopmentEnv(appEnv)
+	metricsAddrDefault := ""
+	if isExplicitDevelopmentEnv(appEnv) {
+		metricsAddrDefault = ":9090"
+	}
 	return Config{
 		Addr:           getEnv("API_ADDR", defaultAPIAddr),
 		AllowedOrigins: splitCSV(getEnv("API_ALLOWED_ORIGINS", defaultAllowedOrigin)),
@@ -262,6 +270,7 @@ func LoadConfig() Config {
 			ReconcileInterval:   getEnv("WORKER_RECONCILE_INTERVAL", "24h"),
 			IntegrityInterval:   getEnv("WORKER_INTEGRITY_INTERVAL", "24h"),
 			CleanupInterval:     getEnv("WORKER_CLEANUP_INTERVAL", "6h"),
+			ScheduledOrgIDs:     splitCSV(getEnv("WORKER_SCHEDULED_ORG_IDS", "")),
 		},
 		Security: SecurityConfig{
 			CSRFHeaderName: strings.TrimSpace(getEnv("SECURITY_CSRF_HEADER_NAME", "X-CSRF-Token")),
@@ -288,7 +297,7 @@ func LoadConfig() Config {
 			ServiceVersion: strings.TrimSpace(getEnv("OTEL_SERVICE_VERSION", "dev")),
 			OTLPEndpoint:   strings.TrimSpace(getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "")),
 			SampleRate:     getEnvFloat64("OTEL_TRACES_SAMPLER_ARG", 1.0),
-			MetricsAddr:    strings.TrimSpace(getEnv("METRICS_ADDR", ":9090")),
+			MetricsAddr:    strings.TrimSpace(getEnv("METRICS_ADDR", metricsAddrDefault)),
 		},
 		Keycloak: KeycloakAdminConfig{
 			AdminURL:     strings.TrimSpace(getEnv("KEYCLOAK_ADMIN_URL", "")),
@@ -322,6 +331,20 @@ func ValidateDevAuthConfig(cfg Config) error {
 		)
 	}
 	return nil
+}
+
+// ValidateAppEnvConfig requires APP_ENV to be explicit and recognized at
+// startup so staging/production deployments cannot silently run with typoed or
+// inherited local defaults.
+func ValidateAppEnvConfig(cfg Config) error {
+	appEnv := strings.ToLower(strings.TrimSpace(cfg.AppEnv))
+	if appEnv == "" {
+		return fmt.Errorf("APP_ENV must be set explicitly; allowed values: development, local, test, staging, production")
+	}
+	if isRecognizedAppEnv(appEnv) {
+		return nil
+	}
+	return fmt.Errorf("APP_ENV=%q is invalid; allowed values: development, local, test, staging, production", cfg.AppEnv)
 }
 
 func getEnv(key, fallback string) string {
@@ -413,4 +436,13 @@ func splitCSV(value string) []string {
 		out = append(out, trimmed)
 	}
 	return out
+}
+
+func isRecognizedAppEnv(appEnv string) bool {
+	switch strings.ToLower(strings.TrimSpace(appEnv)) {
+	case "development", "local", "test", "staging", "production":
+		return true
+	default:
+		return false
+	}
 }

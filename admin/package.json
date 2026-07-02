@@ -9,12 +9,19 @@
     "clean": "node -e \"require('fs').rmSync('.next', { recursive: true, force: true, maxRetries: 10 })\"",
     "build:clean": "node -e \"require('fs').rmSync('.next', { recursive: true, force: true, maxRetries: 10 })\" && next build",
     "dev": "next dev",
-    "build": "next build",
-    "test": "node --test",
+    "build": "npm run check:offline-build && next build",
+    "check:offline-build": "node ./scripts/check-offline-build.mjs",
+    "test": "tsx --tsconfig tsconfig.test.json --test",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:install": "playwright install --with-deps chromium",
     "start": "next start",
-    "lint": "next lint --max-warnings=0"
+    "lint": "npm run check:offline-build && next lint --max-warnings=0"
   },
   "dependencies": {
+    "@fontsource/instrument-serif": "^5.2.8",
+    "@fontsource/jetbrains-mono": "^5.2.8",
+    "@fontsource/plus-jakarta-sans": "^5.2.8",
     "@hookform/resolvers": "^5.2.2",
     "next": "15.5.15",
     "qrcode": "^1.5.4",
@@ -24,11 +31,15 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "@types/jsdom": "^21.1.7",
     "@types/node": "22.15.0",
     "@types/react": "19.0.12",
     "@types/react-dom": "19.0.5",
     "eslint": "9.39.4",
     "eslint-config-next": "15.5.14",
+    "jsdom": "^26.1.0",
+    "tsx": "^4.20.6",
     "typescript": "5.8.3"
   }
 }

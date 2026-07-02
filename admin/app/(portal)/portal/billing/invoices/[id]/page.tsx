@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { Suspense, useState, useEffect } from 'react'
 import Link from 'next/link'
-import { useParams } from 'next/navigation'
+import { useParams, useSearchParams } from 'next/navigation'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
+import { reportUIError } from '@/lib/frontend-telemetry'
 import {
   fetchInvoice,
   fetchInvoiceItems,
@@ -14,6 +15,11 @@ import {
   InvoiceItemRecord,
   PaymentRecord,
 } from '@/lib/adminData'
+import {
+  isPortalInvoiceCheckoutDisabled,
+  launchPortalInvoiceCheckout,
+  portalInvoiceCheckoutErrorMessage,
+} from '@/lib/portal-invoice-checkout'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 const STATUS_CONFIG: Record<string, { label: string; bg: string; color: string }> = {
@@ -79,7 +85,16 @@ function LoadingSkeleton() {
 
 // ── Component ────────────────────────────────────────────────────────────────
 export default function InvoiceDetailPage() {
+  return (
+    <Suspense fallback={<LoadingSkeleton />}>
+      <InvoiceDetailPageContent />
+    </Suspense>
+  )
+}
+
+function InvoiceDetailPageContent() {
   const params = useParams<{ id: string }>()
+  const searchParams = useSearchParams()
   const invoiceId = typeof params?.id === 'string' ? params.id : ''
 
   const { session } = useSession()
@@ -92,10 +107,18 @@ export default function InvoiceDetailPage() {
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<Tab>('summary')
   const [checkingOut, setCheckingOut] = useState(false)
+  const [checkoutError, setCheckoutError] = useState('')
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
-    if (!orgId || !invoiceId) { setLoading(false); return }
+    if (!orgId || !invoiceId) {
+      setLoading(false)
+      setLoadError('Invoice detail is unavailable because invoice context is missing.')
+      return
+    }
     setLoading(true)
+    setLoadError(null)
     Promise.all([
       fetchInvoice(api, orgId, invoiceId),
       fetchInvoiceItems(api, orgId, invoiceId),
@@ -106,9 +129,19 @@ export default function InvoiceDetailPage() {
         setItems(its)
         setPayments(pmts)
       })
-      .catch(console.error)
+      .catch((error) => {
+        setInvoice(null)
+        setItems([])
+        setPayments([])
+        setLoadError(reportUIError(
+          'portal-invoice-detail-load',
+          error,
+          'Invoice detail data is unavailable right now.',
+          { orgId, invoiceId },
+        ))
+      })
       .finally(() => setLoading(false))
-  }, [api, orgId, invoiceId])
+  }, [api, orgId, invoiceId, reloadKey])
 
   if (loading) return <LoadingSkeleton />
 
@@ -120,6 +153,33 @@ export default function InvoiceDetailPage() {
             Billing
           </Link>
         </nav>
+        {loadError && (
+          <div
+            style={{
+              background: '#fff7ed',
+              border: '1px solid #fdba74',
+              borderRadius: '10px',
+              padding: '12px 16px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: '12px',
+              marginBottom: '20px',
+            }}
+          >
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+              <Icon name="alert-circle" size={15} style={{ color: '#ea580c', marginTop: '1px', flexShrink: 0 }} />
+              <p style={{ margin: 0, fontSize: '12.5px', color: '#9a3412', lineHeight: 1.5 }}>{loadError}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setReloadKey((key) => key + 1)}
+              style={{ background: '#ffffff', border: '1px solid #fdba74', borderRadius: '8px', cursor: 'pointer', color: '#9a3412', fontSize: '12px', fontWeight: 600, padding: '8px 14px', whiteSpace: 'nowrap' }}
+            >
+              Retry
+            </button>
+          </div>
+        )}
         <div
           style={{
             background: '#ffffff',
@@ -129,7 +189,9 @@ export default function InvoiceDetailPage() {
             textAlign: 'center',
           }}
         >
-          <div style={{ fontSize: '15px', color: '#9A9693', fontWeight: 500 }}>Invoice not found</div>
+          <div style={{ fontSize: '15px', color: '#9A9693', fontWeight: 500 }}>
+            {loadError ? 'Invoice details are unavailable right now.' : 'Invoice not found'}
+          </div>
         </div>
       </div>
     )
@@ -140,12 +202,25 @@ export default function InvoiceDetailPage() {
   const amountPaid = invoice.amount_paid_cents / 100
   const amountDue = invoice.amount_due_cents / 100
   const paidPct = total > 0 ? Math.round((amountPaid / total) * 100) : 0
+  const checkoutState = searchParams.get('checkout')
+  const checkoutDisabled = isPortalInvoiceCheckoutDisabled(invoice, checkingOut)
 
   const handlePay = async () => {
+    if (!invoice || !orgId || typeof window === 'undefined') return
     setCheckingOut(true)
-    await new Promise((r) => setTimeout(r, 1200))
-    setCheckingOut(false)
-    alert('Stripe Checkout would launch here in production.')
+    setCheckoutError('')
+    try {
+      await launchPortalInvoiceCheckout({
+        api,
+        orgId,
+        invoice,
+        origin: window.location.origin,
+        redirect: (url) => window.location.assign(url),
+      })
+    } catch (error) {
+      setCheckingOut(false)
+      setCheckoutError(portalInvoiceCheckoutErrorMessage(error))
+    }
   }
 
   return (
@@ -183,6 +258,54 @@ export default function InvoiceDetailPage() {
           animation: 'slideUp 0.35s ease both',
         }}
       >
+        {checkoutState === 'success' && (
+          <div
+            style={{
+              marginBottom: '16px',
+              padding: '12px 14px',
+              borderRadius: '10px',
+              background: '#eff6ff',
+              border: '1px solid rgba(37,99,235,0.15)',
+              color: '#1d4ed8',
+              fontSize: '13px',
+              lineHeight: 1.5,
+            }}
+          >
+            Stripe returned successfully. If payment confirmation is still in flight, refresh this invoice in a moment to see the updated status.
+          </div>
+        )}
+        {checkoutState === 'cancelled' && (
+          <div
+            style={{
+              marginBottom: '16px',
+              padding: '12px 14px',
+              borderRadius: '10px',
+              background: '#fff7ed',
+              border: '1px solid rgba(217,119,6,0.15)',
+              color: '#c2410c',
+              fontSize: '13px',
+              lineHeight: 1.5,
+            }}
+          >
+            Checkout was cancelled before payment completed. Your invoice is still open.
+          </div>
+        )}
+        {checkoutError && (
+          <div
+            style={{
+              marginBottom: '16px',
+              padding: '12px 14px',
+              borderRadius: '10px',
+              background: '#fef2f2',
+              border: '1px solid rgba(220,38,38,0.15)',
+              color: '#b91c1c',
+              fontSize: '13px',
+              lineHeight: 1.5,
+            }}
+          >
+            {checkoutError}
+          </div>
+        )}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap', marginBottom: '20px' }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
@@ -278,7 +401,7 @@ export default function InvoiceDetailPage() {
         {(invoice.status === 'issued' || invoice.status === 'partially_paid') && (
           <button
             onClick={handlePay}
-            disabled={checkingOut}
+            disabled={checkoutDisabled}
             style={{
               width: '100%',
               padding: '14px',
@@ -288,7 +411,7 @@ export default function InvoiceDetailPage() {
               borderRadius: '11px',
               fontSize: '15px',
               fontWeight: 700,
-              cursor: checkingOut ? 'wait' : 'pointer',
+              cursor: checkoutDisabled ? 'wait' : 'pointer',
               fontFamily: 'var(--font-body)',
               display: 'flex',
               alignItems: 'center',
@@ -296,9 +419,9 @@ export default function InvoiceDetailPage() {
               gap: '10px',
               boxShadow: '0 4px 14px rgba(235,93,30,0.35)',
               transition: 'opacity 120ms, transform 80ms',
-              opacity: checkingOut ? 0.8 : 1,
+              opacity: checkoutDisabled ? 0.8 : 1,
             }}
-            onMouseEnter={(e) => { if (!checkingOut) e.currentTarget.style.transform = 'translateY(-1px)' }}
+            onMouseEnter={(e) => { if (!checkoutDisabled) e.currentTarget.style.transform = 'translateY(-1px)' }}
             onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)' }}
           >
             {checkingOut ? (

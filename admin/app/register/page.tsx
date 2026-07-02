@@ -1,17 +1,17 @@
 'use client'
 
-import { useState, useCallback, type FormEvent } from 'react'
-import { useRouter } from 'next/navigation'
-import { LOCAL_DEV_ORG_ID } from '@/lib/localDev'
+import { Suspense, useState, useCallback, type FormEvent } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { resolvePublicOrg } from '@/lib/public-org'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
 
-type Role = 'parent' | 'coach' | 'staff'
+type Role = 'parent' | 'coach' | 'read_only_staff'
 
 const ROLE_OPTIONS: { value: Role; label: string; desc: string }[] = [
   { value: 'parent',  label: 'Parent / Guardian', desc: 'Manage swimmers, meets, billing' },
   { value: 'coach',   label: 'Coach',              desc: 'Access training tools and entries' },
-  { value: 'staff',   label: 'Admin Staff',        desc: 'Read-only or administrative access' },
+  { value: 'read_only_staff', label: 'Admin Staff', desc: 'Read-only or administrative access' },
 ]
 
 type FormState = {
@@ -37,7 +37,16 @@ function validate(f: FormState): FieldError {
 }
 
 export default function RegisterPage() {
+  return (
+    <Suspense fallback={null}>
+      <RegisterPageContent />
+    </Suspense>
+  )
+}
+
+function RegisterPageContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [form, setForm] = useState<FormState>({
     firstName: '', lastName: '', email: '', role: '', clubCode: '', message: '',
   })
@@ -67,6 +76,16 @@ export default function RegisterPage() {
     setSubmitStatus('loading')
     setApiError('')
     try {
+      const resolved = resolvePublicOrg({
+        searchParams,
+        host: typeof window === 'undefined' ? '' : window.location.hostname,
+        clubCode: form.clubCode,
+      })
+      if (!resolved.orgId) {
+        setApiError('We could not determine your club. Use the registration link from your club or enter a valid club code.')
+        setSubmitStatus('error')
+        return
+      }
       const res = await fetch(`${API_BASE}/api/v1/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -74,7 +93,10 @@ export default function RegisterPage() {
           first_name: form.firstName.trim(),
           last_name: form.lastName.trim(),
           email: form.email.trim().toLowerCase(),
-          org_id: LOCAL_DEV_ORG_ID,
+          org_id: resolved.orgId,
+          requested_role: form.role,
+          club_code: resolved.clubCode || undefined,
+          note: form.message.trim() || undefined,
         }),
       })
       if (res.status === 201 || res.status === 200) {
@@ -95,7 +117,7 @@ export default function RegisterPage() {
       setApiError('Unable to connect. Please check your connection and try again.')
       setSubmitStatus('error')
     }
-  }, [form])
+  }, [form, searchParams])
 
   const submitting = submitStatus === 'loading'
 

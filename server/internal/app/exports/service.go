@@ -313,6 +313,10 @@ func (s *Service) ListExports(principal *appmiddleware.Principal, orgID, meetID 
 	if !hasAnyRole(principal, "owner", "admin", "coach") {
 		return nil, ErrForbidden
 	}
+	return s.ListExportsForAuthorizedMeet(orgID, meetID), nil
+}
+
+func (s *Service) ListExportsForAuthorizedMeet(orgID, meetID string) []FileExport {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -329,7 +333,7 @@ func (s *Service) ListExports(principal *appmiddleware.Principal, orgID, meetID 
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].CreatedAt.After(result[j].CreatedAt)
 	})
-	return result, nil
+	return result
 }
 
 func (s *Service) GetExport(principal *appmiddleware.Principal, orgID, exportID string) (*FileExport, error) {
@@ -452,7 +456,7 @@ func hasAnyRole(principal *appmiddleware.Principal, required ...string) bool {
 func randomToken(byteLen int) string {
 	raw := make([]byte, byteLen)
 	if _, err := rand.Read(raw); err != nil {
-		return fmt.Sprintf("fallback%x", time.Now().UTC().UnixNano())
+		panic(fmt.Errorf("secure random unavailable for export token generation: %w", err))
 	}
 	return hex.EncodeToString(raw)
 }

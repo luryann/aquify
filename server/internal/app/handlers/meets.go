@@ -263,10 +263,15 @@ func (h *MeetsHandlers) listMeets(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	pagination := parseListPagination(r, listPaginationOptions{})
+	result, total := paginateSlice(result, pagination)
 
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status": "ok",
 		"count":  len(result),
+		"total":  total,
+		"limit":  pagination.Limit,
+		"offset": pagination.Offset,
 		"meets":  result,
 	})
 }
@@ -421,10 +426,15 @@ func (h *MeetsHandlers) listMeetSessions(w http.ResponseWriter, r *http.Request)
 		}
 		return
 	}
+	pagination := parseListPagination(r, listPaginationOptions{})
+	result, total := paginateSlice(result, pagination)
 
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":   "ok",
 		"count":    len(result),
+		"total":    total,
+		"limit":    pagination.Limit,
+		"offset":   pagination.Offset,
 		"sessions": result,
 	})
 }
@@ -518,10 +528,15 @@ func (h *MeetsHandlers) listMeetEvents(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	pagination := parseListPagination(r, listPaginationOptions{})
+	result, total := paginateSlice(result, pagination)
 
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status": "ok",
 		"count":  len(result),
+		"total":  total,
+		"limit":  pagination.Limit,
+		"offset": pagination.Offset,
 		"events": result,
 	})
 }
@@ -587,10 +602,15 @@ func (h *MeetsHandlers) listCommitments(w http.ResponseWriter, r *http.Request) 
 		}
 		return
 	}
+	pagination := parseListPagination(r, listPaginationOptions{})
+	result, total := paginateSlice(result, pagination)
 
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":      "ok",
 		"count":       len(result),
+		"total":       total,
+		"limit":       pagination.Limit,
+		"offset":      pagination.Offset,
 		"commitments": result,
 	})
 }
@@ -726,10 +746,15 @@ func (h *MeetsHandlers) listCommitmentEventSelections(w http.ResponseWriter, r *
 		}
 		return
 	}
+	pagination := parseListPagination(r, listPaginationOptions{})
+	result, total := paginateSlice(result, pagination)
 
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":     "ok",
 		"count":      len(result),
+		"total":      total,
+		"limit":      pagination.Limit,
+		"offset":     pagination.Offset,
 		"selections": result,
 	})
 }
@@ -844,10 +869,15 @@ func (h *MeetsHandlers) listEntries(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	pagination := parseListPagination(r, listPaginationOptions{})
+	result, total := paginateSlice(result, pagination)
 
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":  "ok",
 		"count":   len(result),
+		"total":   total,
+		"limit":   pagination.Limit,
+		"offset":  pagination.Offset,
 		"entries": result,
 	})
 }
@@ -1034,15 +1064,13 @@ func (h *MeetsHandlers) approveEntry(w http.ResponseWriter, r *http.Request) {
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
 func (h *MeetsHandlers) decodeAndValidate(w http.ResponseWriter, r *http.Request, dst any) bool {
-	if err := decodeJSONBody(r, dst); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request_body", err.Error(), nil)
-		return false
-	}
-	if err := h.validate.Struct(dst); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "validation_failed", "One or more request fields are invalid.", httpx.FormatValidationErrors(err))
-		return false
-	}
-	return true
+	return decodeAndValidateJSON(w, r, dst, h.validate, decodeAndValidateOptions{
+		InvalidStatus:     http.StatusBadRequest,
+		InvalidCode:       "invalid_request_body",
+		ValidationStatus:  http.StatusBadRequest,
+		ValidationCode:    "validation_failed",
+		ValidationMessage: "One or more request fields are invalid.",
+	})
 }
 
 // validateID returns true if the given path parameter value is non-empty.

@@ -85,6 +85,10 @@ export type RegistrationRecord = {
   status: string
   registration_date: string
   notes?: string
+  waiver_accepted?: boolean
+  waiver_count?: number
+  waiver_types?: string[]
+  last_waiver_accepted_at?: string
 }
 
 export type EligibilityRuleRecord = {
@@ -343,6 +347,22 @@ export type RefundRecord = {
   updated_by: string
 }
 
+export type HouseholdAutopayStatusRecord = {
+  household_id: string
+  enabled: boolean
+  payment_method_type?: string
+  payment_method_brand?: string
+  payment_method_last4?: string
+  payment_method_label?: string
+  payment_method_external_ref?: string
+  payment_method_exp_month?: number
+  payment_method_exp_year?: number
+  trigger_days_before_due: number
+  next_charge_date?: string
+  next_charge_amount_cents?: number
+  next_invoice_id?: string
+}
+
 export type BestTimeRecord = {
   id: string
   org_id: string
@@ -378,6 +398,17 @@ export type ProgressionResultRecord = {
   override_reason?: string
   created_at: string
   updated_at: string
+}
+
+export type SwimmerActivityRecord = {
+  id: string
+  type: string
+  occurred_at: string
+  title: string
+  detail?: string
+  status?: string
+  source_id?: string
+  meet_id?: string
 }
 
 export type RoleAssignmentRecord = {
@@ -667,11 +698,6 @@ export type EmailDeliveryRecord = {
   updated_at: string
 }
 
-export type SendCampaignRecipientInput = {
-  email: string
-  user_id?: string
-}
-
 export type SuppressionRecord = {
   id: string
   org_id: string
@@ -770,6 +796,28 @@ export type TimeStandardRecord = {
   updated_at: string
   created_by: string
   updated_by: string
+}
+
+export type CommunicationPreferenceRecord = {
+  event_id: string
+  label: string
+  description: string
+  email_enabled: boolean
+  push_enabled: boolean
+}
+
+export type CutQualificationRecord = {
+  swimmer_id: string
+  standard_id: string
+  standard_code: string
+  event_distance: number
+  stroke: string
+  course: string
+  gender: string
+  cut_time_ms: number
+  best_time_ms?: number
+  qualified: boolean
+  margin_ms?: number
 }
 
 function withOrgHeaders(orgId: string) {
@@ -876,6 +924,33 @@ export async function fetchMeetEntries(api: ApiClient, orgId: string, meetId: st
   return res.entries ?? []
 }
 
+export async function createMeetEntry(api: ApiClient, orgId: string, meetId: string, input: {
+  swimmer_id: string
+  meet_event_id: string
+  commitment_id?: string
+  seed_time_ms?: number
+  is_relay?: boolean
+}): Promise<EntryRecord> {
+  const res = await api.post<{ entry: EntryRecord }>(
+    `/api/v1/meets/${meetId}/entries`,
+    input,
+    withOrgHeaders(orgId),
+  )
+  return res.entry
+}
+
+export async function respondToMeetCommitment(api: ApiClient, orgId: string, meetId: string, commitmentId: string, input: {
+  response: 'committed_yes' | 'committed_no'
+  notes?: string
+}): Promise<CommitmentRecord> {
+  const res = await api.post<{ commitment: CommitmentRecord }>(
+    `/api/v1/meets/${meetId}/commitments/${commitmentId}/respond`,
+    input,
+    withOrgHeaders(orgId),
+  )
+  return res.commitment
+}
+
 export async function fetchImports(api: ApiClient, orgId: string): Promise<ImportRecord[]> {
   const res = await api.get<{ imports?: ImportRecord[] }>('/api/v1/imports', undefined, withOrgHeaders(orgId))
   return res.imports ?? []
@@ -906,6 +981,65 @@ export async function fetchInvoicesForHousehold(api: ApiClient, orgId: string, h
   return res.invoices ?? []
 }
 
+export async function fetchHouseholdAutopay(api: ApiClient, orgId: string, householdId: string): Promise<HouseholdAutopayStatusRecord> {
+  const res = await api.get<{ autopay: HouseholdAutopayStatusRecord }>(
+    `/api/v1/households/${householdId}/autopay`,
+    undefined,
+    withOrgHeaders(orgId),
+  )
+  return res.autopay
+}
+
+export async function fetchHouseholdAutopayStatuses(
+  api: ApiClient,
+  orgId: string,
+  householdIds: string[] = [],
+): Promise<HouseholdAutopayStatusRecord[]> {
+  const params = new URLSearchParams()
+  for (const householdId of householdIds) {
+    if (householdId) params.append('household_id', householdId)
+  }
+  const query = params.toString()
+  const res = await api.get<{ autopay?: HouseholdAutopayStatusRecord[] }>(
+    `/api/v1/autopay/households${query ? `?${query}` : ''}`,
+    undefined,
+    withOrgHeaders(orgId),
+  )
+  return res.autopay ?? []
+}
+
+export async function upsertHouseholdAutopay(
+  api: ApiClient,
+  orgId: string,
+  householdId: string,
+  input: {
+    payment_method_type: 'card' | 'ach'
+    payment_method_brand?: string
+    payment_method_last4?: string
+    payment_method_label: string
+    payment_method_external_ref?: string
+    payment_method_exp_month?: number
+    payment_method_exp_year?: number
+    trigger_days_before_due: 0 | 3 | 7
+  },
+): Promise<HouseholdAutopayStatusRecord> {
+  const res = await api.put<{ autopay: HouseholdAutopayStatusRecord }>(
+    `/api/v1/households/${householdId}/autopay`,
+    input,
+    withOrgHeaders(orgId),
+  )
+  return res.autopay
+}
+
+export async function optOutHouseholdAutopay(api: ApiClient, orgId: string, householdId: string): Promise<HouseholdAutopayStatusRecord> {
+  const res = await api.post<{ autopay: HouseholdAutopayStatusRecord }>(
+    `/api/v1/households/${householdId}/autopay/opt-out`,
+    undefined,
+    withOrgHeaders(orgId),
+  )
+  return res.autopay
+}
+
 export async function fetchInvoices(api: ApiClient, orgId: string, params: Record<string, string> = {}): Promise<InvoiceRecord[]> {
   const query = new URLSearchParams(params).toString()
   const res = await api.get<{ invoices?: InvoiceRecord[] }>(`/api/v1/invoices${query ? `?${query}` : ''}`, undefined, withOrgHeaders(orgId))
@@ -915,6 +1049,35 @@ export async function fetchInvoices(api: ApiClient, orgId: string, params: Recor
 export async function fetchInvoice(api: ApiClient, orgId: string, invoiceId: string): Promise<InvoiceRecord> {
   const res = await api.get<{ invoice: InvoiceRecord }>(`/api/v1/invoices/${invoiceId}`, undefined, withOrgHeaders(orgId))
   return res.invoice
+}
+
+export async function createInvoiceCheckoutSession(
+  api: ApiClient,
+  orgId: string,
+  input: {
+    invoice_id: string
+    amount_cents: number
+    description?: string
+    success_url: string
+    cancel_url: string
+    idempotency_key: string
+  },
+): Promise<{ id: string; url: string }> {
+  const res = await api.post<{ checkout_session: { id: string; url: string } }>(
+    '/api/v1/stripe/checkout-sessions',
+    {
+      invoice_id: input.invoice_id,
+      amount_cents: input.amount_cents,
+      description: input.description ?? '',
+      success_url: input.success_url,
+      cancel_url: input.cancel_url,
+    },
+    {
+      ...withOrgHeaders(orgId),
+      'Idempotency-Key': input.idempotency_key,
+    },
+  )
+  return res.checkout_session
 }
 
 export async function fetchInvoiceItems(api: ApiClient, orgId: string, invoiceId: string): Promise<InvoiceItemRecord[]> {
@@ -946,6 +1109,11 @@ export async function fetchSwimmerBestTimes(api: ApiClient, orgId: string, swimm
 export async function fetchSwimmerProgression(api: ApiClient, orgId: string, swimmerId: string): Promise<ProgressionResultRecord[]> {
   const res = await api.get<{ results?: ProgressionResultRecord[] }>(`/api/v1/swimmers/${swimmerId}/progression`, undefined, withOrgHeaders(orgId))
   return res.results ?? []
+}
+
+export async function fetchSwimmerActivity(api: ApiClient, orgId: string, swimmerId: string): Promise<SwimmerActivityRecord[]> {
+  const res = await api.get<{ activities?: SwimmerActivityRecord[] }>(`/api/v1/swimmers/${swimmerId}/activity`, undefined, withOrgHeaders(orgId))
+  return res.activities ?? []
 }
 
 export async function fetchPerformanceBestTimes(api: ApiClient, orgId: string, params: Record<string, string> = {}): Promise<BestTimeRecord[]> {
@@ -1072,6 +1240,32 @@ export async function fetchAnnouncements(api: ApiClient, orgId: string, status?:
   return res.announcements ?? []
 }
 
+export async function fetchCommunicationPreferences(api: ApiClient, orgId: string): Promise<CommunicationPreferenceRecord[]> {
+  const res = await api.get<{ preferences?: CommunicationPreferenceRecord[] }>(
+    '/api/v1/communication-preferences',
+    undefined,
+    withOrgHeaders(orgId),
+  )
+  return res.preferences ?? []
+}
+
+export async function updateCommunicationPreferences(
+  api: ApiClient,
+  orgId: string,
+  preferences: Array<{
+    event_id: string
+    email_enabled: boolean
+    push_enabled: boolean
+  }>,
+): Promise<CommunicationPreferenceRecord[]> {
+  const res = await api.put<{ preferences?: CommunicationPreferenceRecord[] }>(
+    '/api/v1/communication-preferences',
+    { preferences },
+    withOrgHeaders(orgId),
+  )
+  return res.preferences ?? []
+}
+
 export async function fetchAnnouncement(api: ApiClient, orgId: string, announcementId: string): Promise<AnnouncementRecord> {
   return api.get<AnnouncementRecord>(`/api/v1/announcements/${announcementId}`, undefined, withOrgHeaders(orgId))
 }
@@ -1115,10 +1309,8 @@ export async function createCampaign(api: ApiClient, orgId: string, input: {
   return api.post<EmailCampaignRecord>('/api/v1/email-campaigns', input, withOrgHeaders(orgId))
 }
 
-export async function sendCampaign(api: ApiClient, orgId: string, campaignId: string, input: {
-  recipients: SendCampaignRecipientInput[]
-}): Promise<EmailCampaignRecord> {
-  return api.post<EmailCampaignRecord>(`/api/v1/email-campaigns/${campaignId}/send`, input, withOrgHeaders(orgId))
+export async function sendCampaign(api: ApiClient, orgId: string, campaignId: string): Promise<EmailCampaignRecord> {
+  return api.post<EmailCampaignRecord>(`/api/v1/email-campaigns/${campaignId}/send`, undefined, withOrgHeaders(orgId))
 }
 
 export async function fetchCampaignDeliveries(api: ApiClient, orgId: string, campaignId: string): Promise<EmailDeliveryRecord[]> {
@@ -1161,6 +1353,16 @@ export async function fetchTimeStandards(api: ApiClient, orgId: string, params: 
   const query = new URLSearchParams(params).toString()
   const res = await api.get<{ time_standards?: TimeStandardRecord[] }>(`/api/v1/time-standards${query ? `?${query}` : ''}`, undefined, withOrgHeaders(orgId))
   return res.time_standards ?? []
+}
+
+export async function fetchSwimmerCutQualification(api: ApiClient, orgId: string, swimmerId: string, standardId: string): Promise<CutQualificationRecord> {
+  const query = new URLSearchParams({ standard_id: standardId }).toString()
+  const res = await api.get<{ qualification: CutQualificationRecord }>(
+    `/api/v1/swimmers/${swimmerId}/cut-qualification?${query}`,
+    undefined,
+    withOrgHeaders(orgId),
+  )
+  return res.qualification
 }
 
 export async function createTimeStandard(api: ApiClient, orgId: string, input: {
@@ -1539,6 +1741,41 @@ export async function createRegistration(
     withOrgHeaders(orgId),
   )
   return res.registration
+}
+
+export async function acceptRegistrationWaiver(
+  api: ApiClient,
+  orgId: string,
+  registrationId: string,
+  input: {
+    waiver_type: string
+    ip_address?: string
+  },
+): Promise<{
+  id: string
+  org_id: string
+  registration_id: string
+  waiver_type: string
+  accepted_at: string
+  accepted_by_user_id: string
+  ip_address?: string
+  created_at: string
+}> {
+  const res = await api.post<{ waiver: {
+    id: string
+    org_id: string
+    registration_id: string
+    waiver_type: string
+    accepted_at: string
+    accepted_by_user_id: string
+    ip_address?: string
+    created_at: string
+  } }>(
+    `/api/v1/registrations/${registrationId}/waivers`,
+    input,
+    withOrgHeaders(orgId),
+  )
+  return res.waiver
 }
 
 export async function assignSwimmerToGroup(

@@ -1,14 +1,23 @@
 package app
 
 import (
+	"archive/zip"
+	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/dareaquatics/aquify/meetfiles"
 	"github.com/dareaquatics/aquify/server/internal/app/imports"
+	"github.com/dareaquatics/aquify/server/internal/app/members"
+	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	"github.com/dareaquatics/aquify/server/internal/storage"
 )
 
 type malwareScannerFunc func(storageKey string, metadata imports.FileUploadMetadata) imports.MalwareScanResult
@@ -101,6 +110,84 @@ func requestUploadURL(t *testing.T, router http.Handler, orgID, token, filename,
 	return env.Import.ID
 }
 
+func loadImportFixture(t *testing.T, name string) []byte {
+	t.Helper()
+	path := filepath.Join("..", "..", "..", "internal", "meetfiles", "testdata", "fixtures", name)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read import fixture %s: %v", name, err)
+	}
+	return data
+}
+
+func buildImportArchive(t *testing.T, entries map[string][]byte) []byte {
+	t.Helper()
+
+	var buf bytes.Buffer
+	writer := zip.NewWriter(&buf)
+	for name, data := range entries {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatalf("create archive entry %s: %v", name, err)
+		}
+		if _, err := entry.Write(data); err != nil {
+			t.Fatalf("write archive entry %s: %v", name, err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close archive writer: %v", err)
+	}
+	return buf.Bytes()
+}
+
+func seedUploadedImport(t *testing.T, store storage.ObjectStorage, orgID, importID, filename, contentType string, data []byte) {
+	t.Helper()
+	key := "imports/" + orgID + "/" + importID + "/" + filename
+	if err := store.PutObject(context.Background(), key, contentType, data); err != nil {
+		t.Fatalf("seed uploaded import %s: %v", key, err)
+	}
+}
+
+func buildZipFixture(t *testing.T, innerName string, data []byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	writer := zip.NewWriter(&buf)
+	entry, err := writer.Create(innerName)
+	if err != nil {
+		t.Fatalf("create zip entry %s: %v", innerName, err)
+	}
+	if _, err := entry.Write(data); err != nil {
+		t.Fatalf("write zip entry %s: %v", innerName, err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close zip fixture: %v", err)
+	}
+	return buf.Bytes()
+}
+
+func seedRosterSwimmer(t *testing.T, svc *members.Service, orgID, householdName, firstName, lastName, dob, gender string) string {
+	t.Helper()
+	principal := &appmiddleware.Principal{UserID: "import-admin", OrgID: orgID, Roles: []string{"admin"}}
+	household, err := svc.CreateHousehold(principal, members.CreateHouseholdInput{
+		OrgID:         orgID,
+		HouseholdName: householdName,
+	})
+	if err != nil {
+		t.Fatalf("create roster household: %v", err)
+	}
+	swimmer, _, err := svc.CreateSwimmer(principal, orgID, members.CreateSwimmerInput{
+		HouseholdID: household.ID,
+		FirstName:   firstName,
+		LastName:    lastName,
+		DateOfBirth: dob,
+		Gender:      gender,
+	})
+	if err != nil {
+		t.Fatalf("create roster swimmer: %v", err)
+	}
+	return swimmer.ID
+}
+
 func importMIMEFor(filename, fileType string) string {
 	switch fileType {
 	case "zip", "hy3":
@@ -122,7 +209,8 @@ func TestRequestUploadURL_AcceptsHYVAndEV3(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	importsService := imports.NewService()
+	store := storage.NewStubStorage("")
+	importsService := imports.NewServiceWithStorage(store)
 	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-import-test", []string{"admin"}, false)
@@ -149,8 +237,11 @@ func TestRequestUploadURL(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	importsService := imports.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	store := storage.NewStubStorage("")
+	importsService := imports.NewServiceWithStorage(store)
+	membersService := members.NewService()
+	seedRosterSwimmer(t, membersService, "org-x", "Coach Family", "John", "Smith", "1999-02-15", "male")
+	router := NewRouterWithServices(Config{}, logger, nil, membersService, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-import-test", []string{"admin"}, false)
 
@@ -255,12 +346,14 @@ func TestFinalizeImport(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	importsService := imports.NewService()
+	store := storage.NewStubStorage("")
+	importsService := imports.NewServiceWithStorage(store)
 	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-import-test", []string{"admin"}, false)
 
 	importID := requestUploadURL(t, router, "org-import-test", adminToken, "results.cl2", "cl2")
+	seedUploadedImport(t, store, "org-import-test", importID, "results.cl2", "application/octet-stream", loadImportFixture(t, "sample.cl2"))
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/imports/"+importID+"/finalize", nil)
 	req.Header.Set("X-Org-Id", "org-import-test")
@@ -276,8 +369,8 @@ func TestFinalizeImport(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &env); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if env.Import.Status != "conflicts_pending" {
-		t.Fatalf("expected status 'conflicts_pending', got %q", env.Import.Status)
+	if env.Import.Status != "applied" {
+		t.Fatalf("expected status 'applied', got %q", env.Import.Status)
 	}
 	if env.AuditEvent.Action != "import.finalized" {
 		t.Fatalf("expected audit action import.finalized, got %q", env.AuditEvent.Action)
@@ -288,11 +381,13 @@ func TestFinalizeImport_AlreadyFinalized(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	importsService := imports.NewService()
+	store := storage.NewStubStorage("")
+	importsService := imports.NewServiceWithStorage(store)
 	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-x", []string{"admin"}, false)
 	importID := requestUploadURL(t, router, "org-x", adminToken, "data.sd3", "sd3")
+	seedUploadedImport(t, store, "org-x", importID, "data.sd3", "application/octet-stream", loadImportFixture(t, "valid.sd3"))
 
 	// Finalize once.
 	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/imports/"+importID+"/finalize", nil)
@@ -393,11 +488,23 @@ func TestListConflicts(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	importsService := imports.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	store := storage.NewStubStorage("")
+	importsService := imports.NewServiceWithStorage(store)
+	membersService := members.NewService()
+	seedRosterSwimmer(t, membersService, "org-conflicts", "Roster Family", "John", "Smith", "1999-02-15", "male")
+	router := NewRouterWithServices(Config{}, logger, nil, membersService, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	importsService.SetRosterLoader(func(orgID string) []meetfiles.RosterSwimmer {
+		return []meetfiles.RosterSwimmer{{
+			ID:        "swimmer-smith",
+			LastName:  "Smith",
+			FirstName: "John",
+			Gender:    "M",
+		}}
+	})
 
 	adminToken := issueSessionToken(t, router, "org-conflicts", []string{"admin"}, false)
-	importID := requestUploadURL(t, router, "org-conflicts", adminToken, "data.cl2", "cl2")
+	importID := requestUploadURL(t, router, "org-conflicts", adminToken, "data.sd3", "sd3")
+	seedUploadedImport(t, store, "org-conflicts", importID, "data.sd3", "application/octet-stream", loadImportFixture(t, "valid.sd3"))
 
 	// Before finalize: no conflicts.
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/imports/"+importID+"/conflicts", nil)
@@ -416,7 +523,7 @@ func TestListConflicts(t *testing.T) {
 		t.Fatalf("expected 0 conflicts before finalize, got %d", env.Count)
 	}
 
-	// Finalize — stub seeds one conflict.
+	// Finalize with one roster match and one unresolved swimmer conflict.
 	finalReq := httptest.NewRequest(http.MethodPost, "/api/v1/imports/"+importID+"/finalize", nil)
 	finalReq.Header.Set("X-Org-Id", "org-conflicts")
 	finalReq.Header.Set("Authorization", "Bearer "+adminToken)
@@ -451,11 +558,23 @@ func TestResolveConflict(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	importsService := imports.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	store := storage.NewStubStorage("")
+	importsService := imports.NewServiceWithStorage(store)
+	membersService := members.NewService()
+	seedRosterSwimmer(t, membersService, "org-resolve", "Resolve Family", "John", "Smith", "1999-02-15", "male")
+	router := NewRouterWithServices(Config{}, logger, nil, membersService, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	importsService.SetRosterLoader(func(orgID string) []meetfiles.RosterSwimmer {
+		return []meetfiles.RosterSwimmer{{
+			ID:        "swimmer-smith",
+			LastName:  "Smith",
+			FirstName: "John",
+			Gender:    "M",
+		}}
+	})
 
 	adminToken := issueSessionToken(t, router, "org-resolve", []string{"admin"}, false)
-	importID := requestUploadURL(t, router, "org-resolve", adminToken, "data.zip", "zip")
+	importID := requestUploadURL(t, router, "org-resolve", adminToken, "data.sd3", "sd3")
+	seedUploadedImport(t, store, "org-resolve", importID, "data.sd3", "application/octet-stream", loadImportFixture(t, "valid.sd3"))
 
 	// Finalize to get a conflict.
 	finalReq := httptest.NewRequest(http.MethodPost, "/api/v1/imports/"+importID+"/finalize", nil)
@@ -510,13 +629,15 @@ func TestResolveConflict_Forbidden_Coach(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	importsService := imports.NewService()
+	store := storage.NewStubStorage("")
+	importsService := imports.NewServiceWithStorage(store)
 	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-x", []string{"admin"}, false)
 	coachToken := issueSessionToken(t, router, "org-x", []string{"coach"}, false)
 
 	importID := requestUploadURL(t, router, "org-x", adminToken, "data.sd3", "sd3")
+	seedUploadedImport(t, store, "org-x", importID, "data.sd3", "application/octet-stream", loadImportFixture(t, "valid.sd3"))
 
 	// Finalize.
 	finalReq := httptest.NewRequest(http.MethodPost, "/api/v1/imports/"+importID+"/finalize", nil)
@@ -545,11 +666,22 @@ func TestGetImportReport(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	importsService := imports.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	store := storage.NewStubStorage("")
+	importsService := imports.NewServiceWithStorage(store)
+	membersService := members.NewService()
+	seedRosterSwimmer(t, membersService, "org-report", "Report Family A", "John", "Smith", "1999-02-15", "male")
+	seedRosterSwimmer(t, membersService, "org-report", "Report Family B", "Jane", "Doe", "2008-05-10", "female")
+	router := NewRouterWithServices(Config{}, logger, nil, membersService, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	importsService.SetRosterLoader(func(orgID string) []meetfiles.RosterSwimmer {
+		return []meetfiles.RosterSwimmer{
+			{ID: "swimmer-smith", LastName: "Smith", FirstName: "John", Gender: "M"},
+			{ID: "swimmer-doe", LastName: "Doe", FirstName: "Jane", Gender: "F"},
+		}
+	})
 
 	adminToken := issueSessionToken(t, router, "org-report", []string{"admin"}, false)
-	importID := requestUploadURL(t, router, "org-report", adminToken, "data.cl2", "cl2")
+	importID := requestUploadURL(t, router, "org-report", adminToken, "data.sd3", "sd3")
+	seedUploadedImport(t, store, "org-report", importID, "data.sd3", "application/octet-stream", loadImportFixture(t, "valid.sd3"))
 
 	// Finalize so report is populated.
 	finalReq := httptest.NewRequest(http.MethodPost, "/api/v1/imports/"+importID+"/finalize", nil)
@@ -573,8 +705,11 @@ func TestGetImportReport(t *testing.T) {
 	if env.Report == nil {
 		t.Fatal("expected report to be populated after finalize")
 	}
-	if env.Report.TotalRows != 10 {
-		t.Fatalf("expected total_rows 10, got %d", env.Report.TotalRows)
+	if env.Report.TotalRows != 2 {
+		t.Fatalf("expected total_rows 2, got %d", env.Report.TotalRows)
+	}
+	if env.Report.MatchedRows != 2 {
+		t.Fatalf("expected matched_rows 2, got %d", env.Report.MatchedRows)
 	}
 }
 
@@ -627,13 +762,15 @@ func TestFinalizeImportRejectsRequiredModeWithoutScanner(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	importsService := imports.NewService()
+	store := storage.NewStubStorage("")
+	importsService := imports.NewServiceWithStorage(store)
 	importsService.ConfigureSecurity(imports.SecurityConfig{RequireMalwareScanHook: true})
 	importsService.SetMalwareScanner(nil)
 	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-required", []string{"admin"}, false)
 	importID := requestUploadURL(t, router, "org-required", adminToken, "required.sd3", "sd3")
+	seedUploadedImport(t, store, "org-required", importID, "required.sd3", "application/octet-stream", loadImportFixture(t, "valid.sd3"))
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/imports/"+importID+"/finalize", nil)
 	req.Header.Set("X-Org-Id", "org-required")
@@ -650,12 +787,14 @@ func TestFinalizeImportRejectsRequiredModeWithStubScanner(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	importsService := imports.NewService()
+	store := storage.NewStubStorage("")
+	importsService := imports.NewServiceWithStorage(store)
 	importsService.ConfigureSecurity(imports.SecurityConfig{RequireMalwareScanHook: true})
 	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-stub", []string{"admin"}, false)
 	importID := requestUploadURL(t, router, "org-stub", adminToken, "stub.sd3", "sd3")
+	seedUploadedImport(t, store, "org-stub", importID, "stub.sd3", "application/octet-stream", loadImportFixture(t, "valid.sd3"))
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/imports/"+importID+"/finalize", nil)
 	req.Header.Set("X-Org-Id", "org-stub")
@@ -672,7 +811,8 @@ func TestFinalizeImportRejectsInfectedUpload(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	importsService := imports.NewService()
+	store := storage.NewStubStorage("")
+	importsService := imports.NewServiceWithStorage(store)
 	importsService.SetMalwareScanner(malwareScannerFunc(func(_ string, _ imports.FileUploadMetadata) imports.MalwareScanResult {
 		return imports.MalwareScanResult{Status: "infected", Provider: "clamav"}
 	}))
@@ -680,6 +820,9 @@ func TestFinalizeImportRejectsInfectedUpload(t *testing.T) {
 
 	adminToken := issueSessionToken(t, router, "org-infected", []string{"admin"}, false)
 	importID := requestUploadURL(t, router, "org-infected", adminToken, "infected.zip", "zip")
+	seedUploadedImport(t, store, "org-infected", importID, "infected.zip", "application/zip", buildImportArchive(t, map[string][]byte{
+		"results.sd3": loadImportFixture(t, "valid.sd3"),
+	}))
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/imports/"+importID+"/finalize", nil)
 	req.Header.Set("X-Org-Id", "org-infected")
@@ -696,7 +839,8 @@ func TestFinalizeImportAcceptsCleanUploadFromRealScanner(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	importsService := imports.NewService()
+	store := storage.NewStubStorage("")
+	importsService := imports.NewServiceWithStorage(store)
 	importsService.ConfigureSecurity(imports.SecurityConfig{RequireMalwareScanHook: true})
 	importsService.SetMalwareScanner(malwareScannerFunc(func(_ string, metadata imports.FileUploadMetadata) imports.MalwareScanResult {
 		if metadata.Filename != "clean.sd3" {
@@ -708,6 +852,7 @@ func TestFinalizeImportAcceptsCleanUploadFromRealScanner(t *testing.T) {
 
 	adminToken := issueSessionToken(t, router, "org-clean", []string{"admin"}, false)
 	importID := requestUploadURL(t, router, "org-clean", adminToken, "clean.sd3", "sd3")
+	seedUploadedImport(t, store, "org-clean", importID, "clean.sd3", "application/octet-stream", loadImportFixture(t, "valid.sd3"))
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/imports/"+importID+"/finalize", nil)
 	req.Header.Set("X-Org-Id", "org-clean")

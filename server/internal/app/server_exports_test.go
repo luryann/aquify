@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dareaquatics/aquify/server/internal/app/exports"
+	"github.com/dareaquatics/aquify/server/internal/app/meets"
 )
 
 // ─── Envelope types ───────────────────────────────────────────────────────────
@@ -36,6 +37,7 @@ type exportListEnvelope struct {
 		ID         string `json:"id"`
 		ExportType string `json:"export_type"`
 		Status     string `json:"status"`
+		DownloadURL string `json:"download_url"`
 	} `json:"exports"`
 }
 
@@ -459,5 +461,170 @@ func TestDownloadExport_ExtendedSD3_ContainsSeedTime(t *testing.T) {
 			snippet = snippet[:200]
 		}
 		t.Errorf("expected seed time '59.10' in extended SD3 output; body snippet: %q", snippet)
+	}
+}
+
+func TestListMeetExports_ParentHouseholdCanAccessMeetFiles(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	meetsSvc := meets.NewService()
+	exportsSvc := exports.NewService()
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsSvc, nil, exportsSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	orgID := "org-export-parent-files"
+	adminToken := issueSessionToken(t, router, orgID, []string{"admin"}, false)
+	parentToken := issueSessionTokenWithHousehold(t, router, "parent-files", orgID, "household-a", []string{"parent"}, false)
+
+	meetsSvc.SeedSwimmer(orgID, "swimmer-a", "household-a")
+	meetsSvc.SeedParentHousehold("parent-files", "household-a")
+
+	meetID := createMeet(t, router, orgID, adminToken, "Family Files Meet")
+	publishMeet(t, router, orgID, adminToken, meetID)
+
+	publishCommitmentsReq := httptest.NewRequest(http.MethodPost, "/api/v1/meets/"+meetID+"/commitment-request", nil)
+	publishCommitmentsReq.Header.Set("X-Org-Id", orgID)
+	publishCommitmentsReq.Header.Set("Authorization", "Bearer "+adminToken)
+	publishCommitmentsRes := httptest.NewRecorder()
+	router.ServeHTTP(publishCommitmentsRes, publishCommitmentsReq)
+	if publishCommitmentsRes.Code != http.StatusOK {
+		t.Fatalf("publish commitment request: expected 200, got %d body=%s", publishCommitmentsRes.Code, publishCommitmentsRes.Body.String())
+	}
+
+	doGenerateExport(t, router, orgID, adminToken, meetID, "standard_sd3")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/meets/"+meetID+"/exports", nil)
+	req.Header.Set("X-Org-Id", orgID)
+	req.Header.Set("Authorization", "Bearer "+parentToken)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 for parent file listing, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var env exportListEnvelope
+	if err := json.Unmarshal(rr.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode list response: %v", err)
+	}
+	if env.Count != 1 || len(env.Exports) != 1 {
+		t.Fatalf("expected 1 meet file, got count=%d len=%d", env.Count, len(env.Exports))
+	}
+	if env.Exports[0].DownloadURL == "" {
+		t.Fatal("expected parent-scoped meet file listing to include a download URL")
+	}
+}
+
+func TestListMeetExports_ParentCrossHouseholdForbidden(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	meetsSvc := meets.NewService()
+	exportsSvc := exports.NewService()
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsSvc, nil, exportsSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	orgID := "org-export-parent-forbidden"
+	adminToken := issueSessionToken(t, router, orgID, []string{"admin"}, false)
+	parentToken := issueSessionTokenWithHousehold(t, router, "parent-other", orgID, "household-b", []string{"parent"}, false)
+
+	meetsSvc.SeedSwimmer(orgID, "swimmer-a", "household-a")
+	meetID := createMeet(t, router, orgID, adminToken, "Restricted Meet")
+	publishMeet(t, router, orgID, adminToken, meetID)
+
+	publishCommitmentsReq := httptest.NewRequest(http.MethodPost, "/api/v1/meets/"+meetID+"/commitment-request", nil)
+	publishCommitmentsReq.Header.Set("X-Org-Id", orgID)
+	publishCommitmentsReq.Header.Set("Authorization", "Bearer "+adminToken)
+	publishCommitmentsRes := httptest.NewRecorder()
+	router.ServeHTTP(publishCommitmentsRes, publishCommitmentsReq)
+	if publishCommitmentsRes.Code != http.StatusOK {
+		t.Fatalf("publish commitment request: expected 200, got %d body=%s", publishCommitmentsRes.Code, publishCommitmentsRes.Body.String())
+	}
+
+	doGenerateExport(t, router, orgID, adminToken, meetID, "standard_sd3")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/meets/"+meetID+"/exports", nil)
+	req.Header.Set("X-Org-Id", orgID)
+	req.Header.Set("Authorization", "Bearer "+parentToken)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for cross-household parent file listing, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestListMeetExports_SwimmerHouseholdCanAccessMeetFiles(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	meetsSvc := meets.NewService()
+	exportsSvc := exports.NewService()
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsSvc, nil, exportsSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	orgID := "org-export-swimmer-files"
+	adminToken := issueSessionToken(t, router, orgID, []string{"admin"}, false)
+	swimmerToken := issueSessionTokenWithHousehold(t, router, "swimmer-files", orgID, "household-a", []string{"swimmer"}, false)
+
+	meetsSvc.SeedSwimmer(orgID, "swimmer-a", "household-a")
+	meetID := createMeet(t, router, orgID, adminToken, "Swimmer Files Meet")
+	publishMeet(t, router, orgID, adminToken, meetID)
+
+	publishCommitmentsReq := httptest.NewRequest(http.MethodPost, "/api/v1/meets/"+meetID+"/commitment-request", nil)
+	publishCommitmentsReq.Header.Set("X-Org-Id", orgID)
+	publishCommitmentsReq.Header.Set("Authorization", "Bearer "+adminToken)
+	publishCommitmentsRes := httptest.NewRecorder()
+	router.ServeHTTP(publishCommitmentsRes, publishCommitmentsReq)
+	if publishCommitmentsRes.Code != http.StatusOK {
+		t.Fatalf("publish commitment request: expected 200, got %d body=%s", publishCommitmentsRes.Code, publishCommitmentsRes.Body.String())
+	}
+
+	doGenerateExport(t, router, orgID, adminToken, meetID, "standard_sd3")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/meets/"+meetID+"/exports", nil)
+	req.Header.Set("X-Org-Id", orgID)
+	req.Header.Set("Authorization", "Bearer "+swimmerToken)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 for swimmer file listing, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestListMeetExports_SwimmerCrossHouseholdForbidden(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	meetsSvc := meets.NewService()
+	exportsSvc := exports.NewService()
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsSvc, nil, exportsSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	orgID := "org-export-swimmer-forbidden"
+	adminToken := issueSessionToken(t, router, orgID, []string{"admin"}, false)
+	swimmerToken := issueSessionTokenWithHousehold(t, router, "swimmer-other", orgID, "household-b", []string{"swimmer"}, false)
+
+	meetsSvc.SeedSwimmer(orgID, "swimmer-a", "household-a")
+	meetID := createMeet(t, router, orgID, adminToken, "Restricted Swimmer Meet")
+	publishMeet(t, router, orgID, adminToken, meetID)
+
+	publishCommitmentsReq := httptest.NewRequest(http.MethodPost, "/api/v1/meets/"+meetID+"/commitment-request", nil)
+	publishCommitmentsReq.Header.Set("X-Org-Id", orgID)
+	publishCommitmentsReq.Header.Set("Authorization", "Bearer "+adminToken)
+	publishCommitmentsRes := httptest.NewRecorder()
+	router.ServeHTTP(publishCommitmentsRes, publishCommitmentsReq)
+	if publishCommitmentsRes.Code != http.StatusOK {
+		t.Fatalf("publish commitment request: expected 200, got %d body=%s", publishCommitmentsRes.Code, publishCommitmentsRes.Body.String())
+	}
+
+	doGenerateExport(t, router, orgID, adminToken, meetID, "standard_sd3")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/meets/"+meetID+"/exports", nil)
+	req.Header.Set("X-Org-Id", orgID)
+	req.Header.Set("Authorization", "Bearer "+swimmerToken)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for cross-household swimmer file listing, got %d body=%s", rr.Code, rr.Body.String())
 	}
 }

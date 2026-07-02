@@ -1,6 +1,7 @@
 package members
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -145,6 +146,108 @@ func TestUpdateSwimmerParentCannotChangeRegistrationStatus(t *testing.T) {
 		RegistrationStatus: testutil.StringPtr("inactive"),
 	})
 	testutil.RequireErrorIs(t, err, ErrForbidden)
+}
+
+func TestUpdateSwimmerSwimmerCanUpdateOwnBioOnly(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService()
+	admin := testutil.AdminPrincipal()
+	household, err := svc.CreateHousehold(admin, CreateHouseholdInput{
+		OrgID:         testutil.DefaultOrgID,
+		HouseholdName: "Bio Family",
+	})
+	if err != nil {
+		t.Fatalf("CreateHousehold returned error: %v", err)
+	}
+	swimmer, _, err := svc.CreateSwimmer(admin, testutil.DefaultOrgID, CreateSwimmerInput{
+		HouseholdID: household.ID,
+		FirstName:   "Mia",
+		LastName:    "Bio",
+		DateOfBirth: "2011-01-01",
+		Gender:      "female",
+	})
+	if err != nil {
+		t.Fatalf("CreateSwimmer returned error: %v", err)
+	}
+
+	swimmerPrincipal := testutil.SwimmerPrincipal("swimmer-bio", household.ID)
+	updated, auditEvent, err := svc.UpdateSwimmer(swimmerPrincipal, testutil.DefaultOrgID, swimmer.ID, UpdateSwimmerInput{
+		Notes: testutil.StringPtr("  Loves distance free and relay starts.  "),
+	})
+	if err != nil {
+		t.Fatalf("UpdateSwimmer returned error: %v", err)
+	}
+	if updated.Notes != "Loves distance free and relay starts." {
+		t.Fatalf("expected trimmed swimmer bio, got %q", updated.Notes)
+	}
+	if updated.UpdatedBy != "swimmer-bio" {
+		t.Fatalf("expected UpdatedBy swimmer-bio, got %q", updated.UpdatedBy)
+	}
+	if auditEvent.Action != "swimmer.profile_updated" {
+		t.Fatalf("expected profile_updated audit action, got %q", auditEvent.Action)
+	}
+}
+
+func TestUpdateSwimmerSwimmerCannotEditProtectedFields(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService()
+	admin := testutil.AdminPrincipal()
+	household, err := svc.CreateHousehold(admin, CreateHouseholdInput{
+		OrgID:         testutil.DefaultOrgID,
+		HouseholdName: "Protected Family",
+	})
+	if err != nil {
+		t.Fatalf("CreateHousehold returned error: %v", err)
+	}
+	swimmer, _, err := svc.CreateSwimmer(admin, testutil.DefaultOrgID, CreateSwimmerInput{
+		HouseholdID: household.ID,
+		FirstName:   "Nina",
+		LastName:    "Protect",
+		DateOfBirth: "2012-03-04",
+		Gender:      "female",
+	})
+	if err != nil {
+		t.Fatalf("CreateSwimmer returned error: %v", err)
+	}
+
+	swimmerPrincipal := testutil.SwimmerPrincipal("swimmer-protect", household.ID)
+	_, _, err = svc.UpdateSwimmer(swimmerPrincipal, testutil.DefaultOrgID, swimmer.ID, UpdateSwimmerInput{
+		FirstName: testutil.StringPtr("Changed"),
+	})
+	testutil.RequireErrorIs(t, err, ErrForbidden)
+}
+
+func TestUpdateSwimmerSwimmerBioRejectsOverlongInput(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService()
+	admin := testutil.AdminPrincipal()
+	household, err := svc.CreateHousehold(admin, CreateHouseholdInput{
+		OrgID:         testutil.DefaultOrgID,
+		HouseholdName: "Long Bio Family",
+	})
+	if err != nil {
+		t.Fatalf("CreateHousehold returned error: %v", err)
+	}
+	swimmer, _, err := svc.CreateSwimmer(admin, testutil.DefaultOrgID, CreateSwimmerInput{
+		HouseholdID: household.ID,
+		FirstName:   "Owen",
+		LastName:    "Length",
+		DateOfBirth: "2010-08-09",
+		Gender:      "male",
+	})
+	if err != nil {
+		t.Fatalf("CreateSwimmer returned error: %v", err)
+	}
+
+	tooLong := strings.Repeat("a", maxSwimmerBioLength+1)
+	swimmerPrincipal := testutil.SwimmerPrincipal("swimmer-length", household.ID)
+	_, _, err = svc.UpdateSwimmer(swimmerPrincipal, testutil.DefaultOrgID, swimmer.ID, UpdateSwimmerInput{
+		Notes: &tooLong,
+	})
+	testutil.RequireErrorIs(t, err, ErrSwimmerBioTooLong)
 }
 
 func TestListSwimmersRedactsMedicalFlagsForBillingRole(t *testing.T) {

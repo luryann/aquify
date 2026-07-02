@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dareaquatics/aquify/server/internal/app/compliance"
 	"github.com/dareaquatics/aquify/server/internal/app/exports"
 	"github.com/dareaquatics/aquify/server/internal/app/imports"
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
@@ -151,6 +152,99 @@ func TestPurgeExpiredFilesHandler_ExpiresImportsExportsAndReports(t *testing.T) 
 		if exists {
 			t.Fatalf("expected storage key %q to be deleted", key)
 		}
+	}
+}
+
+func TestProcessDataExportHandler_CompletesRequestAndStoresArtifact(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	complianceService := compliance.NewService()
+	store := storage.NewStubStorage("http://storage.test/aquify")
+	req, err := complianceService.CreateDataExportRequest("org-export", "hh-export", "admin-user")
+	if err != nil {
+		t.Fatalf("CreateDataExportRequest: %v", err)
+	}
+	task, err := workers.NewTask(workers.TypeProcessDataExport, ProcessDataExportPayload{
+		RequestID:   req.ID,
+		OrgID:       "org-export",
+		HouseholdID: "hh-export",
+	})
+	if err != nil {
+		t.Fatalf("NewTask: %v", err)
+	}
+
+	handler := ProcessDataExportHandler(logger, complianceService, store)
+	if err := handler(context.Background(), task); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+
+	after, err := complianceService.GetDataExportRequest("org-export", req.ID)
+	if err != nil {
+		t.Fatalf("GetDataExportRequest: %v", err)
+	}
+	if after.Status != "ready" {
+		t.Fatalf("status = %q, want ready", after.Status)
+	}
+	if after.DownloadURL == "" {
+		t.Fatal("DownloadURL is empty")
+	}
+	if after.CompletedAt == nil {
+		t.Fatal("CompletedAt is nil")
+	}
+
+	key := complianceExportStorageKey("org-export", req.ID)
+	data, contentType, err := store.GetObject(context.Background(), key)
+	if err != nil {
+		t.Fatalf("GetObject(%q): %v", key, err)
+	}
+	if contentType != "application/json; charset=utf-8" {
+		t.Fatalf("contentType = %q", contentType)
+	}
+	var artifact map[string]any
+	if err := json.Unmarshal(data, &artifact); err != nil {
+		t.Fatalf("decode artifact: %v", err)
+	}
+	if artifact["request_id"] != req.ID || artifact["household_id"] != "hh-export" {
+		t.Fatalf("unexpected artifact: %#v", artifact)
+	}
+}
+
+func TestProcessDataDeletionHandler_CompletesRequest(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	complianceService := compliance.NewService()
+	req, err := complianceService.CreateDataDeletionRequest("org-delete", "hh-delete", "admin-user", "requested")
+	if err != nil {
+		t.Fatalf("CreateDataDeletionRequest: %v", err)
+	}
+	task, err := workers.NewTask(workers.TypeProcessDataDeletion, ProcessDataDeletionPayload{
+		RequestID:   req.ID,
+		OrgID:       "org-delete",
+		HouseholdID: "hh-delete",
+	})
+	if err != nil {
+		t.Fatalf("NewTask: %v", err)
+	}
+
+	handler := ProcessDataDeletionHandler(logger, complianceService)
+	if err := handler(context.Background(), task); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+
+	after, err := complianceService.GetDataDeletionRequest("org-delete", req.ID)
+	if err != nil {
+		t.Fatalf("GetDataDeletionRequest: %v", err)
+	}
+	if after.Status != "completed" {
+		t.Fatalf("status = %q, want completed", after.Status)
+	}
+	if after.CompletedAt == nil {
+		t.Fatal("CompletedAt is nil")
+	}
+	if after.ReviewNotes == "" {
+		t.Fatal("ReviewNotes is empty")
 	}
 }
 

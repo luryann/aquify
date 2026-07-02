@@ -102,7 +102,7 @@ func (r *Repository) SaveAll(snapshots map[string]json.RawMessage) error {
 }
 
 func (r *Repository) runSQL(sql string) (string, error) {
-	cmd := exec.Command("psql", r.DatabaseURL, "-v", "ON_ERROR_STOP=1", "-At", "-F", "\t", "-c", sql)
+	cmd := exec.Command("psql", "-d", r.DatabaseURL, "-v", "ON_ERROR_STOP=1", "-At", "-F", "\t", "-c", sql)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("runtime snapshot psql failed: %w: %s", err, strings.TrimSpace(string(out)))

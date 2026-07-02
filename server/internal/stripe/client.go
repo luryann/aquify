@@ -46,6 +46,8 @@ type PaymentIntentParams struct {
 	// Metadata contains arbitrary key-value pairs; include "invoice_id" and
 	// "org_id" so webhook handlers can route back to the correct invoice.
 	Metadata map[string]string
+	// IdempotencyKey deduplicates retries for the same logical payment creation request.
+	IdempotencyKey string
 }
 
 // PaymentIntentResult is a simplified representation of a Stripe PaymentIntent.
@@ -76,6 +78,8 @@ type CheckoutSessionParams struct {
 	SuccessURL string
 	// CancelURL is where Stripe redirects if the customer cancels.
 	CancelURL string
+	// IdempotencyKey deduplicates retries for the same logical checkout creation request.
+	IdempotencyKey string
 }
 
 // CheckoutSessionResult is a simplified representation of a Stripe Checkout Session.
@@ -293,11 +297,18 @@ type StubClient struct {
 	createdSessions []*CheckoutSessionResult
 	// createdRefunds records each refund request handled by the stub.
 	createdRefunds []RefundParams
+	// intentResultsByKey deduplicates create-intent retries by idempotency key.
+	intentResultsByKey map[string]*PaymentIntentResult
+	// sessionResultsByKey deduplicates create-session retries by idempotency key.
+	sessionResultsByKey map[string]*CheckoutSessionResult
 }
 
 // NewStubClient returns a new StubClient with default settings.
 func NewStubClient() *StubClient {
-	return &StubClient{}
+	return &StubClient{
+		intentResultsByKey:  make(map[string]*PaymentIntentResult),
+		sessionResultsByKey: make(map[string]*CheckoutSessionResult),
+	}
 }
 
 // Ready reports the stub as available for local/test environments.
@@ -311,6 +322,15 @@ func (c *StubClient) CreatedIntents() []*PaymentIntentResult {
 	defer c.mu.Unlock()
 	out := make([]*PaymentIntentResult, len(c.createdIntents))
 	copy(out, c.createdIntents)
+	return out
+}
+
+// CreatedSessions returns a snapshot of all CheckoutSessions created via this stub.
+func (c *StubClient) CreatedSessions() []*CheckoutSessionResult {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]*CheckoutSessionResult, len(c.createdSessions))
+	copy(out, c.createdSessions)
 	return out
 }
 
@@ -337,6 +357,12 @@ func (c *StubClient) CreatePaymentIntent(_ context.Context, params PaymentIntent
 	if cur == "" {
 		cur = "usd"
 	}
+	key := strings.TrimSpace(params.IdempotencyKey)
+	if key != "" {
+		if existing, ok := c.intentResultsByKey[key]; ok {
+			return existing, nil
+		}
+	}
 
 	id := "pi_stub_" + stubRandHex(8)
 	result := &PaymentIntentResult{
@@ -347,6 +373,9 @@ func (c *StubClient) CreatePaymentIntent(_ context.Context, params PaymentIntent
 		AmountCents:  params.AmountCents,
 	}
 	c.createdIntents = append(c.createdIntents, result)
+	if key != "" {
+		c.intentResultsByKey[key] = result
+	}
 	return result, nil
 }
 
@@ -359,12 +388,22 @@ func (c *StubClient) CreateCheckoutSession(_ context.Context, params CheckoutSes
 		return nil, c.CreateCheckoutSessionErr
 	}
 
+	key := strings.TrimSpace(params.IdempotencyKey)
+	if key != "" {
+		if existing, ok := c.sessionResultsByKey[key]; ok {
+			return existing, nil
+		}
+	}
+
 	id := "cs_stub_" + stubRandHex(8)
 	result := &CheckoutSessionResult{
 		ID:  id,
 		URL: "https://checkout.stripe.com/pay/" + id,
 	}
 	c.createdSessions = append(c.createdSessions, result)
+	if key != "" {
+		c.sessionResultsByKey[key] = result
+	}
 	return result, nil
 }
 
@@ -432,6 +471,9 @@ func (c *SDKClient) CreatePaymentIntent(_ context.Context, params PaymentIntentP
 		Description: stripeapi.String(params.Description),
 		Metadata:    params.Metadata,
 	}
+	if strings.TrimSpace(params.IdempotencyKey) != "" {
+		req.SetIdempotencyKey(strings.TrimSpace(params.IdempotencyKey))
+	}
 	intent, err := paymentintent.New(req)
 	if err != nil {
 		return nil, err
@@ -466,6 +508,9 @@ func (c *SDKClient) CreateCheckoutSession(_ context.Context, params CheckoutSess
 				},
 			},
 		},
+	}
+	if strings.TrimSpace(params.IdempotencyKey) != "" {
+		req.SetIdempotencyKey(strings.TrimSpace(params.IdempotencyKey))
 	}
 	cs, err := session.New(req)
 	if err != nil {

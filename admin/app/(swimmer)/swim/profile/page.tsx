@@ -3,14 +3,18 @@
 import { useState, useEffect } from 'react'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
-import { useApiClient } from '@/lib/api'
+import { ApiError, useApiClient } from '@/lib/api'
+import { shouldShowCollectionEmptyState } from '@/lib/collection-load-state'
+import { reportUIError } from '@/lib/frontend-telemetry'
 import {
   fetchSwimmers,
   fetchSwimmerGroups,
   fetchGroups,
+  updateSwimmer,
   type SwimmerRecord,
   type GroupRecord,
 } from '@/lib/adminData'
+import { SWIMMER_BIO_MAX_LENGTH, normalizeSwimmerBio, validateSwimmerBio } from '@/lib/swimmer-bio'
 
 // ── Design tokens ──────────────────────────────────────────────────────────
 const C = {
@@ -112,20 +116,33 @@ export default function SwimmerProfilePage() {
   const [group, setGroup] = useState<GroupRecord | null>(null)
   const [loading, setLoading] = useState(true)
   const [bio, setBio] = useState('')
+  const [bioSaving, setBioSaving] = useState(false)
+  const [bioError, setBioError] = useState<string | null>(null)
+  const [bioSaved, setBioSaved] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
-    if (!orgId) { setLoading(false); return }
+    if (!orgId) {
+      setLoading(false)
+      setLoadError('Swimmer profile is unavailable because no organization is selected.')
+      return
+    }
+
+    setLoading(true)
+    setLoadError(null)
 
     Promise.all([
-      fetchSwimmers(api, orgId).catch(() => [] as SwimmerRecord[]),
-      fetchSwimmerGroups(api, orgId).catch(() => []),
-      fetchGroups(api, orgId).catch(() => [] as GroupRecord[]),
+      fetchSwimmers(api, orgId),
+      fetchSwimmerGroups(api, orgId),
+      fetchGroups(api, orgId),
     ]).then(([swimmers, swimmerGroupLinks, groups]) => {
       // Resolve swimmer
       const mySwimmer = householdId
         ? (swimmers.find(s => s.household_id === householdId) ?? null)
         : null
       setSwimmer(mySwimmer)
+      setBio(mySwimmer?.notes ?? '')
 
       if (mySwimmer) {
         // Find primary group link for this swimmer
@@ -136,8 +153,43 @@ export default function SwimmerProfilePage() {
           setGroup(matchedGroup)
         }
       }
+    }).catch((error) => {
+      setSwimmer(null)
+      setGroup(null)
+      setBio('')
+      setLoadError(reportUIError(
+        'swimmer-profile-load',
+        error,
+        'Swimmer profile data is unavailable right now.',
+        { orgId, householdId },
+      ))
     }).finally(() => setLoading(false))
-  }, [api, orgId, householdId])
+  }, [api, orgId, householdId, reloadKey])
+
+  const saveBio = async () => {
+    if (!swimmer || !orgId || bioSaving) return
+
+    const validationError = validateSwimmerBio(bio)
+    if (validationError) {
+      setBioError(validationError)
+      setBioSaved(false)
+      return
+    }
+
+    setBioSaving(true)
+    setBioError(null)
+    setBioSaved(false)
+    try {
+      const updated = await updateSwimmer(api, orgId, swimmer.id, { notes: normalizeSwimmerBio(bio) })
+      setSwimmer(updated)
+      setBio(updated.notes ?? '')
+      setBioSaved(true)
+    } catch (error) {
+      setBioError(error instanceof ApiError ? error.message : 'Failed to save bio.')
+    } finally {
+      setBioSaving(false)
+    }
+  }
 
 
   const initials = swimmer
@@ -252,6 +304,44 @@ export default function SwimmerProfilePage() {
         </p>
       </div>
 
+      {loadError && (
+        <div
+          style={{
+            background: 'rgba(245,158,11,0.10)',
+            border: '1px solid rgba(245,158,11,0.25)',
+            borderRadius: '10px',
+            padding: '12px 16px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: '12px',
+            marginBottom: '24px',
+          }}
+        >
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+            <Icon name="alert-circle" size={15} style={{ color: '#f59e0b', marginTop: '1px', flexShrink: 0 }} />
+            <p style={{ margin: 0, fontSize: '12.5px', color: C.text, lineHeight: 1.5 }}>{loadError}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setReloadKey((key) => key + 1)}
+            style={{
+              padding: '8px 14px',
+              borderRadius: '8px',
+              border: '1px solid rgba(245,158,11,0.25)',
+              background: 'transparent',
+              color: C.text,
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       <div
         style={{
           display: 'grid',
@@ -321,9 +411,13 @@ export default function SwimmerProfilePage() {
                   </div>
                 )}
               </FieldGroup>
-            ) : (
+            ) : shouldShowCollectionEmptyState(loading, loadError, swimmer ? 1 : 0) ? (
               <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '14px', padding: '24px', textAlign: 'center' }}>
                 <p style={{ fontSize: '14px', color: C.muted }}>No swimmer profile found for your account.</p>
+              </div>
+            ) : (
+              <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '14px', padding: '24px', textAlign: 'center' }}>
+                <p style={{ fontSize: '14px', color: C.muted }}>Profile details are unavailable until the latest data loads successfully.</p>
               </div>
             )}
           </div>
@@ -363,9 +457,13 @@ export default function SwimmerProfilePage() {
 
               <textarea
                 value={bio}
-                onChange={(e) => setBio(e.target.value)}
+                onChange={(e) => {
+                  setBio(e.target.value)
+                  if (bioError) setBioError(null)
+                  if (bioSaved) setBioSaved(false)
+                }}
                 placeholder="Tell your team about yourself. Your goals, favorite events, or anything you'd like to share..."
-                maxLength={400}
+                maxLength={SWIMMER_BIO_MAX_LENGTH}
                 rows={4}
                 style={{
                   width: '100%',
@@ -386,32 +484,41 @@ export default function SwimmerProfilePage() {
                 onBlur={(e) => (e.currentTarget.style.borderColor = C.inputBorder)}
               />
 
+              {bioError && (
+                <div style={{ marginTop: '10px', fontSize: '12px', color: '#fca5a5', lineHeight: 1.5 }}>
+                  {bioError}
+                </div>
+              )}
+
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '12px' }}>
                 <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: C.muted }}>
-                  {bio.length}/400
+                  {bio.length}/{SWIMMER_BIO_MAX_LENGTH}
                 </span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: C.muted }}>
-                    Coming soon
-                  </span>
+                  {bioSaved && (
+                    <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: C.accent }}>
+                      Saved
+                    </span>
+                  )}
                   <button
-                    disabled
-                    title="Bio saving coming soon — this field will be persisted in an upcoming update"
+                    onClick={() => void saveBio()}
+                    disabled={loading || !swimmer || bioSaving}
                     style={{
                       padding: '8px 20px',
-                      background: 'rgba(0,212,170,0.06)',
-                      color: C.muted,
-                      border: `1px solid rgba(0,212,170,0.12)`,
+                      background: bioSaving ? 'rgba(0,212,170,0.06)' : C.accentDim,
+                      color: bioSaving ? C.muted : C.accent,
+                      border: `1px solid ${bioSaving ? 'rgba(0,212,170,0.12)' : C.accentBorder}`,
                       borderRadius: '8px',
                       fontSize: '13px',
                       fontWeight: 700,
-                      cursor: 'not-allowed',
+                      cursor: loading || !swimmer || bioSaving ? 'not-allowed' : 'pointer',
+                      opacity: loading || !swimmer ? 0.65 : 1,
                       display: 'flex',
                       alignItems: 'center',
                       gap: '6px',
                     }}
                   >
-                    Save Bio
+                    {bioSaving ? 'Saving...' : 'Save Bio'}
                   </button>
                 </div>
               </div>
@@ -465,7 +572,7 @@ export default function SwimmerProfilePage() {
             )}
           </div>
 
-          {/* Notes / Equipment sidebar */}
+          {/* Saved bio sidebar */}
           <div
             style={{
               background: 'rgba(0,0,0,0.20)',
@@ -476,17 +583,17 @@ export default function SwimmerProfilePage() {
             }}
           >
             <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '16px', color: C.text, marginBottom: '10px' }}>
-              Notes
+              Saved Bio
             </h3>
             {loading ? (
               <SkeletonLine />
             ) : swimmer?.notes ? (
               <p style={{ fontSize: '13px', color: C.subtle, lineHeight: 1.6 }}>{swimmer.notes}</p>
             ) : (
-              <p style={{ fontSize: '13px', color: C.muted, lineHeight: 1.5 }}>No notes on file.</p>
+              <p style={{ fontSize: '13px', color: C.muted, lineHeight: 1.5 }}>No bio saved yet.</p>
             )}
             <p style={{ fontSize: '11.5px', color: C.muted, marginTop: '10px', lineHeight: 1.5 }}>
-              To update equipment sizes or emergency notes, ask a parent to update via the parent portal.
+              This panel reflects the currently saved bio text from your swimmer profile record.
             </p>
           </div>
         </div>

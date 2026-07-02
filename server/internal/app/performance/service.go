@@ -267,7 +267,7 @@ type SwimmerHouseholdChecker interface {
 // Service is the performance/best-times domain service.
 type Service struct {
 	mu               sync.RWMutex
-	repo             *Repository             // nil = in-memory only
+	repo             *Repository              // nil = in-memory only
 	results          map[string]*Result       // id → Result
 	splits           map[string][]*Split      // resultID → []Split
 	bestTimes        map[string]*BestTime     // id → BestTime
@@ -366,7 +366,9 @@ func (s *Service) SetHouseholdChecker(checker SwimmerHouseholdChecker) {
 
 func newID() string {
 	b := make([]byte, 16)
-	_, _ = rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		panic(fmt.Errorf("secure random unavailable for performance ID generation: %w", err))
+	}
 	return hex.EncodeToString(b)
 }
 
@@ -390,14 +392,14 @@ func (s *Service) requireAdmin(principal *appmiddleware.Principal) error {
 	return ErrForbidden
 }
 
-// requireReadAccess allows owner, admin, coach, and parent roles to read
+// requireReadAccess allows owner, admin, coach, parent, and swimmer roles to read
 // swimmer performance data. For per-swimmer endpoints, call
 // checkParentHouseholdForSwimmer after this check to enforce household
-// isolation for the parent role.
+// isolation for the parent and swimmer roles.
 func (s *Service) requireReadAccess(principal *appmiddleware.Principal) error {
 	for _, r := range principal.Roles {
 		switch strings.ToLower(r) {
-		case "admin", "owner", "coach", "parent":
+		case "admin", "owner", "coach", "parent", "swimmer":
 			return nil
 		}
 	}
@@ -405,21 +407,22 @@ func (s *Service) requireReadAccess(principal *appmiddleware.Principal) error {
 }
 
 // checkParentHouseholdForSwimmer returns ErrForbidden when the principal has
-// the parent role but the requested swimmerID does not belong to the
-// principal's household. Non-parent roles pass through unchecked.
-// This enforces the parent-scoped isolation policy on per-swimmer read paths.
+// the parent or swimmer role but the requested swimmerID does not belong to
+// the principal's household. Other roles pass through unchecked.
+// This enforces household-scoped isolation on per-swimmer read paths.
 func (s *Service) checkParentHouseholdForSwimmer(principal *appmiddleware.Principal, orgID, swimmerID string) error {
 	if principal == nil {
 		return ErrForbidden
 	}
-	isParent := false
+	requiresHouseholdScope := false
 	for _, r := range principal.Roles {
-		if strings.ToLower(r) == "parent" {
-			isParent = true
+		switch strings.ToLower(r) {
+		case "parent", "swimmer":
+			requiresHouseholdScope = true
 			break
 		}
 	}
-	if !isParent {
+	if !requiresHouseholdScope {
 		return nil
 	}
 	// Household checker is required; deny if not wired.
@@ -1076,10 +1079,13 @@ func (s *Service) DeleteTimeStandard(orgID, actorID, standardID string, principa
 
 // EvaluateCutQualification evaluates whether a swimmer's best time qualifies
 // for a given time standard.
-// Allowed roles: owner, admin, coach, parent.
-// Parent household scoping is deferred to the production DB layer (see requireReadAccess).
+// Allowed roles: owner, admin, coach, parent, swimmer.
+// Household-scoped roles must match the swimmer's household via the injected checker.
 func (s *Service) EvaluateCutQualification(orgID string, principal *appmiddleware.Principal, swimmerID, standardID string) (*CutQualification, error) {
 	if err := s.requireReadAccess(principal); err != nil {
+		return nil, err
+	}
+	if err := s.checkParentHouseholdForSwimmer(principal, orgID, swimmerID); err != nil {
 		return nil, err
 	}
 

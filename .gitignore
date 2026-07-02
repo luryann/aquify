@@ -9,6 +9,8 @@ server/worker
 # Next.js build output
 admin/.next/
 admin/out/
+admin/test-results/
+admin/playwright-report/
 
 # Node
 node_modules/
@@ -40,3 +42,5 @@ coverage.txt
 
 # Temp
 tmp/
+tmp-kcadm.config
+*.tsbuildinfo

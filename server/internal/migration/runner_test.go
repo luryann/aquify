@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/dareaquatics/aquify/server/internal/app/performance"
@@ -190,6 +191,66 @@ func TestRunnerDryRunIgnoresBlankRows(t *testing.T) {
 	}
 }
 
+func TestRunnerDryRunComparesSourceCountsAndBillingTotals(t *testing.T) {
+	dir := t.TempDir()
+	writeCSVFixture(t, dir, "households.csv", "legacy_household_id,household_name,primary_email,status\nhh-1,Smith Family,smith@example.com,active\n")
+	writeCSVFixture(t, dir, "swimmers.csv", "legacy_swimmer_id,legacy_household_id,first_name,last_name,date_of_birth,gender,registration_status\n")
+	writeCSVFixture(t, dir, "groups.csv", "legacy_group_code,name,type\n")
+	writeCSVFixture(t, dir, "historical_best_times.csv", "legacy_best_time_key,legacy_swimmer_id,distance,stroke,course,best_time_ms,recorded_at\n")
+	writeCSVFixture(t, dir, "open_invoices.csv", "legacy_invoice_id,invoice_number,legacy_household_id,total_amount_cents,outstanding_amount_cents,due_date\ninv-1,INV-100,hh-1,12000,12000,2026-03-01\n")
+	writeCSVFixture(t, dir, "payment_history.csv", "legacy_payment_id,legacy_invoice_id,amount_cents,method,paid_at\n")
+
+	billingTotal := 12000
+	report, err := NewRunner(Config{
+		OrgID:                   testutil.DefaultOrgID,
+		SourceCounts:            map[string]int{"households.csv": 1, "open_invoices": 1},
+		SourceBillingTotalCents: &billingTotal,
+	}).DryRun(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("DryRun returned error: %v", err)
+	}
+
+	assertComparison(t, report, "row_count_households", 1, 1, "match")
+	assertComparison(t, report, "row_count_open_invoices", 1, 1, "match")
+	assertComparison(t, report, "billing_outstanding_total_cents", 12000, 12000, "match")
+}
+
+func TestRunnerDryRunFailsOnSourceComparisonMismatchAndWritesRemediationLog(t *testing.T) {
+	dir := t.TempDir()
+	writeCSVFixture(t, dir, "households.csv", "legacy_household_id,household_name,primary_email,status\nhh-1,Smith Family,smith@example.com,active\n")
+	writeCSVFixture(t, dir, "swimmers.csv", "legacy_swimmer_id,legacy_household_id,first_name,last_name,date_of_birth,gender,registration_status\n")
+	writeCSVFixture(t, dir, "groups.csv", "legacy_group_code,name,type\n")
+	writeCSVFixture(t, dir, "historical_best_times.csv", "legacy_best_time_key,legacy_swimmer_id,distance,stroke,course,best_time_ms,recorded_at\n")
+	writeCSVFixture(t, dir, "open_invoices.csv", "legacy_invoice_id,invoice_number,legacy_household_id,total_amount_cents,outstanding_amount_cents,due_date\ninv-1,INV-100,hh-1,12000,12000,2026-03-01\n")
+	writeCSVFixture(t, dir, "payment_history.csv", "legacy_payment_id,legacy_invoice_id,amount_cents,method,paid_at\n")
+
+	billingTotal := 13000
+	runner := NewRunner(Config{
+		OrgID:                   testutil.DefaultOrgID,
+		SourceCounts:            map[string]int{"households": 2},
+		SourceBillingTotalCents: &billingTotal,
+	})
+	report, err := runner.DryRun(context.Background(), dir)
+	if err == nil {
+		t.Fatal("expected DryRun to fail on comparison mismatches")
+	}
+
+	assertComparison(t, report, "row_count_households", 2, 1, "mismatch")
+	assertComparison(t, report, "billing_outstanding_total_cents", 13000, 12000, "mismatch")
+
+	logPath := filepath.Join(dir, "remediation.md")
+	if err := runner.WriteRemediationLog(logPath, report); err != nil {
+		t.Fatalf("WriteRemediationLog: %v", err)
+	}
+	content, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("ReadFile(remediation): %v", err)
+	}
+	if got := string(content); !strings.Contains(got, "row_count_households") || !strings.Contains(got, "billing_outstanding_total_cents") {
+		t.Fatalf("remediation log missing comparison items:\n%s", got)
+	}
+}
+
 func TestRunnerDryRunRejectsInvalidDates(t *testing.T) {
 	dir := t.TempDir()
 	writeCSVFixture(t, dir, "households.csv", "legacy_household_id,household_name,primary_email,status\nhh-1,Smith Family,smith@example.com,active\n")
@@ -225,6 +286,20 @@ func assertStepHasError(t *testing.T, report Report, stepName, want string) {
 	}
 
 	t.Fatalf("step %s not found in report", stepName)
+}
+
+func assertComparison(t *testing.T, report Report, name string, source, target int, status string) {
+	t.Helper()
+	for _, comparison := range report.Comparisons {
+		if comparison.Name != name {
+			continue
+		}
+		if comparison.SourceValue != source || comparison.TargetValue != target || comparison.Status != status {
+			t.Fatalf("comparison %s = %+v, want source=%d target=%d status=%s", name, comparison, source, target, status)
+		}
+		return
+	}
+	t.Fatalf("comparison %s not found in %+v", name, report.Comparisons)
 }
 
 func writeCSVFixture(t *testing.T, dir, name, contents string) {

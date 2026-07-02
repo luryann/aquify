@@ -12,9 +12,14 @@ import (
 	"time"
 
 	miniredis "github.com/alicebob/miniredis/v2"
+	"github.com/dareaquatics/aquify/server/internal/app/billing"
+	"github.com/dareaquatics/aquify/server/internal/app/comms"
+	"github.com/dareaquatics/aquify/server/internal/app/compliance"
 	"github.com/dareaquatics/aquify/server/internal/app/exports"
 	"github.com/dareaquatics/aquify/server/internal/app/imports"
 	"github.com/dareaquatics/aquify/server/internal/app/reports"
+	"github.com/dareaquatics/aquify/server/internal/storage"
+	stripelib "github.com/dareaquatics/aquify/server/internal/stripe"
 	"github.com/dareaquatics/aquify/server/internal/workers"
 )
 
@@ -131,12 +136,43 @@ func TestDurableJobsSurviveAPIRestart(t *testing.T) {
 
 func TestBuildWorkersRegistersFullProductionHandlerSet(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	commsService := comms.NewService()
+	campaign, err := commsService.CreateCampaign(comms.CreateCampaignInput{
+		OrgID:     "org-step32b",
+		Name:      "Step 32B Campaign",
+		Subject:   "Practice update",
+		BodyHTML:  "<p>Practice update</p>",
+		FromName:  "DARE Aquatics",
+		FromEmail: "noreply@example.com",
+		Audience:  "all",
+		CreatedBy: "test",
+	})
+	if err != nil {
+		t.Fatalf("CreateCampaign: %v", err)
+	}
+	complianceService := compliance.NewService()
+	exportRequest, err := complianceService.CreateDataExportRequest("org-step32b", "hh-step32b", "admin-user")
+	if err != nil {
+		t.Fatalf("CreateDataExportRequest: %v", err)
+	}
+	deletionRequest, err := complianceService.CreateDataDeletionRequest("org-step32b", "hh-step32b", "admin-user", "test")
+	if err != nil {
+		t.Fatalf("CreateDataDeletionRequest: %v", err)
+	}
+	objectStore := storage.NewStubStorage("")
+	billingService := billing.NewService()
+	stripeClient := &stripelib.StubClient{}
 	workerServer, _ := BuildWorkers(
 		Config{},
 		logger,
 		imports.NewService(),
 		exports.NewService(),
 		reports.NewService(nil, nil, nil, nil),
+		billingService,
+		stripeClient,
+		commsService,
+		complianceService,
+		objectStore,
 	)
 	workerServer.Start()
 	defer workerServer.Stop()
@@ -170,7 +206,7 @@ func TestBuildWorkersRegistersFullProductionHandlerSet(t *testing.T) {
 			taskType: workers.TypeSendCampaignBatch,
 			queue:    workers.QueueEmail,
 			payload: map[string]any{
-				"campaign_id": "cmp-full-set",
+				"campaign_id": campaign.ID,
 				"org_id":      "org-step32b",
 				"recipients":  []string{"parent@example.com"},
 				"batch_index": 0,
@@ -208,7 +244,7 @@ func TestBuildWorkersRegistersFullProductionHandlerSet(t *testing.T) {
 			taskType: workers.TypeProcessDataExport,
 			queue:    workers.QueueDefault,
 			payload: map[string]string{
-				"request_id":   "req-export",
+				"request_id":   exportRequest.ID,
 				"org_id":       "org-step32b",
 				"household_id": "hh-step32b",
 			},
@@ -218,7 +254,7 @@ func TestBuildWorkersRegistersFullProductionHandlerSet(t *testing.T) {
 			taskType: workers.TypeProcessDataDeletion,
 			queue:    workers.QueueDefault,
 			payload: map[string]string{
-				"request_id":   "req-delete",
+				"request_id":   deletionRequest.ID,
 				"org_id":       "org-step32b",
 				"household_id": "hh-step32b",
 			},
@@ -261,19 +297,19 @@ func TestDurableWorkerModeRegistersAndProcessesSharedHandlers(t *testing.T) {
 		}
 	}()
 
-	task, err := workers.NewTask(workers.TypeParseImport, map[string]string{
-		"import_id": "imp-durable-worker",
-		"org_id":    "org-step32b",
+	task, err := workers.NewTask(workers.TypeBillingReconcile, map[string]string{
+		"org_id":       "org-step32b",
+		"triggered_by": "test",
 	})
 	if err != nil {
 		t.Fatalf("NewTask: %v", err)
 	}
-	enqueued, err := backend.Enqueue(context.Background(), task, workers.WithQueue(workers.QueueImports))
+	enqueued, err := backend.Enqueue(context.Background(), task, workers.WithQueue(workers.QueueReconcile))
 	if err != nil {
 		t.Fatalf("Enqueue: %v", err)
 	}
 
-	waitForTaskCompletion(t, backend, workers.QueueImports, enqueued.ID, workers.TypeParseImport, 5*time.Second)
+	waitForTaskCompletion(t, backend, workers.QueueReconcile, enqueued.ID, workers.TypeBillingReconcile, 5*time.Second)
 }
 
 func TestDurableWorkerModeExecutesScheduledReconcileJobs(t *testing.T) {
@@ -348,16 +384,18 @@ func waitForTaskCompletion(t *testing.T, backend workers.Backend, queue, taskID,
 
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		tasks, err := backend.ListTasks(queue, workers.StatusCompleted)
-		if err != nil {
-			t.Fatalf("ListTasks: %v", err)
-		}
-		for _, task := range tasks {
-			if task.ID == taskID {
-				if task.Type != taskType {
-					t.Fatalf("completed task type = %q; want %q", task.Type, taskType)
+		for _, exec := range backend.Metrics().RecentExecutions(50) {
+			if exec.TaskID == taskID {
+				if exec.Type != taskType {
+					t.Fatalf("completed task type = %q; want %q", exec.Type, taskType)
 				}
-				return
+				if exec.Queue != queue {
+					t.Fatalf("completed task queue = %q; want %q", exec.Queue, queue)
+				}
+				if exec.Status == workers.StatusCompleted {
+					return
+				}
+				t.Fatalf("task %q finished with status %q and error %q", taskID, exec.Status, exec.Err)
 			}
 		}
 		time.Sleep(25 * time.Millisecond)

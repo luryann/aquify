@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { Icon } from '@/components/ui/icons'
@@ -108,6 +108,14 @@ async function buildMeetRows(api: ReturnType<typeof useApiClient>, orgId: string
 }
 
 export default function MeetsPage() {
+  return (
+    <Suspense fallback={null}>
+      <MeetsPageContent />
+    </Suspense>
+  )
+}
+
+function MeetsPageContent() {
   const { session } = useSession()
   const api = useApiClient(session?.token)
   const searchParams = useSearchParams()

@@ -35,10 +35,32 @@ Optional legacy evidence files that should still be preserved for dry-run packag
 
 ```text
 <input-dir>/evidence/
+  source-counts.json
+  source-billing-total-cents.txt
   known-bad-data-notes.md
   hy3/
   raw-results/
 ```
+
+`source-counts.json` is the authoritative row-count comparison input for the
+migration CLI and launch evidence bundle. It maps either CSV filenames or
+migration step names to the source-system row count, for example:
+
+```json
+{
+  "households.csv": 125,
+  "swimmers.csv": 210,
+  "groups.csv": 12,
+  "historical_best_times.csv": 6400,
+  "open_invoices.csv": 58,
+  "payment_history.csv": 410
+}
+```
+
+`source-billing-total-cents.txt` should contain the source system's outstanding
+open-invoice total in cents. Pass that value to `make launch-evidence-bundle`
+as `SOURCE_BILLING_TOTAL_CENTS=<value>` so Finance can compare it with the
+post-migration billing total in `migration-report.json`.
 
 ## Ownership checkpoints
 

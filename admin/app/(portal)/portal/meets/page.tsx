@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
+import { reportUIError } from '@/lib/frontend-telemetry'
 import {
   fetchMeets,
   fetchMeetCommitments,
@@ -170,10 +171,17 @@ export default function MeetsPage() {
 
   const [meets, setMeets] = useState<MeetCard[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [retryKey, setRetryKey] = useState(0)
 
   useEffect(() => {
-    if (!orgId || !householdId) { setLoading(false); return }
+    if (!orgId || !householdId) {
+      setLoadError('Your portal session is missing household context. Refresh and sign in again.')
+      setLoading(false)
+      return
+    }
     setLoading(true)
+    setLoadError(null)
     Promise.all([
       fetchMeets(api, orgId),
       fetchSwimmers(api, orgId),
@@ -189,7 +197,6 @@ export default function MeetsPage() {
           actionableMeets.map((m) =>
             fetchMeetCommitments(api, orgId, m.id)
               .then((cs): [string, CommitmentRecord[]] => [m.id, cs])
-              .catch((): [string, CommitmentRecord[]] => [m.id, []])
           )
         )
         const commitmentsByMeet = new Map<string, CommitmentRecord[]>(commitmentResults)
@@ -197,9 +204,15 @@ export default function MeetsPage() {
         const cards = allMeets.map((m) => buildMeetCard(m, hhSwimmers, commitmentsByMeet))
         setMeets(cards)
       })
-      .catch(console.error)
+      .catch((error) => {
+        reportUIError('portal.meets.load', error, 'Unable to load meet schedules right now. Please try again.', {
+          orgId,
+          householdId,
+        })
+        setLoadError('Unable to load meet schedules right now. Please try again.')
+      })
       .finally(() => setLoading(false))
-  }, [api, orgId, householdId])
+  }, [api, orgId, householdId, retryKey])
 
   const activeMeets   = meets.filter((m) => m.status === 'commitment_open')
   const upcomingMeets = meets.filter((m) => ['entry_finalized', 'commitment_closed'].includes(m.status))
@@ -245,8 +258,25 @@ export default function MeetsPage() {
 
       {!loading && (
         <>
+          {loadError && (
+            <div style={{ marginBottom: '20px', background: '#fef2f2', border: '1px solid rgba(220,38,38,0.18)', borderRadius: '14px', padding: '18px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
+              <div>
+                <div style={{ fontSize: '14px', fontWeight: 600, color: '#991b1b', marginBottom: '4px' }}>
+                  Meet data is unavailable
+                </div>
+                <div style={{ fontSize: '13px', color: '#b91c1c' }}>{loadError}</div>
+              </div>
+              <button
+                onClick={() => setRetryKey((current) => current + 1)}
+                style={{ padding: '9px 16px', borderRadius: '9px', border: 'none', background: '#991b1b', color: '#fff', fontSize: '13px', fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
           {/* Action needed banner */}
-          {pendingRespond > 0 && (
+          {!loadError && pendingRespond > 0 && (
             <div style={{ background: 'linear-gradient(135deg, rgba(235,93,30,0.08) 0%, rgba(235,93,30,0.04) 100%)', border: '1px solid rgba(235,93,30,0.2)', borderRadius: '12px', padding: '16px 20px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '14px', animation: 'slideUp 0.35s ease both' }}>
               <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(235,93,30,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <Icon name="calendar" size={18} style={{ color: '#eb5d1e' }} />
@@ -263,7 +293,7 @@ export default function MeetsPage() {
           )}
 
           {/* Active meets (commitment open) */}
-          {activeMeets.length > 0 && (
+          {!loadError && activeMeets.length > 0 && (
             <section style={{ marginBottom: '32px' }}>
               <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#9A9693', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '14px', animation: 'slideUp 0.4s ease both' }}>
                 Needs Action
@@ -355,7 +385,7 @@ export default function MeetsPage() {
           )}
 
           {/* Entries confirmed */}
-          {upcomingMeets.length > 0 && (
+          {!loadError && upcomingMeets.length > 0 && (
             <section style={{ marginBottom: '32px' }}>
               <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#9A9693', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '14px' }}>
                 Entries Confirmed
@@ -365,7 +395,7 @@ export default function MeetsPage() {
           )}
 
           {/* Announced */}
-          {announcedMeets.length > 0 && (
+          {!loadError && announcedMeets.length > 0 && (
             <section style={{ marginBottom: '32px' }}>
               <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#9A9693', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '14px' }}>
                 Announced
@@ -375,14 +405,14 @@ export default function MeetsPage() {
           )}
 
           {/* Empty state */}
-          {meets.length === 0 && (
+          {!loadError && meets.length === 0 && (
             <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid rgba(0,0,0,0.07)', padding: '40px', textAlign: 'center', color: '#9A9693', fontSize: '14px' }}>
               No meets scheduled yet.
             </div>
           )}
 
           {/* Past meets */}
-          {pastMeets.length > 0 && (
+          {!loadError && pastMeets.length > 0 && (
             <section>
               <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#9A9693', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '14px' }}>
                 Past Meets

@@ -4,11 +4,13 @@ import assert from 'node:assert/strict'
 import type { ApiClient } from './api.ts'
 import { ApiError } from './api.ts'
 import {
+  acceptRegistrationWaiver,
   archiveAnnouncement,
   createAnnouncement,
   createCampaign,
   createDataDeletionRequest,
   createDataExportRequest,
+  createMeetEntry,
   createSuppression,
   createTimeStandard,
   deleteDLQTask,
@@ -24,6 +26,8 @@ import {
   fetchDataDeletionRequests,
   fetchDataExportRequests,
   fetchInvoiceAgingReport,
+  fetchHouseholdAutopay,
+  fetchHouseholdAutopayStatuses,
   fetchInvoices,
   fetchJobMetrics,
   fetchJobs,
@@ -35,6 +39,7 @@ import {
   fetchQueueStats,
   fetchRegistrationStatusReport,
   fetchRuntimeSettings,
+  fetchSwimmerActivity,
   fetchSuppression,
   fetchSwimmers,
   fetchSwimmerBestTimes,
@@ -43,8 +48,11 @@ import {
   fetchUsers,
   publishAnnouncement,
   removeSuppression,
+  respondToMeetCommitment,
   retryDLQTask,
   sendCampaign,
+  optOutHouseholdAutopay,
+  upsertHouseholdAutopay,
   updateTimeStandard,
 } from './adminData.ts'
 
@@ -180,6 +188,81 @@ test('Step 29E audit and jobs helpers cover the live operational admin endpoints
   ])
 })
 
+test('billing autopay helpers use the live household autopay endpoints', async () => {
+  const mock = createMockApi()
+  const orgId = 'org_billing'
+
+  mock.respond('GET', '/api/v1/households/hh_1/autopay', { autopay: { household_id: 'hh_1', enabled: true, trigger_days_before_due: 3 } })
+  mock.respond('GET', '/api/v1/autopay/households?household_id=hh_1&household_id=hh_2', {
+    autopay: [
+      { household_id: 'hh_1', enabled: true, trigger_days_before_due: 3 },
+      { household_id: 'hh_2', enabled: false, trigger_days_before_due: 0 },
+    ],
+  })
+  mock.respond('PUT', '/api/v1/households/hh_1/autopay', { autopay: { household_id: 'hh_1', enabled: true, trigger_days_before_due: 7 } })
+  mock.respond('POST', '/api/v1/households/hh_1/autopay/opt-out', { autopay: { household_id: 'hh_1', enabled: false, trigger_days_before_due: 7 } })
+
+  const api = mock as unknown as ApiClient
+
+  assert.equal((await fetchHouseholdAutopay(api, orgId, 'hh_1')).enabled, true)
+  assert.equal((await fetchHouseholdAutopayStatuses(api, orgId, ['hh_1', 'hh_2'])).length, 2)
+  assert.equal((await upsertHouseholdAutopay(api, orgId, 'hh_1', {
+    payment_method_type: 'card',
+    payment_method_label: 'Visa •••• 4242',
+    trigger_days_before_due: 7,
+  })).trigger_days_before_due, 7)
+  assert.equal((await optOutHouseholdAutopay(api, orgId, 'hh_1')).enabled, false)
+
+  assert.deepEqual(mock.calls, [
+    { method: 'GET', path: '/api/v1/households/hh_1/autopay', headers: { 'X-Org-Id': orgId } },
+    { method: 'GET', path: '/api/v1/autopay/households?household_id=hh_1&household_id=hh_2', headers: { 'X-Org-Id': orgId } },
+    {
+      method: 'PUT',
+      path: '/api/v1/households/hh_1/autopay',
+      body: {
+        payment_method_type: 'card',
+        payment_method_label: 'Visa •••• 4242',
+        trigger_days_before_due: 7,
+      },
+      headers: { 'X-Org-Id': orgId },
+    },
+    { method: 'POST', path: '/api/v1/households/hh_1/autopay/opt-out', body: undefined, headers: { 'X-Org-Id': orgId } },
+  ])
+})
+
+test('portal registration helpers use live registration and waiver routes', async () => {
+  const mock = createMockApi()
+  const orgId = 'org_portal_reg'
+
+  mock.respond('POST', '/api/v1/registrations/reg_1/waivers', {
+    waiver: {
+      id: 'wvr_1',
+      org_id: orgId,
+      registration_id: 'reg_1',
+      waiver_type: 'code of conduct agreement',
+      accepted_at: '2026-05-25T18:00:00Z',
+      accepted_by_user_id: 'usr_parent',
+      created_at: '2026-05-25T18:00:00Z',
+    },
+  })
+
+  const api = mock as unknown as ApiClient
+  const waiver = await acceptRegistrationWaiver(api, orgId, 'reg_1', {
+    waiver_type: 'code of conduct agreement',
+  })
+
+  assert.equal(waiver.registration_id, 'reg_1')
+  assert.equal(waiver.waiver_type, 'code of conduct agreement')
+  assert.deepEqual(mock.calls, [
+    {
+      method: 'POST',
+      path: '/api/v1/registrations/reg_1/waivers',
+      body: { waiver_type: 'code of conduct agreement' },
+      headers: { 'X-Org-Id': orgId },
+    },
+  ])
+})
+
 test('Step 29E comms helpers preserve live list, detail, and publish/archive flows', async () => {
   const mock = createMockApi()
   mock.respond('GET', '/api/v1/announcements?status=draft', { announcements: [{ id: 'ann_1', title: 'Spring Update' }] })
@@ -211,12 +294,7 @@ test('Step 29E comms helpers preserve live list, detail, and publish/archive flo
     from_email: 'team@example.com',
     audience: 'all',
   })).id, 'cmp_2')
-  assert.equal((await sendCampaign(api, orgId, 'cmp_1', {
-    recipients: [
-      { email: 'parent@example.com' },
-      { email: 'swimmer@example.com', user_id: 'user_2' },
-    ],
-  })).status, 'sent')
+  assert.equal((await sendCampaign(api, orgId, 'cmp_1')).status, 'sent')
   assert.equal((await fetchCampaignDeliveries(api, orgId, 'cmp_1'))[0]?.id, 'del_1')
 
   assert.deepEqual(mock.calls, [
@@ -243,12 +321,7 @@ test('Step 29E comms helpers preserve live list, detail, and publish/archive flo
     {
       method: 'POST',
       path: '/api/v1/email-campaigns/cmp_1/send',
-      body: {
-        recipients: [
-          { email: 'parent@example.com' },
-          { email: 'swimmer@example.com', user_id: 'user_2' },
-        ],
-      },
+      body: undefined,
       headers: { 'X-Org-Id': orgId },
     },
     { method: 'GET', path: '/api/v1/email-campaigns/cmp_1/deliveries', headers: { 'X-Org-Id': orgId } },
@@ -299,6 +372,7 @@ test('Step 29E performance and settings helpers keep live admin screens attached
   mock.respond('GET', '/api/v1/performance/progression', { results: [{ id: 'pr_org_1', swimmer_id: 'sw_1' }] })
   mock.respond('GET', '/api/v1/swimmers/sw_1/best-times', { best_times: [{ id: 'bt_1', swimmer_id: 'sw_1' }] })
   mock.respond('GET', '/api/v1/swimmers/sw_1/progression', { results: [{ id: 'pr_1', swimmer_id: 'sw_1' }] })
+  mock.respond('GET', '/api/v1/swimmers/sw_1/activity', { activities: [{ id: 'act_1', type: 'result', occurred_at: '2026-05-19T00:00:00Z', title: '100 SCY Freestyle' }] })
   mock.respond('GET', '/api/v1/time-standards?course=SCY&season_year=2026', { time_standards: [{ id: 'ts_1', standard_code: 'A' }] })
   mock.respond('POST', '/api/v1/time-standards', { time_standard: { id: 'ts_2', standard_code: 'B' } })
   mock.respond('PUT', '/api/v1/time-standards/ts_2', { time_standard: { id: 'ts_2', is_active: false } })
@@ -312,6 +386,7 @@ test('Step 29E performance and settings helpers keep live admin screens attached
   assert.equal((await fetchPerformanceProgression(api, orgId))[0]?.id, 'pr_org_1')
   assert.equal((await fetchSwimmerBestTimes(api, orgId, 'sw_1'))[0]?.id, 'bt_1')
   assert.equal((await fetchSwimmerProgression(api, orgId, 'sw_1'))[0]?.id, 'pr_1')
+  assert.equal((await fetchSwimmerActivity(api, orgId, 'sw_1'))[0]?.id, 'act_1')
   assert.equal((await fetchTimeStandards(api, orgId, { course: 'SCY', season_year: '2026' }))[0]?.id, 'ts_1')
   assert.equal((await createTimeStandard(api, orgId, {
     name: '2026 A Standard',
@@ -333,6 +408,7 @@ test('Step 29E performance and settings helpers keep live admin screens attached
     { method: 'GET', path: '/api/v1/performance/progression', headers: { 'X-Org-Id': orgId } },
     { method: 'GET', path: '/api/v1/swimmers/sw_1/best-times', headers: { 'X-Org-Id': orgId } },
     { method: 'GET', path: '/api/v1/swimmers/sw_1/progression', headers: { 'X-Org-Id': orgId } },
+    { method: 'GET', path: '/api/v1/swimmers/sw_1/activity', headers: { 'X-Org-Id': orgId } },
     { method: 'GET', path: '/api/v1/time-standards?course=SCY&season_year=2026', headers: { 'X-Org-Id': orgId } },
     {
       method: 'POST',
@@ -369,6 +445,43 @@ test('Step 29E billing helpers support org-wide invoice and payment reads withou
   assert.deepEqual(mock.calls, [
     { method: 'GET', path: '/api/v1/invoices', headers: { 'X-Org-Id': orgId } },
     { method: 'GET', path: '/api/v1/payments', headers: { 'X-Org-Id': orgId } },
+  ])
+})
+
+test('meet mutation helpers target the live /api/v1/meets route shape and backend request bodies', async () => {
+  const mock = createMockApi()
+  mock.respond('POST', '/api/v1/meets/meet_1/entries', {
+    entry: { id: 'entry_1', meet_id: 'meet_1', swimmer_id: 'sw_1', meet_event_id: 'event_1', status: 'draft' },
+  })
+  mock.respond('POST', '/api/v1/meets/meet_1/commitments/cmt_1/respond', {
+    commitment: { id: 'cmt_1', meet_id: 'meet_1', swimmer_id: 'sw_1', status: 'committed_yes', note: 'Can do prelims only.' },
+  })
+
+  const api = mock as unknown as ApiClient
+  const orgId = 'org_meets'
+
+  assert.equal((await createMeetEntry(api, orgId, 'meet_1', {
+    swimmer_id: 'sw_1',
+    meet_event_id: 'event_1',
+  })).id, 'entry_1')
+  assert.equal((await respondToMeetCommitment(api, orgId, 'meet_1', 'cmt_1', {
+    response: 'committed_yes',
+    notes: 'Can do prelims only.',
+  })).id, 'cmt_1')
+
+  assert.deepEqual(mock.calls, [
+    {
+      method: 'POST',
+      path: '/api/v1/meets/meet_1/entries',
+      body: { swimmer_id: 'sw_1', meet_event_id: 'event_1' },
+      headers: { 'X-Org-Id': orgId },
+    },
+    {
+      method: 'POST',
+      path: '/api/v1/meets/meet_1/commitments/cmt_1/respond',
+      body: { response: 'committed_yes', notes: 'Can do prelims only.' },
+      headers: { 'X-Org-Id': orgId },
+    },
   ])
 })
 

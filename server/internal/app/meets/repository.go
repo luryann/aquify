@@ -26,6 +26,10 @@ func nullableString(s string) interface{} {
 	return s
 }
 
+func nonNullString(s string) string {
+	return s
+}
+
 type execer interface {
 	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
 }
@@ -287,7 +291,7 @@ func (r *Repository) UpsertCommitment(ctx context.Context, c Commitment) error {
 		  committed_at = EXCLUDED.committed_at,
 		  updated_at   = EXCLUDED.updated_at`,
 		c.ID, c.OrgID, c.MeetID, c.HouseholdID, c.SwimmerID,
-		c.Status, nullableString(c.Notes), c.CommittedAt,
+		c.Status, nonNullString(c.Notes), c.CommittedAt,
 		c.CreatedAt, c.UpdatedAt,
 	)
 	return err
@@ -321,11 +325,15 @@ func (r *Repository) LoadCommitments(ctx context.Context) ([]Commitment, error) 
 // ─── Entries ──────────────────────────────────────────────────────────────────
 
 func (r *Repository) UpsertEntry(ctx context.Context, e Entry) error {
+	return upsertEntry(ctx, r.pool, e)
+}
+
+func upsertEntry(ctx context.Context, db execer, e Entry) error {
 	var seedTime interface{}
 	if e.SeedTimeMs != nil {
 		seedTime = *e.SeedTimeMs
 	}
-	_, err := r.pool.Exec(ctx, `
+	_, err := db.Exec(ctx, `
 		INSERT INTO entries (id, org_id, meet_id, swimmer_id, meet_event_id, status, seed_time_ms, entry_time_ms, notes, created_at, updated_at)
 		VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6, $7, $8, $9, $10, $11)
 		ON CONFLICT (id) DO UPDATE SET
@@ -336,7 +344,7 @@ func (r *Repository) UpsertEntry(ctx context.Context, e Entry) error {
 		  updated_at    = EXCLUDED.updated_at`,
 		e.ID, e.OrgID, e.MeetID, e.SwimmerID, e.MeetEventID,
 		e.Status, seedTime, nil,
-		nullableString(e.OverrideReason),
+		nonNullString(e.OverrideReason),
 		e.CreatedAt, e.UpdatedAt,
 	)
 	return err

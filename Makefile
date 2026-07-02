@@ -1,6 +1,6 @@
 SHELL := /bin/zsh
 
-.PHONY: dev dev-full dev-api dev-admin test test-p0 lint lint-openapi infra-up infra-down infra-reset db-up db-down db-status cutover-rehearsal cutover-smoke cutover-certify cutover-billing-check keycloak-bootstrap keycloak-local-sync keycloak-local-up
+.PHONY: dev dev-full dev-api dev-admin test test-p0 lint lint-openapi infra-up infra-down infra-reset db-up db-down db-status cutover-rehearsal cutover-smoke cutover-certify cutover-billing-check provider-validation-evidence parallel-meet-cycle-evidence stability-report-evidence launch-evidence-bundle verify-launch-evidence keycloak-bootstrap keycloak-local-sync keycloak-local-up
 
 COMPOSE_FILE ?= docker-compose.yml
 DOCKER_COMPOSE ?= docker compose
@@ -8,6 +8,7 @@ DOCKER_ENV_FILE ?= .env.local
 MIGRATIONS_DIR ?= db/migrations
 DATABASE_URL_DEFAULT ?= postgres://postgres:postgres@localhost:5432/aquify?sslmode=disable
 GOOSE_CMD ?= go run github.com/pressly/goose/v3/cmd/goose@v3.24.1
+VERIFY_LAUNCH_EVIDENCE_FLAGS ?=
 
 KEYCLOAK_DIR ?= $(shell pwd)/keycloak-26.5.6
 KEYCLOAK_REALM_FILE ?= $(shell pwd)/keycloak/realm-aquify-local.json
@@ -175,3 +176,18 @@ cutover-certify:
 
 cutover-billing-check:
 	@./scripts/cutover-billing-check.sh
+
+provider-validation-evidence:
+	@bash ./scripts/provider-validation-evidence.sh
+
+parallel-meet-cycle-evidence:
+	@bash ./scripts/parallel-meet-cycle-evidence.sh
+
+stability-report-evidence:
+	@bash ./scripts/stability-report-evidence.sh
+
+launch-evidence-bundle:
+	@bash ./scripts/launch-evidence-bundle.sh
+
+verify-launch-evidence:
+	@cd server && go run ./cmd/evidencecheck -dir "$${EVIDENCE_DIR:?EVIDENCE_DIR is required}" $(VERIFY_LAUNCH_EVIDENCE_FLAGS)

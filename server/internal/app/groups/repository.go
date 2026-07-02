@@ -25,6 +25,10 @@ func nullableString(s string) interface{} {
 	return s
 }
 
+func nonNullString(s string) string {
+	return s
+}
+
 // ─── Groups ───────────────────────────────────────────────────────────────────
 
 func (r *Repository) UpsertGroup(ctx context.Context, g Group) error {
@@ -46,7 +50,7 @@ func (r *Repository) UpsertGroup(ctx context.Context, g Group) error {
 		  is_active     = EXCLUDED.is_active,
 		  updated_at    = EXCLUDED.updated_at`,
 		g.ID, g.OrgID, g.Code, g.Name,
-		nullableString(g.Description),
+		nonNullString(g.Description),
 		nullableString(g.Type),
 		g.MinAge, g.MaxAge,
 		coachUserID,

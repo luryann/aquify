@@ -60,6 +60,20 @@ Each update should include:
 - billing status
 - go-forward / escalation decision
 
+Generate and archive the stability report evidence at the +30m, +2h, +8h, and +24h checkpoints:
+
+```bash
+make stability-report-evidence \
+  API_BASE_URL=https://api.example.com \
+  AUTH_TOKEN=<admin-token> \
+  ORG_ID=<prod-org-id> \
+  STABILITY_WINDOW_LABEL=+24h \
+  NO_OPEN_P0_P1_ATTESTATION=true \
+  SUPPORT_INCIDENTS_FILE=/absolute/path/to/support-incidents.csv \
+  PROMETHEUS_URL=https://prometheus.example.com \
+  REQUIRE_SUPPORT_INCIDENTS_FILE=true
+```
+
 ## Hypercare exit criteria
 
 - no unresolved P0 or P1 issues

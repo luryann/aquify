@@ -357,6 +357,7 @@ func TestCreatePaymentIntentSuccess(t *testing.T) {
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/stripe/payment-intents", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", "payment-intent-success-1")
 	req.Header.Set("X-Org-Id", "org-demo")
 	req.Header.Set("Authorization", "Bearer "+token)
 	rr := httptest.NewRecorder()
@@ -389,6 +390,82 @@ func TestCreatePaymentIntentSuccess(t *testing.T) {
 	// Verify stub recorded the intent.
 	if len(stub.CreatedIntents()) != 1 {
 		t.Fatalf("expected 1 created intent in stub, got %d", len(stub.CreatedIntents()))
+	}
+}
+
+func TestCreatePaymentIntentRequiresIdempotencyKey(t *testing.T) {
+	t.Parallel()
+	stub := stripelib.NewStubClient()
+	router := newStripeRouter(t, nil, stub)
+	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
+
+	body, _ := json.Marshal(map[string]any{
+		"invoice_id":   "inv-001",
+		"amount_cents": 15000,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/stripe/payment-intents", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Org-Id", "org-demo")
+	req.Header.Set("Authorization", "Bearer "+token)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if len(stub.CreatedIntents()) != 0 {
+		t.Fatalf("expected 0 created intents in stub, got %d", len(stub.CreatedIntents()))
+	}
+}
+
+func TestCreatePaymentIntentDuplicateIdempotencyKeyReturnsSameIntent(t *testing.T) {
+	t.Parallel()
+	stub := stripelib.NewStubClient()
+	router := newStripeRouter(t, nil, stub)
+	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
+
+	body, _ := json.Marshal(map[string]any{
+		"invoice_id":   "inv-001",
+		"amount_cents": 15000,
+		"description":  "Annual fee",
+	})
+
+	post := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/stripe/payment-intents", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Idempotency-Key", "retry-payment-intent-1")
+		req.Header.Set("X-Org-Id", "org-demo")
+		req.Header.Set("Authorization", "Bearer "+token)
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		return rr
+	}
+
+	rr1 := post()
+	rr2 := post()
+	if rr1.Code != http.StatusCreated {
+		t.Fatalf("first request: expected 201, got %d: %s", rr1.Code, rr1.Body.String())
+	}
+	if rr2.Code != http.StatusCreated {
+		t.Fatalf("second request: expected 201, got %d: %s", rr2.Code, rr2.Body.String())
+	}
+
+	var resp1, resp2 struct {
+		PaymentIntent struct {
+			ID string `json:"id"`
+		} `json:"payment_intent"`
+	}
+	json.NewDecoder(rr1.Body).Decode(&resp1)
+	json.NewDecoder(rr2.Body).Decode(&resp2)
+
+	if resp1.PaymentIntent.ID == "" || resp2.PaymentIntent.ID == "" {
+		t.Fatal("expected payment_intent.id to be set on both responses")
+	}
+	if resp1.PaymentIntent.ID != resp2.PaymentIntent.ID {
+		t.Fatalf("expected identical payment intent IDs, got %q and %q", resp1.PaymentIntent.ID, resp2.PaymentIntent.ID)
+	}
+	if len(stub.CreatedIntents()) != 1 {
+		t.Fatalf("expected stub to create 1 payment intent across retries, got %d", len(stub.CreatedIntents()))
 	}
 }
 
@@ -447,6 +524,7 @@ func TestCreateCheckoutSessionSuccess(t *testing.T) {
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/stripe/checkout-sessions", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", "checkout-session-success-1")
 	req.Header.Set("X-Org-Id", "org-demo")
 	req.Header.Set("Authorization", "Bearer "+token)
 	rr := httptest.NewRecorder()
@@ -469,6 +547,148 @@ func TestCreateCheckoutSessionSuccess(t *testing.T) {
 	}
 	if !strings.HasPrefix(resp.CheckoutSession.URL, "https://checkout.stripe.com/pay/") {
 		t.Fatalf("expected checkout URL prefix, got %q", resp.CheckoutSession.URL)
+	}
+	if len(stub.CreatedSessions()) != 1 {
+		t.Fatalf("expected 1 created session in stub, got %d", len(stub.CreatedSessions()))
+	}
+}
+
+func TestParentCanCreateCheckoutSessionForOwnInvoice(t *testing.T) {
+	t.Parallel()
+
+	stub := stripelib.NewStubClient()
+	billingSvc := billing.NewService()
+	router := newStripeRouter(t, billingSvc, stub)
+
+	admin := adminPrincipal()
+	inv, _ := billingSvc.CreateInvoice("org-demo", "actor-1", admin, billing.CreateInvoiceInput{
+		HouseholdID:   "hh-parent",
+		InvoiceNumber: "INV-PARENT-CHECKOUT",
+		Notes:         "Spring dues",
+	})
+	billingSvc.AddInvoiceItem("org-demo", "actor-1", admin, inv.ID, billing.AddInvoiceItemInput{
+		Description:     "Program fee",
+		Quantity:        1,
+		UnitAmountCents: 9000,
+		Category:        "program_fee",
+	})
+	billingSvc.IssueInvoice("org-demo", "actor-1", admin, inv.ID)
+
+	parentToken := issueSessionTokenWithHousehold(t, router, "parent-checkout", "org-demo", "hh-parent", []string{"parent"}, false)
+	body, _ := json.Marshal(map[string]any{
+		"invoice_id":   inv.ID,
+		"amount_cents": 9000,
+		"success_url":  "https://example.com/success",
+		"cancel_url":   "https://example.com/cancel",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/stripe/checkout-sessions", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", "parent-checkout-own-1")
+	req.Header.Set("X-Org-Id", "org-demo")
+	req.Header.Set("Authorization", "Bearer "+parentToken)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for parent checkout session, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if len(stub.CreatedSessions()) != 1 {
+		t.Fatalf("expected 1 created checkout session, got %d", len(stub.CreatedSessions()))
+	}
+}
+
+func TestParentCannotCreateCheckoutSessionForForeignInvoice(t *testing.T) {
+	t.Parallel()
+
+	stub := stripelib.NewStubClient()
+	billingSvc := billing.NewService()
+	router := newStripeRouter(t, billingSvc, stub)
+
+	admin := adminPrincipal()
+	inv, _ := billingSvc.CreateInvoice("org-demo", "actor-1", admin, billing.CreateInvoiceInput{
+		HouseholdID:   "hh-foreign",
+		InvoiceNumber: "INV-PARENT-FOREIGN",
+	})
+	billingSvc.AddInvoiceItem("org-demo", "actor-1", admin, inv.ID, billing.AddInvoiceItemInput{
+		Description:     "Program fee",
+		Quantity:        1,
+		UnitAmountCents: 9000,
+		Category:        "program_fee",
+	})
+	billingSvc.IssueInvoice("org-demo", "actor-1", admin, inv.ID)
+
+	parentToken := issueSessionTokenWithHousehold(t, router, "parent-checkout", "org-demo", "hh-parent", []string{"parent"}, false)
+	body, _ := json.Marshal(map[string]any{
+		"invoice_id":   inv.ID,
+		"amount_cents": 9000,
+		"success_url":  "https://example.com/success",
+		"cancel_url":   "https://example.com/cancel",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/stripe/checkout-sessions", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", "parent-checkout-foreign-1")
+	req.Header.Set("X-Org-Id", "org-demo")
+	req.Header.Set("Authorization", "Bearer "+parentToken)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for parent foreign checkout session, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if len(stub.CreatedSessions()) != 0 {
+		t.Fatalf("expected 0 created checkout sessions for foreign invoice, got %d", len(stub.CreatedSessions()))
+	}
+}
+
+func TestCreateCheckoutSessionDuplicateIdempotencyKeyReturnsSameSession(t *testing.T) {
+	t.Parallel()
+	stub := stripelib.NewStubClient()
+	router := newStripeRouter(t, nil, stub)
+	token := issueSessionToken(t, router, "org-demo", []string{"billing"}, false)
+
+	body, _ := json.Marshal(map[string]any{
+		"invoice_id":   "inv-cs-001",
+		"amount_cents": 20000,
+		"success_url":  "https://example.com/success",
+		"cancel_url":   "https://example.com/cancel",
+	})
+
+	post := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/stripe/checkout-sessions", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Idempotency-Key", "retry-checkout-session-1")
+		req.Header.Set("X-Org-Id", "org-demo")
+		req.Header.Set("Authorization", "Bearer "+token)
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		return rr
+	}
+
+	rr1 := post()
+	rr2 := post()
+	if rr1.Code != http.StatusCreated {
+		t.Fatalf("first request: expected 201, got %d: %s", rr1.Code, rr1.Body.String())
+	}
+	if rr2.Code != http.StatusCreated {
+		t.Fatalf("second request: expected 201, got %d: %s", rr2.Code, rr2.Body.String())
+	}
+
+	var resp1, resp2 struct {
+		CheckoutSession struct {
+			ID string `json:"id"`
+		} `json:"checkout_session"`
+	}
+	json.NewDecoder(rr1.Body).Decode(&resp1)
+	json.NewDecoder(rr2.Body).Decode(&resp2)
+
+	if resp1.CheckoutSession.ID == "" || resp2.CheckoutSession.ID == "" {
+		t.Fatal("expected checkout_session.id to be set on both responses")
+	}
+	if resp1.CheckoutSession.ID != resp2.CheckoutSession.ID {
+		t.Fatalf("expected identical checkout session IDs, got %q and %q", resp1.CheckoutSession.ID, resp2.CheckoutSession.ID)
+	}
+	if len(stub.CreatedSessions()) != 1 {
+		t.Fatalf("expected stub to create 1 checkout session across retries, got %d", len(stub.CreatedSessions()))
 	}
 }
 

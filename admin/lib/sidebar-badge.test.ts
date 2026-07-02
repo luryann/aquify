@@ -16,6 +16,7 @@ const session: Session = {
     email: 'admin@example.com',
     name: 'Ada Lovelace',
     role: 'admin',
+    roles: ['admin'],
     orgId: 'org-42',
     avatarInitials: 'AL',
   },
@@ -24,6 +25,7 @@ const session: Session = {
 test('buildSidebarSessionProps forwards org scope for the approvals badge', () => {
   assert.deepEqual(buildSidebarSessionProps(session), {
     role: 'admin',
+    roles: ['admin'],
     userName: 'AL',
     orgId: 'org-42',
   })
@@ -33,6 +35,7 @@ test('shouldFetchPendingApprovals only enables privileged scoped sessions', () =
   assert.equal(shouldFetchPendingApprovals('admin', 'org-42'), true)
   assert.equal(shouldFetchPendingApprovals('owner', 'org-42'), true)
   assert.equal(shouldFetchPendingApprovals('coach', 'org-42'), false)
+  assert.equal(shouldFetchPendingApprovals(['coach', 'admin'], 'org-42'), true)
   assert.equal(shouldFetchPendingApprovals('admin', ''), false)
 })
 

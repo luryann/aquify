@@ -1,9 +1,7 @@
 package handlers
 
 import (
-	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"strings"
 
@@ -100,6 +98,12 @@ func authSessionMetadata(expiresAt any) map[string]any {
 	}
 }
 
+func writeCSRFGenerationError(w http.ResponseWriter, r *http.Request, err error) {
+	httpx.WriteError(w, r, http.StatusInternalServerError, "csrf_generation_failed", "Failed to generate CSRF token.", map[string]any{
+		"detail": err.Error(),
+	})
+}
+
 func (h *AuthHandlers) oidcCallback(w http.ResponseWriter, r *http.Request) {
 	var req oidcCallbackRequest
 	if !h.decodeAndValidate(w, r, &req) {
@@ -122,7 +126,11 @@ func (h *AuthHandlers) oidcCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	csrfToken := appmiddleware.NewCSRFToken()
+	csrfToken, err := appmiddleware.CSRFTokenFactory()
+	if err != nil {
+		writeCSRFGenerationError(w, r, err)
+		return
+	}
 	appmiddleware.SetSessionCookies(w, result.AccessToken, result.RefreshToken, csrfToken, result.ExpiresAt)
 
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
@@ -167,7 +175,11 @@ func (h *AuthHandlers) issueSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	csrfToken := appmiddleware.NewCSRFToken()
+	csrfToken, err := appmiddleware.CSRFTokenFactory()
+	if err != nil {
+		writeCSRFGenerationError(w, r, err)
+		return
+	}
 	appmiddleware.SetSessionCookies(w, session.AccessToken, session.RefreshToken, csrfToken, session.ExpiresAt)
 
 	_ = httpx.WriteJSON(w, http.StatusCreated, map[string]any{
@@ -260,9 +272,15 @@ func (h *AuthHandlers) refreshSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	csrfCookie, err := r.Cookie(appmiddleware.CSRFTokenCookieName)
-	csrfToken := appmiddleware.NewCSRFToken()
+	csrfToken := ""
 	if err == nil && strings.TrimSpace(csrfCookie.Value) != "" {
 		csrfToken = strings.TrimSpace(csrfCookie.Value)
+	} else {
+		csrfToken, err = appmiddleware.CSRFTokenFactory()
+		if err != nil {
+			writeCSRFGenerationError(w, r, err)
+			return
+		}
 	}
 	appmiddleware.SetSessionCookies(w, session.AccessToken, session.RefreshToken, csrfToken, session.ExpiresAt)
 
@@ -287,9 +305,11 @@ func (h *AuthHandlers) revokeSession(w http.ResponseWriter, r *http.Request) {
 	if refreshToken == "" {
 		// Try to read from body as a fallback (some clients send the token in JSON).
 		var req revokeSessionRequest
-		if err := decodeJSONBody(r, &req); err == nil {
-			refreshToken = req.RefreshToken
+		if err := decodeOptionalJSONBody(w, r, &req); err != nil {
+			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request_body", err.Error(), nil)
+			return
 		}
+		refreshToken = req.RefreshToken
 	}
 
 	// Attempt to revoke the server-side session record. Ignore not-found errors:
@@ -311,9 +331,11 @@ func (h *AuthHandlers) logoutSession(w http.ResponseWriter, r *http.Request) {
 	if refreshToken == "" {
 		// Try to read from body as a fallback (some clients send the token in JSON).
 		var req revokeSessionRequest
-		if err := decodeJSONBody(r, &req); err == nil {
-			refreshToken = req.RefreshToken
+		if err := decodeOptionalJSONBody(w, r, &req); err != nil {
+			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request_body", err.Error(), nil)
+			return
 		}
+		refreshToken = req.RefreshToken
 	}
 
 	result := h.service.LogoutSessionWithAccess(refreshToken, accessToken)
@@ -392,9 +414,15 @@ func (h *AuthHandlers) challengeMFA(w http.ResponseWriter, r *http.Request) {
 	}
 
 	csrfCookie, err := r.Cookie(appmiddleware.CSRFTokenCookieName)
-	csrfToken := appmiddleware.NewCSRFToken()
+	csrfToken := ""
 	if err == nil && strings.TrimSpace(csrfCookie.Value) != "" {
 		csrfToken = strings.TrimSpace(csrfCookie.Value)
+	} else {
+		csrfToken, err = appmiddleware.CSRFTokenFactory()
+		if err != nil {
+			writeCSRFGenerationError(w, r, err)
+			return
+		}
 	}
 	appmiddleware.SetSessionCookies(w, session.AccessToken, session.RefreshToken, csrfToken, session.ExpiresAt)
 
@@ -477,34 +505,13 @@ func (h *AuthHandlers) assignRole(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandlers) decodeAndValidate(w http.ResponseWriter, r *http.Request, dst any) bool {
-	if err := decodeJSONBody(r, dst); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request_body", err.Error(), nil)
-		return false
-	}
-
-	if err := h.validate.Struct(dst); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "validation_failed", "One or more request fields are invalid.", httpx.FormatValidationErrors(err))
-		return false
-	}
-
-	return true
-}
-
-func decodeJSONBody(r *http.Request, dst any) error {
-	defer r.Body.Close()
-
-	decoder := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
-	decoder.DisallowUnknownFields()
-
-	if err := decoder.Decode(dst); err != nil {
-		return err
-	}
-
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return errors.New("request body must contain a single JSON object")
-	}
-
-	return nil
+	return decodeAndValidateJSON(w, r, dst, h.validate, decodeAndValidateOptions{
+		InvalidStatus:     http.StatusBadRequest,
+		InvalidCode:       "invalid_request_body",
+		ValidationStatus:  http.StatusBadRequest,
+		ValidationCode:    "validation_failed",
+		ValidationMessage: "One or more request fields are invalid.",
+	})
 }
 
 func readRefreshToken(r *http.Request) string {

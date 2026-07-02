@@ -5,6 +5,8 @@ import { useState, useEffect } from 'react'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
+import { shouldShowCollectionEmptyState } from '@/lib/collection-load-state'
+import { reportUIError } from '@/lib/frontend-telemetry'
 import {
   fetchSwimmers,
   fetchMeets,
@@ -429,10 +431,17 @@ export default function ParentDashboardPage() {
   const [dashSwimmers, setDashSwimmers] = useState<DashSwimmer[]>([])
   const [dashMeets, setDashMeets] = useState<DashMeet[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
-    if (!orgId || !householdId) { setLoading(false); return }
+    if (!orgId || !householdId) {
+      setLoading(false)
+      setLoadError('Parent dashboard is unavailable because household context is missing.')
+      return
+    }
     setLoading(true)
+    setLoadError(null)
 
     Promise.all([
       fetchSwimmers(api, orgId),
@@ -458,7 +467,7 @@ export default function ParentDashboardPage() {
         if (openMeets.length > 0) {
           const arrays = await Promise.all(
             openMeets.slice(0, 8).map((m) =>
-              fetchMeetCommitments(api, orgId, m.id).catch(() => [] as CommitmentRecord[])
+              fetchMeetCommitments(api, orgId, m.id)
             )
           )
           allCommitments = arrays.flat()
@@ -548,9 +557,19 @@ export default function ParentDashboardPage() {
         setDashSwimmers(ds)
         setDashMeets(dm)
       })
-      .catch(console.error)
+      .catch((error) => {
+        setAlerts([])
+        setDashSwimmers([])
+        setDashMeets([])
+        setLoadError(reportUIError(
+          'portal-dashboard-load',
+          error,
+          'Parent dashboard data is unavailable right now.',
+          { orgId, householdId },
+        ))
+      })
       .finally(() => setLoading(false))
-  }, [api, orgId, householdId])
+  }, [api, orgId, householdId, reloadKey])
 
   const now = new Date()
   const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
@@ -577,6 +596,44 @@ export default function ParentDashboardPage() {
         </p>
       </div>
 
+      {loadError && (
+        <div
+          style={{
+            marginBottom: '24px',
+            background: '#fff7ed',
+            border: '1px solid #fdba74',
+            borderRadius: '12px',
+            padding: '14px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '16px',
+          }}
+        >
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+            <Icon name="alert-circle" size={16} style={{ color: '#ea580c', marginTop: '1px', flexShrink: 0 }} />
+            <p style={{ margin: 0, fontSize: '13px', color: '#9a3412', lineHeight: 1.5 }}>{loadError}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setReloadKey((key) => key + 1)}
+            style={{
+              padding: '8px 14px',
+              borderRadius: '8px',
+              border: '1px solid #fdba74',
+              background: '#ffffff',
+              color: '#9a3412',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Needs Attention */}
       <section style={{ marginBottom: '44px' }}>
         <SectionHeader title="Needs Your Attention" />
@@ -594,7 +651,24 @@ export default function ParentDashboardPage() {
               </div>
             ))}
           </div>
-        ) : alerts.length === 0 ? (
+        ) : loadError ? (
+          <div
+            style={{
+              background: '#fff7ed',
+              border: '1px solid #fdba74',
+              borderRadius: '12px',
+              padding: '20px 24px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              color: '#9a3412',
+              fontSize: '14px',
+            }}
+          >
+            <Icon name="alert-circle" size={18} style={{ color: '#ea580c' }} />
+            Parent dashboard actions are unavailable until the latest data loads successfully.
+          </div>
+        ) : shouldShowCollectionEmptyState(loading, loadError, alerts.length) ? (
           <div
             style={{
               background: '#f0fdf4',
@@ -637,7 +711,9 @@ export default function ParentDashboardPage() {
               </div>
             ))}
           </div>
-        ) : dashSwimmers.length === 0 ? (
+        ) : loadError ? (
+          <div style={{ color: '#9A9693', fontSize: '14px' }}>Household swimmer data is unavailable right now.</div>
+        ) : shouldShowCollectionEmptyState(loading, loadError, dashSwimmers.length) ? (
           <div style={{ color: '#9A9693', fontSize: '14px' }}>No swimmers found for your household.</div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '14px' }}>
@@ -665,7 +741,11 @@ export default function ParentDashboardPage() {
               </div>
             ))}
           </div>
-        ) : dashMeets.length === 0 ? (
+        ) : loadError ? (
+          <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid rgba(0,0,0,0.08)', padding: '32px', textAlign: 'center', color: '#9A9693', fontSize: '14px' }}>
+            Upcoming meet data is unavailable right now.
+          </div>
+        ) : shouldShowCollectionEmptyState(loading, loadError, dashMeets.length) ? (
           <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid rgba(0,0,0,0.08)', padding: '32px', textAlign: 'center', color: '#9A9693', fontSize: '14px' }}>
             No upcoming meets scheduled.
           </div>

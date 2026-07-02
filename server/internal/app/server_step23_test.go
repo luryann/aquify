@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/dareaquatics/aquify/server/internal/app/billing"
+	"github.com/dareaquatics/aquify/server/internal/app/comms"
 	"github.com/dareaquatics/aquify/server/internal/app/exports"
 	"github.com/dareaquatics/aquify/server/internal/app/groups"
 	"github.com/dareaquatics/aquify/server/internal/app/imports"
@@ -18,6 +19,8 @@ import (
 	"github.com/dareaquatics/aquify/server/internal/app/members"
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
 	"github.com/dareaquatics/aquify/server/internal/app/performance"
+	"github.com/dareaquatics/aquify/server/internal/app/training"
+	"github.com/dareaquatics/aquify/server/internal/storage"
 )
 
 func issueSessionTokenWithHousehold(t *testing.T, router http.Handler, userID, orgID, householdID string, roles []string, mfaAuthenticated bool) string {
@@ -44,11 +47,13 @@ func TestHY3ImportFinalizationAndReportGeneration(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	importsService := imports.NewService()
+	store := storage.NewStubStorage("")
+	importsService := imports.NewServiceWithStorage(store)
 	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionToken(t, router, "org-hy3", []string{"admin"}, false)
 	importID := requestUploadURL(t, router, "org-hy3", adminToken, "championship.hy3", "hy3")
+	seedUploadedImport(t, store, "org-hy3", importID, "championship.hy3", "application/zip", buildZipFixture(t, "results.sd3", loadImportFixture(t, "valid.sd3")))
 
 	finalizeReq := httptest.NewRequest(http.MethodPost, "/api/v1/imports/"+importID+"/finalize", nil)
 	finalizeReq.Header.Set("X-Org-Id", "org-hy3")
@@ -167,6 +172,197 @@ func TestSensitiveRouteRBACMatrix(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestParentAndSwimmerPortalReadMatrix(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	memberSvc := members.NewService()
+	groupSvc := groups.NewService()
+	meetsSvc := meets.NewService()
+	perfSvc := performance.NewService()
+	commsSvc := comms.NewService()
+	trainingSvc := training.NewService()
+	router := NewRouterWithServices(
+		Config{Auth: AuthConfig{EnableDevStubTokens: true}},
+		logger,
+		nil,
+		memberSvc,
+		groupSvc,
+		meetsSvc,
+		nil,
+		nil,
+		perfSvc,
+		nil,
+		nil,
+		commsSvc,
+		nil,
+		nil,
+		nil,
+		trainingSvc,
+		nil,
+		nil,
+	)
+
+	adminToken := issueSessionTokenForUser(t, router, "admin-portal-matrix", "org-portal", []string{"admin"}, true)
+	parentToken := issueSessionTokenForUser(t, router, "parent-portal-matrix", "org-portal", []string{"parent"}, false)
+
+	createHouseholdReq := httptest.NewRequest(http.MethodPost, "/api/v1/members/households", encodeJSONBody(t, map[string]any{
+		"org_id":         "org-portal",
+		"household_name": "Portal Family",
+	}))
+	createHouseholdReq.Header.Set("Content-Type", "application/json")
+	createHouseholdReq.Header.Set("X-Org-Id", "org-portal")
+	createHouseholdReq.Header.Set("Authorization", "Bearer "+parentToken)
+	createHouseholdRes := httptest.NewRecorder()
+	router.ServeHTTP(createHouseholdRes, createHouseholdReq)
+	if createHouseholdRes.Code != http.StatusCreated {
+		t.Fatalf("create parent household: expected %d, got %d body=%s", http.StatusCreated, createHouseholdRes.Code, createHouseholdRes.Body.String())
+	}
+	var household householdEnvelope
+	if err := json.Unmarshal(createHouseholdRes.Body.Bytes(), &household); err != nil {
+		t.Fatalf("decode household response: %v", err)
+	}
+
+	createSwimmerReq := httptest.NewRequest(http.MethodPost, "/api/v1/members/swimmers", encodeJSONBody(t, map[string]any{
+		"org_id":        "org-portal",
+		"household_id":  household.Household.ID,
+		"first_name":    "Riley",
+		"last_name":     "Portal",
+		"date_of_birth": "2012-05-17",
+		"gender":        "female",
+	}))
+	createSwimmerReq.Header.Set("Content-Type", "application/json")
+	createSwimmerReq.Header.Set("X-Org-Id", "org-portal")
+	createSwimmerReq.Header.Set("Authorization", "Bearer "+adminToken)
+	createSwimmerRes := httptest.NewRecorder()
+	router.ServeHTTP(createSwimmerRes, createSwimmerReq)
+	if createSwimmerRes.Code != http.StatusCreated {
+		t.Fatalf("create swimmer: expected %d, got %d body=%s", http.StatusCreated, createSwimmerRes.Code, createSwimmerRes.Body.String())
+	}
+	var swimmer swimmerEnvelope
+	if err := json.Unmarshal(createSwimmerRes.Body.Bytes(), &swimmer); err != nil {
+		t.Fatalf("decode swimmer response: %v", err)
+	}
+
+	groupSvc.SeedSwimmer("org-portal", swimmer.Swimmer.ID, household.Household.ID, "2012-05-17", "female", "active")
+	groupSvc.SeedParentHousehold("parent-portal-matrix", household.Household.ID)
+	meetsSvc.SeedSwimmer("org-portal", swimmer.Swimmer.ID, household.Household.ID)
+	meetsSvc.SeedParentHousehold("parent-portal-matrix", household.Household.ID)
+	swimmerToken := issueSessionTokenWithHousehold(t, router, "swimmer-portal-matrix", "org-portal", household.Household.ID, []string{"swimmer"}, false)
+
+	createGroupReq := httptest.NewRequest(http.MethodPost, "/api/v1/groups", encodeJSONBody(t, map[string]any{
+		"code": "portal-group",
+		"name": "Portal Group",
+	}))
+	createGroupReq.Header.Set("Content-Type", "application/json")
+	createGroupReq.Header.Set("X-Org-Id", "org-portal")
+	createGroupReq.Header.Set("Authorization", "Bearer "+adminToken)
+	createGroupRes := httptest.NewRecorder()
+	router.ServeHTTP(createGroupRes, createGroupReq)
+	if createGroupRes.Code != http.StatusCreated {
+		t.Fatalf("create group: expected %d, got %d body=%s", http.StatusCreated, createGroupRes.Code, createGroupRes.Body.String())
+	}
+
+	standardReq := httptest.NewRequest(http.MethodPost, "/api/v1/time-standards", strings.NewReader(minimalTimeStandardBody("BB")))
+	standardReq.Header.Set("Content-Type", "application/json")
+	standardReq.Header.Set("X-Org-Id", "org-portal")
+	standardReq.Header.Set("Authorization", "Bearer "+adminToken)
+	standardRes := httptest.NewRecorder()
+	router.ServeHTTP(standardRes, standardReq)
+	if standardRes.Code != http.StatusCreated {
+		t.Fatalf("create time standard: expected %d, got %d body=%s", http.StatusCreated, standardRes.Code, standardRes.Body.String())
+	}
+	var standardEnv timeStandardEnvelope
+	if err := json.Unmarshal(standardRes.Body.Bytes(), &standardEnv); err != nil {
+		t.Fatalf("decode time standard response: %v", err)
+	}
+
+	type routeCheck struct {
+		name   string
+		path   string
+		token  string
+		status int
+	}
+
+	checks := []routeCheck{
+		{name: "parent households", path: "/api/v1/members/households", token: parentToken, status: http.StatusOK},
+		{name: "parent swimmers", path: "/api/v1/members/swimmers", token: parentToken, status: http.StatusOK},
+		{name: "parent swimmer groups", path: "/api/v1/members/swimmer-groups", token: parentToken, status: http.StatusOK},
+		{name: "parent registrations", path: "/api/v1/registrations", token: parentToken, status: http.StatusOK},
+		{name: "parent groups", path: "/api/v1/groups", token: parentToken, status: http.StatusOK},
+		{name: "parent meets", path: "/api/v1/meets", token: parentToken, status: http.StatusOK},
+		{name: "parent practices", path: "/api/v1/practices", token: parentToken, status: http.StatusOK},
+		{name: "parent announcements", path: "/api/v1/announcements?status=published", token: parentToken, status: http.StatusOK},
+		{name: "swimmer swimmers", path: "/api/v1/members/swimmers", token: swimmerToken, status: http.StatusOK},
+		{name: "swimmer swimmer groups", path: "/api/v1/members/swimmer-groups", token: swimmerToken, status: http.StatusOK},
+		{name: "swimmer groups", path: "/api/v1/groups", token: swimmerToken, status: http.StatusOK},
+		{name: "swimmer meets", path: "/api/v1/meets", token: swimmerToken, status: http.StatusOK},
+		{name: "swimmer practices", path: "/api/v1/practices", token: swimmerToken, status: http.StatusOK},
+		{name: "swimmer announcements", path: "/api/v1/announcements?status=published", token: swimmerToken, status: http.StatusOK},
+		{name: "swimmer best times", path: "/api/v1/swimmers/" + swimmer.Swimmer.ID + "/best-times", token: swimmerToken, status: http.StatusOK},
+		{name: "swimmer progression", path: "/api/v1/swimmers/" + swimmer.Swimmer.ID + "/progression", token: swimmerToken, status: http.StatusOK},
+		{name: "swimmer cut qualification", path: "/api/v1/swimmers/" + swimmer.Swimmer.ID + "/cut-qualification?standard_id=" + standardEnv.TimeStandard.ID, token: swimmerToken, status: http.StatusOK},
+	}
+
+	for _, check := range checks {
+		req := httptest.NewRequest(http.MethodGet, check.path, nil)
+		req.Header.Set("X-Org-Id", "org-portal")
+		req.Header.Set("Authorization", "Bearer "+check.token)
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		if rr.Code != check.status {
+			t.Fatalf("%s: expected %d, got %d body=%s", check.name, check.status, rr.Code, rr.Body.String())
+		}
+	}
+
+	foreignHouseholdReq := httptest.NewRequest(http.MethodPost, "/api/v1/members/households", encodeJSONBody(t, map[string]any{
+		"org_id":         "org-portal",
+		"household_name": "Foreign Family",
+	}))
+	foreignHouseholdReq.Header.Set("Content-Type", "application/json")
+	foreignHouseholdReq.Header.Set("X-Org-Id", "org-portal")
+	foreignHouseholdReq.Header.Set("Authorization", "Bearer "+adminToken)
+	foreignHouseholdRes := httptest.NewRecorder()
+	router.ServeHTTP(foreignHouseholdRes, foreignHouseholdReq)
+	if foreignHouseholdRes.Code != http.StatusCreated {
+		t.Fatalf("create foreign household: expected %d, got %d body=%s", http.StatusCreated, foreignHouseholdRes.Code, foreignHouseholdRes.Body.String())
+	}
+	var foreignHousehold householdEnvelope
+	if err := json.Unmarshal(foreignHouseholdRes.Body.Bytes(), &foreignHousehold); err != nil {
+		t.Fatalf("decode foreign household response: %v", err)
+	}
+
+	foreignSwimmerReq := httptest.NewRequest(http.MethodPost, "/api/v1/members/swimmers", encodeJSONBody(t, map[string]any{
+		"org_id":        "org-portal",
+		"household_id":  foreignHousehold.Household.ID,
+		"first_name":    "Casey",
+		"last_name":     "Foreign",
+		"date_of_birth": "2011-02-01",
+		"gender":        "male",
+	}))
+	foreignSwimmerReq.Header.Set("Content-Type", "application/json")
+	foreignSwimmerReq.Header.Set("X-Org-Id", "org-portal")
+	foreignSwimmerReq.Header.Set("Authorization", "Bearer "+adminToken)
+	foreignSwimmerRes := httptest.NewRecorder()
+	router.ServeHTTP(foreignSwimmerRes, foreignSwimmerReq)
+	if foreignSwimmerRes.Code != http.StatusCreated {
+		t.Fatalf("create foreign swimmer: expected %d, got %d body=%s", http.StatusCreated, foreignSwimmerRes.Code, foreignSwimmerRes.Body.String())
+	}
+	var foreignSwimmer swimmerEnvelope
+	if err := json.Unmarshal(foreignSwimmerRes.Body.Bytes(), &foreignSwimmer); err != nil {
+		t.Fatalf("decode foreign swimmer response: %v", err)
+	}
+
+	foreignBestTimesReq := httptest.NewRequest(http.MethodGet, "/api/v1/swimmers/"+foreignSwimmer.Swimmer.ID+"/best-times", nil)
+	foreignBestTimesReq.Header.Set("X-Org-Id", "org-portal")
+	foreignBestTimesReq.Header.Set("Authorization", "Bearer "+swimmerToken)
+	foreignBestTimesRes := httptest.NewRecorder()
+	router.ServeHTTP(foreignBestTimesRes, foreignBestTimesReq)
+	if foreignBestTimesRes.Code != http.StatusForbidden {
+		t.Fatalf("expected swimmer foreign best-times to be forbidden, got %d body=%s", foreignBestTimesRes.Code, foreignBestTimesRes.Body.String())
 	}
 }
 
@@ -429,10 +625,12 @@ func TestDuplicateImportFinalizeChaos(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	importsService := imports.NewService()
+	store := storage.NewStubStorage("")
+	importsService := imports.NewServiceWithStorage(store)
 	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	adminToken := issueSessionToken(t, router, "org-chaos", []string{"admin"}, false)
 	importID := requestUploadURL(t, router, "org-chaos", adminToken, "duplicate.sd3", "sd3")
+	seedUploadedImport(t, store, "org-chaos", importID, "duplicate.sd3", "application/octet-stream", loadImportFixture(t, "valid.sd3"))
 
 	var wg sync.WaitGroup
 	results := make(chan int, 2)

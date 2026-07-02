@@ -10,29 +10,44 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dareaquatics/aquify/server/internal/app/audit"
 	"github.com/dareaquatics/aquify/server/internal/app/comms"
+	"github.com/dareaquatics/aquify/server/internal/app/groups"
+	"github.com/dareaquatics/aquify/server/internal/app/members"
+	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
 )
 
 // ─── Router helper ────────────────────────────────────────────────────────────
 
 func newCommsRouter(t *testing.T, svc *comms.Service) http.Handler {
+	return newCommsRouterWithServices(t, svc, nil, nil, nil)
+}
+
+func newCommsRouterWithServices(t *testing.T, svc *comms.Service, membersSvc *members.Service, groupsSvc *groups.Service, auditSvc *audit.Service) http.Handler {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	return NewRouterWithServices(
 		Config{Auth: AuthConfig{EnableDevStubTokens: true}},
 		logger,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, svc, nil, nil, nil, nil, nil,
-		nil,
+		nil, membersSvc, groupsSvc, nil, nil, nil, nil, nil, nil, svc, auditSvc, nil, nil, nil, nil, nil,
 	)
 }
 
 // issueCommsToken creates a real session token with the given role for org-demo.
 func issueCommsToken(t *testing.T, router http.Handler, role string) string {
 	t.Helper()
+	return issueScopedCommsToken(t, router, "test-user-"+role, role, "", commsOrgID)
+}
+
+func issueScopedCommsToken(t *testing.T, router http.Handler, userID, role, householdID, orgID string) string {
+	t.Helper()
 	payload := map[string]any{
-		"user_id": "test-user-" + role,
-		"org_id":  "org-demo",
+		"user_id": userID,
+		"org_id":  orgID,
 		"roles":   []string{role},
+	}
+	if householdID != "" {
+		payload["household_id"] = householdID
 	}
 	raw, _ := json.Marshal(payload)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/sessions/issue", bytes.NewReader(raw))
@@ -81,6 +96,40 @@ func doPublicCommsReq(router http.Handler, method, path, body string, headers ma
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 	return rr
+}
+
+func commsAdminPrincipal() *appmiddleware.Principal {
+	return &appmiddleware.Principal{
+		UserID: "comms-admin",
+		OrgID:  commsOrgID,
+		Roles:  []string{"admin"},
+	}
+}
+
+func seedCommsHousehold(t *testing.T, svc *members.Service, householdName, primaryEmail string, contactEmails ...string) string {
+	t.Helper()
+	admin := commsAdminPrincipal()
+	household, err := svc.CreateHousehold(admin, members.CreateHouseholdInput{
+		OrgID:         commsOrgID,
+		HouseholdName: householdName,
+		PrimaryEmail:  primaryEmail,
+		Status:        "active",
+	})
+	if err != nil {
+		t.Fatalf("seed household: %v", err)
+	}
+	for idx, email := range contactEmails {
+		if _, err := svc.AddContact(admin, commsOrgID, household.ID, members.AddContactInput{
+			Relationship: "parent",
+			FirstName:    "Parent",
+			LastName:     string(rune('A' + idx)),
+			Email:        email,
+			IsPrimary:    idx == 0,
+		}); err != nil {
+			t.Fatalf("seed contact: %v", err)
+		}
+	}
+	return household.ID
 }
 
 // ─── Announcement tests ───────────────────────────────────────────────────────
@@ -216,6 +265,110 @@ func TestAnnouncements_GroupAudienceRequiresGroupID(t *testing.T) {
 	}
 }
 
+func TestCommunicationPreferences_ListAndUpdateAreScopedToCurrentUser(t *testing.T) {
+	svc := comms.NewService()
+	router := newCommsRouter(t, svc)
+
+	parentToken := issueScopedCommsToken(t, router, "parent-user", "parent", "household-parent", commsOrgID)
+	swimmerToken := issueScopedCommsToken(t, router, "swimmer-user", "swimmer", "household-parent", commsOrgID)
+
+	updateBody := commsBody(map[string]any{
+		"preferences": []map[string]any{
+			{"event_id": "announcement", "email_enabled": false, "push_enabled": true},
+			{"event_id": "invoice_due", "email_enabled": true, "push_enabled": false},
+		},
+	})
+	rr := doCommsReq(router, http.MethodPut, "/api/v1/communication-preferences", parentToken, updateBody)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("update preferences: want 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	rr = doCommsReq(router, http.MethodGet, "/api/v1/communication-preferences", parentToken, "")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("list parent preferences: want 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var parentResp struct {
+		Preferences []comms.NotificationPreferenceView `json:"preferences"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&parentResp); err != nil {
+		t.Fatalf("decode parent preferences: %v", err)
+	}
+	if got := findPreference(parentResp.Preferences, "announcement"); got == nil || got.EmailEnabled || !got.PushEnabled {
+		t.Fatalf("expected persisted announcement preference for parent user, got %#v", got)
+	}
+	if got := findPreference(parentResp.Preferences, "invoice_due"); got == nil || !got.EmailEnabled || got.PushEnabled {
+		t.Fatalf("expected persisted invoice_due preference for parent user, got %#v", got)
+	}
+
+	rr = doCommsReq(router, http.MethodGet, "/api/v1/communication-preferences", swimmerToken, "")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("list swimmer preferences: want 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var swimmerResp struct {
+		Preferences []comms.NotificationPreferenceView `json:"preferences"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&swimmerResp); err != nil {
+		t.Fatalf("decode swimmer preferences: %v", err)
+	}
+	if got := findPreference(swimmerResp.Preferences, "announcement"); got == nil || !got.EmailEnabled || got.PushEnabled {
+		t.Fatalf("expected swimmer user to retain default announcement preference, got %#v", got)
+	}
+}
+
+func TestCommunicationPreferences_UpdateRejectsUnknownEvents(t *testing.T) {
+	svc := comms.NewService()
+	router := newCommsRouter(t, svc)
+	token := issueScopedCommsToken(t, router, "parent-user", "parent", "household-parent", commsOrgID)
+
+	rr := doCommsReq(router, http.MethodPut, "/api/v1/communication-preferences", token, commsBody(map[string]any{
+		"preferences": []map[string]any{
+			{"event_id": "unknown_event", "email_enabled": true, "push_enabled": false},
+		},
+	}))
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("unknown event: want 400, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestCommunicationPreferences_UpdateEmitsAuditEvent(t *testing.T) {
+	svc := comms.NewService()
+	auditSvc := audit.NewService()
+	router := newCommsRouterWithServices(t, svc, nil, nil, auditSvc)
+	token := issueScopedCommsToken(t, router, "parent-user", "parent", "household-parent", commsOrgID)
+
+	rr := doCommsReq(router, http.MethodPut, "/api/v1/communication-preferences", token, commsBody(map[string]any{
+		"preferences": []map[string]any{
+			{"event_id": "announcement", "email_enabled": false, "push_enabled": true},
+		},
+	}))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("update preferences: want 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	events, err := auditSvc.Query(audit.Filter{OrgID: commsOrgID, Action: audit.ActionCommsNotificationPreferencesUpdate})
+	if err != nil {
+		t.Fatalf("query audit: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 audit event, got %d", len(events))
+	}
+	if events[0].ResourceID != "parent-user" {
+		t.Fatalf("expected resource id parent-user, got %q", events[0].ResourceID)
+	}
+	if events[0].Metadata["household_id"] != "household-parent" {
+		t.Fatalf("expected household metadata, got %#v", events[0].Metadata)
+	}
+}
+
+func findPreference(preferences []comms.NotificationPreferenceView, eventID string) *comms.NotificationPreferenceView {
+	for i := range preferences {
+		if preferences[i].EventID == eventID {
+			return &preferences[i]
+		}
+	}
+	return nil
+}
+
 // ─── Campaign tests ───────────────────────────────────────────────────────────
 
 func TestCampaigns_CreateListGet(t *testing.T) {
@@ -263,9 +416,11 @@ func TestCampaigns_CreateListGet(t *testing.T) {
 }
 
 func TestCampaigns_SendWithSuppression(t *testing.T) {
-	t.Setenv("COMMS_ALLOW_ARBITRARY_RECIPIENTS", "true")
 	svc := comms.NewService()
-	router := newCommsRouter(t, svc)
+	membersSvc := members.NewService()
+	seedCommsHousehold(t, membersSvc, "Household One", "alice@example.com", "bob@example.com")
+	seedCommsHousehold(t, membersSvc, "Household Two", "bounce@example.com")
+	router := newCommsRouterWithServices(t, svc, membersSvc, nil, nil)
 	token := issueCommsToken(t, router, "admin")
 
 	// Add a suppressed email.
@@ -292,14 +447,8 @@ func TestCampaigns_SendWithSuppression(t *testing.T) {
 	json.NewDecoder(rr.Body).Decode(&campaign)
 	campaignID := campaign["id"].(string)
 
-	// Send with 3 recipients — 1 suppressed, 2 live.
-	sendBody := commsBody(map[string]any{
-		"recipients": []map[string]any{
-			{"email": "alice@example.com"},
-			{"email": "bob@example.com"},
-			{"email": "bounce@example.com"},
-		},
-	})
+	// Send to org-member recipients resolved server-side — 1 suppressed, 2 live.
+	sendBody := `{}`
 	rr = doCommsReq(router, http.MethodPost, "/api/v1/email-campaigns/"+campaignID+"/send", token, sendBody)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("send: want 200, got %d: %s", rr.Code, rr.Body.String())
@@ -327,9 +476,11 @@ func TestCampaigns_SendWithSuppression(t *testing.T) {
 }
 
 func TestCampaigns_ListDeliveries(t *testing.T) {
-	t.Setenv("COMMS_ALLOW_ARBITRARY_RECIPIENTS", "true")
 	svc := comms.NewService()
-	router := newCommsRouter(t, svc)
+	membersSvc := members.NewService()
+	seedCommsHousehold(t, membersSvc, "Household A", "a@a.com")
+	seedCommsHousehold(t, membersSvc, "Household B", "b@b.com")
+	router := newCommsRouterWithServices(t, svc, membersSvc, nil, nil)
 	token := issueCommsToken(t, router, "admin")
 
 	// Create + send.
@@ -346,12 +497,7 @@ func TestCampaigns_ListDeliveries(t *testing.T) {
 	json.NewDecoder(rr.Body).Decode(&campaign)
 	campaignID := campaign["id"].(string)
 
-	sendBody := commsBody(map[string]any{
-		"recipients": []map[string]any{
-			{"email": "a@a.com"},
-			{"email": "b@b.com"},
-		},
-	})
+	sendBody := `{}`
 	doCommsReq(router, http.MethodPost, "/api/v1/email-campaigns/"+campaignID+"/send", token, sendBody)
 
 	// List deliveries.
@@ -364,6 +510,113 @@ func TestCampaigns_ListDeliveries(t *testing.T) {
 	deliveries := listResp["deliveries"].([]any)
 	if len(deliveries) != 2 {
 		t.Fatalf("want 2 deliveries, got %d", len(deliveries))
+	}
+}
+
+func TestCampaigns_SendRejectsCallerSuppliedRecipientsPayload(t *testing.T) {
+	svc := comms.NewService()
+	membersSvc := members.NewService()
+	seedCommsHousehold(t, membersSvc, "Household A", "member@example.com")
+	router := newCommsRouterWithServices(t, svc, membersSvc, nil, nil)
+	token := issueCommsToken(t, router, "admin")
+
+	cBody := commsBody(map[string]any{
+		"name":       "Unsafe Send",
+		"subject":    "Hello",
+		"body_html":  "<p>Hi</p>",
+		"from_name":  "DARE",
+		"from_email": "noreply@dare.swim",
+		"audience":   "all",
+	})
+	rr := doCommsReq(router, http.MethodPost, "/api/v1/email-campaigns", token, cBody)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", rr.Code, rr.Body.String())
+	}
+	var campaign map[string]any
+	json.NewDecoder(rr.Body).Decode(&campaign)
+	campaignID := campaign["id"].(string)
+
+	sendBody := commsBody(map[string]any{
+		"recipients": []map[string]any{{"email": "outsider@example.com"}},
+	})
+	rr = doCommsReq(router, http.MethodPost, "/api/v1/email-campaigns/"+campaignID+"/send", token, sendBody)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for caller-supplied recipients payload, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	deliveries, err := svc.ListDeliveries(commsOrgID, campaignID)
+	if err != nil {
+		t.Fatalf("list deliveries: %v", err)
+	}
+	if len(deliveries) != 0 {
+		t.Fatalf("expected 0 deliveries after rejected unsafe payload, got %d", len(deliveries))
+	}
+}
+
+func TestCampaigns_GroupAudienceOnlyTargetsRegisteredHouseholds(t *testing.T) {
+	svc := comms.NewService()
+	membersSvc := members.NewService()
+	groupsSvc := groups.NewService()
+	admin := commsAdminPrincipal()
+
+	targetHouseholdID := seedCommsHousehold(t, membersSvc, "Target Household", "target@example.com", "target-parent@example.com")
+	seedCommsHousehold(t, membersSvc, "Other Household", "other@example.com", "other-parent@example.com")
+
+	group, _, err := groupsSvc.CreateGroup(admin, commsOrgID, groups.CreateGroupInput{
+		Code: "jr1",
+		Name: "Junior 1",
+		Type: "competitive",
+	})
+	if err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	groupsSvc.SeedSwimmer(commsOrgID, "swm-target", targetHouseholdID, "2012-02-03", "female", "active")
+	if _, err := groupsSvc.CreateRegistration(admin, commsOrgID, groups.CreateRegistrationInput{
+		HouseholdID:      targetHouseholdID,
+		SwimmerID:        "swm-target",
+		GroupID:          group.ID,
+		Season:           "2026",
+		RegistrationDate: "2026-01-02",
+	}); err != nil {
+		t.Fatalf("create registration: %v", err)
+	}
+
+	router := newCommsRouterWithServices(t, svc, membersSvc, groupsSvc, nil)
+	token := issueCommsToken(t, router, "admin")
+
+	cBody := commsBody(map[string]any{
+		"name":       "Group Send",
+		"subject":    "Practice Update",
+		"body_html":  "<p>Hi team</p>",
+		"from_name":  "DARE",
+		"from_email": "noreply@dare.swim",
+		"audience":   "group",
+		"group_id":   group.ID,
+	})
+	rr := doCommsReq(router, http.MethodPost, "/api/v1/email-campaigns", token, cBody)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("create campaign: %d %s", rr.Code, rr.Body.String())
+	}
+	var campaign map[string]any
+	json.NewDecoder(rr.Body).Decode(&campaign)
+	campaignID := campaign["id"].(string)
+
+	rr = doCommsReq(router, http.MethodPost, "/api/v1/email-campaigns/"+campaignID+"/send", token, `{}`)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("send group campaign: %d %s", rr.Code, rr.Body.String())
+	}
+
+	deliveries, err := svc.ListDeliveries(commsOrgID, campaignID)
+	if err != nil {
+		t.Fatalf("list deliveries: %v", err)
+	}
+	if len(deliveries) != 2 {
+		t.Fatalf("expected 2 registered-household deliveries, got %d", len(deliveries))
+	}
+	for _, delivery := range deliveries {
+		if strings.HasPrefix(delivery.RecipientEmail, "other") {
+			t.Fatalf("unexpected delivery to non-registered household recipient %q", delivery.RecipientEmail)
+		}
 	}
 }
 
@@ -479,9 +732,10 @@ func TestSuppression_RBACEnforcement(t *testing.T) {
 }
 
 func TestPostmarkWebhookBounceUpdatesDeliveryAndSuppression(t *testing.T) {
-	t.Setenv("COMMS_ALLOW_ARBITRARY_RECIPIENTS", "true")
 	svc := comms.NewService()
-	router := newCommsRouter(t, svc)
+	membersSvc := members.NewService()
+	seedCommsHousehold(t, membersSvc, "Household A", "alice@example.com")
+	router := newCommsRouterWithServices(t, svc, membersSvc, nil, nil)
 	token := issueCommsToken(t, router, "admin")
 
 	cBody := commsBody(map[string]any{
@@ -500,9 +754,7 @@ func TestPostmarkWebhookBounceUpdatesDeliveryAndSuppression(t *testing.T) {
 	json.NewDecoder(rr.Body).Decode(&campaign)
 	campaignID := campaign["id"].(string)
 
-	sendBody := commsBody(map[string]any{
-		"recipients": []map[string]any{{"email": "alice@example.com"}},
-	})
+	sendBody := `{}`
 	rr = doCommsReq(router, http.MethodPost, "/api/v1/email-campaigns/"+campaignID+"/send", token, sendBody)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("send campaign: want 200, got %d: %s", rr.Code, rr.Body.String())

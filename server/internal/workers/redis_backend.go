@@ -299,6 +299,9 @@ func (b *RedisBackend) Start() error {
 			if err != nil {
 				return err
 			}
+			if _, err := b.enqueue(context.Background(), time.Time{}, task, WithQueue(job.Queue)); err != nil && !errors.Is(err, ErrDuplicateTask) {
+				return fmt.Errorf("enqueue initial scheduled job %q: %w", job.Name, err)
+			}
 			_, err = scheduler.Register(
 				fmt.Sprintf("@every %s", job.Interval),
 				asynq.NewTask(task.Type, task.Payload),

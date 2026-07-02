@@ -6,7 +6,9 @@ import { useParams } from 'next/navigation'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
+import { reportUIError } from '@/lib/frontend-telemetry'
 import {
+  fetchSwimmerActivity,
   fetchSwimmer,
   fetchSwimmerGroups,
   fetchGroups,
@@ -14,6 +16,7 @@ import {
   updateSwimmer,
   type SwimmerRecord,
   type BestTimeRecord,
+  type SwimmerActivityRecord,
 } from '@/lib/adminData'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -99,6 +102,30 @@ const EDITABLE_FIELD_NOTE =
 
 type Tab = 'profile' | 'performance' | 'history'
 
+function fmtShortDate(iso?: string): string {
+  if (!iso) return '—'
+  const value = new Date(iso)
+  if (Number.isNaN(value.getTime())) return '—'
+  return value.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function historyAccent(type: string): { bg: string; color: string } {
+  switch (type) {
+    case 'result':
+      return { bg: 'rgba(59,130,246,0.12)', color: '#2563eb' }
+    case 'registration':
+      return { bg: 'rgba(16,185,129,0.12)', color: '#059669' }
+    case 'waiver':
+      return { bg: 'rgba(245,158,11,0.15)', color: '#b45309' }
+    case 'document':
+      return { bg: 'rgba(235,93,30,0.12)', color: '#c2410c' }
+    case 'commitment':
+      return { bg: 'rgba(107,114,128,0.12)', color: '#4b5563' }
+    default:
+      return { bg: 'rgba(0,0,0,0.06)', color: '#6B6866' }
+  }
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 export default function SwimmerProfilePage() {
   const params = useParams<{ id: string }>()
@@ -111,7 +138,10 @@ export default function SwimmerProfilePage() {
   const [swimmer, setSwimmer] = useState<SwimmerRecord | null>(null)
   const [groupName, setGroupName] = useState<string>('—')
   const [bestTimes, setBestTimes] = useState<TimeRow[]>([])
+  const [activity, setActivity] = useState<SwimmerActivityRecord[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
   // Editable local state (initialized from swimmer data on load)
   const [emergencyNotes, setEmergencyNotes] = useState('')
@@ -121,15 +151,21 @@ export default function SwimmerProfilePage() {
   const [saveSuccess, setSaveSuccess] = useState(false)
 
   useEffect(() => {
-    if (!orgId || !swimmerId) { setLoading(false); return }
+    if (!orgId || !swimmerId) {
+      setLoading(false)
+      setLoadError('Swimmer detail is unavailable because the swimmer context is missing.')
+      return
+    }
     setLoading(true)
+    setLoadError(null)
     Promise.all([
       fetchSwimmer(api, orgId, swimmerId),
       fetchSwimmerGroups(api, orgId),
       fetchGroups(api, orgId),
       fetchSwimmerBestTimes(api, orgId, swimmerId),
+      fetchSwimmerActivity(api, orgId, swimmerId),
     ])
-      .then(([sw, sGroups, grps, times]) => {
+      .then(([sw, sGroups, grps, times, activities]) => {
         setSwimmer(sw)
         setEmergencyNotes(sw.notes ?? '')
         setPreferredName(sw.preferred_name ?? '')
@@ -141,10 +177,22 @@ export default function SwimmerProfilePage() {
         }
 
         setBestTimes(pivotBestTimes(times))
+        setActivity(activities)
       })
-      .catch(console.error)
+      .catch((error) => {
+        setSwimmer(null)
+        setGroupName('—')
+        setBestTimes([])
+        setActivity([])
+        setLoadError(reportUIError(
+          'portal-household-swimmer-load',
+          error,
+          'Swimmer detail data is unavailable right now.',
+          { orgId, swimmerId },
+        ))
+      })
       .finally(() => setLoading(false))
-  }, [api, orgId, swimmerId])
+  }, [api, orgId, swimmerId, reloadKey])
 
   const [tab, setTab] = useState<Tab>('profile')
   const [editingName, setEditingName] = useState(false)
@@ -201,6 +249,34 @@ export default function SwimmerProfilePage() {
           {loading ? 'Loading…' : fullName}
         </span>
       </nav>
+
+      {loadError && (
+        <div
+          style={{
+            background: '#fff7ed',
+            border: '1px solid #fdba74',
+            borderRadius: '10px',
+            padding: '12px 16px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: '12px',
+            marginBottom: '24px',
+          }}
+        >
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+            <Icon name="alert-circle" size={15} style={{ color: '#ea580c', marginTop: '1px', flexShrink: 0 }} />
+            <p style={{ margin: 0, fontSize: '12.5px', color: '#9a3412', lineHeight: 1.5 }}>{loadError}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setReloadKey((key) => key + 1)}
+            style={{ background: '#ffffff', border: '1px solid #fdba74', borderRadius: '8px', cursor: 'pointer', color: '#9a3412', fontSize: '12px', fontWeight: 600, padding: '8px 14px', whiteSpace: 'nowrap' }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* Header Card */}
       <div style={{ background: '#ffffff', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.07)', boxShadow: '0 2px 12px rgba(0,0,0,0.05)', padding: '28px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '20px', animation: 'slideUp 0.35s ease both' }}>
@@ -461,10 +537,45 @@ export default function SwimmerProfilePage() {
                 Activity History
               </span>
             </div>
-            <div style={{ padding: '32px 20px', textAlign: 'center', color: '#9A9693', fontSize: '13.5px', lineHeight: 1.6 }}>
-              <Icon name="clock" size={20} style={{ display: 'block', margin: '0 auto 10px', color: '#C0BDBB' }} />
-              Activity history is managed by club staff and will be available here in a future update.
-            </div>
+            {loading ? (
+              <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {[0, 1, 2].map((i) => <Skeleton key={i} h={42} r={10} />)}
+              </div>
+            ) : activity.length === 0 ? (
+              <div style={{ padding: '32px 20px', textAlign: 'center', color: '#9A9693', fontSize: '13.5px', lineHeight: 1.6 }}>
+                <Icon name="clock" size={20} style={{ display: 'block', margin: '0 auto 10px', color: '#C0BDBB' }} />
+                No activity has been recorded for this swimmer yet.
+              </div>
+            ) : (
+              activity.map((entry, index) => {
+                const accent = historyAccent(entry.type)
+                return (
+                  <div key={entry.id} style={{ display: 'grid', gridTemplateColumns: '104px 1fr', gap: '14px', padding: '16px 20px', borderBottom: index < activity.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none', alignItems: 'start' }}>
+                    <div style={{ fontSize: '11.5px', color: '#9A9693', fontFamily: 'var(--font-mono)', paddingTop: '3px' }}>
+                      {fmtShortDate(entry.occurred_at)}
+                    </div>
+                    <div style={{ display: 'flex', gap: '12px' }}>
+                      <div style={{ width: '10px', height: '10px', borderRadius: '999px', background: accent.bg, border: `2px solid ${accent.color}`, marginTop: '4px', flexShrink: 0 }} />
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
+                          <span style={{ fontSize: '13.5px', color: '#1A1714', fontWeight: 600 }}>{entry.title}</span>
+                          {entry.status ? (
+                            <span style={{ padding: '2px 8px', borderRadius: '999px', background: accent.bg, color: accent.color, fontSize: '10.5px', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                              {entry.status.replaceAll('_', ' ')}
+                            </span>
+                          ) : null}
+                        </div>
+                        {entry.detail ? (
+                          <div style={{ fontSize: '12.5px', color: '#6B6866', lineHeight: 1.55 }}>
+                            {entry.detail}
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })
+            )}
           </div>
         </div>
       )}

@@ -1,12 +1,11 @@
 package handlers
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"slices"
-	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dareaquatics/aquify/server/internal/app/audit"
 	"github.com/dareaquatics/aquify/server/internal/app/httpx"
@@ -42,7 +41,7 @@ func actorMaxTier(roles []string) int {
 
 func normalizeUserRole(role string) string {
 	switch strings.TrimSpace(strings.ToLower(role)) {
-	case "read-only", "read_only_staff":
+	case "staff", "read-only", "read_only_staff":
 		return "read_only_staff"
 	default:
 		return strings.TrimSpace(strings.ToLower(role))
@@ -213,6 +212,42 @@ func writeKeycloakAdminError(w http.ResponseWriter, r *http.Request, err error, 
 	}
 }
 
+func cloneUserAttributes(user *keycloak.User) map[string][]string {
+	attrs := make(map[string][]string)
+	if user == nil || user.Attributes == nil {
+		return attrs
+	}
+	for key, values := range user.Attributes {
+		cp := make([]string, len(values))
+		copy(cp, values)
+		attrs[key] = cp
+	}
+	return attrs
+}
+
+func setUserAttribute(attrs map[string][]string, key, value string) {
+	if strings.TrimSpace(key) == "" {
+		return
+	}
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		delete(attrs, key)
+		return
+	}
+	attrs[key] = []string{trimmed}
+}
+
+func firstUserAttribute(user *keycloak.User, key string) string {
+	if user == nil || user.Attributes == nil {
+		return ""
+	}
+	values := user.Attributes[key]
+	if len(values) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(values[0])
+}
+
 // requireUserInOrg fetches the target user and verifies org membership.
 // Writes 404 or 403 on failure. Returns (user, true) on success.
 func (h *UserHandlers) requireUserInOrg(w http.ResponseWriter, r *http.Request, userID, orgID string) (*keycloak.User, bool) {
@@ -258,20 +293,9 @@ func (h *UserHandlers) listUsers(w http.ResponseWriter, r *http.Request) {
 
 	q := r.URL.Query()
 	search := strings.TrimSpace(q.Get("search"))
-	limit := 50
-	offset := 0
-	if lStr := q.Get("limit"); lStr != "" {
-		if l, err := strconv.Atoi(lStr); err == nil && l > 0 {
-			limit = l
-		}
-	}
-	if oStr := q.Get("offset"); oStr != "" {
-		if o, err := strconv.Atoi(oStr); err == nil && o >= 0 {
-			offset = o
-		}
-	}
+	pagination := parseListPagination(r, listPaginationOptions{DefaultLimit: 50})
 
-	users, err := h.kc.ListUsers(r.Context(), orgID, search, limit, offset)
+	users, err := h.kc.ListUsers(r.Context(), orgID, search, pagination.Limit, pagination.Offset)
 	if err != nil {
 		writeKeycloakAdminError(w, r, err, "Failed to list users.")
 		return
@@ -327,6 +351,8 @@ func (h *UserHandlers) listUsers(w http.ResponseWriter, r *http.Request) {
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":     "ok",
 		"count":      len(listItems),
+		"limit":      pagination.Limit,
+		"offset":     pagination.Offset,
 		"source":     keycloakSource(h.kc),
 		"is_stubbed": keycloakSource(h.kc) == "stub",
 		"users":      listItems,
@@ -362,15 +388,18 @@ func (h *UserHandlers) getUser(w http.ResponseWriter, r *http.Request) {
 // ── POST /register (public) ────────────────────────────────────────────────────
 
 type selfRegisterRequest struct {
-	FirstName string `json:"first_name"`
-	LastName  string `json:"last_name"`
-	Email     string `json:"email"`
-	OrgID     string `json:"org_id"`
+	FirstName     string `json:"first_name"`
+	LastName      string `json:"last_name"`
+	Email         string `json:"email"`
+	OrgID         string `json:"org_id"`
+	RequestedRole string `json:"requested_role"`
+	ClubCode      string `json:"club_code"`
+	Note          string `json:"note"`
 }
 
 func (h *UserHandlers) selfRegister(w http.ResponseWriter, r *http.Request) {
 	var req selfRegisterRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
 		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "Invalid request body.", nil)
 		return
 	}
@@ -378,6 +407,9 @@ func (h *UserHandlers) selfRegister(w http.ResponseWriter, r *http.Request) {
 	req.FirstName = strings.TrimSpace(req.FirstName)
 	req.LastName = strings.TrimSpace(req.LastName)
 	req.OrgID = strings.TrimSpace(req.OrgID)
+	req.RequestedRole = normalizeUserRole(req.RequestedRole)
+	req.ClubCode = strings.ToUpper(strings.TrimSpace(req.ClubCode))
+	req.Note = strings.TrimSpace(req.Note)
 
 	if req.Email == "" {
 		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "email is required.", nil)
@@ -386,6 +418,12 @@ func (h *UserHandlers) selfRegister(w http.ResponseWriter, r *http.Request) {
 	if req.OrgID == "" {
 		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "org_id is required.", nil)
 		return
+	}
+	if req.RequestedRole != "" {
+		if _, ok := roleTier[req.RequestedRole]; !ok {
+			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_role", "requested_role is not supported.", nil)
+			return
+		}
 	}
 
 	newUserID, err := h.kc.CreateUser(r.Context(), req.Email, req.FirstName, req.LastName, req.OrgID)
@@ -398,16 +436,31 @@ func (h *UserHandlers) selfRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Set registration_status=pending_approval so the admin approvals queue can filter by it.
-	// Preserve org_id alongside the new attribute.
-	_ = h.kc.UpdateUser(r.Context(), newUserID, keycloak.UpdateUserFields{
-		Attributes: map[string][]string{
-			"org_id":              {req.OrgID},
-			"registration_status": {"pending_approval"},
-		},
-	})
+	registrationAttributes := map[string][]string{
+		"org_id":                    {req.OrgID},
+		"registration_status":       {"pending_approval"},
+		"registration_submitted_at": {time.Now().UTC().Format(time.RFC3339)},
+	}
+	if req.RequestedRole != "" {
+		registrationAttributes["requested_role"] = []string{req.RequestedRole}
+	}
+	if req.ClubCode != "" {
+		registrationAttributes["registration_club_code"] = []string{req.ClubCode}
+	}
+	if req.Note != "" {
+		registrationAttributes["registration_note"] = []string{req.Note}
+	}
+
+	_ = h.kc.UpdateUser(r.Context(), newUserID, keycloak.UpdateUserFields{Attributes: registrationAttributes})
 
 	if h.auditService != nil {
+		metadata := map[string]string{"email": req.Email}
+		if req.RequestedRole != "" {
+			metadata["requested_role"] = req.RequestedRole
+		}
+		if req.ClubCode != "" {
+			metadata["club_code"] = req.ClubCode
+		}
 		_, _ = h.auditService.Append(audit.AppendRequest{
 			OrgID:        req.OrgID,
 			ActorUserID:  newUserID,
@@ -415,7 +468,7 @@ func (h *UserHandlers) selfRegister(w http.ResponseWriter, r *http.Request) {
 			Action:       audit.ActionAuthUserSelfRegister,
 			ResourceType: "keycloak_user",
 			ResourceID:   newUserID,
-			Metadata:     map[string]string{"email": req.Email},
+			Metadata:     metadata,
 		})
 	}
 
@@ -445,7 +498,7 @@ func (h *UserHandlers) createUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req createUserRequest
-	if err := decodeJSONBody(r, &req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
 		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "Invalid request body.", nil)
 		return
 	}
@@ -566,7 +619,7 @@ func (h *UserHandlers) inviteUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req inviteUserRequest
-	if err := decodeJSONBody(r, &req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
 		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "Invalid request body.", nil)
 		return
 	}
@@ -682,7 +735,7 @@ func (h *UserHandlers) updateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req updateUserRequest
-	if err := decodeJSONBody(r, &req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
 		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "Invalid request body.", nil)
 		return
 	}
@@ -786,25 +839,28 @@ func (h *UserHandlers) approveUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update registration_status to "active", preserving org_id.
-	_ = h.kc.UpdateUser(r.Context(), userID, keycloak.UpdateUserFields{
-		Attributes: map[string][]string{
-			"org_id":              {user.OrgID()},
-			"registration_status": {"active"},
-		},
-	})
+	attrs := cloneUserAttributes(user)
+	setUserAttribute(attrs, "org_id", user.OrgID())
+	setUserAttribute(attrs, "registration_status", "active")
+	_ = h.kc.UpdateUser(r.Context(), userID, keycloak.UpdateUserFields{Attributes: attrs})
 
-	// Assign the parent role if the user has no realm roles yet.
+	requestedRole := normalizeUserRole(firstUserAttribute(user, "requested_role"))
+	if requestedRole == "" {
+		requestedRole = "parent"
+	}
+
+	// Assign the requested role if the user has no realm roles yet.
 	existingRoles, _ := h.kc.GetUserRealmRoles(r.Context(), userID)
 	if len(existingRoles) == 0 {
-		_ = h.kc.AssignRealmRole(r.Context(), userID, "parent")
+		_ = h.kc.AssignRealmRole(r.Context(), userID, requestedRole)
 	}
 
 	// Trigger welcome / verification email.
 	_ = h.kc.SendVerificationEmail(r.Context(), userID)
 
 	h.emitAudit(r, principal, audit.ActionAuthUserApprove, userID, map[string]string{
-		"email": user.Email,
+		"email":          user.Email,
+		"requested_role": requestedRole,
 	})
 
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": "approved"})
@@ -830,7 +886,7 @@ func (h *UserHandlers) rejectUser(w http.ResponseWriter, r *http.Request) {
 
 	var req rejectUserRequest
 	// Ignore decode error — reason is optional and body may be empty.
-	_ = json.NewDecoder(r.Body).Decode(&req)
+	_ = decodeOptionalJSONBody(w, r, &req)
 	req.Reason = strings.TrimSpace(req.Reason)
 
 	if err := h.kc.DisableUser(r.Context(), userID); err != nil {
@@ -842,13 +898,10 @@ func (h *UserHandlers) rejectUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update registration_status to "rejected", preserving org_id.
-	_ = h.kc.UpdateUser(r.Context(), userID, keycloak.UpdateUserFields{
-		Attributes: map[string][]string{
-			"org_id":              {user.OrgID()},
-			"registration_status": {"rejected"},
-		},
-	})
+	attrs := cloneUserAttributes(user)
+	setUserAttribute(attrs, "org_id", user.OrgID())
+	setUserAttribute(attrs, "registration_status", "rejected")
+	_ = h.kc.UpdateUser(r.Context(), userID, keycloak.UpdateUserFields{Attributes: attrs})
 
 	meta := map[string]string{"email": user.Email}
 	if req.Reason != "" {
@@ -937,7 +990,7 @@ func (h *UserHandlers) assignRole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req userAssignRoleRequest
-	if err := decodeJSONBody(r, &req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
 		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "Invalid request body.", nil)
 		return
 	}
@@ -1125,7 +1178,7 @@ func (h *UserHandlers) linkUserHousehold(w http.ResponseWriter, r *http.Request)
 	}
 
 	var req linkHouseholdRequest
-	if err := decodeJSONBody(r, &req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
 		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "Invalid request body.", nil)
 		return
 	}
@@ -1177,7 +1230,7 @@ func (h *UserHandlers) unlinkUserHousehold(w http.ResponseWriter, r *http.Reques
 	}
 
 	var req unlinkHouseholdRequest
-	if err := decodeJSONBody(r, &req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
 		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "Invalid request body.", nil)
 		return
 	}

@@ -9,6 +9,7 @@ type runtimeSnapshot struct {
 	Refunds       map[string][]*Refund            `json:"refunds"`
 	Ledger        []*LedgerEvent                  `json:"ledger"`
 	WebhookEvents map[string]*WebhookEventRecord  `json:"webhook_events"`
+	AutopayProfiles map[string]*HouseholdAutopayProfile `json:"autopay_profiles"`
 }
 
 func (s *Service) ExportRuntimeSnapshot() ([]byte, error) {
@@ -22,6 +23,7 @@ func (s *Service) ExportRuntimeSnapshot() ([]byte, error) {
 		Refunds:       cloneRefundLists(s.refunds),
 		Ledger:        cloneLedgerEvents(s.ledger),
 		WebhookEvents: cloneWebhookEvents(s.webhookEvents),
+		AutopayProfiles: cloneAutopayProfiles(s.autopayProfiles),
 	}
 	return json.Marshal(snapshot)
 }
@@ -44,6 +46,7 @@ func (s *Service) LoadRuntimeSnapshot(data []byte) error {
 	s.refunds = cloneRefundLists(snapshot.Refunds)
 	s.ledger = cloneLedgerEvents(snapshot.Ledger)
 	s.webhookEvents = cloneWebhookEvents(snapshot.WebhookEvents)
+	s.autopayProfiles = cloneAutopayProfiles(snapshot.AutopayProfiles)
 
 	s.itemsByID = make(map[string]*InvoiceItem)
 	for _, items := range s.items {
@@ -165,6 +168,19 @@ func cloneLedgerEvents(in []*LedgerEvent) []*LedgerEvent {
 
 func cloneWebhookEvents(in map[string]*WebhookEventRecord) map[string]*WebhookEventRecord {
 	out := make(map[string]*WebhookEventRecord, len(in))
+	for k, v := range in {
+		if v == nil {
+			out[k] = nil
+			continue
+		}
+		cp := *v
+		out[k] = &cp
+	}
+	return out
+}
+
+func cloneAutopayProfiles(in map[string]*HouseholdAutopayProfile) map[string]*HouseholdAutopayProfile {
+	out := make(map[string]*HouseholdAutopayProfile, len(in))
 	for k, v := range in {
 		if v == nil {
 			out[k] = nil
