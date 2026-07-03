@@ -28,12 +28,21 @@ set -euo pipefail
 : "${KEYCLOAK_REALM:?KEYCLOAK_REALM is required}"
 : "${DATABASE_URL:?DATABASE_URL is required}"
 
+# Pass the DSN (which embeds the DB password) to psql via the PGDATABASE
+# environment variable rather than a command-line argument — libpq accepts a
+# full connection URI there — so the credential never appears in `ps` output.
+export PGDATABASE="${DATABASE_URL}"
+
 echo "==> Obtaining Keycloak admin token..."
+# Pass the client secret via stdin rather than a -d argument so it never
+# appears in this process's argv (visible to other local users via `ps`).
 TOKEN_RESPONSE=$(curl -s -X POST \
   "${KEYCLOAK_ADMIN_URL}/realms/master/protocol/openid-connect/token" \
-  -d "grant_type=client_credentials" \
-  -d "client_id=${KEYCLOAK_ADMIN_CLIENT_ID}" \
-  -d "client_secret=${KEYCLOAK_ADMIN_CLIENT_SECRET}")
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  --data-binary @- <<EOF
+grant_type=client_credentials&client_id=${KEYCLOAK_ADMIN_CLIENT_ID}&client_secret=${KEYCLOAK_ADMIN_CLIENT_SECRET}
+EOF
+)
 
 ADMIN_TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.access_token')
 if [ -z "$ADMIN_TOKEN" ] || [ "$ADMIN_TOKEN" = "null" ]; then
@@ -43,7 +52,7 @@ if [ -z "$ADMIN_TOKEN" ] || [ "$ADMIN_TOKEN" = "null" ]; then
 fi
 
 echo "==> Fetching households without keycloak_user_id..."
-HOUSEHOLDS=$(psql "$DATABASE_URL" --csv -t -c \
+HOUSEHOLDS=$(psql --csv -t -c \
   "SELECT id, primary_email FROM households WHERE keycloak_user_id IS NULL AND primary_email IS NOT NULL AND deleted_at IS NULL ORDER BY created_at")
 
 MATCHED=0
@@ -94,7 +103,7 @@ while IFS=',' read -r HOUSEHOLD_ID PRIMARY_EMAIL; do
 
   # Check if another household already has this keycloak_user_id.
   # Use psql --set for parameterized variable substitution (:'varname' is quoted literal).
-  EXISTING=$(psql "$DATABASE_URL" --csv -t \
+  EXISTING=$(psql --csv -t \
     --set="kc_user_id=$KC_USER_ID" \
     -c "SELECT id FROM households WHERE keycloak_user_id = :'kc_user_id' LIMIT 1" | tr -d '[:space:]')
   if [ -n "$EXISTING" ]; then
@@ -104,7 +113,7 @@ while IFS=',' read -r HOUSEHOLD_ID PRIMARY_EMAIL; do
   fi
 
   echo "LINK household ${HOUSEHOLD_ID} → keycloak_user_id ${KC_USER_ID} (email=${PRIMARY_EMAIL})"
-  if psql "$DATABASE_URL" \
+  if psql \
     --set="kc_user_id=$KC_USER_ID" \
     --set="hh_id=$HOUSEHOLD_ID" \
     -c "UPDATE households SET keycloak_user_id = :'kc_user_id', updated_at = now() WHERE id = :'hh_id'::uuid" \

@@ -4,7 +4,6 @@ import (
 	"archive/zip"
 	"bytes"
 	"fmt"
-	"io"
 	"strings"
 )
 
@@ -17,6 +16,7 @@ func ReadMeetZip(data []byte) ([]ZipEntry, error) {
 	}
 
 	var entries []ZipEntry
+	var budget int64
 	for _, f := range r.File {
 		lower := strings.ToLower(f.Name)
 		if !strings.HasSuffix(lower, ".ev3") &&
@@ -26,15 +26,11 @@ func ReadMeetZip(data []byte) ([]ZipEntry, error) {
 			continue
 		}
 
-		rc, err := f.Open()
+		content, newBudget, err := readZipEntryBounded(f, budget)
 		if err != nil {
-			return nil, fmt.Errorf("meetfiles/meet_zip: open entry %q: %w", f.Name, err)
+			return nil, fmt.Errorf("meetfiles/meet_zip: %w", err)
 		}
-		content, readErr := io.ReadAll(rc)
-		rc.Close()
-		if readErr != nil {
-			return nil, fmt.Errorf("meetfiles/meet_zip: read entry %q: %w", f.Name, readErr)
-		}
+		budget = newBudget
 		entries = append(entries, ZipEntry{Name: f.Name, Content: content})
 	}
 	return entries, nil

@@ -935,15 +935,14 @@ func TestDBRepoExports_RoundTrip(t *testing.T) {
 
 	store := storage.NewStubStorage("")
 	svc := exports.NewServiceWithPool(pool, store)
-	expJob, _, err := svc.GenerateExport(admin, testOrgID, meetID, exports.GenerateExportInput{
-		ExportType:    exports.ExportTypeStandardSD3,
-		MeetName:      "Export Test Meet",
-		MeetStartDate: "03222026",
-		MeetEndDate:   "03222026",
-		Course:        "SCY",
-		HostTeamCode:  "DARE",
-		HostTeamName:  "DARE Aquatics",
-		Entries:       []exports.ExportEntry{},
+	expJob, _, err := svc.GenerateExport(admin, testOrgID, meetID, exports.ReportInput{
+		ReportType: exports.ReportTypeEvent,
+		Meet: exports.ReportMeet{
+			Name:      "Export Test Meet",
+			StartDate: "2026-03-22",
+			EndDate:   "2026-03-22",
+			Course:    "SCY",
+		},
 	})
 	if err != nil {
 		t.Fatalf("GenerateExport: %v", err)

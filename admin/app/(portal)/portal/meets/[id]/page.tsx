@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
+import { parseBackendDate } from '@/lib/dates'
 import { ApiError, useApiClient } from '@/lib/api'
 import { reportUIError } from '@/lib/frontend-telemetry'
 import {
@@ -14,6 +15,7 @@ import {
   fetchCommitmentEventSelections,
   fetchMeetCommitments,
   fetchMeetEvents,
+  fetchMeetSessions,
   fetchExportsForMeet,
   fetchSwimmers,
   respondToMeetCommitment,
@@ -21,6 +23,7 @@ import {
   type ExportRecord,
   MeetRecord,
   MeetEventRecord,
+  MeetSessionRecord,
   SwimmerRecord,
 } from '@/lib/adminData'
 import {
@@ -37,10 +40,10 @@ type SwimmerState = PortalSwimmerCommitmentState
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function formatDateRange(start?: string, end?: string): string {
   if (!start) return '—'
-  const s = new Date(start)
+  const s = parseBackendDate(start)
   const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' }
   if (!end || end === start) return s.toLocaleDateString('en-US', { ...opts, year: 'numeric' })
-  const e = new Date(end)
+  const e = parseBackendDate(end)
   if (s.getFullYear() === e.getFullYear()) {
     return `${s.toLocaleDateString('en-US', opts)}–${e.toLocaleDateString('en-US', { ...opts, year: 'numeric' })}`
   }
@@ -103,9 +106,9 @@ function formatMeetFileSize(sizeBytes?: number): string {
 }
 
 function formatMeetFileType(exportType: string): string {
-  if (exportType === 'standard_sd3') return 'Standard SD3 export'
-  if (exportType === 'extended_sd3') return 'Extended SD3 export'
-  if (exportType === 'sdif_roster') return 'Roster export'
+  if (exportType === 'eligibility_report') return 'Eligibility report'
+  if (exportType === 'entry_report') return 'Entry report'
+  if (exportType === 'event_report') return 'Event report'
   return exportType.replace(/_/g, ' ')
 }
 
@@ -151,6 +154,7 @@ export default function MeetDetailPage() {
 
   const [meet, setMeet] = useState<MeetRecord | null>(null)
   const [events, setEvents] = useState<MeetEventRecord[]>([])
+  const [sessions, setSessions] = useState<MeetSessionRecord[]>([])
   const [swimmers, setSwimmers] = useState<SwimmerRecord[]>([])
   const [meetFiles, setMeetFiles] = useState<ExportRecord[]>([])
   const [loading, setLoading] = useState(true)
@@ -183,6 +187,7 @@ export default function MeetDetailPage() {
       fetchMeetCommitments(api, orgId, meetId),
       fetchMeetEvents(api, orgId, meetId),
       fetchSwimmers(api, orgId),
+      fetchMeetSessions(api, orgId, meetId).catch(() => [] as MeetSessionRecord[]),
       fetchExportsForMeet(api, orgId, meetId).catch((error) => {
         if (error instanceof ApiError && error.isForbidden()) {
           setFilesError('Meet files become available when this meet is tied to your household commitments.')
@@ -192,9 +197,10 @@ export default function MeetDetailPage() {
         return [] as ExportRecord[]
       }),
     ])
-      .then(async ([m, cmts, evs, swmrs, files]) => {
+      .then(async ([m, cmts, evs, swmrs, sess, files]) => {
         setMeet(m)
         setEvents(evs)
+        setSessions(sess)
         setMeetFiles(files)
 
         // Filter to household swimmers
@@ -317,6 +323,8 @@ export default function MeetDetailPage() {
 
   // Group events by session_id for display
   const sessionIds = Array.from(new Set(events.map((e) => e.session_id ?? 'main')))
+  const sessionNameById = new Map(sessions.map((s) => [s.id, s.name?.trim() || `Session ${s.session_number}`]))
+  const sessionLabel = (sid: string) => (sid === 'main' ? 'Main Session' : sessionNameById.get(sid) ?? `Session ${sid.slice(-4)}`)
 
   const eligibleEvents = swimmer
     ? events.filter((ev) => !ev.gender || ev.gender.toLowerCase() === 'mixed' || ev.gender === swimmer.gender)
@@ -609,7 +617,7 @@ export default function MeetDetailPage() {
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
                       <div style={{ fontSize: '14px', fontWeight: 600, color: '#1A1714' }}>
-                        {sid === 'main' ? 'Main Session' : `Session ${sid.slice(-4)}`}
+                        {sessionLabel(sid)}
                       </div>
                       <div style={{ fontSize: '11px', color: '#9A9693', fontFamily: 'var(--font-mono)' }}>
                         {evCount} event{evCount !== 1 ? 's' : ''}
@@ -1058,7 +1066,7 @@ export default function MeetDetailPage() {
                         }}
                       >
                         <div style={{ fontSize: '13px', fontWeight: 600, color: '#1A1714' }}>
-                          {group.id === 'main' ? 'Main Session' : `Session ${group.id.slice(-4)}`}
+                          {sessionLabel(group.id)}
                         </div>
                         <span
                           style={{

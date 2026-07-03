@@ -172,7 +172,7 @@ function MeetsPageContent() {
     return matchesSearch && matchesCourse && matchesView
   }), [rows, search, courseFilter, viewTab])
 
-  const totalEntries = rows.filter((row) => row.status === 'completed').reduce((acc, row) => acc + row.entries, 0)
+  const totalEntries = rows.reduce((acc, row) => acc + row.entries, 0)
 
   return (
     <div style={{ padding: '24px', maxWidth: '1200px' }}>

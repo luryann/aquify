@@ -8,6 +8,7 @@ import { Tabs } from '@/components/ui/Tabs'
 import { Table, type Column } from '@/components/ui/Table'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
+import { parseBackendDate } from '@/lib/dates'
 import { useApiClient, ApiError } from '@/lib/api'
 import {
   fetchHouseholds,
@@ -60,7 +61,7 @@ type EntryRow = {
 
 function formatDate(value?: string | null) {
   if (!value) return '—'
-  const parsed = new Date(value)
+  const parsed = parseBackendDate(value)
   if (Number.isNaN(parsed.getTime())) return value
   return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
@@ -74,9 +75,9 @@ function formatTime(value?: string | null) {
   return value
 }
 
-function formatSeedTime(cents?: number) {
-  if (cents == null) return 'NT'
-  const seconds = cents / 100
+function formatSeedTime(ms?: number) {
+  if (ms == null) return 'NT'
+  const seconds = ms / 1000
   if (seconds >= 60) {
     const minutes = Math.floor(seconds / 60)
     const remainder = (seconds % 60).toFixed(2).padStart(5, '0')
@@ -372,7 +373,7 @@ export default function MeetDetailPage() {
             id: entry.id,
             swimmer: swimmer ? `${swimmer.preferred_name || swimmer.first_name} ${swimmer.last_name}`.trim() : entry.swimmer_id,
             event: event ? `${event.distance || ''} ${event.stroke || ''} ${event.gender || ''} ${formatAgeGroup(event.min_age, event.max_age, event.age_group)}`.trim() : 'Meet event',
-            seedTime: formatSeedTime(entry.seed_time_cents),
+            seedTime: formatSeedTime(entry.seed_time_ms),
             status: entry.status,
           }
         }).sort((a, b) => a.swimmer.localeCompare(b.swimmer)))

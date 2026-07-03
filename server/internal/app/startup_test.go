@@ -23,8 +23,9 @@ func (fakeObjectStorage) PutObject(context.Context, string, string, []byte) erro
 func (fakeObjectStorage) GetObject(context.Context, string) ([]byte, string, error) {
 	return nil, "", nil
 }
-func (fakeObjectStorage) Exists(context.Context, string) (bool, error) { return false, nil }
-func (fakeObjectStorage) Delete(string) error                          { return nil }
+func (fakeObjectStorage) Exists(context.Context, string) (bool, error)      { return false, nil }
+func (fakeObjectStorage) ObjectSize(context.Context, string) (int64, error) { return 0, nil }
+func (fakeObjectStorage) Delete(string) error                               { return nil }
 
 func TestValidateStartupDependenciesAllowsDevelopmentFallback(t *testing.T) {
 	t.Parallel()

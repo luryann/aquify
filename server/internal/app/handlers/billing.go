@@ -372,6 +372,9 @@ func (h *BillingHandlers) recordPayment(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+	if !requirePrivilegedBillingAction(w, r, principal, appmiddleware.ActionBillingPaymentRecord, "record payments") {
+		return
+	}
 	invoiceID := chi.URLParam(r, "invoiceID")
 
 	var input billing.RecordPaymentInput

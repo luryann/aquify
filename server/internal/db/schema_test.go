@@ -35,7 +35,11 @@ func TestMissingExpectedColumnsReturnsSortedMissingList(t *testing.T) {
 		"meets.max_entries_per_swimmer",
 		"meets.self_signup_enabled",
 		"meets.venue",
+		"org_settings.lsc_code",
+		"org_settings.team_code",
+		"org_settings.team_name",
 		"payments.household_id",
+		"swimmers.usa_swimming_id",
 		"waiver_acceptances.accepted_by",
 	}
 	if !slices.Equal(got, want) {

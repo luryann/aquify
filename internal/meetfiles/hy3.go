@@ -25,7 +25,6 @@ import (
 	"archive/zip"
 	"bytes"
 	"fmt"
-	"io"
 	"sort"
 	"strings"
 )
@@ -71,6 +70,7 @@ func ReadHY3(filename string, data []byte) HY3IngestResult {
 		return result
 	}
 
+	var budget int64
 	for _, f := range r.File {
 		lower := strings.ToLower(f.Name)
 		isParseable := strings.HasSuffix(lower, ".sd3") || strings.HasSuffix(lower, ".cl2")
@@ -79,18 +79,15 @@ func ReadHY3(filename string, data []byte) HY3IngestResult {
 			continue
 		}
 
-		rc, openErr := f.Open()
-		if openErr != nil {
-			// Treat an unreadable entry as a packaging failure; skip it.
-			result.UnknownFiles = append(result.UnknownFiles, f.Name)
-			continue
-		}
-		content, readErr := io.ReadAll(rc)
-		rc.Close()
+		content, newBudget, readErr := readZipEntryBounded(f, budget)
 		if readErr != nil {
-			result.UnknownFiles = append(result.UnknownFiles, f.Name)
-			continue
+			result.Error = &ParseError{
+				Code:    ErrCodeArchiveTooLarge,
+				Message: readErr.Error(),
+			}
+			return result
 		}
+		budget = newBudget
 		result.AllPayloads = append(result.AllPayloads, ZipEntry{Name: f.Name, Content: content})
 	}
 

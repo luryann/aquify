@@ -9,10 +9,11 @@ import (
 type Action string
 
 const (
-	ActionAssignRole       Action = "roles.assign"
-	ActionBillingRefund    Action = "billing.refund.create"
-	ActionBillingVoid      Action = "billing.invoice.void"
-	ActionBillingWriteOff  Action = "billing.invoice.write_off"
+	ActionAssignRole           Action = "roles.assign"
+	ActionBillingRefund        Action = "billing.refund.create"
+	ActionBillingVoid          Action = "billing.invoice.void"
+	ActionBillingWriteOff      Action = "billing.invoice.write_off"
+	ActionBillingPaymentRecord Action = "billing.payment.record"
 )
 
 var ErrPermissionDenied = errors.New("permission denied")
@@ -38,6 +39,10 @@ var actionRules = map[Action]actionRule{
 	},
 	ActionBillingWriteOff: {
 		AllowedRoles: []string{"owner", "admin"},
+		RequireMFA:   true,
+	},
+	ActionBillingPaymentRecord: {
+		AllowedRoles: []string{"owner", "admin", "billing"},
 		RequireMFA:   true,
 	},
 }

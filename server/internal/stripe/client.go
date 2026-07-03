@@ -181,6 +181,9 @@ const DefaultTimestampTolerance = 5 * time.Minute
 // If tolerance is zero, DefaultTimestampTolerance (5 min) is used.
 // Returns ErrInvalidSignature, ErrExpiredTimestamp, or ErrMalformedHeader on failure.
 func VerifyStripeSignature(payload []byte, sigHeader, webhookSecret string, tolerance time.Duration) error {
+	if strings.TrimSpace(webhookSecret) == "" {
+		return ErrInvalidSignature
+	}
 	if tolerance <= 0 {
 		tolerance = DefaultTimestampTolerance
 	}

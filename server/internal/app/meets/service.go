@@ -24,21 +24,23 @@ import (
 // ─── Sentinel errors ─────────────────────────────────────────────────────────
 
 var (
-	ErrForbidden           = errors.New("forbidden")
-	ErrMeetNotFound        = errors.New("meet not found")
-	ErrSessionNotFound     = errors.New("meet session not found")
-	ErrEventNotFound       = errors.New("meet event not found")
-	ErrCommitmentNotFound  = errors.New("commitment not found")
-	ErrSelectionNotFound   = errors.New("event selection not found")
-	ErrEntryNotFound       = errors.New("entry not found")
-	ErrInvalidTransition   = errors.New("invalid state transition")
-	ErrCommitmentLocked    = errors.New("commitment is locked; selections cannot be modified")
-	ErrNotCommittedYes     = errors.New("parent must respond committed_yes before selecting events")
-	ErrDuplicateEntry      = errors.New("entry already exists for this swimmer and event")
-	ErrEntryNotEditable    = errors.New("entry is not in an editable state")
-	ErrDuplicateSelection  = errors.New("event already selected for this commitment")
-	ErrEventNumberConflict = errors.New("event number already exists in this meet")
-	ErrInvalidMeetFile     = errors.New("invalid meet file")
+	ErrForbidden             = errors.New("forbidden")
+	ErrMeetNotFound          = errors.New("meet not found")
+	ErrSessionNotFound       = errors.New("meet session not found")
+	ErrEventNotFound         = errors.New("meet event not found")
+	ErrCommitmentNotFound    = errors.New("commitment not found")
+	ErrSelectionNotFound     = errors.New("event selection not found")
+	ErrEntryNotFound         = errors.New("entry not found")
+	ErrInvalidTransition     = errors.New("invalid state transition")
+	ErrCommitmentLocked      = errors.New("commitment is locked; selections cannot be modified")
+	ErrNotCommittedYes       = errors.New("parent must respond committed_yes before selecting events")
+	ErrDuplicateEntry        = errors.New("entry already exists for this swimmer and event")
+	ErrIneligibleEntry       = errors.New("swimmer is not eligible for this event")
+	ErrEntryNotEditable      = errors.New("entry is not in an editable state")
+	ErrEntryAlreadyScratched = errors.New("entry is already scratched")
+	ErrDuplicateSelection    = errors.New("event already selected for this commitment")
+	ErrEventNumberConflict   = errors.New("event number already exists in this meet")
+	ErrInvalidMeetFile       = errors.New("invalid meet file")
 )
 
 // ─── Domain types ─────────────────────────────────────────────────────────────
@@ -236,6 +238,11 @@ type ProposeEntryInput struct {
 	CommitmentID string
 	SeedTimeMs   *int
 	IsRelay      bool
+	// OverrideEligibility lets a coach knowingly enter a swimmer who fails the
+	// gender/age eligibility check (e.g. non-binary swimmers, bona-fide
+	// exceptions). Requires OverrideReason; the override is audit-logged.
+	OverrideEligibility bool
+	OverrideReason      string
 }
 
 type OverrideEntryInput struct {
@@ -337,6 +344,84 @@ type Service struct {
 	households      map[string]householdRef
 	parentHousehold map[string]map[string]struct{}
 	auditEvents     []MeetAuditEvent
+
+	// swimmerEligibility resolves a swimmer's gender/DOB for event-eligibility
+	// checks. Injected from the members service (see SetSwimmerEligibilityLookup)
+	// so the meets domain can gate entries without importing members. Nil in
+	// tests that don't exercise eligibility.
+	swimmerEligibility func(orgID, swimmerID string) (SwimmerEligibilityView, bool)
+}
+
+// SwimmerEligibilityView is the minimal swimmer data needed to validate meet
+// event eligibility. Gender uses the swimmer vocabulary (female|male|
+// non_binary|undisclosed); DateOfBirth is YYYY-MM-DD.
+type SwimmerEligibilityView struct {
+	Gender      string
+	DateOfBirth string
+}
+
+// SetSwimmerEligibilityLookup wires the swimmer gender/DOB accessor used to gate
+// entry creation. Safe to leave unset (eligibility checks are then skipped).
+func (s *Service) SetSwimmerEligibilityLookup(fn func(orgID, swimmerID string) (SwimmerEligibilityView, bool)) {
+	s.swimmerEligibility = fn
+}
+
+// swimmerAgeAsOf returns the swimmer's integer age on the given reference date
+// (the meet's first day, per USA-Swimming convention). Falls back to today when
+// the reference date is empty/unparseable.
+func swimmerAgeAsOf(dobRaw, refDateRaw string) (int, bool) {
+	dob, err := time.Parse("2006-01-02", strings.TrimSpace(dobRaw))
+	if err != nil {
+		return 0, false
+	}
+	ref := time.Now().UTC()
+	if d, err := time.Parse("2006-01-02", strings.TrimSpace(refDateRaw)); err == nil {
+		ref = d
+	}
+	age := ref.Year() - dob.Year()
+	if ref.YearDay() < dob.YearDay() {
+		age--
+	}
+	return age, true
+}
+
+// eventGenderForSwimmer maps swimmer gender vocabulary to the event gender
+// vocabulary (M|F|X|O). Returns "" for unmapped values.
+func eventGenderForSwimmer(swimmerGender string) string {
+	switch strings.ToLower(strings.TrimSpace(swimmerGender)) {
+	case "female":
+		return "F"
+	case "male":
+		return "M"
+	default:
+		return "" // non_binary / undisclosed / unknown → only open/mixed events
+	}
+}
+
+// validateSwimmerEventEligibility rejects entries where the swimmer's gender or
+// age (as of the meet start date) does not match the event. Open/mixed events
+// (gender X or O, or unspecified) accept any swimmer; unset age bounds are not
+// enforced.
+func validateSwimmerEventEligibility(sw SwimmerEligibilityView, ev MeetEvent, meetStartDate string) error {
+	evGender := strings.ToUpper(strings.TrimSpace(ev.Gender))
+	if evGender == "M" || evGender == "F" {
+		if eventGenderForSwimmer(sw.Gender) != evGender {
+			return fmt.Errorf("%w: swimmer gender %q is not eligible for a %s event", ErrIneligibleEntry, sw.Gender, evGender)
+		}
+	}
+	if ev.MinAge != nil || ev.MaxAge != nil {
+		age, ok := swimmerAgeAsOf(sw.DateOfBirth, meetStartDate)
+		if !ok {
+			return fmt.Errorf("%w: swimmer date of birth is required to check age eligibility", ErrIneligibleEntry)
+		}
+		if ev.MinAge != nil && age < *ev.MinAge {
+			return fmt.Errorf("%w: swimmer age %d is below the event minimum %d", ErrIneligibleEntry, age, *ev.MinAge)
+		}
+		if ev.MaxAge != nil && age > *ev.MaxAge {
+			return fmt.Errorf("%w: swimmer age %d is above the event maximum %d", ErrIneligibleEntry, age, *ev.MaxAge)
+		}
+	}
+	return nil
 }
 
 // NewService returns a new in-memory meets service.
@@ -1770,6 +1855,23 @@ func (s *Service) ProposeEntry(principal *appmiddleware.Principal, orgID, meetID
 		return Entry{}, MeetAuditEvent{}, ErrEventNotFound
 	}
 
+	// Enforce gender/age eligibility (relays are seeded per-leg and skip this).
+	// A coach may knowingly override with a required reason (audit-logged below).
+	eligibilityOverridden := false
+	if !input.IsRelay && s.swimmerEligibility != nil {
+		if sw, ok := s.swimmerEligibility(orgID, swimmerID); ok {
+			if err := validateSwimmerEventEligibility(sw, ev, meet.StartDate); err != nil {
+				if !input.OverrideEligibility {
+					return Entry{}, MeetAuditEvent{}, err
+				}
+				if strings.TrimSpace(input.OverrideReason) == "" {
+					return Entry{}, MeetAuditEvent{}, fmt.Errorf("%w: a reason is required to override eligibility", ErrIneligibleEntry)
+				}
+				eligibilityOverridden = true
+			}
+		}
+	}
+
 	// Validate optional commitment.
 	commitmentID := strings.TrimSpace(input.CommitmentID)
 	if commitmentID != "" {
@@ -1810,12 +1912,17 @@ func (s *Service) ProposeEntry(principal *appmiddleware.Principal, orgID, meetID
 	}
 	s.entries[entry.ID] = entry
 
+	metadata := map[string]any{"meet_id": meet.ID, "entry_id": entry.ID}
+	if eligibilityOverridden {
+		metadata["eligibility_override"] = true
+		metadata["eligibility_override_reason"] = strings.TrimSpace(input.OverrideReason)
+	}
 	event := s.recordAuditEventLocked(MeetAuditEvent{
 		OrgID:       orgID,
 		ActorUserID: principal.UserID,
 		Action:      "entry.proposed",
 		After:       entrySnapshot(entry),
-		Metadata:    map[string]any{"meet_id": meet.ID, "entry_id": entry.ID},
+		Metadata:    metadata,
 	})
 	return entry, event, nil
 }
@@ -1865,6 +1972,15 @@ func (s *Service) OverrideEntry(principal *appmiddleware.Principal, orgID, meetI
 		return Entry{}, MeetAuditEvent{}, ErrEventNotFound
 	}
 
+	// Re-check eligibility against the new event (skip relays).
+	if !entry.IsRelay && s.swimmerEligibility != nil {
+		if sw, ok := s.swimmerEligibility(orgID, entry.SwimmerID); ok {
+			if err := validateSwimmerEventEligibility(sw, newEvent, meet.StartDate); err != nil {
+				return Entry{}, MeetAuditEvent{}, err
+			}
+		}
+	}
+
 	// Check for duplicate: another entry for the same swimmer and new event already exists.
 	for _, e := range s.entries {
 		if e.MeetID == meet.ID && e.SwimmerID == entry.SwimmerID && e.MeetEventID == newMeetEventID && e.ID != entry.ID {
@@ -1906,6 +2022,68 @@ func (s *Service) OverrideEntry(principal *appmiddleware.Principal, orgID, meetI
 			"old_meet_event_id": oldMeetEventID,
 			"new_meet_event_id": newMeetEventID,
 			"reason":            reason,
+		},
+	})
+	return entry, auditEvent, nil
+}
+
+// ScratchEntry soft-scratches an entry: it is marked "scratched" (retained for
+// audit/history) rather than deleted, so it is excluded from reports/exports but
+// the record of it ever existing is preserved. Coaches scratch entries when a
+// swimmer withdraws or a duplicate was created. Blocked once the meet is
+// finalized/closed or the entry has already been exported.
+func (s *Service) ScratchEntry(principal *appmiddleware.Principal, orgID, meetID, entryID, reason string) (Entry, MeetAuditEvent, error) {
+	if !hasAnyRole(principal, "owner", "admin", "coach") {
+		return Entry{}, MeetAuditEvent{}, ErrForbidden
+	}
+	reason = strings.TrimSpace(reason)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	meet, ok := s.meets[strings.TrimSpace(meetID)]
+	if !ok || meet.OrgID != orgID {
+		return Entry{}, MeetAuditEvent{}, ErrMeetNotFound
+	}
+	// Scratches are not permitted after the meet is finalized or closed.
+	if meet.Status == "entry_finalized" || meet.Status == "completed" || meet.Status == "archived" {
+		return Entry{}, MeetAuditEvent{}, fmt.Errorf("%w: entries cannot be scratched when meet status is %q", ErrInvalidTransition, meet.Status)
+	}
+
+	entry, ok := s.entries[strings.TrimSpace(entryID)]
+	if !ok || entry.MeetID != meet.ID || entry.OrgID != orgID {
+		return Entry{}, MeetAuditEvent{}, ErrEntryNotFound
+	}
+	if entry.Status == "scratched" {
+		return Entry{}, MeetAuditEvent{}, ErrEntryAlreadyScratched
+	}
+	// Only entries that have not yet been exported/locked can be scratched.
+	if entry.Status != "draft" && entry.Status != "submitted" && entry.Status != "approved" {
+		return Entry{}, MeetAuditEvent{}, fmt.Errorf("%w: entries in status %q cannot be scratched", ErrEntryNotEditable, entry.Status)
+	}
+
+	before := entrySnapshot(entry)
+	entry.Status = "scratched"
+	entry.UpdatedAt = time.Now().UTC()
+	entry.UpdatedBy = principal.UserID
+	if s.repo != nil {
+		if err := s.repo.UpsertEntry(context.Background(), entry); err != nil {
+			return Entry{}, MeetAuditEvent{}, fmt.Errorf("persist entry (scratch): %w", err)
+		}
+	}
+	s.entries[entry.ID] = entry
+
+	auditEvent := s.recordAuditEventLocked(MeetAuditEvent{
+		OrgID:       orgID,
+		ActorUserID: principal.UserID,
+		Action:      "entry.scratched",
+		Before:      before,
+		After:       entrySnapshot(entry),
+		Metadata: map[string]any{
+			"meet_id":    meet.ID,
+			"entry_id":   entry.ID,
+			"swimmer_id": entry.SwimmerID,
+			"reason":     reason,
 		},
 	})
 	return entry, auditEvent, nil

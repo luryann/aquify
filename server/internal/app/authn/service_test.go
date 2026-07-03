@@ -320,7 +320,7 @@ func TestOIDCCallbackRejectsUntrustedBodyOrgFallback(t *testing.T) {
 		Exp:   now.Add(5 * time.Minute).Unix(),
 	})
 
-	if _, err := service.OIDCCallback("auth-code", state, "org-body-value"); err == nil || !strings.Contains(err.Error(), "trusted oidc claims/state") {
+	if _, err := service.OIDCCallback("auth-code", state, "org-body-value"); err == nil || !strings.Contains(err.Error(), "org_id claim missing") {
 		t.Fatalf("expected trusted org resolution error, got: %v", err)
 	}
 }

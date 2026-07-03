@@ -17,7 +17,12 @@ import (
 	"github.com/dareaquatics/aquify/server/internal/testutil"
 )
 
-func TestRuntimePersistenceMiddlewareReturns500WhenSnapshotSaveFails(t *testing.T) {
+// The runtime-snapshot bridge is a backward-compat, best-effort mirror of state;
+// the DB pool is canonical. A snapshot save failure must NOT turn an
+// already-committed mutation into a 500 — the successful response is returned
+// and the failure is logged. (Previously this returned 500, which broke writes
+// on Windows once the snapshot exceeded the command-line length limit.)
+func TestRuntimePersistenceMiddlewareReturnsSuccessWhenSnapshotSaveFails(t *testing.T) {
 	t.Setenv("PATH", prependFakePSQL(t, fakePSQLBehavior{
 		failOnBegin: true,
 	}))
@@ -28,7 +33,10 @@ func TestRuntimePersistenceMiddlewareReturns500WhenSnapshotSaveFails(t *testing.
 		service: snapshotStub{payload: []byte(`{"ok":true}`)},
 	}}
 
-	handler := runtimePersistenceMiddleware(discardLogger(), repo, participants)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
+
+	handler := runtimePersistenceMiddleware(logger, repo, participants)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Test", "buffered")
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte(`{"created":true}`))
@@ -38,17 +46,20 @@ func TestRuntimePersistenceMiddlewareReturns500WhenSnapshotSaveFails(t *testing.
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500 when persistence fails, got %d", rec.Code)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected committed mutation to still return 201 despite snapshot failure, got %d", rec.Code)
 	}
-	if strings.Contains(rec.Body.String(), `"created":true`) {
-		t.Fatalf("success body leaked despite persistence failure: %s", rec.Body.String())
+	if !strings.Contains(rec.Body.String(), `"created":true`) {
+		t.Fatalf("expected successful response body to be flushed, got %s", rec.Body.String())
 	}
-	if got := rec.Header().Get("X-Test"); got != "" {
-		t.Fatalf("buffered success headers should not be flushed on failure, got %q", got)
+	if got := rec.Header().Get("X-Test"); got != "buffered" {
+		t.Fatalf("expected buffered success headers to be flushed, got %q", got)
 	}
-	if !strings.Contains(rec.Body.String(), "runtime_persistence_failed") {
-		t.Fatalf("expected runtime persistence error payload, got %s", rec.Body.String())
+	if strings.Contains(rec.Body.String(), "runtime_persistence_failed") {
+		t.Fatalf("snapshot failure should not surface as an error payload, got %s", rec.Body.String())
+	}
+	if !strings.Contains(logs.String(), "runtime snapshot persistence failed") {
+		t.Fatalf("expected snapshot failure to be logged, logs=%s", logs.String())
 	}
 }
 
@@ -107,32 +118,34 @@ func prependFakePSQL(t *testing.T, behavior fakePSQLBehavior) string {
 	dir := t.TempDir()
 
 	if runtime.GOOS == "windows" {
+		// runSQL now feeds SQL via stdin (`psql -f -`), not the -c argument, so
+		// the fake reads the first stdin line (BEGIN;/SELECT domain/CREATE TABLE
+		// each begin their statement on their own line) to decide behavior.
+		// Capture stdin to a temp file, then findstr the file. Searching the SQL
+		// via a file (not by echoing/piping %sql%) avoids cmd mangling BEGIN;/
+		// SELECT lines that contain shell metacharacters like `||` and `|`.
 		path := filepath.Join(dir, "psql.cmd")
 		script := "@echo off\r\n" +
-			"setlocal EnableDelayedExpansion\r\n" +
-			"set \"sql=\"\r\n" +
-			":loop\r\n" +
-			"if \"%~1\"==\"\" goto after\r\n" +
-			"if \"%~1\"==\"-c\" (\r\n" +
-			"  set \"sql=%~2\"\r\n" +
-			"  goto after\r\n" +
-			")\r\n" +
-			"shift\r\n" +
-			"goto loop\r\n" +
-			":after\r\n"
+			"set \"tmp=%TEMP%\\fakepsql_%RANDOM%%RANDOM%.sql\"\r\n" +
+			"findstr \"^\" > \"%tmp%\"\r\n"
 		if behavior.failOnBegin {
-			script += "echo(!sql!| findstr /C:\"BEGIN;\" >nul && (\r\n" +
+			script += "findstr /C:\"BEGIN;\" \"%tmp%\" >nul\r\n" +
+				"if not errorlevel 1 (\r\n" +
+				"  del \"%tmp%\"\r\n" +
 				"  echo simulated save failure 1>&2\r\n" +
 				"  exit /b 1\r\n" +
 				")\r\n"
 		}
 		if strings.TrimSpace(behavior.selectOutput) != "" {
-			script += "echo(!sql!| findstr /C:\"SELECT domain\" >nul && (\r\n" +
+			script += "findstr /C:\"SELECT domain\" \"%tmp%\" >nul\r\n" +
+				"if not errorlevel 1 (\r\n" +
+				"  del \"%tmp%\"\r\n" +
 				fmt.Sprintf("  echo %s\r\n", behavior.selectOutput) +
 				"  exit /b 0\r\n" +
 				")\r\n"
 		}
-		script += "exit /b 0\r\n"
+		script += "del \"%tmp%\"\r\n" +
+			"exit /b 0\r\n"
 		if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 			t.Fatalf("write fake psql: %v", err)
 		}
@@ -140,15 +153,8 @@ func prependFakePSQL(t *testing.T, behavior fakePSQLBehavior) string {
 		path := filepath.Join(dir, "psql")
 		var script strings.Builder
 		script.WriteString("#!/bin/sh\n")
-		script.WriteString("sql=\"\"\n")
-		script.WriteString("prev=\"\"\n")
-		script.WriteString("for arg in \"$@\"; do\n")
-		script.WriteString("  if [ \"$prev\" = \"-c\" ]; then\n")
-		script.WriteString("    sql=\"$arg\"\n")
-		script.WriteString("    break\n")
-		script.WriteString("  fi\n")
-		script.WriteString("  prev=\"$arg\"\n")
-		script.WriteString("done\n")
+		// runSQL feeds SQL via stdin (`psql -f -`), not -c; read it all.
+		script.WriteString("sql=\"$(cat)\"\n")
 		if behavior.failOnBegin {
 			script.WriteString("case \"$sql\" in\n")
 			script.WriteString("  *\"BEGIN;\"*)\n")

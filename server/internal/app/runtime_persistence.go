@@ -12,7 +12,6 @@ import (
 	"github.com/dareaquatics/aquify/server/internal/app/compliance"
 	"github.com/dareaquatics/aquify/server/internal/app/exports"
 	"github.com/dareaquatics/aquify/server/internal/app/groups"
-	"github.com/dareaquatics/aquify/server/internal/app/httpx"
 	"github.com/dareaquatics/aquify/server/internal/app/imports"
 	"github.com/dareaquatics/aquify/server/internal/app/meets"
 	"github.com/dareaquatics/aquify/server/internal/app/members"
@@ -125,9 +124,13 @@ func runtimePersistenceMiddleware(logger *slog.Logger, repo *runtimepersist.Repo
 				return
 			}
 
+			// The runtime-snapshot bridge is a backward-compat, best-effort mirror
+			// of in-memory state; the DB pool is the canonical store. A snapshot
+			// save failure must never turn an already-committed mutation into a
+			// 500 for the client — log it and return the successful response.
 			if err := persistRuntimeSnapshots(logger, repo, participants); err != nil {
-				httpx.WriteError(w, r, http.StatusInternalServerError, "runtime_persistence_failed", "Request could not be durably persisted.", nil)
-				return
+				logger.Error("runtime snapshot persistence failed after successful mutation; returning success (DB write is canonical)",
+					"error", err, "method", r.Method, "path", r.URL.Path)
 			}
 
 			recorder.FlushTo(w)

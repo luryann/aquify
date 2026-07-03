@@ -1,6 +1,10 @@
 import type { Role } from './roles'
 
 export const LOCAL_DEV_ORG_ID = '00000000-0000-0000-0000-00000000a001'
+// Fixed demo household the stub parent/swimmer are linked to (mirrors the
+// backend authn/localdev.go LocalDevHouseholdID) so portal household-scoped
+// pages resolve under dev stub login without an OIDC session.
+export const LOCAL_DEV_HOUSEHOLD_ID = '00000000-0000-0000-0000-0000000b0001'
 
 export type LocalDevUser = {
   id: string
@@ -10,6 +14,7 @@ export type LocalDevUser = {
   orgId: string
   avatarInitials: string
   mfaAuthenticated?: boolean
+  householdId?: string
 }
 
 export const LOCAL_DEV_USERS: Record<string, LocalDevUser> = {
@@ -45,6 +50,7 @@ export const LOCAL_DEV_USERS: Record<string, LocalDevUser> = {
     role: 'parent',
     orgId: LOCAL_DEV_ORG_ID,
     avatarInitials: 'DP',
+    householdId: LOCAL_DEV_HOUSEHOLD_ID,
   },
   'stub-billing': {
     id: '00000000-0000-0000-0000-00000000a105',
@@ -69,5 +75,6 @@ export const LOCAL_DEV_USERS: Record<string, LocalDevUser> = {
     role: 'swimmer',
     orgId: LOCAL_DEV_ORG_ID,
     avatarInitials: 'DS',
+    householdId: LOCAL_DEV_HOUSEHOLD_ID,
   },
 }

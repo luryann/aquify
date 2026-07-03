@@ -145,7 +145,7 @@ export default function SwimmersPage() {
   const [showNew, setShowNew] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
-  const [form, setForm] = useState({ first_name: '', last_name: '', household_id: '', date_of_birth: '', gender: 'female', registration_status: 'active' })
+  const [form, setForm] = useState({ first_name: '', last_name: '', household_id: '', date_of_birth: '', gender: 'female', usa_swimming_id: '', registration_status: 'active' })
 
   useEffect(() => {
     let cancelled = false
@@ -214,7 +214,7 @@ export default function SwimmersPage() {
     try {
       await createSwimmer(api, session.user.orgId, form)
       setShowNew(false)
-      setForm({ first_name: '', last_name: '', household_id: '', date_of_birth: '', gender: 'female', registration_status: 'active' })
+      setForm({ first_name: '', last_name: '', household_id: '', date_of_birth: '', gender: 'female', usa_swimming_id: '', registration_status: 'active' })
       const [swimmers, hhs, grps, swimmerGroups] = await Promise.all([
         fetchSwimmers(api, session.user.orgId),
         fetchHouseholds(api, session.user.orgId),
@@ -331,6 +331,10 @@ export default function SwimmersPage() {
                     <option value="undisclosed">Undisclosed</option>
                   </select>
                 </div>
+              </div>
+              <div>
+                <label style={LABEL_STYLE}>USA Swimming ID</label>
+                <input style={INPUT_STYLE} value={form.usa_swimming_id} onChange={(e) => setForm((f) => ({ ...f, usa_swimming_id: e.target.value.toUpperCase() }))} placeholder="e.g. AB12CD34EF56" />
               </div>
               <div>
                 <label style={LABEL_STYLE}>Registration Status</label>

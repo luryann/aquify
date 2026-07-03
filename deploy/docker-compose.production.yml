@@ -39,7 +39,7 @@ services:
       AUTH_ENABLE_DEV_STUB_TOKENS: "false"
       AUTH_ALLOW_DEV_SESSION_ISSUE: "false"
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health/live || exit 1"]
       interval: 15s
@@ -69,7 +69,7 @@ services:
       NEXT_PUBLIC_AUTH_ENABLE_DEV_STUB_TOKENS: "false"
       PORT: "3000"
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
       interval: 15s
@@ -205,8 +205,8 @@ services:
       MINIO_BROWSER_REDIRECT_URL: https://minio.dare.club
       MINIO_PROMETHEUS_AUTH_TYPE: public
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     volumes:
       - minio_production_data:/data
     healthcheck:
@@ -246,7 +246,7 @@ services:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USER:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
     ports:
-      - "8081:8081"
+      - "127.0.0.1:8081:8081"
     depends_on:
       postgres:
         condition: service_healthy
@@ -306,7 +306,7 @@ services:
       - ../docs/observability/grafana:/etc/grafana/provisioning/dashboards:ro
       - ./grafana/datasources.production.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
     ports:
-      - "3001:3000"
+      - "127.0.0.1:3001:3000"
     depends_on:
       - prometheus
       - loki

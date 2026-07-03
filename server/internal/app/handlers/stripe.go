@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/dareaquatics/aquify/server/internal/app/billing"
@@ -31,6 +32,10 @@ type StripeHandlers struct {
 	// writeLimiter is an optional extra rate-limiting middleware applied only
 	// to cost-driving write endpoints (payment-intents, checkout-sessions).
 	writeLimiter func(http.Handler) http.Handler
+	// allowedReturnOrigins restricts Stripe Checkout success_url/cancel_url to
+	// this app's own trusted origins, so a tampered API call cannot redirect
+	// a post-payment browser to an attacker-controlled host.
+	allowedReturnOrigins []string
 }
 
 // NewStripeHandlers returns a new StripeHandlers.
@@ -70,6 +75,31 @@ func (h *StripeHandlers) RegisterPublicRoutes(router chi.Router) {
 // cost-driving write routes (payment-intents, checkout-sessions).
 func (h *StripeHandlers) SetWriteLimiter(limiter func(http.Handler) http.Handler) {
 	h.writeLimiter = limiter
+}
+
+// SetAllowedReturnOrigins configures the origin allowlist enforced against
+// Checkout Session success_url/cancel_url.
+func (h *StripeHandlers) SetAllowedReturnOrigins(origins []string) {
+	h.allowedReturnOrigins = origins
+}
+
+// isAllowedReturnURL reports whether rawURL is an absolute https(s) URL whose
+// origin (scheme+host) matches one of the configured allowed origins.
+func isAllowedReturnURL(rawURL string, allowedOrigins []string) bool {
+	if len(allowedOrigins) == 0 {
+		return false
+	}
+	u, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return false
+	}
+	origin := u.Scheme + "://" + u.Host
+	for _, allowed := range allowedOrigins {
+		if strings.EqualFold(strings.TrimSpace(allowed), origin) {
+			return true
+		}
+	}
+	return false
 }
 
 // RegisterProtectedRoutes mounts routes that require auth + org scope middleware.
@@ -221,6 +251,10 @@ func (h *StripeHandlers) createCheckoutSession(w http.ResponseWriter, r *http.Re
 	invoice, ok := h.authorizeCheckoutSessionPrincipal(principal, orgID, &req)
 	if !ok {
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient permissions.", nil)
+		return
+	}
+	if !isAllowedReturnURL(req.SuccessURL, h.allowedReturnOrigins) || !isAllowedReturnURL(req.CancelURL, h.allowedReturnOrigins) {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_return_url", "success_url and cancel_url must belong to a trusted application origin.", nil)
 		return
 	}
 

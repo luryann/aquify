@@ -8,6 +8,7 @@ import (
 
 const (
 	LocalDevOrgID          = "00000000-0000-0000-0000-00000000a001"
+	LocalDevHouseholdID    = "00000000-0000-0000-0000-0000000b0001"
 	legacyLocalDevOrgID    = "org-demo"
 	LocalDevOwnerUserID    = "00000000-0000-0000-0000-00000000a101"
 	LocalDevAdminUserID    = "00000000-0000-0000-0000-00000000a102"
@@ -71,6 +72,11 @@ func localDevStaticPrincipals() map[string]*appmiddleware.Principal {
 			Roles:  append([]string{}, user.Roles...),
 		}
 	}
+	// Local portal testing: point the stub parent and swimmer at a fixed demo
+	// household so parent/swimmer household-scoped read paths resolve without an
+	// OIDC login (which is what normally attaches HouseholdID to the principal).
+	principals["stub-parent"].HouseholdID = LocalDevHouseholdID
+	principals["stub-swimmer"].HouseholdID = LocalDevHouseholdID
 	principals["stub-owner"].MFAAuthenticated = true
 	principals["stub-admin-mfa"] = &appmiddleware.Principal{
 		UserID:           LocalDevAdminUserID,

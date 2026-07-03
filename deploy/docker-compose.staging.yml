@@ -37,7 +37,7 @@ services:
       APP_ENV: staging
       SERVER_ADDR: ":8080"
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health/live || exit 1"]
       interval: 15s
@@ -66,7 +66,7 @@ services:
       NEXT_PUBLIC_APP_ENV: staging
       PORT: "3000"
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
       interval: 15s
@@ -190,8 +190,8 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
       MINIO_BROWSER_REDIRECT_URL: https://minio-staging.dare.club
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     volumes:
       - minio_staging_data:/data
     healthcheck:
@@ -231,7 +231,7 @@ services:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USER:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
     ports:
-      - "8081:8081"
+      - "127.0.0.1:8081:8081"
     depends_on:
       postgres:
         condition: service_healthy
@@ -263,7 +263,7 @@ services:
       - ../docs/observability/prometheus/alerts.yaml:/etc/prometheus/alerts.yaml:ro
       - prometheus_staging_data:/prometheus
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     networks:
       - dare-net
     mem_limit: 256m
@@ -288,7 +288,7 @@ services:
       - ../docs/observability/grafana:/etc/grafana/provisioning/dashboards:ro
       - ./grafana/datasources.staging.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
     ports:
-      - "3001:3000"
+      - "127.0.0.1:3001:3000"
     depends_on:
       - prometheus
       - loki
@@ -308,7 +308,7 @@ services:
       - ./loki/loki.yml:/etc/loki/loki.yml:ro
       - loki_staging_data:/loki
     ports:
-      - "3100:3100"
+      - "127.0.0.1:3100:3100"
     networks:
       - dare-net
     mem_limit: 256m
@@ -328,8 +328,8 @@ services:
       MP_SMTP_AUTH_ACCEPT_ANY: "true"
       MP_SMTP_AUTH_ALLOW_INSECURE: "true"
     ports:
-      - "1025:1025"
-      - "8025:8025"
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
     volumes:
       - mailpit_staging_data:/data
     networks:
@@ -348,7 +348,7 @@ services:
     image: louislam/uptime-kuma:latest
     <<: *default-restart
     ports:
-      - "3002:3001"
+      - "127.0.0.1:3002:3001"
     volumes:
       - uptime_kuma_staging_data:/app/data
     networks:

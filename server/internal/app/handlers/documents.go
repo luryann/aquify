@@ -428,6 +428,19 @@ func (h *DocumentHandlers) validateUploadAccess(principal *appmiddleware.Princip
 	return existing, true
 }
 
+// Document uploads are household-submitted registration paperwork (waivers,
+// medical forms, ID scans). These caps/allowlist bound storage abuse and
+// downstream content-handling risk from client-declared metadata that does
+// not match the actual uploaded object.
+const maxDocumentUploadBytes int64 = 20 << 20 // 20 MiB
+
+var allowedDocumentMIMETypes = map[string]bool{
+	"application/pdf": true,
+	"image/jpeg":      true,
+	"image/png":       true,
+	"image/heic":      true,
+}
+
 func documentObjectKey(orgID, submissionID, fileName string) string {
 	stamp := strconv.FormatInt(time.Now().UTC().UnixNano(), 10)
 	return fmt.Sprintf("documents/%s/%s/%s-%s", orgID, submissionID, stamp, fileName)
@@ -475,6 +488,14 @@ func (h *DocumentHandlers) requestUploadURL(w http.ResponseWriter, r *http.Reque
 	fileName, err := sanitizeDocumentFilename(body.FileName)
 	if err != nil {
 		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_filename", err.Error(), nil)
+		return
+	}
+	if !allowedDocumentMIMETypes[strings.ToLower(strings.TrimSpace(body.FileMIME))] {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "invalid_mime_type", "Uploaded file type is not permitted.", nil)
+		return
+	}
+	if body.FileSizeBytes > maxDocumentUploadBytes {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "file_too_large", "Declared file size exceeds the maximum allowed size.", nil)
 		return
 	}
 
@@ -531,6 +552,11 @@ func (h *DocumentHandlers) attachFile(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_object_key", "Attached file object key is not valid for this submission.", nil)
 		return
 	}
+	declaredMIME := strings.ToLower(strings.TrimSpace(body.FileMIME))
+	if !allowedDocumentMIMETypes[declaredMIME] {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "invalid_mime_type", "Uploaded file type is not permitted.", nil)
+		return
+	}
 	if h.store == nil {
 		httpx.WriteError(w, r, http.StatusServiceUnavailable, "storage_unavailable", "Object storage is not configured.", nil)
 		return
@@ -544,8 +570,20 @@ func (h *DocumentHandlers) attachFile(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, http.StatusConflict, "missing_uploaded_file", "Uploaded file was not found in object storage.", nil)
 		return
 	}
+	// The presigned PUT URL is not size/type-constrained, so caller-declared
+	// metadata cannot be trusted. Enforce the actual stored object size
+	// before accepting the submission.
+	actualSize, err := h.store.ObjectSize(context.Background(), body.FileObjectKey)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to validate uploaded file.", err)
+		return
+	}
+	if actualSize > maxDocumentUploadBytes {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "file_too_large", "Uploaded file exceeds the maximum allowed size.", nil)
+		return
+	}
 
-	sub, err := h.service.AttachFile(orgID, submissionID, body.FileObjectKey, fileName, body.FileMIME, body.FileSizeBytes, principal.UserID)
+	sub, err := h.service.AttachFile(orgID, submissionID, body.FileObjectKey, fileName, declaredMIME, actualSize, principal.UserID)
 	if err != nil {
 		if errors.Is(err, documents.ErrInvalidTransition) {
 			httpx.WriteError(w, r, http.StatusConflict, "invalid_transition", "Cannot attach file to a submission in its current state.", nil)

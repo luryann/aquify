@@ -1,21 +1,26 @@
-// Package audit provides the in-memory audit-log service.
+// Package audit provides the audit-log service.
 //
 // Every privileged or sensitive action in the platform must emit an AuditEvent
 // via Service.Append. Events are immutable once written.
 //
-// Production note: all data is held in-memory slices protected by a RWMutex.
-// Replace with an sqlc/pgx append-only insert when the DB layer is wired.
+// When SetPool is given a DB pool, events are persisted to the append-only
+// audit_events table (canonical) in addition to the in-memory read cache used
+// to serve queries; without a pool the service is in-memory-only (tests).
 package audit
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // ─── Sentinel errors ──────────────────────────────────────────────────────────
@@ -29,39 +34,40 @@ var (
 // Naming convention: <domain>.<resource>.<verb>
 
 const (
-	ActionAuthUserSelfRegister           = "auth.user.self_register"
-	ActionAuthUserApprove                = "auth.user.approve"
-	ActionAuthUserReject                 = "auth.user.reject"
-	ActionAuthRoleAssign                 = "auth.role.assign"
-	ActionAuthRoleRemove                 = "auth.role.remove"
-	ActionAuthUserInvite                 = "auth.user.invite"
-	ActionAuthUserUpdate                 = "auth.user.update"
-	ActionAuthUserDisable                = "auth.user.disable"
-	ActionAuthUserEnable                 = "auth.user.enable"
-	ActionAuthUserDelete                 = "auth.user.delete"
-	ActionAuthUserPasswordReset          = "auth.user.password_reset"
+	ActionAuthUserSelfRegister               = "auth.user.self_register"
+	ActionAuthUserApprove                    = "auth.user.approve"
+	ActionAuthUserReject                     = "auth.user.reject"
+	ActionAuthRoleAssign                     = "auth.role.assign"
+	ActionAuthRoleRemove                     = "auth.role.remove"
+	ActionAuthUserInvite                     = "auth.user.invite"
+	ActionAuthUserUpdate                     = "auth.user.update"
+	ActionAuthUserDisable                    = "auth.user.disable"
+	ActionAuthUserEnable                     = "auth.user.enable"
+	ActionAuthUserDelete                     = "auth.user.delete"
+	ActionAuthUserPasswordReset              = "auth.user.password_reset"
 	ActionCommsNotificationPreferencesUpdate = "comms.notification_preferences.update"
-	ActionBillingInvoiceIssue            = "billing.invoice.issue"
-	ActionBillingInvoiceVoid             = "billing.invoice.void"
-	ActionBillingInvoiceWriteOff         = "billing.invoice.write_off"
-	ActionBillingRefundCreate            = "billing.refund.create"
-	ActionBillingAutopayEnroll           = "billing.autopay.enroll"
-	ActionBillingAutopayOptOut           = "billing.autopay.opt_out"
-	ActionMeetEntryOverride              = "meet.entry.override"
-	ActionMeetEntryApprove               = "meet.entry.approve"
-	ActionMeetCommitmentsLock            = "meet.commitments.lock"
-	ActionPerformanceBestTimeOverride    = "performance.best_time.override"
-	ActionImportConflictResolve          = "import.conflict.resolve"
-	ActionMembersHouseholdDelete         = "members.household.delete"
-	ActionMembersSwimmerDelete           = "members.swimmer.delete"
-	ActionMembersSwimmerUpdate           = "members.swimmer.update"
-	ActionComplianceDataExportRequest    = "compliance.data_export.request"
-	ActionComplianceDataDeletionRequest  = "compliance.data_deletion.request"
-	ActionReportMembershipStatusRun      = "report.membership_status.run"
-	ActionReportMeetFeesRun              = "report.meet_fees.run"
-	ActionReportInvoiceAgingRun          = "report.invoice_aging.run"
-	ActionReportPaymentReconciliationRun = "report.payment_reconciliation.run"
-	ActionReportRegistrationStatusRun    = "report.registration_status.run"
+	ActionBillingInvoiceIssue                = "billing.invoice.issue"
+	ActionBillingInvoiceVoid                 = "billing.invoice.void"
+	ActionBillingInvoiceWriteOff             = "billing.invoice.write_off"
+	ActionBillingRefundCreate                = "billing.refund.create"
+	ActionBillingAutopayEnroll               = "billing.autopay.enroll"
+	ActionBillingAutopayOptOut               = "billing.autopay.opt_out"
+	ActionMeetEntryOverride                  = "meet.entry.override"
+	ActionMeetEntryApprove                   = "meet.entry.approve"
+	ActionMeetEntryScratch                   = "meet.entry.scratch"
+	ActionMeetCommitmentsLock                = "meet.commitments.lock"
+	ActionPerformanceBestTimeOverride        = "performance.best_time.override"
+	ActionImportConflictResolve              = "import.conflict.resolve"
+	ActionMembersHouseholdDelete             = "members.household.delete"
+	ActionMembersSwimmerDelete               = "members.swimmer.delete"
+	ActionMembersSwimmerUpdate               = "members.swimmer.update"
+	ActionComplianceDataExportRequest        = "compliance.data_export.request"
+	ActionComplianceDataDeletionRequest      = "compliance.data_deletion.request"
+	ActionReportMembershipStatusRun          = "report.membership_status.run"
+	ActionReportMeetFeesRun                  = "report.meet_fees.run"
+	ActionReportInvoiceAgingRun              = "report.invoice_aging.run"
+	ActionReportPaymentReconciliationRun     = "report.payment_reconciliation.run"
+	ActionReportRegistrationStatusRun        = "report.registration_status.run"
 )
 
 // ─── Domain types ─────────────────────────────────────────────────────────────
@@ -114,15 +120,41 @@ type Filter struct {
 
 // ─── Service ──────────────────────────────────────────────────────────────────
 
-// Service is the in-memory audit log store.
+// Service is the audit log store. It always keeps an in-memory read cache,
+// and additionally persists to Postgres (append-only) when a pool is wired
+// via SetPool, so the audit trail survives process restarts/crashes.
 type Service struct {
 	mu     sync.RWMutex
 	events []AuditEvent
+	repo   *repository
 }
 
-// NewService returns an empty Service.
+// NewService returns an empty, in-memory-only Service.
 func NewService() *Service {
 	return &Service{}
+}
+
+// SetPool wires a DB pool into the service and loads existing audit events
+// from Postgres into the in-memory read cache so restart-time state is
+// restored before the service handles requests. A nil pool leaves the
+// service in-memory-only (used by tests).
+func (s *Service) SetPool(pool *pgxpool.Pool) {
+	if pool == nil {
+		return
+	}
+	repo := newRepository(pool)
+
+	events, err := repo.ListAll(context.Background())
+	if err != nil {
+		slog.Error("audit: failed to load events from DB at startup", "error", err)
+	}
+
+	s.mu.Lock()
+	s.repo = repo
+	if events != nil {
+		s.events = events
+	}
+	s.mu.Unlock()
 }
 
 // Append adds an immutable audit event. Returns the created event.
@@ -167,6 +199,17 @@ func (s *Service) Append(req AppendRequest) (*AuditEvent, error) {
 		AfterState:   afterRaw,
 		Metadata:     meta,
 		OccurredAt:   time.Now().UTC(),
+	}
+
+	s.mu.Lock()
+	repo := s.repo
+	s.mu.Unlock()
+	if repo != nil {
+		if err := repo.Insert(context.Background(), ev); err != nil {
+			// The audit trail is a compliance record; a failed DB write must
+			// not be silently swallowed as if the event were durably recorded.
+			return nil, err
+		}
 	}
 
 	s.mu.Lock()

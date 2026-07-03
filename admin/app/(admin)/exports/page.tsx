@@ -7,14 +7,21 @@ import { Table, type Column } from '@/components/ui/Table'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
 import { useApiClient, ApiError } from '@/lib/api'
-import { fetchExportsForMeet, fetchMeets, generateExport, type ExportRecord, type MeetRecord } from '@/lib/adminData'
+import {
+  fetchExportsForMeet,
+  fetchMeets,
+  generateReport,
+  type ExportRecord,
+  type MeetRecord,
+  type ReportType,
+  type EntryReportGrouping,
+} from '@/lib/adminData'
 
 type ExportStatus = 'pending' | 'generating' | 'ready' | 'failed' | 'expired'
-type ExportType = 'standard_sd3' | 'extended_sd3' | 'sdif_roster'
 
-type FileExportRow = {
+type ReportRow = {
   id: string
-  exportType: ExportType
+  reportType: string
   meet: string
   meetId: string
   status: ExportStatus
@@ -34,19 +41,35 @@ const STATUS_CFG: Record<ExportStatus, { label: string; color: string; bg: strin
   expired: { label: 'Expired', color: 'var(--text-muted)', bg: 'var(--bg-elevated)' },
 }
 
-const EXPORT_TYPE_LABELS: Record<ExportType, string> = {
-  standard_sd3: 'SD3 Standard',
-  extended_sd3: 'SD3 Extended',
-  sdif_roster: 'SDIF Roster',
+const REPORT_TYPE_LABELS: Record<string, string> = {
+  eligibility_report: 'Eligibility Report',
+  entry_report: 'Entry Report',
+  event_report: 'Event Report',
 }
 
-const COLUMNS: Column<FileExportRow>[] = [
+const REPORT_TYPE_OPTIONS: { value: ReportType; label: string; hint: string }[] = [
+  { value: 'entry_report', label: 'Entry Report', hint: 'Every approved entry — swimmer, event, seed time.' },
+  { value: 'event_report', label: 'Event Report', hint: 'Swimmers grouped under each event, fastest seed first.' },
+  { value: 'eligibility_report', label: 'Eligibility Report', hint: 'Per event, each swimmer’s sex/age eligibility status.' },
+]
+
+const GROUPING_OPTIONS: { value: EntryReportGrouping; label: string }[] = [
+  { value: 'session', label: 'By session' },
+  { value: 'group', label: 'By training group' },
+  { value: 'alphabetical', label: 'Alphabetical' },
+]
+
+function reportLabel(reportType: string): string {
+  return REPORT_TYPE_LABELS[reportType] ?? reportType.replace(/_/g, ' ')
+}
+
+const COLUMNS: Column<ReportRow>[] = [
   {
-    key: 'exportType',
-    label: 'Export',
+    key: 'reportType',
+    label: 'Report',
     render: (row) => (
       <div>
-        <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', marginBottom: '2px' }}>{EXPORT_TYPE_LABELS[row.exportType]}</div>
+        <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', marginBottom: '2px' }}>{reportLabel(row.reportType)}</div>
         <Link href={`/meets/${row.meetId}`} style={{ fontSize: '11px', color: 'var(--text-muted)', textDecoration: 'none' }}>{row.meet}</Link>
       </div>
     ),
@@ -71,18 +94,32 @@ const COLUMNS: Column<FileExportRow>[] = [
     render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-muted)' }}>{row.fileSizeKb != null ? `${row.fileSizeKb} KB` : '—'}</span>,
   },
   {
-    key: 'createdBy',
-    label: 'Created By',
-    render: (row) => <span style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>{row.createdBy}</span>,
-  },
-  {
     key: 'createdAt',
     label: 'Created',
     render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-muted)' }}>{new Date(row.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>,
   },
+  {
+    key: 'id',
+    label: '',
+    align: 'right',
+    render: (row) =>
+      row.status === 'ready' && row.downloadUrl ? (
+        <a
+          href={row.downloadUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="btn"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '5px 10px' }}
+        >
+          <Icon name="download" size={13} /> PDF
+        </a>
+      ) : (
+        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>—</span>
+      ),
+  },
 ]
 
-async function loadExports(api: ReturnType<typeof useApiClient>, orgId: string): Promise<FileExportRow[]> {
+async function loadReports(api: ReturnType<typeof useApiClient>, orgId: string): Promise<ReportRow[]> {
   const meets = await fetchMeets(api, orgId)
   const exportsByMeet = await Promise.all(meets.map(async (meet) => ({
     meet,
@@ -91,7 +128,7 @@ async function loadExports(api: ReturnType<typeof useApiClient>, orgId: string):
 
   return exportsByMeet.flatMap(({ meet, exports }) => exports.map((item: ExportRecord) => ({
     id: item.id,
-    exportType: item.export_type as ExportType,
+    reportType: item.export_type,
     meet: meet.name,
     meetId: meet.id,
     status: item.status as ExportStatus,
@@ -107,10 +144,10 @@ async function loadExports(api: ReturnType<typeof useApiClient>, orgId: string):
 const INPUT_STYLE: React.CSSProperties = { width: '100%', padding: '9px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none', boxSizing: 'border-box' }
 const LABEL_STYLE: React.CSSProperties = { fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '5px' }
 
-export default function ExportsPage() {
+export default function ReportsPage() {
   const { session } = useSession()
   const api = useApiClient(session?.token)
-  const [rows, setRows] = useState<FileExportRow[]>([])
+  const [rows, setRows] = useState<ReportRow[]>([])
   const [meets, setMeets] = useState<MeetRecord[]>([])
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -119,7 +156,11 @@ export default function ExportsPage() {
   const [showNew, setShowNew] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [genError, setGenError] = useState<string | null>(null)
-  const [genForm, setGenForm] = useState({ meet_id: '', export_type: 'standard_sd3' })
+  const [genForm, setGenForm] = useState<{ meet_id: string; report_type: ReportType; grouping: EntryReportGrouping }>({
+    meet_id: '',
+    report_type: 'entry_report',
+    grouping: 'session',
+  })
 
   useEffect(() => {
     let cancelled = false
@@ -133,11 +174,11 @@ export default function ExportsPage() {
       try {
         setLoading(true)
         setError(null)
-        const [exports, meetsData] = await Promise.all([loadExports(api, session.user.orgId), fetchMeets(api, session.user.orgId)])
-        if (!cancelled) { setRows(exports); setMeets(meetsData) }
+        const [reports, meetsData] = await Promise.all([loadReports(api, session.user.orgId), fetchMeets(api, session.user.orgId)])
+        if (!cancelled) { setRows(reports); setMeets(meetsData) }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof ApiError ? err.message : 'Failed to load exports.')
+          setError(err instanceof ApiError ? err.message : 'Failed to load reports.')
           setRows([])
         }
       } finally {
@@ -153,7 +194,7 @@ export default function ExportsPage() {
 
   const filtered = useMemo(() => rows.filter((row) => {
     const query = search.toLowerCase()
-    const matchesSearch = !search || row.meet.toLowerCase().includes(query) || row.filename.toLowerCase().includes(query) || row.createdBy.toLowerCase().includes(query)
+    const matchesSearch = !search || row.meet.toLowerCase().includes(query) || row.filename.toLowerCase().includes(query) || reportLabel(row.reportType).toLowerCase().includes(query)
     const matchesStatus = statusFilter === 'all' || row.status === statusFilter
     return matchesSearch && matchesStatus
   }), [rows, search, statusFilter])
@@ -164,55 +205,60 @@ export default function ExportsPage() {
     setGenerating(true)
     setGenError(null)
     try {
-      await generateExport(api, session.user.orgId, genForm.meet_id, { export_type: genForm.export_type })
+      await generateReport(api, session.user.orgId, genForm.meet_id, {
+        report_type: genForm.report_type,
+        ...(genForm.report_type === 'entry_report' ? { grouping: genForm.grouping } : {}),
+      })
       setShowNew(false)
-      setGenForm({ meet_id: '', export_type: 'standard_sd3' })
-      const [exports, meetsData] = await Promise.all([loadExports(api, session.user.orgId), fetchMeets(api, session.user.orgId)])
-      setRows(exports); setMeets(meetsData)
+      setGenForm({ meet_id: '', report_type: 'entry_report', grouping: 'session' })
+      const [reports, meetsData] = await Promise.all([loadReports(api, session.user.orgId), fetchMeets(api, session.user.orgId)])
+      setRows(reports); setMeets(meetsData)
     } catch (err) {
-      setGenError(err instanceof ApiError ? err.message : 'Failed to generate export.')
+      setGenError(err instanceof ApiError ? err.message : 'Failed to generate report.')
     } finally {
       setGenerating(false)
     }
   }
 
+  const activeReport = REPORT_TYPE_OPTIONS.find((r) => r.value === genForm.report_type)
+
   return (
     <div style={{ padding: '24px', maxWidth: '1200px' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
         <div>
-          <h1 style={{ fontSize: '22px', fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.2, marginBottom: '4px' }}>Exports</h1>
-          <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>Live export jobs generated from the persisted backend queue</p>
+          <h1 style={{ fontSize: '22px', fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.2, marginBottom: '4px' }}>Meet Reports</h1>
+          <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>Printable PDF reports built from a meet’s approved entries — entry, event, and eligibility.</p>
         </div>
         <button className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setShowNew(true)}>
-          <Icon name="download" size={14} /> Generate Export
+          <Icon name="download" size={14} /> Generate Report
         </button>
       </div>
 
       <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', alignItems: 'center' }}>
         <div style={{ position: 'relative', flex: 1, maxWidth: '320px' }}>
           <Icon name="search" size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
-          <input type="text" placeholder="Search by meet, file, or creator…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: '100%', padding: '8px 12px 8px 32px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none' }} />
+          <input type="text" placeholder="Search by meet, file, or report…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: '100%', padding: '8px 12px 8px 32px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none' }} />
         </div>
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none', cursor: 'pointer' }}>
           <option value="all">All Statuses</option>
           {Object.entries(STATUS_CFG).map(([value, cfg]) => <option key={value} value={value}>{cfg.label}</option>)}
         </select>
-        <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginLeft: 'auto' }}>{filtered.length} exports</span>
+        <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginLeft: 'auto' }}>{filtered.length} reports</span>
       </div>
 
       {loading ? (
-        <EmptyState icon="download" title="Loading exports" description="Fetching live export jobs from the API." />
+        <EmptyState icon="download" title="Loading reports" description="Fetching generated reports from the API." />
       ) : error ? (
-        <EmptyState icon="alert-circle" title="Unable to load exports" description={error} />
+        <EmptyState icon="alert-circle" title="Unable to load reports" description={error} />
       ) : (
-        <Table columns={COLUMNS} data={filtered} pageSize={10} emptyTitle="No exports found" emptyDescription="Generate an export from a meet to see it here." />
+        <Table columns={COLUMNS} data={filtered} pageSize={10} emptyTitle="No reports yet" emptyDescription="Generate a report from a meet to see it here." />
       )}
 
       {showNew && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)' }} onClick={(e) => { if (e.target === e.currentTarget) setShowNew(false) }}>
-          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '14px', padding: '28px', width: '100%', maxWidth: '420px', boxShadow: '0 24px 80px rgba(0,0,0,0.4)' }}>
+          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '14px', padding: '28px', width: '100%', maxWidth: '440px', boxShadow: '0 24px 80px rgba(0,0,0,0.4)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-              <h2 style={{ fontSize: '18px', fontFamily: 'var(--font-display)', color: 'var(--text)', margin: 0 }}>Generate Export</h2>
+              <h2 style={{ fontSize: '18px', fontFamily: 'var(--font-display)', color: 'var(--text)', margin: 0 }}>Generate Report</h2>
               <button onClick={() => setShowNew(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><Icon name="x" size={18} /></button>
             </div>
             {genError && <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px' }}>{genError}</div>}
@@ -225,13 +271,42 @@ export default function ExportsPage() {
                 </select>
               </div>
               <div>
-                <label style={LABEL_STYLE}>Export Type *</label>
-                <select style={INPUT_STYLE} value={genForm.export_type} onChange={(e) => setGenForm((f) => ({ ...f, export_type: e.target.value }))}>
-                  <option value="standard_sd3">SD3 Standard</option>
-                  <option value="extended_sd3">SD3 Extended</option>
-                  <option value="sdif_roster">SDIF Roster</option>
+                <label style={LABEL_STYLE}>Report Type *</label>
+                <select style={INPUT_STYLE} value={genForm.report_type} onChange={(e) => setGenForm((f) => ({ ...f, report_type: e.target.value as ReportType }))}>
+                  {REPORT_TYPE_OPTIONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
                 </select>
+                {activeReport && <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: '6px 2px 0' }}>{activeReport.hint}</p>}
               </div>
+              {genForm.report_type === 'entry_report' && (
+                <div>
+                  <label style={LABEL_STYLE}>Group entries by</label>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    {GROUPING_OPTIONS.map((g) => {
+                      const active = genForm.grouping === g.value
+                      return (
+                        <button
+                          key={g.value}
+                          type="button"
+                          onClick={() => setGenForm((f) => ({ ...f, grouping: g.value }))}
+                          style={{
+                            flex: 1,
+                            padding: '8px 6px',
+                            fontSize: '12px',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            borderRadius: 'var(--r-md)',
+                            border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+                            background: active ? 'var(--accent-bg, rgba(235,93,30,0.12))' : 'var(--bg-elevated)',
+                            color: active ? 'var(--accent)' : 'var(--text-subtle)',
+                          }}
+                        >
+                          {g.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
               <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '4px' }}>
                 <button type="button" className="btn" onClick={() => setShowNew(false)}>Cancel</button>
                 <button type="submit" className="btn btn-primary" disabled={generating || !genForm.meet_id}>{generating ? 'Generating…' : 'Generate'}</button>

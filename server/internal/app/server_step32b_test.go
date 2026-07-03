@@ -17,6 +17,7 @@ import (
 	"github.com/dareaquatics/aquify/server/internal/app/compliance"
 	"github.com/dareaquatics/aquify/server/internal/app/exports"
 	"github.com/dareaquatics/aquify/server/internal/app/imports"
+	"github.com/dareaquatics/aquify/server/internal/app/members"
 	"github.com/dareaquatics/aquify/server/internal/app/reports"
 	"github.com/dareaquatics/aquify/server/internal/storage"
 	stripelib "github.com/dareaquatics/aquify/server/internal/stripe"
@@ -172,6 +173,7 @@ func TestBuildWorkersRegistersFullProductionHandlerSet(t *testing.T) {
 		stripeClient,
 		commsService,
 		complianceService,
+		members.NewService(),
 		objectStore,
 	)
 	workerServer.Start()

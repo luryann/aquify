@@ -52,9 +52,10 @@ func (r *Repository) Upsert(ctx context.Context, p *Practice) error {
 	return err
 }
 
-// Delete permanently removes a practice by ID.
-func (r *Repository) Delete(ctx context.Context, id string) error {
-	tag, err := r.pool.Exec(ctx, `DELETE FROM practices WHERE id = $1::uuid`, id)
+// Delete permanently removes a practice by (org_id, id) so a caller cannot
+// delete another org's practice by guessing/observing its UUID.
+func (r *Repository) Delete(ctx context.Context, orgID, id string) error {
+	tag, err := r.pool.Exec(ctx, `DELETE FROM practices WHERE id = $1::uuid AND org_id = $2`, id, orgID)
 	if err != nil {
 		return err
 	}

@@ -111,32 +111,13 @@ func TestRuntimeSnapshotsRoundTripAcrossConvertedDomains(t *testing.T) {
 		t.Fatalf("request upload url: %v", err)
 	}
 
-	exportJob, _, err := exportSvc.GenerateExport(admin, testutil.DefaultOrgID, meet.ID, exports.GenerateExportInput{
-		ExportType:    exports.ExportTypeStandardSD3,
-		MeetName:      "Spring Invite",
-		MeetStartDate: "03182026",
-		MeetEndDate:   "03192026",
-		Course:        "SCY",
-		HostTeamCode:  "DARE",
-		HostTeamName:  "DARE Aquatics",
-		Entries: []exports.ExportEntry{
-			{
-				Swimmer: exports.ExportSwimmer{
-					LastName:  "Persist",
-					FirstName: "Taylor",
-					USSNumber: "1234567890",
-					DOBRaw:    "08142012",
-					Gender:    "F",
-					TeamCode:  "DARE",
-				},
-				EventNumber: "1",
-				Distance:    50,
-				Stroke:      "free",
-				EventGender: "F",
-				AgeGroup:    "11-12",
-				Course:      "SCY",
-				SeedTimeMs:  35000,
-			},
+	exportJob, _, err := exportSvc.GenerateExport(admin, testutil.DefaultOrgID, meet.ID, exports.ReportInput{
+		ReportType: exports.ReportTypeEvent,
+		Meet: exports.ReportMeet{
+			Name:      "Spring Invite",
+			StartDate: "2026-03-18",
+			EndDate:   "2026-03-19",
+			Course:    "SCY",
 		},
 	})
 	if err != nil {

@@ -438,6 +438,32 @@ func (s *Service) checkParentHouseholdForSwimmer(principal *appmiddleware.Princi
 	return nil
 }
 
+// principalRequiresHouseholdScope reports whether the principal's roles
+// require household-scoped filtering (parent/swimmer) on org-wide reads.
+func principalRequiresHouseholdScope(principal *appmiddleware.Principal) bool {
+	for _, r := range principal.Roles {
+		switch strings.ToLower(r) {
+		case "parent", "swimmer":
+			return true
+		}
+	}
+	return false
+}
+
+// householdScopedSwimmerAllowed reports whether swimmerID belongs to the
+// principal's household. Used to restrict org-wide performance reads for
+// parent/swimmer callers, who must never see other households' data.
+func (s *Service) householdScopedSwimmerAllowed(principal *appmiddleware.Principal, orgID, swimmerID string) bool {
+	if s.householdChecker == nil || principal.HouseholdID == "" {
+		return false
+	}
+	swimmerHouseholdID, ok := s.householdChecker.SwimmerHouseholdID(orgID, swimmerID)
+	if !ok {
+		return false
+	}
+	return swimmerHouseholdID == principal.HouseholdID
+}
+
 // btKey returns the composite map key for a best-time record.
 func btKey(orgID, swimmerID string, distance int, stroke, course string) string {
 	return strings.Join([]string{orgID, swimmerID, fmt.Sprintf("%d", distance), stroke, course}, "|") //nolint:perfsprint
@@ -708,6 +734,7 @@ func (s *Service) ListBestTimesForOrg(orgID string, principal *appmiddleware.Pri
 	if err := s.requireReadAccess(principal); err != nil {
 		return nil, err
 	}
+	householdScoped := principalRequiresHouseholdScope(principal)
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -724,6 +751,9 @@ func (s *Service) ListBestTimesForOrg(orgID string, principal *appmiddleware.Pri
 			continue
 		}
 		if filters.Stroke != "" && bt.Stroke != filters.Stroke {
+			continue
+		}
+		if householdScoped && !s.householdScopedSwimmerAllowed(principal, orgID, bt.SwimmerID) {
 			continue
 		}
 		cp := *bt
@@ -880,6 +910,7 @@ func (s *Service) ListProgressionForOrg(orgID string, principal *appmiddleware.P
 	if err := s.requireReadAccess(principal); err != nil {
 		return nil, err
 	}
+	householdScoped := principalRequiresHouseholdScope(principal)
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -902,6 +933,9 @@ func (s *Service) ListProgressionForOrg(orgID string, principal *appmiddleware.P
 			continue
 		}
 		if filters.Course != "" && result.Course != filters.Course {
+			continue
+		}
+		if householdScoped && !s.householdScopedSwimmerAllowed(principal, orgID, result.SwimmerID) {
 			continue
 		}
 		cp := *result

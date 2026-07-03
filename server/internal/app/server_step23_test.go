@@ -564,17 +564,17 @@ func TestP0MeetCommitToSD3ExportFlow(t *testing.T) {
 		t.Fatalf("propose entry: expected 201, got %d body=%s", proposeRes.Code, proposeRes.Body.String())
 	}
 
-	exportRes := doGenerateExport(t, router, "org-p0-meet", adminToken, meetID, "standard_sd3")
+	exportRes := doGenerateExport(t, router, "org-p0-meet", adminToken, meetID, "event_report")
 	downloadReq := httptest.NewRequest(http.MethodGet, "/api/v1/exports/"+exportRes.Export.ID+"/download", nil)
 	downloadReq.Header.Set("X-Org-Id", "org-p0-meet")
 	downloadReq.Header.Set("Authorization", "Bearer "+adminToken)
 	downloadRes := httptest.NewRecorder()
 	router.ServeHTTP(downloadRes, downloadReq)
 	if downloadRes.Code != http.StatusOK {
-		t.Fatalf("download export: expected 200, got %d body=%s", downloadRes.Code, downloadRes.Body.String())
+		t.Fatalf("download report: expected 200, got %d body=%s", downloadRes.Code, downloadRes.Body.String())
 	}
-	if !strings.Contains(downloadRes.Body.String(), "Spring Invitational") && !strings.Contains(downloadRes.Body.String(), "P0 Meet") {
-		t.Fatalf("expected SD3 export payload to contain meet metadata, got %s", downloadRes.Body.String())
+	if !strings.HasPrefix(downloadRes.Body.String(), "%PDF-") {
+		t.Fatalf("expected PDF report payload, got %q", downloadRes.Body.String()[:min(16, downloadRes.Body.Len())])
 	}
 }
 

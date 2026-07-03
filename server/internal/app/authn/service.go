@@ -575,7 +575,15 @@ func (s *Service) OIDCCallback(code, state, _ string) (OIDCCallbackResult, error
 
 	resolvedOrgID := strings.TrimSpace(claims.OrgID)
 	if resolvedOrgID == "" {
-		s.logger.Warn("oidc: org_id absent from ID token claims — falling back to state parameter; verify Keycloak protocol mapper (User Attribute 'org_id' → ID token claim 'org_id') is configured",
+		// The state org_id is caller-supplied at /authorize time and is not an
+		// authentication authority: trusting it here would let an attacker with
+		// any valid provider account choose their tenant. Only fall back to it
+		// in explicit local-dev/test deployments where Keycloak protocol
+		// mappers may not be configured; production/staging must reject.
+		if !s.cfg.EnableDevStubTokens {
+			return OIDCCallbackResult{}, errors.New("org_id claim missing from id token; configure Keycloak protocol mapper (User Attribute 'org_id' → ID token claim 'org_id')")
+		}
+		s.logger.Warn("oidc: org_id absent from ID token claims — falling back to state parameter (dev-only); verify Keycloak protocol mapper (User Attribute 'org_id' → ID token claim 'org_id') is configured",
 			"user_id", claims.Subject,
 			"issuer", claims.Issuer,
 		)

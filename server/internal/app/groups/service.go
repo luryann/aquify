@@ -804,6 +804,15 @@ func (s *Service) TransitionRegistrationStatus(principal *appmiddleware.Principa
 		return Registration{}, GroupAuditEvent{}, ErrRegistrationNotFound
 	}
 
+	// Parents may only transition registrations belonging to their own
+	// household — otherwise a parent who learns another household's
+	// registration ID could withdraw it (cross-household IDOR).
+	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "owner", "admin", "coach") {
+		if strings.TrimSpace(principal.HouseholdID) != reg.HouseholdID && !s.parentOwnsHouseholdLocked(principal.UserID, reg.HouseholdID) {
+			return Registration{}, GroupAuditEvent{}, ErrRegistrationNotFound
+		}
+	}
+
 	// Validate state machine transition.
 	if err := validateTransition(reg.Status, toStatus, principal); err != nil {
 		return Registration{}, GroupAuditEvent{}, err

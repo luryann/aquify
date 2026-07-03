@@ -1,282 +1,158 @@
 package exports
 
 import (
+	"bytes"
 	"strings"
 	"testing"
-	"time"
-
-	"github.com/dareaquatics/aquify/meetfiles"
-	sdifexport "github.com/dareaquatics/aquify/meetfiles/sdif"
 )
 
-func TestBuildFileContent_MatchesCanonicalStandardSD3(t *testing.T) {
+func intPtr(v int) *int { return &v }
+
+func sampleReportInput(reportType, grouping string) ReportInput {
+	return ReportInput{
+		ReportType: reportType,
+		Grouping:   grouping,
+		Team:       ReportTeam{TeamCode: "DARE", TeamName: "DARE Aquatics", LSCCode: "PC"},
+		Meet: ReportMeet{
+			Name:      "Spring Invitational",
+			StartDate: "2026-03-15",
+			EndDate:   "2026-03-16",
+			Course:    "SCY",
+			Location:  "Home Pool",
+		},
+		Events: []ReportEvent{
+			{MeetEventID: "e2", EventNumber: "2", SessionID: "s1", SessionName: "Day 1 Prelims", Stroke: "freestyle", Distance: 200, Course: "SCY", Gender: "F", MinAge: nil, MaxAge: nil},
+			{MeetEventID: "e10", EventNumber: "10", SessionID: "s2", SessionName: "Day 1 Finals", Stroke: "backstroke", Distance: 100, Course: "SCY", Gender: "F", MinAge: intPtr(15), MaxAge: intPtr(17)},
+		},
+		Entries: []ReportEntry{
+			{SwimmerFirst: "Zoe", SwimmerLast: "Zimmer", USASwimmingID: "AB12CD34EF56", Gender: "female", AgeAtMeet: 17, GroupCode: "SENIOR", MeetEventID: "e10", EventNumber: "10", SessionID: "s2", SessionName: "Day 1 Finals", Stroke: "backstroke", Distance: 100, Course: "SCY", SeedTimeMs: intPtr(70250), Eligible: true},
+			{SwimmerFirst: "Amy", SwimmerLast: "Adams", USASwimmingID: "GH78IJ90KL12", Gender: "female", AgeAtMeet: 27, GroupCode: "SENIOR", MeetEventID: "e2", EventNumber: "2", SessionID: "s1", SessionName: "Day 1 Prelims", Stroke: "freestyle", Distance: 200, Course: "SCY", SeedTimeMs: intPtr(125340), Eligible: true},
+			{SwimmerFirst: "Amy", SwimmerLast: "Adams", USASwimmingID: "GH78IJ90KL12", Gender: "female", AgeAtMeet: 27, GroupCode: "SENIOR", MeetEventID: "e10", EventNumber: "10", SessionID: "s2", SessionName: "Day 1 Finals", Stroke: "backstroke", Distance: 100, Course: "SCY", SeedTimeMs: nil, Eligible: false, EligibilityNote: "age 27 above event maximum 17"},
+		},
+	}
+}
+
+func assertPDF(t *testing.T, content []byte, filename, wantFilename string) {
+	t.Helper()
+	if filename != wantFilename {
+		t.Fatalf("filename = %q, want %q", filename, wantFilename)
+	}
+	if !bytes.HasPrefix(content, []byte("%PDF-")) {
+		t.Fatalf("content does not look like a PDF: prefix %q", string(content[:min(8, len(content))]))
+	}
+	if len(content) < 500 {
+		t.Fatalf("PDF suspiciously small: %d bytes", len(content))
+	}
+}
+
+func TestBuildReportPDF_EventReport(t *testing.T) {
 	t.Parallel()
-
-	input := testGenerateExportInput()
-	got, filename, err := buildFileContent(input)
+	content, filename, err := buildReportPDF(sampleReportInput(ReportTypeEvent, ""))
 	if err != nil {
-		t.Fatalf("buildFileContent: %v", err)
+		t.Fatalf("buildReportPDF: %v", err)
 	}
-	if filename != "spring-invitational_standard.sd3" {
-		t.Fatalf("filename = %q, want %q", filename, "spring-invitational_standard.sd3")
-	}
+	assertPDF(t, content, filename, "spring-invitational_event_report.pdf")
+}
 
-	want, err := sdifexport.ExportStandardSD3(testCanonicalExportInput())
+func TestBuildReportPDF_EligibilityReport(t *testing.T) {
+	t.Parallel()
+	content, filename, err := buildReportPDF(sampleReportInput(ReportTypeEligibility, ""))
 	if err != nil {
-		t.Fatalf("ExportStandardSD3: %v", err)
+		t.Fatalf("buildReportPDF: %v", err)
 	}
-	if string(got) != string(want) {
-		t.Fatalf("standard export mismatch\n--- got ---\n%s\n--- want ---\n%s", got, want)
-	}
+	assertPDF(t, content, filename, "spring-invitational_eligibility.pdf")
+}
 
-	lines := strings.Split(string(got), "\r\n")
-	var eventLines []string
-	for _, line := range lines {
-		if strings.HasPrefix(line, "D0") {
-			eventLines = append(eventLines, line)
+func TestBuildReportPDF_EntryReportGroupings(t *testing.T) {
+	t.Parallel()
+	cases := map[string]string{
+		GroupingSession:      "spring-invitational_entries_by_session.pdf",
+		GroupingGroup:        "spring-invitational_entries_by_group.pdf",
+		GroupingAlphabetical: "spring-invitational_entries_by_alphabetical.pdf",
+	}
+	for grouping, wantFile := range cases {
+		content, filename, err := buildReportPDF(sampleReportInput(ReportTypeEntry, grouping))
+		if err != nil {
+			t.Fatalf("grouping %q: %v", grouping, err)
+		}
+		assertPDF(t, content, filename, wantFile)
+	}
+	// Default grouping (empty) should fall back to alphabetical.
+	_, filename, err := buildReportPDF(sampleReportInput(ReportTypeEntry, ""))
+	if err != nil {
+		t.Fatalf("default grouping: %v", err)
+	}
+	if filename != "spring-invitational_entries_by_alphabetical.pdf" {
+		t.Fatalf("default grouping filename = %q", filename)
+	}
+}
+
+func TestBuildReportPDF_RejectsUnknownType(t *testing.T) {
+	t.Parallel()
+	if _, _, err := buildReportPDF(sampleReportInput("bogus", "")); err == nil {
+		t.Fatal("expected error for unknown report type")
+	}
+}
+
+func TestBuildReportPDF_RequiresMeetName(t *testing.T) {
+	t.Parallel()
+	in := sampleReportInput(ReportTypeEvent, "")
+	in.Meet.Name = "  "
+	if _, _, err := buildReportPDF(in); err == nil {
+		t.Fatal("expected error for blank meet name")
+	}
+}
+
+func TestFormatSeedTime(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		ms   *int
+		want string
+	}{
+		{nil, "NT"},
+		{intPtr(0), "NT"},
+		{intPtr(31450), "31.45"},
+		{intPtr(70250), "1:10.25"},
+		{intPtr(125340), "2:05.34"},
+	}
+	for _, c := range cases {
+		if got := formatSeedTime(c.ms); got != c.want {
+			t.Errorf("formatSeedTime(%v) = %q, want %q", c.ms, got, c.want)
 		}
 	}
-	if len(eventLines) != 3 {
-		t.Fatalf("got %d D0 lines, want 3", len(eventLines))
-	}
-	if eventNumberField(eventLines[0]) != "2" || eventNumberField(eventLines[1]) != "10" {
-		t.Fatalf("event ordering mismatch: got %q then %q", eventNumberField(eventLines[0]), eventNumberField(eventLines[1]))
-	}
 }
 
-func TestBuildFileContent_MatchesCanonicalExtendedSD3(t *testing.T) {
+func TestAgeAtMeet(t *testing.T) {
 	t.Parallel()
-
-	input := testGenerateExportInput()
-	input.ExportType = ExportTypeExtendedSD3
-
-	got, filename, err := buildFileContent(input)
-	if err != nil {
-		t.Fatalf("buildFileContent: %v", err)
+	// Born 2009-02-15, meet starts 2026-03-15 -> 17 (birthday already passed).
+	if got := AgeAtMeet("2009-02-15", "2026-03-15"); got != 17 {
+		t.Errorf("AgeAtMeet after birthday = %d, want 17", got)
 	}
-	if filename != "spring-invitational_extended.sd3" {
-		t.Fatalf("filename = %q, want %q", filename, "spring-invitational_extended.sd3")
-	}
-
-	want, err := sdifexport.ExportExtendedSD3(testCanonicalExportInput())
-	if err != nil {
-		t.Fatalf("ExportExtendedSD3: %v", err)
-	}
-	if string(got) != string(want) {
-		t.Fatalf("extended export mismatch\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	// Meet before birthday -> 16.
+	if got := AgeAtMeet("2009-02-15", "2026-01-01"); got != 16 {
+		t.Errorf("AgeAtMeet before birthday = %d, want 16", got)
 	}
 }
 
-func TestBuildFileContent_MatchesCanonicalRoster(t *testing.T) {
+func TestEventNumKeyOrdering(t *testing.T) {
 	t.Parallel()
-
-	input := testGenerateExportInput()
-	input.ExportType = ExportTypeSDIFRoster
-
-	got, filename, err := buildFileContent(input)
-	if err != nil {
-		t.Fatalf("buildFileContent: %v", err)
+	if eventNumKey("2") >= eventNumKey("10") {
+		t.Fatal("event 2 should sort before event 10")
 	}
-	if filename != "spring-invitational_roster.sd3" {
-		t.Fatalf("filename = %q, want %q", filename, "spring-invitational_roster.sd3")
-	}
-
-	want, err := sdifexport.ExportSDIFRoster(testCanonicalRosterInput())
-	if err != nil {
-		t.Fatalf("ExportSDIFRoster: %v", err)
-	}
-	if string(got) != string(want) {
-		t.Fatalf("roster export mismatch\n--- got ---\n%s\n--- want ---\n%s", got, want)
-	}
-	if !strings.Contains(string(got), "D1") {
-		t.Fatalf("expected canonical roster D1 records, got %q", string(got))
+	if eventNumKey("10A") >= eventNumKey("10B") {
+		t.Fatal("10A should sort before 10B")
 	}
 }
 
-func eventNumberField(line string) string {
-	if len(line) < 76 {
-		return ""
+func TestReportTitles(t *testing.T) {
+	t.Parallel()
+	for reportType, want := range map[string]string{
+		ReportTypeEligibility: "Eligibility Report",
+		ReportTypeEntry:       "Entry Report",
+		ReportTypeEvent:       "Event Report",
+	} {
+		if got := reportTitle(reportType); !strings.Contains(got, want) {
+			t.Errorf("reportTitle(%q) = %q, want to contain %q", reportType, got, want)
+		}
 	}
-	return strings.TrimSpace(line[72:76])
-}
-
-func testGenerateExportInput() GenerateExportInput {
-	return GenerateExportInput{
-		ExportType:    ExportTypeStandardSD3,
-		MeetName:      "Spring Invitational",
-		MeetStartDate: "03152026",
-		MeetEndDate:   "03162026",
-		Course:        "SCY",
-		HostTeamCode:  "DARE",
-		HostTeamName:  "DARE Aquatics",
-		Entries: []ExportEntry{
-			{
-				Swimmer: ExportSwimmer{
-					LastName:  "Zimmer",
-					FirstName: "Zoe",
-					USSNumber: "555555555555",
-					DOBRaw:    "02152009",
-					Gender:    "F",
-					TeamCode:  "DARE",
-				},
-				EventNumber: "10",
-				Distance:    100,
-				Stroke:      "back",
-				EventGender: "F",
-				AgeGroup:    "1517",
-				Course:      "SCY",
-				SeedTimeMs:  70250,
-				Heat:        2,
-				Lane:        5,
-			},
-			{
-				Swimmer: ExportSwimmer{
-					LastName:  "Adams",
-					FirstName: "Amy",
-					USSNumber: "111111111111",
-					DOBRaw:    "02151999",
-					Gender:    "F",
-					TeamCode:  "DARE",
-				},
-				EventNumber: "2",
-				Distance:    200,
-				Stroke:      "free",
-				EventGender: "F",
-				AgeGroup:    "Open",
-				Course:      "SCY",
-				SeedTimeMs:  125340,
-				Heat:        1,
-				Lane:        3,
-			},
-			{
-				Swimmer: ExportSwimmer{
-					LastName:  "Adams",
-					FirstName: "Amy",
-					USSNumber: "111111111111",
-					DOBRaw:    "02151999",
-					Gender:    "F",
-					TeamCode:  "DARE",
-				},
-				EventNumber: "10",
-				Distance:    100,
-				Stroke:      "fly",
-				EventGender: "F",
-				AgeGroup:    "1517",
-				Course:      "SCY",
-				SeedTimeMs:  68890,
-				Heat:        3,
-				Lane:        4,
-			},
-		},
-	}
-}
-
-func testCanonicalExportInput() sdifexport.ExportInput {
-	start := time.Date(2026, time.March, 15, 0, 0, 0, 0, time.UTC)
-	end := time.Date(2026, time.March, 16, 0, 0, 0, 0, time.UTC)
-	return sdifexport.ExportInput{
-		MeetName:      "Spring Invitational",
-		MeetStartDate: &start,
-		MeetEndDate:   &end,
-		Course:        meetfiles.CourseShortCourseYards,
-		HostTeamCode:  "DARE",
-		HostTeamName:  "DARE Aquatics",
-		IndividualEntries: []sdifexport.ExportIndividualEntry{
-			{
-				Swimmer: sdifexport.ExportSwimmer{
-					LastName:  "Zimmer",
-					FirstName: "Zoe",
-					USSNumber: "555555555555",
-					DOB:       datePtr(2009, time.February, 15),
-					Gender:    "F",
-					TeamCode:  "DARE",
-				},
-				EventNumber: "10",
-				Distance:    100,
-				Stroke:      meetfiles.StrokeBackstroke,
-				EventGender: "F",
-				AgeGroup:    "1517",
-				Course:      meetfiles.CourseShortCourseYards,
-				SeedTime:    meetfiles.Time{Valid: true, Seconds: 70.25},
-				Heat:        2,
-				Lane:        5,
-			},
-			{
-				Swimmer: sdifexport.ExportSwimmer{
-					LastName:  "Adams",
-					FirstName: "Amy",
-					USSNumber: "111111111111",
-					DOB:       datePtr(1999, time.February, 15),
-					Gender:    "F",
-					TeamCode:  "DARE",
-				},
-				EventNumber: "2",
-				Distance:    200,
-				Stroke:      meetfiles.StrokeFreestyle,
-				EventGender: "F",
-				AgeGroup:    "Open",
-				Course:      meetfiles.CourseShortCourseYards,
-				SeedTime:    meetfiles.Time{Valid: true, Seconds: 125.34},
-				Heat:        1,
-				Lane:        3,
-			},
-			{
-				Swimmer: sdifexport.ExportSwimmer{
-					LastName:  "Adams",
-					FirstName: "Amy",
-					USSNumber: "111111111111",
-					DOB:       datePtr(1999, time.February, 15),
-					Gender:    "F",
-					TeamCode:  "DARE",
-				},
-				EventNumber: "10",
-				Distance:    100,
-				Stroke:      meetfiles.StrokeButterfly,
-				EventGender: "F",
-				AgeGroup:    "1517",
-				Course:      meetfiles.CourseShortCourseYards,
-				SeedTime:    meetfiles.Time{Valid: true, Seconds: 68.89},
-				Heat:        3,
-				Lane:        4,
-			},
-		},
-	}
-}
-
-func testCanonicalRosterInput() sdifexport.RosterExportInput {
-	start := time.Date(2026, time.March, 15, 0, 0, 0, 0, time.UTC)
-	end := time.Date(2026, time.March, 16, 0, 0, 0, 0, time.UTC)
-	return sdifexport.RosterExportInput{
-		MeetName:  "Spring Invitational",
-		StartDate: &start,
-		EndDate:   &end,
-		Course:    meetfiles.CourseShortCourseYards,
-		TeamCode:  "DARE",
-		TeamName:  "DARE Aquatics",
-		Swimmers: []sdifexport.RosterExportSwimmer{
-			{
-				LastName:  "Zimmer",
-				FirstName: "Zoe",
-				USSNumber: "555555555555",
-				DOB:       datePtr(2009, time.February, 15),
-				Gender:    "F",
-				TeamCode:  "DARE",
-				TeamName:  "DARE Aquatics",
-			},
-			{
-				LastName:  "Adams",
-				FirstName: "Amy",
-				USSNumber: "111111111111",
-				DOB:       datePtr(1999, time.February, 15),
-				Gender:    "F",
-				TeamCode:  "DARE",
-				TeamName:  "DARE Aquatics",
-			},
-		},
-	}
-}
-
-func datePtr(year int, month time.Month, day int) *time.Time {
-	value := time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
-	return &value
 }

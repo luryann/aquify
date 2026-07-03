@@ -343,6 +343,7 @@ type createSwimmerRequest struct {
 	DateOfBirth        string   `json:"date_of_birth" validate:"required"`
 	Gender             string   `json:"gender" validate:"required,oneof=female male non_binary undisclosed"`
 	SwimmerExternalID  string   `json:"swimmer_external_id"`
+	USASwimmingID      string   `json:"usa_swimming_id"`
 	RegistrationStatus string   `json:"registration_status" validate:"omitempty,oneof=pending active inactive archived"`
 	MedicalFlags       []string `json:"medical_flags"`
 	Notes              string   `json:"notes"`
@@ -370,6 +371,7 @@ func (h *MembershipHandlers) createSwimmer(w http.ResponseWriter, r *http.Reques
 		DateOfBirth:        req.DateOfBirth,
 		Gender:             req.Gender,
 		SwimmerExternalID:  req.SwimmerExternalID,
+		USASwimmingID:      req.USASwimmingID,
 		RegistrationStatus: req.RegistrationStatus,
 		MedicalFlags:       req.MedicalFlags,
 		Notes:              req.Notes,
@@ -435,6 +437,7 @@ type updateSwimmerRequest struct {
 	DateOfBirth        *string   `json:"date_of_birth"`
 	Gender             *string   `json:"gender" validate:"omitempty,oneof=female male non_binary undisclosed"`
 	SwimmerExternalID  *string   `json:"swimmer_external_id"`
+	USASwimmingID      *string   `json:"usa_swimming_id"`
 	RegistrationStatus *string   `json:"registration_status" validate:"omitempty,oneof=pending active inactive archived"`
 	MedicalFlags       *[]string `json:"medical_flags"`
 	Notes              *string   `json:"notes"`
@@ -459,6 +462,7 @@ func (h *MembershipHandlers) updateSwimmer(w http.ResponseWriter, r *http.Reques
 		DateOfBirth:        req.DateOfBirth,
 		Gender:             req.Gender,
 		SwimmerExternalID:  req.SwimmerExternalID,
+		USASwimmingID:      req.USASwimmingID,
 		RegistrationStatus: req.RegistrationStatus,
 		MedicalFlags:       req.MedicalFlags,
 		Notes:              req.Notes,

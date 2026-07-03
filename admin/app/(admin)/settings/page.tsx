@@ -5,7 +5,10 @@ import { Icon } from '@/components/ui/icons'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
 import { useApiClient, ApiError } from '@/lib/api'
-import { fetchRuntimeSettings, type RuntimeSettingsRecord } from '@/lib/adminData'
+import { fetchRuntimeSettings, fetchOrgSettings, updateOrgSettings, type RuntimeSettingsRecord, type OrgSettingsRecord } from '@/lib/adminData'
+
+const TEAM_INPUT_STYLE: React.CSSProperties = { width: '100%', padding: '9px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none', boxSizing: 'border-box' }
+const TEAM_LABEL_STYLE: React.CSSProperties = { fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '5px' }
 
 function sectionEntries(section?: Record<string, unknown>) {
   return Object.entries(section ?? {}).sort(([a], [b]) => a.localeCompare(b))
@@ -26,6 +29,47 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [activeCategory, setActiveCategory] = useState('auth')
+
+  const [teamForm, setTeamForm] = useState<{ team_code: string; team_name: string; lsc_code: string }>({ team_code: '', team_name: '', lsc_code: '' })
+  const [teamLoaded, setTeamLoaded] = useState(false)
+  const [teamSaving, setTeamSaving] = useState(false)
+  const [teamMsg, setTeamMsg] = useState<string | null>(null)
+  const [teamErr, setTeamErr] = useState<string | null>(null)
+
+  const canEditTeam = useMemo(() => {
+    const roles = session?.user.roles ?? (session?.user.role ? [session.user.role] : [])
+    return roles.includes('owner') || roles.includes('admin')
+  }, [session])
+
+  useEffect(() => {
+    if (!session) return
+    let cancelled = false
+    fetchOrgSettings(api, session.user.orgId)
+      .then((s: OrgSettingsRecord) => {
+        if (cancelled) return
+        setTeamForm({ team_code: s.team_code ?? '', team_name: s.team_name ?? '', lsc_code: s.lsc_code ?? '' })
+        setTeamLoaded(true)
+      })
+      .catch(() => { if (!cancelled) setTeamLoaded(true) })
+    return () => { cancelled = true }
+  }, [api, session])
+
+  async function handleSaveTeam(e: React.FormEvent) {
+    e.preventDefault()
+    if (!session) return
+    setTeamSaving(true)
+    setTeamMsg(null)
+    setTeamErr(null)
+    try {
+      const saved = await updateOrgSettings(api, session.user.orgId, teamForm)
+      setTeamForm({ team_code: saved.team_code ?? '', team_name: saved.team_name ?? '', lsc_code: saved.lsc_code ?? '' })
+      setTeamMsg('Saved.')
+    } catch (err) {
+      setTeamErr(err instanceof ApiError ? err.message : 'Failed to save team identity.')
+    } finally {
+      setTeamSaving(false)
+    }
+  }
 
   useEffect(() => {
     if (!session) return
@@ -100,6 +144,38 @@ export default function SettingsPage() {
           </span>
         </div>
       ) : null}
+
+      <div className="card" style={{ padding: '20px', marginBottom: '28px' }}>
+        <div style={{ marginBottom: '4px' }}>
+          <h2 style={{ fontSize: '15px', fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)' }}>Team &amp; Export Identity</h2>
+          <p style={{ fontSize: '12px', color: 'var(--text-subtle)', marginTop: '4px' }}>
+            Your club’s team code, name, and LSC — printed on generated meet reports.
+          </p>
+        </div>
+        {teamMsg ? <div style={{ marginTop: '12px', padding: '8px 12px', background: 'var(--success-bg)', border: '1px solid var(--success-border)', borderRadius: '8px', color: 'var(--success)', fontSize: '12px' }}>{teamMsg}</div> : null}
+        {teamErr ? <div style={{ marginTop: '12px', padding: '8px 12px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', borderRadius: '8px', color: 'var(--error)', fontSize: '12px' }}>{teamErr}</div> : null}
+        <form onSubmit={handleSaveTeam} style={{ marginTop: '16px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '14px', alignItems: 'end' }}>
+          <div>
+            <label style={TEAM_LABEL_STYLE}>Team Code</label>
+            <input style={TEAM_INPUT_STYLE} value={teamForm.team_code} disabled={!canEditTeam || !teamLoaded} onChange={(e) => setTeamForm((f) => ({ ...f, team_code: e.target.value.toUpperCase() }))} placeholder="DARE" />
+          </div>
+          <div>
+            <label style={TEAM_LABEL_STYLE}>Team Name</label>
+            <input style={TEAM_INPUT_STYLE} value={teamForm.team_name} disabled={!canEditTeam || !teamLoaded} onChange={(e) => setTeamForm((f) => ({ ...f, team_name: e.target.value }))} placeholder="DARE Aquatics" />
+          </div>
+          <div>
+            <label style={TEAM_LABEL_STYLE}>LSC Code</label>
+            <input style={TEAM_INPUT_STYLE} value={teamForm.lsc_code} disabled={!canEditTeam || !teamLoaded} onChange={(e) => setTeamForm((f) => ({ ...f, lsc_code: e.target.value.toUpperCase() }))} placeholder="PC" maxLength={4} />
+          </div>
+          {canEditTeam ? (
+            <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end' }}>
+              <button type="submit" className="btn btn-primary" disabled={teamSaving || !teamLoaded}>{teamSaving ? 'Saving…' : 'Save identity'}</button>
+            </div>
+          ) : (
+            <p style={{ gridColumn: '1 / -1', fontSize: '11px', color: 'var(--text-muted)', margin: 0 }}>Only owners and admins can edit team identity.</p>
+          )}
+        </form>
+      </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: '20px', alignItems: 'start' }}>
         <div className="card" style={{ overflow: 'hidden', padding: '6px' }}>

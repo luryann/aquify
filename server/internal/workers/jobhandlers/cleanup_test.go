@@ -11,6 +11,7 @@ import (
 	"github.com/dareaquatics/aquify/server/internal/app/compliance"
 	"github.com/dareaquatics/aquify/server/internal/app/exports"
 	"github.com/dareaquatics/aquify/server/internal/app/imports"
+	"github.com/dareaquatics/aquify/server/internal/app/members"
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
 	"github.com/dareaquatics/aquify/server/internal/app/reports"
 	"github.com/dareaquatics/aquify/server/internal/storage"
@@ -58,32 +59,13 @@ func TestPurgeExpiredFilesHandler_ExpiresImportsExportsAndReports(t *testing.T) 
 	}
 
 	exportsService.ConfigureArtifactTTL(time.Millisecond)
-	exportRecord, _, err := exportsService.GenerateExport(principal, "org-cleanup", "meet-cleanup", exports.GenerateExportInput{
-		ExportType:    exports.ExportTypeStandardSD3,
-		MeetName:      "Cleanup Meet",
-		MeetStartDate: "03152026",
-		MeetEndDate:   "03162026",
-		Course:        "SCY",
-		HostTeamCode:  "DARE",
-		HostTeamName:  "DARE Aquatics",
-		Entries: []exports.ExportEntry{
-			{
-				Swimmer: exports.ExportSwimmer{
-					LastName:  "Smith",
-					FirstName: "Jamie",
-					USSNumber: "123456789012",
-					DOBRaw:    "02152010",
-					Gender:    "F",
-					TeamCode:  "DARE",
-				},
-				EventNumber: "1",
-				Distance:    100,
-				Stroke:      "free",
-				EventGender: "F",
-				AgeGroup:    "1517",
-				Course:      "SCY",
-				SeedTimeMs:  60000,
-			},
+	exportRecord, _, err := exportsService.GenerateExport(principal, "org-cleanup", "meet-cleanup", exports.ReportInput{
+		ReportType: exports.ReportTypeEvent,
+		Meet: exports.ReportMeet{
+			Name:      "Cleanup Meet",
+			StartDate: "2026-03-15",
+			EndDate:   "2026-03-16",
+			Course:    "SCY",
 		},
 	})
 	if err != nil {
@@ -215,22 +197,41 @@ func TestProcessDataDeletionHandler_CompletesRequest(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	complianceService := compliance.NewService()
-	req, err := complianceService.CreateDataDeletionRequest("org-delete", "hh-delete", "admin-user", "requested")
+	membersService := members.NewService()
+
+	principal := &appmiddleware.Principal{UserID: "admin-user", OrgID: "org-delete", Roles: []string{"admin"}}
+	household, err := membersService.CreateHousehold(principal, members.CreateHouseholdInput{
+		OrgID:         "org-delete",
+		HouseholdName: "The Delete Household",
+	})
+	if err != nil {
+		t.Fatalf("CreateHousehold: %v", err)
+	}
+
+	req, err := complianceService.CreateDataDeletionRequest("org-delete", household.ID, "admin-user", "requested")
 	if err != nil {
 		t.Fatalf("CreateDataDeletionRequest: %v", err)
 	}
 	task, err := workers.NewTask(workers.TypeProcessDataDeletion, ProcessDataDeletionPayload{
 		RequestID:   req.ID,
 		OrgID:       "org-delete",
-		HouseholdID: "hh-delete",
+		HouseholdID: household.ID,
 	})
 	if err != nil {
 		t.Fatalf("NewTask: %v", err)
 	}
 
-	handler := ProcessDataDeletionHandler(logger, complianceService)
+	handler := ProcessDataDeletionHandler(logger, complianceService, membersService)
 	if err := handler(context.Background(), task); err != nil {
 		t.Fatalf("handler: %v", err)
+	}
+
+	anonymized, err := membersService.GetHousehold(principal, "org-delete", household.ID)
+	if err != nil {
+		t.Fatalf("GetHousehold: %v", err)
+	}
+	if anonymized.HouseholdName != "Deleted Household" {
+		t.Fatalf("household not anonymized: %+v", anonymized)
 	}
 
 	after, err := complianceService.GetDataDeletionRequest("org-delete", req.ID)

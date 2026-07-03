@@ -6,12 +6,13 @@ import { Icon } from '@/components/ui/icons'
 import { Table, type Column } from '@/components/ui/Table'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
-import { useApiClient } from '@/lib/api'
+import { useApiClient, ApiError } from '@/lib/api'
 import {
   fetchMeets,
   fetchMeetEntries,
   fetchMeetEvents,
   fetchSwimmers,
+  scratchEntry,
   type EntryRecord,
   type MeetEventRecord,
   type MeetRecord,
@@ -21,7 +22,7 @@ import { formatMeetEntriesSaveError, saveMeetEntriesBatch } from '@/lib/meet-ent
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type EntryStatus = 'draft' | 'submitted' | 'approved' | 'rejected' | 'exported' | 'updated_from_results' | 'archived'
+type EntryStatus = 'draft' | 'submitted' | 'approved' | 'rejected' | 'exported' | 'updated_from_results' | 'archived' | 'scratched'
 
 type EntryRow = {
   id: string
@@ -47,6 +48,7 @@ const STATUS_CFG: Record<string, { label: string; color: string; bg: string }> =
   exported:             { label: 'Exported',  color: 'var(--info)',       bg: 'var(--info-bg)' },
   updated_from_results: { label: 'Updated',   color: 'var(--info)',       bg: 'var(--info-bg)' },
   archived:             { label: 'Archived',  color: 'var(--text-muted)', bg: 'var(--bg-elevated)' },
+  scratched:            { label: 'Scratched', color: 'var(--error)',      bg: 'var(--error-bg)' },
 }
 
 const STATUS_FILTER_OPTIONS = [
@@ -56,6 +58,7 @@ const STATUS_FILTER_OPTIONS = [
   { value: 'approved',  label: 'Approved' },
   { value: 'rejected',  label: 'Rejected' },
   { value: 'exported',  label: 'Exported' },
+  { value: 'scratched', label: 'Scratched' },
 ]
 
 const STROKE_LABELS: Record<string, string> = {
@@ -70,9 +73,9 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-function formatSeedTime(hundredths: number | undefined): string {
-  if (!hundredths || hundredths <= 0) return 'NT'
-  const totalHundredths = Math.round(hundredths)
+function formatSeedTime(ms: number | undefined): string {
+  if (!ms || ms <= 0) return 'NT'
+  const totalHundredths = Math.round(ms / 10)
   const h = Math.floor(totalHundredths / 360000)
   const m = Math.floor((totalHundredths % 360000) / 6000)
   const s = Math.floor((totalHundredths % 6000) / 100)
@@ -531,7 +534,7 @@ export default function EntriesPage() {
             meetName: meet.name,
             meetDate: meet.start_date ?? '',
             event: formatEvent(meetEvent),
-            seedTime: formatSeedTime(e.seed_time_cents),
+            seedTime: formatSeedTime(e.seed_time_ms),
             status: e.status as EntryStatus,
             override: !!e.override_reason,
             overrideNote: e.override_reason ?? null,
@@ -561,6 +564,15 @@ export default function EntriesPage() {
     if (!window.confirm('Reject this submitted entry?')) return
     setRows((prev) => prev.map((e) => e.id === entryId ? { ...e, status: 'rejected' } : e))
   }, [])
+
+  const handleScratch = useCallback((entryId: string, meetId: string) => {
+    if (!session?.user.orgId) return
+    if (!window.confirm('Scratch this entry? It stays on record but is removed from reports and exports.')) return
+    const reason = window.prompt('Reason for scratch (optional):') ?? undefined
+    void scratchEntry(api, session.user.orgId, meetId, entryId, reason)
+      .then(() => setRows((prev) => prev.map((e) => e.id === entryId ? { ...e, status: 'scratched' } : e)))
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to scratch entry.'))
+  }, [api, session?.user.orgId])
 
   // Stats
   const total     = rows.length
@@ -662,28 +674,40 @@ export default function EntriesPage() {
       key: 'id',
       label: '',
       render: (r) => {
-        if (r.status !== 'submitted') {
-          return (
+        // Entries can be scratched until they are exported/finalized.
+        const scratchable = r.status === 'draft' || r.status === 'submitted' || r.status === 'approved'
+        return (
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+            {r.status === 'submitted' && (
+              <>
+                <button className="btn btn-sm" style={{ background: 'var(--success-bg)', color: 'var(--success)', border: '1px solid var(--success-border)', display: 'flex', alignItems: 'center', gap: '4px' }} onClick={() => handleApprove(r.id)}>
+                  <Icon name="check-circle" size={11} /> Approve
+                </button>
+                <button className="btn btn-sm btn-secondary" style={{ color: 'var(--error)', display: 'flex', alignItems: 'center', gap: '4px' }} onClick={() => handleReject(r.id)}>
+                  <Icon name="x" size={11} /> Reject
+                </button>
+              </>
+            )}
+            {scratchable && (
+              <button
+                className="btn btn-sm btn-secondary"
+                style={{ color: 'var(--error)', display: 'flex', alignItems: 'center', gap: '4px' }}
+                onClick={() => handleScratch(r.id, r.meetId)}
+                title="Scratch this entry"
+              >
+                <Icon name="trash-2" size={11} /> Scratch
+              </button>
+            )}
             <Link href={`/meets/${r.meetId}`} style={{ fontSize: '12px', color: 'var(--text-muted)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '3px' }}
               onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--accent)')}
               onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}>
               Meet <Icon name="chevron-right" size={12} />
             </Link>
-          )
-        }
-        return (
-          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-            <button className="btn btn-sm" style={{ background: 'var(--success-bg)', color: 'var(--success)', border: '1px solid var(--success-border)', display: 'flex', alignItems: 'center', gap: '4px' }} onClick={() => handleApprove(r.id)}>
-              <Icon name="check-circle" size={11} /> Approve
-            </button>
-            <button className="btn btn-sm btn-secondary" style={{ color: 'var(--error)', display: 'flex', alignItems: 'center', gap: '4px' }} onClick={() => handleReject(r.id)}>
-              <Icon name="x" size={11} /> Reject
-            </button>
           </div>
         )
       },
     },
-  ], [handleApprove, handleReject])
+  ], [handleApprove, handleReject, handleScratch])
 
   if (error) {
     return (

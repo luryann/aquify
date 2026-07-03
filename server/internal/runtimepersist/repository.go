@@ -102,7 +102,13 @@ func (r *Repository) SaveAll(snapshots map[string]json.RawMessage) error {
 }
 
 func (r *Repository) runSQL(sql string) (string, error) {
-	cmd := exec.Command("psql", "-d", r.DatabaseURL, "-v", "ON_ERROR_STOP=1", "-At", "-F", "\t", "-c", sql)
+	// Feed SQL through stdin (`psql -f -`) rather than the `-c` argument. Passing
+	// large snapshots via `-c` overflows the OS command-line length limit — on
+	// Windows this is only ~32KB and fails with "The filename or extension is too
+	// long" once the serialized snapshot grows, which previously turned committed
+	// mutations into 500s.
+	cmd := exec.Command("psql", "-d", r.DatabaseURL, "-v", "ON_ERROR_STOP=1", "-At", "-F", "\t", "-f", "-")
+	cmd.Stdin = strings.NewReader(sql)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("runtime snapshot psql failed: %w: %s", err, strings.TrimSpace(string(out)))

@@ -126,7 +126,7 @@ export const NAV_ITEMS: NavItem[] = [
     section: 'Files',
   },
   {
-    id: 'exports', label: 'Exports', path: '/exports', icon: 'download-cloud',
+    id: 'exports', label: 'Meet Reports', path: '/exports', icon: 'download-cloud',
     allowedRoles: ['owner', 'admin', 'coach', 'read-only'],
     section: 'Files',
   },

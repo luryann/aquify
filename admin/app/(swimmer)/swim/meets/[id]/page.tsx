@@ -102,9 +102,9 @@ function formatMeetFileSize(sizeBytes?: number): string {
 }
 
 function formatMeetFileType(exportType: string): string {
-  if (exportType === 'standard_sd3') return 'Standard SD3 export'
-  if (exportType === 'extended_sd3') return 'Extended SD3 export'
-  if (exportType === 'sdif_roster') return 'Roster export'
+  if (exportType === 'eligibility_report') return 'Eligibility report'
+  if (exportType === 'entry_report') return 'Entry report'
+  if (exportType === 'event_report') return 'Event report'
   return exportType.replace(/_/g, ' ')
 }
 

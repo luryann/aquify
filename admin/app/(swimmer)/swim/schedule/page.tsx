@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
+import { parseBackendDate } from '@/lib/dates'
 import { useApiClient } from '@/lib/api'
 import { shouldShowCollectionEmptyState } from '@/lib/collection-load-state'
 import { reportUIError } from '@/lib/frontend-telemetry'
@@ -62,7 +63,7 @@ function buildScheduleFromMeets(meets: MeetRecord[]): ScheduleEvent[] {
 
   for (const m of meets) {
     if (!m.start_date) continue
-    const meetDate = new Date(m.start_date)
+    const meetDate = parseBackendDate(m.start_date)
     if (meetDate < now && m.status === 'completed') continue
 
     // Meet event (start date)
@@ -75,7 +76,7 @@ function buildScheduleFromMeets(meets: MeetRecord[]): ScheduleEvent[] {
       location: m.location ?? undefined,
       course: m.course?.toUpperCase() ?? undefined,
       detail: m.end_date && m.end_date !== m.start_date
-        ? `Meet runs ${new Date(m.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${new Date(m.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}.`
+        ? `Meet runs ${parseBackendDate(m.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${parseBackendDate(m.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}.`
         : undefined,
       meetPath: `/swim/meets/${m.id}`,
     })

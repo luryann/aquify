@@ -69,6 +69,7 @@ func (h *MeetsHandlers) RegisterRoutes(router chi.Router) {
 	router.Post("/meets/{meetID}/entries", h.proposeEntry)
 	router.Post("/meets/{meetID}/entries/{entryID}/override", h.overrideEntry)
 	router.Post("/meets/{meetID}/entries/{entryID}/approve", h.approveEntry)
+	router.Delete("/meets/{meetID}/entries/{entryID}", h.scratchEntry)
 }
 
 // ─── Meets ────────────────────────────────────────────────────────────────────
@@ -883,11 +884,13 @@ func (h *MeetsHandlers) listEntries(w http.ResponseWriter, r *http.Request) {
 }
 
 type proposeEntryRequest struct {
-	SwimmerID    string `json:"swimmer_id" validate:"required"`
-	MeetEventID  string `json:"meet_event_id" validate:"required"`
-	CommitmentID string `json:"commitment_id"`
-	SeedTimeMs   *int   `json:"seed_time_ms"`
-	IsRelay      bool   `json:"is_relay"`
+	SwimmerID           string `json:"swimmer_id" validate:"required"`
+	MeetEventID         string `json:"meet_event_id" validate:"required"`
+	CommitmentID        string `json:"commitment_id"`
+	SeedTimeMs          *int   `json:"seed_time_ms"`
+	IsRelay             bool   `json:"is_relay"`
+	OverrideEligibility bool   `json:"override_eligibility"`
+	OverrideReason      string `json:"override_reason"`
 }
 
 func (h *MeetsHandlers) proposeEntry(w http.ResponseWriter, r *http.Request) {
@@ -907,11 +910,13 @@ func (h *MeetsHandlers) proposeEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	entry, auditEvent, err := h.service.ProposeEntry(principal, orgID, meetID, meets.ProposeEntryInput{
-		SwimmerID:    req.SwimmerID,
-		MeetEventID:  req.MeetEventID,
-		CommitmentID: req.CommitmentID,
-		SeedTimeMs:   req.SeedTimeMs,
-		IsRelay:      req.IsRelay,
+		SwimmerID:           req.SwimmerID,
+		MeetEventID:         req.MeetEventID,
+		CommitmentID:        req.CommitmentID,
+		SeedTimeMs:          req.SeedTimeMs,
+		IsRelay:             req.IsRelay,
+		OverrideEligibility: req.OverrideEligibility,
+		OverrideReason:      req.OverrideReason,
 	})
 	if err != nil {
 		switch {
@@ -925,6 +930,8 @@ func (h *MeetsHandlers) proposeEntry(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to propose entries.", nil)
 		case errors.Is(err, meets.ErrDuplicateEntry):
 			httpx.WriteError(w, r, http.StatusConflict, "duplicate_entry", err.Error(), nil)
+		case errors.Is(err, meets.ErrIneligibleEntry):
+			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "ineligible_entry", err.Error(), nil)
 		case errors.Is(err, meets.ErrInvalidTransition):
 			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "invalid_state", err.Error(), nil)
 		default:
@@ -980,6 +987,8 @@ func (h *MeetsHandlers) overrideEntry(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to override entries.", nil)
 		case errors.Is(err, meets.ErrDuplicateEntry):
 			httpx.WriteError(w, r, http.StatusConflict, "duplicate_entry", err.Error(), nil)
+		case errors.Is(err, meets.ErrIneligibleEntry):
+			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "ineligible_entry", err.Error(), nil)
 		case errors.Is(err, meets.ErrInvalidTransition):
 			httpx.WriteError(w, r, http.StatusConflict, "invalid_meet_state", err.Error(), nil)
 		case errors.Is(err, meets.ErrEntryNotEditable):
@@ -1056,6 +1065,64 @@ func (h *MeetsHandlers) approveEntry(w http.ResponseWriter, r *http.Request) {
 
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":      "approved",
+		"entry":       entry,
+		"audit_event": auditEvent,
+	})
+}
+
+// scratchEntry soft-scratches an entry (DELETE). The record is retained but
+// marked "scratched" so it is excluded from reports/exports. An optional
+// ?reason= query param is recorded on the audit event.
+func (h *MeetsHandlers) scratchEntry(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := meetScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+
+	meetID := strings.TrimSpace(chi.URLParam(r, "meetID"))
+	entryID := strings.TrimSpace(chi.URLParam(r, "entryID"))
+	if !validateID(meetID) || !validateID(entryID) {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_id", "Meet ID and entry ID are required.", nil)
+		return
+	}
+	reason := strings.TrimSpace(r.URL.Query().Get("reason"))
+
+	entry, auditEvent, err := h.service.ScratchEntry(principal, orgID, meetID, entryID, reason)
+	if err != nil {
+		switch {
+		case errors.Is(err, meets.ErrMeetNotFound):
+			httpx.WriteError(w, r, http.StatusNotFound, "meet_not_found", "Meet was not found.", nil)
+		case errors.Is(err, meets.ErrEntryNotFound):
+			httpx.WriteError(w, r, http.StatusNotFound, "entry_not_found", "Entry was not found.", nil)
+		case errors.Is(err, meets.ErrForbidden):
+			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to scratch entries.", nil)
+		case errors.Is(err, meets.ErrEntryAlreadyScratched):
+			httpx.WriteError(w, r, http.StatusConflict, "already_scratched", err.Error(), nil)
+		case errors.Is(err, meets.ErrInvalidTransition):
+			httpx.WriteError(w, r, http.StatusConflict, "invalid_meet_state", err.Error(), nil)
+		case errors.Is(err, meets.ErrEntryNotEditable):
+			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "entry_not_editable", err.Error(), nil)
+		default:
+			httpx.WriteError(w, r, http.StatusBadRequest, "scratch_failed", err.Error(), nil)
+		}
+		return
+	}
+
+	if h.auditService != nil {
+		_, _ = h.auditService.Append(audit.AppendRequest{
+			OrgID:        orgID,
+			ActorUserID:  principal.UserID,
+			ActorRoles:   principal.Roles,
+			Action:       audit.ActionMeetEntryScratch,
+			ResourceType: "entry",
+			ResourceID:   entryID,
+			After:        entry,
+			Metadata:     map[string]string{"meet_id": meetID, "reason": reason},
+		})
+	}
+
+	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"status":      "scratched",
 		"entry":       entry,
 		"audit_event": auditEvent,
 	})

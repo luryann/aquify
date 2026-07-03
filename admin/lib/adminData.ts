@@ -46,6 +46,7 @@ export type SwimmerRecord = {
   date_of_birth: string
   gender: string
   swimmer_external_id?: string
+  usa_swimming_id?: string
   registration_status: string
   medical_flags?: string[]
   medical_flags_redacted?: boolean
@@ -154,8 +155,7 @@ export type EntryRecord = {
   swimmer_id: string
   status: string
   meet_event_id?: string
-  seed_time_cents?: number
-  entry_time_cents?: number
+  seed_time_ms?: number
   override_reason?: string
 }
 
@@ -1657,6 +1657,21 @@ export async function approveEntry(
   return res.entry
 }
 
+export async function scratchEntry(
+  api: ApiClient,
+  orgId: string,
+  meetId: string,
+  entryId: string,
+  reason?: string,
+): Promise<EntryRecord> {
+  const qs = reason && reason.trim() ? `?reason=${encodeURIComponent(reason.trim())}` : ''
+  const res = await api.delete<{ entry: EntryRecord }>(
+    `/api/v1/meets/${meetId}/entries/${entryId}${qs}`,
+    withOrgHeaders(orgId),
+  )
+  return res.entry
+}
+
 export async function lockMeetCommitments(
   api: ApiClient,
   orgId: string,
@@ -1737,6 +1752,7 @@ export async function createSwimmer(
     date_of_birth: string
     gender: string
     swimmer_external_id?: string
+    usa_swimming_id?: string
     registration_status?: string
     notes?: string
   },
@@ -1847,7 +1863,14 @@ export async function updateSwimmer(
   orgId: string,
   swimmerId: string,
   input: {
+    first_name?: string
+    last_name?: string
     preferred_name?: string
+    date_of_birth?: string
+    gender?: string
+    swimmer_external_id?: string
+    usa_swimming_id?: string
+    registration_status?: string
     notes?: string
   },
 ): Promise<SwimmerRecord> {
@@ -2011,13 +2034,19 @@ export async function finalizeImport(
   return res.import
 }
 
-export async function generateExport(
+export type ReportType = 'eligibility_report' | 'entry_report' | 'event_report'
+export type EntryReportGrouping = 'session' | 'group' | 'alphabetical'
+
+// generateReport creates a meet PDF report. All report data is assembled
+// server-side from the meet's approved entries; the client sends only the
+// report type and (for entry reports) the grouping.
+export async function generateReport(
   api: ApiClient,
   orgId: string,
   meetId: string,
   input: {
-    export_type: string
-    filename?: string
+    report_type: ReportType
+    grouping?: EntryReportGrouping
   },
 ): Promise<ExportRecord> {
   const res = await api.post<{ export: ExportRecord }>(
@@ -2026,6 +2055,39 @@ export async function generateExport(
     withOrgHeaders(orgId),
   )
   return res.export
+}
+
+// ── Org Settings (export identity) ─────────────────────────────────────────────
+
+export type OrgSettingsRecord = {
+  org_id: string
+  team_code: string
+  team_name: string
+  lsc_code: string
+  updated_at?: string
+  updated_by?: string
+}
+
+export async function fetchOrgSettings(api: ApiClient, orgId: string): Promise<OrgSettingsRecord> {
+  const res = await api.get<{ org_settings: OrgSettingsRecord }>(
+    '/api/v1/org-settings',
+    undefined,
+    withOrgHeaders(orgId),
+  )
+  return res.org_settings
+}
+
+export async function updateOrgSettings(
+  api: ApiClient,
+  orgId: string,
+  input: { team_code?: string; team_name?: string; lsc_code?: string },
+): Promise<OrgSettingsRecord> {
+  const res = await api.put<{ org_settings: OrgSettingsRecord }>(
+    '/api/v1/org-settings',
+    input,
+    withOrgHeaders(orgId),
+  )
+  return res.org_settings
 }
 
 // ── User Management (Keycloak) ─────────────────────────────────────────────────

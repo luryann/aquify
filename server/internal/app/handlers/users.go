@@ -849,6 +849,16 @@ func (h *UserHandlers) approveUser(w http.ResponseWriter, r *http.Request) {
 		requestedRole = "parent"
 	}
 
+	// Approval must not let an approver grant a role above their own tier —
+	// the same guard applied to direct create/invite/assign-role paths.
+	// Self-registration can request any role, so this is the only gate that
+	// prevents e.g. an admin approver from indirectly granting owner.
+	targetTier := roleTier[requestedRole]
+	if actorMaxTier(principal.Roles) < targetTier {
+		httpx.WriteError(w, r, http.StatusForbidden, "insufficient_role_tier", "You cannot approve a user for a role above your own.", nil)
+		return
+	}
+
 	// Assign the requested role if the user has no realm roles yet.
 	existingRoles, _ := h.kc.GetUserRealmRoles(r.Context(), userID)
 	if len(existingRoles) == 0 {

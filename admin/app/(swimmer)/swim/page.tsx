@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
+import { parseBackendDate } from '@/lib/dates'
 import { useApiClient } from '@/lib/api'
 import { shouldShowCollectionEmptyState } from '@/lib/collection-load-state'
 import { reportUIError } from '@/lib/frontend-telemetry'
@@ -48,7 +49,7 @@ function eventName(distance: number, stroke: string): string {
 
 function fmtDate(dateStr?: string): string {
   if (!dateStr) return '—'
-  const d = new Date(dateStr)
+  const d = parseBackendDate(dateStr)
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 

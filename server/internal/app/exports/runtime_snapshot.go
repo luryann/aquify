@@ -8,7 +8,7 @@ type runtimeSnapshot struct {
 
 type fileExportSnapshot struct {
 	FileExport   FileExport           `json:"file_export"`
-	PendingInput *GenerateExportInput `json:"pending_input,omitempty"`
+	PendingInput *ReportInput `json:"pending_input,omitempty"`
 }
 
 func (s *Service) ExportRuntimeSnapshot() ([]byte, error) {
@@ -24,7 +24,7 @@ func (s *Service) ExportRuntimeSnapshot() ([]byte, error) {
 		}
 		cp := *export
 		cp.pendingInput = nil
-		var pending *GenerateExportInput
+		var pending *ReportInput
 		if export.pendingInput != nil {
 			input := *export.pendingInput
 			pending = &input

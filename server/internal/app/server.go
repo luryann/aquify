@@ -26,6 +26,7 @@ import (
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
 	"github.com/dareaquatics/aquify/server/internal/app/performance"
 	"github.com/dareaquatics/aquify/server/internal/app/reports"
+	"github.com/dareaquatics/aquify/server/internal/app/orgsettings"
 	"github.com/dareaquatics/aquify/server/internal/app/seasons"
 	"github.com/dareaquatics/aquify/server/internal/app/training"
 	"github.com/dareaquatics/aquify/server/internal/db"
@@ -211,6 +212,9 @@ func ValidateProviderConfig(cfg Config) error {
 	if _, err := stripelib.NewSDKClient(cfg.Stripe.SecretKey); err != nil {
 		errs = append(errs, fmt.Sprintf("stripe: %v", err))
 	}
+	if strings.TrimSpace(cfg.Stripe.SecretKey) != "" && strings.TrimSpace(cfg.Stripe.WebhookSecret) == "" {
+		errs = append(errs, "stripe: STRIPE_WEBHOOK_SECRET must be set in non-development environments when Stripe is enabled, otherwise webhook signature verification cannot be enforced")
+	}
 	if _, err := postmark.NewHTTPClient(postmark.Config{
 		ServerToken: cfg.Postmark.ServerToken,
 		FromName:    cfg.Postmark.FromName,
@@ -224,6 +228,12 @@ func ValidateProviderConfig(cfg Config) error {
 		(cfg.Postmark.WebhookBasicUser != "" && cfg.Postmark.WebhookBasicPass != "")
 	if !pmWebhookAuthConfigured {
 		errs = append(errs, "postmark webhook: auth must be configured via POSTMARK_WEBHOOK_AUTH_HEADER_NAME+VALUE or POSTMARK_WEBHOOK_BASIC_USER+PASS in non-development environments")
+	}
+	// OIDC issuer validation must be mandatory outside dev/test — without it
+	// a compromised or misconfigured discovery endpoint could allow a
+	// different Keycloak realm/provider to mint accepted ID tokens.
+	if cfg.Auth.OIDC.ClientID != "" && strings.TrimSpace(cfg.Auth.OIDC.ExpectedIssuer) == "" {
+		errs = append(errs, "oidc: OIDC_EXPECTED_ISSUER must be set in non-development environments so ID token issuer is validated")
 	}
 	if len(errs) == 0 {
 		return nil
@@ -367,6 +377,7 @@ func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.M
 	// Open a pgxpool when DatabaseURL is configured. The pool is used to back
 	// all service repositories; a nil pool falls back to in-memory only.
 	dbPool := openValidatedDBPool(context.Background(), cfg, logger)
+	auditService.SetPool(dbPool)
 
 	if authService == nil {
 		authService = authn.NewService(authn.Config{
@@ -486,7 +497,13 @@ func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.M
 			exportsService = exports.NewServiceWithStorage(objectStore)
 		}
 	}
-	exportsHandlers := handlers.NewExportsHandlersWithMeetAccess(exportsService, meetsService)
+	var orgSettingsService *orgsettings.Service
+	if dbPool != nil {
+		orgSettingsService = orgsettings.NewServiceWithPool(dbPool)
+	} else {
+		orgSettingsService = orgsettings.NewService()
+	}
+	exportsHandlers := handlers.NewExportsHandlersWithMeetAccess(exportsService, meetsService, membershipService, orgSettingsService)
 	if performanceService == nil {
 		if dbPool != nil {
 			performanceService = performance.NewServiceWithPool(dbPool)
@@ -536,6 +553,7 @@ func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.M
 		cfg.Stripe.ReconciliationAlertThresholdCents,
 		logger,
 	)
+	stripeHandlers.SetAllowedReturnOrigins(cfg.AllowedOrigins)
 	// Apply a tighter per-IP rate limiter to cost-driving Stripe write routes.
 	stripeHandlers.SetWriteLimiter(appmiddleware.NewRateLimiter(
 		cfg.Security.RateLimit.StripeRequests,
@@ -614,6 +632,7 @@ func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.M
 		seasonsService = seasons.NewService()
 	}
 	seasonsHandlers := handlers.NewSeasonsHandlers(seasonsService, auditService)
+	orgSettingsHandlers := handlers.NewOrgSettingsHandlers(orgSettingsService, auditService)
 
 	// Keycloak client — prefer injected, then real from config, then stub fallback.
 	if kcClient == nil {
@@ -643,6 +662,18 @@ func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.M
 
 	// Wire household lookup: after OIDC login, attach the session's household_id
 	// from the keycloak_user_id stored on the household record.
+	// Wire swimmer gender/DOB lookup so the meets domain can gate entry creation
+	// on event eligibility (gender + age) without importing the members package.
+	if meetsService != nil && membershipService != nil {
+		meetsService.SetSwimmerEligibilityLookup(func(orgID, swimmerID string) (meets.SwimmerEligibilityView, bool) {
+			info, ok := membershipService.SwimmerEligibility(orgID, swimmerID)
+			if !ok {
+				return meets.SwimmerEligibilityView{}, false
+			}
+			return meets.SwimmerEligibilityView{Gender: info.Gender, DateOfBirth: info.DateOfBirth}, true
+		})
+	}
+
 	authService.SetHouseholdLookup(func(keycloakUserID string) string {
 		if membershipService == nil {
 			return ""
@@ -724,11 +755,11 @@ func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.M
 
 	// ── Workers ────────────────────────────────────────────────────────────────
 	if isNilWorkerBackend(workerBackend) {
-		workerServer, _ := BuildWorkers(cfg, logger, importsService, exportsService, reportsService, billingService, stripeClient, commsService, complianceService, objectStore)
+		workerServer, _ := BuildWorkers(cfg, logger, importsService, exportsService, reportsService, billingService, stripeClient, commsService, complianceService, membershipService, objectStore)
 		workerServer.Start()
 		workerBackend = workerServer
 	} else {
-		registerWorkerHandlers(workerBackend, logger, importsService, exportsService, reportsService, billingService, stripeClient, commsService, complianceService, objectStore, cfg.Stripe.ReconciliationAlertThresholdCents)
+		registerWorkerHandlers(workerBackend, logger, importsService, exportsService, reportsService, billingService, stripeClient, commsService, complianceService, membershipService, objectStore, cfg.Stripe.ReconciliationAlertThresholdCents)
 	}
 	readinessChecker := buildReadinessChecker(cfg, dbPool, objectStore, stripeClient, postmarkClient, workerBackend, kcClient)
 	exportsService.SetQueue(workerBackend)
@@ -818,6 +849,7 @@ func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.M
 			documentHandlers.RegisterRoutes(protected)
 			trainingHandlers.RegisterRoutes(protected)
 			seasonsHandlers.RegisterRoutes(protected)
+			orgSettingsHandlers.RegisterRoutes(protected)
 			reportsHandlers.RegisterRoutes(protected)
 			jobsHandlers.RegisterRoutes(protected)
 			settingsHandlers.RegisterRoutes(protected)
@@ -846,7 +878,7 @@ func allowedCORSHeaders(cfg Config) []string {
 // BuildWorkers creates and configures the worker server and scheduler without
 // starting either. Callers must invoke ws.Start() and sched.Start() and call
 // the corresponding Stop() methods on shutdown.
-func BuildWorkers(cfg Config, logger *slog.Logger, importsService *imports.Service, exportsService *exports.Service, reportsService *reports.Service, billingService *billing.Service, stripeClient stripelib.Client, commsService *comms.Service, complianceService *compliance.Service, objectStore storage.ObjectStorage) (*workers.Server, *workers.Scheduler) {
+func BuildWorkers(cfg Config, logger *slog.Logger, importsService *imports.Service, exportsService *exports.Service, reportsService *reports.Service, billingService *billing.Service, stripeClient stripelib.Client, commsService *comms.Service, complianceService *compliance.Service, membershipService *members.Service, objectStore storage.ObjectStorage) (*workers.Server, *workers.Scheduler) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -854,7 +886,7 @@ func BuildWorkers(cfg Config, logger *slog.Logger, importsService *imports.Servi
 		Concurrency: cfg.Worker.ConcurrencyPerQueue,
 		Logger:      logger,
 	})
-	registerWorkerHandlers(ws, logger, importsService, exportsService, reportsService, billingService, stripeClient, commsService, complianceService, objectStore, cfg.Stripe.ReconciliationAlertThresholdCents)
+	registerWorkerHandlers(ws, logger, importsService, exportsService, reportsService, billingService, stripeClient, commsService, complianceService, membershipService, objectStore, cfg.Stripe.ReconciliationAlertThresholdCents)
 
 	sched := workers.NewScheduler(ws, logger)
 	registerScheduledJobs(sched, cfg)
@@ -881,7 +913,7 @@ type workerHandlerRegistrar interface {
 	RegisterHandler(taskType string, h workers.Handler)
 }
 
-func registerWorkerHandlers(registrar workerHandlerRegistrar, logger *slog.Logger, importsService *imports.Service, exportsService *exports.Service, reportsService *reports.Service, billingService *billing.Service, stripeClient stripelib.Client, commsService *comms.Service, complianceService *compliance.Service, objectStore storage.ObjectStorage, reconciliationAlertThresholdCents int) {
+func registerWorkerHandlers(registrar workerHandlerRegistrar, logger *slog.Logger, importsService *imports.Service, exportsService *exports.Service, reportsService *reports.Service, billingService *billing.Service, stripeClient stripelib.Client, commsService *comms.Service, complianceService *compliance.Service, membershipService *members.Service, objectStore storage.ObjectStorage, reconciliationAlertThresholdCents int) {
 	if registrar == nil {
 		return
 	}
@@ -892,7 +924,7 @@ func registerWorkerHandlers(registrar workerHandlerRegistrar, logger *slog.Logge
 	registrar.RegisterHandler(workers.TypeNightlyIntegrity, jobhandlers.NightlyIntegrityHandler(logger, billingService))
 	registrar.RegisterHandler(workers.TypePurgeExpiredFiles, jobhandlers.PurgeExpiredFilesHandler(logger, importsService, exportsService, reportsService))
 	registrar.RegisterHandler(workers.TypeProcessDataExport, jobhandlers.ProcessDataExportHandler(logger, complianceService, objectStore))
-	registrar.RegisterHandler(workers.TypeProcessDataDeletion, jobhandlers.ProcessDataDeletionHandler(logger, complianceService))
+	registrar.RegisterHandler(workers.TypeProcessDataDeletion, jobhandlers.ProcessDataDeletionHandler(logger, complianceService, membershipService))
 }
 
 func registerScheduledJobs(s scheduledJobRegistrar, cfg Config) {

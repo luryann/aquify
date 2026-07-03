@@ -71,6 +71,7 @@ export const DEV_SESSIONS: Record<string, Session> = {
           role: user.role,
           roles: [user.role],
           orgId: user.orgId,
+          householdId: user.householdId,
           avatarInitials: user.avatarInitials,
           mfaAuthenticated: user.mfaAuthenticated,
         },

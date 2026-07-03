@@ -186,6 +186,9 @@ const (
 	// ErrCodeHY3AmbiguousPayload means the .hy3 archive contains multiple parseable
 	// files; one was selected by deterministic precedence but the conflict is flagged.
 	ErrCodeHY3AmbiguousPayload ErrorCode = "hy3_ambiguous_payload"
+	// ErrCodeArchiveTooLarge means a ZIP/HY3 archive exceeded the per-entry or
+	// cumulative decompressed-size cap (zip-bomb protection).
+	ErrCodeArchiveTooLarge ErrorCode = "archive_too_large"
 )
 
 // HY3 ingest result

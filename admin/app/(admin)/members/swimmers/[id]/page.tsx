@@ -253,7 +253,7 @@ export default function SwimmerDetailPage() {
               <StatusBadge status={swimmer.registration_status} />
             </div>
             <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-              <span>{swimmer.swimmer_external_id || 'No external ID'}</span>
+              <span>{swimmer.usa_swimming_id || swimmer.swimmer_external_id || 'No USA-S ID'}</span>
               <span>·</span>
               <span>Age {computeAge(swimmer.date_of_birth)}</span>
               <span>·</span>
@@ -310,7 +310,8 @@ export default function SwimmerDetailPage() {
             <h3 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '16px', fontFamily: 'var(--font-mono)' }}>Swimmer Info</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {[
-                { label: 'USS Number', value: swimmer.swimmer_external_id || '—' },
+                { label: 'USA Swimming ID', value: swimmer.usa_swimming_id || '—' },
+                { label: 'External ID', value: swimmer.swimmer_external_id || '—' },
                 { label: 'Date of Birth', value: formatDate(swimmer.date_of_birth) },
                 { label: 'Age', value: computeAge(swimmer.date_of_birth) },
                 { label: 'Gender', value: swimmer.gender },

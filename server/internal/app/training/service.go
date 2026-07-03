@@ -304,10 +304,18 @@ func (s *Service) Update(orgID, id string, updates PracticeUpdates, updatedBy st
 	return &cp, nil
 }
 
-// Delete permanently removes a practice record.
+// Delete permanently removes a practice record. The delete is always scoped
+// to orgID (both in the DB predicate and the in-memory cache lookup) so a
+// caller cannot delete another org's practice by ID alone.
 func (s *Service) Delete(orgID, id string) error {
 	if s.repo != nil {
-		return s.repo.Delete(context.Background(), id)
+		if err := s.repo.Delete(context.Background(), orgID, id); err != nil {
+			return err
+		}
+		s.mu.Lock()
+		delete(s.practices, id)
+		s.mu.Unlock()
+		return nil
 	}
 
 	s.mu.Lock()
@@ -316,11 +324,6 @@ func (s *Service) Delete(orgID, id string) error {
 	p, ok := s.practices[id]
 	if !ok || p.OrgID != orgID {
 		return ErrNotFound
-	}
-	if s.repo != nil {
-		if err := s.repo.Delete(context.Background(), id); err != nil {
-			return err
-		}
 	}
 	delete(s.practices, id)
 	return nil

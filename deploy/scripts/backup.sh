@@ -157,11 +157,13 @@ backup_postgres() {
   fi
 
   log "INFO" "Running pg_dump (custom format, compression level 9)..."
-  if pg_dump \
+  # Pass the DSN via PGDATABASE (libpq accepts a full connection URI there)
+  # instead of as a command-line argument, so the embedded password never
+  # appears in `ps` output visible to other local users.
+  if PGDATABASE="${DATABASE_URL}" pg_dump \
       --format=custom \
       --compress=9 \
       --no-password \
-      "${DATABASE_URL}" \
       > "${dump_file}" 2>> "${BACKUP_LOG}"; then
     local sz
     sz="$(du -sh "${dump_file}" | cut -f1)"
@@ -231,17 +233,18 @@ backup_keycloak() {
     return
   fi
 
-  # Obtain admin token from master realm
+  # Obtain admin token from master realm. Credentials are passed via stdin
+  # rather than -d arguments so they never appear in `ps` output.
   log "INFO" "Requesting Keycloak admin token..."
   local token_json
   token_json="$(curl -sf -X POST \
     "${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token" \
     -H "Content-Type: application/x-www-form-urlencoded" \
-    -d "client_id=admin-cli" \
-    -d "username=${KEYCLOAK_ADMIN_USER}" \
-    -d "password=${KEYCLOAK_ADMIN_PASS}" \
-    -d "grant_type=password" \
-    --max-time 30 2>> "${BACKUP_LOG}")" \
+    --data-binary @- \
+    --max-time 30 2>> "${BACKUP_LOG}" <<EOF
+client_id=admin-cli&username=${KEYCLOAK_ADMIN_USER}&password=${KEYCLOAK_ADMIN_PASS}&grant_type=password
+EOF
+)" \
     || { die "Keycloak token request failed (is Keycloak up?)"; return; }
 
   local access_token

@@ -11,6 +11,7 @@ import (
 	"github.com/dareaquatics/aquify/server/internal/app/compliance"
 	"github.com/dareaquatics/aquify/server/internal/app/exports"
 	"github.com/dareaquatics/aquify/server/internal/app/imports"
+	"github.com/dareaquatics/aquify/server/internal/app/members"
 	"github.com/dareaquatics/aquify/server/internal/app/reports"
 	"github.com/dareaquatics/aquify/server/internal/storage"
 	"github.com/dareaquatics/aquify/server/internal/workers"
@@ -165,9 +166,11 @@ func ProcessDataExportHandler(logger *slog.Logger, complianceService *compliance
 	}
 }
 
-// ProcessDataDeletionHandler returns a Handler that completes an approved
-// compliance right-to-erasure workflow.
-func ProcessDataDeletionHandler(logger *slog.Logger, complianceService *compliance.Service) workers.Handler {
+// ProcessDataDeletionHandler returns a Handler that performs an approved
+// compliance right-to-erasure workflow. Completion is gated on actually
+// anonymizing the household's PII (members domain) — a request must never be
+// marked complete without a real erasure step having succeeded first.
+func ProcessDataDeletionHandler(logger *slog.Logger, complianceService *compliance.Service, membersService *members.Service) workers.Handler {
 	return func(ctx context.Context, task *workers.Task) error {
 		var p ProcessDataDeletionPayload
 		if err := json.Unmarshal(task.Payload, &p); err != nil {
@@ -178,6 +181,9 @@ func ProcessDataDeletionHandler(logger *slog.Logger, complianceService *complian
 		}
 		if complianceService == nil {
 			return fmt.Errorf("process data deletion: compliance service is not configured")
+		}
+		if membersService == nil {
+			return fmt.Errorf("process data deletion: members service is not configured; cannot perform erasure")
 		}
 		if err := ctx.Err(); err != nil {
 			return err
@@ -199,7 +205,13 @@ func ProcessDataDeletionHandler(logger *slog.Logger, complianceService *complian
 		if _, err := complianceService.MarkDataDeletionProcessing(p.OrgID, p.RequestID); err != nil {
 			return fmt.Errorf("process data deletion: mark processing: %w", err)
 		}
-		if _, err := complianceService.CompleteDataDeletion(p.OrgID, p.RequestID, "Deletion workflow completed by background worker."); err != nil {
+
+		if err := membersService.AnonymizeHousehold(p.OrgID, p.HouseholdID); err != nil {
+			_, _ = complianceService.FailDataDeletion(p.OrgID, p.RequestID, fmt.Sprintf("Erasure failed: %v", err))
+			return fmt.Errorf("process data deletion: anonymize household %s: %w", p.HouseholdID, err)
+		}
+
+		if _, err := complianceService.CompleteDataDeletion(p.OrgID, p.RequestID, "Household PII anonymized (members domain); billing/communications/documents/audit records are retained per compliance-record requirements."); err != nil {
 			_, _ = complianceService.FailDataDeletion(p.OrgID, p.RequestID, "Deletion workflow failed in background worker.")
 			return fmt.Errorf("process data deletion: complete request %s: %w", p.RequestID, err)
 		}

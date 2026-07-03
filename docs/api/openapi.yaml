@@ -1892,6 +1892,42 @@ paths:
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
 
+  /meets/{meetID}/entries/{entryID}:
+    delete:
+      tags: [Entries]
+      summary: Scratch entry (coach/admin)
+      description: >
+        Soft-scratches an entry. The record is retained (status becomes
+        `scratched`) but excluded from reports and exports. Blocked once the
+        meet is finalized/closed or the entry has been exported.
+      operationId: scratchEntry
+      parameters:
+        - $ref: "#/components/parameters/MeetID"
+        - $ref: "#/components/parameters/EntryID"
+        - name: reason
+          in: query
+          required: false
+          schema: { type: string }
+          description: Optional reason recorded on the audit event.
+      responses:
+        "200":
+          description: Entry scratched
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  entry: { $ref: "#/components/schemas/Entry" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
   # ── Exports (meet-scoped) ─────────────────────────────────────────────────
 
   /meets/{meetID}/exports:
@@ -1917,18 +1953,22 @@ paths:
           $ref: "#/components/responses/Forbidden"
     post:
       tags: [Exports]
-      summary: Generate SD3/SDIF export for meet
-      operationId: generateExport
+      summary: Generate PDF report for meet
+      description: >
+        Generates a human-readable PDF report assembled server-side from the
+        meet's approved (non-scratched) entries. The client sends only the
+        report type and, for entry reports, the grouping.
+      operationId: generateReport
       parameters:
         - $ref: "#/components/parameters/MeetID"
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/GenerateExportRequest" }
+            schema: { $ref: "#/components/schemas/GenerateReportRequest" }
       responses:
         "201":
-          description: Export job created
+          description: Report job created
           content:
             application/json:
               schema:
@@ -2156,19 +2196,63 @@ paths:
         - $ref: "#/components/parameters/ExportID"
       responses:
         "200":
-          description: File content (SD3/SDIF)
+          description: PDF report content
           content:
-            application/octet-stream:
+            application/pdf:
               schema: { type: string, format: binary }
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          description: Export not yet ready
+          description: Report not yet ready
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  # ── Org settings (export identity) ────────────────────────────────────────────
+
+  /org-settings:
+    get:
+      tags: [Settings]
+      summary: Get org export identity (team code, name, LSC)
+      operationId: getOrgSettings
+      responses:
+        "200":
+          description: Org settings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  org_settings: { $ref: "#/components/schemas/OrgSettings" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    put:
+      tags: [Settings]
+      summary: Update org export identity (owner/admin)
+      operationId: updateOrgSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                team_code: { type: string }
+                team_name: { type: string }
+                lsc_code: { type: string }
+      responses:
+        "200":
+          description: Org settings updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  org_settings: { $ref: "#/components/schemas/OrgSettings" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /reports/membership-status:
     get:
@@ -4321,6 +4405,7 @@ components:
               type: string
               enum: [female, male, non_binary, undisclosed]
             swimmer_external_id: { type: string }
+            usa_swimming_id: { type: string, description: "USA-Swimming registration number" }
             registration_status:
               type: string
               enum: [pending, active, inactive, archived]
@@ -4349,6 +4434,7 @@ components:
           type: string
           enum: [female, male, non_binary, undisclosed]
         swimmer_external_id: { type: string }
+        usa_swimming_id: { type: string, description: "USA-Swimming registration number" }
         registration_status:
           type: string
           enum: [pending, active, inactive, archived]
@@ -4368,6 +4454,7 @@ components:
           type: string
           enum: [female, male, non_binary, undisclosed]
         swimmer_external_id: { type: string }
+        usa_swimming_id: { type: string, description: "USA-Swimming registration number" }
         registration_status:
           type: string
           enum: [pending, active, inactive, archived]
@@ -4745,6 +4832,17 @@ components:
             resolved_swimmer_id: { type: [string, "null"] }
             resolution_note: { type: string }
 
+    # Org settings ───────────────────────────────────────────────────────────────
+    OrgSettings:
+      type: object
+      properties:
+        org_id: { type: string }
+        team_code: { type: string }
+        team_name: { type: string }
+        lsc_code: { type: string }
+        updated_at: { type: string, format: date-time }
+        updated_by: { type: string }
+
     # Exports ──────────────────────────────────────────────────────────────────
     FileExport:
       allOf:
@@ -4754,7 +4852,8 @@ components:
             meet_id: { type: string }
             export_type:
               type: string
-              enum: [standard_sd3, extended_sd3, sdif_roster]
+              description: The report type this artifact was generated for.
+              enum: [eligibility_report, entry_report, event_report]
             status:
               type: string
               enum: [pending, generating, ready, failed, expired]
@@ -4788,49 +4887,21 @@ components:
         format: { type: string, enum: [csv] }
         delivery: { type: string, enum: [artifact] }
 
-    GenerateExportRequest:
+    GenerateReportRequest:
       type: object
-      required: [export_type, meet_name, entries]
+      required: [report_type]
+      description: >
+        Report data is assembled server-side from the meet's approved entries,
+        events, swimmers, and org export identity, so only the report type and
+        (for entry reports) the grouping are supplied.
       properties:
-        export_type:
+        report_type:
           type: string
-          enum: [standard_sd3, extended_sd3, sdif_roster]
-        meet_name: { type: string }
-        meet_start_date: { type: string, description: "MMDDYYYY format" }
-        meet_end_date: { type: string, description: "MMDDYYYY format" }
-        course:
+          enum: [eligibility_report, entry_report, event_report]
+        grouping:
           type: string
-          enum: [SCY, SCM, LCM]
-        host_team_code: { type: string }
-        host_team_name: { type: string }
-        entries:
-          type: array
-          minItems: 1
-          items:
-            type: object
-            required: [swimmer, event_number, distance, stroke]
-            properties:
-              swimmer:
-                type: object
-                required: [last_name]
-                properties:
-                  last_name: { type: string }
-                  first_name: { type: string }
-                  uss_number: { type: string }
-                  dob: { type: string, description: "MMDDYYYY format" }
-                  gender: { type: string, enum: [M, F] }
-                  team_code: { type: string }
-              event_number: { type: string }
-              distance: { type: integer, minimum: 1 }
-              stroke:
-                type: string
-                enum: [free, back, breast, fly, im, free_relay, medley_relay]
-              event_gender: { type: string, enum: [M, F, X] }
-              age_group: { type: string }
-              course: { type: string, enum: [SCY, SCM, LCM] }
-              seed_time_ms: { type: integer }
-              heat: { type: integer }
-              lane: { type: integer }
+          description: Grouping for entry reports; ignored for other report types.
+          enum: [session, group, alphabetical]
 
     # Performance ──────────────────────────────────────────────────────────────
     Result:

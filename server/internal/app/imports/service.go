@@ -380,6 +380,20 @@ func (s *Service) FinalizeImport(principal *appmiddleware.Principal, orgID, impo
 		return nil, nil, fmt.Errorf("%w: uploaded object not found in storage", ErrInvalidTransition)
 	}
 
+	// The presigned PUT URL is not size-constrained, so the caller-declared
+	// size cannot be trusted. Enforce the actual stored object size against
+	// the configured cap before ever reading it into memory.
+	actualSize, err := s.store.ObjectSize(context.Background(), imp.StorageKey)
+	if err != nil {
+		s.mu.Unlock()
+		return nil, nil, fmt.Errorf("storage: stat uploaded object: %w", err)
+	}
+	maxBytes := s.securityConfig.MaxBytes
+	if maxBytes > 0 && actualSize > maxBytes {
+		s.mu.Unlock()
+		return nil, nil, ErrFileTooLarge
+	}
+
 	now := time.Now().UTC()
 	if s.scanner == nil && !s.securityConfig.RequireMalwareScanHook {
 		imp.ScanStatus = "clean"

@@ -168,10 +168,10 @@ func (r *Repository) UpsertSwimmer(ctx context.Context, sw Swimmer) error {
 	}
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO swimmers (id, org_id, household_id, first_name, last_name, preferred_name,
-		                      date_of_birth, gender, swimmer_external_id, registration_status,
+		                      date_of_birth, gender, swimmer_external_id, usa_swimming_id, registration_status,
 		                      medical_flags, notes, created_at, updated_at)
-		VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7::date, $8, $9, $10,
-		        $11::jsonb, $12, $13, $14)
+		VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7::date, $8, $9, $10, $11,
+		        $12::jsonb, $13, $14, $15)
 		ON CONFLICT (id) DO UPDATE SET
 		  first_name          = EXCLUDED.first_name,
 		  last_name           = EXCLUDED.last_name,
@@ -179,6 +179,7 @@ func (r *Repository) UpsertSwimmer(ctx context.Context, sw Swimmer) error {
 		  date_of_birth       = EXCLUDED.date_of_birth,
 		  gender              = EXCLUDED.gender,
 		  swimmer_external_id = EXCLUDED.swimmer_external_id,
+		  usa_swimming_id     = EXCLUDED.usa_swimming_id,
 		  registration_status = EXCLUDED.registration_status,
 		  medical_flags       = EXCLUDED.medical_flags,
 		  notes               = EXCLUDED.notes,
@@ -186,7 +187,7 @@ func (r *Repository) UpsertSwimmer(ctx context.Context, sw Swimmer) error {
 		sw.ID, sw.OrgID, sw.HouseholdID,
 		sw.FirstName, sw.LastName, nullableString(sw.PreferredName),
 		sw.DateOfBirth, sw.Gender,
-		nullableString(sw.SwimmerExternalID), sw.RegistrationStatus,
+		nullableString(sw.SwimmerExternalID), nullableString(sw.USASwimmingID), sw.RegistrationStatus,
 		string(flagsJSON), nullableString(sw.Notes),
 		sw.CreatedAt, sw.UpdatedAt,
 	)
@@ -198,7 +199,7 @@ func (r *Repository) LoadSwimmers(ctx context.Context) ([]Swimmer, error) {
 		SELECT id::text, org_id::text, household_id::text,
 		       first_name, last_name, COALESCE(preferred_name, ''),
 		       date_of_birth::text, gender,
-		       COALESCE(swimmer_external_id, ''), registration_status,
+		       COALESCE(swimmer_external_id, ''), COALESCE(usa_swimming_id, ''), registration_status,
 		       medical_flags::text, COALESCE(notes, ''),
 		       created_at, updated_at
 		FROM swimmers WHERE deleted_at IS NULL`)
@@ -215,7 +216,7 @@ func (r *Repository) LoadSwimmers(ctx context.Context) ([]Swimmer, error) {
 			&sw.ID, &sw.OrgID, &sw.HouseholdID,
 			&sw.FirstName, &sw.LastName, &sw.PreferredName,
 			&sw.DateOfBirth, &sw.Gender,
-			&sw.SwimmerExternalID, &sw.RegistrationStatus,
+			&sw.SwimmerExternalID, &sw.USASwimmingID, &sw.RegistrationStatus,
 			&flagsJSON, &sw.Notes,
 			&sw.CreatedAt, &sw.UpdatedAt,
 		); err != nil {
@@ -449,7 +450,7 @@ func loadSwimmersInTx(ctx context.Context, tx pgx.Tx) ([]Swimmer, error) {
 		SELECT id::text, org_id::text, household_id::text,
 		       first_name, last_name, COALESCE(preferred_name, ''),
 		       date_of_birth::text, gender,
-		       COALESCE(swimmer_external_id, ''), registration_status,
+		       COALESCE(swimmer_external_id, ''), COALESCE(usa_swimming_id, ''), registration_status,
 		       medical_flags::text, COALESCE(notes, ''), created_at, updated_at
 		FROM swimmers WHERE deleted_at IS NULL`)
 	if err != nil {
@@ -464,7 +465,7 @@ func loadSwimmersInTx(ctx context.Context, tx pgx.Tx) ([]Swimmer, error) {
 			&sw.ID, &sw.OrgID, &sw.HouseholdID,
 			&sw.FirstName, &sw.LastName, &sw.PreferredName,
 			&sw.DateOfBirth, &sw.Gender,
-			&sw.SwimmerExternalID, &sw.RegistrationStatus,
+			&sw.SwimmerExternalID, &sw.USASwimmingID, &sw.RegistrationStatus,
 			&flagsJSON, &sw.Notes,
 			&sw.CreatedAt, &sw.UpdatedAt,
 		); err != nil {

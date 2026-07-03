@@ -26,8 +26,9 @@ func newStripeRouter(t *testing.T, billingSvc *billing.Service, stripeClient str
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	cfg := Config{
-		Auth:   AuthConfig{EnableDevStubTokens: true},
-		Stripe: StripeConfig{WebhookSecret: "whsec_test", Currency: "usd", ReconciliationAlertThresholdCents: 100},
+		Auth:           AuthConfig{EnableDevStubTokens: true},
+		Stripe:         StripeConfig{WebhookSecret: "whsec_test", Currency: "usd", ReconciliationAlertThresholdCents: 100},
+		AllowedOrigins: []string{"https://example.com"},
 	}
 	return NewRouterWithServices(cfg, logger, nil, nil, nil, nil, nil, nil, nil, billingSvc, stripeClient, nil, nil, nil, nil, nil, nil, nil)
 }

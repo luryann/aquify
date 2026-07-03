@@ -27,6 +27,10 @@ type ObjectStorage interface {
 	PutObject(ctx context.Context, key string, contentType string, data []byte) error
 	GetObject(ctx context.Context, key string) ([]byte, string, error)
 	Exists(ctx context.Context, key string) (bool, error)
+	// ObjectSize returns the actual stored byte size of key, independent of
+	// any caller-declared metadata, so callers can enforce size caps before
+	// reading the full object into memory.
+	ObjectSize(ctx context.Context, key string) (int64, error)
 	Delete(key string) error
 }
 
@@ -132,6 +136,16 @@ func (s *StubStorage) Exists(_ context.Context, key string) (bool, error) {
 	defer s.mu.RUnlock()
 	_, ok := s.objects[key]
 	return ok, nil
+}
+
+func (s *StubStorage) ObjectSize(_ context.Context, key string) (int64, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	obj, ok := s.objects[key]
+	if !ok {
+		return 0, ErrObjectNotFound
+	}
+	return int64(len(obj.data)), nil
 }
 
 func (s *StubStorage) Delete(key string) error {
@@ -250,6 +264,17 @@ func (s *S3Storage) Exists(ctx context.Context, key string) (bool, error) {
 		return false, nil
 	}
 	return false, fmt.Errorf("stat object %s: %w", key, err)
+}
+
+func (s *S3Storage) ObjectSize(ctx context.Context, key string) (int64, error) {
+	info, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
+	if err != nil {
+		if isMinIOObjectMissing(err) {
+			return 0, ErrObjectNotFound
+		}
+		return 0, fmt.Errorf("stat object %s: %w", key, err)
+	}
+	return info.Size, nil
 }
 
 func (s *S3Storage) Delete(key string) error {

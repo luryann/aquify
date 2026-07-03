@@ -113,6 +113,13 @@ die() {
   exit 1
 }
 
+# redact_dsn strips user:password@ credentials from a connection URI before
+# it is ever displayed, so operators confirming a restore don't leak the DB
+# password to their terminal scrollback/session recordings.
+redact_dsn() {
+  printf '%s' "$1" | sed -E 's#(://)[^/@]*@#\1[redacted]@#'
+}
+
 CURRENT_STEP="init"
 
 wait_for_health() {
@@ -266,7 +273,7 @@ echo ""
 echo "========================================================================"
 echo "  DARE RESTORE CONFIRMATION"
 echo "  Backup timestamp : ${BACKUP_TIMESTAMP}"
-echo "  Target database  : ${DATABASE_URL}"
+echo "  Target database  : $(redact_dsn "${DATABASE_URL}")"
 echo "  Target MinIO     : ${MINIO_ENDPOINT}/${MINIO_BUCKET}"
 echo "  Dry run          : ${DRY_RUN}"
 echo ""
@@ -311,12 +318,13 @@ if [[ "${DRY_RUN}" == "true" ]]; then
   log "INFO" "[dry-run] Would run pg_restore --clean --if-exists from ${PG_DUMP}"
 else
   log "INFO" "Restoring from ${PG_DUMP}..."
-  if pg_restore \
+  # Pass the DSN via PGDATABASE (libpq accepts a full connection URI there)
+  # instead of --dbname, so the embedded password never appears in `ps` output.
+  if PGDATABASE="${DATABASE_URL}" pg_restore \
       --clean \
       --if-exists \
       --no-password \
       --verbose \
-      --dbname "${DATABASE_URL}" \
       "${PG_DUMP}" 2>> "${RESTORE_LOG}"; then
     log "INFO" "PostgreSQL restore complete"
   else
@@ -341,9 +349,10 @@ if command -v goose &>/dev/null; then
     log "INFO" "[dry-run] Would run: goose up (database migrations)"
   else
     log "INFO" "Running goose up..."
-    DATABASE_URL="${DATABASE_URL}" goose \
+    # DSN is passed via GOOSE_DBSTRING (env-only) rather than as a positional
+    # argument, so it never appears in `ps` output.
+    GOOSE_DRIVER="postgres" GOOSE_DBSTRING="${DATABASE_URL}" goose \
       -dir "${DEPLOY_DIR}/db/migrations" \
-      postgres "${DATABASE_URL}" \
       up >> "${RESTORE_LOG}" 2>&1 \
       || die "goose up failed — database may be at wrong schema version"
     log "INFO" "Migrations applied"

@@ -303,7 +303,7 @@ func TestOrgWideBillingListEndpointsReturnInvoicesAndPayments(t *testing.T) {
 	t.Parallel()
 	svc := billing.NewService()
 	router := newBillingRouter(t, svc)
-	token := issueSessionToken(t, router, "org-demo", []string{"billing"}, false)
+	token := issueSessionToken(t, router, "org-demo", []string{"billing"}, true)
 
 	first := createInvoiceForHousehold(t, router, token, "org-demo", "hh-001", "INV-ORG-1")
 	addItem(t, router, token, "org-demo", first.Invoice.ID, 5000)
@@ -844,11 +844,14 @@ func TestCreateRefundRequiresMFA(t *testing.T) {
 	svc := billing.NewService()
 	router := newBillingRouter(t, svc)
 	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
+	// Recording the payment itself requires MFA step-up; use a separate
+	// MFA-authenticated setup token so this test isolates the refund gate.
+	mfaToken := issueSessionToken(t, router, "org-demo", []string{"admin"}, true)
 
 	inv := createInvoice(t, router, token, "org-demo", "INV-REFUND-MFA")
 	addItem(t, router, token, "org-demo", inv.Invoice.ID, 20000)
 	issueInvoiceReq(t, router, token, "org-demo", inv.Invoice.ID)
-	payEnv := recordPaymentReq(t, router, token, "org-demo", inv.Invoice.ID, 20000)
+	payEnv := recordPaymentReq(t, router, mfaToken, "org-demo", inv.Invoice.ID, 20000)
 
 	body := billingBody(map[string]any{
 		"payment_id":   payEnv.Payment.ID,
@@ -1394,7 +1397,7 @@ func TestListLedgerEventsAdminCanRead(t *testing.T) {
 	t.Parallel()
 	svc := billing.NewService()
 	router := newBillingRouter(t, svc)
-	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
+	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, true)
 
 	inv := createInvoice(t, router, token, "org-demo", "INV-LEDGER")
 	addItem(t, router, token, "org-demo", inv.Invoice.ID, 15000)
