@@ -215,6 +215,11 @@ export const NAV_ITEMS: NavItem[] = [
     section: 'System',
   },
   {
+    id: 'system-diagnostics', label: 'System Diagnostics', path: '/settings/system', icon: 'cpu',
+    allowedRoles: ['owner', 'admin'],
+    section: 'System',
+  },
+  {
     id: 'users', label: 'Users', path: '/users', icon: 'user-check',
     allowedRoles: ['owner', 'admin'],
     section: 'System',
@@ -227,6 +232,13 @@ export function hasRole(userRoles: Role | Role[], requiredRole: Role): boolean {
 
 export function canAccess(userRoles: Role | Role[], allowedRoles: Role[]): boolean {
   return normalizeRoles(userRoles).some((userRole) => allowedRoles.includes(userRole))
+}
+
+// Read-only staff can view every admin page they can navigate to, but must never see
+// create/edit/delete affordances — the backend already rejects their writes with a 403,
+// this just keeps the UI from offering actions that will fail.
+export function canWrite(userRoles: Role | Role[]): boolean {
+  return !normalizeRoles(userRoles).every((userRole) => userRole === 'read-only')
 }
 
 export function filterNavItems(userRoles: Role | Role[]): NavItem[] {

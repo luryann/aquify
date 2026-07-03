@@ -24,9 +24,9 @@ import (
 	"github.com/dareaquatics/aquify/server/internal/app/meets"
 	"github.com/dareaquatics/aquify/server/internal/app/members"
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	"github.com/dareaquatics/aquify/server/internal/app/orgsettings"
 	"github.com/dareaquatics/aquify/server/internal/app/performance"
 	"github.com/dareaquatics/aquify/server/internal/app/reports"
-	"github.com/dareaquatics/aquify/server/internal/app/orgsettings"
 	"github.com/dareaquatics/aquify/server/internal/app/seasons"
 	"github.com/dareaquatics/aquify/server/internal/app/training"
 	"github.com/dareaquatics/aquify/server/internal/db"
@@ -504,6 +504,13 @@ func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.M
 		orgSettingsService = orgsettings.NewService()
 	}
 	exportsHandlers := handlers.NewExportsHandlersWithMeetAccess(exportsService, meetsService, membershipService, orgSettingsService)
+	if documentsService == nil {
+		if dbPool != nil {
+			documentsService = documents.NewServiceWithPool(dbPool)
+		} else {
+			documentsService = documents.NewService()
+		}
+	}
 	if performanceService == nil {
 		if dbPool != nil {
 			performanceService = performance.NewServiceWithPool(dbPool)
@@ -609,13 +616,6 @@ func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.M
 		}
 	}
 	complianceHandlers := handlers.NewComplianceHandlers(complianceService, auditService)
-	if documentsService == nil {
-		if dbPool != nil {
-			documentsService = documents.NewServiceWithPool(dbPool)
-		} else {
-			documentsService = documents.NewService()
-		}
-	}
 	documentHandlers := handlers.NewDocumentHandlers(documentsService, auditService, objectStore)
 	if trainingService == nil {
 		if dbPool != nil {
@@ -624,7 +624,7 @@ func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.M
 			trainingService = training.NewService()
 		}
 	}
-	trainingHandlers := handlers.NewTrainingHandlers(trainingService, auditService)
+	trainingHandlers := handlers.NewTrainingHandlersWithMembers(trainingService, membershipService, groupsService, auditService)
 	var seasonsService *seasons.Service
 	if dbPool != nil {
 		seasonsService = seasons.NewServiceWithPool(dbPool)
@@ -683,6 +683,17 @@ func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.M
 			return ""
 		}
 		return h.ID
+	})
+
+	authService.SetSwimmerLookup(func(keycloakUserID string) string {
+		if membershipService == nil {
+			return ""
+		}
+		sw, found := membershipService.GetSwimmerByKeycloakUserID(keycloakUserID)
+		if !found {
+			return ""
+		}
+		return sw.ID
 	})
 
 	reportsService := reports.NewService(membershipService, groupsService, meetsService, billingService)
@@ -751,7 +762,13 @@ func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.M
 		complianceService,
 		reportsService,
 	)
-	loadRuntimeSnapshots(logger, runtimeRepo, runtimeParticipants)
+	// Skip snapshot hydration when a DB pool backs these services: each service
+	// already loaded canonical, current state from Postgres above, and restoring
+	// a legacy snapshot here would silently overwrite it with stale data (the
+	// snapshot bridge exists only for pre-DB in-memory mode).
+	if dbPool == nil {
+		loadRuntimeSnapshots(logger, runtimeRepo, runtimeParticipants)
+	}
 
 	// ── Workers ────────────────────────────────────────────────────────────────
 	if isNilWorkerBackend(workerBackend) {

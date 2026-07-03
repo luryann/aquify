@@ -5,6 +5,7 @@ import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
 import { reportUIError } from '@/lib/frontend-telemetry'
+import { UnlinkedSwimmerNotice } from '@/components/swimmer/UnlinkedSwimmerNotice'
 import {
   fetchSwimmerCutQualification,
   fetchSwimmers,
@@ -204,6 +205,7 @@ export default function PerformancePage() {
   const api = useApiClient(session?.token)
   const orgId = session?.user.orgId ?? ''
   const householdId = session?.user.householdId ?? ''
+  const swimmerId = session?.user.swimmerId ?? ''
 
   const [rawRecords, setRawRecords] = useState<BestTimeRecord[]>([])
   const [cutCards, setCutCards] = useState<SwimmerCutQualificationCard[]>([])
@@ -221,6 +223,7 @@ export default function PerformancePage() {
   const [goalError, setGoalError] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<'chart' | 'table' | 'monthly'>('chart')
   const [retryKey, setRetryKey] = useState(0)
+  const [noLinkedSwimmer, setNoLinkedSwimmer] = useState(false)
 
   useEffect(() => {
     if (!orgId || !householdId) {
@@ -229,6 +232,13 @@ export default function PerformancePage() {
       setCutLoading(false)
       return
     }
+    if (!swimmerId) {
+      setNoLinkedSwimmer(true)
+      setLoading(false)
+      setCutLoading(false)
+      return
+    }
+    setNoLinkedSwimmer(false)
 
     let cancelled = false
 
@@ -244,9 +254,9 @@ export default function PerformancePage() {
         const swimmers = await fetchSwimmers(api, orgId)
         if (cancelled) return
 
-        const mySwimmer = swimmers.find((swimmer) => swimmer.household_id === householdId) ?? null
+        const mySwimmer = swimmers.find((swimmer) => swimmer.id === swimmerId) ?? null
         if (!mySwimmer) {
-          setLoadError('Swimmer performance is unavailable because your household swimmer could not be loaded.')
+          setLoadError('Swimmer performance is unavailable because your linked swimmer record could not be loaded.')
           return
         }
 
@@ -311,7 +321,7 @@ export default function PerformancePage() {
     return () => {
       cancelled = true
     }
-  }, [api, orgId, householdId, retryKey])
+  }, [api, orgId, householdId, swimmerId, retryKey])
 
   const pivotedRows = pivotBestTimes(rawRecords)
   const cutsView = buildSwimmerCutsViewModel({
@@ -348,6 +358,25 @@ export default function PerformancePage() {
     if (!monthMap[d.date]) monthMap[d.date] = []
     monthMap[d.date].push(d.time)
   })
+
+  if (!loading && noLinkedSwimmer) {
+    return (
+      <div>
+        <style>{`
+          @keyframes slideUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+        `}</style>
+        <div style={{ marginBottom: '32px', animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both' }}>
+          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(26px, 4vw, 34px)', color: C.text, letterSpacing: '-0.02em', lineHeight: 1.1, marginBottom: '6px' }}>
+            Performance
+          </h1>
+          <p style={{ fontSize: '14px', color: C.subtle }}>
+            Best times, cut qualifications, and progression history.
+          </p>
+        </div>
+        <UnlinkedSwimmerNotice />
+      </div>
+    )
+  }
 
   if (!loading && loadError) {
     return (

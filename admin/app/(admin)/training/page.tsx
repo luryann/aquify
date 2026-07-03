@@ -3,7 +3,11 @@
 import { useState, useMemo, useCallback } from 'react'
 import { useSession } from '@/lib/session'
 import { ApiError, useApiClient } from '@/lib/api'
-import { fetchGroups, fetchPractices, createPractice, deletePractice, type GroupRecord, type PracticeRecord } from '@/lib/adminData'
+import {
+  fetchGroups, fetchPractices, createPractice, deletePractice,
+  fetchPracticeAttendance, setPracticeAttendance,
+  type GroupRecord, type PracticeRecord, type AttendanceRosterEntry, type AttendanceStatus,
+} from '@/lib/adminData'
 import { useEffect } from 'react'
 import { Icon } from '@/components/ui/icons'
 
@@ -65,21 +69,23 @@ function StrokeBar({ value, total, color, label }: { value: number; total: numbe
   )
 }
 
-function WorkoutRow({ workout, groupName, onDelete }: { workout: Workout; groupName: string; onDelete: () => void }) {
+function WorkoutRow({ workout, groupName, onDelete, onTakeAttendance }: { workout: Workout; groupName: string; onDelete: () => void; onTakeAttendance: () => void }) {
   const typeColor = WORKOUT_TYPE_COLORS[workout.type]
   const totalYards = Object.values(workout.strokes).reduce((a, b) => a + b, 0)
 
   return (
-    <div style={{
-      display: 'grid',
-      gridTemplateColumns: '100px 120px 1fr 90px 80px 36px',
-      alignItems: 'center',
-      gap: '12px',
-      padding: '0 16px',
-      height: '48px',
-      borderBottom: '1px solid var(--border)',
-      transition: 'background 0.1s',
-    }}
+    <div
+      className="training-row"
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '100px 120px 1fr 90px 80px 68px',
+        alignItems: 'center',
+        gap: '12px',
+        padding: '0 16px',
+        height: '48px',
+        borderBottom: '1px solid var(--border)',
+        transition: 'background 0.1s',
+      }}
       onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.02)' }}
       onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
     >
@@ -103,9 +109,20 @@ function WorkoutRow({ workout, groupName, onDelete }: { workout: Workout; groupN
       <span style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', color: workout.yardageTarget > 0 ? 'var(--text)' : 'var(--text-muted)', textAlign: 'right' }}>
         {totalYards > 0 ? `${totalYards.toLocaleString()} yds` : '—'}
       </span>
-      <span style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', color: 'var(--text-subtle)', textAlign: 'center' }}>
-        {workout.attendance != null ? `${workout.attendance} att` : '—'}
-      </span>
+      <button
+        onClick={onTakeAttendance}
+        title="Take attendance"
+        style={{
+          fontSize: '11px', fontFamily: 'var(--font-mono)', textAlign: 'center',
+          color: workout.attendance != null ? 'var(--text)' : 'var(--text-muted)',
+          background: 'transparent', border: '1px solid var(--border)', borderRadius: '6px',
+          padding: '5px 6px', cursor: 'pointer', transition: 'all 0.15s',
+        }}
+        onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent-border)'; e.currentTarget.style.color = 'var(--accent)' }}
+        onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = workout.attendance != null ? 'var(--text)' : 'var(--text-muted)' }}
+      >
+        {workout.attendance != null ? `${workout.attendance} att` : 'Take'}
+      </button>
       <button
         onClick={onDelete}
         className="btn-icon"
@@ -116,6 +133,129 @@ function WorkoutRow({ workout, groupName, onDelete }: { workout: Workout; groupN
       >
         <Icon name="trash-2" size={13} />
       </button>
+    </div>
+  )
+}
+
+const ATTENDANCE_OPTIONS: { status: AttendanceStatus; label: string; color: string }[] = [
+  { status: 'present', label: 'Here',    color: 'var(--success)' },
+  { status: 'excused', label: 'Excused', color: 'var(--warning)' },
+  { status: 'absent',  label: 'Absent',  color: 'var(--error)' },
+]
+
+function AttendanceSheet({
+  workout, groupName, onClose,
+  roster, loading, error, savingSwimmerId, onMark,
+}: {
+  workout: Workout
+  groupName: string
+  onClose: () => void
+  roster: AttendanceRosterEntry[]
+  loading: boolean
+  error: string | null
+  savingSwimmerId: string | null
+  onMark: (swimmerId: string, status: AttendanceStatus) => void
+}) {
+  const marked = roster.filter((r) => r.status).length
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Take attendance"
+      style={{
+        position: 'fixed', inset: 0, zIndex: 60,
+        background: 'rgba(4,10,16,0.6)',
+        display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+      }}
+      onClick={onClose}
+    >
+      <div
+        className="attendance-sheet"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: 'var(--bg-surface)',
+          border: '1px solid var(--border)',
+          borderBottom: 'none',
+          width: '100%', maxWidth: '480px',
+          maxHeight: '85vh',
+          borderRadius: '18px 18px 0 0',
+          display: 'flex', flexDirection: 'column',
+          animation: 'attendanceSheetUp 0.22s ease-out',
+        }}
+      >
+        <div style={{ padding: '18px 20px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
+            <div>
+              <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '19px', fontWeight: 400, color: 'var(--text)', letterSpacing: '-0.01em' }}>
+                Take Attendance
+              </h2>
+              <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '3px' }}>
+                {groupName} · {new Date(workout.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+              </p>
+            </div>
+            <button onClick={onClose} className="btn-icon" title="Close" style={{ color: 'var(--text-muted)' }}>
+              <Icon name="x" size={16} />
+            </button>
+          </div>
+          {roster.length > 0 && (
+            <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-subtle)', marginTop: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              {marked} of {roster.length} marked
+            </p>
+          )}
+        </div>
+
+        <div style={{ overflowY: 'auto', flex: 1, padding: '8px 10px' }}>
+          {loading ? (
+            <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>Loading roster…</div>
+          ) : error ? (
+            <div style={{ padding: '40px', textAlign: 'center', color: 'var(--error)', fontSize: '13px' }}>{error}</div>
+          ) : roster.length === 0 ? (
+            <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
+              No swimmers are assigned to this group yet.
+            </div>
+          ) : (
+            roster.map((swimmer) => (
+              <div
+                key={swimmer.swimmer_id}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px',
+                  padding: '12px 10px', borderRadius: '10px',
+                }}
+              >
+                <span style={{ fontSize: '14px', color: 'var(--text)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {swimmer.swimmer_name}
+                </span>
+                <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                  {ATTENDANCE_OPTIONS.map((opt) => {
+                    const active = swimmer.status === opt.status
+                    const isSaving = savingSwimmerId === swimmer.swimmer_id
+                    return (
+                      <button
+                        key={opt.status}
+                        onClick={() => onMark(swimmer.swimmer_id, opt.status)}
+                        disabled={isSaving}
+                        style={{
+                          minHeight: '42px', minWidth: '58px', padding: '0 12px',
+                          borderRadius: '9px', fontSize: '12px', fontWeight: 600,
+                          fontFamily: 'var(--font-body)', cursor: isSaving ? 'wait' : 'pointer',
+                          border: `1px solid ${active ? opt.color : 'var(--border)'}`,
+                          background: active ? opt.color : 'transparent',
+                          color: active ? 'var(--text-on-accent)' : 'var(--text-muted)',
+                          opacity: isSaving ? 0.6 : 1,
+                          transition: 'all 0.12s',
+                        }}
+                      >
+                        {opt.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
     </div>
   )
 }
@@ -160,6 +300,12 @@ export default function TrainingPage() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [mutationError, setMutationError] = useState<string | null>(null)
 
+  const [attendanceWorkout, setAttendanceWorkout] = useState<Workout | null>(null)
+  const [attendanceRoster, setAttendanceRoster] = useState<AttendanceRosterEntry[]>([])
+  const [attendanceLoading, setAttendanceLoading] = useState(false)
+  const [attendanceError, setAttendanceError] = useState<string | null>(null)
+  const [savingSwimmerId, setSavingSwimmerId] = useState<string | null>(null)
+
   const [newWorkout, setNewWorkout] = useState({
     date: new Date().toISOString().slice(0, 10),
     groupId: '',
@@ -201,7 +347,7 @@ export default function TrainingPage() {
 
   function getGroupName(groupId: string) {
     const g = groups.find((g) => g.id === groupId)
-    return g ? g.name : groupId
+    return g ? g.name : 'Other group'
   }
 
   const filteredWorkouts = useMemo(() => {
@@ -254,6 +400,39 @@ export default function TrainingPage() {
       setWorkouts((ws) => ws.filter((w) => w.id !== id))
     } catch (error) {
       setMutationError(errorMessage(error, 'Unable to delete workout.'))
+    }
+  }
+
+  async function openAttendance(workout: Workout) {
+    setAttendanceWorkout(workout)
+    setAttendanceRoster([])
+    setAttendanceError(null)
+    setAttendanceLoading(true)
+    try {
+      const roster = await fetchPracticeAttendance(api, orgId, workout.id)
+      setAttendanceRoster(roster)
+    } catch (error) {
+      setAttendanceError(errorMessage(error, 'Unable to load attendance roster.'))
+    } finally {
+      setAttendanceLoading(false)
+    }
+  }
+
+  async function handleMarkAttendance(swimmerId: string, status: AttendanceStatus) {
+    if (!attendanceWorkout) return
+    setSavingSwimmerId(swimmerId)
+    try {
+      await setPracticeAttendance(api, orgId, attendanceWorkout.id, swimmerId, status)
+      setAttendanceRoster((roster) => {
+        const next = roster.map((r) => r.swimmer_id === swimmerId ? { ...r, status } : r)
+        const presentCount = next.filter((r) => r.status === 'present').length
+        setWorkouts((ws) => ws.map((w) => w.id === attendanceWorkout.id ? { ...w, attendance: presentCount } : w))
+        return next
+      })
+    } catch (error) {
+      setAttendanceError(errorMessage(error, 'Unable to save attendance.'))
+    } finally {
+      setSavingSwimmerId(null)
     }
   }
 
@@ -511,6 +690,7 @@ export default function TrainingPage() {
                   workout={w}
                   groupName={getGroupName(w.groupId)}
                   onDelete={() => handleDeleteWorkout(w.id)}
+                  onTakeAttendance={() => openAttendance(w)}
                 />
               ))
             )}
@@ -613,6 +793,33 @@ export default function TrainingPage() {
           </div>
         </div>
       )}
+
+      {attendanceWorkout && (
+        <AttendanceSheet
+          workout={attendanceWorkout}
+          groupName={getGroupName(attendanceWorkout.groupId)}
+          onClose={() => setAttendanceWorkout(null)}
+          roster={attendanceRoster}
+          loading={attendanceLoading}
+          error={attendanceError}
+          savingSwimmerId={savingSwimmerId}
+          onMark={handleMarkAttendance}
+        />
+      )}
+
+      <style>{`
+        @keyframes attendanceSheetUp {
+          from { transform: translateY(24px); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
+        }
+        @media (min-width: 640px) {
+          .attendance-sheet {
+            margin-bottom: 8vh;
+            border-radius: 18px;
+            border-bottom: 1px solid var(--border);
+          }
+        }
+      `}</style>
     </div>
   )
 }

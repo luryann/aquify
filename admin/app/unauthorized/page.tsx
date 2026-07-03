@@ -2,9 +2,13 @@
 
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
+import { useSession } from '@/lib/session'
+import { destinationForRole } from '@/lib/auth-routing'
 
 export default function UnauthorizedPage() {
   const router = useRouter()
+  const { session } = useSession()
+  const dashboardDestination = session ? destinationForRole(session.user.roles) : '/dashboard'
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
@@ -169,7 +173,7 @@ export default function UnauthorizedPage() {
             Go back
           </button>
           <button
-            onClick={() => router.push('/dashboard')}
+            onClick={() => router.push(dashboardDestination)}
             style={{
               padding: '10px 22px',
               background: 'var(--accent)',

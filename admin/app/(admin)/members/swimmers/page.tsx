@@ -8,6 +8,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
 import { useApiClient, ApiError } from '@/lib/api'
 import { fetchGroups, fetchHouseholds, fetchSwimmerGroups, fetchSwimmers, createSwimmer, type GroupRecord, type HouseholdRecord, type SwimmerGroupLinkRecord, type SwimmerRecord } from '@/lib/adminData'
+import { canWrite } from '@/lib/roles'
 
 type SwimmerStatus = 'active' | 'inactive' | 'pending' | 'archived'
 
@@ -132,6 +133,7 @@ const LABEL_STYLE: React.CSSProperties = { fontSize: '11px', fontWeight: 600, co
 export default function SwimmersPage() {
   const { session } = useSession()
   const api = useApiClient(session?.token)
+  const allowWrite = canWrite(session?.user.roles ?? [])
   const [rows, setRows] = useState<SwimmerRow[]>([])
   const [households, setHouseholds] = useState<HouseholdRecord[]>([])
   const [search, setSearch] = useState('')
@@ -237,10 +239,12 @@ export default function SwimmersPage() {
           <h1 style={{ fontSize: '22px', fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.2, marginBottom: '4px' }}>Swimmers</h1>
           <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>Live roster membership and current group assignment data</p>
         </div>
-        <button className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setShowNew(true)}>
-          <Icon name="plus" size={14} />
-          Add Swimmer
-        </button>
+        {allowWrite && (
+          <button className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setShowNew(true)}>
+            <Icon name="plus" size={14} />
+            Add Swimmer
+          </button>
+        )}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>

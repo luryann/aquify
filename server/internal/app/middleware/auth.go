@@ -16,6 +16,7 @@ type Principal struct {
 	Name             string   `json:"name,omitempty"`
 	OrgID            string   `json:"org_id,omitempty"`
 	HouseholdID      string   `json:"household_id,omitempty"`
+	SwimmerID        string   `json:"swimmer_id,omitempty"`
 	Roles            []string `json:"roles"`
 	MFAAuthenticated bool     `json:"mfa_authenticated"`
 }

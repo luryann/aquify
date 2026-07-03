@@ -6,6 +6,7 @@ import { useSession } from '@/lib/session'
 import { ApiError, useApiClient } from '@/lib/api'
 import { shouldShowCollectionEmptyState } from '@/lib/collection-load-state'
 import { reportUIError } from '@/lib/frontend-telemetry'
+import { UnlinkedSwimmerNotice } from '@/components/swimmer/UnlinkedSwimmerNotice'
 import {
   fetchSwimmers,
   fetchSwimmerGroups,
@@ -111,6 +112,7 @@ export default function SwimmerProfilePage() {
   const api = useApiClient(session?.token)
   const orgId = session?.user.orgId ?? ''
   const householdId = session?.user.householdId ?? ''
+  const swimmerId = session?.user.swimmerId ?? ''
 
   const [swimmer, setSwimmer] = useState<SwimmerRecord | null>(null)
   const [group, setGroup] = useState<GroupRecord | null>(null)
@@ -120,6 +122,7 @@ export default function SwimmerProfilePage() {
   const [bioError, setBioError] = useState<string | null>(null)
   const [bioSaved, setBioSaved] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [noLinkedSwimmer, setNoLinkedSwimmer] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
@@ -137,11 +140,13 @@ export default function SwimmerProfilePage() {
       fetchSwimmerGroups(api, orgId),
       fetchGroups(api, orgId),
     ]).then(([swimmers, swimmerGroupLinks, groups]) => {
-      // Resolve swimmer
-      const mySwimmer = householdId
-        ? (swimmers.find(s => s.household_id === householdId) ?? null)
+      // Resolve "which swimmer is me" by the stable swimmer_id on the
+      // session, not by guessing a household roster entry.
+      const mySwimmer = swimmerId
+        ? (swimmers.find(s => s.id === swimmerId) ?? null)
         : null
       setSwimmer(mySwimmer)
+      setNoLinkedSwimmer(!swimmerId)
       setBio(mySwimmer?.notes ?? '')
 
       if (mySwimmer) {
@@ -164,7 +169,7 @@ export default function SwimmerProfilePage() {
         { orgId, householdId },
       ))
     }).finally(() => setLoading(false))
-  }, [api, orgId, householdId, reloadKey])
+  }, [api, orgId, householdId, swimmerId, reloadKey])
 
   const saveBio = async () => {
     if (!swimmer || !orgId || bioSaving) return
@@ -342,6 +347,8 @@ export default function SwimmerProfilePage() {
         </div>
       )}
 
+      {!loading && !loadError && noLinkedSwimmer && <UnlinkedSwimmerNotice />}
+
       <div
         style={{
           display: 'grid',
@@ -408,6 +415,20 @@ export default function SwimmerProfilePage() {
                 {swimmer.medical_flags && (
                   <div>
                     <ReadOnlyField label="Medical Notes" value={swimmer.medical_flags?.join('; ') ?? ''} />
+                  </div>
+                )}
+                {swimmer.allergies && (
+                  <div>
+                    <ReadOnlyField label="Allergies" value={swimmer.allergies} />
+                  </div>
+                )}
+                {(swimmer.emergency_contact_name || swimmer.emergency_contact_phone) && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px' }}>
+                    <ReadOnlyField label="Emergency Contact" value={swimmer.emergency_contact_name || '—'} />
+                    <ReadOnlyField label="Emergency Phone" value={swimmer.emergency_contact_phone || '—'} />
+                    {swimmer.emergency_contact_relationship && (
+                      <ReadOnlyField label="Relationship" value={swimmer.emergency_contact_relationship} />
+                    )}
                   </div>
                 )}
               </FieldGroup>

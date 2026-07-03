@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useSession } from '@/lib/session'
 import type { Role } from '@/lib/roles'
 import { canAccess } from '@/lib/roles'
-import { roleRequiresMFA } from '@/lib/auth-routing'
+import { roleRequiresMFA, destinationForRole } from '@/lib/auth-routing'
 
 type AuthGuardProps = {
   children: ReactNode
@@ -77,6 +77,8 @@ function LoadingSplash() {
 // Unauthorized / forbidden screen
 function UnauthorizedScreen({ reason }: { reason: 'unauthenticated' | 'forbidden' }) {
   const router = useRouter()
+  const { session } = useSession()
+  const dashboardDestination = session ? destinationForRole(session.user.roles) : '/dashboard'
 
   return (
     <div
@@ -141,7 +143,7 @@ function UnauthorizedScreen({ reason }: { reason: 'unauthenticated' | 'forbidden
 
       <button
         className="btn btn-secondary"
-        onClick={() => router.push(reason === 'forbidden' ? '/dashboard' : '/login')}
+        onClick={() => router.push(reason === 'forbidden' ? dashboardDestination : '/login')}
         style={{ marginTop: '8px' }}
       >
         {reason === 'forbidden' ? 'Go to Dashboard' : 'Sign In'}

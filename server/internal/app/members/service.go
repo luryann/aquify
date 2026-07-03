@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -27,6 +28,7 @@ var (
 	ErrInvalidDateOfBirth     = errors.New("date_of_birth must use YYYY-MM-DD format")
 	ErrParentHouseholdScope   = errors.New("parent can only access swimmers in their own household")
 	ErrSwimmerBioTooLong      = errors.New("swimmer bio must be 400 characters or fewer")
+	ErrAllergiesTooLong       = errors.New("allergies must be 400 characters or fewer")
 )
 
 const maxSwimmerBioLength = 400
@@ -40,6 +42,7 @@ type Service struct {
 	swimmerGroupLinks    map[string]SwimmerGroupLink
 	parentHouseholdIndex map[string]map[string]struct{}
 	auditEvents          []SwimmerAuditEvent
+	linkRequests         map[string]SwimmerLinkRequest
 }
 
 func NewService() *Service {
@@ -50,6 +53,7 @@ func NewService() *Service {
 		swimmerGroupLinks:    make(map[string]SwimmerGroupLink),
 		parentHouseholdIndex: make(map[string]map[string]struct{}),
 		auditEvents:          []SwimmerAuditEvent{},
+		linkRequests:         make(map[string]SwimmerLinkRequest),
 	}
 }
 
@@ -198,23 +202,28 @@ type AddContactInput struct {
 }
 
 type Swimmer struct {
-	ID                 string    `json:"id"`
-	OrgID              string    `json:"org_id"`
-	HouseholdID        string    `json:"household_id"`
-	FirstName          string    `json:"first_name"`
-	LastName           string    `json:"last_name"`
-	PreferredName      string    `json:"preferred_name,omitempty"`
-	DateOfBirth        string    `json:"date_of_birth"`
-	Gender             string    `json:"gender"`
-	SwimmerExternalID  string    `json:"swimmer_external_id,omitempty"`
-	USASwimmingID      string    `json:"usa_swimming_id,omitempty"`
-	RegistrationStatus string    `json:"registration_status"`
-	MedicalFlags       []string  `json:"medical_flags,omitempty"`
-	Notes              string    `json:"notes,omitempty"`
-	CreatedAt          time.Time `json:"created_at"`
-	UpdatedAt          time.Time `json:"updated_at"`
-	CreatedBy          string    `json:"created_by"`
-	UpdatedBy          string    `json:"updated_by"`
+	ID                           string    `json:"id"`
+	OrgID                        string    `json:"org_id"`
+	HouseholdID                  string    `json:"household_id"`
+	FirstName                    string    `json:"first_name"`
+	LastName                     string    `json:"last_name"`
+	PreferredName                string    `json:"preferred_name,omitempty"`
+	DateOfBirth                  string    `json:"date_of_birth"`
+	Gender                       string    `json:"gender"`
+	SwimmerExternalID            string    `json:"swimmer_external_id,omitempty"`
+	USASwimmingID                string    `json:"usa_swimming_id,omitempty"`
+	RegistrationStatus           string    `json:"registration_status"`
+	MedicalFlags                 []string  `json:"medical_flags,omitempty"`
+	Notes                        string    `json:"notes,omitempty"`
+	EmergencyContactName         string    `json:"emergency_contact_name,omitempty"`
+	EmergencyContactPhone        string    `json:"emergency_contact_phone,omitempty"`
+	EmergencyContactRelationship string    `json:"emergency_contact_relationship,omitempty"`
+	Allergies                    string    `json:"allergies,omitempty"`
+	KeycloakUserID               string    `json:"keycloak_user_id,omitempty"`
+	CreatedAt                    time.Time `json:"created_at"`
+	UpdatedAt                    time.Time `json:"updated_at"`
+	CreatedBy                    string    `json:"created_by"`
+	UpdatedBy                    string    `json:"updated_by"`
 }
 
 type SwimmerView struct {
@@ -237,16 +246,20 @@ type CreateSwimmerInput struct {
 }
 
 type UpdateSwimmerInput struct {
-	FirstName          *string
-	LastName           *string
-	PreferredName      *string
-	DateOfBirth        *string
-	Gender             *string
-	SwimmerExternalID  *string
-	USASwimmingID      *string
-	RegistrationStatus *string
-	MedicalFlags       *[]string
-	Notes              *string
+	FirstName                    *string
+	LastName                     *string
+	PreferredName                *string
+	DateOfBirth                  *string
+	Gender                       *string
+	SwimmerExternalID            *string
+	USASwimmingID                *string
+	RegistrationStatus           *string
+	MedicalFlags                 *[]string
+	Notes                        *string
+	EmergencyContactName         *string
+	EmergencyContactPhone        *string
+	EmergencyContactRelationship *string
+	Allergies                    *string
 }
 
 type SwimmerGroupLink struct {
@@ -733,7 +746,8 @@ func (s *Service) UpdateSwimmer(principal *appmiddleware.Principal, orgID, swimm
 		if strings.TrimSpace(principal.HouseholdID) == "" || strings.TrimSpace(principal.HouseholdID) != strings.TrimSpace(swimmer.HouseholdID) {
 			return Swimmer{}, SwimmerAuditEvent{}, ErrForbidden
 		}
-		if input.FirstName != nil || input.LastName != nil || input.PreferredName != nil || input.DateOfBirth != nil || input.Gender != nil || input.SwimmerExternalID != nil || input.USASwimmingID != nil || input.RegistrationStatus != nil || input.MedicalFlags != nil {
+		if input.FirstName != nil || input.LastName != nil || input.PreferredName != nil || input.DateOfBirth != nil || input.Gender != nil || input.SwimmerExternalID != nil || input.USASwimmingID != nil || input.RegistrationStatus != nil || input.MedicalFlags != nil ||
+			input.EmergencyContactName != nil || input.EmergencyContactPhone != nil || input.EmergencyContactRelationship != nil || input.Allergies != nil {
 			return Swimmer{}, SwimmerAuditEvent{}, ErrForbidden
 		}
 	}
@@ -809,6 +823,22 @@ func (s *Service) UpdateSwimmer(principal *appmiddleware.Principal, orgID, swimm
 			return Swimmer{}, SwimmerAuditEvent{}, ErrSwimmerBioTooLong
 		}
 		swimmer.Notes = nextNotes
+	}
+	if input.EmergencyContactName != nil {
+		swimmer.EmergencyContactName = strings.TrimSpace(*input.EmergencyContactName)
+	}
+	if input.EmergencyContactPhone != nil {
+		swimmer.EmergencyContactPhone = strings.TrimSpace(*input.EmergencyContactPhone)
+	}
+	if input.EmergencyContactRelationship != nil {
+		swimmer.EmergencyContactRelationship = strings.TrimSpace(*input.EmergencyContactRelationship)
+	}
+	if input.Allergies != nil {
+		nextAllergies := strings.TrimSpace(*input.Allergies)
+		if len([]rune(nextAllergies)) > maxSwimmerBioLength {
+			return Swimmer{}, SwimmerAuditEvent{}, ErrAllergiesTooLong
+		}
+		swimmer.Allergies = nextAllergies
 	}
 
 	if swimmer.FirstName == "" || swimmer.LastName == "" {
@@ -1062,6 +1092,8 @@ func (s *Service) ListSwimmers(principal *appmiddleware.Principal, orgID string,
 		results = append(results, view)
 	}
 
+	sort.Slice(results, func(i, j int) bool { return results[i].ID < results[j].ID })
+
 	return results, nil
 }
 
@@ -1311,6 +1343,86 @@ func (s *Service) UnlinkHouseholdFromUser(orgID, householdID string) error {
 		}
 	}
 	s.households[householdID] = h
+	return nil
+}
+
+// GetSwimmerByKeycloakUserID returns the swimmer linked to the given Keycloak
+// user ID across all orgs. Used during OIDC login (and dev-stub login) to
+// attach a stable swimmer_id to a swimmer-role session principal, so the
+// portal never has to guess which household roster entry is "self."
+func (s *Service) GetSwimmerByKeycloakUserID(keycloakUserID string) (Swimmer, bool) {
+	if keycloakUserID == "" {
+		return Swimmer{}, false
+	}
+	if err := s.syncFromDB(context.Background()); err != nil {
+		return Swimmer{}, false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, sw := range s.swimmers {
+		if sw.KeycloakUserID == keycloakUserID {
+			return sw, true
+		}
+	}
+	return Swimmer{}, false
+}
+
+// LinkSwimmerToUser sets the keycloak_user_id on a swimmer record, so that
+// user's future logins resolve to this specific swimmer instead of any
+// roster entry that merely shares a household. The swimmer must belong to
+// the specified org.
+func (s *Service) LinkSwimmerToUser(orgID, swimmerID, keycloakUserID string) error {
+	if err := s.syncFromDB(context.Background()); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	sw, ok := s.swimmers[swimmerID]
+	if !ok || sw.OrgID != orgID {
+		return ErrSwimmerNotFound
+	}
+
+	for _, existing := range s.swimmers {
+		if existing.KeycloakUserID == keycloakUserID && existing.ID != swimmerID {
+			return errors.New("keycloak_user_id is already linked to another swimmer")
+		}
+	}
+
+	sw.KeycloakUserID = keycloakUserID
+	sw.UpdatedAt = time.Now().UTC()
+
+	if s.repo != nil {
+		if err := s.repo.SetSwimmerKeycloakUserID(context.Background(), swimmerID, keycloakUserID); err != nil {
+			return fmt.Errorf("persist swimmer link: %w", err)
+		}
+	}
+	s.swimmers[swimmerID] = sw
+	return nil
+}
+
+// UnlinkSwimmerFromUser clears the keycloak_user_id on a swimmer record.
+func (s *Service) UnlinkSwimmerFromUser(orgID, swimmerID string) error {
+	if err := s.syncFromDB(context.Background()); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	sw, ok := s.swimmers[swimmerID]
+	if !ok || sw.OrgID != orgID {
+		return ErrSwimmerNotFound
+	}
+
+	sw.KeycloakUserID = ""
+	sw.UpdatedAt = time.Now().UTC()
+
+	if s.repo != nil {
+		if err := s.repo.SetSwimmerKeycloakUserID(context.Background(), swimmerID, ""); err != nil {
+			return fmt.Errorf("persist swimmer unlink: %w", err)
+		}
+	}
+	s.swimmers[swimmerID] = sw
 	return nil
 }
 

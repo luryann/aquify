@@ -16,9 +16,13 @@ import {
   assignUserRole,
   removeUserRole,
   sendPasswordReset,
+  fetchUserSwimmer,
+  linkUserSwimmer,
+  unlinkUserSwimmer,
   type UserRecord,
   type UserRoleRecord,
   type AuditEventRecord,
+  type SwimmerRecord,
 } from '@/lib/adminData'
 import { ROLE_HIERARCHY, type Role } from '@/lib/roles'
 
@@ -130,8 +134,14 @@ export default function UserDetailPage() {
   const [roles, setRoles] = useState<UserRoleRecord[]>([])
   const [auditEvents, setAuditEvents] = useState<AuditEventRecord[]>([])
   const [householdId, setHouseholdId] = useState<string | null>(null)
+  const [linkedSwimmer, setLinkedSwimmer] = useState<SwimmerRecord | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  // Swimmer linkage
+  const [swimmerIdInput, setSwimmerIdInput] = useState('')
+  const [swimmerLinkLoading, setSwimmerLinkLoading] = useState(false)
+  const [swimmerLinkError, setSwimmerLinkError] = useState<string | null>(null)
 
   // Edit profile
   const [editMode, setEditMode] = useState(false)
@@ -171,17 +181,19 @@ export default function UserDetailPage() {
     setLoading(true)
     setError(null)
     try {
-      const [{ user: u, roles: r }, auditRes] = await Promise.all([
+      const [{ user: u, roles: r }, auditRes, swimmer] = await Promise.all([
         fetchUser(api, session.user.orgId, userId),
         fetchAuditEvents(api, session.user.orgId, {
           resource_id: userId,
           limit: '50',
         }).catch(() => ({ events: [] as AuditEventRecord[] })),
+        fetchUserSwimmer(api, session.user.orgId, userId).catch(() => null),
       ])
       setUser(u)
       setRoles(r)
       setAuditEvents(auditRes.events ?? [])
       setHouseholdId(u.attributes?.household_id?.[0] ?? u.householdId ?? null)
+      setLinkedSwimmer(swimmer)
       setEditForm({ first_name: u.firstName, last_name: u.lastName, email: u.email })
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load user.')
@@ -253,6 +265,35 @@ export default function UserDetailPage() {
       setActionError(err instanceof ApiError ? err.message : 'Failed to send password reset.')
     } finally {
       setActionLoading(false)
+    }
+  }
+
+  async function handleLinkSwimmer() {
+    if (!session?.user.orgId || !swimmerIdInput.trim()) return
+    setSwimmerLinkLoading(true)
+    setSwimmerLinkError(null)
+    try {
+      await linkUserSwimmer(api, session.user.orgId, userId, swimmerIdInput.trim())
+      setSwimmerIdInput('')
+      await load()
+    } catch (err) {
+      setSwimmerLinkError(err instanceof ApiError ? err.message : 'Failed to link swimmer.')
+    } finally {
+      setSwimmerLinkLoading(false)
+    }
+  }
+
+  async function handleUnlinkSwimmer() {
+    if (!session?.user.orgId || !linkedSwimmer) return
+    setSwimmerLinkLoading(true)
+    setSwimmerLinkError(null)
+    try {
+      await unlinkUserSwimmer(api, session.user.orgId, userId, linkedSwimmer.id)
+      await load()
+    } catch (err) {
+      setSwimmerLinkError(err instanceof ApiError ? err.message : 'Failed to unlink swimmer.')
+    } finally {
+      setSwimmerLinkLoading(false)
     }
   }
 
@@ -544,6 +585,73 @@ export default function UserDetailPage() {
               <div style={{ fontSize: '11px', color: 'var(--text-disabled)', marginTop: '2px' }}>
                 Link a household from Members to give a parent access to that family&apos;s swimmers in the portal.
               </div>
+            </div>
+          </div>
+        )}
+      </Section>
+
+      {/* Linked Swimmer */}
+      <Section title="Linked Swimmer">
+        {swimmerLinkError && (
+          <div style={{ background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', borderRadius: '8px', padding: '8px 12px', marginBottom: '12px', fontSize: '12px' }}>
+            {swimmerLinkError}
+          </div>
+        )}
+        {linkedSwimmer ? (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '12px 14px', background: 'var(--bg-elevated)', borderRadius: 'var(--r-md)', border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+              <Icon name="user" size={16} style={{ color: 'var(--accent)', flexShrink: 0, marginTop: '1px' }} />
+              <div>
+                <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text)' }}>
+                  {linkedSwimmer.first_name} {linkedSwimmer.last_name}
+                </div>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{linkedSwimmer.id}</div>
+                <div style={{ fontSize: '11px', color: 'var(--text-disabled)', marginTop: '4px', lineHeight: 1.5, maxWidth: '440px' }}>
+                  When this user logs in with the swimmer role, their portal session resolves to this exact swimmer record — never a guess from the household roster.
+                </div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <button
+                className="btn"
+                style={{ fontSize: '12px', padding: '6px 10px', color: 'var(--error)', borderColor: 'var(--error-border)' }}
+                onClick={() => { void handleUnlinkSwimmer() }}
+                disabled={swimmerLinkLoading}
+              >
+                {swimmerLinkLoading ? 'Unlinking…' : 'Unlink'}
+              </button>
+              <Link href={`/members/swimmers/${linkedSwimmer.id}`} style={{ fontSize: '12px', color: 'var(--accent)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                View <Icon name="chevron-right" size={12} />
+              </Link>
+            </div>
+          </div>
+        ) : (
+          <div style={{ padding: '12px', background: 'var(--bg-elevated)', borderRadius: 'var(--r-md)', border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '10px' }}>
+              <Icon name="user" size={16} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+              <div>
+                <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>No swimmer linked</div>
+                <div style={{ fontSize: '11px', color: 'var(--text-disabled)', marginTop: '2px' }}>
+                  Required for this user&apos;s swim portal session to know which swimmer is &quot;them&quot; when the household has more than one.
+                </div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <input
+                type="text"
+                placeholder="Swimmer ID"
+                value={swimmerIdInput}
+                onChange={(e) => setSwimmerIdInput(e.target.value)}
+                style={INPUT_STYLE}
+              />
+              <button
+                className="btn btn-primary"
+                style={{ fontSize: '12px', padding: '7px 14px', whiteSpace: 'nowrap' }}
+                onClick={() => { void handleLinkSwimmer() }}
+                disabled={!swimmerIdInput.trim() || swimmerLinkLoading}
+              >
+                {swimmerLinkLoading ? 'Linking…' : 'Link'}
+              </button>
             </div>
           </div>
         )}

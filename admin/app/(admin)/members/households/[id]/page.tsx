@@ -10,6 +10,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
 import { useApiClient, ApiError } from '@/lib/api'
 import {
+  addHouseholdContact,
   fetchGroups,
   fetchHousehold,
   fetchHouseholdContacts,
@@ -23,6 +24,7 @@ import {
   type SwimmerGroupLinkRecord,
   type SwimmerRecord,
 } from '@/lib/adminData'
+import { canWrite } from '@/lib/roles'
 
 type SwimmerRow = {
   id: string
@@ -208,6 +210,7 @@ export default function HouseholdDetailPage() {
   const householdId = typeof params?.id === 'string' ? params.id : ''
   const { session } = useSession()
   const api = useApiClient(session?.token)
+  const allowWrite = canWrite(session?.user.roles ?? [])
   const [activeTab, setActiveTab] = useState('overview')
   const [household, setHousehold] = useState<HouseholdRecord | null>(null)
   const [swimmers, setSwimmers] = useState<SwimmerRow[]>([])
@@ -215,6 +218,12 @@ export default function HouseholdDetailPage() {
   const [invoices, setInvoices] = useState<InvoiceRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  // Add-contact form (Contacts tab empty state)
+  const [showAddContact, setShowAddContact] = useState(false)
+  const [contactForm, setContactForm] = useState({ relationship: 'parent', first_name: '', last_name: '', email: '', phone_e164: '', is_primary: false })
+  const [addingContact, setAddingContact] = useState(false)
+  const [addContactError, setAddContactError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -260,6 +269,24 @@ export default function HouseholdDetailPage() {
     }
   }, [api, householdId, session?.user.orgId])
 
+  async function handleAddContact(e: React.FormEvent) {
+    e.preventDefault()
+    if (!session?.user.orgId || !householdId) return
+    setAddingContact(true)
+    setAddContactError(null)
+    try {
+      await addHouseholdContact(api, session.user.orgId, householdId, contactForm)
+      const nextContacts = await fetchHouseholdContacts(api, session.user.orgId, householdId)
+      setContacts(buildContactRows(nextContacts))
+      setShowAddContact(false)
+      setContactForm({ relationship: 'parent', first_name: '', last_name: '', email: '', phone_e164: '', is_primary: false })
+    } catch (err) {
+      setAddContactError(err instanceof ApiError ? err.message : 'Failed to add contact.')
+    } finally {
+      setAddingContact(false)
+    }
+  }
+
   const tabs = useMemo(() => [
     { id: 'overview', label: 'Overview' },
     { id: 'swimmers', label: 'Swimmers', count: swimmers.length },
@@ -301,7 +328,7 @@ export default function HouseholdDetailPage() {
             <StatusBadge status={household.status || 'active'} />
           </div>
           <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-            {household.id} · {household.primary_email || household.primary_phone_e164 || 'No primary contact method'}
+            {household.primary_email || household.primary_phone_e164 || 'No primary contact method'}
           </div>
         </div>
       </div>
@@ -329,8 +356,18 @@ export default function HouseholdDetailPage() {
               Account Info
             </h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px', borderBottom: '1px solid var(--border)', paddingBottom: '10px' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Household ID</span>
+                <button
+                  onClick={() => { void navigator.clipboard.writeText(household.id) }}
+                  title="Copy household ID"
+                  style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'var(--font-mono)', color: 'var(--text)', fontWeight: 600, fontSize: '13px' }}
+                >
+                  {household.id.slice(0, 8)}…
+                  <Icon name="copy" size={12} style={{ color: 'var(--text-muted)' }} />
+                </button>
+              </div>
               {[
-                { label: 'Household ID', value: household.id },
                 { label: 'Primary Email', value: household.primary_email || '—' },
                 { label: 'Primary Phone', value: household.primary_phone_e164 || '—' },
                 { label: 'Open Invoices', value: `${outstandingCount}` },
@@ -352,9 +389,23 @@ export default function HouseholdDetailPage() {
             </p>
             <div style={{ paddingTop: '16px', borderTop: '1px solid var(--border)' }}>
               <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)', marginBottom: '8px' }}>Primary Contact</div>
-              <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text)' }}>{primaryContact?.name || household.household_name}</div>
-              <div style={{ fontSize: '12px', color: 'var(--text-subtle)', marginTop: '4px' }}>{primaryContact?.email || household.primary_email || 'No email on file'}</div>
-              <div style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>{primaryContact?.phone || household.primary_phone_e164 || 'No phone on file'}</div>
+              {primaryContact ? (
+                <>
+                  <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text)' }}>{primaryContact.name}</div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-subtle)', marginTop: '4px' }}>{primaryContact.email || 'No email on file'}</div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>{primaryContact.phone || 'No phone on file'}</div>
+                </>
+              ) : (
+                <div>
+                  <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>No contact on file for this household.</div>
+                  <button
+                    onClick={() => setActiveTab('contacts')}
+                    style={{ marginTop: '8px', fontSize: '12px', color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: '4px' }}
+                  >
+                    Add a contact <Icon name="chevron-right" size={12} />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -365,7 +416,44 @@ export default function HouseholdDetailPage() {
       ) : null}
 
       {activeTab === 'contacts' ? (
-        <Table columns={CONTACT_COLS} data={contacts} emptyTitle="No contacts" emptyDescription="No contacts are stored for this household yet." />
+        <div>
+          {allowWrite && (
+            <div style={{ marginBottom: '16px' }}>
+              {!showAddContact ? (
+                <button className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setShowAddContact(true)}>
+                  <Icon name="plus" size={14} /> Add Contact
+                </button>
+              ) : (
+                <form onSubmit={handleAddContact} className="card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '480px' }}>
+                  {addContactError && (
+                    <div style={{ fontSize: '12px', color: 'var(--error)' }}>{addContactError}</div>
+                  )}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    <input required placeholder="First name" value={contactForm.first_name} onChange={(e) => setContactForm((c) => ({ ...c, first_name: e.target.value }))} style={{ padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)' }} />
+                    <input required placeholder="Last name" value={contactForm.last_name} onChange={(e) => setContactForm((c) => ({ ...c, last_name: e.target.value }))} style={{ padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)' }} />
+                  </div>
+                  <select value={contactForm.relationship} onChange={(e) => setContactForm((c) => ({ ...c, relationship: e.target.value }))} style={{ padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)' }}>
+                    <option value="parent">Parent</option>
+                    <option value="guardian">Guardian</option>
+                    <option value="emergency">Emergency contact</option>
+                    <option value="other">Other</option>
+                  </select>
+                  <input placeholder="Email" type="email" value={contactForm.email} onChange={(e) => setContactForm((c) => ({ ...c, email: e.target.value }))} style={{ padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)' }} />
+                  <input placeholder="Phone" value={contactForm.phone_e164} onChange={(e) => setContactForm((c) => ({ ...c, phone_e164: e.target.value }))} style={{ padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)' }} />
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: 'var(--text-subtle)' }}>
+                    <input type="checkbox" checked={contactForm.is_primary} onChange={(e) => setContactForm((c) => ({ ...c, is_primary: e.target.checked }))} />
+                    Make this the primary contact
+                  </label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button type="submit" className="btn btn-primary" disabled={addingContact}>{addingContact ? 'Adding…' : 'Add Contact'}</button>
+                    <button type="button" className="btn" onClick={() => setShowAddContact(false)}>Cancel</button>
+                  </div>
+                </form>
+              )}
+            </div>
+          )}
+          <Table columns={CONTACT_COLS} data={contacts} emptyTitle="No contacts" emptyDescription="No contacts are stored for this household yet." />
+        </div>
       ) : null}
 
       {activeTab === 'invoices' ? (

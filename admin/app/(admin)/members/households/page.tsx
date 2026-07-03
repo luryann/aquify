@@ -9,6 +9,7 @@ import { useSession } from '@/lib/session'
 import { useApiClient, ApiError } from '@/lib/api'
 import { fetchHouseholds, fetchSwimmers, createHousehold, deleteHousehold, type HouseholdRecord, type SwimmerRecord } from '@/lib/adminData'
 import { normalizeHouseholdStatus, type HouseholdStatus } from '@/lib/household-status'
+import { canWrite } from '@/lib/roles'
 
 type HouseholdRow = {
   id: string
@@ -35,7 +36,7 @@ function StatusBadge({ status }: { status: HouseholdStatus }) {
   )
 }
 
-function buildColumns(onDelete: (row: HouseholdRow) => void): Column<HouseholdRow>[] {
+function buildColumns(onDelete: (row: HouseholdRow) => void, allowWrite: boolean): Column<HouseholdRow>[] {
   return [
     {
       key: 'name',
@@ -88,13 +89,15 @@ function buildColumns(onDelete: (row: HouseholdRow) => void): Column<HouseholdRo
           <Link href={`/members/households/${row.id}`} style={{ fontSize: '12px', color: 'var(--text-muted)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
             View <Icon name="chevron-right" size={12} />
           </Link>
-          <button
-            onClick={(e) => { e.stopPropagation(); onDelete(row) }}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--error)', padding: '2px 4px', display: 'flex', alignItems: 'center', borderRadius: '4px' }}
-            title="Delete household"
-          >
-            <Icon name="trash-2" size={13} />
-          </button>
+          {allowWrite && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onDelete(row) }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--error)', padding: '2px 4px', display: 'flex', alignItems: 'center', borderRadius: '4px' }}
+              title="Delete household"
+            >
+              <Icon name="trash-2" size={13} />
+            </button>
+          )}
         </div>
       ),
     },
@@ -126,6 +129,7 @@ const LABEL_STYLE: React.CSSProperties = { fontSize: '11px', fontWeight: 600, co
 export default function HouseholdsPage() {
   const { session } = useSession()
   const api = useApiClient(session?.token)
+  const allowWrite = canWrite(session?.user.roles ?? [])
   const [rows, setRows] = useState<HouseholdRow[]>([])
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
@@ -185,7 +189,7 @@ export default function HouseholdsPage() {
     })
   }, [rows, search, statusFilter])
 
-  const columns = useMemo(() => buildColumns((row) => { setDeleteTarget(row); setDeleteError(null) }), [])
+  const columns = useMemo(() => buildColumns((row) => { setDeleteTarget(row); setDeleteError(null) }, allowWrite), [allowWrite])
 
   const counts = useMemo(() => ({
     total: rows.length,
@@ -236,10 +240,12 @@ export default function HouseholdsPage() {
           <h1 style={{ fontSize: '22px', fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.2, marginBottom: '4px' }}>Households</h1>
           <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>Live household roster and membership account records</p>
         </div>
-        <button className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setShowNew(true)}>
-          <Icon name="plus" size={14} />
-          New Household
-        </button>
+        {allowWrite && (
+          <button className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setShowNew(true)}>
+            <Icon name="plus" size={14} />
+            New Household
+          </button>
+        )}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>

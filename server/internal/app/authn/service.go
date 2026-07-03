@@ -105,6 +105,13 @@ type Service struct {
 	// OIDCCallback to attach household_id to the newly-issued session.
 	householdLookup func(keycloakUserID string) string
 
+	// swimmerLookup is an optional function injected from the members service
+	// that resolves a Keycloak user ID to a specific linked swimmer ID. It is
+	// called during OIDCCallback to attach swimmer_id to the newly-issued
+	// session so a swimmer-role principal's "self" is never ambiguous across
+	// siblings in the same household.
+	swimmerLookup func(keycloakUserID string) string
+
 	// TOTP replay prevention: "factorID|code" → time the code was last accepted.
 	usedTOTPCodes map[string]time.Time
 
@@ -121,6 +128,13 @@ type Service struct {
 // household ID, or an empty string if no household is linked.
 func (s *Service) SetHouseholdLookup(fn func(keycloakUserID string) string) {
 	s.householdLookup = fn
+}
+
+// SetSwimmerLookup wires a swimmer-lookup function into the service.
+// The function receives a Keycloak user ID and should return the ID of the
+// swimmer record linked to it, or an empty string if none is linked.
+func (s *Service) SetSwimmerLookup(fn func(keycloakUserID string) string) {
+	s.swimmerLookup = fn
 }
 
 // SetPool wires a DB pool into the service and enables persisted auth/session
@@ -337,6 +351,7 @@ type SessionInput struct {
 	Name             string
 	OrgID            string
 	HouseholdID      string
+	SwimmerID        string
 	Roles            []string
 	MFAAuthenticated bool
 	ExpiresIn        time.Duration
@@ -612,12 +627,21 @@ func (s *Service) OIDCCallback(code, state, _ string) (OIDCCallbackResult, error
 		householdID = s.householdLookup(claims.Subject)
 	}
 
+	// Resolve the specific linked swimmer for this Keycloak user, if one
+	// exists, so a swimmer-role session never has to guess "self" from the
+	// household roster.
+	var swimmerID string
+	if s.swimmerLookup != nil {
+		swimmerID = s.swimmerLookup(claims.Subject)
+	}
+
 	session, err := s.IssueSession(SessionInput{
 		UserID:           claims.Subject,
 		Email:            claims.Email,
 		Name:             claims.Name,
 		OrgID:            resolvedOrgID,
 		HouseholdID:      householdID,
+		SwimmerID:        swimmerID,
 		Roles:            roles,
 		ExpiresIn:        24 * time.Hour,
 		MFAAuthenticated: false,
@@ -652,6 +676,9 @@ func (s *Service) IssueSession(input SessionInput) (SessionTokens, error) {
 	if input.ExpiresIn <= 0 {
 		input.ExpiresIn = 24 * time.Hour
 	}
+	if strings.TrimSpace(input.SwimmerID) == "" && s.swimmerLookup != nil && hasRole(input.Roles, "swimmer") {
+		input.SwimmerID = s.swimmerLookup(input.UserID)
+	}
 	if err := s.syncAuthenticatedUser(context.Background(), input); err != nil {
 		return SessionTokens{}, err
 	}
@@ -662,6 +689,7 @@ func (s *Service) IssueSession(input SessionInput) (SessionTokens, error) {
 		Name:             strings.TrimSpace(input.Name),
 		OrgID:            input.OrgID,
 		HouseholdID:      input.HouseholdID,
+		SwimmerID:        input.SwimmerID,
 		Roles:            append([]string{}, input.Roles...),
 		MFAAuthenticated: input.MFAAuthenticated,
 	}, strings.TrimSpace(input.OIDCIDToken), input.ExpiresIn)
@@ -708,6 +736,7 @@ func (s *Service) RefreshSession(refreshToken string) (SessionTokens, error) {
 			Name:             record.Principal.Name,
 			OrgID:            record.Principal.OrgID,
 			HouseholdID:      record.Principal.HouseholdID,
+			SwimmerID:        record.Principal.SwimmerID,
 			Roles:            append([]string{}, record.Principal.Roles...),
 			MFAAuthenticated: record.Principal.MFAAuthenticated,
 		}),
@@ -827,6 +856,15 @@ func (s *Service) ResolvePrincipal(token string) (*appmiddleware.Principal, bool
 		if cloned != nil {
 			normalized := normalizeLocalDevPrincipal(*cloned)
 			cloned = &normalized
+			// Dev-stub sessions have no real Keycloak subject to look up a
+			// linked swimmer by, so resolve it the same way a real swimmer
+			// login would: by keycloak_user_id, using the stub's own fixed
+			// user ID as that identifier. This keeps dev-stub testing on
+			// the exact same "self" resolution path as production, instead
+			// of guessing a household roster entry.
+			if s.swimmerLookup != nil && hasRole(cloned.Roles, "swimmer") {
+				cloned.SwimmerID = s.swimmerLookup(cloned.UserID)
+			}
 		}
 		return cloned, true
 	}
@@ -1019,6 +1057,7 @@ func (s *Service) ChallengeMFA(currentAccessToken string, principal *appmiddlewa
 			Name:             principal.Name,
 			OrgID:            principal.OrgID,
 			HouseholdID:      principal.HouseholdID,
+			SwimmerID:        principal.SwimmerID,
 			Roles:            append([]string{}, principal.Roles...),
 			MFAAuthenticated: true,
 		}, idToken, 15*time.Minute)
@@ -1047,6 +1086,7 @@ func (s *Service) issueSessionRecord(ctx context.Context, principal appmiddlewar
 			Name:             principal.Name,
 			OrgID:            principal.OrgID,
 			HouseholdID:      principal.HouseholdID,
+			SwimmerID:        principal.SwimmerID,
 			Roles:            append([]string{}, principal.Roles...),
 			MFAAuthenticated: principal.MFAAuthenticated,
 		},
@@ -1138,6 +1178,7 @@ func (s *Service) refreshPersistentSession(ctx context.Context, refreshToken str
 			Name:             record.Principal.Name,
 			OrgID:            record.Principal.OrgID,
 			HouseholdID:      record.Principal.HouseholdID,
+			SwimmerID:        record.Principal.SwimmerID,
 			Roles:            append([]string{}, record.Principal.Roles...),
 			MFAAuthenticated: record.Principal.MFAAuthenticated,
 		},
@@ -1887,6 +1928,15 @@ func generateTOTPSecret() string {
 	return base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(raw)
 }
 
+func hasRole(roles []string, role string) bool {
+	for _, r := range roles {
+		if strings.EqualFold(r, role) {
+			return true
+		}
+	}
+	return false
+}
+
 func clonePrincipal(in *appmiddleware.Principal) *appmiddleware.Principal {
 	if in == nil {
 		return nil
@@ -1897,6 +1947,7 @@ func clonePrincipal(in *appmiddleware.Principal) *appmiddleware.Principal {
 		Name:             in.Name,
 		OrgID:            in.OrgID,
 		HouseholdID:      in.HouseholdID,
+		SwimmerID:        in.SwimmerID,
 		Roles:            append([]string{}, in.Roles...),
 		MFAAuthenticated: in.MFAAuthenticated,
 	}

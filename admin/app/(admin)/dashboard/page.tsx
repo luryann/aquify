@@ -14,6 +14,8 @@ import {
   fetchGroups,
   fetchAuditEvents,
   fetchPerformanceBestTimes,
+  fetchUsers,
+  fetchSeasons,
   type HouseholdRecord,
   type SwimmerRecord,
   type MeetRecord,
@@ -22,7 +24,21 @@ import {
   type GroupRecord,
   type AuditEventRecord,
   type BestTimeRecord,
+  type UserRecord,
+  type SeasonRecord,
 } from '@/lib/adminData'
+
+function displayNameForUser(user: UserRecord): string {
+  const name = `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim()
+  return name || user.email || user.id
+}
+
+// Turns an internal action identifier like "report.meet_fees.run" into a
+// readable phrase ("report meet fees run") for the recent-activity feed —
+// admins reviewing "who did what" shouldn't have to parse dotted job codes.
+function humanizeAction(action: string): string {
+  return action.replace(/[._]/g, ' ')
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -223,6 +239,8 @@ export default function DashboardPage() {
   const [groups, setGroups] = useState<GroupRecord[]>([])
   const [auditEvents, setAuditEvents] = useState<AuditEventRecord[]>([])
   const [bestTimes, setBestTimes] = useState<BestTimeRecord[]>([])
+  const [actorNames, setActorNames] = useState<Record<string, string>>({})
+  const [seasons, setSeasons] = useState<SeasonRecord[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -230,7 +248,7 @@ export default function DashboardPage() {
       if (!session?.user.orgId) { setLoading(false); return }
       try {
         setLoading(true)
-        const [sw, hh, mm, inv, imp, gr, audit, bt] = await Promise.all([
+        const [sw, hh, mm, inv, imp, gr, audit, bt, users, sn] = await Promise.all([
           fetchSwimmers(api, session.user.orgId).catch(() => [] as SwimmerRecord[]),
           fetchHouseholds(api, session.user.orgId).catch(() => [] as HouseholdRecord[]),
           fetchMeets(api, session.user.orgId).catch(() => [] as MeetRecord[]),
@@ -239,6 +257,8 @@ export default function DashboardPage() {
           fetchGroups(api, session.user.orgId).catch(() => [] as GroupRecord[]),
           fetchAuditEvents(api, session.user.orgId).catch(() => ({ events: [] as AuditEventRecord[] })),
           fetchPerformanceBestTimes(api, session.user.orgId).catch(() => [] as BestTimeRecord[]),
+          fetchUsers(api, session.user.orgId, { limit: 200 }).catch(() => ({ users: [] as UserRecord[] })),
+          fetchSeasons(api, session.user.orgId).catch(() => [] as SeasonRecord[]),
         ])
         if (cancelled) return
         setSwimmers(sw)
@@ -249,6 +269,8 @@ export default function DashboardPage() {
         setGroups(gr)
         setAuditEvents(audit.events.slice(0, 5))
         setBestTimes(bt)
+        setActorNames(Object.fromEntries(users.users.map((u) => [u.id, displayNameForUser(u)])))
+        setSeasons(sn)
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -301,6 +323,11 @@ export default function DashboardPage() {
   const maxCount = topEvents.reduce((m, e) => Math.max(m, e.count), 0)
 
   const today = new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+  // Derive the dashboard subtitle from a real Season record instead of the
+  // current calendar year — an implied season the Seasons page doesn't
+  // actually have would mislead an owner looking for "the current season."
+  const activeSeason = seasons.find((s) => s.status === 'active') ?? null
+  const seasonLabel = activeSeason ? `Aquify · ${activeSeason.name}` : 'Aquify · No active season'
 
   return (
     <div style={{ maxWidth: '1200px', animation: 'slideUp 0.35s var(--ease-out) both' }}>
@@ -310,7 +337,7 @@ export default function DashboardPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Dashboard</h1>
-          <p className="page-subtitle">Aquify · Season 2026</p>
+          <p className="page-subtitle">{loading ? 'Aquify' : seasonLabel}</p>
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: '4px 9px' }}>
@@ -355,8 +382,8 @@ export default function DashboardPage() {
             auditEvents.map((ev) => (
               <ActivityItem
                 key={ev.id}
-                actor={ev.actor_user_id || 'System'}
-                action={ev.action}
+                actor={ev.actor_user_id ? (actorNames[ev.actor_user_id] ?? `${ev.actor_user_id.slice(0, 8)}…`) : 'System'}
+                action={humanizeAction(ev.action)}
                 subject={ev.resource_type + (ev.resource_id ? ` #${ev.resource_id.slice(0, 8)}` : '')}
                 time={timeAgo(ev.occurred_at)}
               />
@@ -441,12 +468,17 @@ export default function DashboardPage() {
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {[
-              { label: 'New Meet', href: '/meets/new', icon: '＋' },
-              { label: 'Add Swimmer', href: '/members/swimmers?new=1', icon: '＋' },
-              { label: 'New Household', href: '/members/households?new=1', icon: '＋' },
-              { label: 'New Invoice', href: '/invoices?new=1', icon: '＋' },
-              { label: 'Upload Import', href: '/imports?upload=1', icon: '↑' },
-            ].map((action) => (
+              { label: 'New Meet', href: '/meets/new', icon: '＋', roles: ['owner', 'admin', 'coach'] },
+              { label: 'Add Swimmer', href: '/members/swimmers?new=1', icon: '＋', roles: ['owner', 'admin', 'coach'] },
+              { label: 'New Household', href: '/members/households?new=1', icon: '＋', roles: ['owner', 'admin'] },
+              { label: 'New Invoice', href: '/invoices?new=1', icon: '＋', roles: ['owner', 'admin', 'billing'] },
+              { label: 'Upload Import', href: '/imports?upload=1', icon: '↑', roles: ['owner', 'admin'] },
+            ]
+              .filter((action) => {
+                const roles = session?.user.roles ?? (session?.user.role ? [session.user.role] : [])
+                return roles.some((role) => action.roles.includes(role))
+              })
+              .map((action) => (
               <Link
                 key={action.href}
                 href={action.href}

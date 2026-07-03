@@ -722,14 +722,6 @@ export default function HouseholdProfilePage() {
                   </p>
                   <p style={{ fontSize: '15px', fontWeight: 600, color: '#1A1714' }}>{swimmers.length}</p>
                 </div>
-                <div>
-                  <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#A09D9B', letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: '4px' }}>
-                    Household ID
-                  </p>
-                  <p style={{ fontSize: '13px', fontFamily: 'var(--font-mono)', color: '#6B6866' }}>
-                    {household?.id ?? '—'}
-                  </p>
-                </div>
               </div>
             )}
           </div>

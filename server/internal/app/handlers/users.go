@@ -174,6 +174,17 @@ func (h *UserHandlers) RegisterRoutes(r chi.Router) {
 		users.With(appmiddleware.RBACStub("owner", "admin")).Get("/{id}/household", h.getUserHousehold)
 		users.With(appmiddleware.RBACStub("owner", "admin")).Post("/{id}/household/link", h.linkUserHousehold)
 		users.With(appmiddleware.RBACStub("owner", "admin")).Post("/{id}/household/unlink", h.unlinkUserHousehold)
+		// swimmer linkage (owner/admin only) — links a swimmer-role user's Keycloak
+		// account to a specific swimmer record, so their portal session resolves
+		// deterministically instead of guessing from the household roster.
+		users.With(appmiddleware.RBACStub("owner", "admin")).Get("/{id}/swimmer", h.getUserSwimmer)
+		users.With(appmiddleware.RBACStub("owner", "admin")).Post("/{id}/swimmer/link", h.linkUserSwimmer)
+		users.With(appmiddleware.RBACStub("owner", "admin")).Post("/{id}/swimmer/unlink", h.unlinkUserSwimmer)
+		// self-service swimmer-link recovery: any authenticated user may submit a
+		// request for their own account; only owner/admin may view/resolve the queue.
+		users.Post("/me/swimmer-link-requests", h.createSwimmerLinkRequest)
+		users.With(appmiddleware.RBACStub("owner", "admin")).Get("/swimmer-link-requests", h.listSwimmerLinkRequests)
+		users.With(appmiddleware.RBACStub("owner", "admin")).Post("/swimmer-link-requests/{requestID}/resolve", h.resolveSwimmerLinkRequest)
 		// owner only (destructive)
 		users.With(appmiddleware.RBACStub("owner")).Delete("/{id}", h.deleteUser)
 	})
@@ -1265,5 +1276,264 @@ func (h *UserHandlers) unlinkUserHousehold(w http.ResponseWriter, r *http.Reques
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":       "unlinked",
 		"household_id": req.HouseholdID,
+	})
+}
+
+// ── GET /users/{id}/swimmer ────────────────────────────────────────────────
+
+func (h *UserHandlers) getUserSwimmer(w http.ResponseWriter, r *http.Request) {
+	_, orgID, ok := userScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+
+	userID := chi.URLParam(r, "id")
+	if _, ok := h.requireUserInOrg(w, r, userID, orgID); !ok {
+		return
+	}
+
+	if h.membershipService == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, "service_unavailable", "Membership service is not available.", nil)
+		return
+	}
+
+	swimmer, found := h.membershipService.GetSwimmerByKeycloakUserID(userID)
+	if !found || swimmer.OrgID != orgID {
+		_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
+			"status":  "ok",
+			"swimmer": nil,
+		})
+		return
+	}
+
+	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"status":  "ok",
+		"swimmer": swimmer,
+	})
+}
+
+// ── POST /users/{id}/swimmer/link ─────────────────────────────────────────
+
+type linkSwimmerRequest struct {
+	SwimmerID string `json:"swimmer_id"`
+}
+
+func (h *UserHandlers) linkUserSwimmer(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := userScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+
+	userID := chi.URLParam(r, "id")
+	if _, ok := h.requireUserInOrg(w, r, userID, orgID); !ok {
+		return
+	}
+
+	if h.membershipService == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, "service_unavailable", "Membership service is not available.", nil)
+		return
+	}
+
+	var req linkSwimmerRequest
+	if err := decodeJSONBody(w, r, &req); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "Invalid request body.", nil)
+		return
+	}
+	req.SwimmerID = strings.TrimSpace(req.SwimmerID)
+	if req.SwimmerID == "" {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "swimmer_id is required.", nil)
+		return
+	}
+
+	if err := h.membershipService.LinkSwimmerToUser(orgID, req.SwimmerID, userID); err != nil {
+		switch {
+		case errors.Is(err, members.ErrSwimmerNotFound):
+			httpx.WriteError(w, r, http.StatusNotFound, "swimmer_not_found", "Swimmer not found.", nil)
+		default:
+			httpx.WriteError(w, r, http.StatusConflict, "link_conflict", err.Error(), nil)
+		}
+		return
+	}
+
+	h.emitAudit(r, principal, "user.swimmer.link", userID, map[string]string{
+		"swimmer_id": req.SwimmerID,
+	})
+	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"status":     "linked",
+		"swimmer_id": req.SwimmerID,
+	})
+}
+
+// ── POST /users/{id}/swimmer/unlink ───────────────────────────────────────
+
+type unlinkSwimmerRequest struct {
+	SwimmerID string `json:"swimmer_id"`
+}
+
+func (h *UserHandlers) unlinkUserSwimmer(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := userScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+
+	userID := chi.URLParam(r, "id")
+	if _, ok := h.requireUserInOrg(w, r, userID, orgID); !ok {
+		return
+	}
+
+	if h.membershipService == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, "service_unavailable", "Membership service is not available.", nil)
+		return
+	}
+
+	var req unlinkSwimmerRequest
+	if err := decodeJSONBody(w, r, &req); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "Invalid request body.", nil)
+		return
+	}
+	req.SwimmerID = strings.TrimSpace(req.SwimmerID)
+	if req.SwimmerID == "" {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "swimmer_id is required.", nil)
+		return
+	}
+
+	if err := h.membershipService.UnlinkSwimmerFromUser(orgID, req.SwimmerID); err != nil {
+		if errors.Is(err, members.ErrSwimmerNotFound) {
+			httpx.WriteError(w, r, http.StatusNotFound, "swimmer_not_found", "Swimmer not found.", nil)
+		} else {
+			httpx.WriteError(w, r, http.StatusInternalServerError, "service_error", "Failed to unlink swimmer.", nil)
+		}
+		return
+	}
+
+	h.emitAudit(r, principal, "user.swimmer.unlink", userID, map[string]string{
+		"swimmer_id": req.SwimmerID,
+	})
+	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"status":     "unlinked",
+		"swimmer_id": req.SwimmerID,
+	})
+}
+
+// ── POST /users/me/swimmer-link-requests ──────────────────────────────────
+
+type createSwimmerLinkRequestBody struct {
+	RequestedSwimmerName string `json:"requested_swimmer_name"`
+	Note                 string `json:"note"`
+}
+
+func (h *UserHandlers) createSwimmerLinkRequest(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := userScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+	if h.membershipService == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, "service_unavailable", "Membership service is not available.", nil)
+		return
+	}
+
+	var body createSwimmerLinkRequestBody
+	if err := decodeJSONBody(w, r, &body); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "Invalid request body.", nil)
+		return
+	}
+
+	req, err := h.membershipService.CreateLinkRequest(orgID, principal.UserID, body.RequestedSwimmerName, body.Note)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to create link request.", err)
+		return
+	}
+
+	h.emitAudit(r, principal, "user.swimmer_link_request.create", principal.UserID, map[string]string{
+		"request_id": req.ID,
+	})
+	_ = httpx.WriteJSON(w, http.StatusCreated, map[string]any{"request": req})
+}
+
+// ── GET /users/swimmer-link-requests ───────────────────────────────────────
+
+func (h *UserHandlers) listSwimmerLinkRequests(w http.ResponseWriter, r *http.Request) {
+	_, orgID, ok := userScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+	if h.membershipService == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, "service_unavailable", "Membership service is not available.", nil)
+		return
+	}
+
+	requests, err := h.membershipService.ListPendingLinkRequests(orgID)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to list link requests.", err)
+		return
+	}
+	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{"requests": requests})
+}
+
+// ── POST /users/swimmer-link-requests/{requestID}/resolve ─────────────────
+
+type resolveSwimmerLinkRequestBody struct {
+	SwimmerID string `json:"swimmer_id"`
+}
+
+func (h *UserHandlers) resolveSwimmerLinkRequest(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := userScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+	if h.membershipService == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, "service_unavailable", "Membership service is not available.", nil)
+		return
+	}
+
+	requestID := chi.URLParam(r, "requestID")
+	var body resolveSwimmerLinkRequestBody
+	if err := decodeJSONBody(w, r, &body); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "Invalid request body.", nil)
+		return
+	}
+	body.SwimmerID = strings.TrimSpace(body.SwimmerID)
+	if body.SwimmerID == "" {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "swimmer_id is required.", nil)
+		return
+	}
+
+	requests, err := h.membershipService.ListPendingLinkRequests(orgID)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load link request.", err)
+		return
+	}
+	var target *members.SwimmerLinkRequest
+	for i := range requests {
+		if requests[i].ID == requestID {
+			target = &requests[i]
+			break
+		}
+	}
+	if target == nil {
+		httpx.WriteError(w, r, http.StatusNotFound, "request_not_found", "Link request not found.", nil)
+		return
+	}
+
+	if err := h.membershipService.LinkSwimmerToUser(orgID, body.SwimmerID, target.UserID); err != nil {
+		if errors.Is(err, members.ErrSwimmerNotFound) {
+			httpx.WriteError(w, r, http.StatusNotFound, "swimmer_not_found", "Swimmer not found.", nil)
+		} else {
+			httpx.WriteError(w, r, http.StatusConflict, "link_conflict", err.Error(), nil)
+		}
+		return
+	}
+	if err := h.membershipService.ResolveLinkRequest(orgID, requestID, principal.UserID, body.SwimmerID); err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to resolve link request.", err)
+		return
+	}
+
+	h.emitAudit(r, principal, "user.swimmer_link_request.resolve", target.UserID, map[string]string{
+		"request_id": requestID,
+		"swimmer_id": body.SwimmerID,
+	})
+	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"status":     "resolved",
+		"swimmer_id": body.SwimmerID,
 	})
 }

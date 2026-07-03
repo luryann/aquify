@@ -17,8 +17,9 @@ import (
 // ─── Sentinel errors ──────────────────────────────────────────────────────────
 
 var (
-	ErrNotFound    = errors.New("practice not found")
-	ErrInvalidType = errors.New("practice type must be water, dryland, video, or rest")
+	ErrNotFound          = errors.New("practice not found")
+	ErrInvalidType       = errors.New("practice type must be water, dryland, video, or rest")
+	ErrInvalidAttendance = errors.New("attendance status must be present, absent, or excused")
 )
 
 var validTypes = map[string]bool{
@@ -26,6 +27,12 @@ var validTypes = map[string]bool{
 	"dryland": true,
 	"video":   true,
 	"rest":    true,
+}
+
+var validAttendanceStatuses = map[string]bool{
+	"present": true,
+	"absent":  true,
+	"excused": true,
 }
 
 // ─── Domain types ─────────────────────────────────────────────────────────────
@@ -57,6 +64,19 @@ type Practice struct {
 	UpdatedBy     string          `json:"updated_by"`
 }
 
+// PracticeAttendance records one swimmer's attendance status for a practice.
+type PracticeAttendance struct {
+	ID         string    `json:"id"`
+	OrgID      string    `json:"org_id"`
+	PracticeID string    `json:"practice_id"`
+	SwimmerID  string    `json:"swimmer_id"`
+	Status     string    `json:"status"` // present | absent | excused
+	MarkedAt   time.Time `json:"marked_at"`
+	MarkedBy   string    `json:"marked_by"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
 // PracticeUpdates carries the mutable fields that may be patched on a Practice.
 type PracticeUpdates struct {
 	Date          *string          `json:"date,omitempty"`
@@ -73,15 +93,17 @@ type PracticeUpdates struct {
 
 // Service manages practice records with an in-memory write-through cache.
 type Service struct {
-	mu        sync.RWMutex
-	repo      *Repository
-	practices map[string]*Practice
+	mu         sync.RWMutex
+	repo       *Repository
+	practices  map[string]*Practice
+	attendance map[string]map[string]*PracticeAttendance // practiceID -> swimmerID -> record
 }
 
 // NewService returns an empty in-memory Service (no DB backing).
 func NewService() *Service {
 	return &Service{
-		practices: make(map[string]*Practice),
+		practices:  make(map[string]*Practice),
+		attendance: make(map[string]map[string]*PracticeAttendance),
 	}
 }
 
@@ -327,4 +349,74 @@ func (s *Service) Delete(orgID, id string) error {
 	}
 	delete(s.practices, id)
 	return nil
+}
+
+// ─── Attendance ───────────────────────────────────────────────────────────────
+
+// SetAttendance upserts one swimmer's attendance status for a practice.
+func (s *Service) SetAttendance(orgID, practiceID, swimmerID, status, markedBy string) (*PracticeAttendance, error) {
+	if !validAttendanceStatuses[status] {
+		return nil, ErrInvalidAttendance
+	}
+	if _, err := s.Get(orgID, practiceID); err != nil {
+		return nil, err
+	}
+
+	now := time.Now().UTC()
+	if s.repo != nil {
+		rec, err := s.repo.UpsertAttendance(context.Background(), orgID, practiceID, swimmerID, status, markedBy, now)
+		if err != nil {
+			return nil, err
+		}
+		s.mu.Lock()
+		if s.attendance[practiceID] == nil {
+			s.attendance[practiceID] = make(map[string]*PracticeAttendance)
+		}
+		s.attendance[practiceID][swimmerID] = rec
+		s.mu.Unlock()
+		return rec, nil
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.attendance[practiceID] == nil {
+		s.attendance[practiceID] = make(map[string]*PracticeAttendance)
+	}
+	existing, ok := s.attendance[practiceID][swimmerID]
+	rec := &PracticeAttendance{
+		ID:         newID(),
+		OrgID:      orgID,
+		PracticeID: practiceID,
+		SwimmerID:  swimmerID,
+		Status:     status,
+		MarkedAt:   now,
+		MarkedBy:   markedBy,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+	if ok {
+		rec.ID = existing.ID
+		rec.CreatedAt = existing.CreatedAt
+	}
+	s.attendance[practiceID][swimmerID] = rec
+	return rec, nil
+}
+
+// ListAttendance returns all recorded attendance rows for a practice.
+func (s *Service) ListAttendance(orgID, practiceID string) ([]*PracticeAttendance, error) {
+	if _, err := s.Get(orgID, practiceID); err != nil {
+		return nil, err
+	}
+	if s.repo != nil {
+		return s.repo.ListAttendanceForPractice(context.Background(), orgID, practiceID)
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := []*PracticeAttendance{}
+	for _, rec := range s.attendance[practiceID] {
+		cp := *rec
+		out = append(out, &cp)
+	}
+	return out, nil
 }

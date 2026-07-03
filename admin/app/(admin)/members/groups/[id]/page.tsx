@@ -9,17 +9,25 @@ import { Table, type Column } from '@/components/ui/Table'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
 import { useApiClient, ApiError } from '@/lib/api'
+import { canWrite } from '@/lib/roles'
 import {
   assignSwimmerToGroup,
   fetchGroup,
   fetchGroupEligibilityRules,
   fetchSwimmerGroups,
   fetchSwimmers,
+  fetchUsers,
   type EligibilityRuleRecord,
   type GroupRecord,
   type SwimmerGroupLinkRecord,
   type SwimmerRecord,
+  type UserRecord,
 } from '@/lib/adminData'
+
+function displayNameForUser(user: UserRecord): string {
+  const name = `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim()
+  return name || user.email || user.id
+}
 
 type SwimmerRow = {
   id: string
@@ -143,12 +151,14 @@ export default function GroupDetailPage() {
   const groupId = typeof params?.id === 'string' ? params.id : ''
   const { session } = useSession()
   const api = useApiClient(session?.token)
+  const allowWrite = canWrite(session?.user.roles ?? [])
   const [activeTab, setActiveTab] = useState('members')
   const [group, setGroup] = useState<GroupRecord | null>(null)
   const [swimmers, setSwimmers] = useState<SwimmerRecord[]>([])
   const [memberLinks, setMemberLinks] = useState<SwimmerGroupLinkRecord[]>([])
   const [members, setMembers] = useState<SwimmerRow[]>([])
   const [rules, setRules] = useState<RuleRow[]>([])
+  const [coachName, setCoachName] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [assigning, setAssigning] = useState(false)
@@ -183,6 +193,20 @@ export default function GroupDetailPage() {
         setMemberLinks(nextMemberLinks)
         setMembers(buildSwimmerRows(nextSwimmers, nextMemberLinks))
         setRules(buildRuleRows(eligibilityRules))
+
+        if (nextGroup.coach_user_id) {
+          try {
+            const { users } = await fetchUsers(api, session.user.orgId, { limit: 200 })
+            if (!cancelled) {
+              const match = users.find((u) => u.id === nextGroup.coach_user_id)
+              setCoachName(match ? displayNameForUser(match) : nextGroup.coach_user_id)
+            }
+          } catch {
+            if (!cancelled) setCoachName(nextGroup.coach_user_id)
+          }
+        } else if (!cancelled) {
+          setCoachName(null)
+        }
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof ApiError ? err.message : 'Failed to load group details.')
@@ -275,7 +299,7 @@ export default function GroupDetailPage() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '28px' }}>
         {[
           { label: 'Swimmers', value: members.length.toString(), color: 'var(--text)' },
-          { label: 'Coach', value: group.coach_user_id || 'Unassigned', color: 'var(--text-subtle)' },
+          { label: 'Coach', value: coachName || 'Unassigned', color: 'var(--text-subtle)' },
           { label: 'Age Range', value: `${group.min_age ?? '—'}-${group.max_age ?? '+'}`, color: 'var(--text)' },
           { label: 'Rules', value: rules.length.toString(), color: 'var(--accent)' },
         ].map((stat) => (
@@ -290,43 +314,45 @@ export default function GroupDetailPage() {
 
       {activeTab === 'members' ? (
         <div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 320px', gap: '16px', alignItems: 'start', marginBottom: '16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: allowWrite ? 'minmax(0, 1fr) 320px' : '1fr', gap: '16px', alignItems: 'start', marginBottom: '16px' }}>
             <div style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>
               {group.description || 'No group description recorded yet.'}
             </div>
-            <form className="card" onSubmit={handleAssignSwimmer} style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <div>
-                <h3 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', marginBottom: '4px' }}>Add Swimmer To Group</h3>
-                <p style={{ fontSize: '12px', color: 'var(--text-subtle)', lineHeight: 1.5 }}>Assign a swimmer to this training group so they appear on the live roster immediately.</p>
-              </div>
-              <select
-                value={assignForm.swimmerId}
-                onChange={(e) => setAssignForm((current) => ({ ...current, swimmerId: e.target.value }))}
-                style={{ width: '100%', padding: '9px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none' }}
-                disabled={assigning || assignableSwimmers.length === 0}
-              >
-                <option value="">{assignableSwimmers.length === 0 ? 'All swimmers already assigned' : 'Select swimmer'}</option>
-                {assignableSwimmers.map((swimmer) => (
-                  <option key={swimmer.id} value={swimmer.id}>
-                    {`${swimmer.preferred_name || swimmer.first_name} ${swimmer.last_name}`.trim()}
-                  </option>
-                ))}
-              </select>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: 'var(--text-subtle)' }}>
-                <input
-                  type="checkbox"
-                  checked={assignForm.isPrimary}
-                  onChange={(e) => setAssignForm((current) => ({ ...current, isPrimary: e.target.checked }))}
-                  disabled={assigning}
-                />
-                Make this the swimmer&apos;s primary group
-              </label>
-              {assignError ? <div style={{ fontSize: '12px', color: 'var(--danger)' }}>{assignError}</div> : null}
-              {assignSuccess ? <div style={{ fontSize: '12px', color: 'var(--success)' }}>{assignSuccess}</div> : null}
-              <button className="btn btn-primary" type="submit" disabled={assigning || !assignForm.swimmerId}>
-                {assigning ? 'Adding...' : 'Add Swimmer'}
-              </button>
-            </form>
+            {allowWrite && (
+              <form className="card" onSubmit={handleAssignSwimmer} style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div>
+                  <h3 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', marginBottom: '4px' }}>Add Swimmer To Group</h3>
+                  <p style={{ fontSize: '12px', color: 'var(--text-subtle)', lineHeight: 1.5 }}>Assign a swimmer to this training group so they appear on the live roster immediately.</p>
+                </div>
+                <select
+                  value={assignForm.swimmerId}
+                  onChange={(e) => setAssignForm((current) => ({ ...current, swimmerId: e.target.value }))}
+                  style={{ width: '100%', padding: '9px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none' }}
+                  disabled={assigning || assignableSwimmers.length === 0}
+                >
+                  <option value="">{assignableSwimmers.length === 0 ? 'All swimmers already assigned' : 'Select swimmer'}</option>
+                  {assignableSwimmers.map((swimmer) => (
+                    <option key={swimmer.id} value={swimmer.id}>
+                      {`${swimmer.preferred_name || swimmer.first_name} ${swimmer.last_name}`.trim()}
+                    </option>
+                  ))}
+                </select>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: 'var(--text-subtle)' }}>
+                  <input
+                    type="checkbox"
+                    checked={assignForm.isPrimary}
+                    onChange={(e) => setAssignForm((current) => ({ ...current, isPrimary: e.target.checked }))}
+                    disabled={assigning}
+                  />
+                  Make this the swimmer&apos;s primary group
+                </label>
+                {assignError ? <div style={{ fontSize: '12px', color: 'var(--danger)' }}>{assignError}</div> : null}
+                {assignSuccess ? <div style={{ fontSize: '12px', color: 'var(--success)' }}>{assignSuccess}</div> : null}
+                <button className="btn btn-primary" type="submit" disabled={assigning || !assignForm.swimmerId}>
+                  {assigning ? 'Adding...' : 'Add Swimmer'}
+                </button>
+              </form>
+            )}
           </div>
           <Table columns={SWIMMER_COLS} data={members} emptyTitle="No members" emptyDescription="No swimmers are currently assigned to this group." />
         </div>
@@ -350,7 +376,7 @@ export default function GroupDetailPage() {
                 { label: 'Group ID', value: group.id },
                 { label: 'Code', value: group.code },
                 { label: 'Type', value: group.type },
-                { label: 'Coach User', value: group.coach_user_id || '—' },
+                { label: 'Coach', value: coachName || '—' },
                 { label: 'Min Age', value: group.min_age?.toString() || '—' },
                 { label: 'Max Age', value: group.max_age?.toString() || 'No limit' },
                 { label: 'Created', value: formatDate(group.created_at) },

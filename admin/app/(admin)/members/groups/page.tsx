@@ -7,7 +7,8 @@ import { Table, type Column } from '@/components/ui/Table'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
 import { useApiClient, ApiError } from '@/lib/api'
-import { fetchGroups, fetchRegistrations, createGroup, type GroupRecord, type RegistrationRecord } from '@/lib/adminData'
+import { fetchGroups, fetchRegistrations, fetchUsers, createGroup, type GroupRecord, type RegistrationRecord, type UserRecord } from '@/lib/adminData'
+import { canWrite } from '@/lib/roles'
 
 type GroupType = 'competitive' | 'recreational' | 'developmental' | 'masters' | 'other'
 
@@ -77,7 +78,12 @@ const COLUMNS: Column<GroupRow>[] = [
   },
 ]
 
-function deriveRows(groups: GroupRecord[], registrations: RegistrationRecord[]): GroupRow[] {
+function displayNameForUser(user: UserRecord): string {
+  const name = `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim()
+  return name || user.email || user.id
+}
+
+function deriveRows(groups: GroupRecord[], registrations: RegistrationRecord[], userNameById: Record<string, string>): GroupRow[] {
   const registrationCountByGroup = registrations.reduce<Record<string, number>>((acc, registration) => {
     if (registration.status !== 'withdrawn' && registration.status !== 'rejected') {
       acc[registration.group_id] = (acc[registration.group_id] ?? 0) + 1
@@ -91,7 +97,7 @@ function deriveRows(groups: GroupRecord[], registrations: RegistrationRecord[]):
       name: group.name,
       type: (group.type as GroupType) || 'other',
       swimmerCount: registrationCountByGroup[group.id] ?? 0,
-      coachName: group.coach_user_id || null,
+      coachName: group.coach_user_id ? (userNameById[group.coach_user_id] ?? group.coach_user_id) : null,
       minAge: group.min_age ?? null,
       maxAge: group.max_age ?? null,
       status: (group.is_active ? 'active' : 'archived') as 'active' | 'archived',
@@ -106,7 +112,9 @@ const LABEL_STYLE: React.CSSProperties = { fontSize: '11px', fontWeight: 600, co
 export default function GroupsPage() {
   const { session } = useSession()
   const api = useApiClient(session?.token)
+  const allowWrite = canWrite(session?.user.roles ?? [])
   const [rows, setRows] = useState<GroupRow[]>([])
+  const [userNameById, setUserNameById] = useState<Record<string, string>>({})
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('active')
@@ -131,11 +139,16 @@ export default function GroupsPage() {
       try {
         setLoading(true)
         setError(null)
-        const [groups, registrations] = await Promise.all([
+        const [groups, registrations, users] = await Promise.all([
           fetchGroups(api, session.user.orgId),
           fetchRegistrations(api, session.user.orgId),
+          fetchUsers(api, session.user.orgId, { limit: 200 }).catch(() => ({ users: [] as UserRecord[] })),
         ])
-        if (!cancelled) setRows(deriveRows(groups, registrations))
+        const userNameById = Object.fromEntries(users.users.map((u) => [u.id, displayNameForUser(u)]))
+        if (!cancelled) {
+          setUserNameById(userNameById)
+          setRows(deriveRows(groups, registrations, userNameById))
+        }
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof ApiError ? err.message : 'Failed to load groups.')
@@ -180,7 +193,7 @@ export default function GroupsPage() {
       setShowNew(false)
       setForm({ code: '', name: '', description: '', type: 'competitive', min_age: '', max_age: '' })
       const [grps, regs] = await Promise.all([fetchGroups(api, session.user.orgId), fetchRegistrations(api, session.user.orgId)])
-      setRows(deriveRows(grps, regs))
+      setRows(deriveRows(grps, regs, userNameById))
     } catch (err) {
       setFormError(err instanceof ApiError ? err.message : 'Failed to create group.')
     } finally {
@@ -195,9 +208,11 @@ export default function GroupsPage() {
           <h1 style={{ fontSize: '22px', fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.2, marginBottom: '4px' }}>Groups</h1>
           <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>Live training-group inventory and enrollment counts</p>
         </div>
-        <button className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setShowNew(true)}>
-          <Icon name="plus" size={14} /> New Group
-        </button>
+        {allowWrite && (
+          <button className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setShowNew(true)}>
+            <Icon name="plus" size={14} /> New Group
+          </button>
+        )}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>

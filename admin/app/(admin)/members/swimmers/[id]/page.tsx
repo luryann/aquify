@@ -150,6 +150,8 @@ export default function SwimmerDetailPage() {
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deleteNameConfirm, setDeleteNameConfirm] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -209,10 +211,6 @@ export default function SwimmerDetailPage() {
 
   async function handleDeleteSwimmer() {
     if (!session?.user.orgId || !swimmer) return
-    const swimmerName = `${swimmer.preferred_name || swimmer.first_name} ${swimmer.last_name}`.trim()
-    if (!window.confirm(`Delete swimmer "${swimmerName}"? This will only succeed if no related registrations, entries, results, or other linked records still exist.`)) {
-      return
-    }
 
     setDeleting(true)
     setDeleteError(null)
@@ -221,6 +219,7 @@ export default function SwimmerDetailPage() {
       router.push('/members/swimmers')
     } catch (err) {
       setDeleteError(err instanceof ApiError ? err.message : 'Failed to delete swimmer.')
+      setShowDeleteConfirm(false)
     } finally {
       setDeleting(false)
     }
@@ -275,11 +274,56 @@ export default function SwimmerDetailPage() {
           </div>
         </div>
         {canDelete ? (
-          <button className="btn btn-danger" onClick={handleDeleteSwimmer} disabled={deleting}>
-            {deleting ? 'Deleting…' : 'Delete Swimmer'}
+          <button className="btn btn-danger" onClick={() => { setShowDeleteConfirm(true); setDeleteNameConfirm(''); setDeleteError(null) }} disabled={deleting}>
+            Delete Swimmer
           </button>
         ) : null}
       </div>
+
+      {showDeleteConfirm && (
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.7)' }}
+          onClick={(e) => { if (e.target === e.currentTarget) setShowDeleteConfirm(false) }}
+        >
+          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--error-border)', borderRadius: '14px', padding: '28px', width: '100%', maxWidth: '460px', boxShadow: 'var(--shadow-lg)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+              <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'var(--error-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Icon name="trash-2" size={16} style={{ color: 'var(--error)' }} />
+              </div>
+              <h2 style={{ fontSize: '16px', fontFamily: 'var(--font-display)', color: 'var(--text)', margin: 0 }}>Delete Swimmer</h2>
+            </div>
+            <p style={{ fontSize: '13px', color: 'var(--text-subtle)', marginBottom: '8px', lineHeight: 1.5 }}>
+              This permanently removes <strong style={{ color: 'var(--text)' }}>{swimmerName}</strong> from the roster. It only succeeds if no registrations, meet entries, results, best times, document submissions, or invoice items are still linked to this swimmer — otherwise the delete will be blocked and those dependencies will be listed. This action <strong style={{ color: 'var(--error)' }}>cannot be undone</strong>.
+            </p>
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '16px' }}>
+              Type the swimmer&apos;s name to confirm:
+            </p>
+            <input
+              type="text"
+              style={{
+                width: '100%', padding: '9px 12px', background: 'var(--bg-elevated)',
+                border: `1px solid ${deleteNameConfirm === swimmerName ? 'var(--error)' : 'var(--border)'}`,
+                borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none',
+                boxSizing: 'border-box', marginBottom: '16px',
+              }}
+              placeholder={swimmerName}
+              value={deleteNameConfirm}
+              onChange={(e) => setDeleteNameConfirm(e.target.value)}
+            />
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <button className="btn" style={{ fontSize: '13px' }} onClick={() => setShowDeleteConfirm(false)}>Cancel</button>
+              <button
+                className="btn"
+                style={{ fontSize: '13px', background: 'var(--error)', color: '#fff', border: 'none' }}
+                disabled={deleteNameConfirm !== swimmerName || deleting}
+                onClick={() => { void handleDeleteSwimmer() }}
+              >
+                {deleting ? 'Deleting…' : 'Delete Permanently'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {deleteError ? (
         <div className="card" style={{ padding: '14px 16px', marginBottom: '20px', borderColor: 'var(--error-border)', background: 'var(--error-bg)' }}>

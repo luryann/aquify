@@ -7,6 +7,7 @@ import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
 import { ApiError, useApiClient } from '@/lib/api'
 import { reportUIError } from '@/lib/frontend-telemetry'
+import { UnlinkedSwimmerNotice } from '@/components/swimmer/UnlinkedSwimmerNotice'
 import {
   addCommitmentEventSelection,
   deleteCommitmentEventSelection,
@@ -54,6 +55,11 @@ function fmtDateLabel(iso?: string): string {
 
 function fmtTimeFull(isoOrTime?: string): string {
   if (!isoOrTime) return ''
+  const plainTime = isoOrTime.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/)
+  if (plainTime) {
+    const d = new Date(2000, 0, 1, Number(plainTime[1]), Number(plainTime[2]))
+    return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+  }
   try {
     const d = new Date(isoOrTime)
     return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
@@ -130,6 +136,7 @@ export default function SwimmerMeetDetailPage() {
   const api = useApiClient(session?.token)
   const orgId = session?.user.orgId ?? ''
   const householdId = session?.user.householdId ?? ''
+  const mySwimmerId = session?.user.swimmerId ?? ''
 
   const [meet, setMeet] = useState<MeetRecord | null>(null)
   const [sessions, setSessions] = useState<MeetSessionRecord[]>([])
@@ -154,6 +161,7 @@ export default function SwimmerMeetDetailPage() {
   const [commitError, setCommitError] = useState<string | null>(null)
   const [selectionError, setSelectionError] = useState<string | null>(null)
   const [retryKey, setRetryKey] = useState(0)
+  const [noLinkedSwimmer, setNoLinkedSwimmer] = useState(false)
 
   useEffect(() => {
     if (!orgId || !meetId || !householdId) {
@@ -162,6 +170,13 @@ export default function SwimmerMeetDetailPage() {
       setFilesLoading(false)
       return
     }
+    if (!mySwimmerId) {
+      setNoLinkedSwimmer(true)
+      setLoading(false)
+      setFilesLoading(false)
+      return
+    }
+    setNoLinkedSwimmer(false)
 
     let cancelled = false
 
@@ -193,9 +208,9 @@ export default function SwimmerMeetDetailPage() {
         const allSwimmers = await fetchSwimmers(api, orgId)
         if (cancelled) return
 
-        const hhSwimmer = allSwimmers.find((s) => s.household_id === householdId)
+        const hhSwimmer = allSwimmers.find((s) => s.id === mySwimmerId)
         if (!hhSwimmer) {
-          setLoadError('Your swimmer household could not be loaded for this meet. Refresh and try again.')
+          setLoadError('Your linked swimmer record could not be loaded for this meet. Refresh and try again.')
           return
         }
 
@@ -265,7 +280,7 @@ export default function SwimmerMeetDetailPage() {
     return () => {
       cancelled = true
     }
-  }, [api, orgId, meetId, householdId, retryKey])
+  }, [api, orgId, meetId, householdId, mySwimmerId, retryKey])
 
   const commitmentOpen = meet?.status === 'commitment_open'
   const deadlineDate = meet?.commitment_deadline ? new Date(meet.commitment_deadline) : null
@@ -423,6 +438,18 @@ export default function SwimmerMeetDetailPage() {
             No meet was found for <span style={{ fontFamily: 'var(--font-mono)', color: C.text }}>{meetId || 'this route'}</span>.
           </p>
         </div>
+      </div>
+    )
+  }
+
+  if (!loading && noLinkedSwimmer) {
+    return (
+      <div style={{ maxWidth: '720px' }}>
+        <Link href="/swim/schedule" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', color: C.subtle, textDecoration: 'none', fontSize: '13px', marginBottom: '22px' }}>
+          <Icon name="chevron-left" size={14} />
+          Schedule
+        </Link>
+        <UnlinkedSwimmerNotice />
       </div>
     )
   }
@@ -604,8 +631,8 @@ export default function SwimmerMeetDetailPage() {
                         <div>
                           <div style={{ fontSize: '14px', fontWeight: 700, color: C.text }}>{session.name}</div>
                           <div style={{ fontSize: '12px', color: C.subtle }}>
-                            {session.warmup_at ? `Warm-up ${fmtTimeFull(session.warmup_at)}` : ''}
-                            {session.start_at ? ` · Start ${fmtTimeFull(session.start_at)}` : ''}
+                            {session.warmup_time ? `Warm-up ${fmtTimeFull(session.warmup_time)}` : ''}
+                            {session.start_time ? ` · Start ${fmtTimeFull(session.start_time)}` : ''}
                           </div>
                         </div>
                         <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: C.accent, background: C.accentDim, border: `1px solid ${C.accentBorder}`, borderRadius: '999px', padding: '3px 8px' }}>

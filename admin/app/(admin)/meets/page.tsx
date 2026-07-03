@@ -10,6 +10,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
 import { useApiClient, ApiError } from '@/lib/api'
 import { fetchMeetCommitments, fetchMeetEntries, fetchMeetEvents, fetchMeets, type MeetRecord } from '@/lib/adminData'
+import { canWrite } from '@/lib/roles'
 
 type MeetStatus = 'draft' | 'published' | 'commitment_open' | 'commitment_closed' | 'entry_finalized' | 'completed' | 'archived'
 type MeetCourse = 'SCY' | 'SCM' | 'LCM'
@@ -118,6 +119,7 @@ export default function MeetsPage() {
 function MeetsPageContent() {
   const { session } = useSession()
   const api = useApiClient(session?.token)
+  const allowWrite = canWrite(session?.user.roles ?? [])
   const searchParams = useSearchParams()
   const [rows, setRows] = useState<MeetRow[]>([])
   const [viewTab, setViewTab] = useState('upcoming')
@@ -181,9 +183,11 @@ function MeetsPageContent() {
           <h1 style={{ fontSize: '22px', fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.2, marginBottom: '4px' }}>Meets</h1>
           <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>Live meet operations from persisted backend state</p>
         </div>
-        <Link href="/meets/new" className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px', textDecoration: 'none' }}>
-          <Icon name="plus" size={14} /> New Meet
-        </Link>
+        {allowWrite && (
+          <Link href="/meets/new" className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px', textDecoration: 'none' }}>
+            <Icon name="plus" size={14} /> New Meet
+          </Link>
+        )}
       </div>
 
       {createdNotice === '1' && (

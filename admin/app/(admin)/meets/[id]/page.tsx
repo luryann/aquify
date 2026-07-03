@@ -305,6 +305,7 @@ export default function MeetDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [transitioning, setTransitioning] = useState(false)
   const [transitionError, setTransitionError] = useState<string | null>(null)
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -377,6 +378,7 @@ export default function MeetDetailPage() {
             status: entry.status,
           }
         }).sort((a, b) => a.swimmer.localeCompare(b.swimmer)))
+        setLastRefreshedAt(new Date())
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof ApiError ? err.message : 'Failed to load meet details.')
@@ -443,7 +445,7 @@ export default function MeetDetailPage() {
             <StatusBadge status={meet.status} />
           </div>
           <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-            {meet.id} · {meet.host_org || 'Host TBD'} · {meet.location || 'Location TBD'}
+            {meet.host_org || 'Host TBD'} · {meet.location || 'Location TBD'}
           </div>
         </div>
       </div>
@@ -493,9 +495,23 @@ export default function MeetDetailPage() {
           </div>
           <div className="card" style={{ padding: '20px' }}>
             <h3 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '16px', fontFamily: 'var(--font-mono)' }}>Operations Snapshot</h3>
-            <p style={{ fontSize: '13px', color: 'var(--text-subtle)', lineHeight: 1.7 }}>
-              This detail view is backed by persisted meet, session, event, commitment, and entry data, and the operational counts and tables below are all live.
-            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Households yet to respond</span>
+                <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: commitments.filter((c) => c.status === 'invited').length > 0 ? 'var(--warning)' : 'var(--text)' }}>
+                  {commitments.filter((c) => c.status === 'invited').length}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Entries awaiting approval</span>
+                <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: entries.filter((e) => e.status === 'submitted').length > 0 ? 'var(--warning)' : 'var(--text)' }}>
+                  {entries.filter((e) => e.status === 'submitted').length}
+                </span>
+              </div>
+              <p style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: '4px' }}>
+                {lastRefreshedAt ? `Updated ${lastRefreshedAt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : 'Waiting for first refresh…'}
+              </p>
+            </div>
           </div>
         </div>
       ) : null}

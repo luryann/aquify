@@ -8,6 +8,7 @@ import { parseBackendDate } from '@/lib/dates'
 import { useApiClient } from '@/lib/api'
 import { shouldShowCollectionEmptyState } from '@/lib/collection-load-state'
 import { reportUIError } from '@/lib/frontend-telemetry'
+import { UnlinkedSwimmerNotice } from '@/components/swimmer/UnlinkedSwimmerNotice'
 import {
   fetchSwimmers,
   fetchMeets,
@@ -241,6 +242,7 @@ export default function SwimmerDashboardPage() {
   const api = useApiClient(session?.token)
   const orgId = session?.user.orgId ?? ''
   const householdId = session?.user.householdId ?? ''
+  const swimmerId = session?.user.swimmerId ?? ''
 
   const [swimmer, setSwimmer] = useState<SwimmerRecord | null>(null)
   const [meets, setMeets] = useState<MeetDisplay[]>([])
@@ -248,6 +250,7 @@ export default function SwimmerDashboardPage() {
   const [announcements, setAnnouncements] = useState<AnnouncementRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [noLinkedSwimmer, setNoLinkedSwimmer] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
 
   const now = new Date()
@@ -269,11 +272,15 @@ export default function SwimmerDashboardPage() {
       fetchMeets(api, orgId),
       fetchAnnouncements(api, orgId, 'published'),
     ]).then(async ([swimmers, allMeets, anns]) => {
-      // Resolve swimmer
-      const mySwimmer = householdId
-        ? (swimmers.find(s => s.household_id === householdId) ?? null)
+      // Resolve "which swimmer is me" by the stable swimmer_id carried on the
+      // session, never by guessing a household roster entry — a household can
+      // have multiple swimmers, and only swimmerId identifies which one this
+      // login belongs to.
+      const mySwimmer = swimmerId
+        ? (swimmers.find(s => s.id === swimmerId) ?? null)
         : null
       setSwimmer(mySwimmer)
+      setNoLinkedSwimmer(!swimmerId)
       setAnnouncements(anns.slice(0, 3))
 
       // Filter meets to those with commitment_open or later
@@ -341,7 +348,7 @@ export default function SwimmerDashboardPage() {
         { orgId, householdId },
       ))
     }).finally(() => setLoading(false))
-  }, [api, orgId, householdId, reloadKey])
+  }, [api, orgId, householdId, swimmerId, reloadKey])
 
   const firstName = swimmer
     ? (swimmer.preferred_name || swimmer.first_name)
@@ -511,6 +518,8 @@ export default function SwimmerDashboardPage() {
           </button>
         </div>
       )}
+
+      {!loading && !loadError && noLinkedSwimmer && <UnlinkedSwimmerNotice />}
 
       <div
         style={{

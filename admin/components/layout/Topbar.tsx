@@ -26,12 +26,18 @@ function useBreadcrumb() {
     crumbs.push({ label: navItem.section, path: '#' })
   }
 
+  const isUUID = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+
   let built = ''
   for (const seg of segments) {
     built += `/${seg}`
     const match = NAV_ITEMS.find((i) => i.path === built)
     if (match) {
       crumbs.push({ label: match.label, path: built })
+    } else if (isUUID(seg)) {
+      // Dynamic record IDs (e.g. /meets/{id}) aren't human-readable — the page's
+      // own heading already shows the record's name, so skip adding a crumb for it.
+      continue
     } else {
       const decoded = decodeURIComponent(seg)
       const label = decoded.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())

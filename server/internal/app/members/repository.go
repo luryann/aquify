@@ -169,27 +169,47 @@ func (r *Repository) UpsertSwimmer(ctx context.Context, sw Swimmer) error {
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO swimmers (id, org_id, household_id, first_name, last_name, preferred_name,
 		                      date_of_birth, gender, swimmer_external_id, usa_swimming_id, registration_status,
-		                      medical_flags, notes, created_at, updated_at)
+		                      medical_flags, notes, emergency_contact_name, emergency_contact_phone,
+		                      emergency_contact_relationship, allergies, keycloak_user_id, created_at, updated_at)
 		VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7::date, $8, $9, $10, $11,
-		        $12::jsonb, $13, $14, $15)
+		        $12::jsonb, $13, $14, $15, $16, $17, $18, $19, $20)
 		ON CONFLICT (id) DO UPDATE SET
-		  first_name          = EXCLUDED.first_name,
-		  last_name           = EXCLUDED.last_name,
-		  preferred_name      = EXCLUDED.preferred_name,
-		  date_of_birth       = EXCLUDED.date_of_birth,
-		  gender              = EXCLUDED.gender,
-		  swimmer_external_id = EXCLUDED.swimmer_external_id,
-		  usa_swimming_id     = EXCLUDED.usa_swimming_id,
-		  registration_status = EXCLUDED.registration_status,
-		  medical_flags       = EXCLUDED.medical_flags,
-		  notes               = EXCLUDED.notes,
-		  updated_at          = EXCLUDED.updated_at`,
+		  first_name                     = EXCLUDED.first_name,
+		  last_name                      = EXCLUDED.last_name,
+		  preferred_name                 = EXCLUDED.preferred_name,
+		  date_of_birth                  = EXCLUDED.date_of_birth,
+		  gender                         = EXCLUDED.gender,
+		  swimmer_external_id            = EXCLUDED.swimmer_external_id,
+		  usa_swimming_id                = EXCLUDED.usa_swimming_id,
+		  registration_status            = EXCLUDED.registration_status,
+		  medical_flags                  = EXCLUDED.medical_flags,
+		  notes                          = EXCLUDED.notes,
+		  emergency_contact_name         = EXCLUDED.emergency_contact_name,
+		  emergency_contact_phone        = EXCLUDED.emergency_contact_phone,
+		  emergency_contact_relationship = EXCLUDED.emergency_contact_relationship,
+		  allergies                      = EXCLUDED.allergies,
+		  keycloak_user_id               = EXCLUDED.keycloak_user_id,
+		  updated_at                     = EXCLUDED.updated_at`,
 		sw.ID, sw.OrgID, sw.HouseholdID,
 		sw.FirstName, sw.LastName, nullableString(sw.PreferredName),
 		sw.DateOfBirth, sw.Gender,
 		nullableString(sw.SwimmerExternalID), nullableString(sw.USASwimmingID), sw.RegistrationStatus,
 		string(flagsJSON), nullableString(sw.Notes),
+		nullableString(sw.EmergencyContactName), nullableString(sw.EmergencyContactPhone),
+		nullableString(sw.EmergencyContactRelationship), nullableString(sw.Allergies),
+		nullableString(sw.KeycloakUserID),
 		sw.CreatedAt, sw.UpdatedAt,
+	)
+	return err
+}
+
+// SetSwimmerKeycloakUserID sets or clears the keycloak_user_id for a swimmer.
+// Pass an empty string to clear (unlink).
+func (r *Repository) SetSwimmerKeycloakUserID(ctx context.Context, swimmerID, keycloakUserID string) error {
+	_, err := r.pool.Exec(ctx, `
+		UPDATE swimmers SET keycloak_user_id = $2, updated_at = now()
+		WHERE id = $1::uuid AND deleted_at IS NULL`,
+		swimmerID, nullableString(keycloakUserID),
 	)
 	return err
 }
@@ -201,6 +221,9 @@ func (r *Repository) LoadSwimmers(ctx context.Context) ([]Swimmer, error) {
 		       date_of_birth::text, gender,
 		       COALESCE(swimmer_external_id, ''), COALESCE(usa_swimming_id, ''), registration_status,
 		       medical_flags::text, COALESCE(notes, ''),
+		       COALESCE(emergency_contact_name, ''), COALESCE(emergency_contact_phone, ''),
+		       COALESCE(emergency_contact_relationship, ''), COALESCE(allergies, ''),
+		       COALESCE(keycloak_user_id, ''),
 		       created_at, updated_at
 		FROM swimmers WHERE deleted_at IS NULL`)
 	if err != nil {
@@ -218,6 +241,9 @@ func (r *Repository) LoadSwimmers(ctx context.Context) ([]Swimmer, error) {
 			&sw.DateOfBirth, &sw.Gender,
 			&sw.SwimmerExternalID, &sw.USASwimmingID, &sw.RegistrationStatus,
 			&flagsJSON, &sw.Notes,
+			&sw.EmergencyContactName, &sw.EmergencyContactPhone,
+			&sw.EmergencyContactRelationship, &sw.Allergies,
+			&sw.KeycloakUserID,
 			&sw.CreatedAt, &sw.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("members: scan swimmer: %w", err)
@@ -363,6 +389,55 @@ func (r *Repository) LoadSwimmerGroupLinks(ctx context.Context) ([]SwimmerGroupL
 	return out, rows.Err()
 }
 
+// ───────────────────────────── Swimmer Link Requests ───────────────────────
+
+func (r *Repository) InsertSwimmerLinkRequest(ctx context.Context, req SwimmerLinkRequest) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO swimmer_link_requests (id, org_id, user_id, requested_swimmer_name, note, status, created_at)
+		VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7)`,
+		req.ID, req.OrgID, req.UserID, req.RequestedSwimmerName, req.Note, req.Status, req.CreatedAt,
+	)
+	return err
+}
+
+func (r *Repository) ListPendingSwimmerLinkRequests(ctx context.Context, orgID string) ([]SwimmerLinkRequest, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, org_id::text, user_id::text, requested_swimmer_name, note, status, created_at
+		FROM swimmer_link_requests
+		WHERE org_id = $1::uuid AND status = 'pending'
+		ORDER BY created_at ASC`, orgID)
+	if err != nil {
+		return nil, fmt.Errorf("members: list swimmer link requests: %w", err)
+	}
+	defer rows.Close()
+
+	var out []SwimmerLinkRequest
+	for rows.Next() {
+		var req SwimmerLinkRequest
+		if err := rows.Scan(&req.ID, &req.OrgID, &req.UserID, &req.RequestedSwimmerName, &req.Note, &req.Status, &req.CreatedAt); err != nil {
+			return nil, fmt.Errorf("members: scan swimmer link request: %w", err)
+		}
+		out = append(out, req)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) ResolveSwimmerLinkRequest(ctx context.Context, orgID, requestID, resolvedBy, resolvedSwimmerID string) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE swimmer_link_requests
+		SET status = 'resolved', resolved_at = now(), resolved_by = $3::uuid, resolved_swimmer_id = $4::uuid
+		WHERE id = $1::uuid AND org_id = $2::uuid AND status = 'pending'`,
+		requestID, orgID, resolvedBy, resolvedSwimmerID,
+	)
+	if err != nil {
+		return fmt.Errorf("members: resolve swimmer link request: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrSwimmerLinkRequestNotFound
+	}
+	return nil
+}
+
 // ───────────────────────────── Batch load ─────────────────────────────────
 
 // LoadAll fetches all records for the members domain in a single transaction.
@@ -451,7 +526,10 @@ func loadSwimmersInTx(ctx context.Context, tx pgx.Tx) ([]Swimmer, error) {
 		       first_name, last_name, COALESCE(preferred_name, ''),
 		       date_of_birth::text, gender,
 		       COALESCE(swimmer_external_id, ''), COALESCE(usa_swimming_id, ''), registration_status,
-		       medical_flags::text, COALESCE(notes, ''), created_at, updated_at
+		       medical_flags::text, COALESCE(notes, ''),
+		       COALESCE(emergency_contact_name, ''), COALESCE(emergency_contact_phone, ''),
+		       COALESCE(emergency_contact_relationship, ''), COALESCE(allergies, ''),
+		       COALESCE(keycloak_user_id, ''), created_at, updated_at
 		FROM swimmers WHERE deleted_at IS NULL`)
 	if err != nil {
 		return nil, err
@@ -467,6 +545,9 @@ func loadSwimmersInTx(ctx context.Context, tx pgx.Tx) ([]Swimmer, error) {
 			&sw.DateOfBirth, &sw.Gender,
 			&sw.SwimmerExternalID, &sw.USASwimmingID, &sw.RegistrationStatus,
 			&flagsJSON, &sw.Notes,
+			&sw.EmergencyContactName, &sw.EmergencyContactPhone,
+			&sw.EmergencyContactRelationship, &sw.Allergies,
+			&sw.KeycloakUserID,
 			&sw.CreatedAt, &sw.UpdatedAt,
 		); err != nil {
 			return nil, err

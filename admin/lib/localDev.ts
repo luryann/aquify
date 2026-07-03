@@ -15,6 +15,7 @@ export type LocalDevUser = {
   avatarInitials: string
   mfaAuthenticated?: boolean
   householdId?: string
+  swimmerId?: string
 }
 
 export const LOCAL_DEV_USERS: Record<string, LocalDevUser> = {
@@ -34,6 +35,7 @@ export const LOCAL_DEV_USERS: Record<string, LocalDevUser> = {
     role: 'admin',
     orgId: LOCAL_DEV_ORG_ID,
     avatarInitials: 'DA',
+    mfaAuthenticated: true,
   },
   'stub-coach': {
     id: '00000000-0000-0000-0000-00000000a103',
@@ -42,6 +44,7 @@ export const LOCAL_DEV_USERS: Record<string, LocalDevUser> = {
     role: 'coach',
     orgId: LOCAL_DEV_ORG_ID,
     avatarInitials: 'DC',
+    mfaAuthenticated: true,
   },
   'stub-parent': {
     id: '00000000-0000-0000-0000-00000000a104',
@@ -59,6 +62,7 @@ export const LOCAL_DEV_USERS: Record<string, LocalDevUser> = {
     role: 'billing',
     orgId: LOCAL_DEV_ORG_ID,
     avatarInitials: 'DB',
+    mfaAuthenticated: true,
   },
   'stub-readonly': {
     id: '00000000-0000-0000-0000-00000000a106',

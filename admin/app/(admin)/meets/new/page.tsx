@@ -1,11 +1,11 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
-import { createMeet, parseMeetEntryFile, type ParsedMeetEventDraftRecord } from '@/lib/adminData'
+import { createMeet, fetchMeets, parseMeetEntryFile, type MeetRecord, type ParsedMeetEventDraftRecord } from '@/lib/adminData'
 import {
   buildCreateMeetPayload,
   getNextSessionNumber,
@@ -333,6 +333,16 @@ export default function NewMeetPage() {
   const [step, setStep] = useState(0)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [existingMeets, setExistingMeets] = useState<MeetRecord[]>([])
+
+  useEffect(() => {
+    if (!session?.user.orgId) return
+    let cancelled = false
+    fetchMeets(api, session.user.orgId)
+      .then((meets) => { if (!cancelled) setExistingMeets(meets) })
+      .catch(() => { /* duplicate-name check is a soft nicety, not worth failing the page over */ })
+    return () => { cancelled = true }
+  }, [api, session?.user.orgId])
 
   // File upload state
   const [packageFiles, setPackageFiles] = useState<PackageFile[]>([])
@@ -360,6 +370,12 @@ export default function NewMeetPage() {
       { id: 'session-1', sessionNumber: 1, section: 'Day 1', name: 'Morning Session', date: '', warmupTime: '', startTime: '' },
     ],
   })
+
+  const duplicateMeet = useMemo(() => {
+    const name = draft.name.trim().toLowerCase()
+    if (!name || !draft.startDate) return null
+    return existingMeets.find((m) => m.name.trim().toLowerCase() === name && m.start_date === draft.startDate) ?? null
+  }, [draft.name, draft.startDate, existingMeets])
 
   function update<K extends keyof MeetDraft>(key: K, value: MeetDraft[K]) {
     setDraft((d) => ({ ...d, [key]: value }))
@@ -812,6 +828,14 @@ export default function NewMeetPage() {
             <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '20px', fontWeight: 400, color: 'var(--text)', marginBottom: '20px' }}>
               Review & Create
             </h2>
+            {duplicateMeet && (
+              <div style={{ marginBottom: '16px', display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '12px 14px', borderRadius: '8px', background: 'var(--warning-bg)', border: '1px solid var(--warning-border)' }}>
+                <Icon name="alert-triangle" size={15} style={{ color: 'var(--warning)', marginTop: '1px', flexShrink: 0 }} />
+                <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--text)', lineHeight: 1.5 }}>
+                  A meet named &quot;{duplicateMeet.name}&quot; on {duplicateMeet.start_date} already exists — check you&apos;re not creating a duplicate before continuing.
+                </p>
+              </div>
+            )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               {[
                 { label: 'Name',         value: draft.name || '—' },

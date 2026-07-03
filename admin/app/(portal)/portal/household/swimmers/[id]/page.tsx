@@ -146,6 +146,10 @@ export default function SwimmerProfilePage() {
   // Editable local state (initialized from swimmer data on load)
   const [emergencyNotes, setEmergencyNotes] = useState('')
   const [preferredName, setPreferredName] = useState('')
+  const [emergencyContactName, setEmergencyContactName] = useState('')
+  const [emergencyContactPhone, setEmergencyContactPhone] = useState('')
+  const [emergencyContactRelationship, setEmergencyContactRelationship] = useState('')
+  const [allergies, setAllergies] = useState('')
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveSuccess, setSaveSuccess] = useState(false)
@@ -158,38 +162,53 @@ export default function SwimmerProfilePage() {
     }
     setLoading(true)
     setLoadError(null)
-    Promise.all([
+    Promise.allSettled([
       fetchSwimmer(api, orgId, swimmerId),
       fetchSwimmerGroups(api, orgId),
       fetchGroups(api, orgId),
       fetchSwimmerBestTimes(api, orgId, swimmerId),
       fetchSwimmerActivity(api, orgId, swimmerId),
     ])
-      .then(([sw, sGroups, grps, times, activities]) => {
+      .then(([swResult, sGroupsResult, grpsResult, timesResult, activityResult]) => {
+        if (swResult.status === 'rejected') {
+          setSwimmer(null)
+          setGroupName('—')
+          setBestTimes([])
+          setActivity([])
+          setLoadError(reportUIError(
+            'portal-household-swimmer-load',
+            swResult.reason,
+            'Swimmer detail data is unavailable right now.',
+            { orgId, swimmerId },
+          ))
+          return
+        }
+
+        const sw = swResult.value
         setSwimmer(sw)
         setEmergencyNotes(sw.notes ?? '')
         setPreferredName(sw.preferred_name ?? '')
+        setEmergencyContactName(sw.emergency_contact_name ?? '')
+        setEmergencyContactPhone(sw.emergency_contact_phone ?? '')
+        setEmergencyContactRelationship(sw.emergency_contact_relationship ?? '')
+        setAllergies(sw.allergies ?? '')
 
-        const link = sGroups.find((sg) => sg.swimmer_id === sw.id && sg.is_primary)
-        if (link) {
-          const grp = grps.find((g) => g.code === link.group_code)
-          setGroupName(grp?.name ?? link.group_code ?? '—')
+        if (sGroupsResult.status === 'fulfilled' && grpsResult.status === 'fulfilled') {
+          const sGroups = sGroupsResult.value
+          const grps = grpsResult.value
+          const link = sGroups.find((sg) => sg.swimmer_id === sw.id && sg.is_primary)
+          if (link) {
+            const grp = grps.find((g) => g.code === link.group_code)
+            setGroupName(grp?.name ?? link.group_code ?? '—')
+          }
         }
 
-        setBestTimes(pivotBestTimes(times))
-        setActivity(activities)
-      })
-      .catch((error) => {
-        setSwimmer(null)
-        setGroupName('—')
-        setBestTimes([])
-        setActivity([])
-        setLoadError(reportUIError(
-          'portal-household-swimmer-load',
-          error,
-          'Swimmer detail data is unavailable right now.',
-          { orgId, swimmerId },
-        ))
+        if (timesResult.status === 'fulfilled') {
+          setBestTimes(pivotBestTimes(timesResult.value))
+        }
+        if (activityResult.status === 'fulfilled') {
+          setActivity(activityResult.value)
+        }
       })
       .finally(() => setLoading(false))
   }, [api, orgId, swimmerId, reloadKey])
@@ -197,6 +216,7 @@ export default function SwimmerProfilePage() {
   const [tab, setTab] = useState<Tab>('profile')
   const [editingName, setEditingName] = useState(false)
   const [editingNotes, setEditingNotes] = useState(false)
+  const [editingEmergencyContact, setEditingEmergencyContact] = useState(false)
 
   async function handleSave() {
     if (!orgId || !swimmerId) return
@@ -207,12 +227,21 @@ export default function SwimmerProfilePage() {
       const updated = await updateSwimmer(api, orgId, swimmerId, {
         preferred_name: preferredName,
         notes: emergencyNotes,
+        emergency_contact_name: emergencyContactName,
+        emergency_contact_phone: emergencyContactPhone,
+        emergency_contact_relationship: emergencyContactRelationship,
+        allergies,
       })
       setSwimmer(updated)
       setEmergencyNotes(updated.notes ?? '')
       setPreferredName(updated.preferred_name ?? '')
+      setEmergencyContactName(updated.emergency_contact_name ?? '')
+      setEmergencyContactPhone(updated.emergency_contact_phone ?? '')
+      setEmergencyContactRelationship(updated.emergency_contact_relationship ?? '')
+      setAllergies(updated.allergies ?? '')
       setEditingName(false)
       setEditingNotes(false)
+      setEditingEmergencyContact(false)
       setSaveSuccess(true)
       setTimeout(() => setSaveSuccess(false), 3000)
     } catch (err) {
@@ -440,10 +469,74 @@ export default function SwimmerProfilePage() {
                 </button>
               </div>
             </div>
+
+            {/* Emergency Contact + Allergies */}
+            <div style={{ padding: '16px 20px', borderTop: '1px solid rgba(0,0,0,0.05)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: '12px', color: '#9A9693', marginBottom: '10px' }}>Emergency Contact</div>
+                  {editingEmergencyContact ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '440px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '10px' }}>
+                        <input
+                          autoFocus
+                          value={emergencyContactName}
+                          onChange={(e) => setEmergencyContactName(e.target.value)}
+                          placeholder="Contact name"
+                          style={{ padding: '7px 11px', border: '1.5px solid #eb5d1e', borderRadius: '8px', fontSize: '13.5px', color: '#1A1714', fontFamily: 'var(--font-body)', outline: 'none', background: '#fff' }}
+                        />
+                        <input
+                          value={emergencyContactRelationship}
+                          onChange={(e) => setEmergencyContactRelationship(e.target.value)}
+                          placeholder="Relationship"
+                          style={{ padding: '7px 11px', border: '1.5px solid #eb5d1e', borderRadius: '8px', fontSize: '13.5px', color: '#1A1714', fontFamily: 'var(--font-body)', outline: 'none', background: '#fff' }}
+                        />
+                      </div>
+                      <input
+                        value={emergencyContactPhone}
+                        onChange={(e) => setEmergencyContactPhone(e.target.value)}
+                        placeholder="Phone number"
+                        type="tel"
+                        style={{ padding: '7px 11px', border: '1.5px solid #eb5d1e', borderRadius: '8px', fontSize: '13.5px', color: '#1A1714', fontFamily: 'var(--font-body)', outline: 'none', background: '#fff' }}
+                      />
+                      <div>
+                        <div style={{ fontSize: '11px', color: '#9A9693', marginBottom: '4px' }}>Allergies</div>
+                        <input
+                          value={allergies}
+                          onChange={(e) => setAllergies(e.target.value)}
+                          placeholder="e.g. Peanuts, bee stings"
+                          style={{ width: '100%', padding: '7px 11px', border: '1.5px solid #eb5d1e', borderRadius: '8px', fontSize: '13.5px', color: '#1A1714', fontFamily: 'var(--font-body)', outline: 'none', background: '#fff' }}
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '13.5px', color: '#1A1714', lineHeight: 1.7 }}>
+                      {emergencyContactName || emergencyContactPhone || emergencyContactRelationship ? (
+                        <>
+                          {emergencyContactName || <span style={{ color: '#C0BDBB', fontStyle: 'italic' }}>Name not set</span>}
+                          {emergencyContactRelationship && <span style={{ color: '#9A9693' }}> · {emergencyContactRelationship}</span>}
+                          <br />
+                          {emergencyContactPhone || <span style={{ color: '#C0BDBB', fontStyle: 'italic' }}>Phone not set</span>}
+                        </>
+                      ) : (
+                        <span style={{ color: '#C0BDBB', fontStyle: 'italic' }}>No emergency contact on file</span>
+                      )}
+                      <div style={{ fontSize: '12px', color: '#6B6866', marginTop: '6px' }}>
+                        Allergies: {allergies || <span style={{ color: '#C0BDBB', fontStyle: 'italic' }}>none noted</span>}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <button onClick={() => setEditingEmergencyContact(!editingEmergencyContact)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#eb5d1e', fontSize: '12.5px', display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px', borderRadius: '6px', transition: 'background 100ms', flexShrink: 0 }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(235,93,30,0.06)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
+                  <Icon name="edit" size={12} />
+                  {editingEmergencyContact ? 'Cancel' : 'Edit'}
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* Save Button */}
-          {(editingName || editingNotes) && (
+          {(editingName || editingNotes || editingEmergencyContact) && (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px', animation: 'slideUp 0.2s ease both' }}>
               {saveError && (
                 <p style={{ fontSize: '12px', color: '#dc2626', fontFamily: 'var(--font-mono)', margin: 0 }}>{saveError}</p>
@@ -453,7 +546,7 @@ export default function SwimmerProfilePage() {
               )}
               <div style={{ display: 'flex', gap: '10px' }}>
                 <button
-                  onClick={() => { setEditingName(false); setEditingNotes(false); setSaveError(null) }}
+                  onClick={() => { setEditingName(false); setEditingNotes(false); setEditingEmergencyContact(false); setSaveError(null) }}
                   style={{ padding: '10px 20px', background: 'transparent', color: '#6B6866', border: '1px solid rgba(0,0,0,0.12)', borderRadius: '9px', fontSize: '14px', fontWeight: 500, cursor: 'pointer', fontFamily: 'var(--font-body)' }}
                 >
                   Cancel

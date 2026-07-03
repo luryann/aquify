@@ -325,6 +325,25 @@ export default function MeetDetailPage() {
   const sessionIds = Array.from(new Set(events.map((e) => e.session_id ?? 'main')))
   const sessionNameById = new Map(sessions.map((s) => [s.id, s.name?.trim() || `Session ${s.session_number}`]))
   const sessionLabel = (sid: string) => (sid === 'main' ? 'Main Session' : sessionNameById.get(sid) ?? `Session ${sid.slice(-4)}`)
+  const sessionById = new Map(sessions.map((s) => [s.id, s]))
+  const fmtClockTime = (value?: string) => {
+    if (!value) return null
+    const match = value.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/)
+    if (!match) return value
+    const d = new Date(2000, 0, 1, Number(match[1]), Number(match[2]))
+    return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+  }
+  const sessionScheduleLabel = (sid: string) => {
+    const s = sessionById.get(sid)
+    if (!s) return null
+    const date = s.session_date
+      ? new Date(`${s.session_date}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+      : null
+    const warmup = fmtClockTime(s.warmup_time)
+    const start = fmtClockTime(s.start_time)
+    const parts = [date, warmup ? `Warm-up ${warmup}` : null, start ? `Starts ${start}` : null].filter(Boolean)
+    return parts.length > 0 ? parts.join(' · ') : null
+  }
 
   const eligibleEvents = swimmer
     ? events.filter((ev) => !ev.gender || ev.gender.toLowerCase() === 'mixed' || ev.gender === swimmer.gender)
@@ -616,8 +635,15 @@ export default function MeetDetailPage() {
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-                      <div style={{ fontSize: '14px', fontWeight: 600, color: '#1A1714' }}>
-                        {sessionLabel(sid)}
+                      <div>
+                        <div style={{ fontSize: '14px', fontWeight: 600, color: '#1A1714' }}>
+                          {sessionLabel(sid)}
+                        </div>
+                        {sessionScheduleLabel(sid) ? (
+                          <div style={{ fontSize: '11.5px', color: '#9A9693', marginTop: '2px' }}>
+                            {sessionScheduleLabel(sid)}
+                          </div>
+                        ) : null}
                       </div>
                       <div style={{ fontSize: '11px', color: '#9A9693', fontFamily: 'var(--font-mono)' }}>
                         {evCount} event{evCount !== 1 ? 's' : ''}

@@ -170,6 +170,8 @@ func (h *AuthHandlers) issueSession(w http.ResponseWriter, r *http.Request) {
 		Roles:            req.Roles,
 		MFAAuthenticated: req.MFAAuthenticated,
 	})
+	// swimmer_id is resolved server-side from the persisted keycloak_user_id
+	// link (see Service.IssueSession), never accepted from the request body.
 	if err != nil {
 		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_session_request", err.Error(), nil)
 		return
@@ -204,6 +206,7 @@ func (h *AuthHandlers) currentSession(w http.ResponseWriter, r *http.Request) {
 			"name":              principal.Name,
 			"org_id":            principal.OrgID,
 			"household_id":      principal.HouseholdID,
+			"swimmer_id":        principal.SwimmerID,
 			"roles":             principal.Roles,
 			"mfa_authenticated": principal.MFAAuthenticated,
 		},

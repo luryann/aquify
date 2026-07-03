@@ -431,16 +431,20 @@ func (h *MembershipHandlers) getSwimmer(w http.ResponseWriter, r *http.Request) 
 }
 
 type updateSwimmerRequest struct {
-	FirstName          *string   `json:"first_name"`
-	LastName           *string   `json:"last_name"`
-	PreferredName      *string   `json:"preferred_name"`
-	DateOfBirth        *string   `json:"date_of_birth"`
-	Gender             *string   `json:"gender" validate:"omitempty,oneof=female male non_binary undisclosed"`
-	SwimmerExternalID  *string   `json:"swimmer_external_id"`
-	USASwimmingID      *string   `json:"usa_swimming_id"`
-	RegistrationStatus *string   `json:"registration_status" validate:"omitempty,oneof=pending active inactive archived"`
-	MedicalFlags       *[]string `json:"medical_flags"`
-	Notes              *string   `json:"notes"`
+	FirstName                    *string   `json:"first_name"`
+	LastName                     *string   `json:"last_name"`
+	PreferredName                *string   `json:"preferred_name"`
+	DateOfBirth                  *string   `json:"date_of_birth"`
+	Gender                       *string   `json:"gender" validate:"omitempty,oneof=female male non_binary undisclosed"`
+	SwimmerExternalID            *string   `json:"swimmer_external_id"`
+	USASwimmingID                *string   `json:"usa_swimming_id"`
+	RegistrationStatus           *string   `json:"registration_status" validate:"omitempty,oneof=pending active inactive archived"`
+	MedicalFlags                 *[]string `json:"medical_flags"`
+	Notes                        *string   `json:"notes"`
+	EmergencyContactName         *string   `json:"emergency_contact_name"`
+	EmergencyContactPhone        *string   `json:"emergency_contact_phone"`
+	EmergencyContactRelationship *string   `json:"emergency_contact_relationship"`
+	Allergies                    *string   `json:"allergies"`
 }
 
 func (h *MembershipHandlers) updateSwimmer(w http.ResponseWriter, r *http.Request) {
@@ -456,16 +460,20 @@ func (h *MembershipHandlers) updateSwimmer(w http.ResponseWriter, r *http.Reques
 
 	swimmerID := strings.TrimSpace(chi.URLParam(r, "swimmerID"))
 	swimmer, auditEvent, err := h.service.UpdateSwimmer(principal, orgID, swimmerID, members.UpdateSwimmerInput{
-		FirstName:          req.FirstName,
-		LastName:           req.LastName,
-		PreferredName:      req.PreferredName,
-		DateOfBirth:        req.DateOfBirth,
-		Gender:             req.Gender,
-		SwimmerExternalID:  req.SwimmerExternalID,
-		USASwimmingID:      req.USASwimmingID,
-		RegistrationStatus: req.RegistrationStatus,
-		MedicalFlags:       req.MedicalFlags,
-		Notes:              req.Notes,
+		FirstName:                    req.FirstName,
+		LastName:                     req.LastName,
+		PreferredName:                req.PreferredName,
+		DateOfBirth:                  req.DateOfBirth,
+		Gender:                       req.Gender,
+		SwimmerExternalID:            req.SwimmerExternalID,
+		USASwimmingID:                req.USASwimmingID,
+		RegistrationStatus:           req.RegistrationStatus,
+		MedicalFlags:                 req.MedicalFlags,
+		Notes:                        req.Notes,
+		EmergencyContactName:         req.EmergencyContactName,
+		EmergencyContactPhone:        req.EmergencyContactPhone,
+		EmergencyContactRelationship: req.EmergencyContactRelationship,
+		Allergies:                    req.Allergies,
 	})
 	if err != nil {
 		switch {

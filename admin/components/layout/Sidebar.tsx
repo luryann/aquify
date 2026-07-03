@@ -70,20 +70,28 @@ export function Sidebar({ role, roles, userName, onSignOut, orgId }: SidebarProp
     document.documentElement.style.setProperty('--sidebar-w', `${w}px`)
   }, [sidebarWidth, collapsed])
 
-  // Fetch pending approvals count (owner/admin only)
+  // Fetch pending approvals count, plus pending swimmer-link requests
+  // (owner/admin only) — both surface on the same "Approvals" nav badge.
   useEffect(() => {
     if (!shouldFetchPendingApprovals(roles, orgId)) return
     const controller = new AbortController()
-    fetch('/api/v1/users?status=pending_approval', {
-      ...pendingApprovalsRequestInit(orgId),
-      signal: controller.signal,
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data: { count?: number; users?: unknown[] } | null) => {
-        if (data) {
-          const count = typeof data.count === 'number' ? data.count : (data.users?.length ?? 0)
-          setPendingCount(count)
-        }
+
+    Promise.all([
+      fetch('/api/v1/users?status=pending_approval', {
+        ...pendingApprovalsRequestInit(orgId),
+        signal: controller.signal,
+      }).then((r) => (r.ok ? r.json() : null)) as Promise<{ count?: number; users?: unknown[] } | null>,
+      fetch('/api/v1/users/swimmer-link-requests', {
+        ...pendingApprovalsRequestInit(orgId),
+        signal: controller.signal,
+      }).then((r) => (r.ok ? r.json() : null)) as Promise<{ requests?: unknown[] } | null>,
+    ])
+      .then(([approvals, linkRequests]) => {
+        const approvalsCount = approvals
+          ? (typeof approvals.count === 'number' ? approvals.count : (approvals.users?.length ?? 0))
+          : 0
+        const linkRequestsCount = linkRequests?.requests?.length ?? 0
+        setPendingCount(approvalsCount + linkRequestsCount)
       })
       .catch(() => { /* silent */ })
     return () => controller.abort()

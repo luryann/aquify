@@ -51,6 +51,10 @@ export type SwimmerRecord = {
   medical_flags?: string[]
   medical_flags_redacted?: boolean
   notes?: string
+  emergency_contact_name?: string
+  emergency_contact_phone?: string
+  emergency_contact_relationship?: string
+  allergies?: string
 }
 
 export type SwimmerGroupLinkRecord = {
@@ -839,6 +843,16 @@ export async function fetchHouseholdContacts(api: ApiClient, orgId: string, hous
   return res.contacts ?? []
 }
 
+export async function addHouseholdContact(
+  api: ApiClient,
+  orgId: string,
+  householdId: string,
+  input: { relationship: string; first_name: string; last_name: string; email?: string; phone_e164?: string; is_primary?: boolean },
+): Promise<ContactRecord> {
+  const res = await api.post<{ contact: ContactRecord }>(`/api/v1/members/households/${householdId}/contacts`, input, withOrgHeaders(orgId))
+  return res.contact
+}
+
 export async function fetchSwimmers(api: ApiClient, orgId: string): Promise<SwimmerRecord[]> {
   try {
     const res = await api.get<{ swimmers?: SwimmerRecord[] }>(`/api/v1/members/swimmers`, undefined, withOrgHeaders(orgId))
@@ -1158,8 +1172,8 @@ export async function assignRole(api: ApiClient, orgId: string, input: {
   return res.assignment
 }
 
-export async function fetchMFAFactors(api: ApiClient): Promise<MFAFactorRecord[]> {
-  const res = await api.get<{ factors?: MFAFactorRecord[] }>('/api/v1/auth/mfa/factors')
+export async function fetchMFAFactors(api: ApiClient, orgId: string): Promise<MFAFactorRecord[]> {
+  const res = await api.get<{ factors?: MFAFactorRecord[] }>('/api/v1/auth/mfa/factors', undefined, withOrgHeaders(orgId))
   return res.factors ?? []
 }
 
@@ -1542,6 +1556,65 @@ export async function deletePractice(api: ApiClient, orgId: string, practiceId: 
   await api.delete(`/api/v1/practices/${practiceId}`, withOrgHeaders(orgId))
 }
 
+export type AttendanceStatus = 'present' | 'absent' | 'excused'
+
+export type AttendanceRosterEntry = {
+  swimmer_id: string
+  swimmer_name: string
+  status?: AttendanceStatus
+  marked_at?: string
+  marked_by?: string
+}
+
+// ── Swimmer link requests (self-service recovery) ───────────────────────────
+
+export type SwimmerLinkRequestRecord = {
+  id: string
+  org_id: string
+  user_id: string
+  requested_swimmer_name?: string
+  note?: string
+  status: 'pending' | 'resolved' | 'dismissed'
+  created_at: string
+}
+
+export async function createSwimmerLinkRequest(
+  api: ApiClient,
+  orgId: string,
+  body: { requested_swimmer_name?: string; note?: string },
+): Promise<SwimmerLinkRequestRecord> {
+  const res = await api.post<{ request: SwimmerLinkRequestRecord }>(
+    '/api/v1/users/me/swimmer-link-requests',
+    body,
+    withOrgHeaders(orgId),
+  )
+  return res.request
+}
+
+export async function fetchSwimmerLinkRequests(api: ApiClient, orgId: string): Promise<SwimmerLinkRequestRecord[]> {
+  const res = await api.get<{ requests?: SwimmerLinkRequestRecord[] }>('/api/v1/users/swimmer-link-requests', undefined, withOrgHeaders(orgId))
+  return res.requests ?? []
+}
+
+export async function resolveSwimmerLinkRequest(api: ApiClient, orgId: string, requestId: string, swimmerId: string): Promise<void> {
+  await api.post(`/api/v1/users/swimmer-link-requests/${requestId}/resolve`, { swimmer_id: swimmerId }, withOrgHeaders(orgId))
+}
+
+export async function fetchPracticeAttendance(api: ApiClient, orgId: string, practiceId: string): Promise<AttendanceRosterEntry[]> {
+  const res = await api.get<{ roster?: AttendanceRosterEntry[] }>(`/api/v1/practices/${practiceId}/attendance`, undefined, withOrgHeaders(orgId))
+  return res.roster ?? []
+}
+
+export async function setPracticeAttendance(
+  api: ApiClient,
+  orgId: string,
+  practiceId: string,
+  swimmerId: string,
+  status: AttendanceStatus,
+): Promise<void> {
+  await api.put(`/api/v1/practices/${practiceId}/attendance/${swimmerId}`, { status }, withOrgHeaders(orgId))
+}
+
 // ── Seasons ───────────────────────────────────────────────────────────────────
 
 export type SeasonRecord = {
@@ -1872,6 +1945,10 @@ export async function updateSwimmer(
     usa_swimming_id?: string
     registration_status?: string
     notes?: string
+    emergency_contact_name?: string
+    emergency_contact_phone?: string
+    emergency_contact_relationship?: string
+    allergies?: string
   },
 ): Promise<SwimmerRecord> {
   const res = await api.patch<{ swimmer: SwimmerRecord }>(
@@ -2233,3 +2310,35 @@ export async function sendPasswordReset(
 ): Promise<void> {
   await api.post(`/api/v1/users/${userId}/password-reset`, {}, withOrgHeaders(orgId))
 }
+
+export async function fetchUserSwimmer(
+  api: ApiClient,
+  orgId: string,
+  userId: string,
+): Promise<SwimmerRecord | null> {
+  const res = await api.get<{ status: string; swimmer: SwimmerRecord | null }>(
+    `/api/v1/users/${userId}/swimmer`,
+    undefined,
+    withOrgHeaders(orgId),
+  )
+  return res.swimmer ?? null
+}
+
+export async function linkUserSwimmer(
+  api: ApiClient,
+  orgId: string,
+  userId: string,
+  swimmerId: string,
+): Promise<void> {
+  await api.post(`/api/v1/users/${userId}/swimmer/link`, { swimmer_id: swimmerId }, withOrgHeaders(orgId))
+}
+
+export async function unlinkUserSwimmer(
+  api: ApiClient,
+  orgId: string,
+  userId: string,
+  swimmerId: string,
+): Promise<void> {
+  await api.post(`/api/v1/users/${userId}/swimmer/unlink`, { swimmer_id: swimmerId }, withOrgHeaders(orgId))
+}
+

@@ -22,6 +22,7 @@ export type User = {
   roles: Role[]
   orgId: string
   householdId?: string
+  swimmerId?: string
   mfaAuthenticated?: boolean
   avatarInitials?: string
 }
@@ -49,6 +50,7 @@ type CurrentSessionResponse = {
     name?: string
     org_id: string
     household_id?: string
+    swimmer_id?: string
     roles: string[]
     mfa_authenticated?: boolean
   }
@@ -72,6 +74,7 @@ export const DEV_SESSIONS: Record<string, Session> = {
           roles: [user.role],
           orgId: user.orgId,
           householdId: user.householdId,
+          swimmerId: user.swimmerId,
           avatarInitials: user.avatarInitials,
           mfaAuthenticated: user.mfaAuthenticated,
         },
@@ -109,6 +112,7 @@ function sessionFromCurrentResponse(payload: CurrentSessionResponse): Session {
       roles: roles.length > 0 ? roles : [role],
       orgId: payload.user.org_id,
       householdId: payload.user.household_id,
+      swimmerId: payload.user.swimmer_id,
       mfaAuthenticated: payload.user.mfa_authenticated,
       avatarInitials: deriveInitials(name, email, payload.user.user_id),
     },

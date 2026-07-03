@@ -386,6 +386,13 @@ export default function MfaPage() {
           credentials: 'include',
           cache: 'no-store',
         })
+        if (res.status === 401) {
+          // No valid session cookie — this isn't "zero factors enrolled,"
+          // it's "not actually signed in." Send back to login instead of
+          // dead-ending on a generic error the user can't act on.
+          if (!cancelled) router.replace('/login')
+          return
+        }
         if (!res.ok) throw new Error('Unable to load verification methods.')
         const payload = await res.json() as {
           factors: MfaFactorSummary[]
@@ -430,7 +437,7 @@ export default function MfaPage() {
 
     init()
     return () => { cancelled = true }
-  }, [enrollBackupFactor, enrollTotpFactor])
+  }, [enrollBackupFactor, enrollTotpFactor, router])
 
   useEffect(() => {
     setFactorId(mode === 'totp' ? totpFactorId : backupFactorId)

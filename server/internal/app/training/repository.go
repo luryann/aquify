@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -134,6 +136,62 @@ func (r *Repository) LoadAll(ctx context.Context) ([]*Practice, error) {
 	defer rows.Close()
 
 	return scanPractices(rows)
+}
+
+// UpsertAttendance inserts or updates one swimmer's attendance record for a practice.
+func (r *Repository) UpsertAttendance(ctx context.Context, orgID, practiceID, swimmerID, status, markedBy string, markedAt time.Time) (*PracticeAttendance, error) {
+	id := uuid.New().String()
+	row := r.pool.QueryRow(ctx, `
+		INSERT INTO practice_attendance (
+			id, org_id, practice_id, swimmer_id, status, marked_at, marked_by
+		) VALUES (
+			$1::uuid, $2, $3::uuid, $4::uuid, $5, $6, $7
+		)
+		ON CONFLICT (practice_id, swimmer_id) DO UPDATE SET
+			status     = EXCLUDED.status,
+			marked_at  = EXCLUDED.marked_at,
+			marked_by  = EXCLUDED.marked_by,
+			updated_at = NOW()
+		RETURNING id::text, org_id, practice_id::text, swimmer_id::text, status,
+		          marked_at, marked_by, created_at, updated_at`,
+		id, orgID, practiceID, swimmerID, status, markedAt, markedBy,
+	)
+	rec := &PracticeAttendance{}
+	if err := row.Scan(
+		&rec.ID, &rec.OrgID, &rec.PracticeID, &rec.SwimmerID, &rec.Status,
+		&rec.MarkedAt, &rec.MarkedBy, &rec.CreatedAt, &rec.UpdatedAt,
+	); err != nil {
+		return nil, fmt.Errorf("training: upsert attendance: %w", err)
+	}
+	return rec, nil
+}
+
+// ListAttendanceForPractice returns all attendance rows recorded for a practice.
+func (r *Repository) ListAttendanceForPractice(ctx context.Context, orgID, practiceID string) ([]*PracticeAttendance, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, org_id, practice_id::text, swimmer_id::text, status,
+		       marked_at, marked_by, created_at, updated_at
+		FROM practice_attendance
+		WHERE org_id = $1 AND practice_id = $2::uuid`,
+		orgID, practiceID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("training: list attendance: %w", err)
+	}
+	defer rows.Close()
+
+	out := []*PracticeAttendance{}
+	for rows.Next() {
+		rec := &PracticeAttendance{}
+		if err := rows.Scan(
+			&rec.ID, &rec.OrgID, &rec.PracticeID, &rec.SwimmerID, &rec.Status,
+			&rec.MarkedAt, &rec.MarkedBy, &rec.CreatedAt, &rec.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("training: scan attendance: %w", err)
+		}
+		out = append(out, rec)
+	}
+	return out, rows.Err()
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

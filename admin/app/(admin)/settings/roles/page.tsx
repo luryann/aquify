@@ -5,7 +5,7 @@ import { Icon } from '@/components/ui/icons'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
 import { useApiClient, ApiError } from '@/lib/api'
-import { assignRole, fetchMFAFactors, fetchRoleAssignments, type MFAFactorRecord, type RoleAssignmentRecord } from '@/lib/adminData'
+import { assignRole, fetchMFAFactors, fetchRoleAssignments, fetchUsers, type MFAFactorRecord, type RoleAssignmentRecord, type UserRecord } from '@/lib/adminData'
 
 const ROLE_OPTIONS = ['owner', 'admin', 'coach', 'parent', 'swimmer', 'billing', 'read-only'] as const
 type RoleOption = (typeof ROLE_OPTIONS)[number]
@@ -30,14 +30,31 @@ function mfaSummary(factors: MFAFactorRecord[]) {
   return `${verified}/${factors.length} factor${factors.length === 1 ? '' : 's'} verified`
 }
 
+// Never surface raw backend error text (e.g. header names, internal codes) directly
+// in the UI. Map known-safe messages through, and fall back to a generic message
+// for anything that looks technical or is otherwise unrecognized.
+function toFriendlyErrorMessage(err: unknown, fallback: string): string {
+  if (!(err instanceof ApiError)) return fallback
+  const looksTechnical = /header|x-org-id|x-csrf|null|undefined|panic|stack trace/i.test(err.message)
+  if (looksTechnical || !err.message.trim()) return fallback
+  return err.message
+}
+
+function userDisplayName(user: UserRecord): string {
+  const name = `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim()
+  return name || user.username || user.email
+}
+
 export default function RoleManagementPage() {
   const { session } = useSession()
   const api = useApiClient(session?.token)
   const [assignments, setAssignments] = useState<RoleAssignmentRecord[]>([])
   const [mfaFactors, setMFAFactors] = useState<MFAFactorRecord[]>([])
+  const [orgUsers, setOrgUsers] = useState<UserRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [userQuery, setUserQuery] = useState('')
   const [form, setForm] = useState({
     target_user_id: '',
     role: 'coach' as RoleOption,
@@ -52,20 +69,18 @@ export default function RoleManagementPage() {
 
     Promise.all([
       fetchRoleAssignments(api, session.user.orgId),
-      fetchMFAFactors(api),
+      fetchMFAFactors(api, session.user.orgId),
+      fetchUsers(api, session.user.orgId, { limit: 200 }),
     ])
-      .then(([nextAssignments, nextFactors]) => {
+      .then(([nextAssignments, nextFactors, nextUsers]) => {
         if (cancelled) return
         setAssignments(nextAssignments)
         setMFAFactors(nextFactors)
+        setOrgUsers(nextUsers.users)
       })
       .catch((err: unknown) => {
         if (cancelled) return
-        if (err instanceof ApiError) {
-          setError(err.message)
-          return
-        }
-        setError('Unable to load role management data.')
+        setError(toFriendlyErrorMessage(err, 'Unable to load role management data.'))
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -75,6 +90,22 @@ export default function RoleManagementPage() {
       cancelled = true
     }
   }, [api, session])
+
+  const userNameById = useMemo(
+    () => new Map(orgUsers.map((u) => [u.id, userDisplayName(u)])),
+    [orgUsers],
+  )
+
+  const filteredUsers = useMemo(() => {
+    const q = userQuery.trim().toLowerCase()
+    const sorted = [...orgUsers].sort((a, b) => userDisplayName(a).localeCompare(userDisplayName(b)))
+    if (!q) return sorted
+    return sorted.filter((user) => {
+      const name = userDisplayName(user).toLowerCase()
+      const email = (user.email ?? '').toLowerCase()
+      return name.includes(q) || email.includes(q)
+    })
+  }, [orgUsers, userQuery])
 
   const roleCounts = useMemo(() => {
     const counts = new Map<string, number>()
@@ -96,12 +127,9 @@ export default function RoleManagementPage() {
       })
       setAssignments((current) => [created, ...current])
       setForm({ target_user_id: '', role: 'coach', reason: '' })
+      setUserQuery('')
     } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message)
-      } else {
-        setError('Unable to assign role.')
-      }
+      setError(toFriendlyErrorMessage(err, 'Unable to assign role.'))
     } finally {
       setSubmitting(false)
     }
@@ -151,14 +179,26 @@ export default function RoleManagementPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <div>
               <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase' }}>
-                Target User ID
+                Target User
               </label>
               <input
+                value={userQuery}
+                onChange={(event) => setUserQuery(event.target.value)}
+                placeholder="Search users by name or email…"
+                style={{ width: '100%', padding: '9px 12px', marginBottom: '8px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '7px', color: 'var(--text)', fontSize: '13px', fontFamily: 'var(--font-body)', outline: 'none' }}
+              />
+              <select
                 value={form.target_user_id}
                 onChange={(event) => setForm((current) => ({ ...current, target_user_id: event.target.value }))}
-                placeholder="user-123"
                 style={{ width: '100%', padding: '9px 12px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '7px', color: 'var(--text)', fontSize: '13px', fontFamily: 'var(--font-body)', outline: 'none' }}
-              />
+              >
+                <option value="">{filteredUsers.length === 0 ? 'No matching users' : 'Select user…'}</option>
+                {filteredUsers.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {userDisplayName(u)} — {u.email}
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
               <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase' }}>
@@ -232,14 +272,14 @@ export default function RoleManagementPage() {
                   const colors = ROLE_COLORS[assignment.role] ?? ROLE_COLORS.parent
                   return (
                     <tr key={`${assignment.target_user_id}-${assignment.assigned_at}-${assignment.role}`} style={{ borderBottom: '1px solid var(--border)' }}>
-                      <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text)' }}>{assignment.target_user_id}</td>
+                      <td style={{ padding: '11px 14px', fontSize: '12px', color: 'var(--text)' }}>{userNameById.get(assignment.target_user_id) ?? assignment.target_user_id}</td>
                       <td style={{ padding: '11px 14px' }}>
                         <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '20px', fontFamily: 'var(--font-mono)', fontWeight: 700, background: colors.bg, color: colors.color, border: `1px solid ${colors.border}` }}>
                           {assignment.role.toUpperCase()}
                         </span>
                       </td>
                       <td style={{ padding: '11px 14px', fontSize: '12px', color: 'var(--text-subtle)' }}>{assignment.reason}</td>
-                      <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-muted)' }}>{assignment.actor_user_id}</td>
+                      <td style={{ padding: '11px 14px', fontSize: '12px', color: 'var(--text-muted)' }}>{userNameById.get(assignment.actor_user_id) ?? assignment.actor_user_id}</td>
                       <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-muted)' }}>{formatDateTime(assignment.assigned_at)}</td>
                     </tr>
                   )

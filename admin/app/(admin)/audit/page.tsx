@@ -5,7 +5,12 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
 import { ApiError, useApiClient } from '@/lib/api'
-import { fetchAuditEvents, type AuditEventRecord } from '@/lib/adminData'
+import { fetchAuditEvents, fetchUsers, type AuditEventRecord, type UserRecord } from '@/lib/adminData'
+
+function displayNameForUser(user: UserRecord): string {
+  const name = `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim()
+  return name || user.email || user.id
+}
 
 function formatDateTime(value: string) {
   return new Date(value).toLocaleString('en-US', {
@@ -38,6 +43,7 @@ export default function AuditLogPage() {
   const { session } = useSession()
   const api = useApiClient(session?.token)
   const [events, setEvents] = useState<AuditEventRecord[]>([])
+  const [actorNames, setActorNames] = useState<Record<string, string>>({})
   const [search, setSearch] = useState('')
   const [actionFilter, setActionFilter] = useState('')
   const [resourceFilter, setResourceFilter] = useState('')
@@ -58,6 +64,18 @@ export default function AuditLogPage() {
         setError(null)
         const response = await fetchAuditEvents(api, session.user.orgId, { limit: '200' })
         if (!cancelled) setEvents(response.events)
+
+        // Best-effort actor-name resolution so the log reads as "who did what"
+        // instead of raw UUIDs. Failure here shouldn't block the audit log itself.
+        try {
+          const { users } = await fetchUsers(api, session.user.orgId, { limit: 200 })
+          if (!cancelled) {
+            setActorNames(Object.fromEntries(users.map((u) => [u.id, displayNameForUser(u)])))
+          }
+        } catch {
+          // Name resolution is a display nicety; leave actorNames empty and fall
+          // back to raw IDs rather than failing the whole page load.
+        }
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof ApiError ? err.message : 'Unable to load audit events.')
@@ -84,9 +102,10 @@ export default function AuditLogPage() {
       event.resource_type,
       event.resource_id,
       event.actor_user_id,
+      actorNames[event.actor_user_id] ?? '',
       JSON.stringify(event.metadata ?? {}),
     ].join(' ').toLowerCase().includes(query)
-  }), [actionFilter, events, resourceFilter, search])
+  }), [actionFilter, actorNames, events, resourceFilter, search])
 
   const families = Array.from(new Set(events.map((event) => family(event.action)))).sort()
   const resources = Array.from(new Set(events.map((event) => event.resource_type))).sort()
@@ -155,7 +174,9 @@ export default function AuditLogPage() {
                   <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr 220px', gap: '16px', alignItems: 'start' }}>
                     <div>
                       <div style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', marginBottom: '6px' }}>{formatDateTime(event.occurred_at)}</div>
-                      <div style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>{event.actor_user_id}</div>
+                      <div style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>
+                        {actorNames[event.actor_user_id] ?? `${event.actor_user_id.slice(0, 8)}…`}
+                      </div>
                     </div>
                     <div>
                       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '6px' }}>

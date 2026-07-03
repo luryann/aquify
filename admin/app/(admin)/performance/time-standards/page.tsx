@@ -20,6 +20,22 @@ function formatSwimTime(milliseconds: number) {
   return `${minutes}:${seconds}`
 }
 
+function msFromParts(minutes: string, seconds: string, hundredths: string): number {
+  const m = Number(minutes) || 0
+  const s = Number(seconds) || 0
+  const h = Number(hundredths) || 0
+  return Math.round((m * 60 + s) * 1000 + h * 10)
+}
+
+const FIELD_LABEL_STYLE: React.CSSProperties = {
+  display: 'block', fontSize: '10.5px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)',
+  textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '5px',
+}
+const FIELD_INPUT_STYLE: React.CSSProperties = {
+  width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)',
+  background: 'var(--bg-elevated)', color: 'var(--text)', boxSizing: 'border-box',
+}
+
 export default function TimeStandardsPage() {
   const { session } = useSession()
   const api = useApiClient(session?.token)
@@ -36,8 +52,8 @@ export default function TimeStandardsPage() {
     stroke: 'free',
     course: 'SCY',
     gender: 'F',
-    time_ms: '58000',
   })
+  const [cutTime, setCutTime] = useState({ minutes: '0', seconds: '58', hundredths: '00' })
 
   async function loadStandards() {
     if (!session?.user.orgId) return
@@ -89,7 +105,7 @@ export default function TimeStandardsPage() {
         stroke: form.stroke,
         course: form.course,
         gender: form.gender,
-        time_ms: Number(form.time_ms),
+        time_ms: msFromParts(cutTime.minutes, cutTime.seconds, cutTime.hundredths),
         is_active: true,
       })
       await loadStandards()
@@ -157,34 +173,83 @@ export default function TimeStandardsPage() {
       <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: '20px', alignItems: 'start' }}>
         <div className="card" style={{ padding: '18px' }}>
           <h2 style={{ fontSize: '14px', color: 'var(--text)', marginBottom: '12px' }}>Create Standard</h2>
-          <div style={{ display: 'grid', gap: '10px' }}>
-            <input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder="Name" style={{ padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)' }} />
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-              <input value={form.season_year} onChange={(event) => setForm((current) => ({ ...current, season_year: event.target.value }))} placeholder="Season year" style={{ padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)' }} />
-              <input value={form.standard_code} onChange={(event) => setForm((current) => ({ ...current, standard_code: event.target.value }))} placeholder="Code" style={{ padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)' }} />
+          <div style={{ display: 'grid', gap: '14px' }}>
+            <div>
+              <label style={FIELD_LABEL_STYLE}>Standard Name</label>
+              <input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder="e.g. 2026 Senior Cuts" style={FIELD_INPUT_STYLE} />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-              <input value={form.event_distance} onChange={(event) => setForm((current) => ({ ...current, event_distance: event.target.value }))} placeholder="Distance" style={{ padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)' }} />
-              <input value={form.time_ms} onChange={(event) => setForm((current) => ({ ...current, time_ms: event.target.value }))} placeholder="Time ms" style={{ padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)' }} />
+              <div>
+                <label style={FIELD_LABEL_STYLE}>Season</label>
+                <input value={form.season_year} onChange={(event) => setForm((current) => ({ ...current, season_year: event.target.value }))} placeholder="2026" style={FIELD_INPUT_STYLE} />
+              </div>
+              <div>
+                <label style={FIELD_LABEL_STYLE}>Standard Code</label>
+                <input value={form.standard_code} onChange={(event) => setForm((current) => ({ ...current, standard_code: event.target.value }))} placeholder="A / AA / AAA" style={FIELD_INPUT_STYLE} />
+              </div>
+            </div>
+            <div>
+              <label style={FIELD_LABEL_STYLE}>Distance ({form.course === 'LCM' || form.course === 'SCM' ? 'm' : 'yd'})</label>
+              <input value={form.event_distance} onChange={(event) => setForm((current) => ({ ...current, event_distance: event.target.value }))} placeholder="100" style={FIELD_INPUT_STYLE} />
+            </div>
+            <div>
+              <label style={FIELD_LABEL_STYLE}>Cut Time (min : sec . hundredths)</label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr auto 1fr', gap: '6px', alignItems: 'center' }}>
+                <input
+                  value={cutTime.minutes}
+                  onChange={(event) => setCutTime((current) => ({ ...current, minutes: event.target.value.replace(/\D/g, '') }))}
+                  placeholder="0"
+                  inputMode="numeric"
+                  style={{ ...FIELD_INPUT_STYLE, textAlign: 'center', fontFamily: 'var(--font-mono)' }}
+                />
+                <span style={{ color: 'var(--text-muted)' }}>:</span>
+                <input
+                  value={cutTime.seconds}
+                  onChange={(event) => setCutTime((current) => ({ ...current, seconds: event.target.value.replace(/\D/g, '').slice(0, 2) }))}
+                  placeholder="58"
+                  inputMode="numeric"
+                  style={{ ...FIELD_INPUT_STYLE, textAlign: 'center', fontFamily: 'var(--font-mono)' }}
+                />
+                <span style={{ color: 'var(--text-muted)' }}>.</span>
+                <input
+                  value={cutTime.hundredths}
+                  onChange={(event) => setCutTime((current) => ({ ...current, hundredths: event.target.value.replace(/\D/g, '').slice(0, 2) }))}
+                  placeholder="00"
+                  inputMode="numeric"
+                  style={{ ...FIELD_INPUT_STYLE, textAlign: 'center', fontFamily: 'var(--font-mono)' }}
+                />
+              </div>
+              <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '5px', fontFamily: 'var(--font-mono)' }}>
+                = {formatSwimTime(msFromParts(cutTime.minutes, cutTime.seconds, cutTime.hundredths))}
+              </p>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
-              <select value={form.stroke} onChange={(event) => setForm((current) => ({ ...current, stroke: event.target.value }))} style={{ padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)' }}>
-                <option value="free">free</option>
-                <option value="back">back</option>
-                <option value="breast">breast</option>
-                <option value="fly">fly</option>
-                <option value="im">im</option>
-              </select>
-              <select value={form.course} onChange={(event) => setForm((current) => ({ ...current, course: event.target.value }))} style={{ padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)' }}>
-                <option value="SCY">SCY</option>
-                <option value="SCM">SCM</option>
-                <option value="LCM">LCM</option>
-              </select>
-              <select value={form.gender} onChange={(event) => setForm((current) => ({ ...current, gender: event.target.value }))} style={{ padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)' }}>
-                <option value="F">F</option>
-                <option value="M">M</option>
-                <option value="X">X</option>
-              </select>
+              <div>
+                <label style={FIELD_LABEL_STYLE}>Stroke</label>
+                <select value={form.stroke} onChange={(event) => setForm((current) => ({ ...current, stroke: event.target.value }))} style={FIELD_INPUT_STYLE}>
+                  <option value="free">free</option>
+                  <option value="back">back</option>
+                  <option value="breast">breast</option>
+                  <option value="fly">fly</option>
+                  <option value="im">im</option>
+                </select>
+              </div>
+              <div>
+                <label style={FIELD_LABEL_STYLE}>Course</label>
+                <select value={form.course} onChange={(event) => setForm((current) => ({ ...current, course: event.target.value }))} style={FIELD_INPUT_STYLE}>
+                  <option value="SCY">SCY</option>
+                  <option value="SCM">SCM</option>
+                  <option value="LCM">LCM</option>
+                </select>
+              </div>
+              <div>
+                <label style={FIELD_LABEL_STYLE}>Gender</label>
+                <select value={form.gender} onChange={(event) => setForm((current) => ({ ...current, gender: event.target.value }))} style={FIELD_INPUT_STYLE}>
+                  <option value="F">F</option>
+                  <option value="M">M</option>
+                  <option value="X">X</option>
+                </select>
+              </div>
             </div>
             <button onClick={() => void handleCreate()} disabled={submitting} style={{ padding: '9px 14px', borderRadius: '8px', border: 'none', background: 'var(--accent)', color: '#fff', fontSize: '12px', fontWeight: 600, cursor: submitting ? 'not-allowed' : 'pointer' }}>
               {submitting ? 'Creating…' : 'Create Standard'}

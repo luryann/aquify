@@ -5,6 +5,13 @@ import { Icon } from '@/components/ui/icons'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
 import { useApiClient, ApiError } from '@/lib/api'
+import {
+  fetchSwimmerLinkRequests,
+  resolveSwimmerLinkRequest,
+  fetchSwimmers,
+  type SwimmerLinkRequestRecord,
+  type SwimmerRecord,
+} from '@/lib/adminData'
 
 type PendingUser = {
   id: string
@@ -42,6 +49,110 @@ function requestedRoleLabel(role: string): string {
     default:
       return role || 'Unspecified'
   }
+}
+
+function SwimmerLinkRequestsQueue() {
+  const { session } = useSession()
+  const api = useApiClient(session?.token)
+  const orgId = session?.user.orgId ?? ''
+
+  const [requests, setRequests] = useState<SwimmerLinkRequestRecord[]>([])
+  const [swimmers, setSwimmers] = useState<SwimmerRecord[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [selectedSwimmer, setSelectedSwimmer] = useState<Record<string, string>>({})
+  const [resolving, setResolving] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    if (!orgId) { setLoading(false); return }
+    setLoading(true)
+    setError(null)
+    try {
+      const [reqs, sw] = await Promise.all([
+        fetchSwimmerLinkRequests(api, orgId),
+        fetchSwimmers(api, orgId),
+      ])
+      setRequests(reqs)
+      setSwimmers(sw)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to load swimmer link requests.')
+    } finally {
+      setLoading(false)
+    }
+  }, [api, orgId])
+
+  useEffect(() => { void load() }, [load])
+
+  async function handleResolve(requestId: string) {
+    const swimmerId = selectedSwimmer[requestId]
+    if (!swimmerId) return
+    setResolving(requestId)
+    try {
+      await resolveSwimmerLinkRequest(api, orgId, requestId, swimmerId)
+      await load()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to link swimmer.')
+    } finally {
+      setResolving(null)
+    }
+  }
+
+  if (loading || requests.length === 0) return null
+
+  return (
+    <div style={{ marginTop: '32px' }}>
+      <div style={{ marginBottom: '16px' }}>
+        <h2 style={{ fontSize: '16px', fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)', marginBottom: '4px' }}>
+          Swimmer Link Requests
+        </h2>
+        <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>
+          Swimmer-role logins asking to be connected to their roster record.
+        </p>
+      </div>
+
+      {error && (
+        <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px' }}>{error}</div>
+      )}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        {requests.map((req) => (
+          <div key={req.id} className="card" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text)' }}>
+                {req.requested_swimmer_name || 'Name not provided'}
+              </div>
+              {req.note && (
+                <div style={{ fontSize: '12px', color: 'var(--text-subtle)', marginTop: '2px' }}>{req.note}</div>
+              )}
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: '4px' }}>
+                Requested {new Date(req.created_at).toLocaleString()}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <select
+                value={selectedSwimmer[req.id] ?? ''}
+                onChange={(e) => setSelectedSwimmer((s) => ({ ...s, [req.id]: e.target.value }))}
+                style={{ padding: '7px 10px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '8px', fontSize: '12.5px', color: 'var(--text)' }}
+              >
+                <option value="">Select swimmer…</option>
+                {swimmers.map((sw) => (
+                  <option key={sw.id} value={sw.id}>{sw.first_name} {sw.last_name}</option>
+                ))}
+              </select>
+              <button
+                onClick={() => void handleResolve(req.id)}
+                disabled={!selectedSwimmer[req.id] || resolving === req.id}
+                style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '7px 14px', borderRadius: '8px', border: 'none', background: !selectedSwimmer[req.id] || resolving === req.id ? 'var(--bg-elevated)' : 'var(--success)', color: !selectedSwimmer[req.id] || resolving === req.id ? 'var(--text-muted)' : '#fff', fontSize: '12px', fontWeight: 600, cursor: !selectedSwimmer[req.id] || resolving === req.id ? 'not-allowed' : 'pointer' }}
+              >
+                <Icon name="check" size={13} />
+                {resolving === req.id ? 'Linking…' : 'Link'}
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 export default function ApprovalsPage() {
@@ -241,6 +352,8 @@ export default function ApprovalsPage() {
           })}
         </div>
       )}
+
+      <SwimmerLinkRequestsQueue />
     </div>
   )
 }
