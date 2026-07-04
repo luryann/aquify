@@ -58,13 +58,13 @@ export default function SettingsPage() {
   return (
     <div style={{ padding: '32px 32px 80px', maxWidth: '1000px' }}>
       <div style={{ marginBottom: '28px' }}>
-        <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
+        <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
           Settings
         </p>
-        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '28px', fontWeight: 400, color: 'var(--text)', letterSpacing: '-0.01em', marginBottom: '6px' }}>
+        <h1 className="page-title">
           Team Settings
         </h1>
-        <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>
+        <p className="page-subtitle">
           Your club&rsquo;s identity, used across meet reports and exports.
         </p>
       </div>

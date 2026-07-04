@@ -19,14 +19,14 @@ import { SWIMMER_BIO_MAX_LENGTH, normalizeSwimmerBio, validateSwimmerBio } from 
 
 // ── Design tokens ──────────────────────────────────────────────────────────
 const C = {
-  accent:       '#00D4AA',
-  accentDim:    'rgba(0,212,170,0.10)',
-  accentBorder: 'rgba(0,212,170,0.22)',
-  text:         '#E4F2FF',
-  subtle:       '#7FA8C9',
-  muted:        '#4A6B82',
-  card:         '#0D2235',
-  border:       'rgba(0,212,170,0.10)',
+  accent:       'var(--accent)',
+  accentDim:    'var(--border)',
+  accentBorder: 'var(--accent-border)',
+  text:         'var(--text)',
+  subtle:       'var(--text-subtle)',
+  muted:        'var(--text-muted)',
+  card:         'var(--bg-surface)',
+  border:       'var(--border)',
   inputBg:      'rgba(0,0,0,0.25)',
   inputBorder:  'rgba(0,212,170,0.18)',
 }
@@ -48,7 +48,7 @@ function fmtDob(dob: string): string {
 // ── Skeleton ───────────────────────────────────────────────────────────────
 function SkeletonLine({ width = '100%', height = '14px' }: { width?: string; height?: string }) {
   return (
-    <div style={{ width, height, background: 'rgba(0,212,170,0.08)', borderRadius: '6px', animation: 'pulse 1.5s ease-in-out infinite' }} />
+    <div style={{ width, height, background: 'var(--border)', borderRadius: '6px', animation: 'pulse 1.5s ease-in-out infinite' }} />
   )
 }
 
@@ -59,7 +59,7 @@ function ReadOnlyField({ label, value }: { label: string; value: string }) {
       <p
         style={{
           fontSize: '10.5px',
-          fontFamily: 'var(--font-mono)',
+          fontFamily: 'var(--font-body)',
           color: C.muted,
           textTransform: 'uppercase',
           letterSpacing: '0.05em',
@@ -77,11 +77,8 @@ function ReadOnlyField({ label, value }: { label: string; value: string }) {
 
 function FieldGroup({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div
+    <div className="card"
       style={{
-        background: C.card,
-        border: `1px solid ${C.border}`,
-        borderRadius: '14px',
         padding: '22px',
         display: 'flex',
         flexDirection: 'column',
@@ -228,14 +225,14 @@ export default function SwimmerProfilePage() {
             width: '72px',
             height: '72px',
             borderRadius: '50%',
-            background: 'linear-gradient(135deg, #00D4AA 0%, #0099CC 100%)',
+            background: 'linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: '#061623',
+            color: 'var(--bg)',
             fontSize: '24px',
             fontWeight: 700,
-            fontFamily: 'var(--font-mono)',
+            fontFamily: 'var(--font-body)',
             boxShadow: '0 0 32px rgba(0,212,170,0.28)',
             flexShrink: 0,
           }}
@@ -271,9 +268,9 @@ export default function SwimmerProfilePage() {
                 <span
                   style={{
                     fontSize: '11px',
-                    fontFamily: 'var(--font-mono)',
-                    color: '#00D4AA',
-                    background: 'rgba(0,212,170,0.12)',
+                    fontFamily: 'var(--font-body)',
+                    color: 'var(--accent)',
+                    background: 'var(--accent-subtle)',
                     border: '1px solid rgba(0,212,170,0.25)',
                     padding: '3px 10px',
                     borderRadius: '999px',
@@ -292,7 +289,7 @@ export default function SwimmerProfilePage() {
       {/* Read-only notice */}
       <div
         style={{
-          background: 'rgba(0,212,170,0.06)',
+          background: 'var(--border)',
           border: `1px solid ${C.accentBorder}`,
           borderRadius: '10px',
           padding: '12px 16px',
@@ -312,7 +309,7 @@ export default function SwimmerProfilePage() {
       {loadError && (
         <div
           style={{
-            background: 'rgba(245,158,11,0.10)',
+            background: 'var(--warning-bg)',
             border: '1px solid rgba(245,158,11,0.25)',
             borderRadius: '10px',
             padding: '12px 16px',
@@ -324,7 +321,7 @@ export default function SwimmerProfilePage() {
           }}
         >
           <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-            <Icon name="alert-circle" size={15} style={{ color: '#f59e0b', marginTop: '1px', flexShrink: 0 }} />
+            <Icon name="alert-circle" size={15} style={{ color: 'var(--warning)', marginTop: '1px', flexShrink: 0 }} />
             <p style={{ margin: 0, fontSize: '12.5px', color: C.text, lineHeight: 1.5 }}>{loadError}</p>
           </div>
           <button
@@ -362,7 +359,7 @@ export default function SwimmerProfilePage() {
           {/* Club info */}
           <div style={{ animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) 0.08s both' }}>
             {loading ? (
-              <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '14px', padding: '22px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div className="card" style={{ padding: '22px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <SkeletonLine width="120px" height="18px" />
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px' }}>
                   {[1,2,3,4].map(i => <SkeletonLine key={i} height="40px" />)}
@@ -383,7 +380,7 @@ export default function SwimmerProfilePage() {
           {/* Personal info */}
           <div style={{ animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) 0.12s both' }}>
             {loading ? (
-              <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '14px', padding: '22px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div className="card" style={{ padding: '22px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <SkeletonLine width="160px" height="18px" />
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px' }}>
                   {[1,2,3,4,5,6].map(i => <SkeletonLine key={i} height="40px" />)}
@@ -433,11 +430,11 @@ export default function SwimmerProfilePage() {
                 )}
               </FieldGroup>
             ) : shouldShowCollectionEmptyState(loading, loadError, swimmer ? 1 : 0) ? (
-              <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '14px', padding: '24px', textAlign: 'center' }}>
+              <div className="card" style={{ padding: '24px', textAlign: 'center' }}>
                 <p style={{ fontSize: '14px', color: C.muted }}>No swimmer profile found for your account.</p>
               </div>
             ) : (
-              <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '14px', padding: '24px', textAlign: 'center' }}>
+              <div className="card" style={{ padding: '24px', textAlign: 'center' }}>
                 <p style={{ fontSize: '14px', color: C.muted }}>Profile details are unavailable until the latest data loads successfully.</p>
               </div>
             )}
@@ -445,11 +442,8 @@ export default function SwimmerProfilePage() {
 
           {/* Bio — editable */}
           <div style={{ animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) 0.16s both' }}>
-            <div
+            <div className="card"
               style={{
-                background: C.card,
-                border: `1px solid ${C.accentBorder}`,
-                borderRadius: '14px',
                 padding: '22px',
               }}
             >
@@ -460,7 +454,7 @@ export default function SwimmerProfilePage() {
                 <span
                   style={{
                     fontSize: '10px',
-                    fontFamily: 'var(--font-mono)',
+                    fontFamily: 'var(--font-body)',
                     color: C.accent,
                     background: C.accentDim,
                     border: `1px solid ${C.accentBorder}`,
@@ -506,18 +500,18 @@ export default function SwimmerProfilePage() {
               />
 
               {bioError && (
-                <div style={{ marginTop: '10px', fontSize: '12px', color: '#fca5a5', lineHeight: 1.5 }}>
+                <div style={{ marginTop: '10px', fontSize: '12px', color: 'var(--error)', lineHeight: 1.5 }}>
                   {bioError}
                 </div>
               )}
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '12px' }}>
-                <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: C.muted }}>
+                <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: C.muted }}>
                   {bio.length}/{SWIMMER_BIO_MAX_LENGTH}
                 </span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   {bioSaved && (
-                    <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: C.accent }}>
+                    <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: C.accent }}>
                       Saved
                     </span>
                   )}
@@ -526,9 +520,9 @@ export default function SwimmerProfilePage() {
                     disabled={loading || !swimmer || bioSaving}
                     style={{
                       padding: '8px 20px',
-                      background: bioSaving ? 'rgba(0,212,170,0.06)' : C.accentDim,
+                      background: bioSaving ? 'var(--border)' : C.accentDim,
                       color: bioSaving ? C.muted : C.accent,
-                      border: `1px solid ${bioSaving ? 'rgba(0,212,170,0.12)' : C.accentBorder}`,
+                      border: `1px solid ${bioSaving ? 'var(--accent-subtle)' : C.accentBorder}`,
                       borderRadius: '8px',
                       fontSize: '13px',
                       fontWeight: 700,
@@ -550,11 +544,8 @@ export default function SwimmerProfilePage() {
         {/* Sidebar */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {/* Group card */}
-          <div
+          <div className="card"
             style={{
-              background: C.card,
-              border: `1px solid ${C.border}`,
-              borderRadius: '14px',
               padding: '18px',
               animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) 0.10s both',
             }}
@@ -579,7 +570,7 @@ export default function SwimmerProfilePage() {
                   <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: C.accent, flexShrink: 0 }} />
                   <div>
                     <p style={{ fontSize: '14px', fontWeight: 600, color: C.text }}>{group.name}</p>
-                    <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: C.muted }}>{group.code}</p>
+                    <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: C.muted }}>{group.code}</p>
                   </div>
                 </div>
                 {(group.min_age != null || group.max_age != null) && (

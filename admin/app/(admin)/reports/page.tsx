@@ -154,10 +154,10 @@ export default function ReportsPage() {
   return (
     <div style={{ padding: '32px 36px 80px', maxWidth: 1180, margin: '0 auto' }}>
       <div style={{ marginBottom: '28px' }}>
-        <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
+        <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
           Reporting
         </p>
-        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '30px', fontWeight: 400, color: 'var(--text)', marginBottom: '6px' }}>
+        <h1 className="page-title">
           Live Report Console
         </h1>
         <p style={{ fontSize: '13px', color: 'var(--text-subtle)', maxWidth: '68ch' }}>
@@ -189,7 +189,7 @@ export default function ReportsPage() {
                     <div key={report.key} className="card" style={{ padding: '18px 18px 16px', borderTop: `3px solid ${report.accent}` }}>
                       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', marginBottom: '12px' }}>
                         <div>
-                          <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: report.accent, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>
+                          <div style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: report.accent, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>
                             {REPORTS.find((item) => item.key === report.key)?.category}
                           </div>
                           <h3 style={{ fontSize: '18px', color: 'var(--text)', marginBottom: '4px' }}>{report.title}</h3>
@@ -202,11 +202,11 @@ export default function ReportsPage() {
 
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
                         <div style={{ padding: '12px', borderRadius: '8px', background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
-                          <div style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>Rows</div>
-                          <div style={{ fontSize: '22px', fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>{report.rowCount}</div>
+                          <div style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>Rows</div>
+                          <div style={{ fontSize: '22px', fontFamily: 'var(--font-body)', color: 'var(--text)' }}>{report.rowCount}</div>
                         </div>
                         <div style={{ padding: '12px', borderRadius: '8px', background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
-                          <div style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>Generated</div>
+                          <div style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>Generated</div>
                           <div style={{ fontSize: '12px', color: 'var(--text-subtle)', lineHeight: 1.45 }}>{formatDateTime(report.generatedAt)}</div>
                         </div>
                       </div>

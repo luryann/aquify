@@ -139,15 +139,15 @@ export default function JobsPage() {
 
   return (
     <div style={{ padding: '32px 36px 80px', maxWidth: 1260, margin: '0 auto' }}>
-      <div style={{ marginBottom: '28px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+      <div className="page-header" style={{ flexWrap: 'wrap' }}>
         <div>
-          <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
+          <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
             Operations
           </p>
-          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '30px', fontWeight: 400, color: 'var(--text)', marginBottom: '6px' }}>
+          <h1 className="page-title">
             Background Jobs
           </h1>
-          <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>
+          <p className="page-subtitle">
             Queue depth, task status, metrics, and DLQ actions from the live worker server.
           </p>
         </div>
@@ -177,8 +177,8 @@ export default function JobsPage() {
               { label: 'Dead Letter', value: String(dlq.length) },
             ].map((stat) => (
               <div key={stat.label} className="card-elevated" style={{ padding: '14px 16px' }}>
-                <div style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>{stat.label}</div>
-                <div style={{ fontSize: '22px', fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>{stat.value}</div>
+                <div style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>{stat.label}</div>
+                <div style={{ fontSize: '22px', fontFamily: 'var(--font-body)', color: 'var(--text)' }}>{stat.value}</div>
               </div>
             ))}
           </div>
@@ -194,14 +194,14 @@ export default function JobsPage() {
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--border)' }}>
                     {['Queue', 'Pending', 'Active', 'Retrying', 'Completed', 'Failed', 'Dead Letter'].map((header) => (
-                      <th key={header} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{header}</th>
+                      <th key={header} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{header}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {queues.map((queue) => (
                     <tr key={queue.queue} style={{ borderBottom: '1px solid var(--border)' }}>
-                      <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>{queue.queue}</td>
+                      <td style={{ padding: '11px 14px', fontFamily: 'var(--font-body)', color: 'var(--text)' }}>{queue.queue}</td>
                       <td style={{ padding: '11px 14px' }}>{queue.pending}</td>
                       <td style={{ padding: '11px 14px' }}>{queue.active}</td>
                       <td style={{ padding: '11px 14px' }}>{queue.retrying}</td>
@@ -226,16 +226,16 @@ export default function JobsPage() {
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--border)' }}>
                     {['Task ID', 'Type', 'Queue', 'Status', 'Enqueued', 'Last Error'].map((header) => (
-                      <th key={header} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{header}</th>
+                      <th key={header} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{header}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {activeTasks.map((task) => (
                     <tr key={task.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                      <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text)' }}>{task.id}</td>
-                      <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--accent)' }}>{task.type}</td>
-                      <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-subtle)' }}>{task.queue}</td>
+                      <td style={{ padding: '11px 14px', fontFamily: 'var(--font-body)', fontSize: '11px', color: 'var(--text)' }}>{task.id}</td>
+                      <td style={{ padding: '11px 14px', fontFamily: 'var(--font-body)', fontSize: '11px', color: 'var(--accent)' }}>{task.type}</td>
+                      <td style={{ padding: '11px 14px', fontFamily: 'var(--font-body)', fontSize: '11px', color: 'var(--text-subtle)' }}>{task.queue}</td>
                       <td style={{ padding: '11px 14px' }}>{task.status}</td>
                       <td style={{ padding: '11px 14px', fontSize: '12px', color: 'var(--text-subtle)' }}>{formatDateTime(task.enqueued_at)}</td>
                       <td style={{ padding: '11px 14px', fontSize: '12px', color: task.last_error ? 'var(--error)' : 'var(--text-muted)' }}>{task.last_error || '—'}</td>
@@ -258,14 +258,14 @@ export default function JobsPage() {
                   <thead>
                     <tr style={{ borderBottom: '1px solid var(--border)' }}>
                       {['Type', 'Enqueued', 'Succeeded', 'Failed', 'DLQ'].map((header) => (
-                        <th key={header} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{header}</th>
+                        <th key={header} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{header}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {metricRows.map(([taskType, snapshot]) => (
                       <tr key={taskType} style={{ borderBottom: '1px solid var(--border)' }}>
-                        <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text)' }}>{taskType}</td>
+                        <td style={{ padding: '11px 14px', fontFamily: 'var(--font-body)', fontSize: '11px', color: 'var(--text)' }}>{taskType}</td>
                         <td style={{ padding: '11px 14px' }}>{snapshot.enqueued}</td>
                         <td style={{ padding: '11px 14px' }}>{snapshot.succeeded}</td>
                         <td style={{ padding: '11px 14px' }}>{snapshot.failed}</td>
@@ -288,7 +288,7 @@ export default function JobsPage() {
                   {executions.slice(0, 12).map((execution, index) => (
                     <div key={`${execution.task_id}-${index}`} style={{ padding: '12px 14px', borderBottom: index < Math.min(executions.length, 12) - 1 ? '1px solid var(--border)' : 'none' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '4px' }}>
-                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--accent)' }}>{execution.task_type}</span>
+                        <span style={{ fontFamily: 'var(--font-body)', fontSize: '11px', color: 'var(--accent)' }}>{execution.task_type}</span>
                         <span style={{ fontSize: '11px', color: execution.status === 'failed' ? 'var(--error)' : 'var(--text-subtle)' }}>{execution.status}</span>
                       </div>
                       <div style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>{execution.task_id}</div>
@@ -313,15 +313,15 @@ export default function JobsPage() {
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--border)' }}>
                     {['Task ID', 'Type', 'Retries', 'Last Error', 'Actions'].map((header) => (
-                      <th key={header} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{header}</th>
+                      <th key={header} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{header}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {dlq.map((task) => (
                     <tr key={task.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                      <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text)' }}>{task.id}</td>
-                      <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--accent)' }}>{task.type}</td>
+                      <td style={{ padding: '11px 14px', fontFamily: 'var(--font-body)', fontSize: '11px', color: 'var(--text)' }}>{task.id}</td>
+                      <td style={{ padding: '11px 14px', fontFamily: 'var(--font-body)', fontSize: '11px', color: 'var(--accent)' }}>{task.type}</td>
                       <td style={{ padding: '11px 14px' }}>{task.retried}/{task.max_retries}</td>
                       <td style={{ padding: '11px 14px', color: 'var(--error)', fontSize: '12px' }}>{task.last_error || '—'}</td>
                       <td style={{ padding: '11px 14px' }}>

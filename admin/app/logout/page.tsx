@@ -141,7 +141,7 @@ export default function LogoutPage() {
             }}>
               Signing you out…
             </h2>
-            <p style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
+            <p style={{ fontSize: '12px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
               Revoking session and clearing credentials
             </p>
           </>
@@ -165,7 +165,7 @@ export default function LogoutPage() {
             }}>
               Signed out
             </h2>
-            <p style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
+            <p style={{ fontSize: '12px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
               Redirecting to sign-in…
             </p>
 
@@ -211,7 +211,7 @@ export default function LogoutPage() {
             }}>
               Sign-out needs attention
             </h2>
-            <p style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', letterSpacing: '0.04em', maxWidth: '320px' }}>
+            <p style={{ fontSize: '12px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.04em', maxWidth: '320px' }}>
               {error}
             </p>
             <button

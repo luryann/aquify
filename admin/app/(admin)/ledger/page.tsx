@@ -27,13 +27,13 @@ function formatCents(cents: number) {
 }
 
 const COLUMNS: Column<LedgerEventRow>[] = [
-  { key: 'createdAt', label: 'Timestamp', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{new Date(row.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}</span> },
-  { key: 'eventType', label: 'Event', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--accent)' }}>{row.eventType}</span> },
-  { key: 'invoiceNumber', label: 'Invoice', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text)' }}>{row.invoiceNumber || row.invoiceId || '—'}</span> },
+  { key: 'createdAt', label: 'Timestamp', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{new Date(row.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}</span> },
+  { key: 'eventType', label: 'Event', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 11, color: 'var(--accent)' }}>{row.eventType}</span> },
+  { key: 'invoiceNumber', label: 'Invoice', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--text)' }}>{row.invoiceNumber || row.invoiceId || '—'}</span> },
   { key: 'householdName', label: 'Household', render: (row) => <span style={{ fontSize: 13, color: 'var(--text)' }}>{row.householdName || '—'}</span> },
   { key: 'description', label: 'Description', render: (row) => <span style={{ fontSize: 12, color: 'var(--text-subtle)', maxWidth: 320, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.description || '—'}</span> },
-  { key: 'creditCents', label: 'Credit', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 600, color: row.creditCents > 0 ? 'var(--success)' : 'var(--text-disabled)', textAlign: 'right', display: 'block' }}>{row.creditCents > 0 ? formatCents(row.creditCents) : '—'}</span> },
-  { key: 'debitCents', label: 'Debit', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 600, color: row.debitCents > 0 ? 'var(--error)' : 'var(--text-disabled)', textAlign: 'right', display: 'block' }}>{row.debitCents > 0 ? formatCents(row.debitCents) : '—'}</span> },
+  { key: 'creditCents', label: 'Credit', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 13, fontWeight: 600, color: row.creditCents > 0 ? 'var(--success)' : 'var(--text-disabled)', textAlign: 'right', display: 'block' }}>{row.creditCents > 0 ? formatCents(row.creditCents) : '—'}</span> },
+  { key: 'debitCents', label: 'Debit', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 13, fontWeight: 600, color: row.debitCents > 0 ? 'var(--error)' : 'var(--text-disabled)', textAlign: 'right', display: 'block' }}>{row.debitCents > 0 ? formatCents(row.debitCents) : '—'}</span> },
 ]
 
 async function loadLedgerRows(api: ReturnType<typeof useApiClient>, orgId: string): Promise<LedgerEventRow[]> {
@@ -123,15 +123,15 @@ export default function LedgerPage() {
 
   return (
     <div style={{ padding: '32px 36px', maxWidth: 1400, margin: '0 auto' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28 }}>
+      <div className="page-header">
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
             <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--accent-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Icon name="book-open" size={16} color="var(--accent)" />
             </div>
-            <h1 style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--text)', margin: 0 }}>Billing Ledger</h1>
+            <h1 className="page-title">Billing Ledger</h1>
           </div>
-          <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: 0 }}>Append-only financial event log backed by the live billing service</p>
+          <p className="page-subtitle">Append-only financial event log backed by the live billing service</p>
         </div>
       </div>
 
@@ -143,7 +143,7 @@ export default function LedgerPage() {
         ].map((stat) => (
           <div key={stat.label} style={{ padding: '20px 24px', borderRadius: 10, background: 'var(--bg-elevated)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 6 }}>
             <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>{stat.label}</span>
-            <span style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em', fontFamily: 'var(--font-mono)', color: stat.accent ? 'var(--accent)' : 'var(--text)' }}>{stat.value}</span>
+            <span style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em', fontFamily: 'var(--font-body)', color: stat.accent ? 'var(--accent)' : 'var(--text)' }}>{stat.value}</span>
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{stat.sub}</span>
           </div>
         ))}
@@ -156,7 +156,7 @@ export default function LedgerPage() {
         </div>
         <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} style={{ padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 13, color: 'var(--text)', outline: 'none' }} />
         <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} style={{ padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 13, color: 'var(--text)', outline: 'none' }} />
-        <span style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginLeft: 'auto' }}>{filtered.length} events</span>
+        <span style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginLeft: 'auto' }}>{filtered.length} events</span>
       </div>
 
       {loading ? (

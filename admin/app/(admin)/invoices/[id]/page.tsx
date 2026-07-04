@@ -63,7 +63,7 @@ function StatusBadge({ status }: { status: string }) {
     processed: { color: 'var(--success)', bg: 'var(--success-bg)' },
   }
   const colors = cfg[status] ?? { color: 'var(--text-muted)', bg: 'var(--bg-elevated)' }
-  return <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '10px', background: colors.bg, color: colors.color }}>{status.replaceAll('_', ' ')}</span>
+  return <span className="badge" style={{ background: colors.bg, color: colors.color }}>{status.replaceAll('_', ' ')}</span>
 }
 
 function buildItemCols(swimmerNameById: Map<string, string>): Column<InvoiceItemRecord>[] {
@@ -74,7 +74,7 @@ function buildItemCols(swimmerNameById: Map<string, string>): Column<InvoiceItem
       render: (row) => (
         <div>
           <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>{row.description}</div>
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', fontFamily: 'var(--font-mono)' }}>{row.category}</div>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', fontFamily: 'var(--font-body)' }}>{row.category}</div>
         </div>
       ),
     },
@@ -87,35 +87,35 @@ function buildItemCols(swimmerNameById: Map<string, string>): Column<InvoiceItem
         </span>
       ),
     },
-    { key: 'quantity', label: 'Qty', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-subtle)' }}>{row.quantity}</span> },
-    { key: 'unit_amount_cents', label: 'Unit Price', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-subtle)' }}>{formatCents(row.unit_amount_cents)}</span> },
-    { key: 'total_cents', label: 'Total', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', fontWeight: 700, color: 'var(--text)' }}>{formatCents(row.total_cents)}</span> },
+    { key: 'quantity', label: 'Qty', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-subtle)' }}>{row.quantity}</span> },
+    { key: 'unit_amount_cents', label: 'Unit Price', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-subtle)' }}>{formatCents(row.unit_amount_cents)}</span> },
+    { key: 'total_cents', label: 'Total', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '13px', fontWeight: 700, color: 'var(--text)' }}>{formatCents(row.total_cents)}</span> },
   ]
 }
 
 const PAYMENT_COLS: Column<PaymentRecord>[] = [
   { key: 'method', label: 'Method', render: (row) => <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-subtle)' }}>{row.method}</span> },
-  { key: 'amount_cents', label: 'Amount', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', fontWeight: 700, color: 'var(--success)' }}>{formatCents(row.amount_cents)}</span> },
+  { key: 'amount_cents', label: 'Amount', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '13px', fontWeight: 700, color: 'var(--success)' }}>{formatCents(row.amount_cents)}</span> },
   { key: 'status', label: 'Status', render: (row) => <StatusBadge status={row.status} /> },
-  { key: 'stripe_payment_intent_id', label: 'Reference', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-muted)' }}>{row.stripe_payment_intent_id || row.external_ref || '—'}</span> },
+  { key: 'stripe_payment_intent_id', label: 'Reference', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '11px', color: 'var(--text-muted)' }}>{row.stripe_payment_intent_id || row.external_ref || '—'}</span> },
   { key: 'created_by', label: 'Recorded By', render: (row) => <span style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>{row.created_by}</span> },
-  { key: 'created_at', label: 'Date', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-muted)' }}>{formatDate(row.paid_at || row.created_at)}</span> },
+  { key: 'created_at', label: 'Date', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-muted)' }}>{formatDate(row.paid_at || row.created_at)}</span> },
 ]
 
 const REFUND_COLS: Column<RefundRecord>[] = [
-  { key: 'amount_cents', label: 'Amount', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', fontWeight: 700, color: 'var(--accent)' }}>{formatCents(row.amount_cents)}</span> },
+  { key: 'amount_cents', label: 'Amount', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '13px', fontWeight: 700, color: 'var(--accent)' }}>{formatCents(row.amount_cents)}</span> },
   { key: 'reason', label: 'Reason', render: (row) => <span style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>{row.reason}</span> },
   { key: 'status', label: 'Status', render: (row) => <StatusBadge status={row.status} /> },
   { key: 'created_by', label: 'By', render: (row) => <span style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>{row.created_by}</span> },
-  { key: 'created_at', label: 'Date', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-muted)' }}>{formatDate(row.created_at)}</span> },
+  { key: 'created_at', label: 'Date', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-muted)' }}>{formatDate(row.created_at)}</span> },
 ]
 
 const LEDGER_COLS: Column<LedgerEventRecord>[] = [
   { key: 'event_type', label: 'Action', render: (row) => <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)' }}>{row.event_type.replaceAll('_', ' ')}</span> },
-  { key: 'amount_cents', label: 'Amount', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: row.amount_cents < 0 ? 'var(--success)' : 'var(--text)' }}>{formatCents(row.amount_cents)}</span> },
+  { key: 'amount_cents', label: 'Amount', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: row.amount_cents < 0 ? 'var(--success)' : 'var(--text)' }}>{formatCents(row.amount_cents)}</span> },
   { key: 'description', label: 'Memo', render: (row) => <span style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>{row.description || '—'}</span> },
-  { key: 'actor_id', label: 'Actor', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-muted)' }}>{row.actor_id || 'system'}</span> },
-  { key: 'created_at', label: 'Occurred', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-muted)' }}>{formatDateTime(row.created_at)}</span> },
+  { key: 'actor_id', label: 'Actor', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '11px', color: 'var(--text-muted)' }}>{row.actor_id || 'system'}</span> },
+  { key: 'created_at', label: 'Occurred', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-muted)' }}>{formatDateTime(row.created_at)}</span> },
 ]
 
 const INPUT_STYLE = { width: '100%', padding: '9px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none', boxSizing: 'border-box' as const }
@@ -282,7 +282,7 @@ function CopyableId({ id }: { id: string }) {
       style={{
         display: 'inline-flex', alignItems: 'center', gap: '4px',
         background: 'none', border: 'none', cursor: 'pointer', padding: 0,
-        fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'inherit',
+        fontFamily: 'var(--font-body)', fontSize: '12px', color: 'inherit',
       }}
     >
       {copied ? 'Copied!' : truncateId(id)}
@@ -403,10 +403,10 @@ export default function InvoiceDetailPage() {
         <Icon name="chevron-left" size={14} /> Invoices
       </Link>
 
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
+      <div className="page-header">
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
-            <h1 style={{ fontSize: '24px', fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.2 }}>{invoice.invoice_number}</h1>
+            <h1 className="page-title">{invoice.invoice_number}</h1>
             <StatusBadge status={invoice.status} />
           </div>
           <div style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -430,8 +430,8 @@ export default function InvoiceDetailPage() {
           { label: 'Due Date', value: formatDate(invoice.due_date), color: 'var(--text-subtle)' },
         ].map((stat) => (
           <div key={stat.label} className="card" style={{ padding: '14px 16px' }}>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)', marginBottom: '6px' }}>{stat.label}</div>
-            <div style={{ fontSize: '18px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
+            <div style={{ fontSize: '18px', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
           </div>
         ))}
       </div>

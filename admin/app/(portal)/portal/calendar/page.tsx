@@ -177,25 +177,25 @@ function UpcomingEventRow({ ev }: { ev: CalEvent }) {
         }}
       />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ fontSize: '13px', fontWeight: 600, color: '#1A1714', marginBottom: '2px', lineHeight: 1.3 }}>
+        <p style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', marginBottom: '2px', lineHeight: 1.3 }}>
           {ev.title}
         </p>
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           {ev.time && (
-            <span style={{ fontSize: '11.5px', color: '#6B6866', display: 'flex', alignItems: 'center', gap: '3px' }}>
+            <span style={{ fontSize: '11.5px', color: 'var(--text-subtle)', display: 'flex', alignItems: 'center', gap: '3px' }}>
               <Icon name="clock" size={11} />
               {ev.time}
             </span>
           )}
           {ev.location && (
-            <span style={{ fontSize: '11.5px', color: '#6B6866', display: 'flex', alignItems: 'center', gap: '3px' }}>
+            <span style={{ fontSize: '11.5px', color: 'var(--text-subtle)', display: 'flex', alignItems: 'center', gap: '3px' }}>
               <Icon name="map-pin" size={11} />
               {ev.location}
             </span>
           )}
         </div>
         {ev.detail && (
-          <p style={{ fontSize: '11.5px', color: '#9A9693', marginTop: '4px', lineHeight: 1.4 }}>
+          <p style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.4 }}>
             {ev.detail}
           </p>
         )}
@@ -203,7 +203,7 @@ function UpcomingEventRow({ ev }: { ev: CalEvent }) {
       <span
         style={{
           fontSize: '10px',
-          fontFamily: 'var(--font-mono)',
+          fontFamily: 'var(--font-body)',
           fontWeight: 600,
           textTransform: 'uppercase',
           letterSpacing: '0.04em',
@@ -360,19 +360,10 @@ export default function CalendarPage() {
         }}
       >
         <div>
-          <h1
-            style={{
-              fontFamily: 'var(--font-display)',
-              fontSize: 'clamp(26px, 4vw, 34px)',
-              color: '#1A1714',
-              letterSpacing: '-0.02em',
-              lineHeight: 1.1,
-              marginBottom: '6px',
-            }}
-          >
+          <h1 className="page-title">
             Calendar
           </h1>
-          <p style={{ fontSize: '14px', color: '#6B6866' }}>
+          <p className="page-subtitle">
             Meets, practices, and important deadlines.
           </p>
         </div>
@@ -395,8 +386,8 @@ export default function CalendarPage() {
                 padding: '5px 14px',
                 borderRadius: '6px',
                 border: 'none',
-                background: view === v ? '#ffffff' : 'transparent',
-                color: view === v ? '#1A1714' : '#6B6866',
+                background: view === v ? 'var(--bg-elevated)' : 'transparent',
+                color: view === v ? 'var(--text)' : 'var(--text-subtle)',
                 fontSize: '12.5px',
                 fontWeight: view === v ? 600 : 400,
                 cursor: 'pointer',
@@ -416,7 +407,7 @@ export default function CalendarPage() {
           style={{
             marginBottom: '20px',
             padding: '12px 16px',
-            background: '#fff7ed',
+            background: 'var(--warning-bg)',
             border: '1px solid #fdba74',
             borderRadius: '10px',
             display: 'flex',
@@ -426,13 +417,13 @@ export default function CalendarPage() {
           }}
         >
           <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-            <Icon name="alert-circle" size={15} style={{ color: '#ea580c', marginTop: '1px', flexShrink: 0 }} />
-            <span style={{ fontSize: '13px', color: '#9a3412', lineHeight: 1.5 }}>{loadError}</span>
+            <Icon name="alert-circle" size={15} style={{ color: 'var(--warning)', marginTop: '1px', flexShrink: 0 }} />
+            <span style={{ fontSize: '13px', color: 'var(--warning)', lineHeight: 1.5 }}>{loadError}</span>
           </div>
           <button
             type="button"
             onClick={() => setReloadKey((key) => key + 1)}
-            style={{ background: '#ffffff', border: '1px solid #fdba74', borderRadius: '8px', cursor: 'pointer', color: '#9a3412', fontSize: '12px', fontWeight: 600, padding: '8px 14px', whiteSpace: 'nowrap' }}
+            style={{ background: 'var(--bg-elevated)', border: '1px solid #fdba74', borderRadius: '8px', cursor: 'pointer', color: 'var(--warning)', fontSize: '12px', fontWeight: 600, padding: '8px 14px', whiteSpace: 'nowrap' }}
           >
             Retry
           </button>
@@ -465,7 +456,7 @@ export default function CalendarPage() {
                 borderRadius: '999px',
                 border: `1px solid ${active ? (s ? s.border : 'rgba(0,0,0,0.22)') : 'rgba(0,0,0,0.10)'}`,
                 background: active ? (s ? s.bg : 'rgba(0,0,0,0.06)') : 'transparent',
-                color: active ? (s ? s.color : '#1A1714') : '#6B6866',
+                color: active ? (s ? s.color : 'var(--text)') : 'var(--text-subtle)',
                 fontSize: '12px',
                 fontWeight: 500,
                 cursor: 'pointer',
@@ -502,15 +493,7 @@ export default function CalendarPage() {
       >
         {/* ── MAIN CALENDAR ─────────────────────────────────────────── */}
         <div
-          style={{
-            background: '#ffffff',
-            borderRadius: '16px',
-            border: '1px solid rgba(0,0,0,0.08)',
-            overflowX: 'auto',
-            overflowY: 'hidden',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-            minWidth: 0,
-          }}
+          className="card" style={{ overflowX: 'auto', overflowY: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', minWidth: 0 }}
         >
           {/* Month nav */}
           <div
@@ -535,7 +518,7 @@ export default function CalendarPage() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                color: '#6B6866',
+                color: 'var(--text-subtle)',
                 transition: 'background 120ms ease',
               }}
               onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(0,0,0,0.05)')}
@@ -549,7 +532,7 @@ export default function CalendarPage() {
                 style={{
                   fontFamily: 'var(--font-display)',
                   fontSize: '20px',
-                  color: '#1A1714',
+                  color: 'var(--text)',
                   letterSpacing: '-0.01em',
                 }}
               >
@@ -564,17 +547,17 @@ export default function CalendarPage() {
                   background: 'transparent',
                   fontSize: '12px',
                   fontWeight: 500,
-                  color: '#6B6866',
+                  color: 'var(--text-subtle)',
                   cursor: 'pointer',
                   transition: 'all 120ms ease',
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.background = 'rgba(0,0,0,0.05)'
-                  e.currentTarget.style.color = '#1A1714'
+                  e.currentTarget.style.color = 'var(--text)'
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.background = 'transparent'
-                  e.currentTarget.style.color = '#6B6866'
+                  e.currentTarget.style.color = 'var(--text-subtle)'
                 }}
               >
                 Today
@@ -594,7 +577,7 @@ export default function CalendarPage() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                color: '#6B6866',
+                color: 'var(--text-subtle)',
                 transition: 'background 120ms ease',
               }}
               onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(0,0,0,0.05)')}
@@ -622,11 +605,11 @@ export default function CalendarPage() {
                       padding: '8px 4px',
                       textAlign: 'center',
                       fontSize: '11px',
-                      fontFamily: 'var(--font-mono)',
+                      fontFamily: 'var(--font-body)',
                       fontWeight: 600,
                       letterSpacing: '0.05em',
                       textTransform: 'uppercase',
-                      color: '#A09D9B',
+                      color: 'var(--text-muted)',
                     }}
                   >
                     {d}
@@ -698,8 +681,8 @@ export default function CalendarPage() {
                           justifyContent: 'center',
                           fontSize: '13px',
                           fontWeight: isToday ? 700 : 400,
-                          color: isToday ? '#ffffff' : isSelected ? '#eb5d1e' : '#1A1714',
-                          background: isToday ? '#eb5d1e' : 'transparent',
+                          color: isToday ? 'var(--bg-elevated)' : isSelected ? 'var(--accent)' : 'var(--text)',
+                          background: isToday ? 'var(--accent)' : 'transparent',
                           marginBottom: '6px',
                         }}
                       >
@@ -715,8 +698,8 @@ export default function CalendarPage() {
                           <span
                             style={{
                               fontSize: '10px',
-                              color: '#A09D9B',
-                              fontFamily: 'var(--font-mono)',
+                              color: 'var(--text-muted)',
+                              fontFamily: 'var(--font-body)',
                               padding: '1px 4px',
                             }}
                           >
@@ -752,8 +735,8 @@ export default function CalendarPage() {
                     <p
                       style={{
                         fontSize: '11px',
-                        fontFamily: 'var(--font-mono)',
-                        color: '#A09D9B',
+                        fontFamily: 'var(--font-body)',
+                        color: 'var(--text-muted)',
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em',
                         marginBottom: '4px',
@@ -766,14 +749,14 @@ export default function CalendarPage() {
                         width: '30px',
                         height: '30px',
                         borderRadius: '50%',
-                        background: wd.isToday ? '#eb5d1e' : 'transparent',
+                        background: wd.isToday ? 'var(--accent)' : 'transparent',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         margin: '0 auto',
                         fontSize: '15px',
                         fontWeight: wd.isToday ? 700 : 400,
-                        color: wd.isToday ? '#ffffff' : '#1A1714',
+                        color: wd.isToday ? 'var(--bg-elevated)' : 'var(--text)',
                       }}
                     >
                       {wd.num}
@@ -827,14 +810,7 @@ export default function CalendarPage() {
           {/* Selected day detail */}
           {selectedDate && selectedEvents.length > 0 && (
             <div
-              style={{
-                background: '#ffffff',
-                borderRadius: '14px',
-                border: '1px solid rgba(235,93,30,0.25)',
-                overflow: 'hidden',
-                boxShadow: '0 2px 12px rgba(235,93,30,0.08)',
-                animation: 'slideUp 0.2s var(--ease-out) both',
-              }}
+              className="card" style={{ overflow: 'hidden', boxShadow: '0 2px 12px rgba(235,93,30,0.08)', animation: 'slideUp 0.2s var(--ease-out) both' }}
             >
               <div
                 style={{
@@ -845,8 +821,8 @@ export default function CalendarPage() {
                 <p
                   style={{
                     fontSize: '11px',
-                    fontFamily: 'var(--font-mono)',
-                    color: '#eb5d1e',
+                    fontFamily: 'var(--font-body)',
+                    color: 'var(--accent)',
                     textTransform: 'uppercase',
                     letterSpacing: '0.05em',
                     marginBottom: '2px',
@@ -858,7 +834,7 @@ export default function CalendarPage() {
                   style={{
                     fontFamily: 'var(--font-display)',
                     fontSize: '18px',
-                    color: '#1A1714',
+                    color: 'var(--text)',
                   }}
                 >
                   {new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-US', {
@@ -874,13 +850,7 @@ export default function CalendarPage() {
 
           {/* Upcoming events */}
           <div
-            style={{
-              background: '#ffffff',
-              borderRadius: '14px',
-              border: '1px solid rgba(0,0,0,0.08)',
-              overflow: 'hidden',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-            }}
+            className="card" style={{ overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}
           >
             <div
               style={{
@@ -892,23 +862,23 @@ export default function CalendarPage() {
                 style={{
                   fontFamily: 'var(--font-display)',
                   fontSize: '17px',
-                  color: '#1A1714',
+                  color: 'var(--text)',
                 }}
               >
                 Upcoming
               </p>
-              <p style={{ fontSize: '12px', color: '#9A9693', marginTop: '2px' }}>
+              <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
                 Next events from today
               </p>
             </div>
 
             {loadError ? (
               <div style={{ padding: '32px 16px', textAlign: 'center' }}>
-                <p style={{ fontSize: '13px', color: '#A09D9B' }}>Upcoming calendar events are unavailable right now.</p>
+                <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Upcoming calendar events are unavailable right now.</p>
               </div>
             ) : shouldShowCollectionEmptyState(false, loadError, upcomingEvents.length) ? (
               <div style={{ padding: '32px 16px', textAlign: 'center' }}>
-                <p style={{ fontSize: '13px', color: '#A09D9B' }}>No upcoming events</p>
+                <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>No upcoming events</p>
               </div>
             ) : (
               upcomingEvents.map((ev) => (

@@ -75,13 +75,13 @@ export default function SystemDiagnosticsPage() {
   return (
     <div style={{ padding: '32px 32px 80px', maxWidth: '1000px' }}>
       <div style={{ marginBottom: '28px' }}>
-        <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
+        <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
           System
         </p>
-        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '28px', fontWeight: 400, color: 'var(--text)', letterSpacing: '-0.01em', marginBottom: '6px' }}>
+        <h1 className="page-title">
           System Diagnostics
         </h1>
-        <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>
+        <p className="page-subtitle">
           Sanitized backend configuration for this environment — for engineering and deployment troubleshooting, not club administration.
         </p>
       </div>
@@ -147,12 +147,12 @@ export default function SystemDiagnosticsPage() {
                 <div key={key} style={{ padding: '16px 18px', borderBottom: index < all.length - 1 ? '1px solid var(--border)' : 'none', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px' }}>
                   <div>
                     <div style={{ marginBottom: '4px' }}>
-                      <code style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', color: 'var(--text)', background: 'var(--bg-elevated)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--border)' }}>
+                      <code style={{ fontSize: '12px', fontFamily: 'var(--font-body)', color: 'var(--text)', background: 'var(--bg-elevated)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--border)' }}>
                         {key}
                       </code>
                     </div>
                   </div>
-                  <code style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', color: 'var(--text-subtle)', textAlign: 'right', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                  <code style={{ fontSize: '12px', fontFamily: 'var(--font-body)', color: 'var(--text-subtle)', textAlign: 'right', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                     {formatValue(value)}
                   </code>
                 </div>

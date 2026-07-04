@@ -271,7 +271,7 @@ function SwimmerPanel({
               color: '#fff',
               fontSize: '14px',
               fontWeight: 700,
-              fontFamily: 'var(--font-mono)',
+              fontFamily: 'var(--font-body)',
               flexShrink: 0,
             }}
           >
@@ -302,7 +302,7 @@ function SwimmerPanel({
             color: feedback.type === 'success' ? 'var(--success)' : 'var(--error)',
             fontSize: '12px',
             fontWeight: 600,
-            fontFamily: 'var(--font-mono)',
+            fontFamily: 'var(--font-body)',
             display: 'flex',
             alignItems: 'center',
             gap: '6px',
@@ -319,18 +319,18 @@ function SwimmerPanel({
           {/* Status & meet info row */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '20px' }}>
             <div className="card" style={{ padding: '12px 14px' }}>
-              <div style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '5px' }}>
+              <div style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '5px' }}>
                 Commitment
               </div>
-              <span style={{ fontSize: '12px', fontWeight: 700, padding: '3px 10px', borderRadius: '10px', background: commitCfg.bg, color: commitCfg.color, fontFamily: 'var(--font-mono)' }}>
+              <span className="badge" style={{ background: commitCfg.bg, color: commitCfg.color }}>
                 {commitCfg.label}
               </span>
             </div>
             <div className="card" style={{ padding: '12px 14px' }}>
-              <div style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '5px' }}>
+              <div style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '5px' }}>
                 Meet Status
               </div>
-              <span style={{ fontSize: '12px', color: MEET_STATUS_CFG[row.meetStatus]?.color ?? 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+              <span style={{ fontSize: '12px', color: MEET_STATUS_CFG[row.meetStatus]?.color ?? 'var(--text-muted)', fontFamily: 'var(--font-body)', fontWeight: 600 }}>
                 {meetStatusLabel}
               </span>
             </div>
@@ -342,7 +342,7 @@ function SwimmerPanel({
               className="card"
               style={{ padding: '12px 14px', marginBottom: '20px', borderLeft: '3px solid var(--accent)' }}
             >
-              <div style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '5px' }}>
+              <div style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '5px' }}>
                 Note from family
               </div>
               <p style={{ fontSize: '13px', color: 'var(--text-subtle)', lineHeight: 1.55, margin: 0 }}>{row.note}</p>
@@ -351,7 +351,7 @@ function SwimmerPanel({
 
           {/* Event selections */}
           <div style={{ marginBottom: '20px' }}>
-            <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <span>Event Selections</span>
               {selectionsLoading ? (
                 <span style={{ color: 'var(--text-muted)' }}>Loading…</span>
@@ -376,7 +376,7 @@ function SwimmerPanel({
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {sessionGroups.map((group) => (
                   <div key={group.id}>
-                    <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', marginBottom: '6px', paddingLeft: '2px' }}>
+                    <div style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px', paddingLeft: '2px' }}>
                       {group.id === 'main' ? 'Main Session' : `Session ${group.id.slice(-4)}`}
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
@@ -430,7 +430,7 @@ function SwimmerPanel({
                               {eventLabel(ev)}
                             </span>
                             {ev.event_number && (
-                              <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
+                              <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>
                                 #{ev.event_number}
                               </span>
                             )}
@@ -447,7 +447,7 @@ function SwimmerPanel({
           {/* Entry records with approve actions */}
           {localEntries.length > 0 && (
             <div style={{ marginBottom: '20px' }}>
-              <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '10px' }}>
+              <div style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '10px' }}>
                 Entry Records ({localEntries.length})
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -456,10 +456,10 @@ function SwimmerPanel({
                   const isApproving = approvingEntry.has(e.id)
                   return (
                     <div key={e.id} className="card" style={{ padding: '9px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
-                      <span style={{ fontSize: '12px', color: 'var(--text)', fontFamily: 'var(--font-mono)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <span style={{ fontSize: '12px', color: 'var(--text)', fontFamily: 'var(--font-body)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         Entry #{e.id.slice(-6)}
                       </span>
-                      <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '8px', background: cfg.bg, color: cfg.color, fontFamily: 'var(--font-mono)', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                      <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '8px', background: cfg.bg, color: cfg.color, fontFamily: 'var(--font-body)', fontWeight: 600, whiteSpace: 'nowrap' }}>
                         {cfg.label}
                       </span>
                       {e.status === 'submitted' && (
@@ -750,7 +750,7 @@ export default function CommitmentsPage() {
           >
             {r.meetName}
           </Link>
-          <div style={{ fontSize: '11px', color: MEET_STATUS_CFG[r.meetStatus]?.color ?? 'var(--text-muted)', marginTop: '1px', fontFamily: 'var(--font-mono)' }}>
+          <div style={{ fontSize: '11px', color: MEET_STATUS_CFG[r.meetStatus]?.color ?? 'var(--text-muted)', marginTop: '1px', fontFamily: 'var(--font-body)' }}>
             {MEET_STATUS_CFG[r.meetStatus]?.label ?? r.meetStatus}
           </div>
         </div>
@@ -760,7 +760,7 @@ export default function CommitmentsPage() {
       key: 'meetDate',
       label: 'Date',
       render: (r) => (
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-muted)' }}>
+        <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-muted)' }}>
           {r.meetDate ? formatDate(r.meetDate) : '—'}
         </span>
       ),
@@ -771,7 +771,7 @@ export default function CommitmentsPage() {
       render: (r) => {
         const c = STATUS_CFG[r.status] ?? STATUS_CFG['invited']
         return (
-          <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '10px', background: c.bg, color: c.color, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' as const }}>
+          <span className="badge" style={{ background: c.bg, color: c.color }}>
             {c.label}
           </span>
         )
@@ -807,12 +807,12 @@ export default function CommitmentsPage() {
     <div style={{ padding: '24px', maxWidth: '1200px' }}>
 
       {/* Page header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
+      <div className="page-header">
         <div>
-          <h1 style={{ fontSize: '22px', fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.2, marginBottom: '4px' }}>
+          <h1 className="page-title">
             Commitments
           </h1>
-          <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+          <p className="page-subtitle">
             Cross-meet commitment tracker — click a swimmer to view their entries and event selections
           </p>
         </div>
@@ -828,8 +828,8 @@ export default function CommitmentsPage() {
           { label: 'Locked',    value: loading ? '—' : locked,   color: 'var(--accent)' },
         ].map((s) => (
           <div key={s.label} className="card" style={{ padding: '14px 16px' }}>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)', marginBottom: '6px' }}>{s.label}</div>
-            <div style={{ fontSize: '22px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: s.color }}>{s.value}</div>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{s.label}</div>
+            <div style={{ fontSize: '22px', fontFamily: 'var(--font-body)', fontWeight: 700, color: s.color }}>{s.value}</div>
           </div>
         ))}
       </div>
@@ -837,7 +837,7 @@ export default function CommitmentsPage() {
       {/* Response rate bar */}
       {!loading && total > 0 && (
         <div className="card" style={{ padding: '14px 16px', marginBottom: '20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
             <span>Response rate</span>
             <span>{Math.round(((going + notGoing + locked) / total) * 100)}%</span>
           </div>
@@ -846,7 +846,7 @@ export default function CommitmentsPage() {
             <div style={{ height: '100%', width: `${(locked / total) * 100}%`, background: 'var(--accent)', transition: 'width 0.6s var(--ease-out)' }} />
             <div style={{ height: '100%', width: `${(notGoing / total) * 100}%`, background: 'var(--error)', transition: 'width 0.6s var(--ease-out)' }} />
           </div>
-          <div style={{ display: 'flex', gap: '16px', marginTop: '8px', fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
+          <div style={{ display: 'flex', gap: '16px', marginTop: '8px', fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>
             <span style={{ color: 'var(--success)' }}>■ Going ({going})</span>
             <span style={{ color: 'var(--accent)' }}>■ Locked ({locked})</span>
             <span style={{ color: 'var(--error)' }}>■ Not Going ({notGoing})</span>
@@ -882,7 +882,7 @@ export default function CommitmentsPage() {
 
       {/* Result count */}
       {!loading && (
-        <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginBottom: '12px' }}>
+        <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginBottom: '12px' }}>
           {filtered.length} of {total} commitments · click a swimmer name to view their entries
         </div>
       )}

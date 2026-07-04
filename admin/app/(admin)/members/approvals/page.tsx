@@ -106,7 +106,7 @@ function SwimmerLinkRequestsQueue() {
         <h2 style={{ fontSize: '16px', fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)', marginBottom: '4px' }}>
           Swimmer Link Requests
         </h2>
-        <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>
+        <p className="page-subtitle">
           Swimmer-role logins asking to be connected to their roster record.
         </p>
       </div>
@@ -125,7 +125,7 @@ function SwimmerLinkRequestsQueue() {
               {req.note && (
                 <div style={{ fontSize: '12px', color: 'var(--text-subtle)', marginTop: '2px' }}>{req.note}</div>
               )}
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: '4px' }}>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginTop: '4px' }}>
                 Requested {new Date(req.created_at).toLocaleString()}
               </div>
             </div>
@@ -240,8 +240,8 @@ export default function ApprovalsPage() {
   return (
     <div style={{ padding: '24px', maxWidth: '900px' }}>
       <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '22px', fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.2, marginBottom: '4px' }}>Pending Approvals</h1>
-        <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>Self-registered users awaiting admin review</p>
+        <h1 className="page-title">Pending Approvals</h1>
+        <p className="page-subtitle">Self-registered users awaiting admin review</p>
       </div>
 
       {error && (
@@ -253,7 +253,7 @@ export default function ApprovalsPage() {
           <Icon name="search" size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
           <input type="text" placeholder="Search by name or email…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: '100%', padding: '8px 12px 8px 32px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none' }} />
         </div>
-        <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginLeft: 'auto' }}>{filtered.length} pending</span>
+        <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginLeft: 'auto' }}>{filtered.length} pending</span>
       </div>
 
       {loading ? (
@@ -277,15 +277,15 @@ export default function ApprovalsPage() {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
                       <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text)' }}>{displayName}</span>
-                      <span style={{ fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '10px', background: 'var(--warning-bg)', color: 'var(--warning)', fontFamily: 'var(--font-mono)', textTransform: 'uppercase' }}>Pending</span>
+                      <span className="badge" style={{ background: 'var(--warning-bg)', color: 'var(--warning)' }}>Pending</span>
                     </div>
                     <div style={{ fontSize: '12px', color: 'var(--text-subtle)', marginBottom: '4px', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
                       <span>{user.email}</span>
                       {user.firstName && user.lastName && (
-                        <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>Self-registered</span>
+                        <span style={{ fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>Self-registered</span>
                       )}
                     </div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
                       ID: {user.id}
                     </div>
                     {(requestedRole || clubCode || registrationNote || submittedAt || swimmerName) && (
@@ -300,7 +300,7 @@ export default function ApprovalsPage() {
                         )}
                         {clubCode && (
                           <div style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>
-                            Club code: <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>{clubCode}</span>
+                            Club code: <span style={{ fontFamily: 'var(--font-body)', color: 'var(--text)' }}>{clubCode}</span>
                           </div>
                         )}
                         {submittedAt && (

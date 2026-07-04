@@ -77,26 +77,26 @@ const COLUMNS: Column<ReportRow>[] = [
   {
     key: 'filename',
     label: 'File',
-    render: (row) => <span style={{ fontSize: '12px', color: 'var(--text-subtle)', fontFamily: 'var(--font-mono)' }}>{row.filename}</span>,
+    render: (row) => <span style={{ fontSize: '12px', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)' }}>{row.filename}</span>,
   },
   {
     key: 'status',
     label: 'Status',
     render: (row) => {
       const c = STATUS_CFG[row.status]
-      return <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '10px', background: c.bg, color: c.color, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>{c.label}</span>
+      return <span className="badge" style={{ background: c.bg, color: c.color }}>{c.label}</span>
     },
   },
   {
     key: 'fileSizeKb',
     label: 'Size',
     align: 'right',
-    render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-muted)' }}>{row.fileSizeKb != null ? `${row.fileSizeKb} KB` : '—'}</span>,
+    render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-muted)' }}>{row.fileSizeKb != null ? `${row.fileSizeKb} KB` : '—'}</span>,
   },
   {
     key: 'createdAt',
     label: 'Created',
-    render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-muted)' }}>{new Date(row.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>,
+    render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-muted)' }}>{new Date(row.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>,
   },
   {
     key: 'id',
@@ -224,10 +224,10 @@ export default function ReportsPage() {
 
   return (
     <div style={{ padding: '24px', maxWidth: '1200px' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
+      <div className="page-header">
         <div>
-          <h1 style={{ fontSize: '22px', fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.2, marginBottom: '4px' }}>Meet Reports</h1>
-          <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>Printable PDF reports built from a meet’s approved entries — entry, event, and eligibility.</p>
+          <h1 className="page-title">Meet Reports</h1>
+          <p className="page-subtitle">Printable PDF reports built from a meet’s approved entries — entry, event, and eligibility.</p>
         </div>
         <button className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setShowNew(true)}>
           <Icon name="download" size={14} /> Generate Report
@@ -243,7 +243,7 @@ export default function ReportsPage() {
           <option value="all">All Statuses</option>
           {Object.entries(STATUS_CFG).map(([value, cfg]) => <option key={value} value={value}>{cfg.label}</option>)}
         </select>
-        <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginLeft: 'auto' }}>{filtered.length} reports</span>
+        <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginLeft: 'auto' }}>{filtered.length} reports</span>
       </div>
 
       {loading ? (

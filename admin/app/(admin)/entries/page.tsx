@@ -256,7 +256,7 @@ function AddEntryPanel({
                 fontFamily: 'var(--font-body)',
               }}
             >
-              <span style={{ width: '18px', height: '18px', borderRadius: '50%', background: step > n ? 'var(--success)' : step === n ? 'var(--accent)' : 'var(--bg-elevated)', color: step >= n ? '#fff' : 'var(--text-muted)', fontSize: '10px', fontFamily: 'var(--font-mono)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, flexShrink: 0 }}>
+              <span style={{ width: '18px', height: '18px', borderRadius: '50%', background: step > n ? 'var(--success)' : step === n ? 'var(--accent)' : 'var(--bg-elevated)', color: step >= n ? '#fff' : 'var(--text-muted)', fontSize: '10px', fontFamily: 'var(--font-body)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, flexShrink: 0 }}>
                 {step > n ? '✓' : n}
               </span>
               {label}
@@ -292,12 +292,12 @@ function AddEntryPanel({
                     onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.background = 'var(--accent-subtle)' }}
                     onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = 'var(--bg-surface)' }}
                   >
-                    <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(135deg, var(--accent) 0%, #b84a18 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '11px', fontWeight: 700, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
+                    <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(135deg, var(--accent) 0%, #b84a18 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '11px', fontWeight: 700, fontFamily: 'var(--font-body)', flexShrink: 0 }}>
                       {(sw.first_name[0] ?? '') + (sw.last_name[0] ?? '')}
                     </div>
                     <div>
                       <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>{sw.first_name} {sw.last_name}</div>
-                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
                         {sw.gender ?? '—'} · {sw.registration_status}
                       </div>
                     </div>
@@ -339,7 +339,7 @@ function AddEntryPanel({
                     <Icon name="calendar" size={16} color="var(--text-muted)" style={{ flexShrink: 0 } as CSSProperties} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>{m.name}</div>
-                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
                         {m.start_date ? formatDate(m.start_date) : '—'} · {m.status.replace(/_/g, ' ')}
                       </div>
                     </div>
@@ -365,11 +365,11 @@ function AddEntryPanel({
               ) : (
                 <>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-                    <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+                    <p className="page-subtitle">
                       Select events for <strong style={{ color: 'var(--text)' }}>{selectedSwimmer?.first_name} {selectedSwimmer?.last_name}</strong>:
                     </p>
                     {selectedEvents.size > 0 && (
-                      <span style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', color: 'var(--accent)' }}>
+                      <span style={{ fontSize: '12px', fontFamily: 'var(--font-body)', color: 'var(--accent)' }}>
                         {selectedEvents.size} selected
                       </span>
                     )}
@@ -381,7 +381,7 @@ function AddEntryPanel({
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                       {eligibleSessionGroups.map((group) => (
                         <div key={group.id}>
-                          <div style={{ fontSize: '10.5px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '6px' }}>
+                          <div style={{ fontSize: '10.5px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '6px' }}>
                             {group.id === 'main' ? 'Main Session' : `Session ${group.id.slice(-4)}`}
                           </div>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
@@ -410,7 +410,7 @@ function AddEntryPanel({
                                     {formatEvent(ev)}
                                   </span>
                                   {ev.event_number && (
-                                    <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>#{ev.event_number}</span>
+                                    <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>#{ev.event_number}</span>
                                   )}
                                 </div>
                               )
@@ -627,7 +627,7 @@ export default function EntriesPage() {
       label: 'Seed Time',
       align: 'right',
       render: (r) => (
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', fontWeight: 700, color: r.seedTime === 'NT' ? 'var(--text-muted)' : 'var(--accent)' }}>
+        <span style={{ fontFamily: 'var(--font-body)', fontSize: '13px', fontWeight: 700, color: r.seedTime === 'NT' ? 'var(--text-muted)' : 'var(--accent)' }}>
           {r.seedTime}
         </span>
       ),
@@ -644,7 +644,7 @@ export default function EntriesPage() {
             {r.meetName}
           </Link>
           {r.meetDate && (
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: '1px' }}>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginTop: '1px' }}>
               {formatDate(r.meetDate)}
             </div>
           )}
@@ -658,11 +658,11 @@ export default function EntriesPage() {
         const c = STATUS_CFG[r.status] ?? STATUS_CFG['draft']
         return (
           <div style={{ display: 'flex', gap: '5px', alignItems: 'center', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '10px', background: c.bg, color: c.color, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' as const }}>
+            <span className="badge" style={{ background: c.bg, color: c.color }}>
               {c.label}
             </span>
             {r.override && (
-              <span style={{ fontSize: '10px', fontWeight: 700, padding: '2px 6px', borderRadius: '8px', background: 'var(--accent-subtle)', color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}>
+              <span style={{ fontSize: '10px', fontWeight: 700, padding: '2px 6px', borderRadius: '8px', background: 'var(--accent-subtle)', color: 'var(--accent)', fontFamily: 'var(--font-body)' }}>
                 OVERRIDE
               </span>
             )}
@@ -724,12 +724,12 @@ export default function EntriesPage() {
       <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }`}</style>
 
       {/* Page header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
+      <div className="page-header">
         <div>
-          <h1 style={{ fontSize: '22px', fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.2, marginBottom: '4px' }}>
+          <h1 className="page-title">
             Entry Approvals
           </h1>
-          <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+          <p className="page-subtitle">
             Cross-meet entry approval queue — review submitted entries or add entries for a swimmer
           </p>
         </div>
@@ -762,8 +762,8 @@ export default function EntriesPage() {
           { label: 'Overrides',    value: loading ? '—' : overrides, color: (overrides > 0 && !loading) ? 'var(--accent)' : 'var(--text-muted)' },
         ].map((s) => (
           <div key={s.label} className="card" style={{ padding: '14px 16px' }}>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)', marginBottom: '6px' }}>{s.label}</div>
-            <div style={{ fontSize: '22px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: s.color }}>{s.value}</div>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{s.label}</div>
+            <div style={{ fontSize: '22px', fontFamily: 'var(--font-body)', fontWeight: 700, color: s.color }}>{s.value}</div>
           </div>
         ))}
       </div>
@@ -778,7 +778,7 @@ export default function EntriesPage() {
             </span>
           </div>
           {draft > 0 && (
-            <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
               {draft} draft{draft !== 1 ? 's' : ''} not yet submitted
             </span>
           )}
@@ -800,7 +800,7 @@ export default function EntriesPage() {
       </div>
 
       {!loading && (
-        <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginBottom: '12px' }}>
+        <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginBottom: '12px' }}>
           {filtered.length} of {total} entries
         </div>
       )}

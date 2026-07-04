@@ -74,24 +74,24 @@ function StatusBadge({ status }: { status: string }) {
     ? { color: 'var(--success)', bg: 'var(--success-bg)' }
     : { color: 'var(--text-muted)', bg: 'var(--bg-elevated)' }
   return (
-    <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '10px', background: colors.bg, color: colors.color, fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.02em' }}>
+    <span className="badge" style={{ background: colors.bg, color: colors.color }}>
       {status}
     </span>
   )
 }
 
 const BT_COLS: Column<BestTimeRow>[] = [
-  { key: 'event', label: 'Event', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>{row.event}</span> },
-  { key: 'course', label: 'Course', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-subtle)', padding: '2px 6px', background: 'var(--bg-elevated)', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)' }}>{row.course}</span> },
-  { key: 'time', label: 'Best Time', align: 'right', sortable: true, render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '14px', fontWeight: 700, color: 'var(--accent)' }}>{row.time}</span> },
+  { key: 'event', label: 'Event', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>{row.event}</span> },
+  { key: 'course', label: 'Course', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-subtle)', padding: '2px 6px', background: 'var(--bg-elevated)', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)' }}>{row.course}</span> },
+  { key: 'time', label: 'Best Time', align: 'right', sortable: true, render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '14px', fontWeight: 700, color: 'var(--accent)' }}>{row.time}</span> },
   { key: 'override', label: 'Source', render: (row) => <span style={{ fontSize: '12px', color: row.override ? 'var(--warning)' : 'var(--text-muted)' }}>{row.override ?? 'Imported result'}</span> },
-  { key: 'updatedAt', label: 'Updated', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-muted)' }}>{formatDate(row.updatedAt)}</span> },
+  { key: 'updatedAt', label: 'Updated', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-muted)' }}>{formatDate(row.updatedAt)}</span> },
 ]
 
 const GROUP_COLS: Column<GroupMembershipRow>[] = [
   { key: 'groupName', label: 'Group', render: (row) => <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>{row.groupName}</span> },
-  { key: 'groupType', label: 'Type', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-subtle)' }}>{row.groupType}</span> },
-  { key: 'assignedAt', label: 'Assigned', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-subtle)' }}>{formatDate(row.assignedAt)}</span> },
+  { key: 'groupType', label: 'Type', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-subtle)' }}>{row.groupType}</span> },
+  { key: 'assignedAt', label: 'Assigned', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-subtle)' }}>{formatDate(row.assignedAt)}</span> },
   { key: 'status', label: 'Status', render: (row) => <StatusBadge status={row.status} /> },
 ]
 
@@ -241,17 +241,17 @@ export default function SwimmerDetailPage() {
         <Icon name="chevron-left" size={14} /> Swimmers
       </Link>
 
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
+      <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
           <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'var(--accent-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', fontWeight: 700, color: 'var(--accent)', fontFamily: 'var(--font-display)', flexShrink: 0 }}>
             {swimmerName.split(' ').map((part) => part[0]).join('').slice(0, 2)}
           </div>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
-              <h1 style={{ fontSize: '24px', fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.2 }}>{swimmerName}</h1>
+              <h1 className="page-title">{swimmerName}</h1>
               <StatusBadge status={swimmer.registration_status} />
             </div>
-            <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
               <span>{swimmer.usa_swimming_id || swimmer.swimmer_external_id || 'No USA-S ID'}</span>
               <span>·</span>
               <span>Age {computeAge(swimmer.date_of_birth)}</span>
@@ -327,7 +327,7 @@ export default function SwimmerDetailPage() {
 
       {deleteError ? (
         <div className="card" style={{ padding: '14px 16px', marginBottom: '20px', borderColor: 'var(--error-border)', background: 'var(--error-bg)' }}>
-          <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--error)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)', marginBottom: '4px' }}>Delete Blocked</div>
+          <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--error)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-body)', marginBottom: '4px' }}>Delete Blocked</div>
           <div style={{ fontSize: '13px', color: 'var(--text)' }}>{deleteError}</div>
         </div>
       ) : null}
@@ -340,8 +340,8 @@ export default function SwimmerDetailPage() {
           { label: 'Current Group', value: groupMemberships[0]?.groupName || '—', color: 'var(--text)' },
         ].map((stat) => (
           <div key={stat.label} className="card" style={{ padding: '14px 16px' }}>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)', marginBottom: '6px' }}>{stat.label}</div>
-            <div style={{ fontSize: '16px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
+            <div style={{ fontSize: '16px', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
           </div>
         ))}
       </div>
@@ -351,7 +351,7 @@ export default function SwimmerDetailPage() {
       {activeTab === 'profile' ? (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
           <div className="card" style={{ padding: '20px' }}>
-            <h3 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '16px', fontFamily: 'var(--font-mono)' }}>Swimmer Info</h3>
+            <h3 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '16px', fontFamily: 'var(--font-body)' }}>Swimmer Info</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {[
                 { label: 'USA Swimming ID', value: swimmer.usa_swimming_id || '—' },
@@ -363,13 +363,13 @@ export default function SwimmerDetailPage() {
               ].map((row) => (
                 <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px', borderBottom: '1px solid var(--border)', paddingBottom: '10px' }}>
                   <span style={{ color: 'var(--text-muted)' }}>{row.label}</span>
-                  <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text)', fontWeight: 600 }}>{row.value}</span>
+                  <span style={{ fontFamily: 'var(--font-body)', color: 'var(--text)', fontWeight: 600 }}>{row.value}</span>
                 </div>
               ))}
             </div>
           </div>
           <div className="card" style={{ padding: '20px' }}>
-            <h3 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '16px', fontFamily: 'var(--font-mono)' }}>Coach Notes</h3>
+            <h3 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '16px', fontFamily: 'var(--font-body)' }}>Coach Notes</h3>
             <p style={{ fontSize: '13px', color: 'var(--text-subtle)', lineHeight: 1.7 }}>
               {swimmer.notes || 'No coach notes recorded yet.'}
             </p>
@@ -380,7 +380,7 @@ export default function SwimmerDetailPage() {
       {activeTab === 'performance' ? (
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>Best times are loaded from the live performance service for this swimmer.</p>
+            <p className="page-subtitle">Best times are loaded from the live performance service for this swimmer.</p>
           </div>
           <Table columns={BT_COLS} data={bestTimes} emptyTitle="No times recorded" emptyDescription="Times will appear here after results are imported." />
         </div>
@@ -394,7 +394,7 @@ export default function SwimmerDetailPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0px' }}>
           {history.length ? history.map((entry, index) => (
             <div key={entry.id} style={{ display: 'flex', gap: '16px', padding: '14px 0', borderBottom: index < history.length - 1 ? '1px solid var(--border)' : 'none', alignItems: 'flex-start' }}>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-muted)', flexShrink: 0, paddingTop: '2px', minWidth: '90px' }}>{formatDate(entry.date)}</span>
+              <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-muted)', flexShrink: 0, paddingTop: '2px', minWidth: '90px' }}>{formatDate(entry.date)}</span>
               <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--border-strong)', flexShrink: 0, marginTop: '6px' }} />
               <div>
                 <div style={{ fontSize: '13px', color: 'var(--text)', lineHeight: 1.5, fontWeight: 600 }}>{entry.event}</div>

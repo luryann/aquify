@@ -63,7 +63,7 @@ function LoadingSplash() {
       <p
         style={{
           fontSize: '12px',
-          fontFamily: 'var(--font-mono)',
+          fontFamily: 'var(--font-body)',
           color: 'var(--text-muted)',
           letterSpacing: '0.04em',
         }}

@@ -56,13 +56,13 @@ function StrokeBar({ value, total, color, label }: { value: number; total: numbe
   const pct = total > 0 ? Math.round(value / total * 100) : 0
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-      <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', width: '36px', textTransform: 'uppercase', letterSpacing: '0.04em', flexShrink: 0 }}>
+      <span style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', width: '36px', textTransform: 'uppercase', letterSpacing: '0.04em', flexShrink: 0 }}>
         {label}
       </span>
       <div style={{ flex: 1, height: '5px', borderRadius: '3px', background: 'var(--bg-elevated)', overflow: 'hidden' }}>
         <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: '3px', transition: 'width 0.4s ease' }} />
       </div>
-      <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', width: '28px', textAlign: 'right', flexShrink: 0 }}>
+      <span style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', width: '28px', textAlign: 'right', flexShrink: 0 }}>
         {pct}%
       </span>
     </div>
@@ -89,12 +89,12 @@ function WorkoutRow({ workout, groupName, onDelete, onTakeAttendance }: { workou
       onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.02)' }}
       onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
     >
-      <span style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', color: 'var(--text-subtle)' }}>
+      <span style={{ fontSize: '12px', fontFamily: 'var(--font-body)', color: 'var(--text-subtle)' }}>
         {new Date(workout.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
       </span>
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
         <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: typeColor, display: 'inline-block', flexShrink: 0 }} />
-        <span style={{ fontSize: '11px', color: typeColor, fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+        <span style={{ fontSize: '11px', color: typeColor, fontFamily: 'var(--font-body)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
           {WORKOUT_TYPE_LABELS[workout.type]}
         </span>
       </div>
@@ -102,18 +102,18 @@ function WorkoutRow({ workout, groupName, onDelete, onTakeAttendance }: { workou
         <span style={{ fontSize: '12px', color: 'var(--text)', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {workout.description}
         </span>
-        <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
+        <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>
           {groupName}
         </span>
       </div>
-      <span style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', color: workout.yardageTarget > 0 ? 'var(--text)' : 'var(--text-muted)', textAlign: 'right' }}>
+      <span style={{ fontSize: '12px', fontFamily: 'var(--font-body)', color: workout.yardageTarget > 0 ? 'var(--text)' : 'var(--text-muted)', textAlign: 'right' }}>
         {totalYards > 0 ? `${totalYards.toLocaleString()} yds` : '—'}
       </span>
       <button
         onClick={onTakeAttendance}
         title="Take attendance"
         style={{
-          fontSize: '11px', fontFamily: 'var(--font-mono)', textAlign: 'center',
+          fontSize: '11px', fontFamily: 'var(--font-body)', textAlign: 'center',
           color: workout.attendance != null ? 'var(--text)' : 'var(--text-muted)',
           background: 'transparent', border: '1px solid var(--border)', borderRadius: '6px',
           padding: '5px 6px', cursor: 'pointer', transition: 'all 0.15s',
@@ -199,7 +199,7 @@ function AttendanceSheet({
             </button>
           </div>
           {roster.length > 0 && (
-            <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-subtle)', marginTop: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-subtle)', marginTop: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
               {marked} of {roster.length} marked
             </p>
           )}
@@ -270,7 +270,7 @@ const inputStyle: React.CSSProperties = {
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
     <label style={{
-      display: 'block', fontSize: '10px', fontFamily: 'var(--font-mono)',
+      display: 'block', fontSize: '10px', fontFamily: 'var(--font-body)',
       color: 'var(--text-muted)', letterSpacing: '0.07em',
       textTransform: 'uppercase', marginBottom: '6px',
     }}>
@@ -480,9 +480,9 @@ export default function TrainingPage() {
   return (
     <div style={{ padding: '32px', maxWidth: '1200px', margin: '0 auto' }}>
       {/* Page header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '28px' }}>
+      <div className="page-header">
         <div>
-          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '28px', fontWeight: 400, color: 'var(--text)', letterSpacing: '-0.01em', marginBottom: '6px' }}>
+          <h1 className="page-title">
             Training
           </h1>
           <p style={{ fontSize: '13px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
@@ -525,7 +525,7 @@ export default function TrainingPage() {
           {/* Add workout form */}
           {showAddForm && (
             <div className="card" style={{ padding: '24px', marginBottom: '20px', border: '1px solid var(--accent-border)', background: 'rgba(235,93,30,0.02)' }}>
-              <p style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '18px' }}>
+              <p style={{ fontSize: '12px', fontFamily: 'var(--font-body)', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '18px' }}>
                 New Workout
               </p>
 
@@ -631,7 +631,7 @@ export default function TrainingPage() {
 
           {/* Filter bar */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
-            <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+            <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
               Filter:
             </span>
             <button
@@ -670,7 +670,7 @@ export default function TrainingPage() {
               background: 'var(--bg-surface)',
             }}>
               {['Date', 'Type', 'Workout', 'Yardage', 'Att.', ''].map((h, i) => (
-                <span key={i} style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', textAlign: i === 3 ? 'right' : i === 4 ? 'center' : 'left' }}>
+                <span key={i} style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', textAlign: i === 3 ? 'right' : i === 4 ? 'center' : 'left' }}>
                   {h}
                 </span>
               ))}
@@ -702,10 +702,10 @@ export default function TrainingPage() {
       {activeTab === 'stats' && (
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
-            <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+            <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
               This Week
             </span>
-            <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-subtle)' }}>
+            <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-subtle)' }}>
               {(() => {
                 const now = new Date()
                 const ws = new Date(now); ws.setDate(now.getDate() - now.getDay())
@@ -724,23 +724,23 @@ export default function TrainingPage() {
                       width: '32px', height: '32px', borderRadius: '8px',
                       background: 'var(--accent-subtle)', border: '1px solid var(--accent-border)',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: '11px', fontFamily: 'var(--font-mono)', fontWeight: 700,
+                      fontSize: '11px', fontFamily: 'var(--font-body)', fontWeight: 700,
                       color: 'var(--accent)', textTransform: 'uppercase',
                     }}>
                       {(group as unknown as { code?: string }).code ?? group.name?.slice(0, 2)}
                     </div>
                     <div>
                       <p style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>{group.name}</p>
-                      <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
+                      <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>
                         {sessions} water · {wCount} total workouts
                       </p>
                     </div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <p style={{ fontSize: '18px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.02em' }}>
+                    <p style={{ fontSize: '18px', fontFamily: 'var(--font-body)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.02em' }}>
                       {totalYards > 0 ? `${(totalYards / 1000).toFixed(1)}k` : '—'}
                     </p>
-                    <p style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase' }}>yds</p>
+                    <p style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase' }}>yds</p>
                   </div>
                 </div>
 
@@ -758,8 +758,8 @@ export default function TrainingPage() {
 
                 {totalAtt > 0 && (
                   <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Attendance</span>
-                    <span style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>
+                    <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Attendance</span>
+                    <span style={{ fontSize: '12px', fontFamily: 'var(--font-body)', color: 'var(--text)' }}>
                       avg {wCount > 0 ? Math.round(totalAtt / wCount) : 0} / session
                     </span>
                   </div>
@@ -771,22 +771,22 @@ export default function TrainingPage() {
           {/* Total summary row */}
           <div className="card" style={{ padding: '16px 20px', marginTop: '16px', display: 'flex', alignItems: 'center', gap: '32px' }}>
             <div>
-              <p style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '3px' }}>Total Yardage</p>
-              <p style={{ fontSize: '20px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text)' }}>
+              <p style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '3px' }}>Total Yardage</p>
+              <p style={{ fontSize: '20px', fontFamily: 'var(--font-body)', fontWeight: 700, color: 'var(--text)' }}>
                 {weeklyStats.reduce((s, g) => s + g.totalYards, 0).toLocaleString()} <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 400 }}>yds</span>
               </p>
             </div>
             <div style={{ width: '1px', height: '32px', background: 'var(--border)' }} />
             <div>
-              <p style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '3px' }}>Workouts Logged</p>
-              <p style={{ fontSize: '20px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text)' }}>
+              <p style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '3px' }}>Workouts Logged</p>
+              <p style={{ fontSize: '20px', fontFamily: 'var(--font-body)', fontWeight: 700, color: 'var(--text)' }}>
                 {weeklyStats.reduce((s, g) => s + g.workouts, 0)}
               </p>
             </div>
             <div style={{ width: '1px', height: '32px', background: 'var(--border)' }} />
             <div>
-              <p style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '3px' }}>Active Groups</p>
-              <p style={{ fontSize: '20px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text)' }}>
+              <p style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '3px' }}>Active Groups</p>
+              <p style={{ fontSize: '20px', fontFamily: 'var(--font-body)', fontWeight: 700, color: 'var(--text)' }}>
                 {weeklyStats.filter((g) => g.workouts > 0).length}
               </p>
             </div>

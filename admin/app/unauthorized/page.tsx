@@ -219,7 +219,7 @@ export default function UnauthorizedPage() {
             <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" />
             <line x1="12" y1="16" x2="12.01" y2="16" />
           </svg>
-          <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', letterSpacing: '0.02em' }}>
+          <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', letterSpacing: '0.02em' }}>
             HTTP 403 · Insufficient permissions for this resource
           </span>
         </div>

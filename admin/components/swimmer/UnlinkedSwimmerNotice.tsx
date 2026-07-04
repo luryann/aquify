@@ -6,19 +6,19 @@ import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
 import { createSwimmerLinkRequest } from '@/lib/adminData'
 
-// Swimmer portal colours (deep navy theme) — matches SwimmerNav.tsx
+// Swimmer portal colours — resolved from the [data-portal="swim"] token overrides in globals.css
 const C = {
-  text:       '#E4F2FF',
-  subtle:     '#7FA8C9',
-  warn:       '#F59E0B',
-  warnBg:     'rgba(245,158,11,0.10)',
-  warnBorder: 'rgba(245,158,11,0.25)',
-  accent:     '#00D4AA',
-  success:    '#00D4AA',
-  successBg:  'rgba(0,212,170,0.10)',
-  successBorder: 'rgba(0,212,170,0.25)',
+  text:       'var(--text)',
+  subtle:     'var(--text-subtle)',
+  warn:       'var(--warning)',
+  warnBg:     'var(--warning-bg)',
+  warnBorder: 'var(--warning-border)',
+  accent:     'var(--accent)',
+  success:    'var(--accent)',
+  successBg:  'var(--accent-subtle)',
+  successBorder: 'var(--accent-border)',
   inputBg:     'rgba(0,0,0,0.25)',
-  inputBorder: 'rgba(245,158,11,0.30)',
+  inputBorder: 'var(--warning-border)',
 }
 
 // Renders the "no swimmer linked" warning shown across the swimmer portal,
@@ -111,16 +111,12 @@ export function UnlinkedSwimmerNotice() {
             borderRadius: '7px', color: C.text, fontSize: '12.5px', outline: 'none',
           }}
         />
-        {error && <p style={{ margin: 0, fontSize: '12px', color: '#EF4444' }}>{error}</p>}
+        {error && <p style={{ margin: 0, fontSize: '12px', color: 'var(--error)' }}>{error}</p>}
         <button
           onClick={handleSubmit}
           disabled={submitting || !name.trim()}
-          style={{
-            alignSelf: 'flex-start', padding: '8px 14px', borderRadius: '7px',
-            background: submitting || !name.trim() ? 'rgba(0,212,170,0.25)' : C.accent,
-            color: '#06231C', border: 'none', fontSize: '12.5px', fontWeight: 600,
-            cursor: submitting || !name.trim() ? 'not-allowed' : 'pointer',
-          }}
+          className="btn btn-primary"
+          style={{ alignSelf: 'flex-start' }}
         >
           {submitting ? 'Sending…' : 'Notify my club admin'}
         </button>

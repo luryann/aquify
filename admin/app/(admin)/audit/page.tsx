@@ -117,13 +117,13 @@ export default function AuditLogPage() {
   return (
     <div style={{ padding: '32px 36px 80px', maxWidth: 1260, margin: '0 auto' }}>
       <div style={{ marginBottom: '28px' }}>
-        <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
+        <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
           Compliance
         </p>
-        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '30px', fontWeight: 400, color: 'var(--text)', marginBottom: '6px' }}>
+        <h1 className="page-title">
           Audit Log
         </h1>
-        <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>
+        <p className="page-subtitle">
           Immutable privileged-action history returned by the live audit event endpoint.
         </p>
       </div>
@@ -146,7 +146,7 @@ export default function AuditLogPage() {
           <option value="">All resources</option>
           {resources.map((item) => <option key={item} value={item}>{item}</option>)}
         </select>
-        <span style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{filtered.length} events</span>
+        <span style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>{filtered.length} events</span>
       </div>
 
       {error ? (
@@ -173,22 +173,22 @@ export default function AuditLogPage() {
                 >
                   <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr 220px', gap: '16px', alignItems: 'start' }}>
                     <div>
-                      <div style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', marginBottom: '6px' }}>{formatDateTime(event.occurred_at)}</div>
+                      <div style={{ fontSize: '12px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>{formatDateTime(event.occurred_at)}</div>
                       <div style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>
                         {actorNames[event.actor_user_id] ?? `${event.actor_user_id.slice(0, 8)}…`}
                       </div>
                     </div>
                     <div>
                       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '6px' }}>
-                        <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: accent, background: 'var(--bg-surface)', padding: '2px 8px', borderRadius: '999px', border: '1px solid var(--border)' }}>
+                        <span className="badge" style={{ color: accent, background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
                           {event.action}
                         </span>
-                        <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
+                        <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>
                           {event.resource_type}
                         </span>
                       </div>
                       <div style={{ fontSize: '13px', color: 'var(--text)' }}>
-                        Resource <code style={{ fontFamily: 'var(--font-mono)' }}>{event.resource_id}</code>
+                        Resource <code style={{ fontFamily: 'var(--font-body)' }}>{event.resource_id}</code>
                       </div>
                     </div>
                     <div style={{ textAlign: 'right', color: 'var(--text-muted)', fontSize: '12px' }}>
@@ -201,18 +201,18 @@ export default function AuditLogPage() {
                   <div style={{ padding: '0 18px 16px 18px', background: 'var(--bg-surface)' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
                       <div className="card-elevated" style={{ padding: '12px 14px' }}>
-                        <div style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>Roles</div>
+                        <div style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>Roles</div>
                         <div style={{ fontSize: '12px', color: 'var(--text)' }}>{event.actor_roles.join(', ') || '—'}</div>
                       </div>
                       <div className="card-elevated" style={{ padding: '12px 14px' }}>
-                        <div style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>Metadata</div>
-                        <pre style={{ margin: 0, fontSize: '11px', color: 'var(--text-subtle)', fontFamily: 'var(--font-mono)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                        <div style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>Metadata</div>
+                        <pre style={{ margin: 0, fontSize: '11px', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                           {JSON.stringify(event.metadata ?? {}, null, 2)}
                         </pre>
                       </div>
                       <div className="card-elevated" style={{ padding: '12px 14px' }}>
-                        <div style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>State Change</div>
-                        <pre style={{ margin: 0, fontSize: '11px', color: 'var(--text-subtle)', fontFamily: 'var(--font-mono)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                        <div style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>State Change</div>
+                        <pre style={{ margin: 0, fontSize: '11px', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                           {JSON.stringify({ before: event.before_state ?? null, after: event.after_state ?? null }, null, 2)}
                         </pre>
                       </div>

@@ -33,7 +33,7 @@ function StatusBadge({ status }: { status: SeasonStatus }) {
       display: 'inline-flex', alignItems: 'center', gap: '5px',
       padding: '3px 10px', borderRadius: '20px',
       background: c.bg, border: `1px solid ${c.border}`,
-      fontSize: '11px', fontFamily: 'var(--font-mono)', fontWeight: 600,
+      fontSize: '11px', fontFamily: 'var(--font-body)', fontWeight: 600,
       color: c.text, textTransform: 'uppercase', letterSpacing: '0.06em',
     }}>
       <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: c.text, display: 'inline-block' }} />
@@ -45,7 +45,7 @@ function StatusBadge({ status }: { status: SeasonStatus }) {
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
     <label style={{
-      display: 'block', fontSize: '11px', fontFamily: 'var(--font-mono)',
+      display: 'block', fontSize: '11px', fontFamily: 'var(--font-body)',
       color: 'var(--text-muted)', letterSpacing: '0.06em',
       textTransform: 'uppercase', marginBottom: '7px',
     }}>
@@ -94,7 +94,7 @@ function StatusPicker({ value, onChange }: { value: SeasonStatus; onChange: (s: 
             padding: '6px 14px', borderRadius: '6px', border: `1px solid ${value === s ? 'var(--accent-border)' : 'var(--border)'}`,
             background: value === s ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
             color: value === s ? 'var(--accent)' : 'var(--text-muted)',
-            fontSize: '12px', fontFamily: 'var(--font-mono)', cursor: 'pointer',
+            fontSize: '12px', fontFamily: 'var(--font-body)', cursor: 'pointer',
             fontWeight: value === s ? 600 : 400, transition: 'all 0.15s',
             textTransform: 'uppercase', letterSpacing: '0.05em',
           }}
@@ -149,7 +149,7 @@ function SeasonCard({
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '20px' }}>
         <div>
-          <p style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.10em', marginBottom: '6px' }}>
+          <p style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.10em', marginBottom: '6px' }}>
             {season.status === 'active' ? 'Current Season' : season.status === 'upcoming' ? 'Upcoming Season' : 'Past Season'}
           </p>
           {editing ? (
@@ -222,7 +222,7 @@ function SeasonCard({
       {!editing && startDate && endDate && (
         <div style={{ marginBottom: '16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-            <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
+            <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>
               {Math.round((new Date(endDate + 'T00:00:00').getTime() - new Date(startDate + 'T00:00:00').getTime()) / (1000 * 60 * 60 * 24 * 7))} weeks
             </span>
             {status === 'active' && (() => {
@@ -231,7 +231,7 @@ function SeasonCard({
               const end = new Date(endDate + 'T00:00:00').getTime()
               const pct = Math.min(100, Math.max(0, Math.round((now - start) / (end - start) * 100)))
               return (
-                <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--accent)' }}>
+                <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--accent)' }}>
                   {pct}% complete
                 </span>
               )
@@ -403,9 +403,9 @@ export default function SeasonsPage() {
   return (
     <div style={{ padding: '32px', maxWidth: '900px', margin: '0 auto' }}>
       {/* Page header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '32px' }}>
+      <div className="page-header">
         <div>
-          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '28px', fontWeight: 400, color: 'var(--text)', letterSpacing: '-0.01em', marginBottom: '6px' }}>
+          <h1 className="page-title">
             Seasons
           </h1>
           <p style={{ fontSize: '13px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
@@ -432,7 +432,7 @@ export default function SeasonsPage() {
       {/* Create form */}
       {creating && (
         <div className="card" style={{ padding: '24px', marginBottom: '24px', border: '1px solid var(--accent-border)' }}>
-          <p style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.10em', marginBottom: '16px' }}>
+          <p style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.10em', marginBottom: '16px' }}>
             New Season
           </p>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
@@ -464,7 +464,7 @@ export default function SeasonsPage() {
       {/* Loading */}
       {loading && (
         <div className="card" style={{ padding: '40px', textAlign: 'center', marginBottom: '24px' }}>
-          <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Loading seasons…</p>
+          <p className="page-subtitle">Loading seasons…</p>
         </div>
       )}
 
@@ -472,7 +472,7 @@ export default function SeasonsPage() {
       {!loading && !loadError && seasons.length === 0 && !creating && (
         <div className="card" style={{ padding: '40px', textAlign: 'center', marginBottom: '24px' }}>
           <p style={{ fontSize: '14px', color: 'var(--text)', marginBottom: '6px' }}>No seasons yet</p>
-          <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Create your first season to start planning dates and goals.</p>
+          <p className="page-subtitle">Create your first season to start planning dates and goals.</p>
         </div>
       )}
 
@@ -497,10 +497,10 @@ export default function SeasonsPage() {
         <div className="card" style={{ padding: '24px', marginBottom: '24px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
             <div>
-              <p style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.10em', marginBottom: '4px' }}>
+              <p style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.10em', marginBottom: '4px' }}>
                 Season Goals
               </p>
-              <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>
+              <p className="page-subtitle">
                 Program objectives, performance targets, and coaching priorities for {activeSeason.name}.
               </p>
             </div>
@@ -538,7 +538,7 @@ export default function SeasonsPage() {
       {/* Timeline overview */}
       {!loading && timelineSeasons.length > 0 && (
         <div className="card" style={{ padding: '24px' }}>
-          <p style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.10em', marginBottom: '20px' }}>
+          <p style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.10em', marginBottom: '20px' }}>
             Timeline Overview
           </p>
 
@@ -552,7 +552,7 @@ export default function SeasonsPage() {
 
             return (
               <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: i === timelineSeasons.length - 1 ? '0' : '14px' }}>
-                <div style={{ width: '120px', fontSize: '12px', color: 'var(--text-subtle)', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
+                <div style={{ width: '120px', fontSize: '12px', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)', flexShrink: 0 }}>
                   {startYear} – {endYear}
                 </div>
                 <div style={{ flex: 1, height: '8px', borderRadius: '4px', background: 'var(--bg-elevated)', overflow: 'hidden' }}>
@@ -569,7 +569,7 @@ export default function SeasonsPage() {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '160px', flexShrink: 0 }}>
                   <span style={{ fontSize: '12px', color: 'var(--text)', fontWeight: 500 }}>{s.name}</span>
-                  <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
+                  <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>
                     {months}mo
                   </span>
                 </div>

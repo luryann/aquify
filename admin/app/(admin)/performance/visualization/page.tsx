@@ -135,13 +135,13 @@ export default function PerformanceVisualizationPage() {
   return (
     <div style={{ padding: '32px 36px 80px', maxWidth: 1180, margin: '0 auto' }}>
       <div style={{ marginBottom: '28px' }}>
-        <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
+        <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
           Performance
         </p>
-        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '30px', fontWeight: 400, color: 'var(--text)', marginBottom: '6px' }}>
+        <h1 className="page-title">
           Live Visualization
         </h1>
-        <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>
+        <p className="page-subtitle">
           Snapshot view composed from live swimmers, best times, and progression history.
         </p>
       </div>
@@ -166,8 +166,8 @@ export default function PerformanceVisualizationPage() {
               { label: 'Manual Overrides', value: String(summary.manualOverrides) },
             ].map((stat) => (
               <div key={stat.label} className="card-elevated" style={{ padding: '14px 16px' }}>
-                <div style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>{stat.label}</div>
-                <div style={{ fontSize: '22px', fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>{stat.value}</div>
+                <div style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>{stat.label}</div>
+                <div style={{ fontSize: '22px', fontFamily: 'var(--font-body)', color: 'var(--text)' }}>{stat.value}</div>
               </div>
             ))}
           </div>
@@ -182,7 +182,7 @@ export default function PerformanceVisualizationPage() {
                   <div key={entry.swimmer.id} style={{ padding: '14px 18px', borderBottom: index < summary.topSwimmers.length - 1 ? '1px solid var(--border)' : 'none' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '4px' }}>
                       <span style={{ fontSize: '13px', color: 'var(--text)' }}>{entry.swimmer.first_name} {entry.swimmer.last_name}</span>
-                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--accent)' }}>{entry.bestTimeCount} best times</span>
+                      <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--accent)' }}>{entry.bestTimeCount} best times</span>
                     </div>
                     <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                       Latest result: {entry.lastResultAt ? new Date(entry.lastResultAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'No official progression rows yet'}
@@ -201,7 +201,7 @@ export default function PerformanceVisualizationPage() {
                   <div key={entry.event} style={{ padding: '14px 18px', borderBottom: index < summary.topEvents.length - 1 ? '1px solid var(--border)' : 'none' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '4px' }}>
                       <span style={{ fontSize: '13px', color: 'var(--text)' }}>{entry.event}</span>
-                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--accent)' }}>{entry.count} swimmers</span>
+                      <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--accent)' }}>{entry.count} swimmers</span>
                     </div>
                     <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                       Fastest recorded time: {formatSwimTime(entry.fastest)}

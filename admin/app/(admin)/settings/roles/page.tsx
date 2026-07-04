@@ -142,13 +142,13 @@ export default function RoleManagementPage() {
   return (
     <div style={{ padding: '32px 32px 80px', maxWidth: '1100px' }}>
       <div style={{ marginBottom: '28px' }}>
-        <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
+        <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
           Settings
         </p>
-        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '28px', fontWeight: 400, color: 'var(--text)', letterSpacing: '-0.01em', marginBottom: '6px' }}>
+        <h1 className="page-title">
           Role Management
         </h1>
-        <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>
+        <p className="page-subtitle">
           Live role assignments and your current MFA enrollment status.
         </p>
       </div>
@@ -167,8 +167,8 @@ export default function RoleManagementPage() {
           { label: 'Your MFA', value: mfaSummary(mfaFactors) },
         ].map((stat) => (
           <div key={stat.label} className="card-elevated" style={{ padding: '14px 16px' }}>
-            <p style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>{stat.label}</p>
-            <p style={{ fontSize: '18px', fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>{stat.value}</p>
+            <p style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>{stat.label}</p>
+            <p style={{ fontSize: '18px', fontFamily: 'var(--font-body)', color: 'var(--text)' }}>{stat.value}</p>
           </div>
         ))}
       </div>
@@ -178,7 +178,7 @@ export default function RoleManagementPage() {
           <h2 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', marginBottom: '16px' }}>Assign Role</h2>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <div>
-              <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase' }}>
+              <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase' }}>
                 Target User
               </label>
               <input
@@ -201,7 +201,7 @@ export default function RoleManagementPage() {
               </select>
             </div>
             <div>
-              <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase' }}>
+              <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase' }}>
                 Role
               </label>
               <select
@@ -213,7 +213,7 @@ export default function RoleManagementPage() {
               </select>
             </div>
             <div>
-              <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase' }}>
+              <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase' }}>
                 Reason
               </label>
               <textarea
@@ -261,7 +261,7 @@ export default function RoleManagementPage() {
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)' }}>
                   {['Target User', 'Role', 'Reason', 'Actor', 'Assigned'].map((header) => (
-                    <th key={header} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    <th key={header} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                       {header}
                     </th>
                   ))}
@@ -274,13 +274,13 @@ export default function RoleManagementPage() {
                     <tr key={`${assignment.target_user_id}-${assignment.assigned_at}-${assignment.role}`} style={{ borderBottom: '1px solid var(--border)' }}>
                       <td style={{ padding: '11px 14px', fontSize: '12px', color: 'var(--text)' }}>{userNameById.get(assignment.target_user_id) ?? assignment.target_user_id}</td>
                       <td style={{ padding: '11px 14px' }}>
-                        <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '20px', fontFamily: 'var(--font-mono)', fontWeight: 700, background: colors.bg, color: colors.color, border: `1px solid ${colors.border}` }}>
+                        <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '20px', fontFamily: 'var(--font-body)', fontWeight: 700, background: colors.bg, color: colors.color, border: `1px solid ${colors.border}` }}>
                           {assignment.role.toUpperCase()}
                         </span>
                       </td>
                       <td style={{ padding: '11px 14px', fontSize: '12px', color: 'var(--text-subtle)' }}>{assignment.reason}</td>
                       <td style={{ padding: '11px 14px', fontSize: '12px', color: 'var(--text-muted)' }}>{userNameById.get(assignment.actor_user_id) ?? assignment.actor_user_id}</td>
-                      <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-muted)' }}>{formatDateTime(assignment.assigned_at)}</td>
+                      <td style={{ padding: '11px 14px', fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-muted)' }}>{formatDateTime(assignment.assigned_at)}</td>
                     </tr>
                   )
                 })}

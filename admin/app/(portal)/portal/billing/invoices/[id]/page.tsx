@@ -23,14 +23,14 @@ import {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 const STATUS_CONFIG: Record<string, { label: string; bg: string; color: string }> = {
-  draft:            { label: 'Draft',        bg: '#f9fafb', color: '#9A9693' },
-  issued:           { label: 'Payment Due',  bg: '#fffbeb', color: '#d97706' },
-  partially_paid:   { label: 'Partially Paid',bg: '#eff6ff', color: '#2563eb' },
-  paid:             { label: 'Paid',         bg: '#ecfdf5', color: '#059669' },
+  draft:            { label: 'Draft',        bg: 'var(--bg-surface)', color: 'var(--text-muted)' },
+  issued:           { label: 'Payment Due',  bg: 'var(--warning-bg)', color: 'var(--warning)' },
+  partially_paid:   { label: 'Partially Paid',bg: 'var(--info-bg)', color: 'var(--info)' },
+  paid:             { label: 'Paid',         bg: 'var(--success-bg)', color: 'var(--success)' },
   refunded_partial: { label: 'Refunded',     bg: '#f5f3ff', color: '#7c3aed' },
   refunded_full:    { label: 'Refunded',     bg: '#f5f3ff', color: '#7c3aed' },
-  voided:           { label: 'Voided',       bg: '#f9fafb', color: '#9A9693' },
-  written_off:      { label: 'Written Off',  bg: '#f9fafb', color: '#9A9693' },
+  voided:           { label: 'Voided',       bg: 'var(--bg-surface)', color: 'var(--text-muted)' },
+  written_off:      { label: 'Written Off',  bg: 'var(--bg-surface)', color: 'var(--text-muted)' },
 }
 
 function centsToDisplay(cents: number): string {
@@ -50,14 +50,7 @@ function LoadingSkeleton() {
     <div style={{ maxWidth: '780px' }}>
       <div style={{ height: '20px', width: '180px', background: 'rgba(0,0,0,0.06)', borderRadius: '6px', marginBottom: '24px' }} />
       <div
-        style={{
-          background: '#ffffff',
-          borderRadius: '16px',
-          border: '1px solid rgba(0,0,0,0.07)',
-          boxShadow: '0 2px 12px rgba(0,0,0,0.05)',
-          padding: '28px',
-          marginBottom: '20px',
-        }}
+        className="card" style={{ boxShadow: '0 2px 12px rgba(0,0,0,0.05)', padding: '28px', marginBottom: '20px' }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -149,14 +142,14 @@ function InvoiceDetailPageContent() {
     return (
       <div style={{ maxWidth: '780px' }}>
         <nav style={{ marginBottom: '20px', fontSize: '13px' }}>
-          <Link href="/portal/billing" style={{ color: '#9A9693', textDecoration: 'none' }}>
+          <Link href="/portal/billing" style={{ color: 'var(--text-muted)', textDecoration: 'none' }}>
             Billing
           </Link>
         </nav>
         {loadError && (
           <div
             style={{
-              background: '#fff7ed',
+              background: 'var(--warning-bg)',
               border: '1px solid #fdba74',
               borderRadius: '10px',
               padding: '12px 16px',
@@ -168,28 +161,22 @@ function InvoiceDetailPageContent() {
             }}
           >
             <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-              <Icon name="alert-circle" size={15} style={{ color: '#ea580c', marginTop: '1px', flexShrink: 0 }} />
-              <p style={{ margin: 0, fontSize: '12.5px', color: '#9a3412', lineHeight: 1.5 }}>{loadError}</p>
+              <Icon name="alert-circle" size={15} style={{ color: 'var(--warning)', marginTop: '1px', flexShrink: 0 }} />
+              <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--warning)', lineHeight: 1.5 }}>{loadError}</p>
             </div>
             <button
               type="button"
               onClick={() => setReloadKey((key) => key + 1)}
-              style={{ background: '#ffffff', border: '1px solid #fdba74', borderRadius: '8px', cursor: 'pointer', color: '#9a3412', fontSize: '12px', fontWeight: 600, padding: '8px 14px', whiteSpace: 'nowrap' }}
+              style={{ background: 'var(--bg-elevated)', border: '1px solid #fdba74', borderRadius: '8px', cursor: 'pointer', color: 'var(--warning)', fontSize: '12px', fontWeight: 600, padding: '8px 14px', whiteSpace: 'nowrap' }}
             >
               Retry
             </button>
           </div>
         )}
         <div
-          style={{
-            background: '#ffffff',
-            borderRadius: '16px',
-            border: '1px solid rgba(0,0,0,0.07)',
-            padding: '48px',
-            textAlign: 'center',
-          }}
+          className="card" style={{ padding: '48px', textAlign: 'center' }}
         >
-          <div style={{ fontSize: '15px', color: '#9A9693', fontWeight: 500 }}>
+          <div style={{ fontSize: '15px', color: 'var(--text-muted)', fontWeight: 500 }}>
             {loadError ? 'Invoice details are unavailable right now.' : 'Invoice not found'}
           </div>
         </div>
@@ -197,7 +184,7 @@ function InvoiceDetailPageContent() {
     )
   }
 
-  const statusCfg = STATUS_CONFIG[invoice.status] ?? { label: invoice.status, bg: '#f9fafb', color: '#9A9693' }
+  const statusCfg = STATUS_CONFIG[invoice.status] ?? { label: invoice.status, bg: 'var(--bg-surface)', color: 'var(--text-muted)' }
   const total = invoice.total_cents / 100
   const amountPaid = invoice.amount_paid_cents / 100
   const amountDue = invoice.amount_due_cents / 100
@@ -232,31 +219,23 @@ function InvoiceDetailPageContent() {
           alignItems: 'center',
           gap: '6px',
           fontSize: '13px',
-          color: '#9A9693',
+          color: 'var(--text-muted)',
           marginBottom: '24px',
           animation: 'slideUp 0.3s ease both',
         }}
       >
-        <Link href="/portal/billing" style={{ color: '#9A9693', textDecoration: 'none' }}>
+        <Link href="/portal/billing" style={{ color: 'var(--text-muted)', textDecoration: 'none' }}>
           Billing
         </Link>
         <span>/</span>
-        <span style={{ color: '#1A1714', fontWeight: 500, fontFamily: 'var(--font-mono)', fontSize: '12px' }}>
+        <span style={{ color: 'var(--text)', fontWeight: 500, fontFamily: 'var(--font-body)', fontSize: '12px' }}>
           {invoice.invoice_number}
         </span>
       </nav>
 
       {/* Invoice header */}
       <div
-        style={{
-          background: '#ffffff',
-          borderRadius: '16px',
-          border: '1px solid rgba(0,0,0,0.07)',
-          boxShadow: '0 2px 12px rgba(0,0,0,0.05)',
-          padding: '28px',
-          marginBottom: '20px',
-          animation: 'slideUp 0.35s ease both',
-        }}
+        className="card" style={{ boxShadow: '0 2px 12px rgba(0,0,0,0.05)', padding: '28px', marginBottom: '20px', animation: 'slideUp 0.35s ease both' }}
       >
         {checkoutState === 'success' && (
           <div
@@ -264,7 +243,7 @@ function InvoiceDetailPageContent() {
               marginBottom: '16px',
               padding: '12px 14px',
               borderRadius: '10px',
-              background: '#eff6ff',
+              background: 'var(--info-bg)',
               border: '1px solid rgba(37,99,235,0.15)',
               color: '#1d4ed8',
               fontSize: '13px',
@@ -280,7 +259,7 @@ function InvoiceDetailPageContent() {
               marginBottom: '16px',
               padding: '12px 14px',
               borderRadius: '10px',
-              background: '#fff7ed',
+              background: 'var(--warning-bg)',
               border: '1px solid rgba(217,119,6,0.15)',
               color: '#c2410c',
               fontSize: '13px',
@@ -296,9 +275,9 @@ function InvoiceDetailPageContent() {
               marginBottom: '16px',
               padding: '12px 14px',
               borderRadius: '10px',
-              background: '#fef2f2',
+              background: 'var(--error-bg)',
               border: '1px solid rgba(220,38,38,0.15)',
-              color: '#b91c1c',
+              color: 'var(--error)',
               fontSize: '13px',
               lineHeight: 1.5,
             }}
@@ -311,9 +290,9 @@ function InvoiceDetailPageContent() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
               <span
                 style={{
-                  fontFamily: 'var(--font-mono)',
+                  fontFamily: 'var(--font-body)',
                   fontSize: '12px',
-                  color: '#9A9693',
+                  color: 'var(--text-muted)',
                   letterSpacing: '0.06em',
                 }}
               >
@@ -334,18 +313,10 @@ function InvoiceDetailPageContent() {
                 {statusCfg.label}
               </span>
             </div>
-            <h1
-              style={{
-                fontFamily: 'var(--font-display)',
-                fontSize: '22px',
-                color: '#1A1714',
-                margin: '0 0 4px',
-                lineHeight: 1.2,
-              }}
-            >
+            <h1 className="page-title">
               {invoice.notes ?? invoice.invoice_number}
             </h1>
-            <div style={{ fontSize: '13px', color: '#9A9693' }}>
+            <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
               {invoice.issued_at ? `Issued ${formatDate(invoice.issued_at)}` : ''}
               {invoice.due_date ? ` · Due ${formatDate(invoice.due_date)}` : ''}
             </div>
@@ -353,12 +324,12 @@ function InvoiceDetailPageContent() {
 
           {/* Amount due */}
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '12px', color: '#9A9693', marginBottom: '4px' }}>Amount Due</div>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>Amount Due</div>
             <div
               style={{
                 fontFamily: 'var(--font-display)',
                 fontSize: '32px',
-                color: amountDue > 0 ? '#d97706' : '#059669',
+                color: amountDue > 0 ? 'var(--warning)' : 'var(--success)',
                 lineHeight: 1,
               }}
             >
@@ -371,10 +342,10 @@ function InvoiceDetailPageContent() {
         {total > 0 && (
           <div style={{ marginBottom: '20px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-              <span style={{ fontSize: '12px', color: '#9A9693' }}>
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                 ${amountPaid.toFixed(2)} paid of ${total.toFixed(2)}
               </span>
-              <span style={{ fontSize: '12px', color: '#9A9693' }}>{paidPct}%</span>
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{paidPct}%</span>
             </div>
             <div
               style={{
@@ -388,7 +359,7 @@ function InvoiceDetailPageContent() {
                 style={{
                   height: '100%',
                   width: `${paidPct}%`,
-                  background: paidPct === 100 ? '#059669' : '#eb5d1e',
+                  background: paidPct === 100 ? 'var(--success)' : 'var(--accent)',
                   borderRadius: '999px',
                   transition: 'width 0.8s ease',
                 }}
@@ -402,19 +373,12 @@ function InvoiceDetailPageContent() {
           <button
             onClick={handlePay}
             disabled={checkoutDisabled}
+            className="btn btn-primary"
             style={{
               width: '100%',
               padding: '14px',
-              background: '#eb5d1e',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '11px',
               fontSize: '15px',
               fontWeight: 700,
-              cursor: checkoutDisabled ? 'wait' : 'pointer',
-              fontFamily: 'var(--font-body)',
-              display: 'flex',
-              alignItems: 'center',
               justifyContent: 'center',
               gap: '10px',
               boxShadow: '0 4px 14px rgba(235,93,30,0.35)',
@@ -426,7 +390,7 @@ function InvoiceDetailPageContent() {
           >
             {checkingOut ? (
               <>
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', opacity: 0.8 }}>⟳</span>
+                <span style={{ fontFamily: 'var(--font-body)', fontSize: '13px', opacity: 0.8 }}>⟳</span>
                 Redirecting to Checkout…
               </>
             ) : (
@@ -460,8 +424,8 @@ function InvoiceDetailPageContent() {
               padding: '8px 0',
               borderRadius: '7px',
               border: 'none',
-              background: tab === t ? '#ffffff' : 'transparent',
-              color: tab === t ? '#1A1714' : '#6B6866',
+              background: tab === t ? 'var(--bg-elevated)' : 'transparent',
+              color: tab === t ? 'var(--text)' : 'var(--text-subtle)',
               fontSize: '13.5px',
               fontWeight: tab === t ? 600 : 450,
               cursor: 'pointer',
@@ -479,14 +443,7 @@ function InvoiceDetailPageContent() {
       {/* ── Line Items ──────────────────────────────────────────────────────── */}
       {tab === 'summary' && (
         <div
-          style={{
-            background: '#ffffff',
-            borderRadius: '14px',
-            border: '1px solid rgba(0,0,0,0.07)',
-            boxShadow: '0 1px 6px rgba(0,0,0,0.04)',
-            overflow: 'hidden',
-            animation: 'slideUp 0.3s ease both',
-          }}
+          className="card" style={{ boxShadow: '0 1px 6px rgba(0,0,0,0.04)', overflow: 'hidden', animation: 'slideUp 0.3s ease both' }}
         >
           {/* Header row */}
           <div
@@ -503,8 +460,8 @@ function InvoiceDetailPageContent() {
                 key={h}
                 style={{
                   fontSize: '11px',
-                  fontFamily: 'var(--font-mono)',
-                  color: '#9A9693',
+                  fontFamily: 'var(--font-body)',
+                  color: 'var(--text-muted)',
                   textTransform: 'uppercase',
                   letterSpacing: '0.06em',
                   textAlign: h === 'Description' ? 'left' : 'right',
@@ -517,7 +474,7 @@ function InvoiceDetailPageContent() {
 
           {/* Items */}
           {items.length === 0 ? (
-            <div style={{ padding: '32px 20px', textAlign: 'center', fontSize: '13.5px', color: '#9A9693' }}>
+            <div style={{ padding: '32px 20px', textAlign: 'center', fontSize: '13.5px', color: 'var(--text-muted)' }}>
               No line items found.
             </div>
           ) : (
@@ -532,14 +489,14 @@ function InvoiceDetailPageContent() {
                   alignItems: 'center',
                 }}
               >
-                <span style={{ fontSize: '13.5px', color: '#1A1714' }}>{item.description}</span>
-                <span style={{ fontSize: '13.5px', color: '#6B6866', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
+                <span style={{ fontSize: '13.5px', color: 'var(--text)' }}>{item.description}</span>
+                <span style={{ fontSize: '13.5px', color: 'var(--text-subtle)', textAlign: 'right', fontFamily: 'var(--font-body)' }}>
                   {item.quantity}
                 </span>
-                <span style={{ fontSize: '13.5px', color: '#6B6866', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
+                <span style={{ fontSize: '13.5px', color: 'var(--text-subtle)', textAlign: 'right', fontFamily: 'var(--font-body)' }}>
                   ${centsToDisplay(item.unit_amount_cents)}
                 </span>
-                <span style={{ fontSize: '14px', fontWeight: 600, color: '#1A1714', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
+                <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text)', textAlign: 'right', fontFamily: 'var(--font-body)' }}>
                   ${centsToDisplay(item.total_cents)}
                 </span>
               </div>
@@ -557,14 +514,14 @@ function InvoiceDetailPageContent() {
             }}
           >
             <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: '12px', color: '#9A9693', marginBottom: '2px' }}>Subtotal</div>
-              <div style={{ fontSize: '14px', fontFamily: 'var(--font-mono)', color: '#1A1714' }}>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '2px' }}>Subtotal</div>
+              <div style={{ fontSize: '14px', fontFamily: 'var(--font-body)', color: 'var(--text)' }}>
                 ${total.toFixed(2)}
               </div>
             </div>
             <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: '12px', color: '#9A9693', marginBottom: '2px' }}>Amount Due</div>
-              <div style={{ fontSize: '18px', fontWeight: 700, fontFamily: 'var(--font-mono)', color: '#d97706' }}>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '2px' }}>Amount Due</div>
+              <div style={{ fontSize: '18px', fontWeight: 700, fontFamily: 'var(--font-body)', color: 'var(--warning)' }}>
                 ${amountDue.toFixed(2)}
               </div>
             </div>
@@ -577,13 +534,7 @@ function InvoiceDetailPageContent() {
         <div style={{ animation: 'slideUp 0.3s ease both' }}>
           {payments.length === 0 ? (
             <div
-              style={{
-                background: '#ffffff',
-                borderRadius: '14px',
-                border: '1px solid rgba(0,0,0,0.07)',
-                padding: '48px',
-                textAlign: 'center',
-              }}
+              className="card" style={{ padding: '48px', textAlign: 'center' }}
             >
               <div
                 style={{
@@ -597,15 +548,15 @@ function InvoiceDetailPageContent() {
                   margin: '0 auto 14px',
                 }}
               >
-                <Icon name="credit-card" size={22} style={{ color: '#C0BDBB' }} />
+                <Icon name="credit-card" size={22} style={{ color: 'var(--border-strong)' }} />
               </div>
-              <div style={{ fontSize: '15px', color: '#9A9693', fontWeight: 500 }}>No payments recorded yet</div>
-              <div style={{ fontSize: '13px', color: '#C0BDBB', marginTop: '6px' }}>
+              <div style={{ fontSize: '15px', color: 'var(--text-muted)', fontWeight: 500 }}>No payments recorded yet</div>
+              <div style={{ fontSize: '13px', color: 'var(--border-strong)', marginTop: '6px' }}>
                 Payments will appear here once processed.
               </div>
             </div>
           ) : (
-            <div style={{ background: '#ffffff', borderRadius: '14px', border: '1px solid rgba(0,0,0,0.07)', overflow: 'hidden' }}>
+            <div className="card" style={{ overflow: 'hidden' }}>
               {payments.map((p, i) => (
                 <div
                   key={p.id}
@@ -618,14 +569,14 @@ function InvoiceDetailPageContent() {
                   }}
                 >
                   <div>
-                    <div style={{ fontSize: '13.5px', color: '#1A1714', fontWeight: 500 }}>
+                    <div style={{ fontSize: '13.5px', color: 'var(--text)', fontWeight: 500 }}>
                       {p.method}
                     </div>
-                    <div style={{ fontSize: '12px', color: '#9A9693', marginTop: '2px' }}>
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
                       {p.paid_at ? formatDate(p.paid_at) : formatDate(p.created_at)}
                     </div>
                   </div>
-                  <span style={{ fontSize: '15px', fontWeight: 700, fontFamily: 'var(--font-mono)', color: '#059669' }}>
+                  <span style={{ fontSize: '15px', fontWeight: 700, fontFamily: 'var(--font-body)', color: 'var(--success)' }}>
                     −${centsToDisplay(p.amount_cents)}
                   </span>
                 </div>
@@ -638,18 +589,12 @@ function InvoiceDetailPageContent() {
       {/* ── Receipt History ──────────────────────────────────────────────────── */}
       {tab === 'receipts' && (
         <div
-          style={{
-            background: '#ffffff',
-            borderRadius: '14px',
-            border: '1px solid rgba(0,0,0,0.07)',
-            overflow: 'hidden',
-            animation: 'slideUp 0.3s ease both',
-          }}
+          className="card" style={{ overflow: 'hidden', animation: 'slideUp 0.3s ease both' }}
         >
           {payments.length === 0 ? (
             <div style={{ padding: '48px', textAlign: 'center' }}>
-              <div style={{ fontSize: '15px', color: '#9A9693', fontWeight: 500 }}>No receipts available</div>
-              <div style={{ fontSize: '13px', color: '#C0BDBB', marginTop: '6px' }}>
+              <div style={{ fontSize: '15px', color: 'var(--text-muted)', fontWeight: 500 }}>No receipts available</div>
+              <div style={{ fontSize: '13px', color: 'var(--border-strong)', marginTop: '6px' }}>
                 Receipts will appear here after payments are processed.
               </div>
             </div>
@@ -670,27 +615,27 @@ function InvoiceDetailPageContent() {
                     width: '34px',
                     height: '34px',
                     borderRadius: '8px',
-                    background: '#ecfdf5',
+                    background: 'var(--success-bg)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     flexShrink: 0,
                   }}
                 >
-                  <Icon name="file-text" size={15} style={{ color: '#059669' }} />
+                  <Icon name="file-text" size={15} style={{ color: 'var(--success)' }} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: '13.5px', color: '#1A1714', fontWeight: 500 }}>
+                  <div style={{ fontSize: '13.5px', color: 'var(--text)', fontWeight: 500 }}>
                     Payment — {rec.method}
                   </div>
-                  <div style={{ fontSize: '12px', color: '#9A9693', marginTop: '2px' }}>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
                     {rec.paid_at ? formatDate(rec.paid_at) : formatDate(rec.created_at)} · {rec.method}
                     <span
                       style={{
                         marginLeft: '8px',
-                        fontFamily: 'var(--font-mono)',
+                        fontFamily: 'var(--font-body)',
                         fontSize: '10.5px',
-                        color: '#C0BDBB',
+                        color: 'var(--border-strong)',
                       }}
                     >
                       #{rec.id.slice(-6)}
@@ -702,8 +647,8 @@ function InvoiceDetailPageContent() {
                     style={{
                       fontSize: '14px',
                       fontWeight: 700,
-                      fontFamily: 'var(--font-mono)',
-                      color: '#059669',
+                      fontFamily: 'var(--font-body)',
+                      color: 'var(--success)',
                     }}
                   >
                     ${centsToDisplay(rec.amount_cents)}
@@ -715,7 +660,7 @@ function InvoiceDetailPageContent() {
                       border: 'none',
                       cursor: 'pointer',
                       fontSize: '11.5px',
-                      color: '#eb5d1e',
+                      color: 'var(--accent)',
                       fontWeight: 500,
                       padding: '0',
                       fontFamily: 'var(--font-body)',

@@ -75,26 +75,26 @@ type DashMeet = {
 // ── Alert urgency config ─────────────────────────────────────────────────────
 const URGENCY_CONFIG = {
   high: {
-    borderColor: '#ef4444',
-    iconBg: '#fef2f2',
-    iconColor: '#ef4444',
-    badgeBg: '#fef2f2',
-    badgeColor: '#dc2626',
+    borderColor: 'var(--error)',
+    iconBg: 'var(--error-bg)',
+    iconColor: 'var(--error)',
+    badgeBg: 'var(--error-bg)',
+    badgeColor: 'var(--error)',
     badgeText: 'Action Required',
   },
   medium: {
-    borderColor: '#f59e0b',
-    iconBg: '#fffbeb',
-    iconColor: '#d97706',
-    badgeBg: '#fffbeb',
+    borderColor: 'var(--warning)',
+    iconBg: 'var(--warning-bg)',
+    iconColor: 'var(--warning)',
+    badgeBg: 'var(--warning-bg)',
     badgeColor: '#92400e',
     badgeText: 'Due Soon',
   },
   low: {
-    borderColor: '#3b82f6',
-    iconBg: '#eff6ff',
-    iconColor: '#3b82f6',
-    badgeBg: '#eff6ff',
+    borderColor: 'var(--info)',
+    iconBg: 'var(--info-bg)',
+    iconColor: 'var(--info)',
+    badgeBg: 'var(--info-bg)',
     badgeColor: '#1d4ed8',
     badgeText: 'Upcoming',
   },
@@ -107,9 +107,9 @@ const ALERT_ICON: Record<string, string> = {
 }
 
 const COMMIT_STATUS = {
-  pending:   { label: 'Response Needed', color: '#d97706', bg: '#fffbeb', border: '#fde68a' },
-  committed: { label: 'Committed',       color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' },
-  open:      { label: 'Not Yet Open',    color: '#6b7280', bg: '#f9fafb', border: '#e5e7eb' },
+  pending:   { label: 'Response Needed', color: 'var(--warning)', bg: 'var(--warning-bg)', border: '#fde68a' },
+  committed: { label: 'Committed',       color: 'var(--success)', bg: 'var(--success-bg)', border: 'var(--success-bg)' },
+  open:      { label: 'Not Yet Open',    color: 'var(--text-muted)', bg: 'var(--bg-surface)', border: 'var(--border)' },
 }
 
 // ── Skeleton ─────────────────────────────────────────────────────────────────
@@ -136,7 +136,7 @@ function AlertCard({ alert }: { alert: DashAlert }) {
   return (
     <div
       style={{
-        background: '#ffffff',
+        background: 'var(--bg-elevated)',
         borderRadius: '12px',
         border: '1px solid rgba(0,0,0,0.08)',
         borderLeft: `3px solid ${cfg.borderColor}`,
@@ -178,7 +178,7 @@ function AlertCard({ alert }: { alert: DashAlert }) {
           style={{
             fontSize: '10.5px',
             fontWeight: 600,
-            fontFamily: 'var(--font-mono)',
+            fontFamily: 'var(--font-body)',
             letterSpacing: '0.04em',
             textTransform: 'uppercase',
             color: cfg.badgeColor,
@@ -192,13 +192,13 @@ function AlertCard({ alert }: { alert: DashAlert }) {
       </div>
 
       <div>
-        <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#A09D9B', letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: '4px' }}>
+        <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: '4px' }}>
           {alert.title}
         </p>
-        <p style={{ fontFamily: 'var(--font-display)', fontSize: '20px', color: '#1A1714', lineHeight: 1.2, marginBottom: '4px' }}>
+        <p style={{ fontFamily: 'var(--font-display)', fontSize: '20px', color: 'var(--text)', lineHeight: 1.2, marginBottom: '4px' }}>
           {alert.body}
         </p>
-        <p style={{ fontSize: '12.5px', color: '#6B6866', lineHeight: 1.5 }}>
+        <p style={{ fontSize: '12.5px', color: 'var(--text-subtle)', lineHeight: 1.5 }}>
           {alert.detail}
         </p>
       </div>
@@ -210,8 +210,8 @@ function AlertCard({ alert }: { alert: DashAlert }) {
           alignItems: 'center',
           gap: '6px',
           padding: '8px 14px',
-          background: '#1A1714',
-          color: '#ffffff',
+          background: 'var(--text)',
+          color: 'var(--bg-elevated)',
           borderRadius: '8px',
           fontSize: '13px',
           fontWeight: 600,
@@ -219,8 +219,8 @@ function AlertCard({ alert }: { alert: DashAlert }) {
           alignSelf: 'flex-start',
           transition: 'background 120ms ease',
         }}
-        onMouseEnter={(e) => (e.currentTarget.style.background = '#eb5d1e')}
-        onMouseLeave={(e) => (e.currentTarget.style.background = '#1A1714')}
+        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--accent)')}
+        onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--text)')}
       >
         {alert.cta}
         <Icon name="chevron-right" size={13} />
@@ -232,10 +232,8 @@ function AlertCard({ alert }: { alert: DashAlert }) {
 function SwimmerCard({ swimmer }: { swimmer: DashSwimmer }) {
   return (
     <div
+      className="card"
       style={{
-        background: '#ffffff',
-        borderRadius: '14px',
-        border: '1px solid rgba(0,0,0,0.08)',
         padding: '22px',
         boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
         display: 'flex',
@@ -264,10 +262,10 @@ function SwimmerCard({ swimmer }: { swimmer: DashSwimmer }) {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          color: '#ffffff',
+          color: 'var(--bg-elevated)',
           fontSize: '16px',
           fontWeight: 700,
-          fontFamily: 'var(--font-mono)',
+          fontFamily: 'var(--font-body)',
           flexShrink: 0,
           boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
         }}
@@ -277,25 +275,25 @@ function SwimmerCard({ swimmer }: { swimmer: DashSwimmer }) {
 
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
-          <p style={{ fontSize: '15px', fontWeight: 600, color: '#1A1714', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <p style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {swimmer.name}
           </p>
-          <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: '#16a34a', background: '#f0fdf4', padding: '2px 7px', borderRadius: '999px', fontWeight: 500, flexShrink: 0 }}>
+          <span style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--success)', background: 'var(--success-bg)', padding: '2px 7px', borderRadius: '999px', fontWeight: 500, flexShrink: 0 }}>
             Active
           </span>
         </div>
-        <p style={{ fontSize: '12px', color: '#6B6866', marginBottom: '12px' }}>
+        <p style={{ fontSize: '12px', color: 'var(--text-subtle)', marginBottom: '12px' }}>
           Age {swimmer.age}{swimmer.group ? ` · ${swimmer.group}` : ''}
         </p>
 
         {swimmer.pendingCommits > 0 ? (
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '7px', padding: '5px 10px', fontSize: '12px', color: '#92400e' }}>
-            <Icon name="alert-circle" size={13} style={{ color: '#d97706' }} />
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'var(--warning-bg)', border: '1px solid #fde68a', borderRadius: '7px', padding: '5px 10px', fontSize: '12px', color: '#92400e' }}>
+            <Icon name="alert-circle" size={13} style={{ color: 'var(--warning)' }} />
             {swimmer.pendingCommits} commitment pending
           </div>
         ) : (
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '7px', padding: '5px 10px', fontSize: '12px', color: '#374151' }}>
-            <Icon name="calendar" size={13} style={{ color: '#6b7280' }} />
+          <div className="card" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '5px 10px', fontSize: '12px', color: '#374151' }}>
+            <Icon name="calendar" size={13} style={{ color: 'var(--text-muted)' }} />
             {swimmer.nextMeet || 'No upcoming meets'}
           </div>
         )}
@@ -312,7 +310,7 @@ function SwimmerCard({ swimmer }: { swimmer: DashSwimmer }) {
           padding: '0 10px',
           borderRadius: '8px',
           background: 'rgba(0,0,0,0.04)',
-          color: '#6B6866',
+          color: 'var(--text-subtle)',
           fontSize: '12px',
           fontWeight: 600,
           flexShrink: 0,
@@ -321,12 +319,12 @@ function SwimmerCard({ swimmer }: { swimmer: DashSwimmer }) {
           transition: 'background 120ms ease, color 120ms ease',
         }}
         onMouseEnter={(e) => {
-          e.currentTarget.style.background = '#eb5d1e'
-          e.currentTarget.style.color = '#ffffff'
+          e.currentTarget.style.background = 'var(--accent)'
+          e.currentTarget.style.color = 'var(--bg-elevated)'
         }}
         onMouseLeave={(e) => {
           e.currentTarget.style.background = 'rgba(0,0,0,0.04)'
-          e.currentTarget.style.color = '#6B6866'
+          e.currentTarget.style.color = 'var(--text-subtle)'
         }}
       >
         View
@@ -353,17 +351,17 @@ function MeetRow({ meet }: { meet: DashMeet }) {
       onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
     >
       <div>
-        <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#eb5d1e', fontWeight: 500, letterSpacing: '0.02em' }}>
+        <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--accent)', fontWeight: 500, letterSpacing: '0.02em' }}>
           {meet.date}
         </p>
-        <p style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: '#A09D9B', marginTop: '2px' }}>
+        <p style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginTop: '2px' }}>
           {meet.course}
         </p>
       </div>
 
       <div>
-        <p style={{ fontSize: '14px', fontWeight: 600, color: '#1A1714', marginBottom: '2px' }}>{meet.name}</p>
-        <p style={{ fontSize: '12px', color: '#9A9693' }}>{meet.location}</p>
+        <p style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text)', marginBottom: '2px' }}>{meet.name}</p>
+        <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{meet.location}</p>
       </div>
 
       <span
@@ -384,18 +382,17 @@ function MeetRow({ meet }: { meet: DashMeet }) {
       {meet.commitment === 'pending' ? (
         <Link
           href="/portal/meets"
-          style={{ padding: '6px 14px', background: '#eb5d1e', color: '#ffffff', borderRadius: '7px', fontSize: '12.5px', fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap', transition: 'background 120ms ease' }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = '#d44f14')}
-          onMouseLeave={(e) => (e.currentTarget.style.background = '#eb5d1e')}
+          className="btn btn-primary btn-sm"
+          style={{ textDecoration: 'none' }}
         >
           Respond
         </Link>
       ) : (
         <Link
           href="/portal/meets"
-          style={{ padding: '6px 14px', background: 'transparent', color: '#6B6866', border: '1px solid rgba(0,0,0,0.12)', borderRadius: '7px', fontSize: '12.5px', fontWeight: 500, textDecoration: 'none', whiteSpace: 'nowrap', transition: 'border-color 120ms ease, color 120ms ease' }}
-          onMouseEnter={(e) => { e.currentTarget.style.color = '#1A1714'; e.currentTarget.style.borderColor = 'rgba(0,0,0,0.24)' }}
-          onMouseLeave={(e) => { e.currentTarget.style.color = '#6B6866'; e.currentTarget.style.borderColor = 'rgba(0,0,0,0.12)' }}
+          style={{ padding: '6px 14px', background: 'transparent', color: 'var(--text-subtle)', border: '1px solid rgba(0,0,0,0.12)', borderRadius: '7px', fontSize: '12.5px', fontWeight: 500, textDecoration: 'none', whiteSpace: 'nowrap', transition: 'border-color 120ms ease, color 120ms ease' }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text)'; e.currentTarget.style.borderColor = 'rgba(0,0,0,0.24)' }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-subtle)'; e.currentTarget.style.borderColor = 'rgba(0,0,0,0.12)' }}
         >
           View
         </Link>
@@ -407,15 +404,15 @@ function MeetRow({ meet }: { meet: DashMeet }) {
 function SectionHeader({ title, action, actionPath }: { title: string; action?: string; actionPath?: string }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-      <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '22px', color: '#1A1714', letterSpacing: '-0.01em', lineHeight: 1.2 }}>
+      <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '22px', color: 'var(--text)', letterSpacing: '-0.01em', lineHeight: 1.2 }}>
         {title}
       </h2>
       {action && actionPath && (
         <Link
           href={actionPath}
-          style={{ fontSize: '13px', fontWeight: 500, color: '#eb5d1e', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px', transition: 'color 120ms ease' }}
+          style={{ fontSize: '13px', fontWeight: 500, color: 'var(--accent)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px', transition: 'color 120ms ease' }}
           onMouseEnter={(e) => (e.currentTarget.style.color = '#d44f14')}
-          onMouseLeave={(e) => (e.currentTarget.style.color = '#eb5d1e')}
+          onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--accent)')}
         >
           {action}
           <Icon name="chevron-right" size={14} />
@@ -591,13 +588,13 @@ export default function ParentDashboardPage() {
 
       {/* Page greeting */}
       <div style={{ marginBottom: '36px', animation: 'slideUp 0.4s var(--ease-out) both' }}>
-        <p style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', color: '#A09D9B', letterSpacing: '0.05em', marginBottom: '6px' }}>
+        <p style={{ fontSize: '12px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.05em', marginBottom: '6px' }}>
           {dateStr}
         </p>
-        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(28px, 4vw, 38px)', color: '#1A1714', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+        <h1 className="page-title">
           {greeting}, {firstName}.
         </h1>
-        <p style={{ fontSize: '14px', color: '#6B6866', marginTop: '8px', lineHeight: 1.6 }}>
+        <p className="page-subtitle">
           Here&apos;s what needs your attention today.
         </p>
       </div>
@@ -606,7 +603,7 @@ export default function ParentDashboardPage() {
         <div
           style={{
             marginBottom: '24px',
-            background: '#fff7ed',
+            background: 'var(--warning-bg)',
             border: '1px solid #fdba74',
             borderRadius: '12px',
             padding: '14px 16px',
@@ -617,8 +614,8 @@ export default function ParentDashboardPage() {
           }}
         >
           <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-            <Icon name="alert-circle" size={16} style={{ color: '#ea580c', marginTop: '1px', flexShrink: 0 }} />
-            <p style={{ margin: 0, fontSize: '13px', color: '#9a3412', lineHeight: 1.5 }}>{loadError}</p>
+            <Icon name="alert-circle" size={16} style={{ color: 'var(--warning)', marginTop: '1px', flexShrink: 0 }} />
+            <p style={{ margin: 0, fontSize: '13px', color: 'var(--warning)', lineHeight: 1.5 }}>{loadError}</p>
           </div>
           <button
             type="button"
@@ -627,8 +624,8 @@ export default function ParentDashboardPage() {
               padding: '8px 14px',
               borderRadius: '8px',
               border: '1px solid #fdba74',
-              background: '#ffffff',
-              color: '#9a3412',
+              background: 'var(--bg-elevated)',
+              color: 'var(--warning)',
               fontSize: '12px',
               fontWeight: 600,
               cursor: 'pointer',
@@ -646,7 +643,7 @@ export default function ParentDashboardPage() {
         {loading ? (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
             {[0, 1].map((i) => (
-              <div key={i} style={{ background: '#fff', borderRadius: '12px', border: '1px solid rgba(0,0,0,0.08)', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div key={i} className="card" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                 <Skeleton w={38} h={38} r={10} />
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <Skeleton w="40%" h={12} />
@@ -660,24 +657,24 @@ export default function ParentDashboardPage() {
         ) : loadError ? (
           <div
             style={{
-              background: '#fff7ed',
+              background: 'var(--warning-bg)',
               border: '1px solid #fdba74',
               borderRadius: '12px',
               padding: '20px 24px',
               display: 'flex',
               alignItems: 'center',
               gap: '12px',
-              color: '#9a3412',
+              color: 'var(--warning)',
               fontSize: '14px',
             }}
           >
-            <Icon name="alert-circle" size={18} style={{ color: '#ea580c' }} />
+            <Icon name="alert-circle" size={18} style={{ color: 'var(--warning)' }} />
             Parent dashboard actions are unavailable until the latest data loads successfully.
           </div>
         ) : shouldShowCollectionEmptyState(loading, loadError, alerts.length) ? (
           <div
             style={{
-              background: '#f0fdf4',
+              background: 'var(--success-bg)',
               border: '1px solid #bbf7d0',
               borderRadius: '12px',
               padding: '20px 24px',
@@ -688,7 +685,7 @@ export default function ParentDashboardPage() {
               fontSize: '14px',
             }}
           >
-            <Icon name="check-circle" size={18} style={{ color: '#16a34a' }} />
+            <Icon name="check-circle" size={18} style={{ color: 'var(--success)' }} />
             You&apos;re all caught up — no pending actions right now.
           </div>
         ) : (
@@ -708,7 +705,7 @@ export default function ParentDashboardPage() {
         {loading ? (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '14px' }}>
             {[0, 1].map((i) => (
-              <div key={i} style={{ background: '#fff', borderRadius: '14px', border: '1px solid rgba(0,0,0,0.08)', padding: '22px', display: 'flex', gap: '16px' }}>
+              <div key={i} className="card" style={{ padding: '22px', display: 'flex', gap: '16px' }}>
                 <Skeleton w={52} h={52} r={26} />
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <Skeleton w="50%" h={15} />
@@ -718,9 +715,9 @@ export default function ParentDashboardPage() {
             ))}
           </div>
         ) : loadError ? (
-          <div style={{ color: '#9A9693', fontSize: '14px' }}>Household swimmer data is unavailable right now.</div>
+          <div style={{ color: 'var(--text-muted)', fontSize: '14px' }}>Household swimmer data is unavailable right now.</div>
         ) : shouldShowCollectionEmptyState(loading, loadError, dashSwimmers.length) ? (
-          <div style={{ color: '#9A9693', fontSize: '14px' }}>No swimmers found for your household.</div>
+          <div style={{ color: 'var(--text-muted)', fontSize: '14px' }}>No swimmers found for your household.</div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '14px' }}>
             {dashSwimmers.map((swimmer) => (
@@ -734,7 +731,7 @@ export default function ParentDashboardPage() {
       <section>
         <SectionHeader title="Upcoming Meets" action="See All Meets" actionPath="/portal/meets" />
         {loading ? (
-          <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+          <div className="card" style={{ overflow: 'hidden' }}>
             {[0, 1, 2].map((i) => (
               <div key={i} style={{ display: 'grid', gridTemplateColumns: '90px 1fr auto auto', gap: '16px', padding: '16px 20px', borderBottom: '1px solid rgba(0,0,0,0.06)', alignItems: 'center' }}>
                 <Skeleton w={80} h={14} />
@@ -748,15 +745,15 @@ export default function ParentDashboardPage() {
             ))}
           </div>
         ) : loadError ? (
-          <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid rgba(0,0,0,0.08)', padding: '32px', textAlign: 'center', color: '#9A9693', fontSize: '14px' }}>
+          <div className="card" style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '14px' }}>
             Upcoming meet data is unavailable right now.
           </div>
         ) : shouldShowCollectionEmptyState(loading, loadError, dashMeets.length) ? (
-          <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid rgba(0,0,0,0.08)', padding: '32px', textAlign: 'center', color: '#9A9693', fontSize: '14px' }}>
+          <div className="card" style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '14px' }}>
             No upcoming meets scheduled.
           </div>
         ) : (
-          <div style={{ background: '#ffffff', borderRadius: '14px', border: '1px solid rgba(0,0,0,0.08)', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', animation: 'slideUp 0.45s var(--ease-out) 0.15s both' }}>
+          <div className="card" style={{ overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', animation: 'slideUp 0.45s var(--ease-out) 0.15s both' }}>
             {dashMeets.map((meet, i) => (
               <div key={meet.id} style={{ animation: `slideUp 0.3s var(--ease-out) ${0.2 + i * 0.07}s both` }}>
                 <MeetRow meet={meet} />

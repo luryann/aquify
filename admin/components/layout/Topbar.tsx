@@ -212,7 +212,7 @@ export function Topbar({ actions }: TopbarProps) {
             alignItems: 'center',
             gap: '5px',
             fontSize: '11px',
-            fontFamily: 'var(--font-mono)',
+            fontFamily: 'var(--font-body)',
             color: 'var(--text-muted)',
           }}
         >

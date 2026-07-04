@@ -53,7 +53,7 @@ const COLUMNS: Column<FileImportRow>[] = [
           <Icon name="file-text" size={14} color={IMPORT_FILE_TYPE_CFG[row.fileType].color} />
         </div>
         <div>
-          <Link href={`/imports/${row.id}`} style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', textDecoration: 'none', fontFamily: 'var(--font-mono)' }}>{row.filename}</Link>
+          <Link href={`/imports/${row.id}`} style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', textDecoration: 'none', fontFamily: 'var(--font-body)' }}>{row.filename}</Link>
           {row.meet && <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '1px' }}>{row.meet}</div>}
         </div>
       </div>
@@ -62,18 +62,18 @@ const COLUMNS: Column<FileImportRow>[] = [
   {
     key: 'fileType',
     label: 'Type',
-    render: (row) => <span style={{ fontSize: '11px', fontWeight: 700, padding: '2px 7px', borderRadius: '6px', background: IMPORT_FILE_TYPE_CFG[row.fileType].bg, color: IMPORT_FILE_TYPE_CFG[row.fileType].color, fontFamily: 'var(--font-mono)', letterSpacing: '0.05em' }}>{row.fileType}</span>,
+    render: (row) => <span style={{ fontSize: '11px', fontWeight: 700, padding: '2px 7px', borderRadius: '6px', background: IMPORT_FILE_TYPE_CFG[row.fileType].bg, color: IMPORT_FILE_TYPE_CFG[row.fileType].color, fontFamily: 'var(--font-body)', letterSpacing: '0.05em' }}>{row.fileType}</span>,
   },
   {
     key: 'status',
     label: 'Status',
     render: (row) => {
       const c = STATUS_CFG[row.status]
-      return <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '10px', background: c.bg, color: c.color, fontFamily: 'var(--font-mono)', letterSpacing: '0.02em', whiteSpace: 'nowrap' }}>{c.label}</span>
+      return <span className="badge" style={{ background: c.bg, color: c.color }}>{c.label}</span>
     },
   },
-  { key: 'rowsParsed', label: 'Rows', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: row.rowsParsed > 0 ? 'var(--text)' : 'var(--text-muted)' }}>{row.rowsParsed || '—'}</span> },
-  { key: 'conflictCount', label: 'Conflicts', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: row.conflictCount > 0 ? 'var(--warning)' : 'var(--text-muted)' }}>{row.conflictCount || '—'}</span> },
+  { key: 'rowsParsed', label: 'Rows', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: row.rowsParsed > 0 ? 'var(--text)' : 'var(--text-muted)' }}>{row.rowsParsed || '—'}</span> },
+  { key: 'conflictCount', label: 'Conflicts', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: row.conflictCount > 0 ? 'var(--warning)' : 'var(--text-muted)' }}>{row.conflictCount || '—'}</span> },
   { key: 'uploadedBy', label: 'Uploaded By', render: (row) => <span style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>{row.uploadedBy}</span> },
 ]
 
@@ -179,10 +179,10 @@ export default function ImportsPage() {
 
   return (
     <div style={{ padding: '24px', maxWidth: '1200px' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
+      <div className="page-header">
         <div>
-          <h1 style={{ fontSize: '22px', fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.2, marginBottom: '4px' }}>Imports</h1>
-          <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>Live file import jobs and conflict state</p>
+          <h1 className="page-title">Imports</h1>
+          <p className="page-subtitle">Live file import jobs and conflict state</p>
         </div>
         <button className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setShowUpload(true)}>
           <Icon name="upload-cloud" size={14} /> Upload File
@@ -202,7 +202,7 @@ export default function ImportsPage() {
           <option value="all">All Types</option>
           {SUPPORTED_IMPORT_FILE_TYPES.map((value) => <option key={value} value={value}>{value}</option>)}
         </select>
-        <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginLeft: 'auto' }}>{filtered.length} imports</span>
+        <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginLeft: 'auto' }}>{filtered.length} imports</span>
       </div>
 
       {loading ? (

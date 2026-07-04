@@ -154,10 +154,10 @@ export default function CampaignDetailPage() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
         <section className="card" style={{ padding: '24px' }}>
           <div style={{ marginBottom: '16px' }}>
-            <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>
+            <div style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>
               {campaign.status} · {campaign.audience}
             </div>
-            <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '30px', fontWeight: 400, color: 'var(--text)', marginBottom: '8px' }}>
+            <h1 className="page-title">
               {campaign.name}
             </h1>
             <div style={{ fontSize: '13px', color: 'var(--text-subtle)', marginBottom: '4px' }}>{campaign.subject}</div>
@@ -174,14 +174,14 @@ export default function CampaignDetailPage() {
               { label: 'Suppressed', value: String(campaign.suppressed_count) },
             ].map((stat) => (
               <div key={stat.label} className="card-elevated" style={{ padding: '14px 16px' }}>
-                <div style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>{stat.label}</div>
-                <div style={{ fontSize: '22px', fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>{stat.value}</div>
+                <div style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>{stat.label}</div>
+                <div style={{ fontSize: '22px', fontFamily: 'var(--font-body)', color: 'var(--text)' }}>{stat.value}</div>
               </div>
             ))}
           </div>
 
           <div style={{ padding: '16px 18px', borderRadius: '10px', background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
-            <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>HTML Preview</div>
+            <div style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>HTML Preview</div>
             <iframe
               title={`${campaign.name} HTML preview`}
               sandbox=""
@@ -192,7 +192,7 @@ export default function CampaignDetailPage() {
 
           {campaign.status === 'draft' ? (
             <div style={{ padding: '16px 18px', borderRadius: '10px', background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
-              <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>Send Draft</div>
+              <div style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>Send Draft</div>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
                 <span style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
                   Recipients are resolved server-side from the campaign audience and current org membership records.
@@ -200,7 +200,7 @@ export default function CampaignDetailPage() {
                 <button
                   onClick={() => void handleSend()}
                   disabled={sending}
-                  style={{ padding: '9px 14px', borderRadius: '8px', border: 'none', background: 'var(--accent)', color: '#fff', fontSize: '12px', fontWeight: 600, cursor: sending ? 'not-allowed' : 'pointer' }}
+                  className="btn btn-primary"
                 >
                   {sending ? 'Sending…' : 'Send Campaign'}
                 </button>
@@ -212,7 +212,7 @@ export default function CampaignDetailPage() {
         <section className="card" style={{ overflow: 'hidden' }}>
           <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
             <h2 style={{ fontSize: '14px', color: 'var(--text)' }}>Deliveries</h2>
-            <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
               Delivered {deliverySummary.delivered} · Failed {deliverySummary.failed} · Suppressed {deliverySummary.suppressed}
             </span>
           </div>
@@ -223,7 +223,7 @@ export default function CampaignDetailPage() {
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)' }}>
                   {['Recipient', 'Status', 'Sent', 'Delivered', 'Message'].map((header) => (
-                    <th key={header} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{header}</th>
+                    <th key={header} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{header}</th>
                   ))}
                 </tr>
               </thead>
@@ -231,7 +231,7 @@ export default function CampaignDetailPage() {
                 {deliveries.map((delivery) => (
                   <tr key={delivery.id} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td style={{ padding: '11px 14px', fontSize: '13px', color: 'var(--text)' }}>{delivery.recipient_email}</td>
-                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontSize: '11px', color: delivery.status === 'delivered' ? 'var(--success)' : delivery.status === 'failed' ? 'var(--error)' : 'var(--text-subtle)' }}>{delivery.status}</td>
+                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-body)', fontSize: '11px', color: delivery.status === 'delivered' ? 'var(--success)' : delivery.status === 'failed' ? 'var(--error)' : 'var(--text-subtle)' }}>{delivery.status}</td>
                     <td style={{ padding: '11px 14px', fontSize: '12px', color: 'var(--text-subtle)' }}>{formatDateTime(delivery.sent_at)}</td>
                     <td style={{ padding: '11px 14px', fontSize: '12px', color: 'var(--text-subtle)' }}>{formatDateTime(delivery.delivered_at)}</td>
                     <td style={{ padding: '11px 14px', fontSize: '12px', color: delivery.error_message ? 'var(--error)' : 'var(--text-muted)' }}>{delivery.provider_message_id || delivery.error_message || '—'}</td>

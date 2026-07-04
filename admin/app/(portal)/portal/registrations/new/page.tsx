@@ -185,7 +185,8 @@ export default function NewRegistrationPage() {
         </p>
         <button
           onClick={() => router.push('/portal/registrations')}
-          style={{ padding: '11px 28px', background: '#eb5d1e', border: 'none', borderRadius: '10px', color: '#fff', fontSize: '14px', fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)' }}
+          className="btn btn-primary"
+          style={{ padding: '11px 28px', fontSize: '14px' }}
         >
           Back to Registrations
         </button>
@@ -197,7 +198,7 @@ export default function NewRegistrationPage() {
     <div style={{ padding: '32px 24px 80px', maxWidth: '720px', margin: '0 auto' }}>
       <button
         onClick={() => step > 0 ? setStep(step - 1) : router.push('/portal/registrations')}
-        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9A9693', fontSize: '13px', fontFamily: 'var(--font-body)', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '20px', padding: 0 }}
+        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '13px', fontFamily: 'var(--font-body)', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '20px', padding: 0 }}
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
           <line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" />
@@ -205,15 +206,15 @@ export default function NewRegistrationPage() {
         {step === 0 ? 'Back to Registrations' : 'Previous step'}
       </button>
 
-      <h1 style={{ fontFamily: '"Instrument Serif", Georgia, serif', fontSize: '28px', fontWeight: 400, color: '#111111', letterSpacing: '-0.01em', marginBottom: '24px' }}>
+      <h1 className="page-title">
         New Registration
       </h1>
 
       <div style={{ display: 'flex', gap: '8px', marginBottom: '28px' }}>
         {STEP_LABELS.map((label, idx) => (
           <div key={label} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <div style={{ height: '3px', borderRadius: '2px', background: idx <= step ? '#eb5d1e' : '#E5E1DC', transition: 'background 0.3s ease' }} />
-            <span style={{ fontSize: '10px', fontFamily: '"JetBrains Mono", monospace', color: idx === step ? '#111111' : '#A09D9B', fontWeight: idx === step ? 600 : 400, letterSpacing: '0.02em' }}>
+            <div style={{ height: '3px', borderRadius: '2px', background: idx <= step ? 'var(--accent)' : 'var(--border)', transition: 'background 0.3s ease' }} />
+            <span style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: idx === step ? 'var(--text)' : 'var(--text-muted)', fontWeight: idx === step ? 600 : 400, letterSpacing: '0.02em' }}>
               {label}
             </span>
           </div>
@@ -221,23 +222,23 @@ export default function NewRegistrationPage() {
       </div>
 
       {error && (
-        <div style={{ marginBottom: '18px', padding: '12px 14px', borderRadius: '10px', background: '#fef2f2', border: '1px solid rgba(220,38,38,0.15)', color: '#dc2626', fontSize: '13px', lineHeight: 1.5 }}>
+        <div style={{ marginBottom: '18px', padding: '12px 14px', borderRadius: '10px', background: 'var(--error-bg)', border: '1px solid rgba(220,38,38,0.15)', color: 'var(--error)', fontSize: '13px', lineHeight: 1.5 }}>
           {error}
         </div>
       )}
 
       {loading ? (
-        <div style={{ padding: '28px 0', color: '#6B6866', fontSize: '14px' }}>Loading registration options…</div>
+        <div style={{ padding: '28px 0', color: 'var(--text-subtle)', fontSize: '14px' }}>Loading registration options…</div>
       ) : (
         <>
           {step === 0 && (
             <div>
-              <p style={{ fontSize: '14px', color: '#6B6866', marginBottom: '20px', lineHeight: 1.6 }}>
+              <p className="page-subtitle">
                 Choose the season and active program you&apos;d like to register for.
               </p>
 
               <div style={{ marginBottom: '20px' }}>
-                <div style={{ fontSize: '11px', fontWeight: 600, color: '#9A9693', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '10px' }}>Season</div>
+                <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '10px' }}>Season</div>
                 <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                   {seasonOptions.map((season) => (
                     <button
@@ -246,9 +247,9 @@ export default function NewRegistrationPage() {
                       style={{
                         padding: '10px 14px',
                         borderRadius: '999px',
-                        border: `1px solid ${selectedSeason === season.id ? '#eb5d1e' : '#E5E1DC'}`,
-                        background: selectedSeason === season.id ? 'rgba(235,93,30,0.08)' : '#FFFFFF',
-                        color: selectedSeason === season.id ? '#c2410c' : '#6B6866',
+                        border: `1px solid ${selectedSeason === season.id ? 'var(--accent)' : 'var(--border)'}`,
+                        background: selectedSeason === season.id ? 'rgba(235,93,30,0.08)' : 'var(--bg-elevated)',
+                        color: selectedSeason === season.id ? '#c2410c' : 'var(--text-subtle)',
                         cursor: 'pointer',
                         fontSize: '13px',
                         fontWeight: 600,
@@ -270,27 +271,27 @@ export default function NewRegistrationPage() {
                       textAlign: 'left',
                       borderRadius: '12px',
                       cursor: 'pointer',
-                      background: selectedProgramId === program.id ? 'rgba(235,93,30,0.06)' : '#FFFFFF',
-                      border: `2px solid ${selectedProgramId === program.id ? '#eb5d1e' : '#E5E1DC'}`,
+                      background: selectedProgramId === program.id ? 'rgba(235,93,30,0.06)' : 'var(--bg-elevated)',
+                      border: `2px solid ${selectedProgramId === program.id ? 'var(--accent)' : 'var(--border)'}`,
                       transition: 'all 0.2s ease',
                       width: '100%',
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
                       <div>
-                        <p style={{ fontSize: '15px', fontWeight: 600, color: '#111111', marginBottom: '4px', fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif' }}>{program.name}</p>
-                        <p style={{ fontSize: '12px', color: '#9A9693', fontFamily: '"JetBrains Mono", monospace' }}>
+                        <p style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text)', marginBottom: '4px', fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif' }}>{program.name}</p>
+                        <p style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
                           {program.group.code.toUpperCase()} · {program.type}
                         </p>
                       </div>
-                      <div style={{ textAlign: 'right', flexShrink: 0, color: '#9A9693', fontSize: '12px' }}>
+                      <div style={{ textAlign: 'right', flexShrink: 0, color: 'var(--text-muted)', fontSize: '12px' }}>
                         {program.group.min_age != null || program.group.max_age != null
                           ? `Ages ${program.group.min_age ?? '—'}-${program.group.max_age ?? '—'}`
                           : 'All ages'}
                       </div>
                     </div>
                     {program.description && (
-                      <p style={{ marginTop: '10px', marginBottom: 0, color: '#6B6866', fontSize: '13px', lineHeight: 1.55 }}>
+                      <p style={{ marginTop: '10px', marginBottom: 0, color: 'var(--text-subtle)', fontSize: '13px', lineHeight: 1.55 }}>
                         {program.description}
                       </p>
                     )}
@@ -302,8 +303,8 @@ export default function NewRegistrationPage() {
 
           {step === 1 && (
             <div>
-              <p style={{ fontSize: '14px', color: '#6B6866', marginBottom: '20px', lineHeight: 1.6 }}>
-                Select which swimmers to enroll in <strong style={{ color: '#111111' }}>{selectedProgram?.name}</strong> for <strong style={{ color: '#111111' }}>{selectedSeasonLabel}</strong>.
+              <p className="page-subtitle">
+                Select which swimmers to enroll in <strong style={{ color: 'var(--text)' }}>{selectedProgram?.name}</strong> for <strong style={{ color: 'var(--text)' }}>{selectedSeasonLabel}</strong>.
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {swimmerOptions.map((swimmer) => {
@@ -318,8 +319,8 @@ export default function NewRegistrationPage() {
                         textAlign: 'left',
                         borderRadius: '10px',
                         cursor: swimmer.alreadyRegistered ? 'not-allowed' : 'pointer',
-                        background: swimmer.alreadyRegistered ? '#F5F3F0' : selectedSwimmers.has(swimmer.id) ? 'rgba(235,93,30,0.06)' : '#FFFFFF',
-                        border: `2px solid ${swimmer.alreadyRegistered ? '#E5E1DC' : selectedSwimmers.has(swimmer.id) ? '#eb5d1e' : '#E5E1DC'}`,
+                        background: swimmer.alreadyRegistered ? '#F5F3F0' : selectedSwimmers.has(swimmer.id) ? 'rgba(235,93,30,0.06)' : 'var(--bg-elevated)',
+                        border: `2px solid ${swimmer.alreadyRegistered ? 'var(--border)' : selectedSwimmers.has(swimmer.id) ? 'var(--accent)' : 'var(--border)'}`,
                         width: '100%',
                         transition: 'all 0.2s ease',
                         opacity: swimmer.alreadyRegistered ? 0.7 : 1,
@@ -328,23 +329,23 @@ export default function NewRegistrationPage() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                         <div style={{
                           width: '36px', height: '36px', borderRadius: '50%', flexShrink: 0,
-                          background: selectedSwimmers.has(swimmer.id) && !swimmer.alreadyRegistered ? '#eb5d1e' : '#E5E1DC',
+                          background: selectedSwimmers.has(swimmer.id) && !swimmer.alreadyRegistered ? 'var(--accent)' : 'var(--border)',
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontSize: '14px', fontWeight: 700, color: selectedSwimmers.has(swimmer.id) && !swimmer.alreadyRegistered ? '#fff' : '#9A9693',
+                          fontSize: '14px', fontWeight: 700, color: selectedSwimmers.has(swimmer.id) && !swimmer.alreadyRegistered ? 'var(--bg-elevated)' : 'var(--text-muted)',
                           fontFamily: '"Instrument Serif", Georgia, serif',
                         }}>
                           {`${swimmer.first_name[0] ?? ''}${swimmer.last_name[0] ?? ''}`.toUpperCase()}
                         </div>
                         <div style={{ flex: 1 }}>
-                          <p style={{ fontSize: '14px', fontWeight: 600, color: '#111111', marginBottom: '2px', fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif' }}>
+                          <p style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text)', marginBottom: '2px', fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif' }}>
                             {swimmer.first_name} {swimmer.last_name}
                           </p>
-                          <p style={{ fontSize: '12px', color: '#9A9693', fontFamily: '"JetBrains Mono", monospace' }}>
+                          <p style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
                             {age != null ? `Age ${age}` : 'Age unavailable'} · {swimmer.registration_status}
                           </p>
                         </div>
                         {swimmer.alreadyRegistered && (
-                          <span style={{ fontSize: '10px', padding: '2px 8px', background: '#E5E1DC', color: '#9A9693', borderRadius: '20px', fontFamily: '"JetBrains Mono", monospace', fontWeight: 600, flexShrink: 0 }}>
+                          <span style={{ fontSize: '10px', padding: '2px 8px', background: 'var(--border)', color: 'var(--text-muted)', borderRadius: '20px', fontFamily: 'var(--font-body)', fontWeight: 600, flexShrink: 0 }}>
                             ALREADY REGISTERED
                           </span>
                         )}
@@ -358,7 +359,7 @@ export default function NewRegistrationPage() {
 
           {step === 2 && (
             <div>
-              <p style={{ fontSize: '14px', color: '#6B6866', marginBottom: '20px', lineHeight: 1.6 }}>
+              <p className="page-subtitle">
                 Review and accept the live registration and waiver requirements for this enrollment.
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -368,8 +369,8 @@ export default function NewRegistrationPage() {
                     style={{
                       borderRadius: '10px',
                       overflow: 'hidden',
-                      border: `1px solid ${waiverAccepted[waiver.id] ? 'rgba(22,163,74,0.3)' : '#E5E1DC'}`,
-                      background: waiverAccepted[waiver.id] ? 'rgba(22,163,74,0.04)' : '#FFFFFF',
+                      border: `1px solid ${waiverAccepted[waiver.id] ? 'rgba(22,163,74,0.3)' : 'var(--border)'}`,
+                      background: waiverAccepted[waiver.id] ? 'rgba(22,163,74,0.04)' : 'var(--bg-elevated)',
                     }}
                   >
                     <button
@@ -378,8 +379,8 @@ export default function NewRegistrationPage() {
                     >
                       <div style={{
                         width: '20px', height: '20px', borderRadius: '50%', flexShrink: 0,
-                        background: waiverAccepted[waiver.id] ? '#16a34a' : '#F0EDEA',
-                        border: `2px solid ${waiverAccepted[waiver.id] ? '#16a34a' : '#E5E1DC'}`,
+                        background: waiverAccepted[waiver.id] ? 'var(--success)' : '#F0EDEA',
+                        border: `2px solid ${waiverAccepted[waiver.id] ? 'var(--success)' : 'var(--border)'}`,
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                       }}>
                         {waiverAccepted[waiver.id] && (
@@ -389,10 +390,10 @@ export default function NewRegistrationPage() {
                         )}
                       </div>
                       <div style={{ flex: 1 }}>
-                        <p style={{ fontSize: '14px', fontWeight: 600, color: '#111111', fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif' }}>
-                          {waiver.title} {waiver.required && <span style={{ color: '#dc2626' }}>*</span>}
+                        <p style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text)', fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif' }}>
+                          {waiver.title} {waiver.required && <span style={{ color: 'var(--error)' }}>*</span>}
                         </p>
-                        <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#9A9693', fontFamily: '"JetBrains Mono", monospace' }}>
+                        <p style={{ margin: '4px 0 0', fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
                           {waiver.appliesTo}
                         </p>
                       </div>
@@ -400,19 +401,19 @@ export default function NewRegistrationPage() {
 
                     {expandedWaiver === waiver.id && (
                       <div style={{ padding: '0 16px 16px' }}>
-                        <div style={{ padding: '12px', background: '#F7F4F0', borderRadius: '8px', marginBottom: '12px' }}>
-                          <p style={{ fontSize: '13px', color: '#6B6866', lineHeight: 1.7, margin: 0 }}>{waiver.body}</p>
+                        <div style={{ padding: '12px', background: 'var(--bg)', borderRadius: '8px', marginBottom: '12px' }}>
+                          <p style={{ fontSize: '13px', color: 'var(--text-subtle)', lineHeight: 1.7, margin: 0 }}>{waiver.body}</p>
                         </div>
                         <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer' }}>
                           <input
                             type="checkbox"
                             checked={!!waiverAccepted[waiver.id]}
                             onChange={(event) => setWaiverAccepted((prev) => ({ ...prev, [waiver.id]: event.target.checked }))}
-                            style={{ marginTop: '2px', accentColor: '#eb5d1e', width: '16px', height: '16px', cursor: 'pointer' }}
+                            style={{ marginTop: '2px', accentColor: 'var(--accent)', width: '16px', height: '16px', cursor: 'pointer' }}
                           />
-                          <span style={{ fontSize: '13px', color: '#111111', lineHeight: 1.5 }}>
+                          <span style={{ fontSize: '13px', color: 'var(--text)', lineHeight: 1.5 }}>
                             I have read and agree to the <strong>{waiver.title}</strong>
-                            {!waiver.required && <span style={{ color: '#9A9693' }}> (optional)</span>}
+                            {!waiver.required && <span style={{ color: 'var(--text-muted)' }}> (optional)</span>}
                           </span>
                         </label>
                       </div>
@@ -425,36 +426,36 @@ export default function NewRegistrationPage() {
 
           {step === 3 && (
             <div>
-              <p style={{ fontSize: '14px', color: '#6B6866', marginBottom: '20px', lineHeight: 1.6 }}>
+              <p className="page-subtitle">
                 Review your registration summary before submitting.
               </p>
-              <div style={{ background: '#FFFFFF', border: '1px solid #E5E1DC', borderRadius: '12px', overflow: 'hidden', marginBottom: '20px' }}>
-                <div style={{ padding: '16px 18px', borderBottom: '1px solid #E5E1DC', background: '#F7F4F0' }}>
-                  <p style={{ fontSize: '11px', fontFamily: '"JetBrains Mono", monospace', color: '#9A9693', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Program</p>
-                  <p style={{ fontSize: '15px', fontWeight: 600, color: '#111111', marginTop: '2px' }}>{selectedProgram?.name}</p>
-                  <p style={{ fontSize: '12px', color: '#9A9693', margin: '4px 0 0' }}>{selectedSeasonLabel}</p>
+              <div className="card" style={{ overflow: 'hidden', marginBottom: '20px' }}>
+                <div style={{ padding: '16px 18px', borderBottom: '1px solid #E5E1DC', background: 'var(--bg)' }}>
+                  <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Program</p>
+                  <p style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text)', marginTop: '2px' }}>{selectedProgram?.name}</p>
+                  <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '4px 0 0' }}>{selectedSeasonLabel}</p>
                 </div>
                 <div style={{ padding: '16px 18px', borderBottom: '1px solid #E5E1DC' }}>
-                  <p style={{ fontSize: '11px', fontFamily: '"JetBrains Mono", monospace', color: '#9A9693', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>Swimmers</p>
+                  <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>Swimmers</p>
                   {selectedSwimmerRecords.map((swimmer) => (
                     <div key={swimmer.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                      <span style={{ fontSize: '13px', color: '#111111' }}>{swimmer.first_name} {swimmer.last_name}</span>
-                      <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '12px', color: '#6B6866' }}>{swimmer.registration_status}</span>
+                      <span style={{ fontSize: '13px', color: 'var(--text)' }}>{swimmer.first_name} {swimmer.last_name}</span>
+                      <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-subtle)' }}>{swimmer.registration_status}</span>
                     </div>
                   ))}
                 </div>
                 <div style={{ padding: '16px 18px' }}>
-                  <p style={{ fontSize: '11px', fontFamily: '"JetBrains Mono", monospace', color: '#9A9693', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>Accepted Requirements</p>
+                  <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>Accepted Requirements</p>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                     {waiverOptions.filter((waiver) => waiverAccepted[waiver.id]).map((waiver) => (
-                      <span key={waiver.id} style={{ padding: '4px 9px', borderRadius: '999px', background: '#fff7ed', color: '#c2410c', fontSize: '11px', fontWeight: 600 }}>
+                      <span key={waiver.id} style={{ padding: '4px 9px', borderRadius: '999px', background: 'var(--warning-bg)', color: '#c2410c', fontSize: '11px', fontWeight: 600 }}>
                         {waiver.title}
                       </span>
                     ))}
                   </div>
                 </div>
               </div>
-              <div style={{ padding: '12px 14px', background: 'rgba(37,99,235,0.06)', border: '1px solid rgba(37,99,235,0.15)', borderRadius: '8px', fontSize: '12px', color: '#2563eb' }}>
+              <div style={{ padding: '12px 14px', background: 'rgba(37,99,235,0.06)', border: '1px solid rgba(37,99,235,0.15)', borderRadius: '8px', fontSize: '12px', color: 'var(--info)' }}>
                 Registrations are created immediately in pending status, and accepted waivers are written to the same live registration records shown in the portal and admin views.
               </div>
             </div>
@@ -465,24 +466,16 @@ export default function NewRegistrationPage() {
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '28px' }}>
         <button
           onClick={() => step > 0 ? setStep(step - 1) : router.push('/portal/registrations')}
-          style={{ padding: '11px 22px', background: '#FFFFFF', border: '1px solid #E5E1DC', borderRadius: '10px', color: '#6B6866', fontSize: '13px', cursor: 'pointer', fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif', display: 'flex', alignItems: 'center', gap: '7px' }}
+          className="btn btn-secondary"
+          style={{ padding: '11px 22px' }}
         >
           {step === 0 ? 'Cancel' : '← Back'}
         </button>
         <button
           onClick={() => step < 3 ? setStep(step + 1) : void handleSubmit()}
           disabled={loading || !canProceed() || submitting}
-          style={{
-            padding: '11px 28px',
-            borderRadius: '10px',
-            border: 'none',
-            background: canProceed() && !submitting && !loading ? '#eb5d1e' : '#E5E1DC',
-            color: canProceed() && !submitting && !loading ? '#fff' : '#9A9693',
-            fontSize: '13px',
-            fontWeight: 600,
-            cursor: canProceed() && !submitting && !loading ? 'pointer' : 'not-allowed',
-            fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif',
-          }}
+          className="btn btn-primary"
+          style={{ padding: '11px 28px' }}
         >
           {submitting ? 'Submitting…' : step < 3 ? 'Continue →' : 'Submit Registration'}
         </button>

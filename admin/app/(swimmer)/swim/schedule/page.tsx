@@ -17,14 +17,14 @@ import {
 
 // ── Design tokens ──────────────────────────────────────────────────────────
 const C = {
-  accent:       '#00D4AA',
-  accentDim:    'rgba(0,212,170,0.10)',
-  accentBorder: 'rgba(0,212,170,0.22)',
-  text:         '#E4F2FF',
-  subtle:       '#7FA8C9',
-  muted:        '#4A6B82',
-  card:         '#0D2235',
-  border:       'rgba(0,212,170,0.10)',
+  accent:       'var(--accent)',
+  accentDim:    'var(--border)',
+  accentBorder: 'var(--accent-border)',
+  text:         'var(--text)',
+  subtle:       'var(--text-subtle)',
+  muted:        'var(--text-muted)',
+  card:         'var(--bg-surface)',
+  border:       'var(--border)',
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -43,9 +43,9 @@ type ScheduleEvent = {
 }
 
 const EVENT_STYLE: Record<EventType, { dot: string; bg: string; border: string; color: string; label: string; leftBorder: string }> = {
-  meet:     { dot: '#00D4AA', bg: 'rgba(0,212,170,0.06)',  border: 'rgba(0,212,170,0.20)',   color: '#00D4AA', label: 'Meet',      leftBorder: '#00D4AA' },
-  deadline: { dot: '#ef4444', bg: 'rgba(239,68,68,0.06)',  border: 'rgba(239,68,68,0.18)',  color: '#fca5a5', label: 'Deadline',  leftBorder: '#ef4444' },
-  practice: { dot: '#7FA8C9', bg: 'rgba(127,168,201,0.06)', border: 'rgba(127,168,201,0.18)', color: '#7FA8C9', label: 'Practice', leftBorder: '#7FA8C9' },
+  meet:     { dot: 'var(--accent)', bg: 'var(--border)',  border: 'rgba(0,212,170,0.20)',   color: 'var(--accent)', label: 'Meet',      leftBorder: 'var(--accent)' },
+  deadline: { dot: 'var(--error)', bg: 'var(--error-bg)',  border: 'var(--error-border)',  color: 'var(--error)', label: 'Deadline',  leftBorder: 'var(--error)' },
+  practice: { dot: 'var(--text-subtle)', bg: 'rgba(127,168,201,0.06)', border: 'var(--text-subtle)', color: 'var(--text-subtle)', label: 'Practice', leftBorder: 'var(--text-subtle)' },
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -141,7 +141,7 @@ function groupIntoSections(events: ScheduleEvent[]): Array<{ heading: string; ev
 // ── Skeleton ───────────────────────────────────────────────────────────────
 function SkeletonLine({ width = '100%', height = '14px' }: { width?: string; height?: string }) {
   return (
-    <div style={{ width, height, background: 'rgba(0,212,170,0.08)', borderRadius: '6px', animation: 'pulse 1.5s ease-in-out infinite' }} />
+    <div style={{ width, height, background: 'var(--border)', borderRadius: '6px', animation: 'pulse 1.5s ease-in-out infinite' }} />
   )
 }
 
@@ -181,14 +181,14 @@ function EventCard({ ev }: { ev: ScheduleEvent }) {
           </p>
           <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexShrink: 0 }}>
             {ev.course && (
-              <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', fontWeight: 600, color: '#0D2235', background: C.accent, padding: '2px 6px', borderRadius: '4px', letterSpacing: '0.04em' }}>
+              <span style={{ fontSize: '10px', fontFamily: 'var(--font-body)', fontWeight: 600, color: 'var(--bg-surface)', background: C.accent, padding: '2px 6px', borderRadius: '4px', letterSpacing: '0.04em' }}>
                 {ev.course}
               </span>
             )}
             <span
               style={{
                 fontSize: '10px',
-                fontFamily: 'var(--font-mono)',
+                fontFamily: 'var(--font-body)',
                 fontWeight: 600,
                 letterSpacing: '0.04em',
                 textTransform: 'uppercase',
@@ -356,7 +356,7 @@ export default function SwimmerSchedulePage() {
         <div
           style={{
             marginBottom: '24px',
-            background: 'rgba(245,158,11,0.10)',
+            background: 'var(--warning-bg)',
             border: '1px solid rgba(245,158,11,0.25)',
             borderRadius: '10px',
             padding: '12px 16px',
@@ -367,7 +367,7 @@ export default function SwimmerSchedulePage() {
           }}
         >
           <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-            <Icon name="alert-circle" size={15} style={{ color: '#f59e0b', marginTop: '1px', flexShrink: 0 }} />
+            <Icon name="alert-circle" size={15} style={{ color: 'var(--warning)', marginTop: '1px', flexShrink: 0 }} />
             <p style={{ margin: 0, fontSize: '12.5px', color: C.text, lineHeight: 1.5 }}>{loadError}</p>
           </div>
           <button
@@ -428,8 +428,8 @@ export default function SwimmerSchedulePage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           {[1, 2].map(i => (
             <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div style={{ height: '18px', width: '140px', background: 'rgba(0,212,170,0.08)', borderRadius: '6px', animation: 'pulse 1.5s ease-in-out infinite' }} />
-              <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '12px', padding: '18px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ height: '18px', width: '140px', background: 'var(--border)', borderRadius: '6px', animation: 'pulse 1.5s ease-in-out infinite' }} />
+              <div className="card" style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 <SkeletonLine width="60%" />
                 <SkeletonLine width="40%" height="12px" />
               </div>
@@ -457,7 +457,7 @@ export default function SwimmerSchedulePage() {
                   {section.heading}
                 </h2>
                 <div style={{ flex: 1, height: '1px', background: C.border }} />
-                <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: C.muted, whiteSpace: 'nowrap' }}>
+                <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: C.muted, whiteSpace: 'nowrap' }}>
                   {section.events.length} {section.events.length === 1 ? 'event' : 'events'}
                 </span>
               </div>
@@ -495,11 +495,8 @@ export default function SwimmerSchedulePage() {
           ))}
 
           {loadError ? (
-            <div
+            <div className="card"
               style={{
-                background: C.card,
-                border: `1px solid ${C.border}`,
-                borderRadius: '14px',
                 padding: '60px 20px',
                 textAlign: 'center',
               }}
@@ -511,11 +508,8 @@ export default function SwimmerSchedulePage() {
               </p>
             </div>
           ) : shouldShowCollectionEmptyState(loading, loadError, sections.length) && (
-            <div
+            <div className="card"
               style={{
-                background: C.card,
-                border: `1px solid ${C.border}`,
-                borderRadius: '14px',
                 padding: '60px 20px',
                 textAlign: 'center',
               }}

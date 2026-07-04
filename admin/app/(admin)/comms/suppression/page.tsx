@@ -109,13 +109,13 @@ export default function SuppressionPage() {
   return (
     <div style={{ padding: '32px 36px 80px', maxWidth: 1080, margin: '0 auto' }}>
       <div style={{ marginBottom: '28px' }}>
-        <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
+        <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
           Communications
         </p>
-        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '30px', fontWeight: 400, color: 'var(--text)', marginBottom: '6px' }}>
+        <h1 className="page-title">
           Suppression List
         </h1>
-        <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>
+        <p className="page-subtitle">
           Bounce, complaint, and manual suppression state from the live communications service.
         </p>
       </div>
@@ -134,8 +134,8 @@ export default function SuppressionPage() {
           { label: 'Manual', value: String(stats.manual) },
         ].map((stat) => (
           <div key={stat.label} className="card-elevated" style={{ padding: '14px 16px' }}>
-            <div style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>{stat.label}</div>
-            <div style={{ fontSize: '22px', fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>{stat.value}</div>
+            <div style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>{stat.label}</div>
+            <div style={{ fontSize: '22px', fontFamily: 'var(--font-body)', color: 'var(--text)' }}>{stat.value}</div>
           </div>
         ))}
       </div>
@@ -149,7 +149,7 @@ export default function SuppressionPage() {
             <option value="bounce">Bounce</option>
             <option value="complaint">Complaint</option>
           </select>
-          <button onClick={() => void handleAdd()} disabled={submitting || !email.trim()} style={{ padding: '9px 14px', borderRadius: '8px', border: 'none', background: 'var(--accent)', color: '#fff', fontSize: '12px', fontWeight: 600, cursor: submitting ? 'not-allowed' : 'pointer' }}>
+          <button onClick={() => void handleAdd()} disabled={submitting || !email.trim()} className="btn btn-primary">
             {submitting ? 'Adding…' : 'Add Suppression'}
           </button>
         </div>
@@ -167,7 +167,7 @@ export default function SuppressionPage() {
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)' }}>
                   {['Email', 'Reason', 'Created', 'Actor', ''].map((header) => (
-                    <th key={header} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{header}</th>
+                    <th key={header} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{header}</th>
                   ))}
                 </tr>
               </thead>
@@ -175,7 +175,7 @@ export default function SuppressionPage() {
                 {entries.map((entry) => (
                   <tr key={entry.id} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td style={{ padding: '11px 14px', fontSize: '13px', color: 'var(--text)' }}>{entry.email}</td>
-                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontSize: '11px', color: entry.reason === 'bounce' ? 'var(--warning)' : entry.reason === 'complaint' ? 'var(--error)' : 'var(--text-subtle)' }}>{entry.reason}</td>
+                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-body)', fontSize: '11px', color: entry.reason === 'bounce' ? 'var(--warning)' : entry.reason === 'complaint' ? 'var(--error)' : 'var(--text-subtle)' }}>{entry.reason}</td>
                     <td style={{ padding: '11px 14px', fontSize: '12px', color: 'var(--text-subtle)' }}>{formatDateTime(entry.created_at)}</td>
                     <td style={{ padding: '11px 14px', fontSize: '12px', color: 'var(--text-muted)' }}>{entry.created_by}</td>
                     <td style={{ padding: '11px 14px' }}>

@@ -49,7 +49,7 @@ function RoleBadge({ role }: { role: string }) {
       borderRadius: '5px',
       background: c.bg,
       color: c.color,
-      fontFamily: 'var(--font-mono)',
+      fontFamily: 'var(--font-body)',
     }}>{label}</span>
   )
 }
@@ -66,7 +66,7 @@ function StatusPill({ enabled }: { enabled: boolean }) {
       borderRadius: '20px',
       background: enabled ? 'var(--success-bg)' : 'var(--bg-elevated)',
       color: enabled ? 'var(--success)' : 'var(--text-muted)',
-      fontFamily: 'var(--font-mono)',
+      fontFamily: 'var(--font-body)',
     }}>
       <span style={{
         width: '5px', height: '5px', borderRadius: '50%',
@@ -97,7 +97,7 @@ const LABEL_STYLE: React.CSSProperties = {
   letterSpacing: '0.05em',
   display: 'block',
   marginBottom: '5px',
-  fontFamily: 'var(--font-mono)',
+  fontFamily: 'var(--font-body)',
 }
 
 export default function UsersPage() {
@@ -245,12 +245,12 @@ export default function UsersPage() {
   return (
     <div style={{ padding: '24px', maxWidth: '1100px' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
+      <div className="page-header">
         <div>
-          <h1 style={{ fontSize: '22px', fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)', marginBottom: '4px' }}>
+          <h1 className="page-title">
             Users
           </h1>
-          <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>
+          <p className="page-subtitle">
             Manage Aquify login accounts, roles, and account status for this organization.
           </p>
         </div>
@@ -328,8 +328,8 @@ export default function UsersPage() {
           { label: 'Disabled', value: stats.disabled, color: 'var(--text-muted)' },
         ].map((stat) => (
           <div key={stat.label} className="card" style={{ padding: '14px 16px' }}>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)', marginBottom: '6px' }}>{stat.label}</div>
-            <div style={{ fontSize: '22px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
+            <div style={{ fontSize: '22px', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
           </div>
         ))}
       </div>
@@ -357,7 +357,7 @@ export default function UsersPage() {
             <option key={r.value} value={r.value}>{r.label}</option>
           ))}
         </select>
-        <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginLeft: 'auto' }}>
+        <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginLeft: 'auto' }}>
           {filtered.length} of {users.length}
         </span>
       </div>
@@ -393,7 +393,7 @@ export default function UsersPage() {
                     textTransform: 'uppercase',
                     letterSpacing: '0.06em',
                     textAlign: 'left',
-                    fontFamily: 'var(--font-mono)',
+                    fontFamily: 'var(--font-body)',
                     background: 'var(--bg-elevated)',
                   }}>{col}</th>
                 ))}
@@ -418,7 +418,7 @@ export default function UsersPage() {
                         border: '1px solid var(--accent-border)',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         fontSize: '12px', fontWeight: 700, color: 'var(--accent)',
-                        fontFamily: 'var(--font-mono)', flexShrink: 0,
+                        fontFamily: 'var(--font-body)', flexShrink: 0,
                       }}>
                         {((user.firstName?.[0] ?? '') + (user.lastName?.[0] ?? '')).toUpperCase() || user.email[0].toUpperCase()}
                       </div>
@@ -428,13 +428,13 @@ export default function UsersPage() {
                             ? `${user.firstName} ${user.lastName}`.trim()
                             : <span style={{ color: 'var(--text-muted)' }}>No name</span>}
                         </div>
-                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: '1px' }}>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginTop: '1px' }}>
                           {user.id.slice(0, 8)}…
                         </div>
                       </div>
                     </div>
                   </td>
-                  <td style={{ padding: '14px 16px', fontSize: '13px', color: 'var(--text-subtle)', fontFamily: 'var(--font-mono)' }}>
+                  <td style={{ padding: '14px 16px', fontSize: '13px', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)' }}>
                     {user.email}
                   </td>
                   <td style={{ padding: '14px 16px' }}>
@@ -449,7 +449,7 @@ export default function UsersPage() {
                   <td style={{ padding: '14px 16px' }}>
                     <StatusPill enabled={user.enabled} />
                   </td>
-                  <td style={{ padding: '14px 16px', fontSize: '12px', color: 'var(--text-subtle)', fontFamily: 'var(--font-mono)' }}>
+                  <td style={{ padding: '14px 16px', fontSize: '12px', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)' }}>
                     {user.lastLoginAt
                       ? new Date(user.lastLoginAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
                       : <span style={{ color: 'var(--text-muted)' }}>—</span>}

@@ -63,7 +63,7 @@ function RoleChip({ roleName, onRemove, canRemove }: { roleName: string; onRemov
       borderRadius: '6px',
       background: c.bg,
       color: c.color,
-      fontFamily: 'var(--font-mono)',
+      fontFamily: 'var(--font-body)',
     }}>
       {label}
       {canRemove && onRemove && (
@@ -92,7 +92,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
         color: 'var(--text-muted)',
         textTransform: 'uppercase',
         letterSpacing: '0.06em',
-        fontFamily: 'var(--font-mono)',
+        fontFamily: 'var(--font-body)',
         marginBottom: '16px',
         paddingBottom: '10px',
         borderBottom: '1px solid var(--border)',
@@ -105,7 +105,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div style={{ marginBottom: '14px' }}>
-      <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '4px' }}>{label}</div>
+      <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '4px' }}>{label}</div>
       <div style={{ fontSize: '14px', color: 'var(--text)' }}>{value}</div>
     </div>
   )
@@ -391,22 +391,22 @@ export default function UserDetailPage() {
           border: '2px solid var(--accent-border)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontSize: '18px', fontWeight: 700, color: 'var(--accent)',
-          fontFamily: 'var(--font-mono)', flexShrink: 0,
+          fontFamily: 'var(--font-body)', flexShrink: 0,
         }}>
           {((user.firstName?.[0] ?? '') + (user.lastName?.[0] ?? '')).toUpperCase() || user.email[0].toUpperCase()}
         </div>
         <div style={{ flex: 1 }}>
-          <h1 style={{ fontSize: '22px', fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)', marginBottom: '4px' }}>
+          <h1 className="page-title">
             {user.firstName || user.lastName ? `${user.firstName} ${user.lastName}`.trim() : <span style={{ color: 'var(--text-muted)' }}>Unnamed User</span>}
           </h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '13px', color: 'var(--text-subtle)', fontFamily: 'var(--font-mono)' }}>{user.email}</span>
+            <span style={{ fontSize: '13px', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)' }}>{user.email}</span>
             <span style={{
               display: 'inline-flex', alignItems: 'center', gap: '4px',
               fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '20px',
               background: user.enabled ? 'var(--success-bg)' : 'var(--bg-elevated)',
               color: user.enabled ? 'var(--success)' : 'var(--text-muted)',
-              fontFamily: 'var(--font-mono)',
+              fontFamily: 'var(--font-body)',
             }}>
               <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: user.enabled ? 'var(--success)' : 'var(--text-disabled)' }} />
               {user.enabled ? 'Active' : 'Disabled'}
@@ -448,20 +448,20 @@ export default function UserDetailPage() {
             )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               <div>
-                <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '5px', fontFamily: 'var(--font-mono)' }}>
+                <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '5px', fontFamily: 'var(--font-body)' }}>
                   First Name
                 </label>
                 <input style={INPUT_STYLE} value={editForm.first_name} onChange={(e) => setEditForm((f) => ({ ...f, first_name: e.target.value }))} />
               </div>
               <div>
-                <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '5px', fontFamily: 'var(--font-mono)' }}>
+                <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '5px', fontFamily: 'var(--font-body)' }}>
                   Last Name
                 </label>
                 <input style={INPUT_STYLE} value={editForm.last_name} onChange={(e) => setEditForm((f) => ({ ...f, last_name: e.target.value }))} />
               </div>
             </div>
             <div>
-              <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '5px', fontFamily: 'var(--font-mono)' }}>
+              <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '5px', fontFamily: 'var(--font-body)' }}>
                 Email
               </label>
               <input type="email" style={INPUT_STYLE} value={editForm.email} onChange={(e) => setEditForm((f) => ({ ...f, email: e.target.value }))} />
@@ -480,14 +480,14 @@ export default function UserDetailPage() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0' }}>
               <Field label="First Name" value={user.firstName || <span style={{ color: 'var(--text-muted)' }}>—</span>} />
               <Field label="Last Name" value={user.lastName || <span style={{ color: 'var(--text-muted)' }}>—</span>} />
-              <Field label="Email" value={<span style={{ fontFamily: 'var(--font-mono)', fontSize: '13px' }}>{user.email}</span>} />
-              <Field label="Username" value={<span style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', color: 'var(--text-subtle)' }}>{user.username}</span>} />
+              <Field label="Email" value={<span style={{ fontFamily: 'var(--font-body)', fontSize: '13px' }}>{user.email}</span>} />
+              <Field label="Username" value={<span style={{ fontFamily: 'var(--font-body)', fontSize: '13px', color: 'var(--text-subtle)' }}>{user.username}</span>} />
               <Field label="Email Verified" value={
                 user.emailVerified
                   ? <span style={{ color: 'var(--success)', fontSize: '13px' }}>Verified</span>
                   : <span style={{ color: 'var(--warning)', fontSize: '13px' }}>Not verified</span>
               } />
-              <Field label="Keycloak ID" value={<span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-muted)' }}>{user.id}</span>} />
+              <Field label="Keycloak ID" value={<span style={{ fontFamily: 'var(--font-body)', fontSize: '11px', color: 'var(--text-muted)' }}>{user.id}</span>} />
             </div>
             <button className="btn" style={{ fontSize: '12px', padding: '6px 12px', marginTop: '4px' }} onClick={() => { setEditMode(true); setSaveSuccess(false) }}>
               <Icon name="edit-2" size={12} style={{ marginRight: '5px' }} />
@@ -567,9 +567,9 @@ export default function UserDetailPage() {
               <Icon name="home" size={16} style={{ color: 'var(--accent)', flexShrink: 0, marginTop: '1px' }} />
               <div>
                 <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text)' }}>Linked household</div>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{householdId}</div>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>{householdId}</div>
                 <div style={{ fontSize: '11px', color: 'var(--text-disabled)', marginTop: '4px', lineHeight: 1.5, maxWidth: '440px' }}>
-                  Household swimmers linked here appear in the parent portal through Members. They do not create separate login accounts in <span style={{ fontFamily: 'var(--font-mono)' }}>/users</span> unless you create a user for them.
+                  Household swimmers linked here appear in the parent portal through Members. They do not create separate login accounts in <span style={{ fontFamily: 'var(--font-body)' }}>/users</span> unless you create a user for them.
                 </div>
               </div>
             </div>
@@ -605,7 +605,7 @@ export default function UserDetailPage() {
                 <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text)' }}>
                   {linkedSwimmer.first_name} {linkedSwimmer.last_name}
                 </div>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{linkedSwimmer.id}</div>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>{linkedSwimmer.id}</div>
                 <div style={{ fontSize: '11px', color: 'var(--text-disabled)', marginTop: '4px', lineHeight: 1.5, maxWidth: '440px' }}>
                   When this user logs in with the swimmer role, their portal session resolves to this exact swimmer record — never a guess from the household roster.
                 </div>
@@ -730,7 +730,7 @@ export default function UserDetailPage() {
                   <Icon name="shield" size={12} style={{ color: 'var(--text-muted)' }} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: '12px', color: 'var(--text)', fontFamily: 'var(--font-mono)' }}>{event.action}</div>
+                  <div style={{ fontSize: '12px', color: 'var(--text)', fontFamily: 'var(--font-body)' }}>{event.action}</div>
                   <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
                     by <span style={{ color: 'var(--text-subtle)' }}>{event.actor_user_id.slice(0, 8)}…</span>
                     {' · '}

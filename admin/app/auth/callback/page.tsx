@@ -254,7 +254,7 @@ function CallbackInner() {
           <p
             style={{
               fontSize: '12px',
-              fontFamily: 'var(--font-mono)',
+              fontFamily: 'var(--font-body)',
               color: 'var(--text-muted)',
               letterSpacing: '0.04em',
             }}
@@ -313,7 +313,7 @@ function CallbackInner() {
                 <span
                   style={{
                     fontSize: '12px',
-                    fontFamily: 'var(--font-mono)',
+                    fontFamily: 'var(--font-body)',
                     color: step.done ? 'var(--text-subtle)' : 'var(--text-muted)',
                     letterSpacing: '0.02em',
                   }}

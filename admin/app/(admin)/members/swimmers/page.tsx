@@ -47,7 +47,7 @@ function StatusBadge({ status }: { status: SwimmerStatus }) {
     archived: { label: 'Archived', color: 'var(--text-muted)', bg: 'var(--bg-elevated)' },
   }
   const c = cfg[status]
-  return <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '10px', background: c.bg, color: c.color, fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.02em' }}>{c.label}</span>
+  return <span className="badge" style={{ background: c.bg, color: c.color }}>{c.label}</span>
 }
 
 const COLUMNS: Column<SwimmerRow>[] = [
@@ -58,7 +58,7 @@ const COLUMNS: Column<SwimmerRow>[] = [
     render: (row) => (
       <div>
         <Link href={`/members/swimmers/${row.id}`} style={{ color: 'var(--text)', fontWeight: 600, textDecoration: 'none', fontSize: '13px' }}>{row.name}</Link>
-        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', fontFamily: 'var(--font-mono)' }}>{row.ussNumber || 'No external ID'}</div>
+        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', fontFamily: 'var(--font-body)' }}>{row.ussNumber || 'No external ID'}</div>
       </div>
     ),
   },
@@ -69,7 +69,7 @@ const COLUMNS: Column<SwimmerRow>[] = [
     align: 'right',
     render: (row) => (
       <div style={{ textAlign: 'right' }}>
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', color: 'var(--text)' }}>{row.age}</span>
+        <span style={{ fontFamily: 'var(--font-body)', fontSize: '13px', color: 'var(--text)' }}>{row.age}</span>
         <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginLeft: '4px' }}>{row.gender}</span>
       </div>
     ),
@@ -85,7 +85,7 @@ const COLUMNS: Column<SwimmerRow>[] = [
     render: (row) => (
       <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
         {row.groups.length > 0 ? row.groups.map((group) => (
-          <span key={group} style={{ fontSize: '11px', padding: '2px 7px', borderRadius: '8px', background: 'var(--accent-subtle)', color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}>{group}</span>
+          <span key={group} style={{ fontSize: '11px', padding: '2px 7px', borderRadius: '8px', background: 'var(--accent-subtle)', color: 'var(--accent)', fontFamily: 'var(--font-body)' }}>{group}</span>
         )) : <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>—</span>}
       </div>
     ),
@@ -234,10 +234,10 @@ export default function SwimmersPage() {
 
   return (
     <div style={{ padding: '24px', maxWidth: '1200px' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
+      <div className="page-header">
         <div>
-          <h1 style={{ fontSize: '22px', fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.2, marginBottom: '4px' }}>Swimmers</h1>
-          <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>Live roster membership and current group assignment data</p>
+          <h1 className="page-title">Swimmers</h1>
+          <p className="page-subtitle">Live roster membership and current group assignment data</p>
         </div>
         {allowWrite && (
           <button className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setShowNew(true)}>
@@ -255,8 +255,8 @@ export default function SwimmersPage() {
           { label: 'Female', value: counts.female, color: 'var(--accent)' },
         ].map((stat) => (
           <div key={stat.label} className="card" style={{ padding: '14px 16px' }}>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)', marginBottom: '6px' }}>{stat.label}</div>
-            <div style={{ fontSize: '22px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
+            <div style={{ fontSize: '22px', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
           </div>
         ))}
       </div>
@@ -283,7 +283,7 @@ export default function SwimmersPage() {
           <option value="all">All Groups</option>
           {groups.map((group) => <option key={group} value={group}>{group}</option>)}
         </select>
-        <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginLeft: 'auto' }}>{filtered.length} of {rows.length}</span>
+        <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginLeft: 'auto' }}>{filtered.length} of {rows.length}</span>
       </div>
 
       {loading ? (

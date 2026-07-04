@@ -56,20 +56,20 @@ function StatusBadge({ status }: { status: string }) {
     closed: { color: 'var(--text-muted)', bg: 'var(--bg-elevated)' },
   }
   const colors = cfg[status] ?? { color: 'var(--text-muted)', bg: 'var(--bg-elevated)' }
-  return <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '10px', background: colors.bg, color: colors.color }}>{status.replaceAll('_', ' ')}</span>
+  return <span className="badge" style={{ background: colors.bg, color: colors.color }}>{status.replaceAll('_', ' ')}</span>
 }
 
 const CONFLICT_COLS: Column<ImportConflictRecord>[] = [
-  { key: 'row_number', label: 'Row', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-muted)' }}>{row.row_number ?? '—'}</span> },
-  { key: 'conflict_type', label: 'Type', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text)' }}>{row.conflict_type}</span> },
+  { key: 'row_number', label: 'Row', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '11px', color: 'var(--text-muted)' }}>{row.row_number ?? '—'}</span> },
+  { key: 'conflict_type', label: 'Type', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '11px', color: 'var(--text)' }}>{row.conflict_type}</span> },
   { key: 'status', label: 'Status', render: (row) => <StatusBadge status={row.status} /> },
-  { key: 'raw_data', label: 'Raw Data', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--text-muted)' }}>{row.raw_data || '—'}</span> },
-  { key: 'resolved_swimmer_id', label: 'Resolved To', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-subtle)' }}>{row.resolved_swimmer_id || '—'}</span> },
+  { key: 'raw_data', label: 'Raw Data', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '10px', color: 'var(--text-muted)' }}>{row.raw_data || '—'}</span> },
+  { key: 'resolved_swimmer_id', label: 'Resolved To', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '11px', color: 'var(--text-subtle)' }}>{row.resolved_swimmer_id || '—'}</span> },
 ]
 
 const ERROR_COLS: Column<ImportErrorRow>[] = [
-  { key: 'row', label: 'Row', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-muted)' }}>{row.row}</span> },
-  { key: 'code', label: 'Code', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text)' }}>{row.code}</span> },
+  { key: 'row', label: 'Row', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '11px', color: 'var(--text-muted)' }}>{row.row}</span> },
+  { key: 'code', label: 'Code', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '11px', color: 'var(--text)' }}>{row.code}</span> },
   { key: 'message', label: 'Message', render: (row) => <span style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>{row.message}</span> },
 ]
 
@@ -153,13 +153,13 @@ export default function ImportDetailPage() {
         <Icon name="chevron-left" size={14} /> Imports
       </Link>
 
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
+      <div className="page-header">
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
-            <h1 style={{ fontSize: '24px', fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.2 }}>{fileImport.filename}</h1>
+            <h1 className="page-title">{fileImport.filename}</h1>
             <StatusBadge status={fileImport.status} />
           </div>
-          <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
             {fileImport.id} · {fileImport.file_type.toUpperCase()} · Meet: {meetName}
           </div>
         </div>
@@ -173,8 +173,8 @@ export default function ImportDetailPage() {
           { label: 'File Size', value: formatBytes(fileImport.declared_size_bytes), color: 'var(--text-subtle)' },
         ].map((stat) => (
           <div key={stat.label} className="card" style={{ padding: '14px 16px' }}>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)', marginBottom: '6px' }}>{stat.label}</div>
-            <div style={{ fontSize: '18px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
+            <div style={{ fontSize: '18px', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
           </div>
         ))}
       </div>
@@ -184,7 +184,7 @@ export default function ImportDetailPage() {
       {activeTab === 'overview' ? (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
           <div className="card" style={{ padding: '20px' }}>
-            <h3 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '16px', fontFamily: 'var(--font-mono)' }}>Import Metadata</h3>
+            <h3 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '16px', fontFamily: 'var(--font-body)' }}>Import Metadata</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {[
                 { label: 'Uploaded', value: formatDateTime(fileImport.created_at) },
@@ -195,13 +195,13 @@ export default function ImportDetailPage() {
               ].map((row) => (
                 <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px', borderBottom: '1px solid var(--border)', paddingBottom: '10px' }}>
                   <span style={{ color: 'var(--text-muted)' }}>{row.label}</span>
-                  <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text)', fontWeight: 600 }}>{row.value}</span>
+                  <span style={{ fontFamily: 'var(--font-body)', color: 'var(--text)', fontWeight: 600 }}>{row.value}</span>
                 </div>
               ))}
             </div>
           </div>
           <div className="card" style={{ padding: '20px' }}>
-            <h3 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '16px', fontFamily: 'var(--font-mono)' }}>Import Report</h3>
+            <h3 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '16px', fontFamily: 'var(--font-body)' }}>Import Report</h3>
             <p style={{ fontSize: '13px', color: 'var(--text-subtle)', lineHeight: 1.7 }}>
               This view uses the persisted import summary plus the live conflict queue from the backend. Open the Conflicts and Errors tabs below for the actionable records returned by the API.
             </p>

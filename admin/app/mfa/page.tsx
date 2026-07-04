@@ -59,13 +59,13 @@ function SetupSteps({ step }: { step: 1 | 2 | 3 }) {
                 </svg>
               ) : (
                 <span style={{
-                  fontSize: '10px', fontFamily: 'var(--font-mono)', fontWeight: 700,
+                  fontSize: '10px', fontFamily: 'var(--font-body)', fontWeight: 700,
                   color: active ? 'var(--accent)' : 'var(--text-muted)',
                 }}>{n}</span>
               )}
             </div>
             <span style={{
-              fontSize: '11px', fontFamily: 'var(--font-mono)',
+              fontSize: '11px', fontFamily: 'var(--font-body)',
               color: active ? 'var(--text)' : done ? 'var(--text-muted)' : 'var(--text-muted)',
               letterSpacing: '0.04em',
               fontWeight: active ? 600 : 400,
@@ -182,7 +182,7 @@ function DigitInputs({
             width: '46px', height: '54px',
             textAlign: 'center',
             fontSize: '22px',
-            fontFamily: 'var(--font-mono)',
+            fontFamily: 'var(--font-body)',
             fontWeight: 600,
             background: 'var(--bg-elevated)',
             border: `1px solid ${d ? 'var(--accent-border)' : 'var(--border)'}`,
@@ -219,7 +219,7 @@ function CopyButton({ text }: { text: string }) {
         borderRadius: '6px',
         padding: '4px 10px',
         fontSize: '11px',
-        fontFamily: 'var(--font-mono)',
+        fontFamily: 'var(--font-body)',
         color: copied ? '#34d399' : 'var(--text-muted)',
         cursor: 'pointer',
         display: 'flex',
@@ -718,7 +718,7 @@ export default function MfaPage() {
               background: 'var(--accent)',
               animation: 'mfaPulse 1.4s ease-in-out infinite',
             }} />
-            <p style={{ fontSize: '13px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', letterSpacing: '0.04em' }}>
+            <p style={{ fontSize: '13px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', letterSpacing: '0.04em' }}>
               Checking your account…
             </p>
           </div>
@@ -807,7 +807,7 @@ export default function MfaPage() {
             }}>
               {['Google Authenticator', 'Authy', 'Apple Passwords', 'Bitwarden'].map((app) => (
                 <span key={app} style={{
-                  fontSize: '10px', fontFamily: 'var(--font-mono)',
+                  fontSize: '10px', fontFamily: 'var(--font-body)',
                   color: 'var(--text-muted)', letterSpacing: '0.03em',
                   background: 'var(--bg-elevated)', border: '1px solid var(--border)',
                   borderRadius: '4px', padding: '2px 7px',
@@ -849,7 +849,7 @@ export default function MfaPage() {
                   display: 'flex', alignItems: 'center', gap: '10px',
                 }}>
                   <span style={{
-                    flex: 1, fontSize: '12px', fontFamily: 'var(--font-mono)',
+                    flex: 1, fontSize: '12px', fontFamily: 'var(--font-body)',
                     color: 'var(--text)', letterSpacing: '0.12em', wordBreak: 'break-all',
                   }}>
                     {totpSecret.match(/.{1,4}/g)?.join(' ') ?? totpSecret}
@@ -998,7 +998,7 @@ export default function MfaPage() {
                       }}>
                         <span style={{
                           fontSize: '12px',
-                          fontFamily: 'var(--font-mono)',
+                          fontFamily: 'var(--font-body)',
                           color: 'var(--text)',
                           letterSpacing: '0.08em',
                           overflow: 'hidden',
@@ -1160,7 +1160,7 @@ export default function MfaPage() {
                     background: 'var(--bg-elevated)',
                     border: `1px solid ${error ? 'var(--error-border)' : 'var(--border)'}`,
                     borderRadius: '10px', color: 'var(--text)',
-                    fontSize: '16px', fontFamily: 'var(--font-mono)',
+                    fontSize: '16px', fontFamily: 'var(--font-body)',
                     letterSpacing: '0.08em', textAlign: 'center', outline: 'none',
                     marginBottom: '20px', transition: 'border-color 0.15s ease',
                   }}

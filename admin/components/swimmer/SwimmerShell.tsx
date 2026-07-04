@@ -10,9 +10,10 @@ import { SWIMMER_PORTAL_ENABLED } from '@/lib/featureFlags'
 function PortalDisabled() {
   return (
     <div
+      data-portal="swim"
       style={{
         minHeight: '100vh',
-        background: '#061623',
+        background: 'var(--bg)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -32,7 +33,7 @@ function PortalDisabled() {
           <svg width="48" height="32" viewBox="0 0 48 32" fill="none" style={{ margin: '0 auto' }}>
             <path
               d="M2 16C6 10 10 4 17 4C24 4 24 16 31 16C38 16 38 4 44 4"
-              stroke="#00D4AA"
+              stroke="var(--accent)"
               strokeWidth="2.5"
               strokeLinecap="round"
               fill="none"
@@ -40,7 +41,7 @@ function PortalDisabled() {
             />
             <path
               d="M2 26C6 20 10 14 17 14C24 14 24 26 31 26C38 26 38 14 44 14"
-              stroke="#00D4AA"
+              stroke="var(--accent)"
               strokeWidth="2"
               strokeLinecap="round"
               fill="none"
@@ -49,21 +50,13 @@ function PortalDisabled() {
           </svg>
         </div>
 
-        <h1
-          style={{
-            fontFamily: 'var(--font-display)',
-            fontSize: '26px',
-            color: '#E4F2FF',
-            letterSpacing: '-0.01em',
-            marginBottom: '12px',
-          }}
-        >
+        <h1 className="page-title" style={{ marginBottom: '12px' }}>
           Athlete Portal Coming Soon
         </h1>
         <p
           style={{
             fontSize: '14px',
-            color: '#7FA8C9',
+            color: 'var(--text-subtle)',
             lineHeight: 1.65,
             marginBottom: '28px',
           }}
@@ -71,24 +64,7 @@ function PortalDisabled() {
           The optional swimmer portal is not yet enabled for your club. All important information —
           meets, registration, billing, and documents — is available through your parent&apos;s account.
         </p>
-        <a
-          href="/portal/dashboard"
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '10px 22px',
-            background: '#00D4AA',
-            color: '#061623',
-            borderRadius: '9px',
-            fontSize: '14px',
-            fontWeight: 700,
-            textDecoration: 'none',
-            transition: 'background 120ms ease',
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = '#00b896')}
-          onMouseLeave={(e) => (e.currentTarget.style.background = '#00D4AA')}
-        >
+        <a href="/portal/dashboard" className="btn btn-primary" style={{ textDecoration: 'none' }}>
           Go to Parent Portal
         </a>
       </div>
@@ -112,9 +88,10 @@ export function SwimmerShell({ children }: { children: ReactNode }) {
 
   return (
     <div
+      data-portal="swim"
       style={{
         minHeight: '100vh',
-        background: '#061623',
+        background: 'var(--bg)',
         fontFamily: 'var(--font-body)',
         position: 'relative',
       }}
@@ -129,7 +106,7 @@ export function SwimmerShell({ children }: { children: ReactNode }) {
           right: 0,
           height: '400px',
           background:
-            'radial-gradient(ellipse 80% 60% at 50% -10%, rgba(0,212,170,0.12) 0%, transparent 70%)',
+            'radial-gradient(ellipse 80% 60% at 50% -10%, var(--accent-subtle) 0%, transparent 70%)',
           pointerEvents: 'none',
           zIndex: 0,
         }}

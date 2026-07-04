@@ -83,7 +83,7 @@ function StatusBadge({ status }: { status: string }) {
   }
   const colors = cfg[status] ?? cfg.active
   return (
-    <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '10px', background: colors.bg, color: colors.color, fontFamily: 'var(--font-mono)', letterSpacing: '0.02em', textTransform: 'uppercase' }}>
+    <span className="badge" style={{ background: colors.bg, color: colors.color }}>
       {status.replaceAll('_', ' ')}
     </span>
   )
@@ -99,19 +99,19 @@ const SWIMMER_COLS: Column<SwimmerRow>[] = [
         <Link href={`/members/swimmers/${row.id}`} style={{ color: 'var(--text)', fontWeight: 600, textDecoration: 'none', fontSize: '13px' }}>
           {row.name}
         </Link>
-        <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: '2px' }}>{row.ussNumber || 'No external ID'}</div>
+        <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginTop: '2px' }}>{row.ussNumber || 'No external ID'}</div>
       </div>
     ),
   },
-  { key: 'dob', label: 'DOB', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-subtle)' }}>{formatDate(row.dob)}</span> },
-  { key: 'gender', label: 'Gender', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-subtle)' }}>{row.gender}</span> },
+  { key: 'dob', label: 'DOB', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-subtle)' }}>{formatDate(row.dob)}</span> },
+  { key: 'gender', label: 'Gender', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-subtle)' }}>{row.gender}</span> },
   {
     key: 'groups',
     label: 'Groups',
     render: (row) => (
       <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
         {row.groups.length ? row.groups.map((group) => (
-          <span key={group} style={{ fontSize: '11px', padding: '2px 7px', borderRadius: '8px', background: 'var(--accent-subtle)', color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}>
+          <span key={group} style={{ fontSize: '11px', padding: '2px 7px', borderRadius: '8px', background: 'var(--accent-subtle)', color: 'var(--accent)', fontFamily: 'var(--font-body)' }}>
             {group}
           </span>
         )) : <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Unassigned</span>}
@@ -134,15 +134,15 @@ const CONTACT_COLS: Column<ContactRow>[] = [
         <div>
           <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>
             {row.name}
-            {row.isPrimary ? <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', background: 'var(--accent-subtle)', color: 'var(--accent)', padding: '1px 6px', borderRadius: '8px', marginLeft: '6px', fontWeight: 600 }}>PRIMARY</span> : null}
+            {row.isPrimary ? <span style={{ fontSize: '10px', fontFamily: 'var(--font-body)', background: 'var(--accent-subtle)', color: 'var(--accent)', padding: '1px 6px', borderRadius: '8px', marginLeft: '6px', fontWeight: 600 }}>PRIMARY</span> : null}
           </div>
           <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{row.role}</div>
         </div>
       </div>
     ),
   },
-  { key: 'email', label: 'Email', render: (row) => <span style={{ fontSize: '13px', color: 'var(--text-subtle)', fontFamily: 'var(--font-mono)' }}>{row.email || '—'}</span> },
-  { key: 'phone', label: 'Phone', render: (row) => <span style={{ fontSize: '13px', color: 'var(--text-subtle)', fontFamily: 'var(--font-mono)' }}>{row.phone || '—'}</span> },
+  { key: 'email', label: 'Email', render: (row) => <span style={{ fontSize: '13px', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)' }}>{row.email || '—'}</span> },
+  { key: 'phone', label: 'Phone', render: (row) => <span style={{ fontSize: '13px', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)' }}>{row.phone || '—'}</span> },
 ]
 
 const INVOICE_COLS: Column<InvoiceRow>[] = [
@@ -150,14 +150,14 @@ const INVOICE_COLS: Column<InvoiceRow>[] = [
     key: 'invoiceNumber',
     label: 'Invoice',
     render: (row) => (
-      <Link href={`/invoices/${row.id}`} style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text)', textDecoration: 'none', fontWeight: 600 }}>
+      <Link href={`/invoices/${row.id}`} style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text)', textDecoration: 'none', fontWeight: 600 }}>
         {row.invoiceNumber}
       </Link>
     ),
   },
-  { key: 'amountCents', label: 'Amount', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>{formatCurrency(row.amountCents)}</span> },
+  { key: 'amountCents', label: 'Amount', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>{formatCurrency(row.amountCents)}</span> },
   { key: 'status', label: 'Status', render: (row) => <StatusBadge status={row.status} /> },
-  { key: 'dueAt', label: 'Due', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-subtle)' }}>{formatDate(row.dueAt)}</span> },
+  { key: 'dueAt', label: 'Due', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-subtle)' }}>{formatDate(row.dueAt)}</span> },
 ]
 
 function buildSwimmerRows(swimmers: SwimmerRecord[], groups: GroupRecord[], links: SwimmerGroupLinkRecord[]): SwimmerRow[] {
@@ -319,15 +319,15 @@ export default function HouseholdDetailPage() {
         Households
       </Link>
 
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
+      <div className="page-header">
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
-            <h1 style={{ fontSize: '24px', fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.2 }}>
+            <h1 className="page-title">
               {household.household_name}
             </h1>
             <StatusBadge status={household.status || 'active'} />
           </div>
-          <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
             {household.primary_email || household.primary_phone_e164 || 'No primary contact method'}
           </div>
         </div>
@@ -341,8 +341,8 @@ export default function HouseholdDetailPage() {
           { label: 'Member Since', value: formatDate(household.created_at), color: 'var(--text-subtle)' },
         ].map((stat) => (
           <div key={stat.label} className="card" style={{ padding: '14px 16px' }}>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)', marginBottom: '6px' }}>{stat.label}</div>
-            <div style={{ fontSize: '18px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
+            <div style={{ fontSize: '18px', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
           </div>
         ))}
       </div>
@@ -352,7 +352,7 @@ export default function HouseholdDetailPage() {
       {activeTab === 'overview' ? (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
           <div className="card" style={{ padding: '20px' }}>
-            <h3 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '16px', fontFamily: 'var(--font-mono)' }}>
+            <h3 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '16px', fontFamily: 'var(--font-body)' }}>
               Account Info
             </h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -361,7 +361,7 @@ export default function HouseholdDetailPage() {
                 <button
                   onClick={() => { void navigator.clipboard.writeText(household.id) }}
                   title="Copy household ID"
-                  style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'var(--font-mono)', color: 'var(--text)', fontWeight: 600, fontSize: '13px' }}
+                  style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'var(--font-body)', color: 'var(--text)', fontWeight: 600, fontSize: '13px' }}
                 >
                   {household.id.slice(0, 8)}…
                   <Icon name="copy" size={12} style={{ color: 'var(--text-muted)' }} />
@@ -375,20 +375,20 @@ export default function HouseholdDetailPage() {
               ].map((row) => (
                 <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px', borderBottom: '1px solid var(--border)', paddingBottom: '10px' }}>
                   <span style={{ color: 'var(--text-muted)' }}>{row.label}</span>
-                  <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text)', fontWeight: 600 }}>{row.value}</span>
+                  <span style={{ fontFamily: 'var(--font-body)', color: 'var(--text)', fontWeight: 600 }}>{row.value}</span>
                 </div>
               ))}
             </div>
           </div>
           <div className="card" style={{ padding: '20px' }}>
-            <h3 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '16px', fontFamily: 'var(--font-mono)' }}>
+            <h3 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '16px', fontFamily: 'var(--font-body)' }}>
               Notes & Contacts
             </h3>
             <p style={{ fontSize: '13px', color: 'var(--text-subtle)', lineHeight: 1.7, marginBottom: '16px' }}>
               {household.notes || 'No household notes recorded yet.'}
             </p>
             <div style={{ paddingTop: '16px', borderTop: '1px solid var(--border)' }}>
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)', marginBottom: '8px' }}>Primary Contact</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-body)', marginBottom: '8px' }}>Primary Contact</div>
               {primaryContact ? (
                 <>
                   <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text)' }}>{primaryContact.name}</div>

@@ -30,7 +30,7 @@ const STATUS_CONFIG: Record<HouseholdStatus, { label: string; color: string; bg:
 function StatusBadge({ status }: { status: HouseholdStatus }) {
   const cfg = STATUS_CONFIG[status]
   return (
-    <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '10px', background: cfg.bg, color: cfg.color, fontFamily: 'var(--font-mono)', letterSpacing: '0.02em', textTransform: 'uppercase' }}>
+    <span className="badge" style={{ background: cfg.bg, color: cfg.color }}>
       {cfg.label}
     </span>
   )
@@ -47,7 +47,7 @@ function buildColumns(onDelete: (row: HouseholdRow) => void, allowWrite: boolean
           <Link href={`/members/households/${row.id}`} style={{ color: 'var(--text)', fontWeight: 600, textDecoration: 'none', fontSize: '13px' }}>
             {row.name}
           </Link>
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', fontFamily: 'var(--font-mono)' }}>{row.id}</div>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', fontFamily: 'var(--font-body)' }}>{row.id}</div>
         </div>
       ),
     },
@@ -67,7 +67,7 @@ function buildColumns(onDelete: (row: HouseholdRow) => void, allowWrite: boolean
       label: 'Swimmers',
       sortable: true,
       align: 'right',
-      render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', color: 'var(--text)' }}>{row.swimmerCount}</span>,
+      render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '13px', color: 'var(--text)' }}>{row.swimmerCount}</span>,
     },
     {
       key: 'status',
@@ -78,7 +78,7 @@ function buildColumns(onDelete: (row: HouseholdRow) => void, allowWrite: boolean
       key: 'joinedAt',
       label: 'Created',
       sortable: true,
-      render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-subtle)' }}>{new Date(row.joinedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>,
+      render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-subtle)' }}>{new Date(row.joinedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>,
     },
     {
       key: 'id',
@@ -235,10 +235,10 @@ export default function HouseholdsPage() {
 
   return (
     <div style={{ padding: '24px', maxWidth: '1200px' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
+      <div className="page-header">
         <div>
-          <h1 style={{ fontSize: '22px', fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.2, marginBottom: '4px' }}>Households</h1>
-          <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>Live household roster and membership account records</p>
+          <h1 className="page-title">Households</h1>
+          <p className="page-subtitle">Live household roster and membership account records</p>
         </div>
         {allowWrite && (
           <button className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setShowNew(true)}>
@@ -256,8 +256,8 @@ export default function HouseholdsPage() {
           { label: 'Archived', value: counts.archived, color: 'var(--text-subtle)' },
         ].map((stat) => (
           <div key={stat.label} className="card" style={{ padding: '14px 16px' }}>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)', marginBottom: '6px' }}>{stat.label}</div>
-            <div style={{ fontSize: '22px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
+            <div style={{ fontSize: '22px', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
           </div>
         ))}
       </div>
@@ -273,7 +273,7 @@ export default function HouseholdsPage() {
           <option value="inactive">Inactive</option>
           <option value="archived">Archived</option>
         </select>
-        <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginLeft: 'auto' }}>{filtered.length} households</span>
+        <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginLeft: 'auto' }}>{filtered.length} households</span>
       </div>
 
       {loading ? (

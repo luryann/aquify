@@ -135,13 +135,13 @@ export default function AnnouncementsPage() {
   return (
     <div style={{ padding: '32px 36px 80px', maxWidth: 1180, margin: '0 auto' }}>
       <div style={{ marginBottom: '28px' }}>
-        <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
+        <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
           Communications
         </p>
-        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '30px', fontWeight: 400, color: 'var(--text)', marginBottom: '6px' }}>
+        <h1 className="page-title">
           Announcements
         </h1>
-        <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>
+        <p className="page-subtitle">
           Draft, publish, and archive announcements using the live communications service.
         </p>
       </div>
@@ -160,8 +160,8 @@ export default function AnnouncementsPage() {
           { label: 'Archived', value: String(stats.archived) },
         ].map((stat) => (
           <div key={stat.label} className="card-elevated" style={{ padding: '14px 16px' }}>
-            <div style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>{stat.label}</div>
-            <div style={{ fontSize: '22px', fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>{stat.value}</div>
+            <div style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>{stat.label}</div>
+            <div style={{ fontSize: '22px', fontFamily: 'var(--font-body)', color: 'var(--text)' }}>{stat.value}</div>
           </div>
         ))}
       </div>
@@ -194,7 +194,7 @@ export default function AnnouncementsPage() {
             <button
               onClick={() => void handleCreate()}
               disabled={submitting || !form.title.trim() || !form.body.trim()}
-              style={{ padding: '9px 14px', borderRadius: '8px', border: 'none', background: 'var(--accent)', color: '#fff', fontSize: '12px', fontWeight: 600, cursor: submitting ? 'not-allowed' : 'pointer' }}
+              className="btn btn-primary"
             >
               {submitting ? 'Creating…' : 'Create Draft'}
             </button>
@@ -225,7 +225,7 @@ export default function AnnouncementsPage() {
                         <Link href={`/announcements/${announcement.id}`} style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text)', textDecoration: 'none' }}>
                           {announcement.title}
                         </Link>
-                        <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: announcement.status === 'published' ? 'var(--success)' : announcement.status === 'draft' ? 'var(--warning)' : 'var(--text-muted)', background: 'var(--bg-surface)', border: '1px solid var(--border)', padding: '2px 8px', borderRadius: '999px' }}>
+                        <span className="badge" style={{ color: announcement.status === 'published' ? 'var(--success)' : announcement.status === 'draft' ? 'var(--warning)' : 'var(--text-muted)', background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
                           {announcement.status}
                         </span>
                       </div>
@@ -238,7 +238,7 @@ export default function AnnouncementsPage() {
                         <button
                           onClick={() => void handlePublish(announcement.id)}
                           disabled={actionId === announcement.id}
-                          style={{ padding: '6px 10px', borderRadius: '6px', border: 'none', background: 'var(--accent)', color: '#fff', fontSize: '12px', cursor: actionId === announcement.id ? 'not-allowed' : 'pointer' }}
+                          className="btn btn-primary"
                         >
                           Publish
                         </button>

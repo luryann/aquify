@@ -50,7 +50,7 @@ const COLUMNS: Column<InvoiceRow>[] = [
   {
     key: 'invoiceNumber',
     label: 'Invoice',
-    render: (row) => <Link href={`/invoices/${row.id}`} style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', fontWeight: 700, color: 'var(--text)', textDecoration: 'none' }}>{row.invoiceNumber}</Link>,
+    render: (row) => <Link href={`/invoices/${row.id}`} style={{ fontFamily: 'var(--font-body)', fontSize: '13px', fontWeight: 700, color: 'var(--text)', textDecoration: 'none' }}>{row.invoiceNumber}</Link>,
   },
   {
     key: 'household',
@@ -69,8 +69,8 @@ const COLUMNS: Column<InvoiceRow>[] = [
     render: (row) => {
       const c = STATUS_CFG[row.status]
       return <div style={{ display: 'flex', gap: '5px', alignItems: 'center', flexWrap: 'wrap' }}>
-        <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '10px', background: c.bg, color: c.color, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>{c.label}</span>
-        {isOverdue(row) && <span style={{ fontSize: '10px', fontWeight: 700, padding: '2px 6px', borderRadius: '8px', background: 'var(--error-bg)', color: 'var(--error)', fontFamily: 'var(--font-mono)' }}>OVERDUE</span>}
+        <span className="badge" style={{ background: c.bg, color: c.color }}>{c.label}</span>
+        {isOverdue(row) && <span style={{ fontSize: '10px', fontWeight: 700, padding: '2px 6px', borderRadius: '8px', background: 'var(--error-bg)', color: 'var(--error)', fontFamily: 'var(--font-body)' }}>OVERDUE</span>}
       </div>
     },
   },
@@ -80,13 +80,13 @@ const COLUMNS: Column<InvoiceRow>[] = [
     align: 'right',
     render: (row) => (
       <div style={{ textAlign: 'right' }}>
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', fontWeight: 700, color: 'var(--text)' }}>{formatCents(row.totalCents)}</div>
-        {row.paidCents > 0 && row.paidCents < row.totalCents && <div style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--success)' }}>{formatCents(row.paidCents)} paid</div>}
+        <div style={{ fontFamily: 'var(--font-body)', fontSize: '13px', fontWeight: 700, color: 'var(--text)' }}>{formatCents(row.totalCents)}</div>
+        {row.paidCents > 0 && row.paidCents < row.totalCents && <div style={{ fontFamily: 'var(--font-body)', fontSize: '11px', color: 'var(--success)' }}>{formatCents(row.paidCents)} paid</div>}
       </div>
     ),
   },
-  { key: 'issuedAt', label: 'Issued', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-muted)' }}>{row.issuedAt ? new Date(row.issuedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span> },
-  { key: 'dueDate', label: 'Due', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: isOverdue(row) ? 'var(--error)' : 'var(--text-muted)' }}>{row.dueDate ?? '—'}</span> },
+  { key: 'issuedAt', label: 'Issued', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-muted)' }}>{row.issuedAt ? new Date(row.issuedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span> },
+  { key: 'dueDate', label: 'Due', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: isOverdue(row) ? 'var(--error)' : 'var(--text-muted)' }}>{row.dueDate ?? '—'}</span> },
 ]
 
 async function loadInvoices(api: ReturnType<typeof useApiClient>, orgId: string): Promise<InvoiceRow[]> {
@@ -185,10 +185,10 @@ export default function InvoicesPage() {
 
   return (
     <div style={{ padding: '24px', maxWidth: '1200px' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
+      <div className="page-header">
         <div>
-          <h1 style={{ fontSize: '22px', fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.2, marginBottom: '4px' }}>Invoices</h1>
-          <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>Live billing invoices aggregated across persisted household accounts</p>
+          <h1 className="page-title">Invoices</h1>
+          <p className="page-subtitle">Live billing invoices aggregated across persisted household accounts</p>
         </div>
         <button className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setShowNew(true)}>
           <Icon name="plus" size={14} /> New Invoice
@@ -204,7 +204,7 @@ export default function InvoicesPage() {
           <option value="all">All Statuses</option>
           {Object.entries(STATUS_CFG).map(([value, cfg]) => <option key={value} value={value}>{cfg.label}</option>)}
         </select>
-        <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginLeft: 'auto' }}>{filtered.length} invoices</span>
+        <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginLeft: 'auto' }}>{filtered.length} invoices</span>
       </div>
 
       {loading ? (

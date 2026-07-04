@@ -196,7 +196,7 @@ export function Sidebar({ role, roles, userName, onSignOut, orgId }: SidebarProp
             <span
               style={{
                 fontSize: '10px',
-                fontFamily: 'var(--font-mono)',
+                fontFamily: 'var(--font-body)',
                 color: 'var(--text-muted)',
                 letterSpacing: '0.08em',
                 textTransform: 'uppercase',
@@ -254,7 +254,7 @@ export function Sidebar({ role, roles, userName, onSignOut, orgId }: SidebarProp
                 style={{
                   padding: '10px 18px 4px',
                   fontSize: '10px',
-                  fontFamily: 'var(--font-mono)',
+                  fontFamily: 'var(--font-body)',
                   fontWeight: 500,
                   color: 'var(--text-muted)',
                   letterSpacing: '0.10em',
@@ -312,7 +312,7 @@ export function Sidebar({ role, roles, userName, onSignOut, orgId }: SidebarProp
                       color: '#fff',
                       fontSize: '10px',
                       fontWeight: 700,
-                      fontFamily: 'var(--font-mono)',
+                      fontFamily: 'var(--font-body)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -398,7 +398,7 @@ export function Sidebar({ role, roles, userName, onSignOut, orgId }: SidebarProp
             color: 'var(--accent)',
             fontSize: '11px',
             fontWeight: 700,
-            fontFamily: 'var(--font-mono)',
+            fontFamily: 'var(--font-body)',
             textTransform: 'uppercase',
           }}
         >
@@ -414,7 +414,7 @@ export function Sidebar({ role, roles, userName, onSignOut, orgId }: SidebarProp
               >
                 {userName ?? 'User'}
               </p>
-              <p style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+              <p style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
                 {ROLE_LABELS[role]}
               </p>
             </div>

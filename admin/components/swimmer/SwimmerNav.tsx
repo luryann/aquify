@@ -18,15 +18,15 @@ const NAV_LINKS = [
   { label: 'Profile',     path: '/swim/profile' },
 ]
 
-// Swimmer portal colours (deep navy theme)
+// Swimmer portal colours — resolved from the [data-portal="swim"] token overrides in globals.css
 const C = {
-  bg:        '#061623',
-  surface:   '#0D2235',
-  accent:    '#00D4AA',
-  text:      '#E4F2FF',
-  subtle:    '#7FA8C9',
-  border:    'rgba(0,212,170,0.12)',
-  borderHov: 'rgba(0,212,170,0.28)',
+  bg:        'var(--bg)',
+  surface:   'var(--bg-surface)',
+  accent:    'var(--accent)',
+  text:      'var(--text)',
+  subtle:    'var(--text-subtle)',
+  border:    'var(--border)',
+  borderHov: 'var(--accent-border)',
 }
 
 export function SwimmerNav({ swimmerName, initials, onSignOut }: SwimmerNavProps) {
@@ -104,7 +104,7 @@ export function SwimmerNav({ swimmerName, initials, onSignOut }: SwimmerNavProps
           <span
             style={{
               fontSize: '9.5px',
-              fontFamily: 'var(--font-mono)',
+              fontFamily: 'var(--font-body)',
               color: C.accent,
               letterSpacing: '0.12em',
               textTransform: 'uppercase',
@@ -189,14 +189,14 @@ export function SwimmerNav({ swimmerName, initials, onSignOut }: SwimmerNavProps
                 width: '28px',
                 height: '28px',
                 borderRadius: '50%',
-                background: 'linear-gradient(135deg, #00D4AA 0%, #0099CC 100%)',
+                background: 'linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                color: '#061623',
+                color: 'var(--text-on-accent)',
                 fontSize: '11px',
                 fontWeight: 700,
-                fontFamily: 'var(--font-mono)',
+                fontFamily: 'var(--font-body)',
                 flexShrink: 0,
               }}
             >
@@ -271,17 +271,17 @@ export function SwimmerNav({ swimmerName, initials, onSignOut }: SwimmerNavProps
                     borderRadius: '7px',
                     background: 'transparent',
                     border: 'none',
-                    color: '#f87171',
+                    color: 'var(--error)',
                     fontSize: '13px',
                     cursor: 'pointer',
                     width: '100%',
                     textAlign: 'left',
                     transition: 'background 100ms ease',
                   }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(248,113,113,0.08)')}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--error-bg)')}
                   onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                 >
-                  <Icon name="log-out" size={14} style={{ color: '#f87171' }} />
+                  <Icon name="log-out" size={14} style={{ color: 'var(--error)' }} />
                   Sign out
                 </button>
               </div>

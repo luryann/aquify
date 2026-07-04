@@ -28,7 +28,7 @@ function msFromParts(minutes: string, seconds: string, hundredths: string): numb
 }
 
 const FIELD_LABEL_STYLE: React.CSSProperties = {
-  display: 'block', fontSize: '10.5px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)',
+  display: 'block', fontSize: '10.5px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)',
   textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '5px',
 }
 const FIELD_INPUT_STYLE: React.CSSProperties = {
@@ -153,13 +153,13 @@ export default function TimeStandardsPage() {
   return (
     <div style={{ padding: '32px 36px 80px', maxWidth: 1180, margin: '0 auto' }}>
       <div style={{ marginBottom: '28px' }}>
-        <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
+        <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
           Performance
         </p>
-        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '30px', fontWeight: 400, color: 'var(--text)', marginBottom: '6px' }}>
+        <h1 className="page-title">
           Time Standards
         </h1>
-        <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>
+        <p className="page-subtitle">
           Live cut standards with admin create, toggle, and delete actions backed by the API.
         </p>
       </div>
@@ -200,7 +200,7 @@ export default function TimeStandardsPage() {
                   onChange={(event) => setCutTime((current) => ({ ...current, minutes: event.target.value.replace(/\D/g, '') }))}
                   placeholder="0"
                   inputMode="numeric"
-                  style={{ ...FIELD_INPUT_STYLE, textAlign: 'center', fontFamily: 'var(--font-mono)' }}
+                  style={{ ...FIELD_INPUT_STYLE, textAlign: 'center', fontFamily: 'var(--font-body)' }}
                 />
                 <span style={{ color: 'var(--text-muted)' }}>:</span>
                 <input
@@ -208,7 +208,7 @@ export default function TimeStandardsPage() {
                   onChange={(event) => setCutTime((current) => ({ ...current, seconds: event.target.value.replace(/\D/g, '').slice(0, 2) }))}
                   placeholder="58"
                   inputMode="numeric"
-                  style={{ ...FIELD_INPUT_STYLE, textAlign: 'center', fontFamily: 'var(--font-mono)' }}
+                  style={{ ...FIELD_INPUT_STYLE, textAlign: 'center', fontFamily: 'var(--font-body)' }}
                 />
                 <span style={{ color: 'var(--text-muted)' }}>.</span>
                 <input
@@ -216,10 +216,10 @@ export default function TimeStandardsPage() {
                   onChange={(event) => setCutTime((current) => ({ ...current, hundredths: event.target.value.replace(/\D/g, '').slice(0, 2) }))}
                   placeholder="00"
                   inputMode="numeric"
-                  style={{ ...FIELD_INPUT_STYLE, textAlign: 'center', fontFamily: 'var(--font-mono)' }}
+                  style={{ ...FIELD_INPUT_STYLE, textAlign: 'center', fontFamily: 'var(--font-body)' }}
                 />
               </div>
-              <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '5px', fontFamily: 'var(--font-mono)' }}>
+              <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '5px', fontFamily: 'var(--font-body)' }}>
                 = {formatSwimTime(msFromParts(cutTime.minutes, cutTime.seconds, cutTime.hundredths))}
               </p>
             </div>
@@ -251,7 +251,7 @@ export default function TimeStandardsPage() {
                 </select>
               </div>
             </div>
-            <button onClick={() => void handleCreate()} disabled={submitting} style={{ padding: '9px 14px', borderRadius: '8px', border: 'none', background: 'var(--accent)', color: '#fff', fontSize: '12px', fontWeight: 600, cursor: submitting ? 'not-allowed' : 'pointer' }}>
+            <button onClick={() => void handleCreate()} disabled={submitting} className="btn btn-primary">
               {submitting ? 'Creating…' : 'Create Standard'}
             </button>
           </div>
@@ -260,7 +260,7 @@ export default function TimeStandardsPage() {
         <div className="card" style={{ overflow: 'hidden' }}>
           <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
             <h2 style={{ fontSize: '14px', color: 'var(--text)' }}>Live Standards</h2>
-            <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{standards.length} total · {activeCount} active</span>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>{standards.length} total · {activeCount} active</span>
           </div>
           {loading ? (
             <div style={{ padding: '20px' }}><EmptyState icon="check-circle" title="Loading standards" description="Fetching the live time-standard registry." /></div>
@@ -271,7 +271,7 @@ export default function TimeStandardsPage() {
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)' }}>
                   {['Name', 'Code', 'Event', 'Cut', 'Season', 'Status', ''].map((header) => (
-                    <th key={header} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{header}</th>
+                    <th key={header} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{header}</th>
                   ))}
                 </tr>
               </thead>
@@ -279,11 +279,11 @@ export default function TimeStandardsPage() {
                 {standards.map((standard) => (
                   <tr key={standard.id} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td style={{ padding: '11px 14px', fontSize: '13px', color: 'var(--text)' }}>{standard.name}</td>
-                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--accent)' }}>{standard.standard_code}</td>
+                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-body)', fontSize: '11px', color: 'var(--accent)' }}>{standard.standard_code}</td>
                     <td style={{ padding: '11px 14px', fontSize: '12px', color: 'var(--text-subtle)' }}>{standard.event_distance} {standard.stroke} · {standard.course} · {standard.gender}</td>
-                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text)' }}>{formatSwimTime(standard.time_ms)}</td>
+                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text)' }}>{formatSwimTime(standard.time_ms)}</td>
                     <td style={{ padding: '11px 14px', fontSize: '12px', color: 'var(--text-subtle)' }}>{standard.season_year}</td>
-                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontSize: '11px', color: standard.is_active ? 'var(--success)' : 'var(--text-muted)' }}>{standard.is_active ? 'active' : 'inactive'}</td>
+                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-body)', fontSize: '11px', color: standard.is_active ? 'var(--success)' : 'var(--text-muted)' }}>{standard.is_active ? 'active' : 'inactive'}</td>
                     <td style={{ padding: '11px 14px' }}>
                       <div style={{ display: 'flex', gap: '8px' }}>
                         <button onClick={() => void handleToggle(standard)} disabled={workingId === standard.id} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: '12px', cursor: workingId === standard.id ? 'not-allowed' : 'pointer' }}>

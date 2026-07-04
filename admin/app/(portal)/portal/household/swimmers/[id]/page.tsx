@@ -92,9 +92,9 @@ function Skeleton({ w = '100%', h = 16, r = 8 }: { w?: string | number; h?: numb
 }
 
 const STATUS_CONFIG: Record<string, { label: string; bg: string; color: string }> = {
-  active:   { label: 'Active',   bg: '#ecfdf5', color: '#059669' },
-  inactive: { label: 'Inactive', bg: '#fef2f2', color: '#dc2626' },
-  pending:  { label: 'Pending',  bg: '#fffbeb', color: '#d97706' },
+  active:   { label: 'Active',   bg: 'var(--success-bg)', color: 'var(--success)' },
+  inactive: { label: 'Inactive', bg: 'var(--error-bg)', color: 'var(--error)' },
+  pending:  { label: 'Pending',  bg: 'var(--warning-bg)', color: 'var(--warning)' },
 }
 
 const EDITABLE_FIELD_NOTE =
@@ -112,9 +112,9 @@ function fmtShortDate(iso?: string): string {
 function historyAccent(type: string): { bg: string; color: string } {
   switch (type) {
     case 'result':
-      return { bg: 'rgba(59,130,246,0.12)', color: '#2563eb' }
+      return { bg: 'rgba(59,130,246,0.12)', color: 'var(--info)' }
     case 'registration':
-      return { bg: 'rgba(16,185,129,0.12)', color: '#059669' }
+      return { bg: 'rgba(16,185,129,0.12)', color: 'var(--success)' }
     case 'waiver':
       return { bg: 'rgba(245,158,11,0.15)', color: '#b45309' }
     case 'document':
@@ -122,7 +122,7 @@ function historyAccent(type: string): { bg: string; color: string } {
     case 'commitment':
       return { bg: 'rgba(107,114,128,0.12)', color: '#4b5563' }
     default:
-      return { bg: 'rgba(0,0,0,0.06)', color: '#6B6866' }
+      return { bg: 'rgba(0,0,0,0.06)', color: 'var(--text-subtle)' }
   }
 }
 
@@ -269,12 +269,12 @@ export default function SwimmerProfilePage() {
       `}</style>
 
       {/* Breadcrumb */}
-      <nav style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#9A9693', marginBottom: '28px', animation: 'slideUp 0.3s ease both' }}>
-        <Link href="/portal/household" style={{ color: '#9A9693', textDecoration: 'none' }}>
+      <nav style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: 'var(--text-muted)', marginBottom: '28px', animation: 'slideUp 0.3s ease both' }}>
+        <Link href="/portal/household" style={{ color: 'var(--text-muted)', textDecoration: 'none' }}>
           Household
         </Link>
         <span>/</span>
-        <span style={{ color: '#1A1714', fontWeight: 500 }}>
+        <span style={{ color: 'var(--text)', fontWeight: 500 }}>
           {loading ? 'Loading…' : fullName}
         </span>
       </nav>
@@ -282,7 +282,7 @@ export default function SwimmerProfilePage() {
       {loadError && (
         <div
           style={{
-            background: '#fff7ed',
+            background: 'var(--warning-bg)',
             border: '1px solid #fdba74',
             borderRadius: '10px',
             padding: '12px 16px',
@@ -294,13 +294,13 @@ export default function SwimmerProfilePage() {
           }}
         >
           <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-            <Icon name="alert-circle" size={15} style={{ color: '#ea580c', marginTop: '1px', flexShrink: 0 }} />
-            <p style={{ margin: 0, fontSize: '12.5px', color: '#9a3412', lineHeight: 1.5 }}>{loadError}</p>
+            <Icon name="alert-circle" size={15} style={{ color: 'var(--warning)', marginTop: '1px', flexShrink: 0 }} />
+            <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--warning)', lineHeight: 1.5 }}>{loadError}</p>
           </div>
           <button
             type="button"
             onClick={() => setReloadKey((key) => key + 1)}
-            style={{ background: '#ffffff', border: '1px solid #fdba74', borderRadius: '8px', cursor: 'pointer', color: '#9a3412', fontSize: '12px', fontWeight: 600, padding: '8px 14px', whiteSpace: 'nowrap' }}
+            style={{ background: 'var(--bg-elevated)', border: '1px solid #fdba74', borderRadius: '8px', cursor: 'pointer', color: 'var(--warning)', fontSize: '12px', fontWeight: 600, padding: '8px 14px', whiteSpace: 'nowrap' }}
           >
             Retry
           </button>
@@ -308,7 +308,7 @@ export default function SwimmerProfilePage() {
       )}
 
       {/* Header Card */}
-      <div style={{ background: '#ffffff', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.07)', boxShadow: '0 2px 12px rgba(0,0,0,0.05)', padding: '28px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '20px', animation: 'slideUp 0.35s ease both' }}>
+      <div className="card" style={{ boxShadow: '0 2px 12px rgba(0,0,0,0.05)', padding: '28px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '20px', animation: 'slideUp 0.35s ease both' }}>
         {loading ? (
           <>
             <Skeleton w={72} h={72} r={36} />
@@ -320,25 +320,25 @@ export default function SwimmerProfilePage() {
         ) : (
           <>
             {/* Avatar */}
-            <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '24px', fontWeight: 700, fontFamily: 'var(--font-mono)', flexShrink: 0, boxShadow: '0 4px 16px rgba(59,130,246,0.3)' }}>
+            <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--bg-elevated)', fontSize: '24px', fontWeight: 700, fontFamily: 'var(--font-body)', flexShrink: 0, boxShadow: '0 4px 16px rgba(59,130,246,0.3)' }}>
               {initials}
             </div>
 
             {/* Info */}
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '26px', color: '#1A1714', margin: 0, lineHeight: 1.1 }}>
+                <h1 className="page-title">
                   {fullName}
                 </h1>
                 <span style={{ padding: '3px 9px', borderRadius: '999px', fontSize: '11.5px', fontWeight: 600, background: statusCfg.bg, color: statusCfg.color, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                   {statusCfg.label}
                 </span>
               </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginTop: '8px', fontSize: '13px', color: '#6B6866' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginTop: '8px', fontSize: '13px', color: 'var(--text-subtle)' }}>
                 {age !== null && <span>Age {age}</span>}
                 {swimmer?.gender && <><span>·</span><span>{swimmer.gender}</span></>}
                 {groupName !== '—' && <><span>·</span><span>{groupName}</span></>}
-                {swimmer?.swimmer_external_id && <><span>·</span><span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px' }}>{swimmer.swimmer_external_id}</span></>}
+                {swimmer?.swimmer_external_id && <><span>·</span><span style={{ fontFamily: 'var(--font-body)', fontSize: '12px' }}>{swimmer.swimmer_external_id}</span></>}
               </div>
             </div>
 
@@ -352,7 +352,7 @@ export default function SwimmerProfilePage() {
           <button
             key={t}
             onClick={() => setTab(t)}
-            style={{ flex: 1, padding: '8px 0', borderRadius: '7px', border: 'none', background: tab === t ? '#ffffff' : 'transparent', color: tab === t ? '#1A1714' : '#6B6866', fontSize: '13.5px', fontWeight: tab === t ? 600 : 450, cursor: 'pointer', boxShadow: tab === t ? '0 1px 4px rgba(0,0,0,0.08)' : 'none', transition: 'all 120ms ease', fontFamily: 'var(--font-body)', textTransform: 'capitalize' }}
+            style={{ flex: 1, padding: '8px 0', borderRadius: '7px', border: 'none', background: tab === t ? 'var(--bg-elevated)' : 'transparent', color: tab === t ? 'var(--text)' : 'var(--text-subtle)', fontSize: '13.5px', fontWeight: tab === t ? 600 : 450, cursor: 'pointer', boxShadow: tab === t ? '0 1px 4px rgba(0,0,0,0.08)' : 'none', transition: 'all 120ms ease', fontFamily: 'var(--font-body)', textTransform: 'capitalize' }}
           >
             {t}
           </button>
@@ -364,19 +364,19 @@ export default function SwimmerProfilePage() {
         <div style={{ animation: 'slideUp 0.3s ease both' }}>
           {/* Edit policy notice */}
           <div style={{ background: 'rgba(235,93,30,0.06)', border: '1px solid rgba(235,93,30,0.15)', borderRadius: '10px', padding: '12px 16px', marginBottom: '20px', display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-            <Icon name="info" size={15} style={{ color: '#eb5d1e', flexShrink: 0, marginTop: '2px' }} />
+            <Icon name="info" size={15} style={{ color: 'var(--accent)', flexShrink: 0, marginTop: '2px' }} />
             <p style={{ margin: 0, fontSize: '13px', color: '#7A4A28', lineHeight: 1.5 }}>
               {EDITABLE_FIELD_NOTE}
             </p>
           </div>
 
           {/* Read-only Fields */}
-          <div style={{ background: '#ffffff', borderRadius: '14px', border: '1px solid rgba(0,0,0,0.07)', boxShadow: '0 1px 6px rgba(0,0,0,0.04)', overflow: 'hidden', marginBottom: '20px' }}>
+          <div className="card" style={{ boxShadow: '0 1px 6px rgba(0,0,0,0.04)', overflow: 'hidden', marginBottom: '20px' }}>
             <div style={{ padding: '16px 20px 12px', borderBottom: '1px solid rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#9A9693', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+              <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
                 Club-managed fields
               </span>
-              <span style={{ padding: '2px 7px', background: 'rgba(0,0,0,0.05)', borderRadius: '4px', fontSize: '10.5px', color: '#9A9693' }}>
+              <span style={{ padding: '2px 7px', background: 'rgba(0,0,0,0.05)', borderRadius: '4px', fontSize: '10.5px', color: 'var(--text-muted)' }}>
                 read-only
               </span>
             </div>
@@ -396,10 +396,10 @@ export default function SwimmerProfilePage() {
                 { label: 'Registration Status',  value: swimmer?.registration_status ?? '—' },
               ].map((field, i, arr) => (
                 <div key={field.label} style={{ display: 'flex', padding: '14px 20px', borderBottom: i < arr.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none', gap: '24px', alignItems: 'center' }}>
-                  <span style={{ width: '160px', fontSize: '13px', color: '#9A9693', flexShrink: 0 }}>
+                  <span style={{ width: '160px', fontSize: '13px', color: 'var(--text-muted)', flexShrink: 0 }}>
                     {field.label}
                   </span>
-                  <span style={{ fontSize: '13.5px', color: '#6B6866', fontFamily: field.mono ? 'var(--font-mono)' : undefined }}>
+                  <span style={{ fontSize: '13.5px', color: 'var(--text-subtle)', fontFamily: field.mono ? 'var(--font-body)' : undefined }}>
                     {field.value}
                   </span>
                 </div>
@@ -408,33 +408,33 @@ export default function SwimmerProfilePage() {
           </div>
 
           {/* Editable Fields */}
-          <div style={{ background: '#ffffff', borderRadius: '14px', border: '1px solid rgba(0,0,0,0.07)', boxShadow: '0 1px 6px rgba(0,0,0,0.04)', overflow: 'hidden', marginBottom: '20px' }}>
+          <div className="card" style={{ boxShadow: '0 1px 6px rgba(0,0,0,0.04)', overflow: 'hidden', marginBottom: '20px' }}>
             <div style={{ padding: '16px 20px 12px', borderBottom: '1px solid rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#9A9693', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+              <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
                 Parent-editable fields
               </span>
-              <Icon name="edit" size={12} style={{ color: '#eb5d1e' }} />
+              <Icon name="edit" size={12} style={{ color: 'var(--accent)' }} />
             </div>
 
             {/* Preferred Name */}
             <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: '12px', color: '#9A9693', marginBottom: '4px' }}>Preferred Name / Nickname</div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>Preferred Name / Nickname</div>
                   {editingName ? (
                     <input
                       autoFocus
                       value={preferredName}
                       onChange={(e) => setPreferredName(e.target.value)}
-                      style={{ width: '100%', maxWidth: '280px', padding: '7px 11px', border: '1.5px solid #eb5d1e', borderRadius: '8px', fontSize: '14px', color: '#1A1714', fontFamily: 'var(--font-body)', outline: 'none', background: '#fff' }}
+                      style={{ width: '100%', maxWidth: '280px', padding: '7px 11px', border: '1.5px solid var(--accent)', borderRadius: '8px', fontSize: '14px', color: 'var(--text)', fontFamily: 'var(--font-body)', outline: 'none', background: 'var(--bg-elevated)' }}
                     />
                   ) : (
-                    <div style={{ fontSize: '14px', color: '#1A1714', fontWeight: 500 }}>
-                      {preferredName || <span style={{ color: '#C0BDBB', fontStyle: 'italic' }}>Not set</span>}
+                    <div style={{ fontSize: '14px', color: 'var(--text)', fontWeight: 500 }}>
+                      {preferredName || <span style={{ color: 'var(--border-strong)', fontStyle: 'italic' }}>Not set</span>}
                     </div>
                   )}
                 </div>
-                <button onClick={() => setEditingName(!editingName)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#eb5d1e', fontSize: '12.5px', display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px', borderRadius: '6px', transition: 'background 100ms' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(235,93,30,0.06)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
+                <button onClick={() => setEditingName(!editingName)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontSize: '12.5px', display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px', borderRadius: '6px', transition: 'background 100ms' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(235,93,30,0.06)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
                   <Icon name="edit" size={12} />
                   {editingName ? 'Cancel' : 'Edit'}
                 </button>
@@ -445,25 +445,25 @@ export default function SwimmerProfilePage() {
             <div style={{ padding: '16px 20px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: '12px', color: '#9A9693', marginBottom: '4px' }}>Medical / Emergency Notes</div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>Medical / Emergency Notes</div>
                   {editingNotes ? (
                     <textarea
                       autoFocus
                       value={emergencyNotes}
                       onChange={(e) => setEmergencyNotes(e.target.value)}
                       rows={4}
-                      style={{ width: '100%', padding: '9px 12px', border: '1.5px solid #eb5d1e', borderRadius: '8px', fontSize: '13.5px', color: '#1A1714', fontFamily: 'var(--font-body)', outline: 'none', background: '#fff', resize: 'vertical', lineHeight: 1.5 }}
+                      style={{ width: '100%', padding: '9px 12px', border: '1.5px solid var(--accent)', borderRadius: '8px', fontSize: '13.5px', color: 'var(--text)', fontFamily: 'var(--font-body)', outline: 'none', background: 'var(--bg-elevated)', resize: 'vertical', lineHeight: 1.5 }}
                     />
                   ) : (
-                    <div style={{ fontSize: '13.5px', color: '#1A1714', lineHeight: 1.6, maxWidth: '500px' }}>
-                      {emergencyNotes || <span style={{ color: '#C0BDBB', fontStyle: 'italic' }}>No notes added</span>}
+                    <div style={{ fontSize: '13.5px', color: 'var(--text)', lineHeight: 1.6, maxWidth: '500px' }}>
+                      {emergencyNotes || <span style={{ color: 'var(--border-strong)', fontStyle: 'italic' }}>No notes added</span>}
                     </div>
                   )}
-                  <div style={{ fontSize: '11.5px', color: '#C0BDBB', marginTop: '6px' }}>
+                  <div style={{ fontSize: '11.5px', color: 'var(--border-strong)', marginTop: '6px' }}>
                     Visible to coaches and club staff during meets and practices.
                   </div>
                 </div>
-                <button onClick={() => setEditingNotes(!editingNotes)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#eb5d1e', fontSize: '12.5px', display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px', borderRadius: '6px', transition: 'background 100ms', flexShrink: 0 }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(235,93,30,0.06)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
+                <button onClick={() => setEditingNotes(!editingNotes)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontSize: '12.5px', display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px', borderRadius: '6px', transition: 'background 100ms', flexShrink: 0 }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(235,93,30,0.06)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
                   <Icon name="edit" size={12} />
                   {editingNotes ? 'Cancel' : 'Edit'}
                 </button>
@@ -474,7 +474,7 @@ export default function SwimmerProfilePage() {
             <div style={{ padding: '16px 20px', borderTop: '1px solid rgba(0,0,0,0.05)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: '12px', color: '#9A9693', marginBottom: '10px' }}>Emergency Contact</div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '10px' }}>Emergency Contact</div>
                   {editingEmergencyContact ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '440px' }}>
                       <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '10px' }}>
@@ -483,13 +483,13 @@ export default function SwimmerProfilePage() {
                           value={emergencyContactName}
                           onChange={(e) => setEmergencyContactName(e.target.value)}
                           placeholder="Contact name"
-                          style={{ padding: '7px 11px', border: '1.5px solid #eb5d1e', borderRadius: '8px', fontSize: '13.5px', color: '#1A1714', fontFamily: 'var(--font-body)', outline: 'none', background: '#fff' }}
+                          style={{ padding: '7px 11px', border: '1.5px solid var(--accent)', borderRadius: '8px', fontSize: '13.5px', color: 'var(--text)', fontFamily: 'var(--font-body)', outline: 'none', background: 'var(--bg-elevated)' }}
                         />
                         <input
                           value={emergencyContactRelationship}
                           onChange={(e) => setEmergencyContactRelationship(e.target.value)}
                           placeholder="Relationship"
-                          style={{ padding: '7px 11px', border: '1.5px solid #eb5d1e', borderRadius: '8px', fontSize: '13.5px', color: '#1A1714', fontFamily: 'var(--font-body)', outline: 'none', background: '#fff' }}
+                          style={{ padding: '7px 11px', border: '1.5px solid var(--accent)', borderRadius: '8px', fontSize: '13.5px', color: 'var(--text)', fontFamily: 'var(--font-body)', outline: 'none', background: 'var(--bg-elevated)' }}
                         />
                       </div>
                       <input
@@ -497,37 +497,37 @@ export default function SwimmerProfilePage() {
                         onChange={(e) => setEmergencyContactPhone(e.target.value)}
                         placeholder="Phone number"
                         type="tel"
-                        style={{ padding: '7px 11px', border: '1.5px solid #eb5d1e', borderRadius: '8px', fontSize: '13.5px', color: '#1A1714', fontFamily: 'var(--font-body)', outline: 'none', background: '#fff' }}
+                        style={{ padding: '7px 11px', border: '1.5px solid var(--accent)', borderRadius: '8px', fontSize: '13.5px', color: 'var(--text)', fontFamily: 'var(--font-body)', outline: 'none', background: 'var(--bg-elevated)' }}
                       />
                       <div>
-                        <div style={{ fontSize: '11px', color: '#9A9693', marginBottom: '4px' }}>Allergies</div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}>Allergies</div>
                         <input
                           value={allergies}
                           onChange={(e) => setAllergies(e.target.value)}
                           placeholder="e.g. Peanuts, bee stings"
-                          style={{ width: '100%', padding: '7px 11px', border: '1.5px solid #eb5d1e', borderRadius: '8px', fontSize: '13.5px', color: '#1A1714', fontFamily: 'var(--font-body)', outline: 'none', background: '#fff' }}
+                          style={{ width: '100%', padding: '7px 11px', border: '1.5px solid var(--accent)', borderRadius: '8px', fontSize: '13.5px', color: 'var(--text)', fontFamily: 'var(--font-body)', outline: 'none', background: 'var(--bg-elevated)' }}
                         />
                       </div>
                     </div>
                   ) : (
-                    <div style={{ fontSize: '13.5px', color: '#1A1714', lineHeight: 1.7 }}>
+                    <div style={{ fontSize: '13.5px', color: 'var(--text)', lineHeight: 1.7 }}>
                       {emergencyContactName || emergencyContactPhone || emergencyContactRelationship ? (
                         <>
-                          {emergencyContactName || <span style={{ color: '#C0BDBB', fontStyle: 'italic' }}>Name not set</span>}
-                          {emergencyContactRelationship && <span style={{ color: '#9A9693' }}> · {emergencyContactRelationship}</span>}
+                          {emergencyContactName || <span style={{ color: 'var(--border-strong)', fontStyle: 'italic' }}>Name not set</span>}
+                          {emergencyContactRelationship && <span style={{ color: 'var(--text-muted)' }}> · {emergencyContactRelationship}</span>}
                           <br />
-                          {emergencyContactPhone || <span style={{ color: '#C0BDBB', fontStyle: 'italic' }}>Phone not set</span>}
+                          {emergencyContactPhone || <span style={{ color: 'var(--border-strong)', fontStyle: 'italic' }}>Phone not set</span>}
                         </>
                       ) : (
-                        <span style={{ color: '#C0BDBB', fontStyle: 'italic' }}>No emergency contact on file</span>
+                        <span style={{ color: 'var(--border-strong)', fontStyle: 'italic' }}>No emergency contact on file</span>
                       )}
-                      <div style={{ fontSize: '12px', color: '#6B6866', marginTop: '6px' }}>
-                        Allergies: {allergies || <span style={{ color: '#C0BDBB', fontStyle: 'italic' }}>none noted</span>}
+                      <div style={{ fontSize: '12px', color: 'var(--text-subtle)', marginTop: '6px' }}>
+                        Allergies: {allergies || <span style={{ color: 'var(--border-strong)', fontStyle: 'italic' }}>none noted</span>}
                       </div>
                     </div>
                   )}
                 </div>
-                <button onClick={() => setEditingEmergencyContact(!editingEmergencyContact)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#eb5d1e', fontSize: '12.5px', display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px', borderRadius: '6px', transition: 'background 100ms', flexShrink: 0 }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(235,93,30,0.06)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
+                <button onClick={() => setEditingEmergencyContact(!editingEmergencyContact)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontSize: '12.5px', display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px', borderRadius: '6px', transition: 'background 100ms', flexShrink: 0 }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(235,93,30,0.06)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
                   <Icon name="edit" size={12} />
                   {editingEmergencyContact ? 'Cancel' : 'Edit'}
                 </button>
@@ -539,15 +539,15 @@ export default function SwimmerProfilePage() {
           {(editingName || editingNotes || editingEmergencyContact) && (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px', animation: 'slideUp 0.2s ease both' }}>
               {saveError && (
-                <p style={{ fontSize: '12px', color: '#dc2626', fontFamily: 'var(--font-mono)', margin: 0 }}>{saveError}</p>
+                <p style={{ fontSize: '12px', color: 'var(--error)', fontFamily: 'var(--font-body)', margin: 0 }}>{saveError}</p>
               )}
               {saveSuccess && (
-                <p style={{ fontSize: '12px', color: '#059669', fontFamily: 'var(--font-mono)', margin: 0 }}>Changes saved.</p>
+                <p style={{ fontSize: '12px', color: 'var(--success)', fontFamily: 'var(--font-body)', margin: 0 }}>Changes saved.</p>
               )}
               <div style={{ display: 'flex', gap: '10px' }}>
                 <button
                   onClick={() => { setEditingName(false); setEditingNotes(false); setEditingEmergencyContact(false); setSaveError(null) }}
-                  style={{ padding: '10px 20px', background: 'transparent', color: '#6B6866', border: '1px solid rgba(0,0,0,0.12)', borderRadius: '9px', fontSize: '14px', fontWeight: 500, cursor: 'pointer', fontFamily: 'var(--font-body)' }}
+                  style={{ padding: '10px 20px', background: 'transparent', color: 'var(--text-subtle)', border: '1px solid rgba(0,0,0,0.12)', borderRadius: '9px', fontSize: '14px', fontWeight: 500, cursor: 'pointer', fontFamily: 'var(--font-body)' }}
                 >
                   Cancel
                 </button>
@@ -556,8 +556,8 @@ export default function SwimmerProfilePage() {
                   disabled={saving}
                   style={{
                     padding: '10px 24px',
-                    background: saving ? 'rgba(235,93,30,0.6)' : '#eb5d1e',
-                    color: '#fff',
+                    background: saving ? 'rgba(235,93,30,0.6)' : 'var(--accent)',
+                    color: 'var(--bg-elevated)',
                     border: 'none',
                     borderRadius: '9px',
                     fontSize: '14px',
@@ -578,16 +578,16 @@ export default function SwimmerProfilePage() {
       {/* ── PERFORMANCE TAB ──────────────────────────────────────────────────── */}
       {tab === 'performance' && (
         <div style={{ animation: 'slideUp 0.3s ease both' }}>
-          <div style={{ background: '#ffffff', borderRadius: '14px', border: '1px solid rgba(0,0,0,0.07)', boxShadow: '0 1px 6px rgba(0,0,0,0.04)', overflow: 'hidden', marginBottom: '20px' }}>
+          <div className="card" style={{ boxShadow: '0 1px 6px rgba(0,0,0,0.04)', overflow: 'hidden', marginBottom: '20px' }}>
             <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontFamily: 'var(--font-display)', fontSize: '17px', color: '#1A1714' }}>Best Times</span>
-              <span style={{ fontSize: '11.5px', color: '#9A9693', fontFamily: 'var(--font-mono)' }}>all-time</span>
+              <span style={{ fontFamily: 'var(--font-display)', fontSize: '17px', color: 'var(--text)' }}>Best Times</span>
+              <span style={{ fontSize: '11.5px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>all-time</span>
             </div>
 
             {/* Table header */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 90px 90px', padding: '10px 20px', borderBottom: '1px solid rgba(0,0,0,0.06)', background: 'rgba(0,0,0,0.02)' }}>
               {['Event', 'SCY', 'SCM', 'LCM'].map((h) => (
-                <span key={h} style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#9A9693', textTransform: 'uppercase', letterSpacing: '0.06em', textAlign: h === 'Event' ? 'left' : 'center' }}>
+                <span key={h} style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', textAlign: h === 'Event' ? 'left' : 'center' }}>
                   {h}
                 </span>
               ))}
@@ -598,15 +598,15 @@ export default function SwimmerProfilePage() {
                 {[0, 1, 2, 3].map((i) => <Skeleton key={i} h={14} />)}
               </div>
             ) : bestTimes.length === 0 ? (
-              <div style={{ padding: '32px 20px', textAlign: 'center', color: '#9A9693', fontSize: '13.5px' }}>
+              <div style={{ padding: '32px 20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13.5px' }}>
                 No best times on record yet.
               </div>
             ) : (
               bestTimes.map((row, i) => (
                 <div key={row.event} style={{ display: 'grid', gridTemplateColumns: '1fr 90px 90px 90px', padding: '13px 20px', borderBottom: i < bestTimes.length - 1 ? '1px solid rgba(0,0,0,0.04)' : 'none', alignItems: 'center' }}>
-                  <span style={{ fontSize: '14px', color: '#1A1714', fontWeight: 500 }}>{row.event}</span>
+                  <span style={{ fontSize: '14px', color: 'var(--text)', fontWeight: 500 }}>{row.event}</span>
                   {[row.scy, row.scm, row.lcm].map((t, j) => (
-                    <span key={j} style={{ fontSize: '13.5px', color: t === '—' ? '#C0BDBB' : '#4B7BF5', fontFamily: 'var(--font-mono)', textAlign: 'center', fontWeight: t === '—' ? 400 : 600 }}>
+                    <span key={j} style={{ fontSize: '13.5px', color: t === '—' ? 'var(--border-strong)' : '#4B7BF5', fontFamily: 'var(--font-body)', textAlign: 'center', fontWeight: t === '—' ? 400 : 600 }}>
                       {t}
                     </span>
                   ))}
@@ -624,9 +624,9 @@ export default function SwimmerProfilePage() {
       {/* ── HISTORY TAB ──────────────────────────────────────────────────────── */}
       {tab === 'history' && (
         <div style={{ animation: 'slideUp 0.3s ease both' }}>
-          <div style={{ background: '#ffffff', borderRadius: '14px', border: '1px solid rgba(0,0,0,0.07)', boxShadow: '0 1px 6px rgba(0,0,0,0.04)', overflow: 'hidden' }}>
+          <div className="card" style={{ boxShadow: '0 1px 6px rgba(0,0,0,0.04)', overflow: 'hidden' }}>
             <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-              <span style={{ fontFamily: 'var(--font-display)', fontSize: '17px', color: '#1A1714' }}>
+              <span style={{ fontFamily: 'var(--font-display)', fontSize: '17px', color: 'var(--text)' }}>
                 Activity History
               </span>
             </div>
@@ -635,8 +635,8 @@ export default function SwimmerProfilePage() {
                 {[0, 1, 2].map((i) => <Skeleton key={i} h={42} r={10} />)}
               </div>
             ) : activity.length === 0 ? (
-              <div style={{ padding: '32px 20px', textAlign: 'center', color: '#9A9693', fontSize: '13.5px', lineHeight: 1.6 }}>
-                <Icon name="clock" size={20} style={{ display: 'block', margin: '0 auto 10px', color: '#C0BDBB' }} />
+              <div style={{ padding: '32px 20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13.5px', lineHeight: 1.6 }}>
+                <Icon name="clock" size={20} style={{ display: 'block', margin: '0 auto 10px', color: 'var(--border-strong)' }} />
                 No activity has been recorded for this swimmer yet.
               </div>
             ) : (
@@ -644,22 +644,22 @@ export default function SwimmerProfilePage() {
                 const accent = historyAccent(entry.type)
                 return (
                   <div key={entry.id} style={{ display: 'grid', gridTemplateColumns: '104px 1fr', gap: '14px', padding: '16px 20px', borderBottom: index < activity.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none', alignItems: 'start' }}>
-                    <div style={{ fontSize: '11.5px', color: '#9A9693', fontFamily: 'var(--font-mono)', paddingTop: '3px' }}>
+                    <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', paddingTop: '3px' }}>
                       {fmtShortDate(entry.occurred_at)}
                     </div>
                     <div style={{ display: 'flex', gap: '12px' }}>
                       <div style={{ width: '10px', height: '10px', borderRadius: '999px', background: accent.bg, border: `2px solid ${accent.color}`, marginTop: '4px', flexShrink: 0 }} />
                       <div style={{ minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
-                          <span style={{ fontSize: '13.5px', color: '#1A1714', fontWeight: 600 }}>{entry.title}</span>
+                          <span style={{ fontSize: '13.5px', color: 'var(--text)', fontWeight: 600 }}>{entry.title}</span>
                           {entry.status ? (
-                            <span style={{ padding: '2px 8px', borderRadius: '999px', background: accent.bg, color: accent.color, fontSize: '10.5px', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            <span style={{ padding: '2px 8px', borderRadius: '999px', background: accent.bg, color: accent.color, fontSize: '10.5px', fontFamily: 'var(--font-body)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                               {entry.status.replaceAll('_', ' ')}
                             </span>
                           ) : null}
                         </div>
                         {entry.detail ? (
-                          <div style={{ fontSize: '12.5px', color: '#6B6866', lineHeight: 1.55 }}>
+                          <div style={{ fontSize: '12.5px', color: 'var(--text-subtle)', lineHeight: 1.55 }}>
                             {entry.detail}
                           </div>
                         ) : null}

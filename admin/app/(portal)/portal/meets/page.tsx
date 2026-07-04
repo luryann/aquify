@@ -104,11 +104,11 @@ function buildMeetCard(
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 const COMMITMENT_CONFIG = {
-  pending: { label: 'Respond',    bg: '#fffbeb', color: '#d97706', border: 'rgba(217,119,6,0.2)' },
-  yes:     { label: 'Going',      bg: '#ecfdf5', color: '#059669', border: 'rgba(5,150,105,0.2)' },
-  no:      { label: 'Not Going',  bg: '#fef2f2', color: '#dc2626', border: 'rgba(220,38,38,0.2)' },
+  pending: { label: 'Respond',    bg: 'var(--warning-bg)', color: 'var(--warning)', border: 'rgba(217,119,6,0.2)' },
+  yes:     { label: 'Going',      bg: 'var(--success-bg)', color: 'var(--success)', border: 'rgba(5,150,105,0.2)' },
+  no:      { label: 'Not Going',  bg: 'var(--error-bg)', color: 'var(--error)', border: 'rgba(220,38,38,0.2)' },
   open:    { label: 'Opens Soon', bg: '#f0f9ff', color: '#0284c7', border: 'rgba(2,132,199,0.2)' },
-  closed:  { label: 'Closed',     bg: '#f9fafb', color: '#9A9693', border: 'rgba(0,0,0,0.1)' },
+  closed:  { label: 'Closed',     bg: 'var(--bg-surface)', color: 'var(--text-muted)', border: 'rgba(0,0,0,0.1)' },
 }
 
 const MEET_STATUS_LABEL: Record<string, string> = {
@@ -139,8 +139,8 @@ function DeadlineCountdown({ days }: { days: number }) {
   const urgent  = days <= 3
   const warning = days <= 7
 
-  const color = urgent ? '#dc2626' : warning ? '#d97706' : '#6B6866'
-  const bg    = urgent ? '#fef2f2' : warning ? '#fffbeb' : 'rgba(0,0,0,0.04)'
+  const color = urgent ? 'var(--error)' : warning ? 'var(--warning)' : 'var(--text-subtle)'
+  const bg    = urgent ? 'var(--error-bg)' : warning ? 'var(--warning-bg)' : 'rgba(0,0,0,0.04)'
 
   return (
     <span
@@ -232,10 +232,10 @@ export default function MeetsPage() {
 
       {/* Page header */}
       <div style={{ marginBottom: '28px', animation: 'slideUp 0.3s ease both' }}>
-        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '30px', color: '#1A1714', margin: '0 0 6px', lineHeight: 1.1 }}>
+        <h1 className="page-title">
           Meets
         </h1>
-        <p style={{ margin: 0, fontSize: '14px', color: '#9A9693' }}>
+        <p className="page-subtitle">
           Commitment deadlines and meet schedules for your household.
         </p>
       </div>
@@ -244,7 +244,7 @@ export default function MeetsPage() {
       {loading && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {[0, 1].map((i) => (
-            <div key={i} style={{ background: '#fff', borderRadius: '14px', border: '1px solid rgba(0,0,0,0.07)', padding: '20px 22px', display: 'flex', gap: '16px' }}>
+            <div key={i} className="card" style={{ padding: '20px 22px', display: 'flex', gap: '16px' }}>
               <Skeleton w={52} h={64} r={10} />
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 <Skeleton w="45%" h={20} />
@@ -259,16 +259,16 @@ export default function MeetsPage() {
       {!loading && (
         <>
           {loadError && (
-            <div style={{ marginBottom: '20px', background: '#fef2f2', border: '1px solid rgba(220,38,38,0.18)', borderRadius: '14px', padding: '18px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
+            <div style={{ marginBottom: '20px', background: 'var(--error-bg)', border: '1px solid rgba(220,38,38,0.18)', borderRadius: '14px', padding: '18px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
               <div>
-                <div style={{ fontSize: '14px', fontWeight: 600, color: '#991b1b', marginBottom: '4px' }}>
+                <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--error)', marginBottom: '4px' }}>
                   Meet data is unavailable
                 </div>
-                <div style={{ fontSize: '13px', color: '#b91c1c' }}>{loadError}</div>
+                <div style={{ fontSize: '13px', color: 'var(--error)' }}>{loadError}</div>
               </div>
               <button
                 onClick={() => setRetryKey((current) => current + 1)}
-                style={{ padding: '9px 16px', borderRadius: '9px', border: 'none', background: '#991b1b', color: '#fff', fontSize: '13px', fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}
+                style={{ padding: '9px 16px', borderRadius: '9px', border: 'none', background: 'var(--error)', color: 'var(--bg-elevated)', fontSize: '13px', fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}
               >
                 Retry
               </button>
@@ -279,7 +279,7 @@ export default function MeetsPage() {
           {!loadError && pendingRespond > 0 && (
             <div style={{ background: 'linear-gradient(135deg, rgba(235,93,30,0.08) 0%, rgba(235,93,30,0.04) 100%)', border: '1px solid rgba(235,93,30,0.2)', borderRadius: '12px', padding: '16px 20px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '14px', animation: 'slideUp 0.35s ease both' }}>
               <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(235,93,30,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <Icon name="calendar" size={18} style={{ color: '#eb5d1e' }} />
+                <Icon name="calendar" size={18} style={{ color: 'var(--accent)' }} />
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: '14px', fontWeight: 600, color: '#8B3312' }}>
@@ -295,7 +295,7 @@ export default function MeetsPage() {
           {/* Active meets (commitment open) */}
           {!loadError && activeMeets.length > 0 && (
             <section style={{ marginBottom: '32px' }}>
-              <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#9A9693', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '14px', animation: 'slideUp 0.4s ease both' }}>
+              <div style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '14px', animation: 'slideUp 0.4s ease both' }}>
                 Needs Action
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -306,7 +306,7 @@ export default function MeetsPage() {
                     <div
                       key={meet.id}
                       style={{
-                        background: '#ffffff',
+                        background: 'var(--bg-elevated)',
                         borderRadius: '14px',
                         border: `1px solid ${hasUrgent ? 'rgba(220,38,38,0.15)' : 'rgba(0,0,0,0.07)'}`,
                         boxShadow: hasUrgent ? '0 2px 16px rgba(220,38,38,0.08)' : '0 2px 12px rgba(0,0,0,0.05)',
@@ -317,10 +317,10 @@ export default function MeetsPage() {
                       <div style={{ padding: '18px 22px', display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
                         {/* Date block */}
                         <div style={{ width: '52px', borderRadius: '10px', background: hasUrgent ? 'rgba(220,38,38,0.07)' : 'rgba(235,93,30,0.07)', border: `1px solid ${hasUrgent ? 'rgba(220,38,38,0.15)' : 'rgba(235,93,30,0.15)'}`, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '8px 4px', flexShrink: 0, textAlign: 'center' }}>
-                          <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: '#eb5d1e', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                          <span style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--accent)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                             {meet.monthLabel}
                           </span>
-                          <span style={{ fontSize: '22px', fontWeight: 700, color: '#1A1714', lineHeight: 1.1, fontFamily: 'var(--font-display)' }}>
+                          <span style={{ fontSize: '22px', fontWeight: 700, color: 'var(--text)', lineHeight: 1.1, fontFamily: 'var(--font-display)' }}>
                             {meet.dayLabel}
                           </span>
                         </div>
@@ -328,14 +328,14 @@ export default function MeetsPage() {
                         {/* Meet info */}
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                            <span style={{ fontFamily: 'var(--font-display)', fontSize: '19px', color: '#1A1714', lineHeight: 1.1 }}>
+                            <span style={{ fontFamily: 'var(--font-display)', fontSize: '19px', color: 'var(--text)', lineHeight: 1.1 }}>
                               {meet.name}
                             </span>
-                            <span style={{ padding: '2px 8px', background: 'rgba(0,0,0,0.05)', borderRadius: '4px', fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#6B6866' }}>
+                            <span style={{ padding: '2px 8px', background: 'rgba(0,0,0,0.05)', borderRadius: '4px', fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-subtle)' }}>
                               {meet.course}
                             </span>
                           </div>
-                          <div style={{ fontSize: '12.5px', color: '#9A9693', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                          <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                             <span>{meet.location}</span>
                             {meet.deadlineDate && (
                               <>
@@ -353,10 +353,10 @@ export default function MeetsPage() {
                                 const cfg = COMMITMENT_CONFIG[swimmer.commitment]
                                 return (
                                   <div key={swimmer.id} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '5px 10px', background: cfg.bg, border: `1px solid ${cfg.border}`, borderRadius: '8px' }}>
-                                    <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: swimmer.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '8px', fontWeight: 700, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
+                                    <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: swimmer.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--bg-elevated)', fontSize: '8px', fontWeight: 700, fontFamily: 'var(--font-body)', flexShrink: 0 }}>
                                       {swimmer.initials}
                                     </div>
-                                    <span style={{ fontSize: '12.5px', color: '#1A1714', fontWeight: 500 }}>
+                                    <span style={{ fontSize: '12.5px', color: 'var(--text)', fontWeight: 500 }}>
                                       {swimmer.name.split(' ')[0]}
                                     </span>
                                     <span style={{ fontSize: '11.5px', color: cfg.color, fontWeight: 600 }}>
@@ -372,7 +372,7 @@ export default function MeetsPage() {
                         {/* CTA */}
                         <Link
                           href={`/portal/meets/${meet.id}`}
-                          style={{ padding: '9px 18px', background: hasUrgent ? '#dc2626' : '#eb5d1e', color: '#fff', borderRadius: '9px', fontSize: '13.5px', fontWeight: 600, textDecoration: 'none', flexShrink: 0, transition: 'opacity 120ms' }}
+                          style={{ padding: '9px 18px', background: hasUrgent ? 'var(--error)' : 'var(--accent)', color: 'var(--bg-elevated)', borderRadius: '9px', fontSize: '13.5px', fontWeight: 600, textDecoration: 'none', flexShrink: 0, transition: 'opacity 120ms' }}
                         >
                           {meet.swimmers.some((s) => s.commitment === 'pending') ? 'Respond' : 'View Meet'}
                         </Link>
@@ -387,7 +387,7 @@ export default function MeetsPage() {
           {/* Entries confirmed */}
           {!loadError && upcomingMeets.length > 0 && (
             <section style={{ marginBottom: '32px' }}>
-              <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#9A9693', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '14px' }}>
+              <div style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '14px' }}>
                 Entries Confirmed
               </div>
               <MeetList meets={upcomingMeets} />
@@ -397,7 +397,7 @@ export default function MeetsPage() {
           {/* Announced */}
           {!loadError && announcedMeets.length > 0 && (
             <section style={{ marginBottom: '32px' }}>
-              <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#9A9693', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '14px' }}>
+              <div style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '14px' }}>
                 Announced
               </div>
               <MeetList meets={announcedMeets} />
@@ -406,7 +406,7 @@ export default function MeetsPage() {
 
           {/* Empty state */}
           {!loadError && meets.length === 0 && (
-            <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid rgba(0,0,0,0.07)', padding: '40px', textAlign: 'center', color: '#9A9693', fontSize: '14px' }}>
+            <div className="card" style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '14px' }}>
               No meets scheduled yet.
             </div>
           )}
@@ -414,10 +414,10 @@ export default function MeetsPage() {
           {/* Past meets */}
           {!loadError && pastMeets.length > 0 && (
             <section>
-              <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#9A9693', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '14px' }}>
+              <div style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '14px' }}>
                 Past Meets
               </div>
-              <div style={{ background: '#ffffff', borderRadius: '12px', border: '1px solid rgba(0,0,0,0.07)', overflow: 'hidden' }}>
+              <div className="card" style={{ overflow: 'hidden' }}>
                 {pastMeets.map((meet, i) => (
                   <Link
                     key={meet.id}
@@ -427,17 +427,17 @@ export default function MeetsPage() {
                     onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                   >
                     <div>
-                      <span style={{ fontSize: '14px', color: '#6B6866', fontWeight: 500 }}>{meet.name}</span>
-                      <span style={{ fontSize: '13px', color: '#9A9693', marginLeft: '8px' }}>{meet.dateLabel}</span>
+                      <span style={{ fontSize: '14px', color: 'var(--text-subtle)', fontWeight: 500 }}>{meet.name}</span>
+                      <span style={{ fontSize: '13px', color: 'var(--text-muted)', marginLeft: '8px' }}>{meet.dateLabel}</span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <span style={{ fontSize: '12px', color: '#9A9693', fontFamily: 'var(--font-mono)' }}>
+                      <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
                         {meet.course}
                       </span>
-                      <span style={{ padding: '2px 8px', background: 'rgba(0,0,0,0.05)', borderRadius: '5px', fontSize: '11.5px', color: '#9A9693' }}>
+                      <span style={{ padding: '2px 8px', background: 'rgba(0,0,0,0.05)', borderRadius: '5px', fontSize: '11.5px', color: 'var(--text-muted)' }}>
                         {MEET_STATUS_LABEL[meet.status] ?? meet.status}
                       </span>
-                      <Icon name="chevron-right" size={14} style={{ color: '#C0BDBB' }} />
+                      <Icon name="chevron-right" size={14} style={{ color: 'var(--border-strong)' }} />
                     </div>
                   </Link>
                 ))}
@@ -458,24 +458,24 @@ function MeetList({ meets }: { meets: MeetCard[] }) {
         <Link
           key={meet.id}
           href={`/portal/meets/${meet.id}`}
-          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#ffffff', borderRadius: '12px', border: '1px solid rgba(0,0,0,0.07)', padding: '16px 20px', textDecoration: 'none', gap: '16px', transition: 'box-shadow 120ms ease' }}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg-elevated)', borderRadius: '12px', border: '1px solid rgba(0,0,0,0.07)', padding: '16px 20px', textDecoration: 'none', gap: '16px', transition: 'box-shadow 120ms ease' }}
           onMouseEnter={(e) => (e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.08)')}
           onMouseLeave={(e) => (e.currentTarget.style.boxShadow = 'none')}
         >
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '15px', color: '#1A1714', fontWeight: 500 }}>{meet.name}</span>
-              <span style={{ padding: '1px 7px', background: 'rgba(0,0,0,0.05)', borderRadius: '4px', fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#6B6866' }}>
+              <span style={{ fontSize: '15px', color: 'var(--text)', fontWeight: 500 }}>{meet.name}</span>
+              <span style={{ padding: '1px 7px', background: 'rgba(0,0,0,0.05)', borderRadius: '4px', fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-subtle)' }}>
                 {meet.course}
               </span>
             </div>
-            <div style={{ fontSize: '12.5px', color: '#9A9693', marginTop: '3px' }}>
+            <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '3px' }}>
               {meet.dateLabel} · {meet.location}
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
             <DeadlineCountdown days={meet.daysUntilDeadline} />
-            <Icon name="chevron-right" size={15} style={{ color: '#C0BDBB' }} />
+            <Icon name="chevron-right" size={15} style={{ color: 'var(--border-strong)' }} />
           </div>
         </Link>
       ))}

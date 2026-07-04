@@ -43,7 +43,7 @@ const inputStyle: React.CSSProperties = {
 function FieldLabel({ children, required }: { children: React.ReactNode; required?: boolean }) {
   return (
     <label style={{
-      display: 'block', fontSize: '11px', fontFamily: 'var(--font-mono)',
+      display: 'block', fontSize: '11px', fontFamily: 'var(--font-body)',
       color: 'var(--text-muted)', letterSpacing: '0.06em',
       textTransform: 'uppercase', marginBottom: '7px',
     }}>
@@ -174,7 +174,7 @@ function UploadZone({
         <p style={{ fontSize: '13px', color: 'var(--text-subtle)', marginBottom: '4px' }}>
           Drop files or <span style={{ color: accent ? 'var(--accent)' : 'var(--info)', fontWeight: 600 }}>browse</span>
         </p>
-        <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>{hint}</p>
+        <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>{hint}</p>
         <input
           ref={inputRef}
           type="file"
@@ -198,7 +198,7 @@ function UploadZone({
                 <span style={{ fontSize: '12px', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-                <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>{formatBytes(f.size)}</span>
+                <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>{formatBytes(f.size)}</span>
                 <button
                   onClick={(e) => { e.stopPropagation(); onFiles(files.filter((_, j) => j !== i)) }}
                   className="btn-icon"
@@ -238,7 +238,7 @@ function SessionCard({
       {/* Card header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
         <span style={{
-          fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--accent)',
+          fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--accent)',
           textTransform: 'uppercase', letterSpacing: '0.08em',
         }}>
           Session {session.sessionNumber}
@@ -511,7 +511,7 @@ export default function NewMeetPage() {
           <Icon name="arrow-left" size={13} />
           Back to Meets
         </button>
-        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '28px', fontWeight: 400, color: 'var(--text)', letterSpacing: '-0.01em' }}>
+        <h1 className="page-title">
           Create Meet
         </h1>
       </div>
@@ -529,7 +529,7 @@ export default function NewMeetPage() {
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 background: idx < step ? 'var(--accent)' : idx === step ? 'var(--bg-elevated)' : 'var(--bg-surface)',
                 border: `2px solid ${idx < step ? 'var(--accent)' : idx === step ? 'var(--accent-border)' : 'var(--border)'}`,
-                fontSize: '11px', fontFamily: 'var(--font-mono)', fontWeight: 700,
+                fontSize: '11px', fontFamily: 'var(--font-body)', fontWeight: 700,
                 color: idx < step ? '#fff' : idx === step ? 'var(--accent)' : 'var(--text-muted)',
                 transition: 'all 0.2s ease',
               }}>
@@ -579,7 +579,7 @@ export default function NewMeetPage() {
                           flex: 1, padding: '7px', borderRadius: '6px', border: 'none', cursor: 'pointer',
                           background: draft.course === c ? 'var(--accent)' : 'transparent',
                           color: draft.course === c ? '#fff' : 'var(--text-muted)',
-                          fontSize: '12px', fontWeight: 700, fontFamily: 'var(--font-mono)', transition: 'all 0.15s',
+                          fontSize: '12px', fontWeight: 700, fontFamily: 'var(--font-body)', transition: 'all 0.15s',
                         }}>{c}</button>
                     ))}
                   </div>
@@ -618,7 +618,7 @@ export default function NewMeetPage() {
 
               {/* Divider */}
               <div style={{ borderTop: '1px solid var(--border)', paddingTop: '20px' }}>
-                <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '16px' }}>
+                <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '16px' }}>
                   Files
                 </p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -643,19 +643,19 @@ export default function NewMeetPage() {
                     {entryFileParsing && (
                       <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', borderRadius: '8px', background: 'var(--info-bg)', border: '1px solid var(--info-border)' }}>
                         <div style={{ width: '12px', height: '12px', borderRadius: '50%', border: '2px solid rgba(96,165,250,0.3)', borderTopColor: 'var(--info)', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
-                        <span style={{ fontSize: '12px', color: 'var(--info)', fontFamily: 'var(--font-mono)' }}>Parsing meet file…</span>
+                        <span style={{ fontSize: '12px', color: 'var(--info)', fontFamily: 'var(--font-body)' }}>Parsing meet file…</span>
                       </div>
                     )}
                     {entryFileParseError && !entryFileParsing && (
                       <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error)' }}>
                         <Icon name="alert-circle" size={14} style={{ color: 'var(--error)', flexShrink: 0 }} />
-                        <span style={{ fontSize: '12px', color: 'var(--error)', fontFamily: 'var(--font-mono)' }}>{entryFileParseError}</span>
+                        <span style={{ fontSize: '12px', color: 'var(--error)', fontFamily: 'var(--font-body)' }}>{entryFileParseError}</span>
                       </div>
                     )}
                     {entryFileParsed && (
                       <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', borderRadius: '8px', background: 'var(--success-bg)', border: '1px solid var(--success-border)' }}>
                         <Icon name="check-circle" size={14} style={{ color: 'var(--success)', flexShrink: 0 }} />
-                        <span style={{ fontSize: '12px', color: 'var(--success)', fontFamily: 'var(--font-mono)' }}>
+                        <span style={{ fontSize: '12px', color: 'var(--success)', fontFamily: 'var(--font-body)' }}>
                           {entryFileParseSummary ?? 'Meet setup auto-populated from meet file — review schedule and signup details before saving.'}
                         </span>
                       </div>
@@ -699,7 +699,7 @@ export default function NewMeetPage() {
               <div style={{ paddingTop: '8px', borderTop: '1px solid var(--border)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
                   <div>
-                    <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '4px' }}>
+                    <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '4px' }}>
                       Sessions
                     </p>
                     <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
@@ -785,7 +785,7 @@ export default function NewMeetPage() {
                   <span style={{ fontSize: '13px' }}>
                     {draft.swimmerSelfSignup ? 'Enabled for swimmer portal event selection' : 'Disabled — parent-only commitment flow'}
                   </span>
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: draft.swimmerSelfSignup ? 'var(--accent)' : 'var(--text-muted)' }}>
+                  <span style={{ fontFamily: 'var(--font-body)', fontSize: '11px', color: draft.swimmerSelfSignup ? 'var(--accent)' : 'var(--text-muted)' }}>
                     {draft.swimmerSelfSignup ? 'ON' : 'OFF'}
                   </span>
                 </button>
@@ -802,11 +802,11 @@ export default function NewMeetPage() {
                       {parsedEvents.slice(0, 8).map((event) => (
                         <div key={`${event.event_number}-${event.session_number ?? 0}`} style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', fontSize: '12px' }}>
                           <span style={{ color: 'var(--text)' }}>#{event.event_number} · {event.distance} {formatEventStroke(event.stroke)}</span>
-                          <span style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{formatEventAgeGroup(event)}</span>
+                          <span style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>{formatEventAgeGroup(event)}</span>
                         </div>
                       ))}
                       {parsedEvents.length > 8 && (
-                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
                           +{parsedEvents.length - 8} more events
                         </div>
                       )}
@@ -854,7 +854,7 @@ export default function NewMeetPage() {
                 { label: 'Entry File',   value: entryFiles.length > 0 ? entryFiles.map((f) => f.name).join(', ') : '—' },
               ].map((r) => (
                 <div key={r.label} style={{ display: 'flex', gap: '16px', padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', minWidth: '110px', flexShrink: 0, paddingTop: '1px' }}>{r.label}</span>
+                  <span style={{ fontFamily: 'var(--font-body)', fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', minWidth: '110px', flexShrink: 0, paddingTop: '1px' }}>{r.label}</span>
                   <span style={{ fontSize: '13px', color: 'var(--text)', fontWeight: 500 }}>{r.value}</span>
                 </div>
               ))}
@@ -863,7 +863,7 @@ export default function NewMeetPage() {
               {draft.sessions.map((s) => (
                 <div key={s.id} style={{ padding: '12px 14px', borderRadius: '10px', background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
                   <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)' }}>{s.section} · {s.name}</div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: '3px' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginTop: '3px' }}>
                     {s.date || 'Date TBD'} · Warm-up {s.warmupTime || 'TBD'} · Start {s.startTime || 'TBD'}
                   </div>
                 </div>
@@ -876,13 +876,13 @@ export default function NewMeetPage() {
                     <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)' }}>
                       #{event.event_number} · {event.distance} {formatEventStroke(event.stroke)}
                     </div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: '3px' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginTop: '3px' }}>
                       {formatEventAgeGroup(event)} · Session {event.session_number || 'Unassigned'}
                     </div>
                   </div>
                 ))}
                 {parsedEvents.length > 10 && (
-                  <p style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', margin: 0 }}>
+                  <p style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', margin: 0 }}>
                     +{parsedEvents.length - 10} additional events will also be created.
                   </p>
                 )}

@@ -41,7 +41,7 @@ export function DevRoleSwitcher() {
         bottom: '16px',
         left: '16px',
         zIndex: 10000,
-        fontFamily: 'var(--font-mono)',
+        fontFamily: 'var(--font-body)',
         fontSize: '11px',
       }}
     >
@@ -80,7 +80,7 @@ export function DevRoleSwitcher() {
                   cursor: 'pointer',
                   color: isActive ? 'var(--accent)' : 'var(--text-subtle)',
                   textAlign: 'left',
-                  fontFamily: 'var(--font-mono)',
+                  fontFamily: 'var(--font-body)',
                   fontSize: '12px',
                   fontWeight: isActive ? 600 : 400,
                 }}
@@ -112,7 +112,7 @@ export function DevRoleSwitcher() {
           borderRadius: 'var(--r-md)',
           cursor: 'pointer',
           color: 'var(--accent)',
-          fontFamily: 'var(--font-mono)',
+          fontFamily: 'var(--font-body)',
           fontSize: '11px',
           fontWeight: 600,
           boxShadow: 'var(--shadow-md)',

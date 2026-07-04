@@ -39,12 +39,12 @@ type DocStatus = 'verified' | 'submitted' | 'pending' | 'rejected' | 'expired' |
 const STATUS_CONFIG: Record<DocStatus, {
   label: string; bg: string; color: string; icon: 'check-circle' | 'alert-circle' | 'clock' | 'upload' | 'x-circle'
 }> = {
-  verified:  { label: 'Verified',        bg: '#ecfdf5', color: '#059669', icon: 'check-circle' },
-  submitted: { label: 'Under Review',    bg: '#fffbeb', color: '#d97706', icon: 'clock' },
-  pending:   { label: 'Action Needed',   bg: '#fffbeb', color: '#d97706', icon: 'alert-circle' },
-  rejected:  { label: 'Resubmit',        bg: '#fef2f2', color: '#dc2626', icon: 'x-circle' },
-  expired:   { label: 'Expired',         bg: '#fef2f2', color: '#dc2626', icon: 'alert-circle' },
-  missing:   { label: 'Upload Required', bg: '#fef2f2', color: '#dc2626', icon: 'upload' },
+  verified:  { label: 'Verified',        bg: 'var(--success-bg)', color: 'var(--success)', icon: 'check-circle' },
+  submitted: { label: 'Under Review',    bg: 'var(--warning-bg)', color: 'var(--warning)', icon: 'clock' },
+  pending:   { label: 'Action Needed',   bg: 'var(--warning-bg)', color: 'var(--warning)', icon: 'alert-circle' },
+  rejected:  { label: 'Resubmit',        bg: 'var(--error-bg)', color: 'var(--error)', icon: 'x-circle' },
+  expired:   { label: 'Expired',         bg: 'var(--error-bg)', color: 'var(--error)', icon: 'alert-circle' },
+  missing:   { label: 'Upload Required', bg: 'var(--error-bg)', color: 'var(--error)', icon: 'upload' },
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -293,8 +293,8 @@ export default function DocumentsPage() {
     return (
       <div>
         <div style={{ marginBottom: '28px', animation: 'slideUp 0.3s ease both' }}>
-          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '30px', color: '#1A1714', margin: '0 0 6px', lineHeight: 1.1 }}>Documents</h1>
-          <p style={{ margin: 0, fontSize: '14px', color: '#9A9693' }}>Loading your household documents…</p>
+          <h1 className="page-title">Documents</h1>
+          <p className="page-subtitle">Loading your household documents…</p>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {[1, 2, 3].map(i => (
@@ -309,24 +309,24 @@ export default function DocumentsPage() {
     <div>
       {/* Page header */}
       <div style={{ marginBottom: '28px', animation: 'slideUp 0.3s ease both' }}>
-        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '30px', color: '#1A1714', margin: '0 0 6px', lineHeight: 1.1 }}>
+        <h1 className="page-title">
           Documents
         </h1>
-        <p style={{ margin: 0, fontSize: '14px', color: '#9A9693' }}>
+        <p className="page-subtitle">
           Required forms, waivers, and certifications for your household.
         </p>
       </div>
 
       {loadError && (
-        <div style={{ padding: '12px 16px', background: '#fff7ed', border: '1px solid #fdba74', borderRadius: '10px', marginBottom: '16px', fontSize: '13px', color: '#9a3412', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+        <div style={{ padding: '12px 16px', background: 'var(--warning-bg)', border: '1px solid #fdba74', borderRadius: '10px', marginBottom: '16px', fontSize: '13px', color: 'var(--warning)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
           <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-            <Icon name="alert-circle" size={15} style={{ color: '#ea580c', marginTop: '1px', flexShrink: 0 }} />
+            <Icon name="alert-circle" size={15} style={{ color: 'var(--warning)', marginTop: '1px', flexShrink: 0 }} />
             <span>{loadError}</span>
           </div>
           <button
             type="button"
             onClick={() => setReloadKey((key) => key + 1)}
-            style={{ background: '#ffffff', border: '1px solid #fdba74', borderRadius: '8px', cursor: 'pointer', color: '#9a3412', fontSize: '12px', fontWeight: 600, padding: '8px 14px', whiteSpace: 'nowrap' }}
+            style={{ background: 'var(--bg-elevated)', border: '1px solid #fdba74', borderRadius: '8px', cursor: 'pointer', color: 'var(--warning)', fontSize: '12px', fontWeight: 600, padding: '8px 14px', whiteSpace: 'nowrap' }}
           >
             Retry
           </button>
@@ -335,9 +335,9 @@ export default function DocumentsPage() {
 
       {/* Upload error */}
       {uploadError && (
-        <div style={{ padding: '12px 16px', background: 'rgba(220,38,38,0.07)', border: '1px solid rgba(220,38,38,0.18)', borderRadius: '10px', marginBottom: '16px', fontSize: '13px', color: '#b91c1c', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ padding: '12px 16px', background: 'rgba(220,38,38,0.07)', border: '1px solid rgba(220,38,38,0.18)', borderRadius: '10px', marginBottom: '16px', fontSize: '13px', color: 'var(--error)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span>{uploadError}</span>
-          <button onClick={() => setUploadError(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#b91c1c', fontSize: '16px', lineHeight: 1, padding: 0 }}>✕</button>
+          <button onClick={() => setUploadError(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--error)', fontSize: '16px', lineHeight: 1, padding: 0 }}>✕</button>
         </div>
       )}
 
@@ -358,13 +358,13 @@ export default function DocumentsPage() {
         <div style={{ background: 'linear-gradient(135deg, #fef2f2 0%, #fff7f5 100%)', border: '1px solid rgba(220,38,38,0.18)', borderRadius: '14px', padding: '18px 22px', marginBottom: '24px', animation: 'slideUp 0.35s ease both' }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
             <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(220,38,38,0.10)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <Icon name="alert-circle" size={20} style={{ color: '#dc2626' }} />
+              <Icon name="alert-circle" size={20} style={{ color: 'var(--error)' }} />
             </div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: '15px', fontWeight: 700, color: '#991b1b', marginBottom: '4px' }}>
+              <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--error)', marginBottom: '4px' }}>
                 {pendingDocs.length} document{pendingDocs.length !== 1 ? 's' : ''} require immediate action
               </div>
-              <ul style={{ margin: 0, padding: '0 0 0 16px', fontSize: '13px', color: '#b91c1c', lineHeight: 1.7 }}>
+              <ul style={{ margin: 0, padding: '0 0 0 16px', fontSize: '13px', color: 'var(--error)', lineHeight: 1.7 }}>
                 {pendingDocs.map(doc => (
                   <li key={doc.typeId}>
                     <strong>{doc.typeName}</strong>
@@ -382,15 +382,15 @@ export default function DocumentsPage() {
       {/* Stats strip */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '24px', animation: 'slideUp 0.4s ease both' }}>
         {[
-          { label: 'Complete',      value: completedCount,      total: merged.length, color: '#059669' },
-          { label: 'Action Needed', value: pendingDocs.length,  total: merged.length, color: '#dc2626' },
-          { label: 'Expiring Soon', value: expiringCount,        total: merged.length, color: '#d97706' },
+          { label: 'Complete',      value: completedCount,      total: merged.length, color: 'var(--success)' },
+          { label: 'Action Needed', value: pendingDocs.length,  total: merged.length, color: 'var(--error)' },
+          { label: 'Expiring Soon', value: expiringCount,        total: merged.length, color: 'var(--warning)' },
         ].map(stat => (
-          <div key={stat.label} style={{ background: '#ffffff', borderRadius: '12px', border: '1px solid rgba(0,0,0,0.07)', padding: '16px 20px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-            <div style={{ fontSize: '22px', fontWeight: 700, color: stat.color, fontFamily: 'var(--font-mono)' }}>
-              {stat.value}<span style={{ fontSize: '14px', color: '#C0BDBB', fontWeight: 400 }}>/{stat.total}</span>
+          <div key={stat.label} className="card" style={{ padding: '16px 20px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+            <div style={{ fontSize: '22px', fontWeight: 700, color: stat.color, fontFamily: 'var(--font-body)' }}>
+              {stat.value}<span style={{ fontSize: '14px', color: 'var(--border-strong)', fontWeight: 400 }}>/{stat.total}</span>
             </div>
-            <div style={{ fontSize: '12px', color: '#9A9693', marginTop: '4px' }}>{stat.label}</div>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>{stat.label}</div>
           </div>
         ))}
       </div>
@@ -398,7 +398,7 @@ export default function DocumentsPage() {
       {/* Filter tabs */}
       <div style={{ display: 'flex', gap: '2px', marginBottom: '20px', background: 'rgba(0,0,0,0.04)', borderRadius: '10px', padding: '4px', maxWidth: '320px', animation: 'slideUp 0.42s ease both' }}>
         {[{ key: 'all', label: 'All Documents' }, { key: 'pending', label: `Needs Action (${pendingDocs.length})` }].map(({ key, label }) => (
-          <button key={key} onClick={() => setFilter(key as 'all' | 'pending')} style={{ flex: 1, padding: '7px 12px', borderRadius: '7px', border: 'none', background: filter === key ? '#ffffff' : 'transparent', color: filter === key ? '#1A1714' : '#6B6866', fontSize: '13px', fontWeight: filter === key ? 600 : 450, cursor: 'pointer', boxShadow: filter === key ? '0 1px 4px rgba(0,0,0,0.08)' : 'none', transition: 'all 120ms ease', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap' }}>
+          <button key={key} onClick={() => setFilter(key as 'all' | 'pending')} style={{ flex: 1, padding: '7px 12px', borderRadius: '7px', border: 'none', background: filter === key ? 'var(--bg-elevated)' : 'transparent', color: filter === key ? 'var(--text)' : 'var(--text-subtle)', fontSize: '13px', fontWeight: filter === key ? 600 : 450, cursor: 'pointer', boxShadow: filter === key ? '0 1px 4px rgba(0,0,0,0.08)' : 'none', transition: 'all 120ms ease', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap' }}>
             {label}
           </button>
         ))}
@@ -406,10 +406,10 @@ export default function DocumentsPage() {
 
       {/* Empty state */}
       {shouldShowCollectionEmptyState(loading, loadError, merged.length) && (
-        <div style={{ textAlign: 'center', padding: '60px 20px', background: '#ffffff', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.07)' }}>
+        <div className="card" style={{ textAlign: 'center', padding: '60px 20px' }}>
           <div style={{ fontSize: '32px', marginBottom: '12px' }}>📄</div>
-          <div style={{ fontFamily: 'var(--font-display)', fontSize: '20px', color: '#1A1714', marginBottom: '6px' }}>No documents required yet</div>
-          <div style={{ fontSize: '14px', color: '#9A9693' }}>Your coach will request documents when needed.</div>
+          <div style={{ fontFamily: 'var(--font-display)', fontSize: '20px', color: 'var(--text)', marginBottom: '6px' }}>No documents required yet</div>
+          <div style={{ fontSize: '14px', color: 'var(--text-muted)' }}>Your coach will request documents when needed.</div>
         </div>
       )}
 
@@ -420,11 +420,11 @@ export default function DocumentsPage() {
           const catDocs = visibleDocs.filter(d => d.typeCategory === cat)
           return (
             <section key={cat} style={{ animation: `slideUp ${0.45 + catIdx * 0.06}s ease both` }}>
-              <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#9A9693', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '12px' }}>
+              <div style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '12px' }}>
                 {CATEGORY_LABELS[cat] ?? cat}
               </div>
 
-              <div style={{ background: '#ffffff', borderRadius: '14px', border: '1px solid rgba(0,0,0,0.07)', boxShadow: '0 1px 6px rgba(0,0,0,0.04)', overflow: 'hidden' }}>
+              <div className="card" style={{ boxShadow: '0 1px 6px rgba(0,0,0,0.04)', overflow: 'hidden' }}>
                 {catDocs.map((doc, i) => {
                   const statusCfg = STATUS_CONFIG[doc.effectiveStatus]
                   const isUploading = uploadingId === doc.typeId
@@ -446,29 +446,29 @@ export default function DocumentsPage() {
                       {/* Content */}
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
-                          <span style={{ fontSize: '14px', fontWeight: 600, color: '#1A1714', lineHeight: 1.3 }}>{doc.typeName}</span>
+                          <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text)', lineHeight: 1.3 }}>{doc.typeName}</span>
                           {doc.isRequired && (
-                            <span style={{ padding: '1px 6px', background: 'rgba(0,0,0,0.05)', borderRadius: '4px', fontSize: '10.5px', color: '#9A9693', fontWeight: 500, whiteSpace: 'nowrap' }}>Required</span>
+                            <span style={{ padding: '1px 6px', background: 'rgba(0,0,0,0.05)', borderRadius: '4px', fontSize: '10.5px', color: 'var(--text-muted)', fontWeight: 500, whiteSpace: 'nowrap' }}>Required</span>
                           )}
                           {doc.submission?.review_notes && (doc.effectiveStatus === 'rejected') && (
-                            <span style={{ padding: '1px 8px', background: 'rgba(220,38,38,0.08)', borderRadius: '4px', fontSize: '10.5px', color: '#dc2626', fontWeight: 500 }}>
+                            <span style={{ padding: '1px 8px', background: 'rgba(220,38,38,0.08)', borderRadius: '4px', fontSize: '10.5px', color: 'var(--error)', fontWeight: 500 }}>
                               {doc.submission.review_notes.slice(0, 60)}
                             </span>
                           )}
                         </div>
                         {doc.typeDescription && (
-                          <div style={{ fontSize: '12.5px', color: '#9A9693', lineHeight: 1.4, marginBottom: '6px' }}>{doc.typeDescription}</div>
+                          <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', lineHeight: 1.4, marginBottom: '6px' }}>{doc.typeDescription}</div>
                         )}
-                        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', fontSize: '11.5px', color: '#C0BDBB' }}>
-                          <span>For: <span style={{ color: '#6B6866' }}>{doc.swimmerLabel}</span></span>
-                          {doc.submittedAt && <span>Submitted: <span style={{ color: '#6B6866' }}>{fmtDate(doc.submittedAt)}</span></span>}
+                        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', fontSize: '11.5px', color: 'var(--border-strong)' }}>
+                          <span>For: <span style={{ color: 'var(--text-subtle)' }}>{doc.swimmerLabel}</span></span>
+                          {doc.submittedAt && <span>Submitted: <span style={{ color: 'var(--text-subtle)' }}>{fmtDate(doc.submittedAt)}</span></span>}
                           {doc.expiresAt && (
                             <span>
                               Expires:{' '}
-                              <span style={{ color: expiringUrgent ? '#d97706' : '#6B6866', fontWeight: expiringUrgent ? 600 : 400 }}>
+                              <span style={{ color: expiringUrgent ? 'var(--warning)' : 'var(--text-subtle)', fontWeight: expiringUrgent ? 600 : 400 }}>
                                 {fmtDate(doc.expiresAt)}
                                 {expiringUrgent && days !== null && (
-                                  <span style={{ marginLeft: '4px', color: '#d97706' }}>({days}d)</span>
+                                  <span style={{ marginLeft: '4px', color: 'var(--warning)' }}>({days}d)</span>
                                 )}
                               </span>
                             </span>
@@ -486,7 +486,7 @@ export default function DocumentsPage() {
                           <button
                             onClick={() => handleUploadClick(doc.rawTypeId, doc.swimmerId || undefined)}
                             disabled={isUploading}
-                            style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 14px', background: isUploading ? 'rgba(235,93,30,0.5)' : '#eb5d1e', color: '#fff', border: 'none', borderRadius: '7px', fontSize: '12.5px', fontWeight: 600, cursor: isUploading ? 'wait' : 'pointer', fontFamily: 'var(--font-body)' }}
+                            style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 14px', background: isUploading ? 'rgba(235,93,30,0.5)' : 'var(--accent)', color: 'var(--bg-elevated)', border: 'none', borderRadius: '7px', fontSize: '12.5px', fontWeight: 600, cursor: isUploading ? 'wait' : 'pointer', fontFamily: 'var(--font-body)' }}
                           >
                             <Icon name="upload" size={12} />
                             {isUploading ? 'Uploading…' : 'Upload File'}
@@ -494,7 +494,7 @@ export default function DocumentsPage() {
                         )}
 
                         {(doc.effectiveStatus === 'verified' || doc.effectiveStatus === 'submitted') && doc.submission?.file_name && (
-                          <span style={{ fontSize: '12px', color: '#9A9693', fontFamily: 'var(--font-body)' }}>
+                          <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
                             Uploaded: {doc.submission.file_name}
                           </span>
                         )}
@@ -508,17 +508,17 @@ export default function DocumentsPage() {
         })}
         </div>
       ) : (
-        <div style={{ textAlign: 'center', padding: '40px 20px', background: '#ffffff', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.07)', color: '#9A9693', fontSize: '14px' }}>
+        <div className="card" style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)', fontSize: '14px' }}>
           Document requirements will appear here after a successful reload.
         </div>
       )}
 
       {/* Help notice */}
-      <div style={{ marginTop: '28px', padding: '14px 18px', background: 'rgba(0,0,0,0.03)', borderRadius: '10px', fontSize: '13px', color: '#9A9693', lineHeight: 1.5, animation: 'slideUp 0.7s ease both', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-        <Icon name="info" size={14} style={{ color: '#C0BDBB', marginTop: '2px', flexShrink: 0 }} />
+      <div style={{ marginTop: '28px', padding: '14px 18px', background: 'rgba(0,0,0,0.03)', borderRadius: '10px', fontSize: '13px', color: 'var(--text-muted)', lineHeight: 1.5, animation: 'slideUp 0.7s ease both', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+        <Icon name="info" size={14} style={{ color: 'var(--border-strong)', marginTop: '2px', flexShrink: 0 }} />
         <span>
           Missing or expired documents may affect meet participation eligibility. Contact{' '}
-          <span style={{ color: '#eb5d1e', fontWeight: 500 }}>office@aquify.club</span>{' '}
+          <span style={{ color: 'var(--accent)', fontWeight: 500 }}>office@aquify.club</span>{' '}
           if you have questions about any document.
         </span>
       </div>

@@ -47,7 +47,7 @@ function Pill({ value, map }: { value: string; map: Record<string, { bg: string;
     <span style={{
       display: 'inline-flex', alignItems: 'center', gap: '5px',
       padding: '2px 9px', borderRadius: '999px', fontSize: '11px', fontWeight: 600,
-      background: colors.bg, color: colors.text, fontFamily: 'var(--font-mono)',
+      background: colors.bg, color: colors.text, fontFamily: 'var(--font-body)',
       letterSpacing: '0.02em', textTransform: 'capitalize',
     }}>
       {value}
@@ -61,7 +61,7 @@ function StatusPill({ status }: { status: string }) {
     <span style={{
       display: 'inline-flex', alignItems: 'center', gap: '6px',
       padding: '3px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: 600,
-      background: s.bg, color: s.text, fontFamily: 'var(--font-mono)',
+      background: s.bg, color: s.text, fontFamily: 'var(--font-body)',
       textTransform: 'capitalize',
     }}>
       <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: s.dot, flexShrink: 0 }} />
@@ -133,7 +133,7 @@ function TypeModal({ initial, onSave, onClose }: {
       }}>
         <div style={{ padding: '22px 26px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '3px' }}>
+            <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '3px' }}>
               {initial ? 'Edit' : 'New'} Document Type
             </p>
             <h2 style={{ fontSize: '18px', fontFamily: 'var(--font-display)', fontWeight: 400, color: 'var(--text)' }}>
@@ -147,7 +147,7 @@ function TypeModal({ initial, onSave, onClose }: {
           {err && <div style={{ padding: '10px 14px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', borderRadius: '8px', color: 'var(--error)', fontSize: '12px' }}>{err}</div>}
 
           <div>
-            <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>Name *</label>
+            <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>Name *</label>
             <input
               value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
               required placeholder="e.g. Season Liability Waiver"
@@ -157,14 +157,14 @@ function TypeModal({ initial, onSave, onClose }: {
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             <div>
-              <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>Category</label>
+              <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>Category</label>
               <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
                 style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: '13px' }}>
                 {['waiver','medical','insurance','release','registration','other'].map(c => <option key={c} value={c}>{c.charAt(0).toUpperCase()+c.slice(1)}</option>)}
               </select>
             </div>
             <div>
-              <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>Applies To</label>
+              <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>Applies To</label>
               <select value={form.applies_to} onChange={e => setForm(f => ({ ...f, applies_to: e.target.value }))}
                 style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: '13px' }}>
                 {['swimmer','household','all'].map(a => <option key={a} value={a}>{a.charAt(0).toUpperCase()+a.slice(1)}</option>)}
@@ -173,7 +173,7 @@ function TypeModal({ initial, onSave, onClose }: {
           </div>
 
           <div>
-            <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>Description</label>
+            <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>Description</label>
             <textarea
               value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
               rows={2} placeholder="Brief description for members…"
@@ -183,7 +183,7 @@ function TypeModal({ initial, onSave, onClose }: {
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             <div>
-              <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>Expiry (months)</label>
+              <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>Expiry (months)</label>
               <input
                 type="number" min="1" value={form.expiry_months}
                 onChange={e => setForm(f => ({ ...f, expiry_months: e.target.value }))}
@@ -205,7 +205,7 @@ function TypeModal({ initial, onSave, onClose }: {
 
           <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '4px' }}>
             <button type="button" onClick={onClose} style={{ padding: '9px 18px', borderRadius: '8px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-subtle)', fontSize: '13px', cursor: 'pointer' }}>Cancel</button>
-            <button type="submit" disabled={saving} style={{ padding: '9px 22px', borderRadius: '8px', border: 'none', background: 'var(--accent)', color: '#fff', fontSize: '13px', fontWeight: 600, cursor: saving ? 'wait' : 'pointer' }}>
+            <button type="submit" disabled={saving} className="btn btn-primary">
               {saving ? 'Saving…' : (initial ? 'Save Changes' : 'Create Type')}
             </button>
           </div>
@@ -376,15 +376,15 @@ export default function DocumentCenterPage() {
 
       {/* Header */}
       <div style={{ marginBottom: '28px', animation: 'fadeUp 0.3s ease both' }}>
-        <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
+        <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
           Compliance / Documents
         </p>
-        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+        <div className="page-header" style={{ flexWrap: 'wrap' }}>
           <div>
-            <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '30px', fontWeight: 400, color: 'var(--text)', marginBottom: '4px' }}>
+            <h1 className="page-title">
               Document Center
             </h1>
-            <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>
+            <p className="page-subtitle">
               Manage required document types and review household submissions.
             </p>
           </div>
@@ -438,7 +438,7 @@ export default function DocumentCenterPage() {
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '14px' }}>
             <button
               onClick={() => setEditingType('new')}
-              style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 18px', borderRadius: '10px', border: 'none', background: 'var(--accent)', color: '#fff', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+              className="btn btn-primary"
             >
               <span style={{ fontSize: '16px', lineHeight: 1 }}>+</span> New Document Type
             </button>
@@ -447,7 +447,7 @@ export default function DocumentCenterPage() {
           {docTypes.length === 0 ? (
             <div className="card" style={{ padding: '40px', textAlign: 'center' }}>
               <p style={{ fontFamily: 'var(--font-display)', fontSize: '20px', color: 'var(--text-subtle)', marginBottom: '8px' }}>No document types defined yet</p>
-              <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Create types to define what documents households must provide.</p>
+              <p className="page-subtitle">Create types to define what documents households must provide.</p>
             </div>
           ) : (
             <div className="card" style={{ overflow: 'hidden' }}>
@@ -455,7 +455,7 @@ export default function DocumentCenterPage() {
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
                     {['Name', 'Category', 'Applies To', 'Expiry', 'Required', 'Status', ''].map(h => (
-                      <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', whiteSpace: 'nowrap' }}>{h}</th>
+                      <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -469,20 +469,19 @@ export default function DocumentCenterPage() {
                         {dt.description && <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{dt.description}</div>}
                       </td>
                       <td style={{ padding: '13px 16px' }}><Pill value={dt.category} map={CATEGORY_COLORS} /></td>
-                      <td style={{ padding: '13px 16px', fontSize: '12px', color: 'var(--text-subtle)', fontFamily: 'var(--font-mono)' }}>{dt.applies_to}</td>
-                      <td style={{ padding: '13px 16px', fontSize: '12px', color: 'var(--text-subtle)', fontFamily: 'var(--font-mono)' }}>
+                      <td style={{ padding: '13px 16px', fontSize: '12px', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)' }}>{dt.applies_to}</td>
+                      <td style={{ padding: '13px 16px', fontSize: '12px', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)' }}>
                         {dt.expiry_months ? `${dt.expiry_months}mo` : 'Never'}
                       </td>
                       <td style={{ padding: '13px 16px' }}>
-                        <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: dt.is_required ? '#059669' : 'var(--text-muted)' }}>
+                        <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: dt.is_required ? '#059669' : 'var(--text-muted)' }}>
                           {dt.is_required ? 'yes' : 'no'}
                         </span>
                       </td>
                       <td style={{ padding: '13px 16px' }}>
-                        <span style={{
-                          display: 'inline-block', padding: '2px 9px', borderRadius: '999px', fontSize: '11px', fontFamily: 'var(--font-mono)',
-                          background: dt.is_active ? 'rgba(16,185,129,0.10)' : 'rgba(107,114,128,0.10)',
-                          color: dt.is_active ? '#065f46' : '#6b7280',
+                        <span className="badge" style={{
+                          background: dt.is_active ? 'var(--success-bg)' : 'var(--bg-elevated)',
+                          color: dt.is_active ? 'var(--success)' : 'var(--text-muted)',
                         }}>
                           {dt.is_active ? 'active' : 'inactive'}
                         </span>
@@ -529,7 +528,7 @@ export default function DocumentCenterPage() {
           {filteredSubs.length === 0 ? (
             <div className="card" style={{ padding: '40px', textAlign: 'center' }}>
               <p style={{ fontFamily: 'var(--font-display)', fontSize: '20px', color: 'var(--text-subtle)', marginBottom: '8px' }}>No submissions</p>
-              <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+              <p className="page-subtitle">
                 {statusFilter === 'all' ? 'Households have not submitted any documents yet.' : `No ${statusFilter} submissions found.`}
               </p>
             </div>
@@ -539,7 +538,7 @@ export default function DocumentCenterPage() {
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
                     {['Document Type', 'Household', 'Swimmer', 'Status', 'Submitted', 'Expires', 'Actions'].map(h => (
-                      <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', whiteSpace: 'nowrap' }}>{h}</th>
+                      <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -553,12 +552,12 @@ export default function DocumentCenterPage() {
                         onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                         <td style={{ padding: '12px 16px' }}>
                           <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>{typeName}</div>
-                          {sub.file_name && <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', fontFamily: 'var(--font-mono)' }}>{sub.file_name}</div>}
+                          {sub.file_name && <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', fontFamily: 'var(--font-body)' }}>{sub.file_name}</div>}
                         </td>
-                        <td style={{ padding: '12px 16px', fontSize: '12px', color: 'var(--text-subtle)', fontFamily: 'var(--font-mono)' }}>
+                        <td style={{ padding: '12px 16px', fontSize: '12px', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)' }}>
                           {sub.household_id.slice(0, 8)}…
                         </td>
-                        <td style={{ padding: '12px 16px', fontSize: '12px', color: 'var(--text-subtle)', fontFamily: 'var(--font-mono)' }}>
+                        <td style={{ padding: '12px 16px', fontSize: '12px', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)' }}>
                           {sub.swimmer_id ? sub.swimmer_id.slice(0, 8) + '…' : '—'}
                         </td>
                         <td style={{ padding: '12px 16px' }}><StatusPill status={sub.status} /></td>

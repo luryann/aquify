@@ -4,8 +4,6 @@
 @import '@fontsource/plus-jakarta-sans/latin-500.css';
 @import '@fontsource/plus-jakarta-sans/latin-600.css';
 @import '@fontsource/plus-jakarta-sans/latin-700.css';
-@import '@fontsource/jetbrains-mono/latin-400.css';
-@import '@fontsource/jetbrains-mono/latin-500.css';
 
 /* ==========================================================
    DARE ADMIN — GLOBAL DESIGN SYSTEM
@@ -64,7 +62,7 @@
   /* Typography */
   --font-display:         'Instrument Serif', Georgia, serif;
   --font-body:            'Plus Jakarta Sans', system-ui, sans-serif;
-  --font-mono:            'JetBrains Mono', 'Courier New', monospace;
+  --font-mono:            'Plus Jakarta Sans', system-ui, sans-serif;
 
   /* Layout */
   --sidebar-w:            224px;
@@ -124,6 +122,63 @@
   --info:                 #2563eb;
   --info-bg:              rgba(37, 99, 235, 0.08);
   --info-border:          rgba(37, 99, 235, 0.20);
+}
+
+/* ── Portal identity overrides ──
+   Each portal keeps its own palette (accent/surface/text) as a deliberate identity,
+   but resolves through the SAME shared classes (.page-title, .card, .btn-*, .badge-*)
+   as admin — so shape/spacing/type scale stay identical across portals and only the
+   color tokens differ. Applied via a `data-portal` attribute on each shell's root node. */
+[data-portal="parent"] {
+  --bg:                   #F7F4F0;
+  --bg-surface:           #F0EAE1;
+  --bg-elevated:          #ffffff;
+  --text:                 #1A1714;
+  --text-subtle:          #6B6866;
+  --text-muted:           #9A9693;
+  --border:               rgba(0, 0, 0, 0.07);
+  --border-strong:        rgba(0, 0, 0, 0.12);
+
+  --success:              #059669;
+  --success-bg:           #ecfdf5;
+  --success-border:       rgba(5, 150, 105, 0.20);
+  --warning:              #d97706;
+  --warning-bg:           #fffbeb;
+  --warning-border:       rgba(217, 119, 6, 0.20);
+  --error:                #dc2626;
+  --error-bg:             #fef2f2;
+  --error-border:         rgba(220, 38, 38, 0.20);
+}
+
+[data-portal="swim"] {
+  --accent:               #00D4AA;
+  --accent-hover:         #00b896;
+  --accent-subtle:        rgba(0, 212, 170, 0.12);
+  --accent-subtle-hover:  rgba(0, 212, 170, 0.18);
+  --accent-border:        rgba(0, 212, 170, 0.25);
+  --accent-2:             #0099CC;
+
+  --bg:                   #061623;
+  --bg-surface:           #0D2235;
+  --bg-elevated:          #0F2A40;
+  --bg-card:              #0D2235;
+  --bg-sidebar:           #061623;
+
+  --text:                 #E4F2FF;
+  --text-subtle:          #7FA8C9;
+  --text-muted:           #4A6B82;
+  --text-on-accent:       #061623;
+
+  --border:               rgba(0, 212, 170, 0.10);
+  --border-strong:        rgba(0, 212, 170, 0.18);
+  --border-focus:         rgba(0, 212, 170, 0.60);
+
+  --warning:              #F59E0B;
+  --warning-bg:           rgba(245, 158, 11, 0.10);
+  --warning-border:       rgba(245, 158, 11, 0.25);
+  --error:                #ef4444;
+  --error-bg:             rgba(239, 68, 68, 0.10);
+  --error-border:         rgba(239, 68, 68, 0.25);
 }
 
 /* ── Reset ── */
@@ -351,11 +406,11 @@ input:focus, textarea:focus, select:focus {
 
 .btn-primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--text-on-accent);
   border: none;
 }
 .btn-primary:hover { background: var(--accent-hover); }
-.btn-primary:active { background: #c44710; }
+.btn-primary:active { filter: brightness(0.9); }
 
 .btn-secondary {
   background: var(--bg-elevated);
@@ -407,7 +462,9 @@ input:focus, textarea:focus, select:focus {
   border-radius: 999px;
   font-size: 11px;
   font-weight: 600;
+  font-family: var(--font-body);
   letter-spacing: 0.02em;
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
@@ -505,9 +562,9 @@ input:focus, textarea:focus, select:focus {
   margin: 16px 0;
 }
 
-/* ── Code / Mono ── */
+/* ── Code ── */
 .code {
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
   font-size: 12px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);

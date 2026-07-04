@@ -107,7 +107,7 @@ function Pagination({ page, totalPages, onPageChange }: PaginationProps) {
     background: active ? 'var(--accent-subtle)' : 'transparent',
     color: active ? 'var(--accent)' : disabled ? 'var(--text-disabled)' : 'var(--text-subtle)',
     fontSize: '12px',
-    fontFamily: 'var(--font-mono)',
+    fontFamily: 'var(--font-body)',
     fontWeight: active ? 600 : 400,
     cursor: disabled ? 'not-allowed' : 'pointer',
     transition: 'background var(--dur-fast), color var(--dur-fast), border-color var(--dur-fast)',
@@ -126,7 +126,7 @@ function Pagination({ page, totalPages, onPageChange }: PaginationProps) {
         flexWrap: 'wrap',
       }}
     >
-      <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+      <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
         Page {page} of {totalPages}
       </span>
 

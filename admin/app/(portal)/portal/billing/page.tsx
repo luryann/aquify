@@ -50,19 +50,19 @@ function Skeleton({ w = '100%', h = 16, r = 8 }: { w?: string | number; h?: numb
 }
 
 const STATUS_CONFIG: Record<string, { label: string; bg: string; color: string }> = {
-  draft: { label: 'Draft', bg: '#f9fafb', color: '#9A9693' },
-  issued: { label: 'Due', bg: '#fffbeb', color: '#d97706' },
-  partially_paid: { label: 'Partial', bg: '#eff6ff', color: '#2563eb' },
-  paid: { label: 'Paid', bg: '#ecfdf5', color: '#059669' },
+  draft: { label: 'Draft', bg: 'var(--bg-surface)', color: 'var(--text-muted)' },
+  issued: { label: 'Due', bg: 'var(--warning-bg)', color: 'var(--warning)' },
+  partially_paid: { label: 'Partial', bg: 'var(--info-bg)', color: 'var(--info)' },
+  paid: { label: 'Paid', bg: 'var(--success-bg)', color: 'var(--success)' },
   refunded_partial: { label: 'Refunded', bg: '#f5f3ff', color: '#7c3aed' },
   refunded_full: { label: 'Refunded', bg: '#f5f3ff', color: '#7c3aed' },
-  voided: { label: 'Voided', bg: '#f9fafb', color: '#9A9693' },
-  written_off: { label: 'Written Off', bg: '#f9fafb', color: '#9A9693' },
+  voided: { label: 'Voided', bg: 'var(--bg-surface)', color: 'var(--text-muted)' },
+  written_off: { label: 'Written Off', bg: 'var(--bg-surface)', color: 'var(--text-muted)' },
 }
 
 function fieldLabel(label: string) {
   return (
-    <label style={{ fontSize: '12px', color: '#6B6866', display: 'block', marginBottom: '6px', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+    <label style={{ fontSize: '12px', color: 'var(--text-subtle)', display: 'block', marginBottom: '6px', fontFamily: 'var(--font-body)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
       {label}
     </label>
   )
@@ -74,9 +74,9 @@ function inputStyle(): CSSProperties {
     padding: '10px 12px',
     borderRadius: '10px',
     border: '1px solid rgba(0,0,0,0.1)',
-    background: '#fff',
+    background: 'var(--bg-elevated)',
     fontSize: '13px',
-    color: '#1A1714',
+    color: 'var(--text)',
     outline: 'none',
   }
 }
@@ -103,11 +103,11 @@ function AutopayTab(props: {
   if (loading) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid rgba(0,0,0,0.07)', padding: '20px 24px' }}>
+        <div className="card" style={{ padding: '20px 24px' }}>
           <Skeleton w="40%" h={18} />
           <div style={{ marginTop: '10px' }}><Skeleton w="75%" h={12} /></div>
         </div>
-        <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid rgba(0,0,0,0.07)', padding: '20px 24px' }}>
+        <div className="card" style={{ padding: '20px 24px' }}>
           <Skeleton w="28%" h={16} />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginTop: '18px' }}>
             <Skeleton h={42} />
@@ -124,16 +124,16 @@ function AutopayTab(props: {
     return (
       <div style={{ background: '#fff5f5', border: '1px solid rgba(220,38,38,0.16)', borderRadius: '14px', padding: '20px 22px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
         <div>
-          <div style={{ fontWeight: 700, fontSize: '15px', color: '#991b1b', marginBottom: '4px' }}>
+          <div style={{ fontWeight: 700, fontSize: '15px', color: 'var(--error)', marginBottom: '4px' }}>
             Autopay settings are unavailable
           </div>
-          <div style={{ fontSize: '13px', color: '#b91c1c', lineHeight: 1.6 }}>
+          <div style={{ fontSize: '13px', color: 'var(--error)', lineHeight: 1.6 }}>
             {loadError}
           </div>
         </div>
         <button
           onClick={onRetry}
-          style={{ padding: '11px 16px', borderRadius: '10px', border: 'none', background: '#991b1b', color: '#fff', fontSize: '13px', fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}
+          style={{ padding: '11px 16px', borderRadius: '10px', border: 'none', background: 'var(--error)', color: 'var(--bg-elevated)', fontSize: '13px', fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}
         >
           Retry
         </button>
@@ -145,7 +145,7 @@ function AutopayTab(props: {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '18px', animation: 'slideUp 0.3s ease both' }}>
       <div
         style={{
-          background: status?.enabled ? 'linear-gradient(135deg, #ecfdf5, #d1fae5)' : '#ffffff',
+          background: status?.enabled ? 'linear-gradient(135deg, #ecfdf5, #d1fae5)' : 'var(--bg-elevated)',
           border: `1px solid ${status?.enabled ? 'rgba(5,150,105,0.2)' : 'rgba(0,0,0,0.08)'}`,
           borderRadius: '14px',
           padding: '20px 24px',
@@ -156,10 +156,10 @@ function AutopayTab(props: {
         }}
       >
         <div style={{ flex: 1 }}>
-          <div style={{ fontWeight: 700, fontSize: '15px', color: '#1A1714', marginBottom: '4px' }}>
+          <div style={{ fontWeight: 700, fontSize: '15px', color: 'var(--text)', marginBottom: '4px' }}>
             {status?.enabled ? 'Autopay enabled' : 'Autopay paused'}
           </div>
-          <div style={{ fontSize: '13px', color: '#6B6866', lineHeight: 1.6 }}>
+          <div style={{ fontSize: '13px', color: 'var(--text-subtle)', lineHeight: 1.6 }}>
             {status?.enabled
               ? `Charges will use ${methodSummary}. Next scheduled attempt: ${nextCharge}.`
               : 'Save a payment method and select when invoices should be charged automatically.'}
@@ -172,9 +172,9 @@ function AutopayTab(props: {
             borderRadius: '999px',
             fontSize: '11px',
             fontWeight: 700,
-            fontFamily: 'var(--font-mono)',
-            background: status?.enabled ? '#059669' : '#e5e7eb',
-            color: status?.enabled ? '#fff' : '#4b5563',
+            fontFamily: 'var(--font-body)',
+            background: status?.enabled ? 'var(--success)' : 'var(--border)',
+            color: status?.enabled ? 'var(--bg-elevated)' : '#4b5563',
             flexShrink: 0,
           }}
         >
@@ -183,18 +183,18 @@ function AutopayTab(props: {
       </div>
 
       {error ? (
-        <div style={{ background: '#fef2f2', border: '1px solid rgba(220,38,38,0.15)', borderRadius: '12px', padding: '12px 14px', fontSize: '13px', color: '#b91c1c' }}>
+        <div style={{ background: 'var(--error-bg)', border: '1px solid rgba(220,38,38,0.15)', borderRadius: '12px', padding: '12px 14px', fontSize: '13px', color: 'var(--error)' }}>
           {error}
         </div>
       ) : null}
       {success ? (
-        <div style={{ background: '#ecfdf5', border: '1px solid rgba(5,150,105,0.15)', borderRadius: '12px', padding: '12px 14px', fontSize: '13px', color: '#065f46' }}>
+        <div style={{ background: 'var(--success-bg)', border: '1px solid rgba(5,150,105,0.15)', borderRadius: '12px', padding: '12px 14px', fontSize: '13px', color: '#065f46' }}>
           {success}
         </div>
       ) : null}
 
-      <div style={{ background: '#ffffff', borderRadius: '14px', border: '1px solid rgba(0,0,0,0.07)', padding: '20px 24px' }}>
-        <div style={{ fontWeight: 600, fontSize: '14px', color: '#1A1714', marginBottom: '16px' }}>Saved payment method</div>
+      <div className="card" style={{ padding: '20px 24px' }}>
+        <div style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text)', marginBottom: '16px' }}>Saved payment method</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
           <div>
             {fieldLabel('Payment Type')}
@@ -263,8 +263,8 @@ function AutopayTab(props: {
         </div>
       </div>
 
-      <div style={{ background: '#ffffff', borderRadius: '14px', border: '1px solid rgba(0,0,0,0.07)', padding: '20px 24px' }}>
-        <div style={{ fontWeight: 600, fontSize: '14px', color: '#1A1714', marginBottom: '14px' }}>Charge timing</div>
+      <div className="card" style={{ padding: '20px 24px' }}>
+        <div style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text)', marginBottom: '14px' }}>Charge timing</div>
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           {[
             { value: 0, label: 'On due date' },
@@ -277,9 +277,9 @@ function AutopayTab(props: {
               style={{
                 padding: '8px 14px',
                 borderRadius: '999px',
-                border: `1px solid ${form.triggerDaysBeforeDue === option.value ? '#1A1714' : 'rgba(0,0,0,0.08)'}`,
-                background: form.triggerDaysBeforeDue === option.value ? '#1A1714' : '#f7f6f4',
-                color: form.triggerDaysBeforeDue === option.value ? '#fff' : '#6B6866',
+                border: `1px solid ${form.triggerDaysBeforeDue === option.value ? 'var(--text)' : 'rgba(0,0,0,0.08)'}`,
+                background: form.triggerDaysBeforeDue === option.value ? 'var(--text)' : '#f7f6f4',
+                color: form.triggerDaysBeforeDue === option.value ? 'var(--bg-elevated)' : 'var(--text-subtle)',
                 fontSize: '12.5px',
                 cursor: 'pointer',
               }}
@@ -288,7 +288,7 @@ function AutopayTab(props: {
             </button>
           ))}
         </div>
-        <div style={{ marginTop: '16px', padding: '12px 14px', background: '#f0fdf4', border: '1px solid rgba(5,150,105,0.15)', borderRadius: '8px', fontSize: '12px', color: '#065f46', lineHeight: 1.5 }}>
+        <div style={{ marginTop: '16px', padding: '12px 14px', background: 'var(--success-bg)', border: '1px solid rgba(5,150,105,0.15)', borderRadius: '8px', fontSize: '12px', color: '#065f46', lineHeight: 1.5 }}>
           Next scheduled attempt: <strong>{nextCharge}</strong>
         </div>
       </div>
@@ -301,8 +301,8 @@ function AutopayTab(props: {
             padding: '12px 18px',
             borderRadius: '10px',
             border: 'none',
-            background: '#1A1714',
-            color: '#fff',
+            background: 'var(--text)',
+            color: 'var(--bg-elevated)',
             fontSize: '13px',
             fontWeight: 700,
             cursor: saving ? 'default' : 'pointer',
@@ -320,7 +320,7 @@ function AutopayTab(props: {
               borderRadius: '10px',
               border: '1px solid rgba(185,28,28,0.16)',
               background: '#fff5f5',
-              color: '#b91c1c',
+              color: 'var(--error)',
               fontSize: '13px',
               fontWeight: 700,
               cursor: saving ? 'default' : 'pointer',
@@ -332,8 +332,8 @@ function AutopayTab(props: {
         ) : null}
       </div>
 
-      <div style={{ background: '#eff6ff', border: '1px solid rgba(37,99,235,0.15)', borderRadius: '12px', padding: '16px 20px', display: 'flex', gap: '12px' }}>
-        <Icon name="info" size={16} style={{ color: '#2563eb', flexShrink: 0, marginTop: '1px' }} />
+      <div style={{ background: 'var(--info-bg)', border: '1px solid rgba(37,99,235,0.15)', borderRadius: '12px', padding: '16px 20px', display: 'flex', gap: '12px' }}>
+        <Icon name="info" size={16} style={{ color: 'var(--info)', flexShrink: 0, marginTop: '1px' }} />
         <div style={{ fontSize: '13px', color: '#1e40af', lineHeight: 1.6 }}>
           This page stores billing metadata only. Live card numbers are still handled by Stripe and are not stored in the app runtime.
         </div>
@@ -505,10 +505,10 @@ export default function BillingPage() {
       `}</style>
 
       <div style={{ marginBottom: '20px', animation: 'slideUp 0.3s ease both' }}>
-        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '30px', color: '#1A1714', margin: '0 0 6px', lineHeight: 1.1 }}>
+        <h1 className="page-title">
           Billing
         </h1>
-        <p style={{ margin: 0, fontSize: '14px', color: '#9A9693' }}>
+        <p className="page-subtitle">
           Invoices, payment history, and autopay settings.
         </p>
       </div>
@@ -523,8 +523,8 @@ export default function BillingPage() {
               borderRadius: '8px',
               border: 'none',
               cursor: 'pointer',
-              background: activeTab === tab.id ? '#ffffff' : 'transparent',
-              color: activeTab === tab.id ? '#1A1714' : '#6B6866',
+              background: activeTab === tab.id ? 'var(--bg-elevated)' : 'transparent',
+              color: activeTab === tab.id ? 'var(--text)' : 'var(--text-subtle)',
               fontWeight: activeTab === tab.id ? 600 : 400,
               fontSize: '13px',
               boxShadow: activeTab === tab.id ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
@@ -552,13 +552,13 @@ export default function BillingPage() {
       ) : (
         <div>
           {billingError ? (
-            <div style={{ background: '#fef2f2', border: '1px solid rgba(220,38,38,0.15)', borderRadius: '12px', padding: '14px 16px', marginBottom: '18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
-              <div style={{ fontSize: '13px', color: '#b91c1c' }}>
+            <div style={{ background: 'var(--error-bg)', border: '1px solid rgba(220,38,38,0.15)', borderRadius: '12px', padding: '14px 16px', marginBottom: '18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
+              <div style={{ fontSize: '13px', color: 'var(--error)' }}>
                 {billingError}
               </div>
               <button
                 onClick={() => setRetryKey((current) => current + 1)}
-                style={{ padding: '9px 14px', borderRadius: '9px', border: 'none', background: '#991b1b', color: '#fff', fontSize: '12.5px', fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}
+                style={{ padding: '9px 14px', borderRadius: '9px', border: 'none', background: 'var(--error)', color: 'var(--bg-elevated)', fontSize: '12.5px', fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}
               >
                 Retry
               </button>
@@ -587,7 +587,7 @@ export default function BillingPage() {
               </div>
               <Link
                 href={firstDueInvoiceId ? `/portal/billing/invoices/${firstDueInvoiceId}` : '/portal/billing'}
-                style={{ padding: '12px 24px', background: '#d97706', color: '#fff', borderRadius: '10px', fontSize: '14px', fontWeight: 700, textDecoration: 'none', flexShrink: 0, boxShadow: '0 4px 12px rgba(217,119,6,0.3)' }}
+                style={{ padding: '12px 24px', background: 'var(--warning)', color: 'var(--bg-elevated)', borderRadius: '10px', fontSize: '14px', fontWeight: 700, textDecoration: 'none', flexShrink: 0, boxShadow: '0 4px 12px rgba(217,119,6,0.3)' }}
               >
                 Pay Now
               </Link>
@@ -597,7 +597,7 @@ export default function BillingPage() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '28px' }}>
             {loading ? (
               [0, 1, 2].map((i) => (
-                <div key={i} style={{ background: '#fff', borderRadius: '12px', border: '1px solid rgba(0,0,0,0.07)', padding: '16px 20px' }}>
+                <div key={i} className="card" style={{ padding: '16px 20px' }}>
                   <Skeleton w="60%" h={22} r={4} />
                   <div style={{ marginTop: '8px' }}><Skeleton w="80%" h={12} /></div>
                 </div>
@@ -605,33 +605,33 @@ export default function BillingPage() {
             ) : billingError ? (
               [0, 1, 2].map((i) => (
                 <div key={i} style={{ background: '#fff7f7', borderRadius: '12px', border: '1px solid rgba(220,38,38,0.08)', padding: '16px 20px' }}>
-                  <div style={{ fontSize: '12px', color: '#b91c1c', fontWeight: 600 }}>Unavailable</div>
-                  <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '4px' }}>Retry to load billing totals.</div>
+                  <div style={{ fontSize: '12px', color: 'var(--error)', fontWeight: 600 }}>Unavailable</div>
+                  <div style={{ fontSize: '12px', color: 'var(--error)', marginTop: '4px' }}>Retry to load billing totals.</div>
                 </div>
               ))
             ) : (
               [
-                { label: 'Paid This Season', value: `$${totalPaid.toLocaleString()}`, color: '#059669' },
-                { label: 'Open Balance', value: `$${openBalance.toFixed(2)}`, color: '#d97706' },
-                { label: 'Invoices', value: String(invoices.length), color: '#2563eb' },
+                { label: 'Paid This Season', value: `$${totalPaid.toLocaleString()}`, color: 'var(--success)' },
+                { label: 'Open Balance', value: `$${openBalance.toFixed(2)}`, color: 'var(--warning)' },
+                { label: 'Invoices', value: String(invoices.length), color: 'var(--info)' },
               ].map((stat) => (
-                <div key={stat.label} style={{ background: '#ffffff', borderRadius: '12px', border: '1px solid rgba(0,0,0,0.07)', padding: '16px 20px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-                  <div style={{ fontSize: '22px', fontWeight: 700, color: stat.color, fontFamily: 'var(--font-mono)' }}>{stat.value}</div>
-                  <div style={{ fontSize: '12px', color: '#9A9693', marginTop: '4px' }}>{stat.label}</div>
+                <div key={stat.label} className="card" style={{ padding: '16px 20px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+                  <div style={{ fontSize: '22px', fontWeight: 700, color: stat.color, fontFamily: 'var(--font-body)' }}>{stat.value}</div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>{stat.label}</div>
                 </div>
               ))
             )}
           </div>
 
           <section style={{ marginBottom: '32px' }}>
-            <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#9A9693', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '14px' }}>
+            <div style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '14px' }}>
               Invoices
             </div>
 
-            <div style={{ background: '#ffffff', borderRadius: '14px', border: '1px solid rgba(0,0,0,0.07)', boxShadow: '0 1px 6px rgba(0,0,0,0.04)', overflow: 'hidden' }}>
+            <div className="card" style={{ boxShadow: '0 1px 6px rgba(0,0,0,0.04)', overflow: 'hidden' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 100px 100px 36px', padding: '10px 20px', borderBottom: '1px solid rgba(0,0,0,0.07)', background: 'rgba(0,0,0,0.02)' }}>
                 {['Invoice', 'Amount', 'Due', 'Status', ''].map((header) => (
-                  <span key={header} style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#9A9693', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  <span key={header} style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                     {header}
                   </span>
                 ))}
@@ -651,7 +651,7 @@ export default function BillingPage() {
                   </div>
                 ))
               ) : billingError ? null : invoices.length === 0 ? (
-                <div style={{ padding: '32px', textAlign: 'center', color: '#9A9693', fontSize: '14px' }}>No invoices found.</div>
+                <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '14px' }}>No invoices found.</div>
               ) : (
                 invoices.map((inv, index) => {
                   const statusCfg = STATUS_CONFIG[inv.status] ?? STATUS_CONFIG.draft
@@ -669,21 +669,21 @@ export default function BillingPage() {
                       }}
                     >
                       <div>
-                        <div style={{ fontSize: '13.5px', color: '#1A1714', fontWeight: 500, lineHeight: 1.3 }}>
+                        <div style={{ fontSize: '13.5px', color: 'var(--text)', fontWeight: 500, lineHeight: 1.3 }}>
                           {inv.notes ?? `Invoice ${inv.invoice_number}`}
                         </div>
-                        <div style={{ fontSize: '11.5px', color: '#9A9693', fontFamily: 'var(--font-mono)', marginTop: '2px' }}>
+                        <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginTop: '2px' }}>
                           {inv.invoice_number}
                         </div>
                       </div>
-                      <span style={{ fontSize: '14px', fontWeight: 700, color: '#1A1714', fontFamily: 'var(--font-mono)' }}>
+                      <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-body)' }}>
                         ${cents(inv.total_cents)}
                       </span>
-                      <span style={{ fontSize: '12.5px', color: '#6B6866' }}>{fmtDate(inv.due_date)}</span>
+                      <span style={{ fontSize: '12.5px', color: 'var(--text-subtle)' }}>{fmtDate(inv.due_date)}</span>
                       <span style={{ display: 'inline-block', padding: '3px 9px', borderRadius: '999px', fontSize: '11.5px', fontWeight: 600, background: statusCfg.bg, color: statusCfg.color }}>
                         {statusCfg.label}
                       </span>
-                      <Icon name="chevron-right" size={14} style={{ color: '#C0BDBB' }} />
+                      <Icon name="chevron-right" size={14} style={{ color: 'var(--border-strong)' }} />
                     </Link>
                   )
                 })
@@ -692,11 +692,11 @@ export default function BillingPage() {
           </section>
 
           <section>
-            <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#9A9693', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '14px' }}>
+            <div style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '14px' }}>
               Recent Payments
             </div>
 
-            <div style={{ background: '#ffffff', borderRadius: '12px', border: '1px solid rgba(0,0,0,0.07)', overflow: 'hidden' }}>
+            <div className="card" style={{ overflow: 'hidden' }}>
               {loading ? (
                 [0, 1, 2].map((i) => (
                   <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: i < 2 ? '1px solid rgba(0,0,0,0.05)' : 'none', gap: '12px' }}>
@@ -711,7 +711,7 @@ export default function BillingPage() {
                   </div>
                 ))
               ) : billingError ? null : payments.length === 0 ? (
-                <div style={{ padding: '24px', textAlign: 'center', color: '#9A9693', fontSize: '14px' }}>No payment history yet.</div>
+                <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '14px' }}>No payment history yet.</div>
               ) : (
                 payments.map((payment, index) => (
                   <div
@@ -719,17 +719,17 @@ export default function BillingPage() {
                     style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: index < payments.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none', gap: '12px' }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#ecfdf5', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <Icon name="check-circle" size={15} style={{ color: '#059669' }} />
+                      <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--success-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <Icon name="check-circle" size={15} style={{ color: 'var(--success)' }} />
                       </div>
                       <div>
-                        <div style={{ fontSize: '13.5px', color: '#1A1714', fontWeight: 500 }}>{payment.invoiceNumber}</div>
-                        <div style={{ fontSize: '12px', color: '#9A9693', marginTop: '2px' }}>
+                        <div style={{ fontSize: '13.5px', color: 'var(--text)', fontWeight: 500 }}>{payment.invoiceNumber}</div>
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
                           {fmtDate(payment.paid_at ?? payment.created_at)} · {payment.method}
                         </div>
                       </div>
                     </div>
-                    <span style={{ fontSize: '14px', fontWeight: 700, color: '#059669', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
+                    <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--success)', fontFamily: 'var(--font-body)', flexShrink: 0 }}>
                       -${cents(payment.amount_cents)}
                     </span>
                   </div>

@@ -41,7 +41,7 @@ const STATUS_CONFIG: Record<MeetStatus, { label: string; color: string; bg: stri
 
 function StatusBadge({ status }: { status: MeetStatus }) {
   const c = STATUS_CONFIG[status]
-  return <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '10px', background: c.bg, color: c.color, fontFamily: 'var(--font-mono)', letterSpacing: '0.02em', whiteSpace: 'nowrap' }}>{c.label}</span>
+  return <span className="badge" style={{ background: c.bg, color: c.color }}>{c.label}</span>
 }
 
 const COURSE_LABELS: Record<MeetCourse, string> = {
@@ -52,7 +52,7 @@ const COURSE_LABELS: Record<MeetCourse, string> = {
 
 function CourseBadge({ course }: { course: MeetCourse }) {
   const colors: Record<MeetCourse, string> = { SCY: 'var(--text-subtle)', SCM: 'var(--info)', LCM: 'var(--accent)' }
-  return <span title={COURSE_LABELS[course]} style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', padding: '2px 6px', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)', color: colors[course], background: 'var(--bg-elevated)' }}>{course}</span>
+  return <span title={COURSE_LABELS[course]} style={{ fontFamily: 'var(--font-body)', fontSize: '11px', padding: '2px 6px', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)', color: colors[course], background: 'var(--bg-elevated)' }}>{course}</span>
 }
 
 const COLUMNS: Column<MeetRow>[] = [
@@ -72,7 +72,7 @@ const COLUMNS: Column<MeetRow>[] = [
     label: 'Dates',
     sortable: true,
     render: (row) => (
-      <div style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-subtle)' }}>
+      <div style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-subtle)' }}>
         <div>{row.startDate || '—'}</div>
         {row.endDate && row.endDate !== row.startDate && <div style={{ color: 'var(--text-muted)' }}>→ {row.endDate}</div>}
       </div>
@@ -80,9 +80,9 @@ const COLUMNS: Column<MeetRow>[] = [
   },
   { key: 'course', label: 'Course', render: (row) => <CourseBadge course={row.course} /> },
   { key: 'status', label: 'Status', render: (row) => <StatusBadge status={row.status} /> },
-  { key: 'events', label: 'Events', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: row.events > 0 ? 'var(--text)' : 'var(--text-muted)' }}>{row.events || '—'}</span> },
-  { key: 'commitments', label: 'Commitments', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: row.commitments > 0 ? 'var(--text)' : 'var(--text-muted)' }}>{row.commitments || '—'}</span> },
-  { key: 'entries', label: 'Entries', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', fontWeight: row.entries > 0 ? 600 : 400, color: row.entries > 0 ? 'var(--accent)' : 'var(--text-muted)' }}>{row.entries || '—'}</span> },
+  { key: 'events', label: 'Events', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: row.events > 0 ? 'var(--text)' : 'var(--text-muted)' }}>{row.events || '—'}</span> },
+  { key: 'commitments', label: 'Commitments', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: row.commitments > 0 ? 'var(--text)' : 'var(--text-muted)' }}>{row.commitments || '—'}</span> },
+  { key: 'entries', label: 'Entries', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', fontWeight: row.entries > 0 ? 600 : 400, color: row.entries > 0 ? 'var(--accent)' : 'var(--text-muted)' }}>{row.entries || '—'}</span> },
 ]
 
 const ACTIVE_STATUSES: MeetStatus[] = ['draft', 'published', 'commitment_open', 'commitment_closed', 'entry_finalized']
@@ -184,10 +184,10 @@ function MeetsPageContent() {
 
   return (
     <div style={{ padding: '24px', maxWidth: '1200px' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
+      <div className="page-header">
         <div>
-          <h1 style={{ fontSize: '22px', fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.2, marginBottom: '4px' }}>Meets</h1>
-          <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>Live meet operations from persisted backend state</p>
+          <h1 className="page-title">Meets</h1>
+          <p className="page-subtitle">Live meet operations from persisted backend state</p>
         </div>
         {allowWrite && (
           <Link href="/meets/new" className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px', textDecoration: 'none' }}>
@@ -198,7 +198,7 @@ function MeetsPageContent() {
 
       {createdNotice === '1' && (
         <div className="card" style={{ padding: '14px 16px', marginBottom: '20px', borderColor: 'var(--success-border)', background: 'var(--success-bg)' }}>
-          <div style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', color: 'var(--success)', marginBottom: '4px', letterSpacing: '0.04em' }}>LIVE DATA ENABLED</div>
+          <div style={{ fontSize: '12px', fontFamily: 'var(--font-body)', color: 'var(--success)', marginBottom: '4px', letterSpacing: '0.04em' }}>LIVE DATA ENABLED</div>
           <div style={{ fontSize: '13px', color: 'var(--text-subtle)', lineHeight: 1.6 }}>The meet list now reloads from persisted API data. Newly created meets appear once the create flow posts to the backend.</div>
         </div>
       )}
@@ -211,8 +211,8 @@ function MeetsPageContent() {
           { label: 'Total Entries (Season)', value: totalEntries, color: 'var(--success)' },
         ].map((stat) => (
           <div key={stat.label} className="card" style={{ padding: '14px 16px' }}>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)', marginBottom: '6px' }}>{stat.label}</div>
-            <div style={{ fontSize: '22px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
+            <div style={{ fontSize: '22px', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
           </div>
         ))}
       </div>
@@ -230,7 +230,7 @@ function MeetsPageContent() {
           <option value="SCM">SCM</option>
           <option value="LCM">LCM</option>
         </select>
-        <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginLeft: 'auto' }}>{filtered.length} meets</span>
+        <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginLeft: 'auto' }}>{filtered.length} meets</span>
       </div>
 
       {loading ? (

@@ -94,22 +94,22 @@ const SWIMMER_COLS: Column<SwimmerRow>[] = [
         <Link href={`/members/swimmers/${row.id}`} style={{ color: 'var(--text)', fontWeight: 600, textDecoration: 'none', fontSize: '13px' }}>
           {row.name}
         </Link>
-        <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: '2px' }}>{row.ussNumber || 'No external ID'}</div>
+        <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginTop: '2px' }}>{row.ussNumber || 'No external ID'}</div>
       </div>
     ),
   },
-  { key: 'age', label: 'Age', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', color: 'var(--text)' }}>{row.age}</span> },
+  { key: 'age', label: 'Age', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '13px', color: 'var(--text)' }}>{row.age}</span> },
   { key: 'gender', label: 'Gender', render: (row) => <span style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>{row.gender}</span> },
-  { key: 'isPrimary', label: 'Role', render: (row) => <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '10px', background: row.isPrimary ? 'var(--accent-subtle)' : 'var(--bg-elevated)', color: row.isPrimary ? 'var(--accent)' : 'var(--text-muted)', fontFamily: 'var(--font-mono)', textTransform: 'uppercase' }}>{row.isPrimary ? 'primary' : 'secondary'}</span> },
-  { key: 'status', label: 'Status', render: (row) => <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '10px', background: row.status === 'active' ? 'var(--success-bg)' : 'var(--bg-elevated)', color: row.status === 'active' ? 'var(--success)' : 'var(--text-muted)', fontFamily: 'var(--font-mono)', textTransform: 'uppercase' }}>{row.status}</span> },
-  { key: 'joinedGroup', label: 'Since', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-muted)' }}>{formatDate(row.joinedGroup)}</span> },
+  { key: 'isPrimary', label: 'Role', render: (row) => <span className="badge" style={{ background: row.isPrimary ? 'var(--accent-subtle)' : 'var(--bg-elevated)', color: row.isPrimary ? 'var(--accent)' : 'var(--text-muted)' }}>{row.isPrimary ? 'primary' : 'secondary'}</span> },
+  { key: 'status', label: 'Status', render: (row) => <span className="badge" style={{ background: row.status === 'active' ? 'var(--success-bg)' : 'var(--bg-elevated)', color: row.status === 'active' ? 'var(--success)' : 'var(--text-muted)' }}>{row.status}</span> },
+  { key: 'joinedGroup', label: 'Since', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-muted)' }}>{formatDate(row.joinedGroup)}</span> },
 ]
 
 const RULE_COLS: Column<RuleRow>[] = [
-  { key: 'ruleType', label: 'Type', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', padding: '2px 8px', borderRadius: '8px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-subtle)' }}>{row.ruleType}</span> },
+  { key: 'ruleType', label: 'Type', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', padding: '2px 8px', borderRadius: '8px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-subtle)' }}>{row.ruleType}</span> },
   { key: 'description', label: 'Description', render: (row) => <span style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>{row.description}</span> },
-  { key: 'createdAt', label: 'Created', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-muted)' }}>{formatDate(row.createdAt)}</span> },
-  { key: 'active', label: 'Status', render: (row) => <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '10px', background: row.active ? 'var(--success-bg)' : 'var(--bg-elevated)', color: row.active ? 'var(--success)' : 'var(--text-muted)', fontFamily: 'var(--font-mono)', textTransform: 'uppercase' }}>{row.active ? 'active' : 'disabled'}</span> },
+  { key: 'createdAt', label: 'Created', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-muted)' }}>{formatDate(row.createdAt)}</span> },
+  { key: 'active', label: 'Status', render: (row) => <span className="badge" style={{ background: row.active ? 'var(--success-bg)' : 'var(--bg-elevated)', color: row.active ? 'var(--success)' : 'var(--text-muted)' }}>{row.active ? 'active' : 'disabled'}</span> },
 ]
 
 function buildSwimmerRows(swimmers: SwimmerRecord[], links: SwimmerGroupLinkRecord[]): SwimmerRow[] {
@@ -279,18 +279,18 @@ export default function GroupDetailPage() {
         <Icon name="chevron-left" size={14} /> Groups
       </Link>
 
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
+      <div className="page-header">
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
-            <h1 style={{ fontSize: '24px', fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.2 }}>{group.name}</h1>
-            <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '10px', background: 'var(--accent-subtle)', color: 'var(--accent)', fontFamily: 'var(--font-mono)', letterSpacing: '0.02em' }}>
+            <h1 className="page-title">{group.name}</h1>
+            <span className="badge" style={{ background: 'var(--accent-subtle)', color: 'var(--accent)' }}>
               {group.type}
             </span>
-            <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '10px', background: group.is_active ? 'var(--success-bg)' : 'var(--bg-elevated)', color: group.is_active ? 'var(--success)' : 'var(--text-muted)', fontFamily: 'var(--font-mono)', textTransform: 'uppercase' }}>
+            <span className="badge" style={{ background: group.is_active ? 'var(--success-bg)' : 'var(--bg-elevated)', color: group.is_active ? 'var(--success)' : 'var(--text-muted)' }}>
               {group.is_active ? 'active' : 'archived'}
             </span>
           </div>
-          <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
             {group.id} · {group.code}
           </div>
         </div>
@@ -304,8 +304,8 @@ export default function GroupDetailPage() {
           { label: 'Rules', value: rules.length.toString(), color: 'var(--accent)' },
         ].map((stat) => (
           <div key={stat.label} className="card" style={{ padding: '14px 16px' }}>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)', marginBottom: '6px' }}>{stat.label}</div>
-            <div style={{ fontSize: '16px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
+            <div style={{ fontSize: '16px', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
           </div>
         ))}
       </div>
@@ -361,7 +361,7 @@ export default function GroupDetailPage() {
       {activeTab === 'eligibility' ? (
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>Rules below are loaded from the persisted eligibility-rule store.</p>
+            <p className="page-subtitle">Rules below are loaded from the persisted eligibility-rule store.</p>
           </div>
           <Table columns={RULE_COLS} data={rules} emptyTitle="No rules" emptyDescription="No eligibility rules are configured for this group." />
         </div>
@@ -370,7 +370,7 @@ export default function GroupDetailPage() {
       {activeTab === 'settings' ? (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
           <div className="card" style={{ padding: '20px' }}>
-            <h3 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '16px', fontFamily: 'var(--font-mono)' }}>Group Settings</h3>
+            <h3 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '16px', fontFamily: 'var(--font-body)' }}>Group Settings</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {[
                 { label: 'Group ID', value: group.id },
@@ -383,13 +383,13 @@ export default function GroupDetailPage() {
               ].map((row) => (
                 <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px', borderBottom: '1px solid var(--border)', paddingBottom: '10px' }}>
                   <span style={{ color: 'var(--text-muted)' }}>{row.label}</span>
-                  <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text)', fontWeight: 600 }}>{row.value}</span>
+                  <span style={{ fontFamily: 'var(--font-body)', color: 'var(--text)', fontWeight: 600 }}>{row.value}</span>
                 </div>
               ))}
             </div>
           </div>
           <div className="card" style={{ padding: '20px' }}>
-            <h3 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '16px', fontFamily: 'var(--font-mono)' }}>Description</h3>
+            <h3 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '16px', fontFamily: 'var(--font-body)' }}>Description</h3>
             <p style={{ fontSize: '13px', color: 'var(--text-subtle)', lineHeight: 1.7 }}>{group.description || 'No description recorded yet.'}</p>
           </div>
         </div>

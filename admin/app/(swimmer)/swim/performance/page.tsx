@@ -25,21 +25,21 @@ import {
 
 // ── Design tokens ──────────────────────────────────────────────────────────
 const C = {
-  accent:      '#00D4AA',
-  accentDim:   'rgba(0,212,170,0.10)',
-  accentBorder:'rgba(0,212,170,0.22)',
-  text:        '#E4F2FF',
-  subtle:      '#7FA8C9',
-  muted:       '#4A6B82',
-  card:        '#0D2235',
-  border:      'rgba(0,212,170,0.10)',
+  accent:      'var(--accent)',
+  accentDim:   'var(--border)',
+  accentBorder:'var(--accent-border)',
+  text:        'var(--text)',
+  subtle:      'var(--text-subtle)',
+  muted:       'var(--text-muted)',
+  card:        'var(--bg-surface)',
+  border:      'var(--border)',
 }
 
 const STANDARD_COLOR: Record<string, string> = {
-  AAA: '#00D4AA',
+  AAA: 'var(--accent)',
   AA:  '#3b82f6',
   A:   '#8b5cf6',
-  BB:  '#F59E0B',
+  BB:  'var(--warning)',
   B:   '#9ca3af',
 }
 
@@ -81,20 +81,20 @@ function toneColors(tone: 'success' | 'warning' | 'muted') {
     case 'success':
       return {
         text: C.accent,
-        bg: 'rgba(0,212,170,0.10)',
-        border: 'rgba(0,212,170,0.22)',
+        bg: 'var(--border)',
+        border: 'var(--accent-border)',
       }
     case 'warning':
       return {
-        text: '#F59E0B',
-        bg: 'rgba(245,158,11,0.12)',
-        border: 'rgba(245,158,11,0.22)',
+        text: 'var(--warning)',
+        bg: 'var(--warning-bg)',
+        border: 'var(--warning-border)',
       }
     default:
       return {
         text: C.subtle,
         bg: 'rgba(127,168,201,0.10)',
-        border: 'rgba(127,168,201,0.18)',
+        border: 'var(--text-subtle)',
       }
   }
 }
@@ -163,7 +163,7 @@ function buildProgressionData(records: BestTimeRecord[], eventKey: string): Arra
 // ── Skeleton ───────────────────────────────────────────────────────────────
 function SkeletonLine({ width = '100%', height = '14px' }: { width?: string; height?: string }) {
   return (
-    <div style={{ width, height, background: 'rgba(0,212,170,0.08)', borderRadius: '6px', animation: 'pulse 1.5s ease-in-out infinite' }} />
+    <div style={{ width, height, background: 'var(--border)', borderRadius: '6px', animation: 'pulse 1.5s ease-in-out infinite' }} />
   )
 }
 
@@ -172,14 +172,14 @@ function CourseCell({ entry }: { entry?: PivotEntry }) {
   if (!entry) {
     return (
       <div style={{ textAlign: 'center' }}>
-        <span style={{ fontSize: '13px', color: C.muted, fontFamily: 'var(--font-mono)' }}>—</span>
+        <span style={{ fontSize: '13px', color: C.muted, fontFamily: 'var(--font-body)' }}>—</span>
       </div>
     )
   }
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '2px' }}>
-        <span style={{ fontSize: '15px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: C.accent }}>
+        <span style={{ fontSize: '15px', fontFamily: 'var(--font-body)', fontWeight: 700, color: C.accent }}>
           {entry.time}
         </span>
       </div>
@@ -193,7 +193,7 @@ function CourseCell({ entry }: { entry?: PivotEntry }) {
 function ProgressionBar({ value, max, color }: { value: number; max: number; color: string }) {
   const pct = Math.min(100, (value / max) * 100)
   return (
-    <div style={{ height: '6px', background: 'rgba(0,212,170,0.10)', borderRadius: '999px', overflow: 'hidden' }}>
+    <div style={{ height: '6px', background: 'var(--border)', borderRadius: '999px', overflow: 'hidden' }}>
       <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: '999px', transition: 'width 600ms cubic-bezier(0.16,1,0.3,1)' }} />
     </div>
   )
@@ -393,8 +393,8 @@ export default function PerformancePage() {
             Best times, cut qualifications, and progression history.
           </p>
         </div>
-        <div style={{ background: C.card, border: '1px solid rgba(239,68,68,0.2)', borderRadius: '14px', padding: '24px 22px' }}>
-          <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#fca5a5', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
+        <div className="card" style={{ padding: '24px 22px' }}>
+          <div style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--error)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
             Swimmer Performance
           </div>
           <p style={{ fontSize: '18px', color: C.text, fontWeight: 600, marginBottom: '8px' }}>
@@ -405,7 +405,7 @@ export default function PerformancePage() {
           </p>
           <button
             onClick={() => setRetryKey((current) => current + 1)}
-            style={{ padding: '10px 16px', borderRadius: '9px', border: 'none', background: '#dc2626', color: '#fff', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+            style={{ padding: '10px 16px', borderRadius: '9px', border: 'none', background: 'var(--error)', color: '#fff', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
           >
             Retry
           </button>
@@ -496,7 +496,7 @@ export default function PerformancePage() {
                   color: courseFilter === course ? C.accent : C.subtle,
                   fontSize: '12.5px',
                   fontWeight: 600,
-                  fontFamily: 'var(--font-mono)',
+                  fontFamily: 'var(--font-body)',
                   cursor: 'pointer',
                   letterSpacing: '0.04em',
                   transition: 'all 120ms ease',
@@ -508,11 +508,11 @@ export default function PerformancePage() {
           </div>
 
           {/* Best times table */}
-          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '14px', overflow: 'hidden' }}>
+          <div className="card" style={{ overflow: 'hidden' }}>
             {/* Header */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', padding: '12px 20px', borderBottom: `1px solid ${C.border}` }}>
               {['Event', 'SCY', 'SCM', 'LCM'].map((h) => (
-                <span key={h} style={{ fontSize: '10.5px', fontFamily: 'var(--font-mono)', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                <span key={h} style={{ fontSize: '10.5px', fontFamily: 'var(--font-body)', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                   {h}
                 </span>
               ))}
@@ -541,7 +541,7 @@ export default function PerformancePage() {
                     animationDelay: `${i * 30}ms`,
                     animation: 'slideUp 0.3s cubic-bezier(0.16,1,0.3,1) both',
                   }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(0,212,170,0.03)')}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--border)')}
                   onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                 >
                   <span style={{ fontSize: '14px', fontWeight: 600, color: C.text }}>{bt.event}</span>
@@ -557,7 +557,7 @@ export default function PerformancePage() {
           <div style={{ display: 'flex', gap: '16px', marginTop: '14px', flexWrap: 'wrap' }}>
             {Object.entries(STANDARD_COLOR).map(([std, color]) => (
               <div key={std} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', fontWeight: 700, color, background: `${color}18`, padding: '2px 7px', borderRadius: '4px' }}>
+                <span style={{ fontSize: '10px', fontFamily: 'var(--font-body)', fontWeight: 700, color, background: `${color}18`, padding: '2px 7px', borderRadius: '4px' }}>
                   {std}
                 </span>
                 <span style={{ fontSize: '11px', color: C.muted }}>
@@ -573,8 +573,8 @@ export default function PerformancePage() {
       {tab === 'cuts' && (
         <div style={{ animation: 'slideUp 0.25s cubic-bezier(0.16,1,0.3,1) both' }}>
           {(cutsView.state === 'loading' || cutsView.state === 'error' || cutsView.state === 'empty') && (
-            <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '12px', padding: '32px 20px', textAlign: 'center' }}>
-              <Icon name={cutsView.state === 'error' ? 'alert-circle' : 'zap'} size={28} style={{ color: cutsView.state === 'error' ? '#F59E0B' : C.muted, marginBottom: '12px' }} />
+            <div className="card" style={{ padding: '32px 20px', textAlign: 'center' }}>
+              <Icon name={cutsView.state === 'error' ? 'alert-circle' : 'zap'} size={28} style={{ color: cutsView.state === 'error' ? 'var(--warning)' : C.muted, marginBottom: '12px' }} />
               <p style={{ fontSize: '15px', color: C.subtle, fontWeight: 500, marginBottom: '6px' }}>{cutsView.title}</p>
               <p style={{ fontSize: '13px', color: C.muted, lineHeight: 1.5 }}>
                 {cutsView.message}
@@ -588,11 +588,11 @@ export default function PerformancePage() {
                 {[
                   { label: 'Qualified', value: String(cutsView.qualifiedCount), accent: C.accent },
                   { label: 'Active Standards', value: String(cutsView.totalCount), accent: C.text },
-                  { label: 'Still Chasing', value: String(cutsView.totalCount - cutsView.qualifiedCount), accent: '#F59E0B' },
+                  { label: 'Still Chasing', value: String(cutsView.totalCount - cutsView.qualifiedCount), accent: 'var(--warning)' },
                 ].map((stat) => (
-                  <div key={stat.label} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '12px', padding: '14px 16px' }}>
-                    <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', color: C.muted, fontFamily: 'var(--font-mono)', marginBottom: '6px' }}>{stat.label}</div>
-                    <div style={{ fontSize: '20px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: stat.accent }}>{stat.value}</div>
+                  <div key={stat.label} className="card" style={{ padding: '14px 16px' }}>
+                    <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', color: C.muted, fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
+                    <div style={{ fontSize: '20px', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.accent }}>{stat.value}</div>
                   </div>
                 ))}
               </div>
@@ -613,10 +613,10 @@ export default function PerformancePage() {
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: '10px' }}>
                         <div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '6px' }}>
-                            <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: colors.text, background: colors.bg, border: `1px solid ${colors.border}`, padding: '3px 8px', borderRadius: '999px' }}>
+                            <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', fontWeight: 700, color: colors.text, background: colors.bg, border: `1px solid ${colors.border}`, padding: '3px 8px', borderRadius: '999px' }}>
                               {status.badge}
                             </span>
-                            <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: C.subtle }}>
+                            <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', fontWeight: 700, color: C.subtle }}>
                               {standard.standard_code}
                             </span>
                           </div>
@@ -628,12 +628,12 @@ export default function PerformancePage() {
                           </p>
                         </div>
                         <div style={{ minWidth: '170px', textAlign: 'right' }}>
-                          <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', color: C.muted, fontFamily: 'var(--font-mono)', marginBottom: '4px' }}>Cut Time</div>
-                          <div style={{ fontSize: '18px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: C.text, marginBottom: '8px' }}>
+                          <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', color: C.muted, fontFamily: 'var(--font-body)', marginBottom: '4px' }}>Cut Time</div>
+                          <div style={{ fontSize: '18px', fontFamily: 'var(--font-body)', fontWeight: 700, color: C.text, marginBottom: '8px' }}>
                             {fmtTime(standard.time_ms)}
                           </div>
-                          <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', color: C.muted, fontFamily: 'var(--font-mono)', marginBottom: '4px' }}>Best Time</div>
-                          <div style={{ fontSize: '15px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: qualification.best_time_ms != null ? colors.text : C.muted }}>
+                          <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', color: C.muted, fontFamily: 'var(--font-body)', marginBottom: '4px' }}>Best Time</div>
+                          <div style={{ fontSize: '15px', fontFamily: 'var(--font-body)', fontWeight: 700, color: qualification.best_time_ms != null ? colors.text : C.muted }}>
                             {qualification.best_time_ms != null ? fmtTime(qualification.best_time_ms) : 'NT'}
                           </div>
                         </div>
@@ -655,7 +655,7 @@ export default function PerformancePage() {
               {[1,2,3].map(i => <SkeletonLine key={i} />)}
             </div>
           ) : progressionKeys.length === 0 ? (
-            <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '12px', padding: '40px 20px', textAlign: 'center' }}>
+            <div className="card" style={{ padding: '40px 20px', textAlign: 'center' }}>
               <p style={{ fontSize: '14px', color: C.muted }}>No progression data available yet.</p>
             </div>
           ) : (
@@ -669,10 +669,10 @@ export default function PerformancePage() {
                       onClick={() => setProgressEvent(ev)}
                       style={{
                         fontSize: '11px', padding: '4px 12px', borderRadius: '20px', cursor: 'pointer',
-                        background: progressEvent === ev ? C.accent : 'rgba(0,212,170,0.06)',
-                        color: progressEvent === ev ? '#061623' : C.subtle,
+                        background: progressEvent === ev ? C.accent : 'var(--border)',
+                        color: progressEvent === ev ? 'var(--bg)' : C.subtle,
                         border: `1px solid ${progressEvent === ev ? C.accent : C.border}`,
-                        fontFamily: 'var(--font-mono)', fontWeight: 600,
+                        fontFamily: 'var(--font-body)', fontWeight: 600,
                         transition: 'all 100ms ease',
                       }}
                     >{ev}</button>
@@ -685,10 +685,10 @@ export default function PerformancePage() {
                       onClick={() => setViewMode(m)}
                       style={{
                         fontSize: '11px', padding: '4px 12px', borderRadius: '20px', cursor: 'pointer',
-                        background: viewMode === m ? 'rgba(0,212,170,0.12)' : 'transparent',
+                        background: viewMode === m ? 'var(--accent-subtle)' : 'transparent',
                         color: viewMode === m ? C.accent : C.muted,
                         border: `1px solid ${viewMode === m ? C.accentBorder : C.border}`,
-                        fontFamily: 'var(--font-mono)', textTransform: 'capitalize',
+                        fontFamily: 'var(--font-body)', textTransform: 'capitalize',
                       }}
                     >{m}</button>
                   ))}
@@ -700,12 +700,12 @@ export default function PerformancePage() {
                 {[
                   { label: 'Current Best', value: latestTime ? fmtSec(latestTime) : '—', color: C.accent, sub: eventData[eventData.length - 1]?.meet ?? '' },
                   { label: 'Total Drop', value: improvement > 0 ? `-${improvement.toFixed(2)}s` : '—', color: improvement > 0 ? C.accent : C.muted, sub: `over ${eventData.length} data points` },
-                  { label: 'My Goal', value: goalSec ? fmtSec(goalSec) : 'Not set', color: goalSec ? '#F59E0B' : C.muted, sub: toGoal !== null ? (toGoal > 0 ? `${toGoal.toFixed(2)}s to go` : `Beat by ${Math.abs(toGoal).toFixed(2)}s!`) : 'Tap to set a goal' },
+                  { label: 'My Goal', value: goalSec ? fmtSec(goalSec) : 'Not set', color: goalSec ? 'var(--warning)' : C.muted, sub: toGoal !== null ? (toGoal > 0 ? `${toGoal.toFixed(2)}s to go` : `Beat by ${Math.abs(toGoal).toFixed(2)}s!`) : 'Tap to set a goal' },
                   { label: 'Data Points', value: String(eventData.length), color: C.subtle, sub: 'recorded swims' },
                 ].map((s) => (
-                  <div key={s.label} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '12px', padding: '14px 16px' }}>
-                    <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', color: C.muted, fontFamily: 'var(--font-mono)', marginBottom: '6px' }}>{s.label}</div>
-                    <div style={{ fontSize: '18px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: s.color, marginBottom: '2px' }}>{s.value}</div>
+                  <div key={s.label} className="card" style={{ padding: '14px 16px' }}>
+                    <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', color: C.muted, fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{s.label}</div>
+                    <div style={{ fontSize: '18px', fontFamily: 'var(--font-body)', fontWeight: 700, color: s.color, marginBottom: '2px' }}>{s.value}</div>
                     <div style={{ fontSize: '10px', color: C.muted }}>{s.sub}</div>
                   </div>
                 ))}
@@ -713,7 +713,7 @@ export default function PerformancePage() {
 
               {/* Goal editor */}
               <div style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.22)', borderRadius: '12px', padding: '14px 16px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <Icon name="zap" size={16} style={{ color: '#F59E0B', flexShrink: 0 }} />
+                <Icon name="zap" size={16} style={{ color: 'var(--warning)', flexShrink: 0 }} />
                 <div style={{ flex: 1 }}>
                   <p style={{ fontSize: '12px', fontWeight: 600, color: C.text, marginBottom: '2px' }}>Goal for {progressEvent}</p>
                   {editingGoal ? (
@@ -725,7 +725,7 @@ export default function PerformancePage() {
                           setGoalError(null)
                         }}
                         placeholder="e.g. 58.50 or 1:58.00"
-                        style={{ background: 'rgba(0,212,170,0.06)', border: `1px solid ${C.border}`, borderRadius: '8px', padding: '5px 10px', fontSize: '12px', fontFamily: 'var(--font-mono)', color: C.text, width: '160px' }}
+                        style={{ background: 'var(--border)', border: `1px solid ${C.border}`, borderRadius: '8px', padding: '5px 10px', fontSize: '12px', fontFamily: 'var(--font-body)', color: C.text, width: '160px' }}
                       />
                       <button
                         onClick={() => {
@@ -735,18 +735,18 @@ export default function PerformancePage() {
                           setEditingGoal(false)
                           setGoalError(null)
                         }}
-                        style={{ fontSize: '11px', padding: '5px 12px', background: C.accent, color: '#061623', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 700 }}
+                        className="btn btn-primary btn-sm"
                       >Save</button>
                     </div>
                   ) : (
                     <p style={{ fontSize: '11px', color: C.muted }}>{goalTime[progressEvent] ? `Target: ${goalTime[progressEvent]}` : 'No goal set for this event.'}</p>
                   )}
-                  {goalError && <p style={{ fontSize: '11px', color: '#fca5a5', marginTop: '6px' }}>{goalError}</p>}
+                  {goalError && <p style={{ fontSize: '11px', color: 'var(--error)', marginTop: '6px' }}>{goalError}</p>}
                 </div>
                 {!editingGoal && (
                   <button
                     onClick={() => { setGoalInput({ ...goalInput, [progressEvent]: goalTime[progressEvent] ?? '' }); setGoalError(null); setEditingGoal(true) }}
-                    style={{ fontSize: '11px', padding: '5px 12px', background: 'rgba(245,158,11,0.15)', color: '#F59E0B', border: '1px solid rgba(245,158,11,0.30)', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 }}
+                    style={{ fontSize: '11px', padding: '5px 12px', background: 'rgba(245,158,11,0.15)', color: 'var(--warning)', border: '1px solid rgba(245,158,11,0.30)', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 }}
                   >
                     {goalTime[progressEvent] ? 'Edit Goal' : 'Set Goal'}
                   </button>
@@ -754,15 +754,15 @@ export default function PerformancePage() {
               </div>
 
               {eventData.length === 0 ? (
-                <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '12px', padding: '32px 20px', textAlign: 'center' }}>
+                <div className="card" style={{ padding: '32px 20px', textAlign: 'center' }}>
                   <p style={{ fontSize: '13px', color: C.muted }}>No data points for this event yet.</p>
                 </div>
               ) : (
                 <>
                   {/* Chart view */}
                   {viewMode === 'chart' && (
-                    <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '14px', padding: '24px', marginBottom: '20px' }}>
-                      <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '20px' }}>
+                    <div className="card" style={{ padding: '24px', marginBottom: '20px' }}>
+                      <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '20px' }}>
                         {progressEvent} — Time Progression
                       </p>
                       <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px', height: '140px', position: 'relative' }}>
@@ -772,7 +772,7 @@ export default function PerformancePage() {
                             bottom: `${((1 - (goalSec - minTime) / (maxTime - minTime)) * 140)}px`,
                             left: 0, right: 0, height: '1px', borderTop: '1px dashed #F59E0B', zIndex: 2,
                           }}>
-                            <span style={{ position: 'absolute', right: 0, top: '-14px', fontSize: '9px', color: '#F59E0B', fontFamily: 'var(--font-mono)', background: C.card, padding: '0 4px' }}>goal</span>
+                            <span style={{ position: 'absolute', right: 0, top: '-14px', fontSize: '9px', color: 'var(--warning)', fontFamily: 'var(--font-body)', background: C.card, padding: '0 4px' }}>goal</span>
                           </div>
                         )}
                         {eventData.map((d, i) => {
@@ -781,7 +781,7 @@ export default function PerformancePage() {
                           const isLatest = i === eventData.length - 1
                           return (
                             <div key={`${d.date}-${i}`} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
-                              <p style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', color: isLatest ? C.accent : C.muted, fontWeight: isLatest ? 700 : 400, whiteSpace: 'nowrap' }}>
+                              <p style={{ fontSize: '9px', fontFamily: 'var(--font-body)', color: isLatest ? C.accent : C.muted, fontWeight: isLatest ? 700 : 400, whiteSpace: 'nowrap' }}>
                                 {fmtSec(d.time)}
                               </p>
                               <div style={{
@@ -799,15 +799,15 @@ export default function PerformancePage() {
                       <div style={{ display: 'flex', gap: '8px', marginTop: '8px', borderTop: `1px solid ${C.border}`, paddingTop: '8px' }}>
                         {eventData.map((d, i) => (
                           <div key={`label-${i}`} style={{ flex: 1, textAlign: 'center' }}>
-                            <p style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', color: C.muted }}>{d.date}</p>
+                            <p style={{ fontSize: '9px', fontFamily: 'var(--font-body)', color: C.muted }}>{d.date}</p>
                           </div>
                         ))}
                       </div>
                       {eventData.length >= 3 && improvement > 0 && (
-                        <div style={{ marginTop: '14px', padding: '10px 12px', background: 'rgba(0,212,170,0.06)', borderRadius: '8px', border: `1px solid ${C.border}` }}>
+                        <div style={{ marginTop: '14px', padding: '10px 12px', background: 'var(--border)', borderRadius: '8px', border: `1px solid ${C.border}` }}>
                           <p style={{ fontSize: '11px', color: C.subtle }}>
                             At your current rate of improvement <strong style={{ color: C.accent }}>({(improvement / eventData.length).toFixed(2)}s/period)</strong>,
-                            you could reach {goalSec ? <strong style={{ color: '#F59E0B' }}>{fmtSec(goalSec)} (your goal)</strong> : 'your next milestone'} in approximately {goalSec && toGoal && toGoal > 0 ? Math.ceil(toGoal / (improvement / eventData.length)) : '?'} more period(s).
+                            you could reach {goalSec ? <strong style={{ color: 'var(--warning)' }}>{fmtSec(goalSec)} (your goal)</strong> : 'your next milestone'} in approximately {goalSec && toGoal && toGoal > 0 ? Math.ceil(toGoal / (improvement / eventData.length)) : '?'} more period(s).
                           </p>
                         </div>
                       )}
@@ -816,10 +816,10 @@ export default function PerformancePage() {
 
                   {/* Table view */}
                   {viewMode === 'table' && (
-                    <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '14px', overflow: 'hidden' }}>
+                    <div className="card" style={{ overflow: 'hidden' }}>
                       <div style={{ display: 'grid', gridTemplateColumns: '100px 100px 1fr 1fr', padding: '10px 18px', borderBottom: `1px solid ${C.border}` }}>
                         {['Period', 'Time', 'Drop', 'Meet'].map((h) => (
-                          <span key={h} style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</span>
+                          <span key={h} style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</span>
                         ))}
                       </div>
                       {[...eventData].reverse().map((d, i) => {
@@ -827,10 +827,10 @@ export default function PerformancePage() {
                         const drop = prev ? prev.time - d.time : null
                         const isLatest = i === 0
                         return (
-                          <div key={`tbl-${i}`} style={{ display: 'grid', gridTemplateColumns: '100px 100px 1fr 1fr', padding: '12px 18px', borderBottom: i < eventData.length - 1 ? `1px solid ${C.border}` : 'none', background: isLatest ? 'rgba(0,212,170,0.04)' : 'transparent' }}>
-                            <span style={{ fontSize: '12px', color: isLatest ? C.accent : C.subtle, fontFamily: 'var(--font-mono)' }}>{d.date}</span>
-                            <span style={{ fontSize: '14px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: isLatest ? C.accent : C.text }}>{fmtSec(d.time)}</span>
-                            <span style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', color: drop !== null && drop > 0 ? C.accent : drop !== null ? '#ef4444' : C.muted }}>
+                          <div key={`tbl-${i}`} style={{ display: 'grid', gridTemplateColumns: '100px 100px 1fr 1fr', padding: '12px 18px', borderBottom: i < eventData.length - 1 ? `1px solid ${C.border}` : 'none', background: isLatest ? 'var(--border)' : 'transparent' }}>
+                            <span style={{ fontSize: '12px', color: isLatest ? C.accent : C.subtle, fontFamily: 'var(--font-body)' }}>{d.date}</span>
+                            <span style={{ fontSize: '14px', fontFamily: 'var(--font-body)', fontWeight: 700, color: isLatest ? C.accent : C.text }}>{fmtSec(d.time)}</span>
+                            <span style={{ fontSize: '12px', fontFamily: 'var(--font-body)', color: drop !== null && drop > 0 ? C.accent : drop !== null ? 'var(--error)' : C.muted }}>
                               {drop !== null ? (drop > 0 ? `-${drop.toFixed(2)}s` : `+${Math.abs(drop).toFixed(2)}s`) : '—'}
                             </span>
                             <span style={{ fontSize: '11px', color: C.muted }}>{d.meet ?? '—'}</span>
@@ -847,16 +847,16 @@ export default function PerformancePage() {
                         const best = Math.min(...times)
                         const worst = Math.max(...times)
                         return (
-                          <div key={month} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '12px', padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '16px' }}>
+                          <div key={month} className="card" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '16px' }}>
                             <div style={{ width: '72px', flexShrink: 0 }}>
-                              <span style={{ fontSize: '13px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: C.subtle }}>{month}</span>
+                              <span style={{ fontSize: '13px', fontFamily: 'var(--font-body)', fontWeight: 700, color: C.subtle }}>{month}</span>
                             </div>
                             <div style={{ flex: 1 }}>
                               <ProgressionBar value={1 - (best - minTime) / (maxTime - minTime)} max={1} color={C.accent} />
                             </div>
                             <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                              <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: C.accent, fontSize: '15px' }}>{fmtSec(best)}</div>
-                              {times.length > 1 && <div style={{ fontSize: '10px', color: C.muted, fontFamily: 'var(--font-mono)' }}>range: {fmtSec(best)} – {fmtSec(worst)}</div>}
+                              <div style={{ fontFamily: 'var(--font-body)', fontWeight: 700, color: C.accent, fontSize: '15px' }}>{fmtSec(best)}</div>
+                              {times.length > 1 && <div style={{ fontSize: '10px', color: C.muted, fontFamily: 'var(--font-body)' }}>range: {fmtSec(best)} – {fmtSec(worst)}</div>}
                               <div style={{ fontSize: '10px', color: C.muted }}>{times.length} swims</div>
                             </div>
                           </div>

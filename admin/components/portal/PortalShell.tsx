@@ -18,9 +18,10 @@ export function PortalShell({ children }: { children: ReactNode }) {
   return (
     <div
       data-theme="light"
+      data-portal="parent"
       style={{
         minHeight: '100vh',
-        background: '#F7F4F0',
+        background: 'var(--bg)',
         fontFamily: 'var(--font-body)',
         position: 'relative',
       }}

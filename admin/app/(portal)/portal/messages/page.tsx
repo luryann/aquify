@@ -106,24 +106,24 @@ export default function PortalMessagesPage() {
   return (
     <div>
       <div style={{ marginBottom: '28px', animation: 'slideUp 0.35s ease both' }}>
-        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(24px, 3vw, 32px)', color: '#1A1714', letterSpacing: '-0.02em', lineHeight: 1.1, marginBottom: '6px' }}>
+        <h1 className="page-title">
           Messages
         </h1>
-        <p style={{ fontSize: '14px', color: '#6B6866' }}>
+        <p className="page-subtitle">
           Message your child&rsquo;s coach directly — each swimmer has their own conversation.
         </p>
       </div>
 
       {swimmersError ? (
-        <div style={{ background: '#fef2f2', borderRadius: '14px', border: '1px solid rgba(220,38,38,0.18)', padding: '20px', color: '#991b1b', fontSize: '13px' }}>
+        <div style={{ background: 'var(--error-bg)', borderRadius: '14px', border: '1px solid rgba(220,38,38,0.18)', padding: '20px', color: 'var(--error)', fontSize: '13px' }}>
           {swimmersError}
         </div>
       ) : swimmersLoading ? (
-        <div style={{ padding: '32px', textAlign: 'center', color: '#9A9693', fontSize: '13px' }}>Loading your swimmers…</div>
+        <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>Loading your swimmers…</div>
       ) : swimmers.length === 0 ? (
-        <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid rgba(0,0,0,0.07)', padding: '56px 32px', textAlign: 'center' }}>
+        <div className="card" style={{ padding: '56px 32px', textAlign: 'center' }}>
           <Icon name="users" size={32} style={{ color: '#D4D1CE', marginBottom: '14px' }} />
-          <p style={{ fontSize: '15px', color: '#9A9693', fontWeight: 500 }}>No swimmers on your account yet</p>
+          <p style={{ fontSize: '15px', color: 'var(--text-muted)', fontWeight: 500 }}>No swimmers on your account yet</p>
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(160px, 220px) 1fr', gap: '20px', alignItems: 'start' }}>
@@ -140,8 +140,8 @@ export default function PortalMessagesPage() {
                     padding: '10px 14px',
                     borderRadius: '10px',
                     border: `1px solid ${active ? 'rgba(235,93,30,0.3)' : 'rgba(0,0,0,0.08)'}`,
-                    background: active ? 'rgba(235,93,30,0.08)' : '#ffffff',
-                    color: active ? '#1A1714' : '#6B6866',
+                    background: active ? 'rgba(235,93,30,0.08)' : 'var(--bg-elevated)',
+                    color: active ? 'var(--text)' : 'var(--text-subtle)',
                     fontSize: '13.5px',
                     fontWeight: active ? 600 : 500,
                     cursor: 'pointer',
@@ -155,20 +155,20 @@ export default function PortalMessagesPage() {
           </div>
 
           {/* Thread */}
-          <div style={{ background: '#ffffff', borderRadius: '14px', border: '1px solid rgba(0,0,0,0.07)', boxShadow: '0 1px 6px rgba(0,0,0,0.04)', display: 'flex', flexDirection: 'column', minHeight: '420px' }}>
+          <div className="card" style={{ boxShadow: '0 1px 6px rgba(0,0,0,0.04)', display: 'flex', flexDirection: 'column', minHeight: '420px' }}>
             <div style={{ padding: '14px 20px', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-              <p style={{ fontSize: '14px', fontWeight: 600, color: '#1A1714' }}>
+              <p style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text)' }}>
                 {selectedSwimmer ? `${selectedSwimmer.first_name} ${selectedSwimmer.last_name}` : 'Conversation'}
               </p>
             </div>
 
             <div style={{ flex: 1, padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px', overflowY: 'auto', maxHeight: '480px' }}>
               {messagesError ? (
-                <p style={{ fontSize: '13px', color: '#991b1b' }}>{messagesError}</p>
+                <p style={{ fontSize: '13px', color: 'var(--error)' }}>{messagesError}</p>
               ) : messagesLoading ? (
-                <p style={{ fontSize: '13px', color: '#9A9693' }}>Loading conversation…</p>
+                <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Loading conversation…</p>
               ) : messages.length === 0 ? (
-                <p style={{ fontSize: '13px', color: '#9A9693' }}>
+                <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
                   No messages yet. Send the first one below to start the conversation with your coach.
                 </p>
               ) : (
@@ -178,8 +178,8 @@ export default function PortalMessagesPage() {
                     <div key={m.id} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '75%' }}>
                       <div
                         style={{
-                          background: mine ? '#eb5d1e' : 'rgba(0,0,0,0.05)',
-                          color: mine ? '#ffffff' : '#1A1714',
+                          background: mine ? 'var(--accent)' : 'rgba(0,0,0,0.05)',
+                          color: mine ? 'var(--bg-elevated)' : 'var(--text)',
                           padding: '10px 14px',
                           borderRadius: mine ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
                           fontSize: '13.5px',
@@ -189,7 +189,7 @@ export default function PortalMessagesPage() {
                       >
                         {m.body}
                       </div>
-                      <p style={{ fontSize: '11px', color: '#A09D9B', marginTop: '4px', textAlign: mine ? 'right' : 'left' }}>
+                      <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', textAlign: mine ? 'right' : 'left' }}>
                         {senderLabel(m.sender_role)} · {fmtTime(m.created_at)}
                       </p>
                     </div>
@@ -215,8 +215,8 @@ export default function PortalMessagesPage() {
                   padding: '10px 18px',
                   borderRadius: '10px',
                   border: 'none',
-                  background: sending || !draft.trim() ? '#6B6866' : '#1A1714',
-                  color: '#fff',
+                  background: sending || !draft.trim() ? 'var(--text-subtle)' : 'var(--text)',
+                  color: 'var(--bg-elevated)',
                   fontSize: '13.5px',
                   fontWeight: 600,
                   cursor: sending || !draft.trim() ? 'not-allowed' : 'pointer',
@@ -225,7 +225,7 @@ export default function PortalMessagesPage() {
                 {sending ? 'Sending…' : 'Send'}
               </button>
             </form>
-            {sendError && <p style={{ padding: '0 20px 14px', fontSize: '12px', color: '#991b1b' }}>{sendError}</p>}
+            {sendError && <p style={{ padding: '0 20px 14px', fontSize: '12px', color: 'var(--error)' }}>{sendError}</p>}
           </div>
         </div>
       )}

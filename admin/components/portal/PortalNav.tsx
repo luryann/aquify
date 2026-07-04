@@ -77,7 +77,7 @@ export function PortalNav({ userName, avatarInitials, onSignOut }: PortalNavProp
             style={{
               fontFamily: 'var(--font-display)',
               fontSize: '19px',
-              color: '#1A1714',
+              color: 'var(--text)',
               letterSpacing: '-0.01em',
               lineHeight: 1,
               userSelect: 'none',
@@ -88,8 +88,8 @@ export function PortalNav({ userName, avatarInitials, onSignOut }: PortalNavProp
           <span
             style={{
               fontSize: '10px',
-              fontFamily: 'var(--font-mono)',
-              color: '#A09D9B',
+              fontFamily: 'var(--font-body)',
+              color: 'var(--text-muted)',
               letterSpacing: '0.10em',
               textTransform: 'uppercase',
               paddingTop: '2px',
@@ -120,7 +120,7 @@ export function PortalNav({ userName, avatarInitials, onSignOut }: PortalNavProp
                   borderRadius: '7px',
                   fontSize: '13.5px',
                   fontWeight: active ? 600 : 450,
-                  color: active ? '#1A1714' : '#6B6866',
+                  color: active ? 'var(--text)' : 'var(--text-subtle)',
                   background: active ? 'rgba(235,93,30,0.08)' : 'transparent',
                   textDecoration: 'none',
                   transition: 'background 120ms ease, color 120ms ease',
@@ -129,13 +129,13 @@ export function PortalNav({ userName, avatarInitials, onSignOut }: PortalNavProp
                 onMouseEnter={(e) => {
                   if (!active) {
                     e.currentTarget.style.background = 'rgba(0,0,0,0.05)'
-                    e.currentTarget.style.color = '#1A1714'
+                    e.currentTarget.style.color = 'var(--text)'
                   }
                 }}
                 onMouseLeave={(e) => {
                   if (!active) {
                     e.currentTarget.style.background = 'transparent'
-                    e.currentTarget.style.color = '#6B6866'
+                    e.currentTarget.style.color = 'var(--text-subtle)'
                   }
                 }}
               >
@@ -177,14 +177,14 @@ export function PortalNav({ userName, avatarInitials, onSignOut }: PortalNavProp
                 width: '28px',
                 height: '28px',
                 borderRadius: '50%',
-                background: 'linear-gradient(135deg, #eb5d1e 0%, #f4823a 100%)',
+                background: 'linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                color: '#ffffff',
+                color: 'var(--bg-elevated)',
                 fontSize: '11px',
                 fontWeight: 700,
-                fontFamily: 'var(--font-mono)',
+                fontFamily: 'var(--font-body)',
                 textTransform: 'uppercase',
                 flexShrink: 0,
               }}
@@ -195,7 +195,7 @@ export function PortalNav({ userName, avatarInitials, onSignOut }: PortalNavProp
               style={{
                 fontSize: '13px',
                 fontWeight: 500,
-                color: '#1A1714',
+                color: 'var(--text)',
                 maxWidth: '120px',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
@@ -204,7 +204,7 @@ export function PortalNav({ userName, avatarInitials, onSignOut }: PortalNavProp
             >
               {userName ?? 'My Account'}
             </span>
-            <Icon name="chevron-down" size={13} style={{ color: '#9A9693', flexShrink: 0 }} />
+            <Icon name="chevron-down" size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
           </button>
 
           {/* Dropdown */}
@@ -216,13 +216,11 @@ export function PortalNav({ userName, avatarInitials, onSignOut }: PortalNavProp
                 onClick={() => setUserMenuOpen(false)}
               />
               <div
+                className="card"
                 style={{
                   position: 'absolute',
                   top: 'calc(100% + 6px)',
                   right: 0,
-                  background: '#ffffff',
-                  border: '1px solid rgba(0,0,0,0.10)',
-                  borderRadius: '10px',
                   boxShadow: '0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06)',
                   minWidth: '180px',
                   padding: '6px',
@@ -240,14 +238,14 @@ export function PortalNav({ userName, avatarInitials, onSignOut }: PortalNavProp
                     padding: '8px 10px',
                     borderRadius: '7px',
                     textDecoration: 'none',
-                    color: '#1A1714',
+                    color: 'var(--text)',
                     fontSize: '13px',
                     transition: 'background 100ms ease',
                   }}
                   onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(0,0,0,0.04)')}
                   onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                 >
-                  <Icon name="home" size={15} style={{ color: '#6B6866' }} />
+                  <Icon name="home" size={15} style={{ color: 'var(--text-subtle)' }} />
                   Household Profile
                 </Link>
                 <div
@@ -267,7 +265,7 @@ export function PortalNav({ userName, avatarInitials, onSignOut }: PortalNavProp
                     borderRadius: '7px',
                     background: 'transparent',
                     border: 'none',
-                    color: '#dc2626',
+                    color: 'var(--error)',
                     fontSize: '13px',
                     cursor: 'pointer',
                     width: '100%',
@@ -277,7 +275,7 @@ export function PortalNav({ userName, avatarInitials, onSignOut }: PortalNavProp
                   onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(220,38,38,0.06)')}
                   onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                 >
-                  <Icon name="log-out" size={15} style={{ color: '#dc2626' }} />
+                  <Icon name="log-out" size={15} style={{ color: 'var(--error)' }} />
                   Sign out
                 </button>
               </div>

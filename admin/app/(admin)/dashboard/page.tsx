@@ -67,18 +67,18 @@ function StatCard({
 }) {
   return (
     <div className="card-elevated" style={{ padding: '20px 22px' }}>
-      <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', fontWeight: 500, color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '10px' }}>
+      <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', fontWeight: 500, color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '10px' }}>
         {label}
       </p>
       {loading ? (
         <div style={{ height: '32px', background: 'var(--bg-elevated)', borderRadius: '4px', animation: 'pulse 1.5s ease-in-out infinite' }} />
       ) : (
-        <p style={{ fontSize: '26px', fontFamily: mono ? 'var(--font-mono)' : 'var(--font-display)', color: 'var(--text)', lineHeight: 1.1, letterSpacing: mono ? '0.02em' : '-0.01em', marginBottom: '6px' }}>
+        <p style={{ fontSize: '26px', fontFamily: mono ? 'var(--font-body)' : 'var(--font-display)', color: 'var(--text)', lineHeight: 1.1, letterSpacing: mono ? '0.02em' : '-0.01em', marginBottom: '6px' }}>
           {value}
         </p>
       )}
       {delta && !loading && (
-        <p style={{ fontSize: '11px', color: positive ? 'var(--success)' : 'var(--error)', fontFamily: 'var(--font-mono)' }}>
+        <p style={{ fontSize: '11px', color: positive ? 'var(--success)' : 'var(--error)', fontFamily: 'var(--font-body)' }}>
           {positive ? '↑' : '↓'} {delta}
         </p>
       )}
@@ -99,7 +99,7 @@ function ActivityItem({ action, subject, time, actor }: { action: string; subjec
           <span style={{ fontWeight: 500 }}>{subject}</span>
         </p>
       </div>
-      <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', flexShrink: 0, whiteSpace: 'nowrap' }}>
+      <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', flexShrink: 0, whiteSpace: 'nowrap' }}>
         {time}
       </p>
     </div>
@@ -114,7 +114,7 @@ function StatusRow({ label, status, detail }: { label: string; status: 'ok' | 'w
         <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: color, flexShrink: 0 }} />
         <span style={{ fontSize: '13px', color: 'var(--text)' }}>{label}</span>
       </div>
-      <span style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', color: 'var(--text-subtle)' }}>{detail}</span>
+      <span style={{ fontSize: '12px', fontFamily: 'var(--font-body)', color: 'var(--text-subtle)' }}>{detail}</span>
     </div>
   )
 }
@@ -148,10 +148,10 @@ function PerfSnapshot({
   return (
     <div className="card-elevated" style={{ padding: '20px 22px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-        <p style={{ fontSize: '12px', fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--text-subtle)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+        <p style={{ fontSize: '12px', fontWeight: 600, fontFamily: 'var(--font-body)', color: 'var(--text-subtle)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
           Performance Snapshot
         </p>
-        <a href="/performance/visualization" style={{ fontSize: '12px', color: 'var(--accent)', textDecoration: 'none', fontFamily: 'var(--font-mono)' }}>
+        <a href="/performance/visualization" style={{ fontSize: '12px', color: 'var(--accent)', textDecoration: 'none', fontFamily: 'var(--font-body)' }}>
           full view →
         </a>
       </div>
@@ -170,7 +170,7 @@ function PerfSnapshot({
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
           {/* Top events */}
           <div>
-            <p style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '10px' }}>
+            <p style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '10px' }}>
               Top Events
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -178,7 +178,7 @@ function PerfSnapshot({
                 <div key={ev.event}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
                     <span style={{ fontSize: '12px', color: 'var(--text)', fontWeight: 500 }}>{ev.event}</span>
-                    <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
+                    <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>
                       {ev.fastest ? formatSwimTime(ev.fastest) : '—'}&nbsp;<span style={{ color: 'var(--text-muted)', opacity: 0.6 }}>·</span>&nbsp;{ev.count}
                     </span>
                   </div>
@@ -199,19 +199,19 @@ function PerfSnapshot({
 
           {/* Top swimmers */}
           <div>
-            <p style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '10px' }}>
+            <p style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '10px' }}>
               Most Coverage
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
               {topSwimmers.slice(0, 5).map((sw, i) => (
                 <div key={sw.name} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', width: '14px', textAlign: 'right', flexShrink: 0 }}>
+                  <span style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', width: '14px', textAlign: 'right', flexShrink: 0 }}>
                     {i + 1}
                   </span>
                   <span style={{ fontSize: '12px', color: 'var(--text)', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {sw.name}
                   </span>
-                  <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--accent)', flexShrink: 0 }}>
+                  <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--accent)', flexShrink: 0 }}>
                     {sw.count}
                   </span>
                 </div>
@@ -340,7 +340,7 @@ export default function DashboardPage() {
           <p className="page-subtitle">{loading ? 'Aquify' : seasonLabel}</p>
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: '4px 9px' }}>
+          <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: '4px 9px' }}>
             {today}
           </span>
         </div>
@@ -361,10 +361,10 @@ export default function DashboardPage() {
         {/* Recent activity */}
         <div className="card-elevated" style={{ padding: '20px 22px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-            <p style={{ fontSize: '12px', fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--text-subtle)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+            <p style={{ fontSize: '12px', fontWeight: 600, fontFamily: 'var(--font-body)', color: 'var(--text-subtle)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
               Recent Activity
             </p>
-            <a href="/audit" style={{ fontSize: '12px', color: 'var(--accent)', textDecoration: 'none', fontFamily: 'var(--font-mono)' }}>
+            <a href="/audit" style={{ fontSize: '12px', color: 'var(--accent)', textDecoration: 'none', fontFamily: 'var(--font-body)' }}>
               view audit log →
             </a>
           </div>
@@ -393,7 +393,7 @@ export default function DashboardPage() {
 
         {/* System status */}
         <div className="card-elevated" style={{ padding: '20px 22px' }}>
-          <p style={{ fontSize: '12px', fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--text-subtle)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '14px' }}>
+          <p style={{ fontSize: '12px', fontWeight: 600, fontFamily: 'var(--font-body)', color: 'var(--text-subtle)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '14px' }}>
             System Status
           </p>
           <StatusRow label="API" status="ok" detail="healthy" />
@@ -402,7 +402,7 @@ export default function DashboardPage() {
           <StatusRow label="Storage" status="ok" detail="MinIO" />
           <StatusRow label="Email" status="ok" detail="Postmark" />
           <StatusRow label="Billing" status="ok" detail="Stripe" />
-          <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', marginTop: '14px', textAlign: 'right' }}>
+          <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginTop: '14px', textAlign: 'right' }}>
             {loading ? 'loading…' : 'updated just now'}
           </p>
         </div>
@@ -413,10 +413,10 @@ export default function DashboardPage() {
         {/* Upcoming Meets list */}
         <div className="card-elevated" style={{ padding: '20px 22px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-            <p style={{ fontSize: '12px', fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--text-subtle)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+            <p style={{ fontSize: '12px', fontWeight: 600, fontFamily: 'var(--font-body)', color: 'var(--text-subtle)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
               Upcoming Meets
             </p>
-            <Link href="/meets" style={{ fontSize: '12px', color: 'var(--accent)', textDecoration: 'none', fontFamily: 'var(--font-mono)' }}>
+            <Link href="/meets" style={{ fontSize: '12px', color: 'var(--accent)', textDecoration: 'none', fontFamily: 'var(--font-body)' }}>
               all meets →
             </Link>
           </div>
@@ -442,13 +442,13 @@ export default function DashboardPage() {
                 >
                   <div>
                     <p style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', marginBottom: '2px' }}>{meet.name}</p>
-                    <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
+                    <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>
                       {meet.start_date ? parseBackendDate(meet.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Date TBD'}
                       {meet.course && <span style={{ marginLeft: '8px', opacity: 0.7 }}>· {meet.course}</span>}
                     </p>
                   </div>
                   <span style={{
-                    fontSize: '10px', fontFamily: 'var(--font-mono)', fontWeight: 700, letterSpacing: '0.05em',
+                    fontSize: '10px', fontFamily: 'var(--font-body)', fontWeight: 700, letterSpacing: '0.05em',
                     padding: '3px 8px', borderRadius: '6px', textTransform: 'uppercase',
                     background: meet.status === 'commitment_open' ? 'var(--success-bg)' : meet.status === 'entry_finalized' ? 'var(--info-bg)' : 'var(--bg-elevated)',
                     color: meet.status === 'commitment_open' ? 'var(--success)' : meet.status === 'entry_finalized' ? 'var(--info)' : 'var(--text-muted)',
@@ -463,7 +463,7 @@ export default function DashboardPage() {
 
         {/* Quick Actions */}
         <div className="card-elevated" style={{ padding: '20px 22px' }}>
-          <p style={{ fontSize: '12px', fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--text-subtle)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '14px' }}>
+          <p style={{ fontSize: '12px', fontWeight: 600, fontFamily: 'var(--font-body)', color: 'var(--text-subtle)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '14px' }}>
             Quick Actions
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -492,7 +492,7 @@ export default function DashboardPage() {
                 onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.background = 'var(--accent-subtle)' }}
                 onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = 'var(--bg-surface)' }}
               >
-                <span style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', color: 'var(--accent)', width: '14px', textAlign: 'center', flexShrink: 0 }}>
+                <span style={{ fontSize: '12px', fontFamily: 'var(--font-body)', color: 'var(--accent)', width: '14px', textAlign: 'center', flexShrink: 0 }}>
                   {action.icon}
                 </span>
                 <span style={{ fontSize: '13px', fontWeight: 500 }}>{action.label}</span>

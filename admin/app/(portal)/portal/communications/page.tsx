@@ -17,12 +17,12 @@ import {
 
 // ── Category config ─────────────────────────────────────────────────────────
 const CATEGORY_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
-  all:       { label: 'All',       color: '#6b7280', bg: '#f9fafb' },
-  meet:      { label: 'Meet',      color: '#2563eb', bg: '#eff6ff' },
+  all:       { label: 'All',       color: 'var(--text-muted)', bg: 'var(--bg-surface)' },
+  meet:      { label: 'Meet',      color: 'var(--info)', bg: 'var(--info-bg)' },
   admin:     { label: 'Admin',     color: '#7c3aed', bg: '#f5f3ff' },
-  facility:  { label: 'Facility',  color: '#059669', bg: '#ecfdf5' },
-  training:  { label: 'Training',  color: '#d97706', bg: '#fffbeb' },
-  billing:   { label: 'Billing',   color: '#dc2626', bg: '#fef2f2' },
+  facility:  { label: 'Facility',  color: 'var(--success)', bg: 'var(--success-bg)' },
+  training:  { label: 'Training',  color: 'var(--warning)', bg: 'var(--warning-bg)' },
+  billing:   { label: 'Billing',   color: 'var(--error)', bg: 'var(--error-bg)' },
   volunteer: { label: 'Volunteer', color: '#0891b2', bg: '#ecfeff' },
 }
 
@@ -50,7 +50,7 @@ function Skeleton() {
         <div
           key={i}
           style={{
-            background: '#fff',
+            background: 'var(--bg-elevated)',
             borderRadius: '14px',
             border: '1px solid rgba(0,0,0,0.07)',
             padding: '20px 24px',
@@ -170,19 +170,10 @@ export default function CommunicationsPage() {
     <div>
       {/* Page header */}
       <div style={{ marginBottom: '28px', animation: 'slideUp 0.35s ease both' }}>
-        <h1
-          style={{
-            fontFamily: 'var(--font-display)',
-            fontSize: 'clamp(24px, 3vw, 32px)',
-            color: '#1A1714',
-            letterSpacing: '-0.02em',
-            lineHeight: 1.1,
-            marginBottom: '6px',
-          }}
-        >
+        <h1 className="page-title">
           Communications
         </h1>
-        <p style={{ fontSize: '14px', color: '#6B6866' }}>
+        <p className="page-subtitle">
           Announcements and notification settings from your club.
         </p>
       </div>
@@ -209,8 +200,8 @@ export default function CommunicationsPage() {
               padding: '9px 0',
               borderRadius: '7px',
               border: 'none',
-              background: activeTab === t ? '#ffffff' : 'transparent',
-              color: activeTab === t ? '#1A1714' : '#6B6866',
+              background: activeTab === t ? 'var(--bg-elevated)' : 'transparent',
+              color: activeTab === t ? 'var(--text)' : 'var(--text-subtle)',
               fontSize: '13.5px',
               fontWeight: activeTab === t ? 600 : 450,
               cursor: 'pointer',
@@ -246,8 +237,8 @@ export default function CommunicationsPage() {
                   padding: '5px 12px',
                   borderRadius: '999px',
                   border: `1px solid ${filter === key ? cfg.color : 'rgba(0,0,0,0.12)'}`,
-                  background: filter === key ? cfg.bg : '#ffffff',
-                  color: filter === key ? cfg.color : '#6B6866',
+                  background: filter === key ? cfg.bg : 'var(--bg-elevated)',
+                  color: filter === key ? cfg.color : 'var(--text-subtle)',
                   fontSize: '12.5px',
                   fontWeight: filter === key ? 600 : 450,
                   cursor: 'pointer',
@@ -266,7 +257,7 @@ export default function CommunicationsPage() {
           ) : announcementsError ? (
             <div
               style={{
-                background: '#fef2f2',
+                background: 'var(--error-bg)',
                 borderRadius: '14px',
                 border: '1px solid rgba(220,38,38,0.18)',
                 padding: '20px',
@@ -278,10 +269,10 @@ export default function CommunicationsPage() {
               }}
             >
               <div>
-                <p style={{ fontSize: '14px', color: '#991b1b', fontWeight: 600, marginBottom: '4px' }}>
+                <p style={{ fontSize: '14px', color: 'var(--error)', fontWeight: 600, marginBottom: '4px' }}>
                   Announcements are unavailable
                 </p>
-                <p style={{ fontSize: '13px', color: '#b91c1c' }}>{announcementsError}</p>
+                <p style={{ fontSize: '13px', color: 'var(--error)' }}>{announcementsError}</p>
               </div>
               <button
                 onClick={() => setAnnouncementsRetryKey((current) => current + 1)}
@@ -289,8 +280,8 @@ export default function CommunicationsPage() {
                   padding: '9px 16px',
                   borderRadius: '9px',
                   border: 'none',
-                  background: '#991b1b',
-                  color: '#fff',
+                  background: 'var(--error)',
+                  color: 'var(--bg-elevated)',
                   fontSize: '13px',
                   fontWeight: 600,
                   cursor: 'pointer',
@@ -302,20 +293,13 @@ export default function CommunicationsPage() {
             </div>
           ) : filtered.length === 0 ? (
             <div
-              style={{
-                background: '#fff',
-                borderRadius: '14px',
-                border: '1px solid rgba(0,0,0,0.07)',
-                padding: '56px 32px',
-                textAlign: 'center',
-                animation: 'slideUp 0.3s ease both',
-              }}
+              className="card" style={{ padding: '56px 32px', textAlign: 'center', animation: 'slideUp 0.3s ease both' }}
             >
               <Icon name="megaphone" size={32} style={{ color: '#D4D1CE', marginBottom: '14px' }} />
-              <p style={{ fontSize: '15px', color: '#9A9693', fontWeight: 500, marginBottom: '6px' }}>
+              <p style={{ fontSize: '15px', color: 'var(--text-muted)', fontWeight: 500, marginBottom: '6px' }}>
                 No announcements
               </p>
-              <p style={{ fontSize: '13px', color: '#C0BDBB' }}>
+              <p style={{ fontSize: '13px', color: 'var(--border-strong)' }}>
                 {filter === 'all'
                   ? 'Club announcements will appear here when published.'
                   : 'No announcements in this category.'}
@@ -330,7 +314,7 @@ export default function CommunicationsPage() {
                   <div
                     key={ann.id}
                     style={{
-                      background: '#ffffff',
+                      background: 'var(--bg-elevated)',
                       borderRadius: '14px',
                       border: '1px solid rgba(0,0,0,0.07)',
                       boxShadow: '0 1px 6px rgba(0,0,0,0.04)',
@@ -371,7 +355,7 @@ export default function CommunicationsPage() {
                             style={{
                               fontSize: '10.5px',
                               fontWeight: 600,
-                              fontFamily: 'var(--font-mono)',
+                              fontFamily: 'var(--font-body)',
                               textTransform: 'uppercase',
                               letterSpacing: '0.05em',
                               color: cat.color,
@@ -385,8 +369,8 @@ export default function CommunicationsPage() {
                           <span
                             style={{
                               fontSize: '11px',
-                              color: '#A09D9B',
-                              fontFamily: 'var(--font-mono)',
+                              color: 'var(--text-muted)',
+                              fontFamily: 'var(--font-body)',
                             }}
                           >
                             {fmtDate(ann.published_at)}
@@ -396,20 +380,20 @@ export default function CommunicationsPage() {
                           style={{
                             fontSize: '15px',
                             fontWeight: 600,
-                            color: '#1A1714',
+                            color: 'var(--text)',
                             marginBottom: '3px',
                             lineHeight: 1.3,
                           }}
                         >
                           {ann.title}
                         </p>
-                        <p style={{ fontSize: '12.5px', color: '#9A9693' }}>
+                        <p style={{ fontSize: '12.5px', color: 'var(--text-muted)' }}>
                           {ann.created_by || 'Club Administration'}
                         </p>
                       </div>
                       <div
                         style={{
-                          color: '#C0BDBB',
+                          color: 'var(--border-strong)',
                           transition: 'transform 200ms ease',
                           transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
                           flexShrink: 0,
@@ -459,8 +443,8 @@ export default function CommunicationsPage() {
                 padding: '12px 14px',
                 borderRadius: '12px',
                 border: '1px solid rgba(220,38,38,0.18)',
-                background: '#fef2f2',
-                color: '#991b1b',
+                background: 'var(--error-bg)',
+                color: 'var(--error)',
                 fontSize: '13px',
               }}
             >
@@ -468,14 +452,7 @@ export default function CommunicationsPage() {
             </div>
           )}
           <div
-            style={{
-              background: '#ffffff',
-              borderRadius: '14px',
-              border: '1px solid rgba(0,0,0,0.07)',
-              boxShadow: '0 1px 6px rgba(0,0,0,0.04)',
-              overflow: 'hidden',
-              marginBottom: '20px',
-            }}
+            className="card" style={{ boxShadow: '0 1px 6px rgba(0,0,0,0.04)', overflow: 'hidden', marginBottom: '20px' }}
           >
             {/* Header */}
             <div
@@ -488,13 +465,13 @@ export default function CommunicationsPage() {
                 alignItems: 'center',
               }}
             >
-              <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#9A9693', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+              <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
                 Notification Event
               </span>
-              <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#9A9693', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center' }}>
+              <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center' }}>
                 Email
               </span>
-              <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#9A9693', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center' }}>
+              <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center' }}>
                 Push
               </span>
             </div>
@@ -512,10 +489,10 @@ export default function CommunicationsPage() {
                 }}
               >
                 <div>
-                  <p style={{ fontSize: '14px', fontWeight: 500, color: '#1A1714', marginBottom: '2px' }}>
+                  <p style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text)', marginBottom: '2px' }}>
                     {pref.label}
                   </p>
-                  <p style={{ fontSize: '12px', color: '#9A9693' }}>{pref.description}</p>
+                  <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{pref.description}</p>
                 </div>
                 {(['email', 'push'] as NotifChannel[]).map((ch) => (
                   <div key={ch} style={{ display: 'flex', justifyContent: 'center' }}>
@@ -526,7 +503,7 @@ export default function CommunicationsPage() {
                         width: '40px',
                         height: '22px',
                         borderRadius: '999px',
-                        background: pref[ch] ? '#eb5d1e' : 'rgba(0,0,0,0.12)',
+                        background: pref[ch] ? 'var(--accent)' : 'rgba(0,0,0,0.12)',
                         border: 'none',
                         cursor: prefsLoading || prefsSaving ? 'not-allowed' : 'pointer',
                         opacity: prefsLoading || prefsSaving ? 0.55 : 1,
@@ -543,7 +520,7 @@ export default function CommunicationsPage() {
                           width: '16px',
                           height: '16px',
                           borderRadius: '50%',
-                          background: '#ffffff',
+                          background: 'var(--bg-elevated)',
                           boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
                           transition: 'left 150ms ease',
                         }}
@@ -561,8 +538,8 @@ export default function CommunicationsPage() {
               disabled={prefsLoading || prefsSaving || !portalCommunicationPreferencesChanged(prefs, savedPrefs)}
               style={{
                 padding: '10px 24px',
-                background: prefsLoading || prefsSaving || !portalCommunicationPreferencesChanged(prefs, savedPrefs) ? '#6B6866' : '#1A1714',
-                color: '#fff',
+                background: prefsLoading || prefsSaving || !portalCommunicationPreferencesChanged(prefs, savedPrefs) ? 'var(--text-subtle)' : 'var(--text)',
+                color: 'var(--bg-elevated)',
                 border: 'none',
                 borderRadius: '9px',
                 fontSize: '14px',
@@ -572,10 +549,10 @@ export default function CommunicationsPage() {
                 transition: 'background 120ms ease',
               }}
               onMouseEnter={(e) => {
-                if (!e.currentTarget.disabled) e.currentTarget.style.background = '#eb5d1e'
+                if (!e.currentTarget.disabled) e.currentTarget.style.background = 'var(--accent)'
               }}
               onMouseLeave={(e) => {
-                if (!e.currentTarget.disabled) e.currentTarget.style.background = '#1A1714'
+                if (!e.currentTarget.disabled) e.currentTarget.style.background = 'var(--text)'
               }}
             >
               {prefsLoading ? 'Loading…' : prefsSaving ? 'Saving…' : 'Save Preferences'}
@@ -586,7 +563,7 @@ export default function CommunicationsPage() {
                   display: 'flex',
                   alignItems: 'center',
                   gap: '6px',
-                  color: '#059669',
+                  color: 'var(--success)',
                   fontSize: '13px',
                   fontWeight: 500,
                   animation: 'slideUp 0.2s ease both',

@@ -111,23 +111,23 @@ function StatusBadge({ status }: { status: string }) {
     approved: { label: 'Approved', color: 'var(--success)', bg: 'var(--success-bg)' },
   }
   const colors = cfg[status] ?? { label: status, color: 'var(--text-muted)', bg: 'var(--bg-elevated)' }
-  return <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '10px', background: colors.bg, color: colors.color, fontFamily: 'var(--font-mono)', letterSpacing: '0.02em' }}>{colors.label}</span>
+  return <span className="badge" style={{ background: colors.bg, color: colors.color }}>{colors.label}</span>
 }
 
 const SESSION_COLS: Column<SessionRow>[] = [
   { key: 'name', label: 'Session', render: (row) => <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>{row.name}</span> },
-  { key: 'date', label: 'Date', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-subtle)' }}>{formatDate(row.date)}</span> },
-  { key: 'warmupTime', label: 'Warm-up', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-muted)' }}>{formatTime(row.warmupTime)}</span> },
-  { key: 'startTime', label: 'Start', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text)' }}>{formatTime(row.startTime)}</span> },
-  { key: 'eventCount', label: 'Events', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text)' }}>{row.eventCount}</span> },
+  { key: 'date', label: 'Date', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-subtle)' }}>{formatDate(row.date)}</span> },
+  { key: 'warmupTime', label: 'Warm-up', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-muted)' }}>{formatTime(row.warmupTime)}</span> },
+  { key: 'startTime', label: 'Start', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text)' }}>{formatTime(row.startTime)}</span> },
+  { key: 'eventCount', label: 'Events', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text)' }}>{row.eventCount}</span> },
 ]
 
 const EVENT_COLS: Column<EventRow>[] = [
-  { key: 'eventNumber', label: 'Event', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', fontWeight: 600, color: 'var(--text)' }}>{row.eventNumber}</span> },
+  { key: 'eventNumber', label: 'Event', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', fontWeight: 600, color: 'var(--text)' }}>{row.eventNumber}</span> },
   { key: 'name', label: 'Name', render: (row) => <span style={{ fontSize: '13px', color: 'var(--text)' }}>{row.name}</span> },
   { key: 'sessionName', label: 'Session', render: (row) => <span style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>{row.sessionName}</span> },
-  { key: 'ageGroup', label: 'Age/Gender', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-muted)' }}>{row.gender} {row.ageGroup}</span> },
-  { key: 'entries', label: 'Entries', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--accent)' }}>{row.entries}</span> },
+  { key: 'ageGroup', label: 'Age/Gender', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-muted)' }}>{row.gender} {row.ageGroup}</span> },
+  { key: 'entries', label: 'Entries', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--accent)' }}>{row.entries}</span> },
 ]
 
 const COMMITMENT_COLS: Column<CommitmentRow>[] = [
@@ -139,7 +139,7 @@ const COMMITMENT_COLS: Column<CommitmentRow>[] = [
 const ENTRY_COLS: Column<EntryRow>[] = [
   { key: 'swimmer', label: 'Swimmer', render: (row) => <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>{row.swimmer}</span> },
   { key: 'event', label: 'Event', render: (row) => <span style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>{row.event}</span> },
-  { key: 'seedTime', label: 'Seed', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--accent)' }}>{row.seedTime}</span> },
+  { key: 'seedTime', label: 'Seed', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--accent)' }}>{row.seedTime}</span> },
   { key: 'status', label: 'Status', render: (row) => <StatusBadge status={row.status} /> },
 ]
 
@@ -240,7 +240,7 @@ function MeetLifecycleBar({
       </div>
 
       {/* Current label */}
-      <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+      <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap', flexShrink: 0 }}>
         {LIFECYCLE_STAGES[stageIndex]?.label ?? meet.status}
       </div>
 
@@ -262,7 +262,7 @@ function MeetLifecycleBar({
                 borderRadius: '6px',
                 fontSize: '12px',
                 fontWeight: 600,
-                fontFamily: 'var(--font-mono)',
+                fontFamily: 'var(--font-body)',
                 cursor: transitioning ? 'not-allowed' : 'pointer',
                 opacity: transitioning ? 0.6 : 1,
                 transition: 'all 0.15s',
@@ -438,13 +438,13 @@ export default function MeetDetailPage() {
         <Icon name="chevron-left" size={14} /> Meets
       </Link>
 
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
+      <div className="page-header">
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
-            <h1 style={{ fontSize: '24px', fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.2 }}>{meet.name}</h1>
+            <h1 className="page-title">{meet.name}</h1>
             <StatusBadge status={meet.status} />
           </div>
-          <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
             {meet.host_org || 'Host TBD'} · {meet.location || 'Location TBD'}
           </div>
         </div>
@@ -453,7 +453,7 @@ export default function MeetDetailPage() {
       <MeetLifecycleBar meet={meet} onTransition={handleTransition} transitioning={transitioning} />
 
       {transitionError && (
-        <div style={{ marginBottom: '16px', padding: '10px 14px', borderRadius: '6px', background: 'var(--error-bg)', color: 'var(--error)', fontSize: '13px', fontFamily: 'var(--font-mono)', border: '1px solid var(--error)' }}>
+        <div style={{ marginBottom: '16px', padding: '10px 14px', borderRadius: '6px', background: 'var(--error-bg)', color: 'var(--error)', fontSize: '13px', fontFamily: 'var(--font-body)', border: '1px solid var(--error)' }}>
           {transitionError}
         </div>
       )}
@@ -466,8 +466,8 @@ export default function MeetDetailPage() {
           { label: 'Entries', value: entries.length.toString(), color: 'var(--success)' },
         ].map((stat) => (
           <div key={stat.label} className="card" style={{ padding: '14px 16px' }}>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)', marginBottom: '6px' }}>{stat.label}</div>
-            <div style={{ fontSize: '18px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
+            <div style={{ fontSize: '18px', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
           </div>
         ))}
       </div>
@@ -477,7 +477,7 @@ export default function MeetDetailPage() {
       {activeTab === 'overview' ? (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
           <div className="card" style={{ padding: '20px' }}>
-            <h3 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '16px', fontFamily: 'var(--font-mono)' }}>Meet Details</h3>
+            <h3 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '16px', fontFamily: 'var(--font-body)' }}>Meet Details</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {[
                 { label: 'Start Date', value: formatDate(meet.start_date) },
@@ -488,27 +488,27 @@ export default function MeetDetailPage() {
               ].map((row) => (
                 <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px', borderBottom: '1px solid var(--border)', paddingBottom: '10px' }}>
                   <span style={{ color: 'var(--text-muted)' }}>{row.label}</span>
-                  <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text)', fontWeight: 600 }}>{row.value}</span>
+                  <span style={{ fontFamily: 'var(--font-body)', color: 'var(--text)', fontWeight: 600 }}>{row.value}</span>
                 </div>
               ))}
             </div>
           </div>
           <div className="card" style={{ padding: '20px' }}>
-            <h3 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '16px', fontFamily: 'var(--font-mono)' }}>Operations Snapshot</h3>
+            <h3 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '16px', fontFamily: 'var(--font-body)' }}>Operations Snapshot</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
                 <span style={{ color: 'var(--text-muted)' }}>Households yet to respond</span>
-                <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: commitments.filter((c) => c.status === 'invited').length > 0 ? 'var(--warning)' : 'var(--text)' }}>
+                <span style={{ fontFamily: 'var(--font-body)', fontWeight: 600, color: commitments.filter((c) => c.status === 'invited').length > 0 ? 'var(--warning)' : 'var(--text)' }}>
                   {commitments.filter((c) => c.status === 'invited').length}
                 </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
                 <span style={{ color: 'var(--text-muted)' }}>Entries awaiting approval</span>
-                <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: entries.filter((e) => e.status === 'submitted').length > 0 ? 'var(--warning)' : 'var(--text)' }}>
+                <span style={{ fontFamily: 'var(--font-body)', fontWeight: 600, color: entries.filter((e) => e.status === 'submitted').length > 0 ? 'var(--warning)' : 'var(--text)' }}>
                   {entries.filter((e) => e.status === 'submitted').length}
                 </span>
               </div>
-              <p style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: '4px' }}>
+              <p style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginTop: '4px' }}>
                 {lastRefreshedAt ? `Updated ${lastRefreshedAt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : 'Waiting for first refresh…'}
               </p>
             </div>

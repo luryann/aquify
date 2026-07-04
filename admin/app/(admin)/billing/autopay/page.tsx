@@ -154,13 +154,13 @@ export default function BillingAutopayPage() {
     <div style={{ padding: '32px', maxWidth: '1180px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', gap: '16px', flexWrap: 'wrap' }}>
         <div>
-          <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
+          <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
             Billing
           </p>
-          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '28px', fontWeight: 400, color: 'var(--text)', marginBottom: '4px' }}>
+          <h1 className="page-title">
             Autopay
           </h1>
-          <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+          <p className="page-subtitle">
             Manage household autopay enrollment, saved billing methods, next scheduled charges, and opt-out handling.
           </p>
         </div>
@@ -170,12 +170,12 @@ export default function BillingAutopayPage() {
       </div>
 
       {error ? (
-        <div style={{ padding: '10px 14px', marginBottom: '18px', background: 'var(--danger-bg)', border: '1px solid var(--danger-border)', borderRadius: '7px', fontSize: '12px', color: 'var(--danger)', fontFamily: 'var(--font-mono)' }}>
+        <div style={{ padding: '10px 14px', marginBottom: '18px', background: 'var(--danger-bg)', border: '1px solid var(--danger-border)', borderRadius: '7px', fontSize: '12px', color: 'var(--danger)', fontFamily: 'var(--font-body)' }}>
           {error}
         </div>
       ) : null}
       {success ? (
-        <div style={{ padding: '10px 14px', marginBottom: '18px', background: 'var(--success-bg)', border: '1px solid rgba(5,150,105,0.15)', borderRadius: '7px', fontSize: '12px', color: 'var(--success)', fontFamily: 'var(--font-mono)' }}>
+        <div style={{ padding: '10px 14px', marginBottom: '18px', background: 'var(--success-bg)', border: '1px solid rgba(5,150,105,0.15)', borderRadius: '7px', fontSize: '12px', color: 'var(--success)', fontFamily: 'var(--font-body)' }}>
           {success}
         </div>
       ) : null}
@@ -187,8 +187,8 @@ export default function BillingAutopayPage() {
           { label: 'Manual Review', value: rows.length - enabledCount, sub: 'households still on manual billing', color: 'var(--text)' },
         ].map((stat) => (
           <div key={stat.label} className="card" style={{ padding: '16px 18px' }}>
-            <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginBottom: '6px' }}>{stat.label}</div>
-            <div style={{ fontSize: '24px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: stat.color }}>{loading ? '—' : stat.value}</div>
+            <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
+            <div style={{ fontSize: '24px', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{loading ? '—' : stat.value}</div>
             <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{stat.sub}</div>
           </div>
         ))}
@@ -198,7 +198,7 @@ export default function BillingAutopayPage() {
         <div className="card" style={{ padding: '16px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr 1fr 0.8fr 0.8fr', gap: '12px', paddingBottom: '10px', borderBottom: '1px solid var(--border)' }}>
             {['Household', 'Saved Method', 'Next Scheduled Charge', 'Status', 'Actions'].map((header) => (
-              <div key={header} style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              <div key={header} style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                 {header}
               </div>
             ))}
@@ -214,14 +214,14 @@ export default function BillingAutopayPage() {
                 <div key={row.householdId} style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr 1fr 0.8fr 0.8fr', gap: '12px', alignItems: 'center', padding: '14px 0', borderBottom: '1px solid var(--border)' }}>
                   <div>
                     <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>{row.householdName}</div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: '3px' }}>{row.householdId}</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginTop: '3px' }}>{row.householdId}</div>
                   </div>
                   <div style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>{row.methodLabel}</div>
                   <div>
                     <div style={{ fontSize: '13px', color: 'var(--text)' }}>{formatDate(row.nextChargeDate)}</div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: '3px' }}>{formatCurrencyCents(row.nextChargeAmountCents)}</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginTop: '3px' }}>{formatCurrencyCents(row.nextChargeAmountCents)}</div>
                   </div>
-                  <span style={{ width: 'fit-content', fontSize: '11px', fontWeight: 600, padding: '3px 10px', borderRadius: '999px', background: row.enabled ? 'var(--success-bg)' : 'var(--warning-bg)', color: row.enabled ? 'var(--success)' : 'var(--warning)', fontFamily: 'var(--font-mono)' }}>
+                  <span className="badge" style={{ width: 'fit-content', background: row.enabled ? 'var(--success-bg)' : 'var(--warning-bg)', color: row.enabled ? 'var(--success)' : 'var(--warning)' }}>
                     {row.enabled ? 'Enabled' : 'Paused'}
                   </span>
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -236,7 +236,7 @@ export default function BillingAutopayPage() {
         </div>
 
         <div className="card" style={{ padding: '18px' }}>
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>
             Selected Household
           </div>
           <h2 style={{ fontSize: '18px', fontWeight: 600, color: 'var(--text)', marginBottom: '4px' }}>
@@ -256,7 +256,7 @@ export default function BillingAutopayPage() {
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                   Payment Type
                 </label>
                 <select value={form.paymentMethodType} onChange={(event) => setForm((current) => ({ ...current, paymentMethodType: event.target.value === 'ach' ? 'ach' : 'card' }))} style={inputStyle()}>
@@ -266,7 +266,7 @@ export default function BillingAutopayPage() {
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                   Saved Label
                 </label>
                 <input value={form.paymentMethodLabel} onChange={(event) => setForm((current) => ({ ...current, paymentMethodLabel: event.target.value }))} style={inputStyle()} placeholder="Visa •••• 4242" />
@@ -274,13 +274,13 @@ export default function BillingAutopayPage() {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                     {form.paymentMethodType === 'ach' ? 'Bank Name' : 'Brand'}
                   </label>
                   <input value={form.paymentMethodBrand} onChange={(event) => setForm((current) => ({ ...current, paymentMethodBrand: event.target.value }))} style={inputStyle()} placeholder={form.paymentMethodType === 'ach' ? 'Chase Bank' : 'Visa'} />
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                     {form.paymentMethodType === 'ach' ? 'Reference' : 'Last 4'}
                   </label>
                   <input
@@ -299,13 +299,13 @@ export default function BillingAutopayPage() {
               {form.paymentMethodType === 'card' ? (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                   <div>
-                    <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                       Expiry Month
                     </label>
                     <input value={form.paymentMethodExpMonth} onChange={(event) => setForm((current) => ({ ...current, paymentMethodExpMonth: event.target.value }))} style={inputStyle()} placeholder="09" />
                   </div>
                   <div>
-                    <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                       Expiry Year
                     </label>
                     <input value={form.paymentMethodExpYear} onChange={(event) => setForm((current) => ({ ...current, paymentMethodExpYear: event.target.value }))} style={inputStyle()} placeholder="2028" />
@@ -314,7 +314,7 @@ export default function BillingAutopayPage() {
               ) : null}
 
               <div>
-                <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                   Charge Timing
                 </label>
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -354,7 +354,7 @@ export default function BillingAutopayPage() {
               </div>
             </div>
           ) : (
-            <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+            <p className="page-subtitle">
               Select a household from the table to edit its billing automation settings.
             </p>
           )}

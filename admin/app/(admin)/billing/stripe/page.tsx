@@ -76,11 +76,11 @@ export default function StripePage() {
 
       {/* Header */}
       <div style={{ marginBottom: '28px' }}>
-        <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
+        <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
           Billing · Stripe
         </p>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
-          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '28px', fontWeight: 400, color: 'var(--text)', letterSpacing: '-0.01em' }}>
+          <h1 className="page-title">
             Stripe Integration
           </h1>
         </div>
@@ -157,8 +157,8 @@ export default function StripePage() {
                   },
                 ].map((c) => (
                   <div key={c.label} className="card-elevated" style={{ padding: '18px 20px' }}>
-                    <p style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>{c.label}</p>
-                    <p style={{ fontFamily: 'var(--font-mono)', fontSize: '22px', fontWeight: 700, color: c.color, marginBottom: '4px' }}>{c.value}</p>
+                    <p style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>{c.label}</p>
+                    <p style={{ fontFamily: 'var(--font-body)', fontSize: '22px', fontWeight: 700, color: c.color, marginBottom: '4px' }}>{c.value}</p>
                     <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{c.sub}</p>
                   </div>
                 ))}
@@ -170,7 +170,7 @@ export default function StripePage() {
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
                 <div>
                   <h3 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', marginBottom: '4px' }}>Last Reconciliation Run</h3>
-                  <p style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
+                  <p style={{ fontSize: '12px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>
                     {report ? `${fmtDt(report.generated_at)} · on-demand` : lastRefreshed ? fmtDt(lastRefreshed.toISOString()) : '—'}
                   </p>
                 </div>
@@ -199,13 +199,13 @@ export default function StripePage() {
                   { label: 'Schedule',    value: 'Every 24h (WORKER_RECONCILE_INTERVAL)' },
                 ].map((r) => (
                   <div key={r.label} style={{ display: 'flex', gap: '16px' }}>
-                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', minWidth: '100px', flexShrink: 0 }}>{r.label}</span>
+                    <span style={{ fontFamily: 'var(--font-body)', fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', minWidth: '100px', flexShrink: 0 }}>{r.label}</span>
                     <span style={{
                       fontSize: '12px',
                       color: r.label === 'Status' && !loading && !error
                         ? alertTriggered ? 'var(--error)' : 'var(--success)'
                         : 'var(--text-subtle)',
-                      fontFamily: 'var(--font-mono)',
+                      fontFamily: 'var(--font-body)',
                     }}>{r.value}</span>
                   </div>
                 ))}
@@ -242,9 +242,9 @@ export default function StripePage() {
                 ].map((env) => (
                   <div key={env.key} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 14px', background: 'var(--bg-elevated)', borderRadius: '7px', border: '1px solid var(--border)' }}>
                     <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--text-muted)', flexShrink: 0 }} />
-                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text)', flex: 1 }}>{env.key}</span>
+                    <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text)', flex: 1 }}>{env.key}</span>
                     {env.required && (
-                      <span style={{ fontSize: '10px', padding: '1px 6px', background: 'var(--accent-subtle)', color: 'var(--accent)', border: '1px solid var(--accent-border)', borderRadius: '4px', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+                      <span style={{ fontSize: '10px', padding: '1px 6px', background: 'var(--accent-subtle)', color: 'var(--accent)', border: '1px solid var(--accent-border)', borderRadius: '4px', fontFamily: 'var(--font-body)', fontWeight: 600 }}>
                         REQUIRED
                       </span>
                     )}
@@ -259,10 +259,10 @@ export default function StripePage() {
                 Register this endpoint in your Stripe Dashboard to receive events. HMAC signature verification is enforced on every request.
               </p>
               <div style={{ padding: '10px 14px', background: 'var(--bg-elevated)', borderRadius: '7px', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', color: 'var(--text)', flex: 1 }}>
+                <span style={{ fontFamily: 'var(--font-body)', fontSize: '13px', color: 'var(--text)', flex: 1 }}>
                   POST /api/v1/webhooks/stripe
                 </span>
-                <span style={{ fontSize: '10px', padding: '2px 7px', background: 'var(--info-bg)', color: 'var(--info)', border: '1px solid var(--info-border)', borderRadius: '4px', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+                <span style={{ fontSize: '10px', padding: '2px 7px', background: 'var(--info-bg)', color: 'var(--info)', border: '1px solid var(--info-border)', borderRadius: '4px', fontFamily: 'var(--font-body)', fontWeight: 600 }}>
                   PUBLIC · HMAC-VERIFIED
                 </span>
               </div>

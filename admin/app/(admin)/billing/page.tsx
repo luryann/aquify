@@ -124,13 +124,13 @@ export default function BillingOverviewPage() {
   return (
     <div style={{ padding: '32px 36px 80px', maxWidth: 1180, margin: '0 auto' }}>
       <div style={{ marginBottom: '28px' }}>
-        <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
+        <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
           Billing
         </p>
-        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '30px', fontWeight: 400, color: 'var(--text)', marginBottom: '6px' }}>
+        <h1 className="page-title">
           Billing Overview
         </h1>
-        <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>
+        <p className="page-subtitle">
           Live billing rollup from persisted invoices, payments, and reconciliation reporting.
         </p>
       </div>
@@ -153,8 +153,8 @@ export default function BillingOverviewPage() {
               { label: 'Collected (30d)', value: formatCurrency(metrics.collected30d) },
             ].map((stat) => (
               <div key={stat.label} className="card-elevated" style={{ padding: '14px 16px' }}>
-                <div style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>{stat.label}</div>
-                <div style={{ fontSize: '22px', fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>{stat.value}</div>
+                <div style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>{stat.label}</div>
+                <div style={{ fontSize: '22px', fontFamily: 'var(--font-body)', color: 'var(--text)' }}>{stat.value}</div>
               </div>
             ))}
           </div>
@@ -184,7 +184,7 @@ export default function BillingOverviewPage() {
                     <div key={payment.id} style={{ padding: '14px 18px', borderBottom: index < recentPayments.length - 1 ? '1px solid var(--border)' : 'none' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '4px' }}>
                         <span style={{ fontSize: '13px', color: 'var(--text)' }}>{payment.household_name}</span>
-                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--accent)' }}>{formatCurrency(payment.amount_cents)}</span>
+                        <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--accent)' }}>{formatCurrency(payment.amount_cents)}</span>
                       </div>
                       <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                         {payment.invoice_number} · {payment.method} · {payment.paid_at ? new Date(payment.paid_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Pending'}
@@ -208,7 +208,7 @@ export default function BillingOverviewPage() {
                     <div key={invoice.id} style={{ padding: '14px 18px', borderBottom: index < Math.min(metrics.overdueInvoices.length, 8) - 1 ? '1px solid var(--border)' : 'none' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '4px' }}>
                         <span style={{ fontSize: '13px', color: 'var(--text)' }}>{invoice.household_name}</span>
-                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--error)' }}>{formatCurrency(invoice.amount_due_cents)}</span>
+                        <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--error)' }}>{formatCurrency(invoice.amount_due_cents)}</span>
                       </div>
                       <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                         {invoice.invoice_number} · Due {invoice.due_date} · Status {invoice.status}

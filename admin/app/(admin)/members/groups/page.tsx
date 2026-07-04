@@ -34,7 +34,7 @@ const TYPE_CONFIG: Record<GroupType, { label: string; color: string; bg: string 
 
 function TypeBadge({ type }: { type: GroupType }) {
   const c = TYPE_CONFIG[type]
-  return <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '10px', background: c.bg, color: c.color, fontFamily: 'var(--font-mono)', letterSpacing: '0.02em' }}>{c.label}</span>
+  return <span className="badge" style={{ background: c.bg, color: c.color }}>{c.label}</span>
 }
 
 const COLUMNS: Column<GroupRow>[] = [
@@ -45,7 +45,7 @@ const COLUMNS: Column<GroupRow>[] = [
     render: (row) => (
       <div>
         <Link href={`/members/groups/${row.id}`} style={{ color: 'var(--text)', fontWeight: 600, textDecoration: 'none', fontSize: '13px' }}>{row.name}</Link>
-        <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: '2px' }}>{row.id}</div>
+        <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginTop: '2px' }}>{row.id}</div>
       </div>
     ),
   },
@@ -59,7 +59,7 @@ const COLUMNS: Column<GroupRow>[] = [
     label: 'Registrations',
     sortable: true,
     align: 'right',
-    render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>{row.swimmerCount}</span>,
+    render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>{row.swimmerCount}</span>,
   },
   {
     key: 'coachName',
@@ -69,12 +69,12 @@ const COLUMNS: Column<GroupRow>[] = [
   {
     key: 'minAge',
     label: 'Age Range',
-    render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-subtle)' }}>{row.minAge ?? '—'}-{row.maxAge ?? '+'}</span>,
+    render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-subtle)' }}>{row.minAge ?? '—'}-{row.maxAge ?? '+'}</span>,
   },
   {
     key: 'status',
     label: 'Status',
-    render: (row) => <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '10px', background: row.status === 'active' ? 'var(--success-bg)' : 'var(--bg-elevated)', color: row.status === 'active' ? 'var(--success)' : 'var(--text-muted)', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.02em' }}>{row.status}</span>,
+    render: (row) => <span className="badge" style={{ background: row.status === 'active' ? 'var(--success-bg)' : 'var(--bg-elevated)', color: row.status === 'active' ? 'var(--success)' : 'var(--text-muted)' }}>{row.status}</span>,
   },
 ]
 
@@ -203,10 +203,10 @@ export default function GroupsPage() {
 
   return (
     <div style={{ padding: '24px', maxWidth: '1100px' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
+      <div className="page-header">
         <div>
-          <h1 style={{ fontSize: '22px', fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.2, marginBottom: '4px' }}>Groups</h1>
-          <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>Live training-group inventory and enrollment counts</p>
+          <h1 className="page-title">Groups</h1>
+          <p className="page-subtitle">Live training-group inventory and enrollment counts</p>
         </div>
         {allowWrite && (
           <button className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setShowNew(true)}>
@@ -223,8 +223,8 @@ export default function GroupsPage() {
           { label: 'Total Enrolled', value: totalRegistrations, color: 'var(--success)' },
         ].map((stat) => (
           <div key={stat.label} className="card" style={{ padding: '14px 16px' }}>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)', marginBottom: '6px' }}>{stat.label}</div>
-            <div style={{ fontSize: '22px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
+            <div style={{ fontSize: '22px', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
           </div>
         ))}
       </div>
@@ -247,7 +247,7 @@ export default function GroupsPage() {
           <option value="archived">Archived</option>
           <option value="all">All</option>
         </select>
-        <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginLeft: 'auto' }}>{filtered.length} groups</span>
+        <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginLeft: 'auto' }}>{filtered.length} groups</span>
       </div>
 
       {loading ? (

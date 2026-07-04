@@ -119,8 +119,8 @@ export default function MessagesInboxPage() {
   return (
     <div style={{ padding: '24px', maxWidth: '1200px' }}>
       <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '24px', fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)', marginBottom: '4px' }}>Messages</h1>
-        <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Direct conversations between families and staff, one thread per swimmer.</p>
+        <h1 className="page-title">Messages</h1>
+        <p className="page-subtitle">Direct conversations between families and staff, one thread per swimmer.</p>
       </div>
 
       {loading ? (
@@ -156,7 +156,7 @@ export default function MessagesInboxPage() {
                   <div style={{ fontSize: '12px', color: 'var(--text-subtle)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {t.last_body}
                   </div>
-                  <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  <div style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginTop: '2px' }}>
                     {formatDateTime(t.last_message_at)}
                   </div>
                 </button>
@@ -180,9 +180,9 @@ export default function MessagesInboxPage() {
               {threadError ? (
                 <p style={{ fontSize: '13px', color: 'var(--error)' }}>{threadError}</p>
               ) : threadLoading ? (
-                <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Loading conversation…</p>
+                <p className="page-subtitle">Loading conversation…</p>
               ) : messages.length === 0 ? (
-                <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>No messages in this thread yet.</p>
+                <p className="page-subtitle">No messages in this thread yet.</p>
               ) : (
                 messages.map((m) => {
                   const mine = m.sender_role !== 'parent' && m.sender_role !== 'swimmer'

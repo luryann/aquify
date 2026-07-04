@@ -30,18 +30,18 @@ import {
 
 // ── Design tokens ──────────────────────────────────────────────────────────
 const C = {
-  accent:   '#00D4AA',
-  accentDim: 'rgba(0,212,170,0.12)',
-  accentBorder: 'rgba(0,212,170,0.25)',
-  text:     '#E4F2FF',
-  subtle:   '#7FA8C9',
-  muted:    '#4A6B82',
-  card:     '#0D2235',
-  cardHov:  '#0F2A40',
-  border:   'rgba(0,212,170,0.10)',
-  warn:     '#F59E0B',
-  warnBg:   'rgba(245,158,11,0.10)',
-  warnBorder: 'rgba(245,158,11,0.25)',
+  accent:   'var(--accent)',
+  accentDim: 'var(--accent-subtle)',
+  accentBorder: 'var(--accent-border)',
+  text:     'var(--text)',
+  subtle:   'var(--text-subtle)',
+  muted:    'var(--text-muted)',
+  card:     'var(--bg-surface)',
+  cardHov:  'var(--bg-elevated)',
+  border:   'var(--border)',
+  warn:     'var(--warning)',
+  warnBg:   'var(--warning-bg)',
+  warnBorder: 'var(--warning-border)',
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -74,11 +74,11 @@ function commitStatus(raw: string | undefined): 'committed' | 'pending' | 'no' |
 }
 
 const COMMIT_STATUS = {
-  committed: { label: 'Committed',       color: '#00D4AA', bg: 'rgba(0,212,170,0.10)', border: 'rgba(0,212,170,0.25)' },
-  pending:   { label: 'Response Needed', color: '#F59E0B', bg: 'rgba(245,158,11,0.10)', border: 'rgba(245,158,11,0.25)' },
-  no:        { label: 'Not Going',       color: '#EF4444', bg: 'rgba(239,68,68,0.10)',  border: 'rgba(239,68,68,0.25)' },
-  closed:    { label: 'Closed',          color: '#4A6B82', bg: 'rgba(74,107,130,0.10)', border: 'rgba(74,107,130,0.20)' },
-  open:      { label: 'Not Yet Open',    color: '#4A6B82', bg: 'rgba(74,107,130,0.10)', border: 'rgba(74,107,130,0.20)' },
+  committed: { label: 'Committed',       color: 'var(--accent)', bg: 'var(--border)', border: 'var(--accent-border)' },
+  pending:   { label: 'Response Needed', color: 'var(--warning)', bg: 'var(--warning-bg)', border: 'var(--warning-border)' },
+  no:        { label: 'Not Going',       color: 'var(--error)', bg: 'var(--error-bg)',  border: 'var(--error-border)' },
+  closed:    { label: 'Closed',          color: 'var(--text-muted)', bg: 'var(--border)', border: 'var(--border-strong)' },
+  open:      { label: 'Not Yet Open',    color: 'var(--text-muted)', bg: 'var(--border)', border: 'var(--border-strong)' },
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -105,7 +105,7 @@ function SkeletonLine({ width = '100%', height = '14px' }: { width?: string; hei
       style={{
         width,
         height,
-        background: 'rgba(0,212,170,0.08)',
+        background: 'var(--border)',
         borderRadius: '6px',
         animation: 'pulse 1.5s ease-in-out infinite',
       }}
@@ -115,11 +115,8 @@ function SkeletonLine({ width = '100%', height = '14px' }: { width?: string; hei
 
 function SkeletonCard() {
   return (
-    <div
+    <div className="card"
       style={{
-        background: C.card,
-        border: `1px solid ${C.border}`,
-        borderRadius: '12px',
         padding: '18px 20px',
         display: 'flex',
         flexDirection: 'column',
@@ -135,16 +132,13 @@ function SkeletonCard() {
 // ── Components ─────────────────────────────────────────────────────────────
 function StatCard({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent?: boolean }) {
   return (
-    <div
+    <div className="card"
       style={{
-        background: C.card,
-        border: `1px solid ${accent ? C.accentBorder : C.border}`,
-        borderRadius: '12px',
         padding: '18px 20px',
         boxShadow: accent ? `0 0 20px rgba(0,212,170,0.08)` : 'none',
       }}
     >
-      <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: C.muted, letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: '6px' }}>
+      <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: C.muted, letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: '6px' }}>
         {label}
       </p>
       <p style={{ fontFamily: 'var(--font-display)', fontSize: '28px', color: accent ? C.accent : C.text, letterSpacing: '-0.02em', lineHeight: 1 }}>
@@ -160,11 +154,8 @@ function StatCard({ label, value, sub, accent }: { label: string; value: string;
 function MeetCard({ meet }: { meet: MeetDisplay }) {
   const status = COMMIT_STATUS[meet.commitmentStatus]
   return (
-    <div
+    <div className="card"
       style={{
-        background: C.card,
-        border: `1px solid ${C.border}`,
-        borderRadius: '12px',
         padding: '18px 20px',
         display: 'flex',
         flexDirection: 'column',
@@ -203,7 +194,7 @@ function MeetCard({ meet }: { meet: MeetDisplay }) {
         </div>
         <div style={{ display: 'flex', gap: '7px', alignItems: 'center' }}>
           {meet.course && (
-            <span title={courseTitle(meet.course)} style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', fontWeight: 600, color: '#0D2235', background: C.accent, padding: '2px 7px', borderRadius: '4px', letterSpacing: '0.04em' }}>
+            <span title={courseTitle(meet.course)} style={{ fontSize: '10px', fontFamily: 'var(--font-body)', fontWeight: 600, color: 'var(--bg-surface)', background: C.accent, padding: '2px 7px', borderRadius: '4px', letterSpacing: '0.04em' }}>
               {meet.course}
             </span>
           )}
@@ -398,14 +389,14 @@ export default function SwimmerDashboardPage() {
               width: '56px',
               height: '56px',
               borderRadius: '50%',
-              background: 'linear-gradient(135deg, #00D4AA 0%, #0099CC 100%)',
+              background: 'linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              color: '#061623',
+              color: 'var(--bg)',
               fontSize: '18px',
               fontWeight: 700,
-              fontFamily: 'var(--font-mono)',
+              fontFamily: 'var(--font-body)',
               boxShadow: '0 0 24px rgba(0,212,170,0.30)',
               flexShrink: 0,
             }}
@@ -416,7 +407,7 @@ export default function SwimmerDashboardPage() {
             <p
               style={{
                 fontSize: '12px',
-                fontFamily: 'var(--font-mono)',
+                fontFamily: 'var(--font-body)',
                 color: C.muted,
                 letterSpacing: '0.05em',
                 marginBottom: '4px',
@@ -579,11 +570,8 @@ export default function SwimmerDashboardPage() {
                   <SkeletonCard />
                 </>
               ) : loadError ? (
-                <div
+                <div className="card"
                   style={{
-                    background: C.card,
-                    border: `1px solid ${C.border}`,
-                    borderRadius: '12px',
                     padding: '32px 20px',
                     textAlign: 'center',
                   }}
@@ -591,11 +579,8 @@ export default function SwimmerDashboardPage() {
                   <p style={{ fontSize: '14px', color: C.subtle }}>Meet data is unavailable right now.</p>
                 </div>
               ) : shouldShowCollectionEmptyState(loading, loadError, meets.length) ? (
-                <div
+                <div className="card"
                   style={{
-                    background: C.card,
-                    border: `1px solid ${C.border}`,
-                    borderRadius: '12px',
                     padding: '32px 20px',
                     textAlign: 'center',
                   }}
@@ -647,11 +632,8 @@ export default function SwimmerDashboardPage() {
                 <Icon name="chevron-right" size={14} />
               </Link>
             </div>
-            <div
+            <div className="card"
               style={{
-                background: C.card,
-                border: `1px solid ${C.border}`,
-                borderRadius: '12px',
                 overflow: 'hidden',
                 animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) 0.18s both',
               }}
@@ -670,7 +652,7 @@ export default function SwimmerDashboardPage() {
                     key={h}
                     style={{
                       fontSize: '10.5px',
-                      fontFamily: 'var(--font-mono)',
+                      fontFamily: 'var(--font-body)',
                       color: C.muted,
                       textTransform: 'uppercase',
                       letterSpacing: '0.05em',
@@ -706,12 +688,12 @@ export default function SwimmerDashboardPage() {
                       alignItems: 'center',
                       transition: 'background 100ms ease',
                     }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(0,212,170,0.04)')}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--border)')}
                     onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                   >
                     <span style={{ fontSize: '13.5px', fontWeight: 600, color: C.text }}>{bt.event}</span>
-                    <span title={courseTitle(bt.course)} style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', color: C.subtle }}>{bt.course}</span>
-                    <span style={{ fontSize: '14px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: C.accent }}>{bt.time}</span>
+                    <span title={courseTitle(bt.course)} style={{ fontSize: '12px', fontFamily: 'var(--font-body)', color: C.subtle }}>{bt.course}</span>
+                    <span style={{ fontSize: '14px', fontFamily: 'var(--font-body)', fontWeight: 700, color: C.accent }}>{bt.time}</span>
                   </div>
                 ))
               )}
@@ -720,11 +702,8 @@ export default function SwimmerDashboardPage() {
         </div>
 
         {/* Right sidebar — announcements */}
-        <div
+        <div className="card"
           style={{
-            background: C.card,
-            border: `1px solid ${C.border}`,
-            borderRadius: '14px',
             overflow: 'hidden',
             animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) 0.12s both',
           }}
@@ -776,7 +755,7 @@ export default function SwimmerDashboardPage() {
                   alignItems: 'flex-start',
                   transition: 'background 100ms ease',
                 }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(0,212,170,0.03)')}
+                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--border)')}
                 onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
               >
                 {/* Dot */}
@@ -794,7 +773,7 @@ export default function SwimmerDashboardPage() {
                   <p style={{ fontSize: '13px', fontWeight: 500, color: C.text, lineHeight: 1.4, marginBottom: '3px' }}>
                     {ann.title}
                   </p>
-                  <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: C.muted }}>
+                  <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: C.muted }}>
                     {ann.published_at ? new Date(ann.published_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}
                   </p>
                 </div>

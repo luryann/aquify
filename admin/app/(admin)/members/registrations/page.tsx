@@ -38,7 +38,7 @@ const WAIVER_CONFIG: Record<WaiverStatus, { label: string; color: string }> = {
 }
 
 const COLUMNS: Column<RegistrationRow>[] = [
-  { key: 'id', label: 'ID', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-muted)' }}>{row.id}</span> },
+  { key: 'id', label: 'ID', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '11px', color: 'var(--text-muted)' }}>{row.id}</span> },
   {
     key: 'household',
     label: 'Household',
@@ -48,20 +48,20 @@ const COLUMNS: Column<RegistrationRow>[] = [
   {
     key: 'season',
     label: 'Season',
-    render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-subtle)', padding: '2px 7px', background: 'var(--bg-elevated)', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)' }}>{row.season}</span>,
+    render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-subtle)', padding: '2px 7px', background: 'var(--bg-elevated)', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)' }}>{row.season}</span>,
   },
   {
     key: 'submittedAt',
     label: 'Submitted',
     sortable: true,
-    render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-subtle)' }}>{row.submittedAt}</span>,
+    render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-subtle)' }}>{row.submittedAt}</span>,
   },
   {
     key: 'status',
     label: 'Status',
     render: (row) => {
       const c = STATUS_CONFIG[row.status]
-      return <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '10px', background: c.bg, color: c.color, fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.02em' }}>{c.label}</span>
+      return <span className="badge" style={{ background: c.bg, color: c.color }}>{c.label}</span>
     },
   },
   {
@@ -77,7 +77,7 @@ const COLUMNS: Column<RegistrationRow>[] = [
     key: 'swimmerCount',
     label: 'Swimmers',
     align: 'right',
-    render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', color: 'var(--text)' }}>{row.swimmerCount}</span>,
+    render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '13px', color: 'var(--text)' }}>{row.swimmerCount}</span>,
   },
 ]
 
@@ -213,10 +213,10 @@ export default function RegistrationsPage() {
 
   return (
     <div style={{ padding: '24px', maxWidth: '1200px' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
+      <div className="page-header">
         <div>
-          <h1 style={{ fontSize: '22px', fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.2, marginBottom: '4px' }}>Registrations</h1>
-          <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>Live season registration data grouped by household and season</p>
+          <h1 className="page-title">Registrations</h1>
+          <p className="page-subtitle">Live season registration data grouped by household and season</p>
         </div>
         <button className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setShowNew(true)}>
           <Icon name="plus" size={14} /> New Registration
@@ -231,8 +231,8 @@ export default function RegistrationsPage() {
           { label: 'Swimmers', value: counts.swimmers, color: 'var(--accent)' },
         ].map((stat) => (
           <div key={stat.label} className="card" style={{ padding: '14px 16px' }}>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)', marginBottom: '6px' }}>{stat.label}</div>
-            <div style={{ fontSize: '22px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
+            <div style={{ fontSize: '22px', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
           </div>
         ))}
       </div>
@@ -254,7 +254,7 @@ export default function RegistrationsPage() {
           <option value="rejected">Rejected</option>
           <option value="withdrawn">Withdrawn</option>
         </select>
-        <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginLeft: 'auto' }}>{filtered.length} registrations</span>
+        <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginLeft: 'auto' }}>{filtered.length} registrations</span>
       </div>
 
       {loading ? (

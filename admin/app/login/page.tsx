@@ -437,7 +437,7 @@ function LoginPageContent() {
         }
         .sl-dev-toggle:hover { background: rgba(235,93,30,0.09); }
         .sl-dev-badge {
-          font-family: var(--font-mono);
+          font-family: var(--font-body);
           font-size: 9px;
           font-weight: 700;
           padding: 2px 6px;
@@ -458,7 +458,7 @@ function LoginPageContent() {
           background: rgba(0,0,0,0.18);
         }
         .sl-dev-note {
-          font-family: var(--font-mono);
+          font-family: var(--font-body);
           font-size: 10.5px;
           color: rgba(237,233,227,0.25);
           margin: 0 0 10px;

@@ -56,7 +56,7 @@ export function Tabs({ tabs, active, onChange }: TabsProps) {
               <span
                 style={{
                   fontSize: '11px',
-                  fontFamily: 'var(--font-mono)',
+                  fontFamily: 'var(--font-body)',
                   padding: '1px 6px',
                   borderRadius: '10px',
                   background: isActive ? 'var(--accent-subtle)' : 'var(--bg-elevated)',

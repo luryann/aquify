@@ -93,13 +93,13 @@ export default function BestTimesPage() {
   return (
     <div style={{ padding: '32px 36px 80px', maxWidth: 1080, margin: '0 auto' }}>
       <div style={{ marginBottom: '28px' }}>
-        <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
+        <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
           Performance
         </p>
-        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '30px', fontWeight: 400, color: 'var(--text)', marginBottom: '6px' }}>
+        <h1 className="page-title">
           Best Times Explorer
         </h1>
-        <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>
+        <p className="page-subtitle">
           Live best-time records from the performance service for each swimmer.
         </p>
       </div>
@@ -137,7 +137,7 @@ export default function BestTimesPage() {
         <div className="card" style={{ overflow: 'hidden' }}>
           <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
             <h2 style={{ fontSize: '14px', color: 'var(--text)' }}>Live Best Times</h2>
-            <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{bestTimes.length} records · {manualOverrides} manual overrides</span>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>{bestTimes.length} records · {manualOverrides} manual overrides</span>
           </div>
           {loading ? (
             <div style={{ padding: '20px' }}><EmptyState icon="bar-chart-2" title="Loading best times" description="Fetching live best-time records." /></div>
@@ -148,7 +148,7 @@ export default function BestTimesPage() {
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)' }}>
                   {['Event', 'Course', 'Time', 'Recorded', 'Source'].map((header) => (
-                    <th key={header} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{header}</th>
+                    <th key={header} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{header}</th>
                   ))}
                 </tr>
               </thead>
@@ -156,8 +156,8 @@ export default function BestTimesPage() {
                 {bestTimes.map((record) => (
                   <tr key={record.id} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td style={{ padding: '11px 14px', fontSize: '13px', color: 'var(--text)' }}>{record.event_distance} {record.stroke}</td>
-                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-subtle)' }}>{record.course}</td>
-                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontSize: '13px', color: 'var(--accent)' }}>{formatSwimTime(record.best_time_ms)}</td>
+                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-body)', fontSize: '11px', color: 'var(--text-subtle)' }}>{record.course}</td>
+                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-body)', fontSize: '13px', color: 'var(--accent)' }}>{formatSwimTime(record.best_time_ms)}</td>
                     <td style={{ padding: '11px 14px', fontSize: '12px', color: 'var(--text-subtle)' }}>{record.recorded_at ? new Date(record.recorded_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</td>
                     <td style={{ padding: '11px 14px', fontSize: '12px', color: record.is_manual_override ? 'var(--warning)' : 'var(--text-muted)' }}>
                       {record.is_manual_override ? `Manual override${record.override_reason ? ` · ${record.override_reason}` : ''}` : 'Imported result'}
