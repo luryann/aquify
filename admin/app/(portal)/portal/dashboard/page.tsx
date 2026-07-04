@@ -305,15 +305,19 @@ function SwimmerCard({ swimmer }: { swimmer: DashSwimmer }) {
         href={`/portal/household/swimmers/${swimmer.id}`}
         aria-label={`View ${swimmer.name}`}
         style={{
-          width: '32px',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '5px',
           height: '32px',
+          padding: '0 10px',
           borderRadius: '8px',
           background: 'rgba(0,0,0,0.04)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
           color: '#6B6866',
+          fontSize: '12px',
+          fontWeight: 600,
           flexShrink: 0,
+          textDecoration: 'none',
+          whiteSpace: 'nowrap',
           transition: 'background 120ms ease, color 120ms ease',
         }}
         onMouseEnter={(e) => {
@@ -325,7 +329,8 @@ function SwimmerCard({ swimmer }: { swimmer: DashSwimmer }) {
           e.currentTarget.style.color = '#6B6866'
         }}
       >
-        <Icon name="chevron-right" size={15} />
+        View
+        <Icon name="chevron-right" size={13} />
       </Link>
     </div>
   )

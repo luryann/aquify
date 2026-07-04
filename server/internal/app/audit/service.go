@@ -46,6 +46,7 @@ const (
 	ActionAuthUserDelete                     = "auth.user.delete"
 	ActionAuthUserPasswordReset              = "auth.user.password_reset"
 	ActionCommsNotificationPreferencesUpdate = "comms.notification_preferences.update"
+	ActionCommsMessageSend                   = "comms.message.send"
 	ActionBillingInvoiceIssue                = "billing.invoice.issue"
 	ActionBillingInvoiceVoid                 = "billing.invoice.void"
 	ActionBillingInvoiceWriteOff             = "billing.invoice.write_off"
@@ -68,6 +69,7 @@ const (
 	ActionReportInvoiceAgingRun              = "report.invoice_aging.run"
 	ActionReportPaymentReconciliationRun     = "report.payment_reconciliation.run"
 	ActionReportRegistrationStatusRun        = "report.registration_status.run"
+	ActionReportInvoiceDetailRun             = "report.invoice_detail.run"
 )
 
 // ─── Domain types ─────────────────────────────────────────────────────────────

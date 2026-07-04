@@ -300,6 +300,44 @@ func (r *Repository) LoadNotificationPreferences(ctx context.Context) ([]*Notifi
 	return out, rows.Err()
 }
 
+// ─── Messages ─────────────────────────────────────────────────────────────────
+
+func (r *Repository) UpsertMessage(ctx context.Context, m *Message) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO messages (id, org_id, household_id, swimmer_id, sender_user_id, sender_role, body, created_at, updated_at)
+		VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6, $7, $8, $9)
+		ON CONFLICT (id) DO UPDATE SET
+		  body       = EXCLUDED.body,
+		  updated_at = EXCLUDED.updated_at`,
+		m.ID, m.OrgID, m.HouseholdID, m.SwimmerID, m.SenderUserID, m.SenderRole, m.Body,
+		m.CreatedAt, m.UpdatedAt,
+	)
+	return err
+}
+
+func (r *Repository) LoadMessages(ctx context.Context) ([]*Message, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, org_id::text, household_id::text, swimmer_id::text,
+		       sender_user_id::text, sender_role, body, created_at, updated_at
+		FROM messages`)
+	if err != nil {
+		return nil, fmt.Errorf("comms: load messages: %w", err)
+	}
+	defer rows.Close()
+	var out []*Message
+	for rows.Next() {
+		m := &Message{}
+		if err := rows.Scan(
+			&m.ID, &m.OrgID, &m.HouseholdID, &m.SwimmerID,
+			&m.SenderUserID, &m.SenderRole, &m.Body, &m.CreatedAt, &m.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("comms: scan message: %w", err)
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
 // ─── Batch load ───────────────────────────────────────────────────────────────
 
 func (r *Repository) LoadAll(ctx context.Context) (
@@ -308,6 +346,7 @@ func (r *Repository) LoadAll(ctx context.Context) (
 	deliveries []*EmailDelivery,
 	suppressions []*SuppressionEntry,
 	preferences []*NotificationPreference,
+	messages []*Message,
 	err error,
 ) {
 	if announcements, err = r.LoadAnnouncements(ctx); err != nil {
@@ -322,6 +361,9 @@ func (r *Repository) LoadAll(ctx context.Context) (
 	if suppressions, err = r.LoadSuppressionEntries(ctx); err != nil {
 		return
 	}
-	preferences, err = r.LoadNotificationPreferences(ctx)
+	if preferences, err = r.LoadNotificationPreferences(ctx); err != nil {
+		return
+	}
+	messages, err = r.LoadMessages(ctx)
 	return
 }

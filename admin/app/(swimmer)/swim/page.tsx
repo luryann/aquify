@@ -9,6 +9,15 @@ import { useApiClient } from '@/lib/api'
 import { shouldShowCollectionEmptyState } from '@/lib/collection-load-state'
 import { reportUIError } from '@/lib/frontend-telemetry'
 import { UnlinkedSwimmerNotice } from '@/components/swimmer/UnlinkedSwimmerNotice'
+
+const COURSE_LABELS: Record<string, string> = {
+  SCY: 'Short Course Yards',
+  SCM: 'Short Course Meters',
+  LCM: 'Long Course Meters',
+}
+function courseTitle(course: string): string | undefined {
+  return COURSE_LABELS[course.toUpperCase()]
+}
 import {
   fetchSwimmers,
   fetchMeets,
@@ -194,7 +203,7 @@ function MeetCard({ meet }: { meet: MeetDisplay }) {
         </div>
         <div style={{ display: 'flex', gap: '7px', alignItems: 'center' }}>
           {meet.course && (
-            <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', fontWeight: 600, color: '#0D2235', background: C.accent, padding: '2px 7px', borderRadius: '4px', letterSpacing: '0.04em' }}>
+            <span title={courseTitle(meet.course)} style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', fontWeight: 600, color: '#0D2235', background: C.accent, padding: '2px 7px', borderRadius: '4px', letterSpacing: '0.04em' }}>
               {meet.course}
             </span>
           )}
@@ -701,7 +710,7 @@ export default function SwimmerDashboardPage() {
                     onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                   >
                     <span style={{ fontSize: '13.5px', fontWeight: 600, color: C.text }}>{bt.event}</span>
-                    <span style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', color: C.subtle }}>{bt.course}</span>
+                    <span title={courseTitle(bt.course)} style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', color: C.subtle }}>{bt.course}</span>
                     <span style={{ fontSize: '14px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: C.accent }}>{bt.time}</span>
                   </div>
                 ))

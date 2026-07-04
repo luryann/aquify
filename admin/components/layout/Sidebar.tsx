@@ -2,7 +2,7 @@
 
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { useMemo, useState, useRef, useCallback, useEffect } from 'react'
+import { useMemo, useState, useRef, useCallback, useEffect, type CSSProperties } from 'react'
 import { filterNavItems, groupNavItems, ROLE_LABELS, type Role } from '@/lib/roles'
 import { Icon, type IconName } from '@/components/ui/icons'
 import { pendingApprovalsRequestInit, shouldFetchPendingApprovals } from '@/lib/sidebar-badge'
@@ -269,48 +269,33 @@ export function Sidebar({ role, roles, userName, onSignOut, orgId }: SidebarProp
 
             {grouped[section]!.map((item, itemIdx) => {
               const active = isActive(item.path)
-              return (
-                <Link
-                  key={item.id}
-                  href={item.path}
-                  title={collapsed ? item.label : undefined}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '9px',
-                    padding: collapsed ? '8px 0' : '7px 14px 7px 18px',
-                    justifyContent: collapsed ? 'center' : 'flex-start',
-                    textDecoration: 'none',
-                    color: active ? 'var(--text)' : 'var(--text-subtle)',
-                    background: active ? 'var(--accent-subtle)' : 'transparent',
-                    borderLeft: active ? '2px solid var(--accent)' : '2px solid transparent',
-                    borderRadius: collapsed ? '0' : '0 var(--r-sm) var(--r-sm) 0',
-                    marginRight: collapsed ? '0' : '8px',
-                    fontSize: '13px',
-                    fontWeight: active ? 600 : 400,
-                    transition:
-                      'background var(--dur-fast), color var(--dur-fast), border-color var(--dur-fast)',
-                    animation: `slideUp 0.3s var(--ease-out) ${(sectionIdx * 3 + itemIdx) * 30 + 50}ms both`,
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!active) {
-                      e.currentTarget.style.background = 'rgba(255,255,255,0.04)'
-                      e.currentTarget.style.color = 'var(--text)'
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!active) {
-                      e.currentTarget.style.background = 'transparent'
-                      e.currentTarget.style.color = 'var(--text-subtle)'
-                    }
-                  }}
-                >
+              const baseStyle: CSSProperties = {
+                display: 'flex',
+                alignItems: 'center',
+                gap: '9px',
+                padding: collapsed ? '8px 0' : '7px 14px 7px 18px',
+                justifyContent: collapsed ? 'center' : 'flex-start',
+                textDecoration: 'none',
+                color: active ? 'var(--text)' : 'var(--text-subtle)',
+                background: active ? 'var(--accent-subtle)' : 'transparent',
+                borderLeft: active ? '2px solid var(--accent)' : '2px solid transparent',
+                borderRadius: collapsed ? '0' : '0 var(--r-sm) var(--r-sm) 0',
+                marginRight: collapsed ? '0' : '8px',
+                fontSize: '13px',
+                fontWeight: active ? 600 : 400,
+                transition:
+                  'background var(--dur-fast), color var(--dur-fast), border-color var(--dur-fast)',
+                animation: `slideUp 0.3s var(--ease-out) ${(sectionIdx * 3 + itemIdx) * 30 + 50}ms both`,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+              }
+
+              const iconAndLabel = (
+                <>
                   <Icon
                     name={item.icon as IconName}
                     size={15}
-                    style={{ flexShrink: 0, opacity: active ? 1 : 0.7 }}
+                    style={{ flexShrink: 0, opacity: active ? 1 : item.locked ? 0.4 : 0.7 }}
                   />
                   {!collapsed && (
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>
@@ -337,6 +322,48 @@ export function Sidebar({ role, roles, userName, onSignOut, orgId }: SidebarProp
                       {pendingCount > 99 ? '99+' : pendingCount}
                     </span>
                   )}
+                </>
+              )
+
+              if (item.locked) {
+                return (
+                  <div
+                    key={item.id}
+                    title={collapsed ? `${item.label} — requires a higher permission level` : 'Requires a higher permission level'}
+                    aria-disabled="true"
+                    style={{
+                      ...baseStyle,
+                      color: 'var(--text-muted)',
+                      opacity: 0.45,
+                      cursor: 'not-allowed',
+                      pointerEvents: 'auto',
+                    }}
+                  >
+                    {iconAndLabel}
+                  </div>
+                )
+              }
+
+              return (
+                <Link
+                  key={item.id}
+                  href={item.path}
+                  title={collapsed ? item.label : undefined}
+                  style={baseStyle}
+                  onMouseEnter={(e) => {
+                    if (!active) {
+                      e.currentTarget.style.background = 'rgba(255,255,255,0.04)'
+                      e.currentTarget.style.color = 'var(--text)'
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!active) {
+                      e.currentTarget.style.background = 'transparent'
+                      e.currentTarget.style.color = 'var(--text-subtle)'
+                    }
+                  }}
+                >
+                  {iconAndLabel}
                 </Link>
               )
             })}

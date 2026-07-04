@@ -28,6 +28,7 @@ func (h *ReportsHandlers) RegisterRoutes(router chi.Router) {
 		r.Get("/membership-status", h.runMembershipStatus)
 		r.Get("/meet-fees", h.runMeetFees)
 		r.Get("/invoice-aging", h.runInvoiceAging)
+		r.Get("/invoice-detail", h.runInvoiceDetail)
 		r.Get("/payment-reconciliation", h.runPaymentReconciliation)
 		r.Get("/registration-status", h.runRegistrationStatus)
 	})
@@ -60,6 +61,12 @@ func mapReportError(w http.ResponseWriter, r *http.Request, err error) bool {
 	switch {
 	case errors.Is(err, reports.ErrForbidden):
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to run reports.", nil)
+		return true
+	case errors.Is(err, reports.ErrInvoiceIDRequired):
+		httpx.WriteError(w, r, http.StatusBadRequest, "invoice_id_required", "invoice_id is required.", nil)
+		return true
+	case errors.Is(err, reports.ErrInvoiceNotFound):
+		httpx.WriteError(w, r, http.StatusNotFound, "invoice_not_found", "Invoice not found.", nil)
 		return true
 	default:
 		return false
@@ -213,6 +220,52 @@ func (h *ReportsHandlers) runInvoiceAging(w http.ResponseWriter, r *http.Request
 			return
 		}
 		artifact, err := h.service.StoreCSVArtifact(orgID, "invoice_aging", report.GeneratedAt, doc)
+		if err != nil {
+			httpx.WriteError(w, r, http.StatusInternalServerError, "artifact_persist_failed", "Failed to persist CSV report artifact.", nil)
+			return
+		}
+		writeCSVArtifactResponse(w, report, artifact)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"report": report})
+}
+
+func (h *ReportsHandlers) runInvoiceDetail(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := reportScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+	invoiceID := strings.TrimSpace(r.URL.Query().Get("invoice_id"))
+	report, err := h.service.RunInvoiceDetailReport(orgID, principal, invoiceID)
+	if err != nil {
+		if !mapReportError(w, r, err) {
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to generate invoice detail report.", nil)
+		}
+		return
+	}
+	h.appendAudit(principal, orgID, audit.ActionReportInvoiceDetailRun, invoiceID, map[string]string{
+		"format": defaultReportFormat(reportFormat(r)),
+		"rows":   fmt.Sprintf("%d", report.RowCount),
+	})
+
+	if reportFormat(r) == "csv" {
+		doc, err := reports.BuildCSV(
+			fmt.Sprintf("invoice-%s-%s.csv", report.InvoiceNumber, report.GeneratedAt.Format("20060102")),
+			[]string{"record_type", "description", "swimmer_name", "quantity", "amount_cents", "status", "date"},
+			func() [][]string {
+				rows := make([][]string, 0, len(report.Rows))
+				for _, row := range report.Rows {
+					rows = append(rows, []string{row.RecordType, row.Description, row.SwimmerName, fmt.Sprintf("%d", row.Quantity), fmt.Sprintf("%d", row.AmountCents), row.Status, row.Date})
+				}
+				return rows
+			}(),
+		)
+		if err != nil {
+			httpx.WriteError(w, r, http.StatusInternalServerError, "csv_generation_failed", "Failed to build CSV report.", nil)
+			return
+		}
+		artifact, err := h.service.StoreCSVArtifact(orgID, "invoice_detail", report.GeneratedAt, doc)
 		if err != nil {
 			httpx.WriteError(w, r, http.StatusInternalServerError, "artifact_persist_failed", "Failed to persist CSV report artifact.", nil)
 			return

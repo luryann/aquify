@@ -287,7 +287,7 @@ export default function DashboardPage() {
     .sort((a, b) => (a.start_date ?? '').localeCompare(b.start_date ?? ''))
     .slice(0, 3)
   const upcomingMeets = meets.filter((m) => UPCOMING_STATUSES.has(m.status)).length
-  const openInvoices = invoices.filter((i) => i.status === 'open' || i.status === 'sent')
+  const openInvoices = invoices.filter((i) => i.status === 'issued' || i.status === 'partially_paid')
   const openInvoiceAmount = openInvoices.reduce((sum, i) => sum + i.amount_due_cents, 0)
   const overdueInvoices = openInvoices.filter((i) => i.due_date && new Date(i.due_date) < new Date())
   const overdueAmount = overdueInvoices.reduce((sum, i) => sum + i.amount_due_cents, 0)

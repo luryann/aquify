@@ -80,16 +80,19 @@ func (r *Repository) LoadInvoices(ctx context.Context) ([]*Invoice, error) {
 
 func (r *Repository) UpsertInvoiceItem(ctx context.Context, item *InvoiceItem) error {
 	_, err := r.pool.Exec(ctx, `
-		INSERT INTO invoice_items (id, org_id, invoice_id, description, quantity, unit_amount_cents, category, created_at, updated_at)
-		VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8, $9)
+		INSERT INTO invoice_items (id, org_id, invoice_id, description, quantity, unit_amount_cents, category, swimmer_id, meet_id, created_at, updated_at)
+		VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8::uuid, $9::uuid, $10, $11)
 		ON CONFLICT (id) DO UPDATE SET
 		  description      = EXCLUDED.description,
 		  quantity         = EXCLUDED.quantity,
 		  unit_amount_cents = EXCLUDED.unit_amount_cents,
 		  category         = EXCLUDED.category,
+		  swimmer_id       = EXCLUDED.swimmer_id,
+		  meet_id          = EXCLUDED.meet_id,
 		  updated_at       = EXCLUDED.updated_at`,
 		item.ID, item.OrgID, item.InvoiceID,
 		item.Description, item.Quantity, item.UnitAmountCents, item.Category,
+		nullableString(item.SwimmerID), nullableString(item.MeetID),
 		item.CreatedAt, item.UpdatedAt,
 	)
 	return err
@@ -99,6 +102,7 @@ func (r *Repository) LoadInvoiceItems(ctx context.Context) ([]*InvoiceItem, erro
 	rows, err := r.pool.Query(ctx, `
 		SELECT id::text, org_id::text, invoice_id::text,
 		       description, quantity, unit_amount_cents, COALESCE(category, ''),
+		       COALESCE(swimmer_id::text, ''), COALESCE(meet_id::text, ''),
 		       created_at, updated_at
 		FROM invoice_items`)
 	if err != nil {
@@ -111,6 +115,7 @@ func (r *Repository) LoadInvoiceItems(ctx context.Context) ([]*InvoiceItem, erro
 		if err := rows.Scan(
 			&item.ID, &item.OrgID, &item.InvoiceID,
 			&item.Description, &item.Quantity, &item.UnitAmountCents, &item.Category,
+			&item.SwimmerID, &item.MeetID,
 			&item.CreatedAt, &item.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("billing: scan invoice_item: %w", err)

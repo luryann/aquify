@@ -19,7 +19,11 @@ import (
 	"github.com/dareaquatics/aquify/server/internal/storage"
 )
 
-var ErrForbidden = errors.New("forbidden")
+var (
+	ErrForbidden         = errors.New("forbidden")
+	ErrInvoiceIDRequired = errors.New("invoice_id is required")
+	ErrInvoiceNotFound   = errors.New("invoice not found")
+)
 
 type Service struct {
 	mu      sync.RWMutex
@@ -472,6 +476,108 @@ func (s *Service) RunInvoiceAgingReport(orgID string, principal *appmiddleware.P
 		OutstandingInvoiceCount: outstandingCount,
 		OutstandingCents:        outstandingCents,
 		Rows:                    rows,
+	}, nil
+}
+
+type InvoiceDetailRow struct {
+	RecordType  string `json:"record_type"` // item | payment | refund
+	Description string `json:"description"`
+	SwimmerName string `json:"swimmer_name,omitempty"`
+	Quantity    int    `json:"quantity,omitempty"`
+	AmountCents int    `json:"amount_cents"`
+	Status      string `json:"status,omitempty"`
+	Date        string `json:"date,omitempty"`
+}
+
+type InvoiceDetailReport struct {
+	GeneratedAt   time.Time          `json:"generated_at"`
+	InvoiceID     string             `json:"invoice_id"`
+	InvoiceNumber string             `json:"invoice_number"`
+	HouseholdID   string             `json:"household_id,omitempty"`
+	RowCount      int                `json:"row_count"`
+	Rows          []InvoiceDetailRow `json:"rows"`
+}
+
+func (s *Service) RunInvoiceDetailReport(orgID string, principal *appmiddleware.Principal, invoiceID string) (*InvoiceDetailReport, error) {
+	if err := s.requireReportAccess(principal); err != nil {
+		return nil, err
+	}
+	invoiceID = strings.TrimSpace(invoiceID)
+	if invoiceID == "" {
+		return nil, ErrInvoiceIDRequired
+	}
+
+	var invoice *billing.Invoice
+	for _, inv := range s.billing.SnapshotInvoices(orgID) {
+		if inv.ID == invoiceID {
+			candidate := inv
+			invoice = &candidate
+			break
+		}
+	}
+	if invoice == nil {
+		return nil, ErrInvoiceNotFound
+	}
+
+	swimmers := s.members.SnapshotSwimmers(orgID)
+	swimmerByID := make(map[string]members.Swimmer, len(swimmers))
+	for _, swimmer := range swimmers {
+		swimmerByID[swimmer.ID] = swimmer
+	}
+
+	rows := make([]InvoiceDetailRow, 0)
+	for _, item := range s.billing.SnapshotInvoiceItems(orgID) {
+		if item.InvoiceID != invoiceID {
+			continue
+		}
+		swimmerName := ""
+		if item.SwimmerID != "" {
+			if swimmer, ok := swimmerByID[item.SwimmerID]; ok {
+				swimmerName = strings.TrimSpace(swimmer.FirstName + " " + swimmer.LastName)
+			}
+		}
+		rows = append(rows, InvoiceDetailRow{
+			RecordType:  "item",
+			Description: item.Description,
+			SwimmerName: swimmerName,
+			Quantity:    item.Quantity,
+			AmountCents: item.TotalCents,
+			Status:      item.Category,
+			Date:        item.CreatedAt.Format("2006-01-02"),
+		})
+	}
+	for _, payment := range s.billing.SnapshotPayments(orgID) {
+		if payment.InvoiceID != invoiceID {
+			continue
+		}
+		rows = append(rows, InvoiceDetailRow{
+			RecordType:  "payment",
+			Description: payment.Method,
+			AmountCents: payment.AmountCents,
+			Status:      payment.Status,
+			Date:        payment.CreatedAt.Format("2006-01-02"),
+		})
+	}
+	for _, refund := range s.billing.SnapshotRefunds(orgID) {
+		if refund.InvoiceID != invoiceID {
+			continue
+		}
+		rows = append(rows, InvoiceDetailRow{
+			RecordType:  "refund",
+			Description: refund.Reason,
+			AmountCents: refund.AmountCents,
+			Status:      refund.Status,
+			Date:        refund.CreatedAt.Format("2006-01-02"),
+		})
+	}
+
+	return &InvoiceDetailReport{
+		GeneratedAt:   s.nowFunc(),
+		InvoiceID:     invoice.ID,
+		InvoiceNumber: invoice.InvoiceNumber,
+		HouseholdID:   invoice.HouseholdID,
+		RowCount:      len(rows),
+		Rows:          rows,
 	}, nil
 }
 

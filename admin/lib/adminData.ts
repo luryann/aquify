@@ -663,6 +663,27 @@ export type AnnouncementRecord = {
   updated_by: string
 }
 
+export type MessageRecord = {
+  id: string
+  org_id: string
+  household_id: string
+  swimmer_id: string
+  sender_user_id: string
+  sender_role: string
+  body: string
+  created_at: string
+  updated_at: string
+}
+
+export type MessageThreadRecord = {
+  household_id: string
+  swimmer_id: string
+  message_count: number
+  last_body: string
+  last_sender_role: string
+  last_message_at: string
+}
+
 export type EmailCampaignRecord = {
   id: string
   org_id: string
@@ -1115,6 +1136,20 @@ export async function fetchInvoiceRefunds(api: ApiClient, orgId: string, invoice
   return res.refunds ?? []
 }
 
+export async function createRefund(
+  api: ApiClient,
+  orgId: string,
+  invoiceId: string,
+  input: { payment_id: string; amount_cents: number; reason: string },
+): Promise<RefundRecord> {
+  const res = await api.post<{ refund: RefundRecord }>(
+    `/api/v1/invoices/${invoiceId}/refunds`,
+    input,
+    withOrgHeaders(orgId),
+  )
+  return res.refund
+}
+
 export async function fetchSwimmerBestTimes(api: ApiClient, orgId: string, swimmerId: string): Promise<BestTimeRecord[]> {
   const res = await api.get<{ best_times?: BestTimeRecord[] }>(`/api/v1/swimmers/${swimmerId}/best-times`, undefined, withOrgHeaders(orgId))
   return res.best_times ?? []
@@ -1252,6 +1287,26 @@ export async function fetchAnnouncements(api: ApiClient, orgId: string, status?:
   const query = status ? `?${new URLSearchParams({ status }).toString()}` : ''
   const res = await api.get<{ announcements?: AnnouncementRecord[] }>(`/api/v1/announcements${query}`, undefined, withOrgHeaders(orgId))
   return res.announcements ?? []
+}
+
+export async function fetchMessages(api: ApiClient, orgId: string, householdId: string, swimmerId: string): Promise<MessageRecord[]> {
+  const query = new URLSearchParams({ household_id: householdId, swimmer_id: swimmerId }).toString()
+  const res = await api.get<{ messages?: MessageRecord[] }>(`/api/v1/messages?${query}`, undefined, withOrgHeaders(orgId))
+  return res.messages ?? []
+}
+
+export async function sendMessage(
+  api: ApiClient,
+  orgId: string,
+  input: { household_id: string; swimmer_id: string; body: string },
+): Promise<MessageRecord> {
+  const res = await api.post<{ message: MessageRecord }>('/api/v1/messages', input, withOrgHeaders(orgId))
+  return res.message
+}
+
+export async function fetchMessageThreads(api: ApiClient, orgId: string): Promise<MessageThreadRecord[]> {
+  const res = await api.get<{ threads?: MessageThreadRecord[] }>('/api/v1/message-threads', undefined, withOrgHeaders(orgId))
+  return res.threads ?? []
 }
 
 export async function fetchCommunicationPreferences(api: ApiClient, orgId: string): Promise<CommunicationPreferenceRecord[]> {

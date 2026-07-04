@@ -16,6 +16,7 @@ const NAV_LINKS = [
   { label: 'Meets',          path: '/portal/meets' },
   { label: 'Billing',        path: '/portal/billing' },
   { label: 'Documents',      path: '/portal/documents' },
+  { label: 'Messages',       path: '/portal/messages' },
   { label: 'Communications', path: '/portal/communications' },
   { label: 'Calendar',       path: '/portal/calendar' },
 ]

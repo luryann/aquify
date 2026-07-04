@@ -21,6 +21,7 @@ type FormState = {
   role: Role | ''
   clubCode: string
   message: string
+  swimmerName: string
 }
 
 type FieldError = Partial<Record<keyof FormState, string>>
@@ -48,7 +49,7 @@ function RegisterPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [form, setForm] = useState<FormState>({
-    firstName: '', lastName: '', email: '', role: '', clubCode: '', message: '',
+    firstName: '', lastName: '', email: '', role: '', clubCode: '', message: '', swimmerName: '',
   })
   const [errors, setErrors] = useState<FieldError>({})
   const [submitStatus, setSubmitStatus] = useState<SubmitStatus>('idle')
@@ -97,6 +98,7 @@ function RegisterPageContent() {
           requested_role: form.role,
           club_code: resolved.clubCode || undefined,
           note: form.message.trim() || undefined,
+          swimmer_name: form.swimmerName.trim() || undefined,
         }),
       })
       if (res.status === 201 || res.status === 200) {
@@ -138,6 +140,13 @@ function RegisterPageContent() {
             <p className="rp-success-body">
               Your access request has been submitted to your club administrator.
               {"You'll receive an email at"} <strong>{form.email}</strong> when your account is approved.
+              {form.role === 'parent' && (
+                <>
+                  {' '}This creates your account only — a club administrator will follow up
+                  separately about registering
+                  {form.swimmerName.trim() ? <> <strong>{form.swimmerName.trim()}</strong></> : ' your swimmer'} for the season.
+                </>
+              )}
             </p>
             <div className="rp-success-actions">
               <button className="rp-btn-ghost" onClick={() => router.push('/login')}>
@@ -268,6 +277,29 @@ function RegisterPageContent() {
                 ))}
               </div>
             </div>
+
+            {/* Swimmer name (parent only, optional) */}
+            {form.role === 'parent' && (
+              <div className="rp-field">
+                <label htmlFor="rp-swimmer" className="rp-label">
+                  Swimmer&rsquo;s name <span className="rp-optional">(optional)</span>
+                </label>
+                <input
+                  id="rp-swimmer"
+                  type="text"
+                  className="rp-input"
+                  placeholder="Emma Chen"
+                  value={form.swimmerName}
+                  onChange={set('swimmerName')}
+                  autoComplete="off"
+                  disabled={submitting}
+                  maxLength={120}
+                />
+                <span className="rp-hint-text">
+                  This request creates your account only — tell us who you&rsquo;re swimming for so staff can follow up about registering them.
+                </span>
+              </div>
+            )}
 
             {/* Club code (optional) */}
             <div className="rp-field">

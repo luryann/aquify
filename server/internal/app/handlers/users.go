@@ -406,6 +406,7 @@ type selfRegisterRequest struct {
 	RequestedRole string `json:"requested_role"`
 	ClubCode      string `json:"club_code"`
 	Note          string `json:"note"`
+	SwimmerName   string `json:"swimmer_name"`
 }
 
 func (h *UserHandlers) selfRegister(w http.ResponseWriter, r *http.Request) {
@@ -421,6 +422,7 @@ func (h *UserHandlers) selfRegister(w http.ResponseWriter, r *http.Request) {
 	req.RequestedRole = normalizeUserRole(req.RequestedRole)
 	req.ClubCode = strings.ToUpper(strings.TrimSpace(req.ClubCode))
 	req.Note = strings.TrimSpace(req.Note)
+	req.SwimmerName = strings.TrimSpace(req.SwimmerName)
 
 	if req.Email == "" {
 		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "email is required.", nil)
@@ -461,6 +463,9 @@ func (h *UserHandlers) selfRegister(w http.ResponseWriter, r *http.Request) {
 	if req.Note != "" {
 		registrationAttributes["registration_note"] = []string{req.Note}
 	}
+	if req.SwimmerName != "" {
+		registrationAttributes["registration_swimmer_name"] = []string{req.SwimmerName}
+	}
 
 	_ = h.kc.UpdateUser(r.Context(), newUserID, keycloak.UpdateUserFields{Attributes: registrationAttributes})
 
@@ -471,6 +476,9 @@ func (h *UserHandlers) selfRegister(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.ClubCode != "" {
 			metadata["club_code"] = req.ClubCode
+		}
+		if req.SwimmerName != "" {
+			metadata["swimmer_name"] = req.SwimmerName
 		}
 		_, _ = h.auditService.Append(audit.AppendRequest{
 			OrgID:        req.OrgID,

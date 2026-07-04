@@ -1462,7 +1462,7 @@ func (s *Service) PublishCommitmentRequest(principal *appmiddleware.Principal, o
 
 // ListCommitments returns commitments for a meet. Parents only see their own household's commitments.
 func (s *Service) ListCommitments(principal *appmiddleware.Principal, orgID, meetID string) ([]Commitment, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "swimmer") {
+	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "swimmer", "billing", "read-only") {
 		return nil, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {

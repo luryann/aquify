@@ -28,6 +28,7 @@ type PendingUser = {
     registration_club_code?: string[]
     registration_note?: string[]
     registration_submitted_at?: string[]
+    registration_swimmer_name?: string[]
   }
 }
 
@@ -269,6 +270,7 @@ export default function ApprovalsPage() {
             const clubCode = attr(user, 'registration_club_code')
             const registrationNote = attr(user, 'registration_note')
             const submittedAt = attr(user, 'registration_submitted_at')
+            const swimmerName = attr(user, 'registration_swimmer_name')
             return (
               <div key={user.id} className="card" style={{ padding: '20px' }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px' }}>
@@ -286,11 +288,16 @@ export default function ApprovalsPage() {
                     <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
                       ID: {user.id}
                     </div>
-                    {(requestedRole || clubCode || registrationNote || submittedAt) && (
+                    {(requestedRole || clubCode || registrationNote || submittedAt || swimmerName) && (
                       <div style={{ marginTop: '12px', display: 'grid', gap: '6px' }}>
                         <div style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>
                           Requested role: <strong style={{ color: 'var(--text)' }}>{requestedRoleLabel(requestedRole)}</strong>
                         </div>
+                        {swimmerName && (
+                          <div style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>
+                            Swimmer: <strong style={{ color: 'var(--text)' }}>{swimmerName}</strong> <span style={{ color: 'var(--text-muted)' }}>(account only — not yet registered for the season)</span>
+                          </div>
+                        )}
                         {clubCode && (
                           <div style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>
                             Club code: <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>{clubCode}</span>

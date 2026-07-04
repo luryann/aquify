@@ -44,9 +44,15 @@ function StatusBadge({ status }: { status: MeetStatus }) {
   return <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '10px', background: c.bg, color: c.color, fontFamily: 'var(--font-mono)', letterSpacing: '0.02em', whiteSpace: 'nowrap' }}>{c.label}</span>
 }
 
+const COURSE_LABELS: Record<MeetCourse, string> = {
+  SCY: 'Short Course Yards',
+  SCM: 'Short Course Meters',
+  LCM: 'Long Course Meters',
+}
+
 function CourseBadge({ course }: { course: MeetCourse }) {
   const colors: Record<MeetCourse, string> = { SCY: 'var(--text-subtle)', SCM: 'var(--info)', LCM: 'var(--accent)' }
-  return <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', padding: '2px 6px', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)', color: colors[course], background: 'var(--bg-elevated)' }}>{course}</span>
+  return <span title={COURSE_LABELS[course]} style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', padding: '2px 6px', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)', color: colors[course], background: 'var(--bg-elevated)' }}>{course}</span>
 }
 
 const COLUMNS: Column<MeetRow>[] = [

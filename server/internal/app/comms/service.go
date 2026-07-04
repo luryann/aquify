@@ -76,6 +76,31 @@ type Announcement struct {
 	UpdatedBy   string     `json:"updated_by"`
 }
 
+// Message is a direct note in a household+swimmer thread between a parent/swimmer
+// and staff (coach/admin/owner). Threads are scoped per swimmer so a household with
+// multiple kids gets a separate conversation for each one.
+type Message struct {
+	ID           string    `json:"id"`
+	OrgID        string    `json:"org_id"`
+	HouseholdID  string    `json:"household_id"`
+	SwimmerID    string    `json:"swimmer_id"`
+	SenderUserID string    `json:"sender_user_id"`
+	SenderRole   string    `json:"sender_role"`
+	Body         string    `json:"body"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+// MessageThreadSummary describes one household+swimmer conversation for an inbox view.
+type MessageThreadSummary struct {
+	HouseholdID    string    `json:"household_id"`
+	SwimmerID      string    `json:"swimmer_id"`
+	MessageCount   int       `json:"message_count"`
+	LastBody       string    `json:"last_body"`
+	LastSenderRole string    `json:"last_sender_role"`
+	LastMessageAt  time.Time `json:"last_message_at"`
+}
+
 // EmailCampaign is a bulk-email job targeting all org members or a group.
 type EmailCampaign struct {
 	ID              string     `json:"id"`
@@ -156,6 +181,16 @@ type NotificationPreferenceView struct {
 }
 
 // ─── Input types ──────────────────────────────────────────────────────────────
+
+// CreateMessageInput holds fields for sending a message into a household+swimmer thread.
+type CreateMessageInput struct {
+	OrgID        string `json:"org_id"       validate:"required"`
+	HouseholdID  string `json:"household_id" validate:"required"`
+	SwimmerID    string `json:"swimmer_id"   validate:"required"`
+	Body         string `json:"body"         validate:"required,max=4000"`
+	SenderUserID string `json:"-"`
+	SenderRole   string `json:"-"`
+}
 
 type CreateAnnouncementInput struct {
 	OrgID     string `json:"org_id"    validate:"required"`
@@ -240,6 +275,7 @@ type Service struct {
 	deliveries    map[string]*EmailDelivery
 	suppression   map[string]*SuppressionEntry // key: orgID|email (lowercase)
 	preferences   map[string]*NotificationPreference
+	messages      map[string]*Message
 
 	postmarkClient postmark.Client
 }
@@ -252,6 +288,7 @@ func NewService() *Service {
 		deliveries:     make(map[string]*EmailDelivery),
 		suppression:    make(map[string]*SuppressionEntry),
 		preferences:    make(map[string]*NotificationPreference),
+		messages:       make(map[string]*Message),
 		postmarkClient: postmark.NewStubClient(),
 	}
 }
@@ -289,7 +326,7 @@ func NewServiceWithPool(pool *pgxpool.Pool) *Service {
 }
 
 func (s *Service) loadFromDB(ctx context.Context) error {
-	announcements, campaigns, deliveries, suppressions, preferences, err := s.repo.LoadAll(ctx)
+	announcements, campaigns, deliveries, suppressions, preferences, messages, err := s.repo.LoadAll(ctx)
 	if err != nil {
 		return err
 	}
@@ -309,6 +346,9 @@ func (s *Service) loadFromDB(ctx context.Context) error {
 	}
 	for _, pref := range preferences {
 		s.preferences[notificationPreferenceKey(pref.OrgID, pref.UserID, pref.EventID)] = pref
+	}
+	for _, m := range messages {
+		s.messages[m.ID] = m
 	}
 	return nil
 }
@@ -546,6 +586,88 @@ func (s *Service) ListAnnouncements(orgID, statusFilter string) ([]*Announcement
 		return out[i].CreatedAt.After(out[j].CreatedAt)
 	})
 	return out, nil
+}
+
+// ─── Message operations ───────────────────────────────────────────────────────
+
+// SendMessage appends a message to a household+swimmer thread.
+func (s *Service) SendMessage(inp CreateMessageInput) (*Message, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now().UTC()
+	m := &Message{
+		ID:           s.newID(),
+		OrgID:        inp.OrgID,
+		HouseholdID:  inp.HouseholdID,
+		SwimmerID:    inp.SwimmerID,
+		SenderUserID: inp.SenderUserID,
+		SenderRole:   inp.SenderRole,
+		Body:         strings.TrimSpace(inp.Body),
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+	if s.repo != nil {
+		if err := s.repo.UpsertMessage(context.Background(), m); err != nil {
+			return nil, fmt.Errorf("persist message: %w", err)
+		}
+	}
+	s.messages[m.ID] = m
+	return m, nil
+}
+
+// ListMessages returns every message in a household+swimmer thread, oldest first.
+func (s *Service) ListMessages(orgID, householdID, swimmerID string) []*Message {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := make([]*Message, 0)
+	for _, m := range s.messages {
+		if m.OrgID != orgID || m.HouseholdID != householdID || m.SwimmerID != swimmerID {
+			continue
+		}
+		out = append(out, m)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
+	return out
+}
+
+// ListMessageThreads returns one summary row per household+swimmer thread for an
+// org, most recently active first — used for a coach/admin inbox view.
+func (s *Service) ListMessageThreads(orgID string) []MessageThreadSummary {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	type key struct{ householdID, swimmerID string }
+	threads := make(map[key]*MessageThreadSummary)
+	for _, m := range s.messages {
+		if m.OrgID != orgID {
+			continue
+		}
+		k := key{m.HouseholdID, m.SwimmerID}
+		summary, ok := threads[k]
+		if !ok {
+			summary = &MessageThreadSummary{HouseholdID: m.HouseholdID, SwimmerID: m.SwimmerID}
+			threads[k] = summary
+		}
+		summary.MessageCount++
+		if m.CreatedAt.After(summary.LastMessageAt) {
+			summary.LastMessageAt = m.CreatedAt
+			summary.LastBody = m.Body
+			summary.LastSenderRole = m.SenderRole
+		}
+	}
+
+	out := make([]MessageThreadSummary, 0, len(threads))
+	for _, summary := range threads {
+		out = append(out, *summary)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].LastMessageAt.After(out[j].LastMessageAt)
+	})
+	return out
 }
 
 // ─── Campaign operations ──────────────────────────────────────────────────────

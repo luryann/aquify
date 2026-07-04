@@ -7,7 +7,7 @@ import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
 import { shouldShowCollectionEmptyState } from '@/lib/collection-load-state'
 import { reportUIError } from '@/lib/frontend-telemetry'
-import { fetchMeets, fetchPractices, type MeetRecord, type PracticeRecord } from '@/lib/adminData'
+import { fetchMeets, fetchPractices, fetchGroups, type MeetRecord, type PracticeRecord, type GroupRecord } from '@/lib/adminData'
 
 // ── Types ───────────────────────────────────────────────────────────────────
 type EventType = 'meet' | 'practice' | 'deadline' | 'holiday' | 'event'
@@ -68,14 +68,18 @@ function meetsToCalEvents(meets: MeetRecord[]): CalEvent[] {
 }
 
 
-function practicesToCalEvents(practices: PracticeRecord[]): CalEvent[] {
-  return practices.map((p) => ({
-    id: `practice-${p.id}`,
-    title: p.description ? `Practice — ${p.description.slice(0, 60)}` : 'Practice',
-    type: 'practice' as EventType,
-    date: p.date,
-    detail: p.yardage_target > 0 ? `${p.yardage_target.toLocaleString()} yds target` : undefined,
-  }))
+function practicesToCalEvents(practices: PracticeRecord[], groupNameById: Map<string, string>): CalEvent[] {
+  return practices.map((p) => {
+    const groupName = p.group_id ? groupNameById.get(p.group_id) : undefined
+    const label = groupName ?? 'All groups'
+    return {
+      id: `practice-${p.id}`,
+      title: p.description ? `Practice — ${label} — ${p.description.slice(0, 60)}` : `Practice — ${label}`,
+      type: 'practice' as EventType,
+      date: p.date,
+      detail: p.yardage_target > 0 ? `${p.yardage_target.toLocaleString()} yds target` : undefined,
+    }
+  })
 }
 
 // ── Config ─────────────────────────────────────────────────────────────────
@@ -241,9 +245,11 @@ export default function CalendarPage() {
     Promise.all([
       fetchMeets(api, orgId),
       fetchPractices(api, orgId),
+      fetchGroups(api, orgId),
     ])
-      .then(([meets, practices]) => {
-        setEvents([...meetsToCalEvents(meets), ...practicesToCalEvents(practices)])
+      .then(([meets, practices, groups]) => {
+        const groupNameById = new Map<string, string>(groups.map((g: GroupRecord) => [g.id, g.name]))
+        setEvents([...meetsToCalEvents(meets), ...practicesToCalEvents(practices, groupNameById)])
       })
       .catch((error) => {
         setEvents([])

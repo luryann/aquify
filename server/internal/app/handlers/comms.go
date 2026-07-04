@@ -92,6 +92,11 @@ func (h *CommsHandlers) RegisterRoutes(router chi.Router) {
 	router.Delete("/suppression/{suppressionID}", h.removeSuppression)
 	router.Get("/communication-preferences", h.listNotificationPreferences)
 	router.Put("/communication-preferences", h.updateNotificationPreferences)
+
+	// Messages — a household+swimmer thread between a parent/swimmer and staff.
+	router.Post("/messages", h.sendMessage)
+	router.Get("/messages", h.listMessages)
+	router.Get("/message-threads", h.listMessageThreads)
 }
 
 // ─── Scope helper ─────────────────────────────────────────────────────────────
@@ -327,6 +332,124 @@ func (h *CommsHandlers) updateNotificationPreferences(w http.ResponseWriter, r *
 		"household_id": principal.HouseholdID,
 	}, preferences)
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"preferences": preferences})
+}
+
+// ─── Messages ─────────────────────────────────────────────────────────────────
+
+// primaryRole returns the principal's first role, used to label who sent a message.
+func primaryRole(principal *appmiddleware.Principal) string {
+	if principal == nil || len(principal.Roles) == 0 {
+		return ""
+	}
+	return principal.Roles[0]
+}
+
+// swimmerHouseholdID returns the household a swimmer belongs to, or "" if unknown.
+func (h *CommsHandlers) swimmerHouseholdID(orgID, swimmerID string) string {
+	if h.membersService == nil {
+		return ""
+	}
+	for _, swimmer := range h.membersService.SnapshotSwimmers(orgID) {
+		if swimmer.ID == swimmerID {
+			return swimmer.HouseholdID
+		}
+	}
+	return ""
+}
+
+// authorizeMessageThread checks that the principal may read/write the given
+// household+swimmer thread. Staff (owner/admin/coach) may access any thread in
+// the org; parent/swimmer may only access their own household's threads.
+func (h *CommsHandlers) authorizeMessageThread(principal *appmiddleware.Principal, orgID, householdID, swimmerID string) bool {
+	if hasAnyRole(principal, "owner", "admin", "coach") {
+		return true
+	}
+	if !hasAnyRole(principal, "parent", "swimmer") {
+		return false
+	}
+	if strings.TrimSpace(principal.HouseholdID) == "" || strings.TrimSpace(principal.HouseholdID) != strings.TrimSpace(householdID) {
+		return false
+	}
+	return h.swimmerHouseholdID(orgID, swimmerID) == householdID
+}
+
+func (h *CommsHandlers) sendMessage(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := commsScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+
+	var body struct {
+		HouseholdID string `json:"household_id" validate:"required"`
+		SwimmerID   string `json:"swimmer_id"   validate:"required"`
+		Body        string `json:"body"         validate:"required,max=4000"`
+	}
+	if err := decodeJSONBody(w, r, &body); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Could not parse request body.", nil)
+		return
+	}
+	if err := h.validate.Struct(body); err != nil {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "validation_error", "Request validation failed.", httpx.FormatValidationErrors(err))
+		return
+	}
+
+	if !h.authorizeMessageThread(principal, orgID, body.HouseholdID, body.SwimmerID) {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to message this thread.", nil)
+		return
+	}
+
+	message, err := h.service.SendMessage(comms.CreateMessageInput{
+		OrgID:        orgID,
+		HouseholdID:  body.HouseholdID,
+		SwimmerID:    body.SwimmerID,
+		Body:         body.Body,
+		SenderUserID: principal.UserID,
+		SenderRole:   primaryRole(principal),
+	})
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "send_failed", err.Error(), nil)
+		return
+	}
+
+	h.emitAudit(principal, audit.ActionCommsMessageSend, message.ID, map[string]string{
+		"household_id": body.HouseholdID,
+		"swimmer_id":   body.SwimmerID,
+	}, message)
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"message": message})
+}
+
+func (h *CommsHandlers) listMessages(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := commsScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+	householdID := strings.TrimSpace(r.URL.Query().Get("household_id"))
+	swimmerID := strings.TrimSpace(r.URL.Query().Get("swimmer_id"))
+	if householdID == "" || swimmerID == "" {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "household_id and swimmer_id are required.", nil)
+		return
+	}
+	if !h.authorizeMessageThread(principal, orgID, householdID, swimmerID) {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to view this thread.", nil)
+		return
+	}
+
+	messages := h.service.ListMessages(orgID, householdID, swimmerID)
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"messages": messages, "count": len(messages)})
+}
+
+func (h *CommsHandlers) listMessageThreads(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := commsScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+	if !hasAnyRole(principal, "owner", "admin", "coach") {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role to view the message inbox.", nil)
+		return
+	}
+
+	threads := h.service.ListMessageThreads(orgID)
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"threads": threads, "count": len(threads)})
 }
 
 func (h *CommsHandlers) createAnnouncement(w http.ResponseWriter, r *http.Request) {
