@@ -673,11 +673,11 @@ func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.M
 
 	// ── Workers ────────────────────────────────────────────────────────────────
 	if isNilWorkerBackend(workerBackend) {
-		workerServer, _ := BuildWorkers(cfg, logger, exportsService, reportsService, billingService, stripeClient, commsService, complianceService, membershipService, objectStore)
+		workerServer, _ := BuildWorkers(cfg, logger, exportsService, reportsService, billingService, stripeClient, commsService, complianceService, membershipService, documentsService, objectStore, kcClient)
 		workerServer.Start()
 		workerBackend = workerServer
 	} else {
-		registerWorkerHandlers(workerBackend, logger, exportsService, reportsService, billingService, stripeClient, commsService, complianceService, membershipService, objectStore, cfg.Stripe.ReconciliationAlertThresholdCents)
+		registerWorkerHandlers(workerBackend, logger, exportsService, reportsService, billingService, stripeClient, commsService, complianceService, membershipService, documentsService, objectStore, kcClient, cfg.Stripe.ReconciliationAlertThresholdCents)
 	}
 	readinessChecker := buildReadinessChecker(cfg, dbPool, objectStore, stripeClient, postmarkClient, workerBackend, kcClient)
 	exportsService.SetQueue(workerBackend)
@@ -796,7 +796,7 @@ func allowedCORSHeaders(cfg Config) []string {
 // BuildWorkers creates and configures the worker server and scheduler without
 // starting either. Callers must invoke ws.Start() and sched.Start() and call
 // the corresponding Stop() methods on shutdown.
-func BuildWorkers(cfg Config, logger *slog.Logger, exportsService *exports.Service, reportsService *reports.Service, billingService *billing.Service, stripeClient stripelib.Client, commsService *comms.Service, complianceService *compliance.Service, membershipService *members.Service, objectStore storage.ObjectStorage) (*workers.Server, *workers.Scheduler) {
+func BuildWorkers(cfg Config, logger *slog.Logger, exportsService *exports.Service, reportsService *reports.Service, billingService *billing.Service, stripeClient stripelib.Client, commsService *comms.Service, complianceService *compliance.Service, membershipService *members.Service, documentsService *documents.Service, objectStore storage.ObjectStorage, kcClient keycloak.Client) (*workers.Server, *workers.Scheduler) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -804,7 +804,7 @@ func BuildWorkers(cfg Config, logger *slog.Logger, exportsService *exports.Servi
 		Concurrency: cfg.Worker.ConcurrencyPerQueue,
 		Logger:      logger,
 	})
-	registerWorkerHandlers(ws, logger, exportsService, reportsService, billingService, stripeClient, commsService, complianceService, membershipService, objectStore, cfg.Stripe.ReconciliationAlertThresholdCents)
+	registerWorkerHandlers(ws, logger, exportsService, reportsService, billingService, stripeClient, commsService, complianceService, membershipService, documentsService, objectStore, kcClient, cfg.Stripe.ReconciliationAlertThresholdCents)
 
 	sched := workers.NewScheduler(ws, logger)
 	registerScheduledJobs(sched, cfg)
@@ -831,7 +831,7 @@ type workerHandlerRegistrar interface {
 	RegisterHandler(taskType string, h workers.Handler)
 }
 
-func registerWorkerHandlers(registrar workerHandlerRegistrar, logger *slog.Logger, exportsService *exports.Service, reportsService *reports.Service, billingService *billing.Service, stripeClient stripelib.Client, commsService *comms.Service, complianceService *compliance.Service, membershipService *members.Service, objectStore storage.ObjectStorage, reconciliationAlertThresholdCents int) {
+func registerWorkerHandlers(registrar workerHandlerRegistrar, logger *slog.Logger, exportsService *exports.Service, reportsService *reports.Service, billingService *billing.Service, stripeClient stripelib.Client, commsService *comms.Service, complianceService *compliance.Service, membershipService *members.Service, documentsService *documents.Service, objectStore storage.ObjectStorage, kcClient keycloak.Client, reconciliationAlertThresholdCents int) {
 	if registrar == nil {
 		return
 	}
@@ -841,7 +841,7 @@ func registerWorkerHandlers(registrar workerHandlerRegistrar, logger *slog.Logge
 	registrar.RegisterHandler(workers.TypeNightlyIntegrity, jobhandlers.NightlyIntegrityHandler(logger, billingService))
 	registrar.RegisterHandler(workers.TypePurgeExpiredFiles, jobhandlers.PurgeExpiredFilesHandler(logger, exportsService, reportsService))
 	registrar.RegisterHandler(workers.TypeProcessDataExport, jobhandlers.ProcessDataExportHandler(logger, complianceService, objectStore))
-	registrar.RegisterHandler(workers.TypeProcessDataDeletion, jobhandlers.ProcessDataDeletionHandler(logger, complianceService, membershipService))
+	registrar.RegisterHandler(workers.TypeProcessDataDeletion, jobhandlers.ProcessDataDeletionHandler(logger, complianceService, membershipService, commsService, documentsService, objectStore, kcClient))
 }
 
 func registerScheduledJobs(s scheduledJobRegistrar, cfg Config) {

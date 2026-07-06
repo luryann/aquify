@@ -8,11 +8,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dareaquatics/aquify/server/internal/app/comms"
 	"github.com/dareaquatics/aquify/server/internal/app/compliance"
+	"github.com/dareaquatics/aquify/server/internal/app/documents"
 	"github.com/dareaquatics/aquify/server/internal/app/exports"
 	"github.com/dareaquatics/aquify/server/internal/app/members"
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
 	"github.com/dareaquatics/aquify/server/internal/app/reports"
+	"github.com/dareaquatics/aquify/server/internal/keycloak"
 	"github.com/dareaquatics/aquify/server/internal/storage"
 	"github.com/dareaquatics/aquify/server/internal/workers"
 )
@@ -160,6 +163,10 @@ func TestProcessDataDeletionHandler_CompletesRequest(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	complianceService := compliance.NewService()
 	membersService := members.NewService()
+	commsService := comms.NewService()
+	documentsService := documents.NewService()
+	objectStore := storage.NewStubStorage("")
+	kcClient := keycloak.NewStubClient()
 
 	principal := &appmiddleware.Principal{UserID: "admin-user", OrgID: "org-delete", Roles: []string{"admin"}}
 	household, err := membersService.CreateHousehold(principal, members.CreateHouseholdInput{
@@ -183,7 +190,7 @@ func TestProcessDataDeletionHandler_CompletesRequest(t *testing.T) {
 		t.Fatalf("NewTask: %v", err)
 	}
 
-	handler := ProcessDataDeletionHandler(logger, complianceService, membersService)
+	handler := ProcessDataDeletionHandler(logger, complianceService, membersService, commsService, documentsService, objectStore, kcClient)
 	if err := handler(context.Background(), task); err != nil {
 		t.Fatalf("handler: %v", err)
 	}
@@ -208,5 +215,137 @@ func TestProcessDataDeletionHandler_CompletesRequest(t *testing.T) {
 	}
 	if after.ReviewNotes == "" {
 		t.Fatal("ReviewNotes is empty")
+	}
+}
+
+// TestProcessDataDeletionHandler_ErasesCrossDomainRecords proves the SEC-012
+// follow-up actually erases comms, documents, storage, and the Keycloak
+// account for a household — not just anonymizing the members-domain record.
+func TestProcessDataDeletionHandler_ErasesCrossDomainRecords(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	complianceService := compliance.NewService()
+	membersService := members.NewService()
+	commsService := comms.NewService()
+	documentsService := documents.NewService()
+	objectStore := storage.NewStubStorage("")
+	kcClient := keycloak.NewStubClient()
+
+	principal := &appmiddleware.Principal{UserID: "admin-user", OrgID: "org-erase", Roles: []string{"admin"}}
+	household, err := membersService.CreateHousehold(principal, members.CreateHouseholdInput{
+		OrgID:         "org-erase",
+		HouseholdName: "The Erasure Household",
+		PrimaryEmail:  "parent@example.test",
+	})
+	if err != nil {
+		t.Fatalf("CreateHousehold: %v", err)
+	}
+	swimmer, _, err := membersService.CreateSwimmer(principal, "org-erase", members.CreateSwimmerInput{
+		HouseholdID: household.ID,
+		FirstName:   "Test",
+		LastName:    "Swimmer",
+		DateOfBirth: "2012-01-01",
+		Gender:      "female",
+	})
+	if err != nil {
+		t.Fatalf("CreateSwimmer: %v", err)
+	}
+
+	// Link a Keycloak account to the household (parent login).
+	kcUserID, err := kcClient.CreateUser(context.Background(), "parent@example.test", "Parent", "Test", "org-erase")
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	if err := membersService.LinkHouseholdToUser("org-erase", household.ID, kcUserID); err != nil {
+		t.Fatalf("LinkHouseholdToUser: %v", err)
+	}
+
+	// Seed a message with an attachment, so both the message and its object
+	// key must be erased.
+	const attachmentKey = "messages/org-erase/attachment.png"
+	if err := objectStore.PutObject(context.Background(), attachmentKey, "image/png", []byte("fake-image")); err != nil {
+		t.Fatalf("PutObject(attachment): %v", err)
+	}
+	commsService.SetStorage(objectStore)
+	if _, err := commsService.SendMessage(comms.CreateMessageInput{
+		OrgID:        "org-erase",
+		HouseholdID:  household.ID,
+		SwimmerID:    swimmer.ID,
+		Body:         "hello coach",
+		SenderUserID: kcUserID,
+		SenderRole:   "parent",
+		Attachments: []comms.AttachmentInput{
+			{ObjectKey: attachmentKey, Filename: "attachment.png", MimeType: "image/png", SizeBytes: 10},
+		},
+	}); err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+
+	// Seed a document submission with an uploaded file.
+	const docKey = "documents/org-erase/waiver.pdf"
+	if err := objectStore.PutObject(context.Background(), docKey, "application/pdf", []byte("fake-pdf")); err != nil {
+		t.Fatalf("PutObject(document): %v", err)
+	}
+	docType, err := documentsService.CreateDocumentType("org-erase", "Waiver", "waiver", "", "swimmer", true, true, nil, "admin-user")
+	if err != nil {
+		t.Fatalf("CreateDocumentType: %v", err)
+	}
+	submission, err := documentsService.CreateSubmission("org-erase", docType.ID, household.ID, swimmer.ID, "admin-user")
+	if err != nil {
+		t.Fatalf("CreateSubmission: %v", err)
+	}
+	if _, err := documentsService.AttachFile("org-erase", submission.ID, docKey, "waiver.pdf", "application/pdf", 8, "admin-user"); err != nil {
+		t.Fatalf("AttachFile: %v", err)
+	}
+
+	req, err := complianceService.CreateDataDeletionRequest("org-erase", household.ID, "admin-user", "requested")
+	if err != nil {
+		t.Fatalf("CreateDataDeletionRequest: %v", err)
+	}
+	task, err := workers.NewTask(workers.TypeProcessDataDeletion, ProcessDataDeletionPayload{
+		RequestID:   req.ID,
+		OrgID:       "org-erase",
+		HouseholdID: household.ID,
+	})
+	if err != nil {
+		t.Fatalf("NewTask: %v", err)
+	}
+
+	handler := ProcessDataDeletionHandler(logger, complianceService, membersService, commsService, documentsService, objectStore, kcClient)
+	if err := handler(context.Background(), task); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+
+	after, err := complianceService.GetDataDeletionRequest("org-erase", req.ID)
+	if err != nil {
+		t.Fatalf("GetDataDeletionRequest: %v", err)
+	}
+	if after.Status != "completed" {
+		t.Fatalf("status = %q, want completed", after.Status)
+	}
+
+	if threads := commsService.ListMessages("org-erase", household.ID, swimmer.ID, kcUserID); len(threads) != 0 {
+		t.Fatalf("expected messages erased, got %d", len(threads))
+	}
+	if exists, err := objectStore.Exists(context.Background(), attachmentKey); err != nil {
+		t.Fatalf("Exists(attachment): %v", err)
+	} else if exists {
+		t.Fatal("expected message attachment object to be purged from storage")
+	}
+
+	if subs, err := documentsService.ListSubmissions("org-erase", household.ID); err != nil {
+		t.Fatalf("ListSubmissions: %v", err)
+	} else if len(subs) != 0 {
+		t.Fatalf("expected document submissions erased, got %d", len(subs))
+	}
+	if exists, err := objectStore.Exists(context.Background(), docKey); err != nil {
+		t.Fatalf("Exists(document): %v", err)
+	} else if exists {
+		t.Fatal("expected document object to be purged from storage")
+	}
+
+	if _, err := kcClient.GetUser(context.Background(), kcUserID); err == nil {
+		t.Fatal("expected Keycloak user account to be deleted")
 	}
 }

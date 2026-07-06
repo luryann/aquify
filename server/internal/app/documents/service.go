@@ -5,6 +5,7 @@ package documents
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"sync"
@@ -446,4 +447,33 @@ func (s *Service) ListSubmissions(orgID, householdID string) ([]DocumentSubmissi
 		out = []DocumentSubmission{}
 	}
 	return out, nil
+}
+
+// EraseHouseholdData hard-deletes every document submission for a household
+// as part of an approved compliance right-to-erasure request (a soft delete
+// would leave file names/notes/reviewer notes queryable). Returns the
+// non-empty file object keys so the caller can purge them from object
+// storage.
+func (s *Service) EraseHouseholdData(ctx context.Context, orgID, householdID string) ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var objectKeys []string
+	for id, sub := range s.submissions {
+		if sub.OrgID != orgID || sub.HouseholdID != householdID {
+			continue
+		}
+		if sub.FileObjectKey != "" {
+			objectKeys = append(objectKeys, sub.FileObjectKey)
+		}
+		delete(s.submissions, id)
+	}
+
+	if s.repo != nil {
+		if err := s.repo.DeleteSubmissionsByHousehold(ctx, orgID, householdID); err != nil {
+			return objectKeys, fmt.Errorf("erase household document submissions: %w", err)
+		}
+	}
+
+	return objectKeys, nil
 }

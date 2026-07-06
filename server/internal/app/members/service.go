@@ -430,6 +430,57 @@ func (s *Service) DeleteHousehold(principal *appmiddleware.Principal, orgID, hou
 	return household, nil
 }
 
+// HouseholdErasureContext carries the identifiers a cross-domain erasure
+// worker needs to purge comms/documents/auth records for a household, and
+// must be captured before AnonymizeHousehold runs (it clears
+// household.KeycloakUserID and every contact's Email as part of scrubbing).
+type HouseholdErasureContext struct {
+	KeycloakUserIDs []string
+	ContactEmails   []string
+}
+
+// GetHouseholdErasureContext returns the Keycloak user IDs (household +
+// linked swimmers) and contact emails for a household, for use by the
+// compliance deletion worker before AnonymizeHousehold scrubs them.
+func (s *Service) GetHouseholdErasureContext(orgID, householdID string) (HouseholdErasureContext, error) {
+	if err := s.syncFromDB(context.Background()); err != nil {
+		return HouseholdErasureContext{}, err
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	household, ok := s.households[strings.TrimSpace(householdID)]
+	if !ok || household.OrgID != orgID {
+		return HouseholdErasureContext{}, ErrHouseholdNotFound
+	}
+
+	var out HouseholdErasureContext
+	if household.KeycloakUserID != "" {
+		out.KeycloakUserIDs = append(out.KeycloakUserIDs, household.KeycloakUserID)
+	}
+	if household.PrimaryEmail != "" {
+		out.ContactEmails = append(out.ContactEmails, household.PrimaryEmail)
+	}
+	for _, contact := range s.contacts {
+		if contact.OrgID != orgID || contact.HouseholdID != household.ID {
+			continue
+		}
+		if contact.Email != "" {
+			out.ContactEmails = append(out.ContactEmails, contact.Email)
+		}
+	}
+	for _, swimmer := range s.swimmers {
+		if swimmer.OrgID != orgID || swimmer.HouseholdID != household.ID {
+			continue
+		}
+		if swimmer.KeycloakUserID != "" {
+			out.KeycloakUserIDs = append(out.KeycloakUserIDs, swimmer.KeycloakUserID)
+		}
+	}
+	return out, nil
+}
+
 // AnonymizeHousehold implements the actual erasure step of a compliance
 // right-to-erasure request: it scrubs directly identifying PII from the
 // household, its contacts, and its swimmers in place (rather than hard

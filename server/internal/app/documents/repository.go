@@ -157,6 +157,19 @@ func (r *Repository) LoadSubmissions(ctx context.Context) ([]*DocumentSubmission
 	return out, rows.Err()
 }
 
+// DeleteSubmissionsByHousehold hard-deletes every document_submissions row
+// for a household, as part of an approved compliance right-to-erasure
+// request (a soft delete would leave file names/notes/reviewer notes
+// queryable). The caller is responsible for purging the returned object
+// keys from object storage.
+func (r *Repository) DeleteSubmissionsByHousehold(ctx context.Context, orgID, householdID string) error {
+	_, err := r.pool.Exec(ctx, `
+		DELETE FROM document_submissions WHERE org_id = $1::uuid AND household_id = $2::uuid`,
+		orgID, householdID,
+	)
+	return err
+}
+
 // ─── Batch load ───────────────────────────────────────────────────────────────
 
 func (r *Repository) LoadAll(ctx context.Context) (

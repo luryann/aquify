@@ -1482,3 +1482,93 @@ func normalizeSuppressionReason(reason string) string {
 		return "manual"
 	}
 }
+
+// EraseHouseholdData permanently deletes every comms record tied to a
+// household as part of an approved compliance right-to-erasure request:
+// message threads (and their edits/reactions/attachments), read watermarks,
+// and notification preferences. email_deliveries has no household_id column
+// at all, so it is matched by the household's contact emails instead, which
+// the caller must capture before member records are anonymized. Returns the
+// message-attachment object keys so the caller can purge them from object
+// storage.
+func (s *Service) EraseHouseholdData(ctx context.Context, orgID, householdID string, contactEmails []string) ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	messageIDs := make(map[string]bool)
+	for id, m := range s.messages {
+		if m.OrgID == orgID && m.HouseholdID == householdID {
+			messageIDs[id] = true
+		}
+	}
+
+	var objectKeys []string
+	for id, a := range s.messageAttachments {
+		if !messageIDs[a.MessageID] {
+			continue
+		}
+		if a.ObjectKey != "" {
+			objectKeys = append(objectKeys, a.ObjectKey)
+		}
+		delete(s.messageAttachments, id)
+	}
+	for id, e := range s.messageEdits {
+		if messageIDs[e.MessageID] {
+			delete(s.messageEdits, id)
+		}
+	}
+	for id, react := range s.messageReactions {
+		if messageIDs[react.MessageID] {
+			delete(s.messageReactions, id)
+		}
+	}
+	for id := range messageIDs {
+		delete(s.messages, id)
+	}
+	for id, read := range s.messageReads {
+		if read.OrgID == orgID && read.HouseholdID == householdID {
+			delete(s.messageReads, id)
+		}
+	}
+	for id, pref := range s.preferences {
+		if pref.OrgID == orgID && pref.HouseholdID == householdID {
+			delete(s.preferences, id)
+		}
+	}
+
+	emailSet := make(map[string]bool, len(contactEmails))
+	for _, e := range contactEmails {
+		e = strings.ToLower(strings.TrimSpace(e))
+		if e != "" {
+			emailSet[e] = true
+		}
+	}
+	for id, d := range s.deliveries {
+		if d.OrgID == orgID && emailSet[strings.ToLower(d.RecipientEmail)] {
+			delete(s.deliveries, id)
+		}
+	}
+
+	if s.repo != nil {
+		// message_edits/reactions/attachments cascade-delete via FK once
+		// their parent message row is removed.
+		if err := s.repo.DeleteMessagesByHousehold(ctx, orgID, householdID); err != nil {
+			return objectKeys, fmt.Errorf("erase household messages: %w", err)
+		}
+		if err := s.repo.DeleteMessageReadsByHousehold(ctx, orgID, householdID); err != nil {
+			return objectKeys, fmt.Errorf("erase household message reads: %w", err)
+		}
+		if err := s.repo.DeleteNotificationPreferencesByHousehold(ctx, orgID, householdID); err != nil {
+			return objectKeys, fmt.Errorf("erase household notification preferences: %w", err)
+		}
+		lowerEmails := make([]string, 0, len(emailSet))
+		for e := range emailSet {
+			lowerEmails = append(lowerEmails, e)
+		}
+		if err := s.repo.DeleteEmailDeliveriesByRecipientEmails(ctx, orgID, lowerEmails); err != nil {
+			return objectKeys, fmt.Errorf("erase household email deliveries: %w", err)
+		}
+	}
+
+	return objectKeys, nil
+}

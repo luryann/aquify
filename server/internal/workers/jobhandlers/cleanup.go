@@ -8,10 +8,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dareaquatics/aquify/server/internal/app/comms"
 	"github.com/dareaquatics/aquify/server/internal/app/compliance"
+	"github.com/dareaquatics/aquify/server/internal/app/documents"
 	"github.com/dareaquatics/aquify/server/internal/app/exports"
 	"github.com/dareaquatics/aquify/server/internal/app/members"
 	"github.com/dareaquatics/aquify/server/internal/app/reports"
+	"github.com/dareaquatics/aquify/server/internal/keycloak"
 	"github.com/dareaquatics/aquify/server/internal/storage"
 	"github.com/dareaquatics/aquify/server/internal/workers"
 )
@@ -160,9 +163,26 @@ func ProcessDataExportHandler(logger *slog.Logger, complianceService *compliance
 
 // ProcessDataDeletionHandler returns a Handler that performs an approved
 // compliance right-to-erasure workflow. Completion is gated on actually
-// anonymizing the household's PII (members domain) — a request must never be
-// marked complete without a real erasure step having succeeded first.
-func ProcessDataDeletionHandler(logger *slog.Logger, complianceService *compliance.Service, membersService *members.Service) workers.Handler {
+// performing every erasure step — a request must never be marked complete
+// without the real erasure steps having succeeded first.
+//
+// Scope (per owner decision recorded in AUDIT_FINDINGS_2026-07-05.md,
+// SEC-012): billing/financial ledger records (invoices, payments, refunds,
+// Stripe references) are RETAINED for tax/audit purposes — only the
+// household's link to them is anonymized (handled by
+// membersService.AnonymizeHousehold, which scrubs the household record
+// itself). Comms, documents, the underlying object-storage files, and the
+// household's Keycloak login account(s) are FULLY ERASED — no retention
+// exception for those domains.
+func ProcessDataDeletionHandler(
+	logger *slog.Logger,
+	complianceService *compliance.Service,
+	membersService *members.Service,
+	commsService *comms.Service,
+	documentsService *documents.Service,
+	objectStore storage.ObjectStorage,
+	kcClient keycloak.Client,
+) workers.Handler {
 	return func(ctx context.Context, task *workers.Task) error {
 		var p ProcessDataDeletionPayload
 		if err := json.Unmarshal(task.Payload, &p); err != nil {
@@ -198,17 +218,72 @@ func ProcessDataDeletionHandler(logger *slog.Logger, complianceService *complian
 			return fmt.Errorf("process data deletion: mark processing: %w", err)
 		}
 
+		fail := func(step string, cause error) error {
+			_, _ = complianceService.FailDataDeletion(p.OrgID, p.RequestID, fmt.Sprintf("Erasure failed at %s: %v", step, cause))
+			return fmt.Errorf("process data deletion: %s: %w", step, cause)
+		}
+
+		// Capture cross-domain identifiers BEFORE anonymizing the household —
+		// AnonymizeHousehold clears household.KeycloakUserID and every
+		// contact's Email, which are needed to erase comms/auth records.
+		erasureCtx, err := membersService.GetHouseholdErasureContext(p.OrgID, p.HouseholdID)
+		if err != nil {
+			return fail("capture erasure context", err)
+		}
+
 		if err := membersService.AnonymizeHousehold(p.OrgID, p.HouseholdID); err != nil {
-			_, _ = complianceService.FailDataDeletion(p.OrgID, p.RequestID, fmt.Sprintf("Erasure failed: %v", err))
-			return fmt.Errorf("process data deletion: anonymize household %s: %w", p.HouseholdID, err)
+			return fail(fmt.Sprintf("anonymize household %s", p.HouseholdID), err)
 		}
 
-		if _, err := complianceService.CompleteDataDeletion(p.OrgID, p.RequestID, "Household PII anonymized (members domain); billing/communications/documents/audit records are retained per compliance-record requirements."); err != nil {
-			_, _ = complianceService.FailDataDeletion(p.OrgID, p.RequestID, "Deletion workflow failed in background worker.")
-			return fmt.Errorf("process data deletion: complete request %s: %w", p.RequestID, err)
+		var purgedObjectKeys []string
+
+		if commsService != nil {
+			keys, err := commsService.EraseHouseholdData(ctx, p.OrgID, p.HouseholdID, erasureCtx.ContactEmails)
+			if err != nil {
+				return fail("erase comms records", err)
+			}
+			purgedObjectKeys = append(purgedObjectKeys, keys...)
 		}
 
-		logger.Info("process data deletion: completed", "request_id", p.RequestID)
+		if documentsService != nil {
+			keys, err := documentsService.EraseHouseholdData(ctx, p.OrgID, p.HouseholdID)
+			if err != nil {
+				return fail("erase document submissions", err)
+			}
+			purgedObjectKeys = append(purgedObjectKeys, keys...)
+		}
+
+		if objectStore != nil {
+			for _, key := range purgedObjectKeys {
+				if key == "" {
+					continue
+				}
+				if err := objectStore.Delete(key); err != nil {
+					return fail(fmt.Sprintf("purge object storage key %s", key), err)
+				}
+			}
+		}
+
+		if kcClient != nil {
+			for _, userID := range erasureCtx.KeycloakUserIDs {
+				if userID == "" {
+					continue
+				}
+				if err := kcClient.DeleteUser(ctx, userID); err != nil {
+					return fail(fmt.Sprintf("delete keycloak user %s", userID), err)
+				}
+			}
+		}
+
+		if _, err := complianceService.CompleteDataDeletion(p.OrgID, p.RequestID, "Household PII anonymized (members domain); comms, document submissions, object-storage files, and Keycloak login account(s) fully erased; billing/financial ledger records retained per tax/audit requirements (household link anonymized only)."); err != nil {
+			return fail(fmt.Sprintf("complete request %s", p.RequestID), err)
+		}
+
+		logger.Info("process data deletion: completed",
+			"request_id", p.RequestID,
+			"purged_object_keys", len(purgedObjectKeys),
+			"deleted_keycloak_users", len(erasureCtx.KeycloakUserIDs),
+		)
 		return nil
 	}
 }

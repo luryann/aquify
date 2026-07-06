@@ -15,9 +15,11 @@ import (
 	"github.com/dareaquatics/aquify/server/internal/app/billing"
 	"github.com/dareaquatics/aquify/server/internal/app/comms"
 	"github.com/dareaquatics/aquify/server/internal/app/compliance"
+	"github.com/dareaquatics/aquify/server/internal/app/documents"
 	"github.com/dareaquatics/aquify/server/internal/app/exports"
 	"github.com/dareaquatics/aquify/server/internal/app/members"
 	"github.com/dareaquatics/aquify/server/internal/app/reports"
+	"github.com/dareaquatics/aquify/server/internal/keycloak"
 	"github.com/dareaquatics/aquify/server/internal/storage"
 	stripelib "github.com/dareaquatics/aquify/server/internal/stripe"
 	"github.com/dareaquatics/aquify/server/internal/workers"
@@ -171,7 +173,9 @@ func TestBuildWorkersRegistersFullProductionHandlerSet(t *testing.T) {
 		commsService,
 		complianceService,
 		members.NewService(),
+		documents.NewService(),
 		objectStore,
+		keycloak.NewStubClient(),
 	)
 	workerServer.Start()
 	defer workerServer.Stop()

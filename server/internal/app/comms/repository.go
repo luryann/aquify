@@ -481,6 +481,50 @@ func (r *Repository) LoadMessageReads(ctx context.Context) ([]*MessageRead, erro
 	return out, rows.Err()
 }
 
+// ─── Household erasure (compliance right-to-erasure) ──────────────────────────
+//
+// These delete household-scoped comms records outright rather than
+// anonymizing them, per the owner's SEC-012 decision that comms/documents/
+// storage/auth are fully erased (only billing/financial records are
+// retained). Messages cascade-delete their edits/reactions/attachments via
+// FK ON DELETE CASCADE; email_deliveries has no household_id column, so
+// callers must match by the household's captured contact emails instead.
+
+func (r *Repository) DeleteMessagesByHousehold(ctx context.Context, orgID, householdID string) error {
+	_, err := r.pool.Exec(ctx, `
+		DELETE FROM messages WHERE org_id = $1::uuid AND household_id = $2::uuid`,
+		orgID, householdID,
+	)
+	return err
+}
+
+func (r *Repository) DeleteMessageReadsByHousehold(ctx context.Context, orgID, householdID string) error {
+	_, err := r.pool.Exec(ctx, `
+		DELETE FROM message_reads WHERE org_id = $1::uuid AND household_id = $2::uuid`,
+		orgID, householdID,
+	)
+	return err
+}
+
+func (r *Repository) DeleteNotificationPreferencesByHousehold(ctx context.Context, orgID, householdID string) error {
+	_, err := r.pool.Exec(ctx, `
+		DELETE FROM notification_preferences WHERE org_id = $1::uuid AND household_id = $2`,
+		orgID, householdID,
+	)
+	return err
+}
+
+func (r *Repository) DeleteEmailDeliveriesByRecipientEmails(ctx context.Context, orgID string, emails []string) error {
+	if len(emails) == 0 {
+		return nil
+	}
+	_, err := r.pool.Exec(ctx, `
+		DELETE FROM email_deliveries WHERE org_id = $1::uuid AND lower(recipient_email) = ANY($2::text[])`,
+		orgID, emails,
+	)
+	return err
+}
+
 // ─── Batch load ───────────────────────────────────────────────────────────────
 
 func (r *Repository) LoadAll(ctx context.Context) (
