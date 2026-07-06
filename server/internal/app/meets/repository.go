@@ -322,6 +322,49 @@ func (r *Repository) LoadCommitments(ctx context.Context) ([]Commitment, error) 
 	return out, rows.Err()
 }
 
+// ─── Event selections ─────────────────────────────────────────────────────────
+
+func (r *Repository) UpsertEventSelection(ctx context.Context, sel EventSelection) error {
+	var seedTime interface{}
+	if sel.SeedTimeMs != nil {
+		seedTime = *sel.SeedTimeMs
+	}
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO commitment_event_selections (id, org_id, commitment_id, meet_event_id, seed_time_ms, created_at, created_by)
+		VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7::uuid)
+		ON CONFLICT (id) DO UPDATE SET
+		  seed_time_ms = EXCLUDED.seed_time_ms`,
+		sel.ID, sel.OrgID, sel.CommitmentID, sel.MeetEventID, seedTime, sel.CreatedAt, nullableString(sel.CreatedBy),
+	)
+	return err
+}
+
+func (r *Repository) DeleteEventSelection(ctx context.Context, id string) error {
+	_, err := r.pool.Exec(ctx, `DELETE FROM commitment_event_selections WHERE id = $1::uuid`, id)
+	return err
+}
+
+func (r *Repository) LoadEventSelections(ctx context.Context) ([]EventSelection, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, org_id::text, commitment_id::text, meet_event_id::text, seed_time_ms, created_at, COALESCE(created_by::text, '')
+		FROM commitment_event_selections`)
+	if err != nil {
+		return nil, fmt.Errorf("meets: load event selections: %w", err)
+	}
+	defer rows.Close()
+	var out []EventSelection
+	for rows.Next() {
+		var sel EventSelection
+		var seedTime *int
+		if err := rows.Scan(&sel.ID, &sel.OrgID, &sel.CommitmentID, &sel.MeetEventID, &seedTime, &sel.CreatedAt, &sel.CreatedBy); err != nil {
+			return nil, fmt.Errorf("meets: scan event selection: %w", err)
+		}
+		sel.SeedTimeMs = seedTime
+		out = append(out, sel)
+	}
+	return out, rows.Err()
+}
+
 // ─── Entries ──────────────────────────────────────────────────────────────────
 
 func (r *Repository) UpsertEntry(ctx context.Context, e Entry) error {
@@ -387,6 +430,7 @@ func (r *Repository) LoadAll(ctx context.Context) (
 	entries []Entry,
 	swimmers []swimmerRef,
 	households []householdRef,
+	selections []EventSelection,
 	err error,
 ) {
 	if meets, err = r.LoadMeets(ctx); err != nil {
@@ -407,7 +451,10 @@ func (r *Repository) LoadAll(ctx context.Context) (
 	if swimmers, err = r.LoadSwimmerRefs(ctx); err != nil {
 		return
 	}
-	households, err = r.LoadHouseholdRefs(ctx)
+	if households, err = r.LoadHouseholdRefs(ctx); err != nil {
+		return
+	}
+	selections, err = r.LoadEventSelections(ctx)
 	return
 }
 

@@ -120,6 +120,11 @@ export const NAV_ITEMS: NavItem[] = [
     allowedRoles: ['admin'],
     section: 'Communications',
   },
+  {
+    id: 'suppression', label: 'Suppression List', path: '/comms/suppression', icon: 'user-x',
+    allowedRoles: ['admin'],
+    section: 'Communications',
+  },
   // Compliance
   {
     id: 'data-exports', label: 'Data Exports', path: '/compliance/data-exports', icon: 'download',

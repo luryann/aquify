@@ -48,6 +48,13 @@ const (
 	ActionCommsNotificationPreferencesUpdate = "comms.notification_preferences.update"
 	ActionCommsMessageSend                   = "comms.message.send"
 	ActionCommsMessageEdit                   = "comms.message.edit"
+	ActionCommsCampaignCreate                = "comms.campaign.create"
+	ActionCommsCampaignSend                  = "comms.campaign.send"
+	ActionCommsSuppressionAdd                = "comms.suppression.add"
+	ActionCommsSuppressionRemove             = "comms.suppression.remove"
+	ActionCommsAnnouncementCreate            = "comms.announcement.create"
+	ActionCommsAnnouncementPublish           = "comms.announcement.publish"
+	ActionCommsAnnouncementArchive           = "comms.announcement.archive"
 	ActionBillingInvoiceIssue                = "billing.invoice.issue"
 	ActionBillingInvoiceVoid                 = "billing.invoice.void"
 	ActionBillingInvoiceWriteOff             = "billing.invoice.write_off"
@@ -59,7 +66,6 @@ const (
 	ActionMeetEntryScratch                   = "meet.entry.scratch"
 	ActionMeetCommitmentsLock                = "meet.commitments.lock"
 	ActionPerformanceBestTimeOverride        = "performance.best_time.override"
-	ActionImportConflictResolve              = "import.conflict.resolve"
 	ActionMembersHouseholdDelete             = "members.household.delete"
 	ActionMembersSwimmerDelete               = "members.swimmer.delete"
 	ActionMembersSwimmerUpdate               = "members.swimmer.update"
@@ -229,12 +235,14 @@ func (s *Service) Query(f Filter) ([]AuditEvent, error) {
 	copy(all, s.events)
 	s.mu.RUnlock()
 
-	// Sort newest-first.
+	// s.events is not guaranteed to already be newest-first: in-memory Append
+	// calls append in insertion order, but a DB-backed resync reloads via
+	// ListAll's ORDER BY occurred_at DESC. Sort explicitly rather than assume
+	// either ordering.
 	sort.Slice(all, func(i, j int) bool {
 		return all[i].OccurredAt.After(all[j].OccurredAt)
 	})
 
-	// Apply filters.
 	var out []AuditEvent
 	pastCursor := f.Cursor == ""
 	for _, ev := range all {

@@ -33,7 +33,7 @@ func TestOpenAPIExampleContractsForCommonErrorResponses(t *testing.T) {
 		"code: unauthorized",
 		"message: Authentication context is missing.",
 		"code: forbidden",
-		"message: You are not allowed to perform this action.",
+		"message: You are not allowed to access this resource.",
 	} {
 		if !strings.Contains(spec, snippet) {
 			t.Fatalf("expected OpenAPI spec to contain example snippet %q", snippet)
@@ -85,13 +85,7 @@ func TestOpenAPIExampleContractsForCommonErrorResponses(t *testing.T) {
 
 	t.Run("forbidden", func(t *testing.T) {
 		parentToken := issueSessionToken(t, router, "org-contract", []string{"parent"}, false)
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/imports/upload-url", encodeJSONBody(t, map[string]any{
-			"filename":   "contract.sd3",
-			"file_type":  "sd3",
-			"size_bytes": 1024,
-			"mime_type":  "application/octet-stream",
-		}))
-		req.Header.Set("Content-Type", "application/json")
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/users", nil)
 		req.Header.Set("X-Org-Id", "org-contract")
 		req.Header.Set("Authorization", "Bearer "+parentToken)
 		rr := httptest.NewRecorder()
@@ -109,7 +103,7 @@ func TestOpenAPIExampleContractsForCommonErrorResponses(t *testing.T) {
 		if err := json.Unmarshal(rr.Body.Bytes(), &env); err != nil {
 			t.Fatalf("decode forbidden response: %v", err)
 		}
-		if env.Error.Code != "forbidden" || env.Error.Message != "You are not allowed to perform this action." {
+		if env.Error.Code != "forbidden" || env.Error.Message != "You are not allowed to access this resource." {
 			t.Fatalf("forbidden response drifted from OpenAPI example: %#v", env.Error)
 		}
 	})

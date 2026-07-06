@@ -14,12 +14,14 @@ import {
   fetchMeetEvents,
   fetchSwimmers,
   scratchEntry,
+  overrideEntry,
   type EntryRecord,
   type MeetEventRecord,
   type MeetRecord,
   type SwimmerRecord,
 } from '@/lib/adminData'
 import { formatMeetEntriesSaveError, saveMeetEntriesBatch } from '@/lib/meet-entry-save'
+import { isSwimmerGenderEligibleForEvent } from '@/lib/gender'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -189,7 +191,7 @@ function AddEntryPanel({
   // Filter events to swimmer's gender
   const eligibleEvents = useMemo(() => {
     if (!selectedSwimmer) return events
-    return events.filter((ev) => !ev.gender || ev.gender.toLowerCase() === 'mixed' || ev.gender === selectedSwimmer.gender)
+    return events.filter((ev) => isSwimmerGenderEligibleForEvent(selectedSwimmer.gender, ev.gender))
   }, [events, selectedSwimmer])
 
   const eligibleSessionGroups = sessionGroups
@@ -585,6 +587,37 @@ function EntriesPageContent() {
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to scratch entry.'))
   }, [api, session?.user.orgId])
 
+  const handleOverride = useCallback((entryId: string, meetId: string) => {
+    const orgId = session?.user.orgId
+    if (!orgId) return
+    void fetchMeetEvents(api, orgId, meetId)
+      .then((meetEvents) => {
+        if (meetEvents.length === 0) {
+          setError('This meet has no events to override into.')
+          return
+        }
+        const listing = meetEvents.map((ev, i) => `${i + 1}. ${formatEvent(ev)}`).join('\n')
+        const choice = window.prompt(`Change this entry to which event? Enter a number:\n${listing}`)
+        if (choice === null) return
+        const idx = Number.parseInt(choice.trim(), 10) - 1
+        const target = meetEvents[idx]
+        if (!target) {
+          setError('Invalid event selection; override cancelled.')
+          return
+        }
+        const reason = window.prompt('Reason for this override (required):')?.trim()
+        if (!reason) {
+          setError('An override reason is required.')
+          return
+        }
+        return overrideEntry(api, orgId, meetId, entryId, { new_meet_event_id: target.id, reason })
+          .then((updated) => setRows((prev) => prev.map((e) => e.id === entryId
+            ? { ...e, event: formatEvent(target), override: true, overrideNote: updated.override_reason ?? reason }
+            : e)))
+      })
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to override entry.'))
+  }, [api, session?.user.orgId])
+
   // Stats
   const total     = rows.length
   const submitted = rows.filter((e) => e.status === 'submitted').length
@@ -705,6 +738,16 @@ function EntriesPageContent() {
             {scratchable && (
               <button
                 className="btn btn-sm btn-secondary"
+                style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
+                onClick={() => handleOverride(r.id, r.meetId)}
+                title="Change this entry's event (coach override, reason required)"
+              >
+                <Icon name="edit" size={11} /> Override
+              </button>
+            )}
+            {scratchable && (
+              <button
+                className="btn btn-sm btn-secondary"
                 style={{ color: 'var(--error)', display: 'flex', alignItems: 'center', gap: '4px' }}
                 onClick={() => handleScratch(r.id, r.meetId)}
                 title="Scratch this entry"
@@ -721,7 +764,7 @@ function EntriesPageContent() {
         )
       },
     },
-  ], [handleApprove, handleReject, handleScratch])
+  ], [handleApprove, handleReject, handleScratch, handleOverride])
 
   if (error) {
     return (

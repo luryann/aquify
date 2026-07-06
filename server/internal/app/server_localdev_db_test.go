@@ -6,11 +6,8 @@ import (
 	"testing"
 
 	"github.com/dareaquatics/aquify/server/internal/app/authn"
-	"github.com/dareaquatics/aquify/server/internal/app/imports"
 	"github.com/dareaquatics/aquify/server/internal/app/meets"
 	"github.com/dareaquatics/aquify/server/internal/app/members"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
-	"github.com/dareaquatics/aquify/server/internal/storage"
 	"github.com/dareaquatics/aquify/server/internal/testutil"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -18,7 +15,6 @@ import (
 func cleanupLocalDevFixtures(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 
-	cleanupImportsFixtures(t, pool, authn.LocalDevOrgID)
 	cleanupMeetsFixtures(t, pool, authn.LocalDevOrgID)
 	cleanupMembersFixtures(t, pool, authn.LocalDevOrgID)
 
@@ -211,42 +207,5 @@ func TestDBLocalDevHouseholdAndMeetWrites_SucceedWithSeededLocalAdmin(t *testing
 	}
 	if meet.CreatedBy != authn.LocalDevAdminUserID {
 		t.Fatalf("expected meet created_by %q, got %q", authn.LocalDevAdminUserID, meet.CreatedBy)
-	}
-}
-
-func TestDBRepoImports_AcceptsHYVAndEV3(t *testing.T) {
-	pool := openTestPool(t)
-	_ = testutil.RequireDBHarness(t)
-
-	cleanupImportsFixtures(t, pool, testOrgID)
-
-	svc := imports.NewServiceWithPool(pool, storage.NewStubStorage(""))
-	principal := &appmiddleware.Principal{
-		UserID: authn.LocalDevAdminUserID,
-		OrgID:  testOrgID,
-		Roles:  []string{"admin"},
-	}
-
-	for _, tc := range []struct {
-		filename string
-		fileType string
-	}{
-		{filename: "meet-events.hyv", fileType: "hyv"},
-		{filename: "meet-events.ev3", fileType: "ev3"},
-	} {
-		t.Run(tc.fileType, func(t *testing.T) {
-			imp, _, err := svc.RequestUploadURL(principal, testOrgID, imports.RequestUploadURLInput{
-				Filename:  tc.filename,
-				FileType:  tc.fileType,
-				SizeBytes: 1024,
-				MIMEType:  "application/octet-stream",
-			})
-			if err != nil {
-				t.Fatalf("RequestUploadURL(%s): %v", tc.fileType, err)
-			}
-			if imp.FileType != tc.fileType {
-				t.Fatalf("expected file_type %q, got %q", tc.fileType, imp.FileType)
-			}
-		})
 	}
 }

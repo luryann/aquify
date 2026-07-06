@@ -502,9 +502,7 @@ func TestLogoutSessionReturnsOIDCLogoutURLWhenConfigured(t *testing.T) {
 		nil,
 		nil,
 		nil,
-		nil,
-		nil,
-	)
+		nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/sessions/logout", nil)
 	req.AddCookie(&http.Cookie{Name: appmiddleware.AccessTokenCookieName, Value: session.AccessToken})

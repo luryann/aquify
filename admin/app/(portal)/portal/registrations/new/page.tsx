@@ -142,8 +142,14 @@ export default function NewRegistrationPage() {
     setError('')
     try {
       const selectedWaivers = waiverOptions.filter((waiver) => waiverAccepted[waiver.id])
-      const createdRegistrations = await Promise.all(
-        [...selectedSwimmers].map((swimmerId) => createRegistration(api, orgId, {
+      const swimmerIds = [...selectedSwimmers]
+      const swimmerName = (id: string) => {
+        const s = swimmerOptions.find((swimmer) => swimmer.id === id)
+        return s ? `${s.first_name} ${s.last_name}` : id
+      }
+
+      const registrationResults = await Promise.allSettled(
+        swimmerIds.map((swimmerId) => createRegistration(api, orgId, {
           household_id: householdId,
           swimmer_id: swimmerId,
           group_id: selectedProgramId,
@@ -151,13 +157,42 @@ export default function NewRegistrationPage() {
         })),
       )
 
-      await Promise.all(
-        createdRegistrations.flatMap((registration) =>
-          selectedWaivers.map((waiver) => acceptRegistrationWaiver(api, orgId, registration.id, {
-            waiver_type: waiver.waiverType,
-          })),
-        ),
+      const createdRegistrations = registrationResults
+        .map((result, i) => (result.status === 'fulfilled' ? { swimmerId: swimmerIds[i], registration: result.value } : null))
+        .filter((entry): entry is { swimmerId: string; registration: Awaited<ReturnType<typeof createRegistration>> } => entry !== null)
+      const failedSwimmerNames = registrationResults
+        .map((result, i) => (result.status === 'rejected' ? swimmerName(swimmerIds[i]) : null))
+        .filter((name): name is string => name !== null)
+
+      const waiverTasks = createdRegistrations.flatMap(({ swimmerId, registration }) =>
+        selectedWaivers.map((waiver) => ({
+          swimmerId,
+          run: () => acceptRegistrationWaiver(api, orgId, registration.id, { waiver_type: waiver.waiverType }),
+        })),
       )
+      const waiverResults = await Promise.allSettled(waiverTasks.map((task) => task.run()))
+      const failedWaiverSwimmerNames = [
+        ...new Set(
+          waiverResults
+            .map((result, i) => (result.status === 'rejected' ? swimmerName(waiverTasks[i].swimmerId) : null))
+            .filter((name): name is string => name !== null),
+        ),
+      ]
+
+      if (failedSwimmerNames.length > 0 || failedWaiverSwimmerNames.length > 0) {
+        const parts: string[] = []
+        if (createdRegistrations.length > 0) {
+          parts.push(`Registered ${createdRegistrations.length} of ${swimmerIds.length} swimmer(s) successfully.`)
+        }
+        if (failedSwimmerNames.length > 0) {
+          parts.push(`Failed to register: ${failedSwimmerNames.join(', ')}.`)
+        }
+        if (failedWaiverSwimmerNames.length > 0) {
+          parts.push(`Waiver acceptance failed for: ${failedWaiverSwimmerNames.join(', ')} (registration was created; please retry accepting waivers from the Registrations page).`)
+        }
+        setError(parts.join(' '))
+        return
+      }
 
       setSubmitted(true)
     } catch (submitError) {

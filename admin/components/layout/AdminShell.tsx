@@ -67,6 +67,9 @@ export function AdminShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="admin-shell" onClickCapture={handleNavClickCapture}>
+      <a href="#main-content" className="skip-to-content">
+        Skip to main content
+      </a>
       {navigating && (
         <div
           style={{
@@ -99,7 +102,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
       </div>
       <main className="admin-main">
         <Topbar onOpenMobileNav={() => setMobileNavOpen(true)} />
-        <div className="admin-content">
+        <div className="admin-content" id="main-content" tabIndex={-1}>
           {children}
         </div>
       </main>

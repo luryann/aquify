@@ -1,19 +1,20 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { Icon } from '@/components/ui/icons'
 import { Table, type Column } from '@/components/ui/Table'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
 import { useApiClient, ApiError } from '@/lib/api'
-import { fetchHouseholds, fetchRegistrations, fetchSwimmers, fetchGroups, createRegistration, type HouseholdRecord, type RegistrationRecord, type SwimmerRecord, type GroupRecord } from '@/lib/adminData'
+import { fetchHouseholds, fetchRegistrations, fetchSwimmers, fetchGroups, createRegistration, transitionRegistration, type HouseholdRecord, type RegistrationRecord, type SwimmerRecord, type GroupRecord } from '@/lib/adminData'
 
-type RegistrationStatus = 'pending' | 'active' | 'completed' | 'rejected' | 'withdrawn'
+type RegistrationStatus = 'pending' | 'active' | 'inactive' | 'completed' | 'rejected' | 'withdrawn'
 type WaiverStatus = 'pending' | 'accepted'
 
 type RegistrationRow = {
   id: string
+  registrationIds: string[]
   household: string
   householdId: string
   season: string
@@ -24,9 +25,17 @@ type RegistrationRow = {
   notes: string | null
 }
 
+// Mirrors server/internal/app/groups/service.go's validTransitions map.
+const VALID_TRANSITIONS: Record<string, string[]> = {
+  pending: ['active', 'withdrawn'],
+  active: ['inactive', 'withdrawn'],
+  inactive: ['active', 'withdrawn'],
+}
+
 const STATUS_CONFIG: Record<RegistrationStatus, { label: string; color: string; bg: string }> = {
   pending: { label: 'Pending', color: 'var(--warning)', bg: 'var(--warning-bg)' },
   active: { label: 'Active', color: 'var(--success)', bg: 'var(--success-bg)' },
+  inactive: { label: 'Inactive', color: 'var(--text-muted)', bg: 'var(--bg-elevated)' },
   completed: { label: 'Completed', color: 'var(--info)', bg: 'var(--info-bg)' },
   rejected: { label: 'Rejected', color: 'var(--error)', bg: 'var(--error-bg)' },
   withdrawn: { label: 'Withdrawn', color: 'var(--text-muted)', bg: 'var(--bg-elevated)' },
@@ -37,7 +46,11 @@ const WAIVER_CONFIG: Record<WaiverStatus, { label: string; color: string }> = {
   accepted: { label: 'Signed', color: 'var(--success)' },
 }
 
-const COLUMNS: Column<RegistrationRow>[] = [
+function buildColumns(
+  onTransition: (row: RegistrationRow, toStatus: string) => void,
+  transitioningId: string | null,
+): Column<RegistrationRow>[] {
+  return [
   {
     key: 'household',
     label: 'Household',
@@ -78,7 +91,32 @@ const COLUMNS: Column<RegistrationRow>[] = [
     align: 'right',
     render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '13px', color: 'var(--text)' }}>{row.swimmerCount}</span>,
   },
-]
+  {
+    key: 'id',
+    label: '',
+    render: (row) => {
+      const options = VALID_TRANSITIONS[row.status] ?? []
+      if (options.length === 0) return null
+      const busy = transitioningId === row.id
+      return (
+        <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+          {options.map((toStatus) => (
+            <button
+              key={toStatus}
+              className="btn btn-sm btn-secondary"
+              disabled={busy}
+              onClick={() => onTransition(row, toStatus)}
+              title={`Move this registration (${row.swimmerCount} swimmer${row.swimmerCount === 1 ? '' : 's'}) to ${toStatus}`}
+            >
+              {busy ? '…' : STATUS_CONFIG[toStatus as RegistrationStatus]?.label ?? toStatus}
+            </button>
+          ))}
+        </div>
+      )
+    },
+  },
+  ]
+}
 
 function deriveRows(registrations: RegistrationRecord[], households: HouseholdRecord[]): RegistrationRow[] {
   const householdById = new Map(households.map((household) => [household.id, household.household_name]))
@@ -94,6 +132,7 @@ function deriveRows(registrations: RegistrationRecord[], households: HouseholdRe
       const activeWaiver = (group.every((registration) => registration.waiver_accepted) ? 'accepted' : 'pending') as WaiverStatus
       return {
         id: representative.id,
+        registrationIds: group.map((registration) => registration.id),
         household: householdById.get(representative.household_id) ?? representative.household_id,
         householdId: representative.household_id,
         season: representative.season,
@@ -192,6 +231,34 @@ export function RegistrationsPanel() {
 
   const filteredSwimmers = useMemo(() => form.household_id ? swimmers.filter((s) => s.household_id === form.household_id) : swimmers, [swimmers, form.household_id])
 
+  const [transitioningId, setTransitioningId] = useState<string | null>(null)
+  const [transitionError, setTransitionError] = useState<string | null>(null)
+
+  const handleTransition = useCallback(async (row: RegistrationRow, toStatus: string) => {
+    const orgId = session?.user.orgId
+    if (!orgId) return
+    if (!window.confirm(`Move this registration (${row.swimmerCount} swimmer${row.swimmerCount === 1 ? '' : 's'}) to "${toStatus}"?`)) return
+    setTransitioningId(row.id)
+    setTransitionError(null)
+    const results = await Promise.allSettled(
+      row.registrationIds.map((registrationId) => transitionRegistration(api, orgId, registrationId, toStatus)),
+    )
+    const failures = results.filter((r) => r.status === 'rejected').length
+    if (failures > 0) {
+      setTransitionError(`Failed to transition ${failures} of ${row.registrationIds.length} registration(s) in this group.`)
+    }
+    try {
+      const [registrations, householdsData] = await Promise.all([fetchRegistrations(api, orgId), fetchHouseholds(api, orgId)])
+      setRows(deriveRows(registrations, householdsData))
+    } catch {
+      // Keep the existing rows if the refresh fails; the transition itself already ran.
+    } finally {
+      setTransitioningId(null)
+    }
+  }, [api, session?.user.orgId])
+
+  const columns = useMemo(() => buildColumns(handleTransition, transitioningId), [handleTransition, transitioningId])
+
   async function handleCreateRegistration(e: React.FormEvent) {
     e.preventDefault()
     if (!session?.user.orgId) return
@@ -252,12 +319,18 @@ export function RegistrationsPanel() {
         <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginLeft: 'auto' }}>{filtered.length} registrations</span>
       </div>
 
+      {transitionError && (
+        <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px' }}>
+          {transitionError}
+        </div>
+      )}
+
       {loading ? (
         <EmptyState icon="clipboard-list" title="Loading registrations" description="Fetching live registration data from the API." />
       ) : error ? (
         <EmptyState icon="alert-circle" title="Unable to load registrations" description={error} />
       ) : (
-        <Table columns={COLUMNS} data={filtered} pageSize={10} emptyTitle="No registrations found" emptyDescription="Try adjusting your season or status filter." />
+        <Table columns={columns} data={filtered} pageSize={10} emptyTitle="No registrations found" emptyDescription="Try adjusting your season or status filter." />
       )}
 
       {/* New Registration Modal */}

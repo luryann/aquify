@@ -20,11 +20,10 @@ func newTrainingRouter(t *testing.T, svc *training.Service) http.Handler {
 	return NewRouterWithServices(
 		Config{Auth: AuthConfig{EnableDevStubTokens: true}},
 		logger,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		svc,
 		nil,
-		nil,
-	)
+		nil)
 }
 
 func issueTrainingToken(t *testing.T, router http.Handler, userID, orgID, role string) string {

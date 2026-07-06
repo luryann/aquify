@@ -1123,6 +1123,24 @@ func (s *Service) ListCampaigns(orgID string) ([]*EmailCampaign, error) {
 	return out, nil
 }
 
+// revertCampaignSendFailure moves a campaign that was flipped to "sending"
+// back to "draft" (so it can be retried) when a mid-send persistence error
+// prevents the send loop from reaching its normal terminal-status update.
+// Persistence of the reverted status is best-effort: if it also fails, the
+// original error is still returned to the caller rather than being masked.
+func (s *Service) revertCampaignSendFailure(c *EmailCampaign, actorID string, sendErr error) error {
+	s.mu.Lock()
+	c.Status = "draft"
+	c.UpdatedAt = time.Now().UTC()
+	c.UpdatedBy = actorID
+	s.mu.Unlock()
+
+	if s.repo != nil {
+		_ = s.repo.UpsertCampaign(context.Background(), c)
+	}
+	return sendErr
+}
+
 // SendCampaign sends a campaign to the provided recipient list, enforcing
 // the suppression list. The campaign must be in draft status.
 func (s *Service) SendCampaign(ctx context.Context, orgID, campaignID string, inp SendCampaignInput) (*EmailCampaign, error) {
@@ -1205,7 +1223,7 @@ func (s *Service) SendCampaign(ctx context.Context, orgID, campaignID string, in
 		if s.repo != nil {
 			if err := s.repo.UpsertDelivery(context.Background(), d); err != nil {
 				s.mu.Unlock()
-				return nil, fmt.Errorf("persist email delivery: %w", err)
+				return nil, s.revertCampaignSendFailure(c, inp.ActorID, fmt.Errorf("persist email delivery: %w", err))
 			}
 		}
 		s.mu.Unlock()

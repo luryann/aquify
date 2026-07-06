@@ -22,11 +22,10 @@ func newStep17Router(t *testing.T, ws workers.Backend) http.Handler {
 	return NewRouterWithServices(
 		Config{Auth: AuthConfig{EnableDevStubTokens: true}},
 		logger,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		nil,
 		ws,
-		nil,
-	)
+		nil)
 }
 
 func issueStep17Token(t *testing.T, router http.Handler, role string) string {

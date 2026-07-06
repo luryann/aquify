@@ -16,7 +16,6 @@ import (
 	"github.com/dareaquatics/aquify/server/internal/app/comms"
 	"github.com/dareaquatics/aquify/server/internal/app/compliance"
 	"github.com/dareaquatics/aquify/server/internal/app/exports"
-	"github.com/dareaquatics/aquify/server/internal/app/imports"
 	"github.com/dareaquatics/aquify/server/internal/app/members"
 	"github.com/dareaquatics/aquify/server/internal/app/reports"
 	"github.com/dareaquatics/aquify/server/internal/storage"
@@ -69,11 +68,10 @@ func TestDurableJobsSurviveAPIRestart(t *testing.T) {
 	router := NewRouterWithServices(
 		Config{Auth: AuthConfig{EnableDevStubTokens: true}},
 		logger,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		nil,
 		backend2,
-		nil,
-	)
+		nil)
 	token := issueStep17Token(t, router, "admin")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs?queue=imports", nil)
@@ -166,7 +164,6 @@ func TestBuildWorkersRegistersFullProductionHandlerSet(t *testing.T) {
 	workerServer, _ := BuildWorkers(
 		Config{},
 		logger,
-		imports.NewService(),
 		exports.NewService(),
 		reports.NewService(nil, nil, nil, nil),
 		billingService,
@@ -185,15 +182,6 @@ func TestBuildWorkersRegistersFullProductionHandlerSet(t *testing.T) {
 		queue    string
 		payload  any
 	}{
-		{
-			name:     "parse import",
-			taskType: workers.TypeParseImport,
-			queue:    workers.QueueImports,
-			payload: map[string]string{
-				"import_id": "imp-full-set",
-				"org_id":    "org-step32b",
-			},
-		},
 		{
 			name:     "generate export",
 			taskType: workers.TypeGenerateExport,
@@ -284,11 +272,10 @@ func TestDurableWorkerModeRegistersAndProcessesSharedHandlers(t *testing.T) {
 	NewRouterWithServices(
 		Config{Auth: AuthConfig{EnableDevStubTokens: true}},
 		logger,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		nil,
 		backend,
-		nil,
-	)
+		nil)
 
 	if err := backend.Start(); err != nil {
 		t.Fatalf("backend.Start: %v", err)
@@ -327,11 +314,10 @@ func TestDurableWorkerModeExecutesScheduledReconcileJobs(t *testing.T) {
 			},
 		},
 		logger,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		nil,
 		backend,
-		nil,
-	)
+		nil)
 	RegisterDurableScheduledJobs(backend, Config{Worker: WorkerConfig{ReconcileInterval: "50ms"}})
 
 	if err := backend.Start(); err != nil {

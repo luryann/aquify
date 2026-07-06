@@ -29,8 +29,7 @@ func newCommsRouterWithServices(t *testing.T, svc *comms.Service, membersSvc *me
 	return NewRouterWithServices(
 		Config{Auth: AuthConfig{EnableDevStubTokens: true}},
 		logger,
-		nil, membersSvc, groupsSvc, nil, nil, nil, nil, nil, nil, svc, auditSvc, nil, nil, nil, nil, nil,
-	)
+		nil, membersSvc, groupsSvc, nil, nil, nil, nil, nil, svc, auditSvc, nil, nil, nil, nil, nil)
 }
 
 // issueCommsToken creates a real session token with the given role for org-demo.

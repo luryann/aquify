@@ -23,7 +23,6 @@ import (
 	"github.com/dareaquatics/aquify/server/internal/app/compliance"
 	"github.com/dareaquatics/aquify/server/internal/app/exports"
 	"github.com/dareaquatics/aquify/server/internal/app/groups"
-	"github.com/dareaquatics/aquify/server/internal/app/imports"
 	"github.com/dareaquatics/aquify/server/internal/app/meets"
 	"github.com/dareaquatics/aquify/server/internal/app/members"
 	"github.com/dareaquatics/aquify/server/internal/app/performance"
@@ -856,61 +855,6 @@ func cleanupComplianceFixtures(t *testing.T, pool *pgxpool.Pool, orgID string) {
 	for _, q := range []string{
 		"DELETE FROM data_deletion_requests WHERE org_id = $1::uuid",
 		"DELETE FROM data_export_requests WHERE org_id = $1::uuid",
-	} {
-		if _, err := pool.Exec(ctx, q, orgID); err != nil {
-			t.Logf("cleanup warning (%s): %v", q, err)
-		}
-	}
-}
-
-// ─── Imports ────────────────────────────────────────────────────────────────
-
-func TestDBRepoImports_RoundTrip(t *testing.T) {
-	t.Parallel()
-	pool := openTestPool(t)
-	_ = testutil.RequireDBHarness(t)
-
-	admin := testutil.AdminPrincipal()
-	cleanupImportsFixtures(t, pool, testOrgID)
-
-	store := storage.NewStubStorage("")
-	svc := imports.NewServiceWithPool(pool, store)
-
-	imp, _, err := svc.RequestUploadURL(admin, testOrgID, imports.RequestUploadURLInput{
-		Filename:  "test.sd3",
-		FileType:  "sd3",
-		SizeBytes: 1024,
-		MIMEType:  "application/octet-stream",
-	})
-	if err != nil {
-		t.Fatalf("RequestUploadURL: %v", err)
-	}
-
-	svc2 := imports.NewServiceWithPool(pool, store)
-	imps, err := svc2.ListImports(admin, testOrgID)
-	if err != nil {
-		t.Fatalf("ListImports after reload: %v", err)
-	}
-	found := false
-	for _, i := range imps {
-		if i.ID == imp.ID {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatalf("import %q not found after DB reload", imp.ID)
-	}
-}
-
-func cleanupImportsFixtures(t *testing.T, pool *pgxpool.Pool, orgID string) {
-	t.Helper()
-	ctx := context.Background()
-	for _, q := range []string{
-		"DELETE FROM match_conflicts WHERE org_id = $1::uuid",
-		"DELETE FROM file_import_errors WHERE org_id = $1::uuid",
-		"DELETE FROM file_import_rows WHERE org_id = $1::uuid",
-		"DELETE FROM file_imports WHERE org_id = $1::uuid",
 	} {
 		if _, err := pool.Exec(ctx, q, orgID); err != nil {
 			t.Logf("cleanup warning (%s): %v", q, err)

@@ -830,6 +830,9 @@ func (h *CommsHandlers) createAnnouncement(w http.ResponseWriter, r *http.Reques
 		httpx.WriteError(w, r, http.StatusBadRequest, "create_failed", err.Error(), nil)
 		return
 	}
+	h.emitAudit(principal, audit.ActionCommsAnnouncementCreate, "announcement", ann.ID, map[string]string{
+		"audience": body.Audience,
+	}, ann)
 	httpx.WriteJSON(w, http.StatusCreated, ann)
 }
 
@@ -888,6 +891,7 @@ func (h *CommsHandlers) publishAnnouncement(w http.ResponseWriter, r *http.Reque
 		httpx.WriteError(w, r, http.StatusInternalServerError, "publish_failed", err.Error(), nil)
 		return
 	}
+	h.emitAudit(principal, audit.ActionCommsAnnouncementPublish, "announcement", ann.ID, nil, ann)
 	httpx.WriteJSON(w, http.StatusOK, ann)
 }
 
@@ -914,6 +918,7 @@ func (h *CommsHandlers) archiveAnnouncement(w http.ResponseWriter, r *http.Reque
 		httpx.WriteError(w, r, http.StatusInternalServerError, "archive_failed", err.Error(), nil)
 		return
 	}
+	h.emitAudit(principal, audit.ActionCommsAnnouncementArchive, "announcement", ann.ID, nil, ann)
 	httpx.WriteJSON(w, http.StatusOK, ann)
 }
 
@@ -964,6 +969,9 @@ func (h *CommsHandlers) createCampaign(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, http.StatusBadRequest, "create_failed", err.Error(), nil)
 		return
 	}
+	h.emitAudit(principal, audit.ActionCommsCampaignCreate, "campaign", campaign.ID, map[string]string{
+		"audience": body.Audience,
+	}, campaign)
 	httpx.WriteJSON(w, http.StatusCreated, campaign)
 }
 
@@ -1060,6 +1068,9 @@ func (h *CommsHandlers) sendCampaign(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, http.StatusInternalServerError, "send_failed", err.Error(), nil)
 		return
 	}
+	h.emitAudit(principal, audit.ActionCommsCampaignSend, "campaign", campaign.ID, map[string]string{
+		"recipient_count": strconv.Itoa(len(recipients)),
+	}, campaign)
 	httpx.WriteJSON(w, http.StatusOK, campaign)
 }
 
@@ -1124,6 +1135,9 @@ func (h *CommsHandlers) addSuppression(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, http.StatusBadRequest, "add_failed", err.Error(), nil)
 		return
 	}
+	h.emitAudit(principal, audit.ActionCommsSuppressionAdd, "suppression", entry.ID, map[string]string{
+		"reason": body.Reason,
+	}, entry)
 	httpx.WriteJSON(w, http.StatusCreated, entry)
 }
 
@@ -1162,5 +1176,6 @@ func (h *CommsHandlers) removeSuppression(w http.ResponseWriter, r *http.Request
 		httpx.WriteError(w, r, http.StatusInternalServerError, "remove_failed", err.Error(), nil)
 		return
 	}
+	h.emitAudit(principal, audit.ActionCommsSuppressionRemove, "suppression", id, nil, nil)
 	w.WriteHeader(http.StatusNoContent)
 }

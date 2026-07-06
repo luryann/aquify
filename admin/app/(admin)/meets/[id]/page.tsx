@@ -10,7 +10,6 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
 import { parseBackendDate } from '@/lib/dates'
 import { useApiClient, ApiError } from '@/lib/api'
-import { ImportHistoryPanel } from './ImportHistoryPanel'
 import { ReportsPanel } from './ReportsPanel'
 import {
   fetchHouseholds,
@@ -433,7 +432,6 @@ function MeetDetailPageContent() {
     { id: 'events', label: 'Events', count: events.length },
     { id: 'commitments', label: 'Commitments', count: commitments.length },
     { id: 'entries', label: 'Entries', count: entries.length },
-    { id: 'imports', label: 'Import History' },
     { id: 'reports', label: 'Reports' },
   ], [commitments.length, entries.length, events.length, sessions.length])
 
@@ -551,7 +549,6 @@ function MeetDetailPageContent() {
           <Table columns={ENTRY_COLS} data={entries} emptyTitle="No entries" emptyDescription="No entries have been proposed for this meet yet." />
         </div>
       ) : null}
-      {activeTab === 'imports' ? <ImportHistoryPanel meetId={meetId} /> : null}
       {activeTab === 'reports' ? <ReportsPanel meetId={meetId} /> : null}
     </div>
   )

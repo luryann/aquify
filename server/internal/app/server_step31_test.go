@@ -89,8 +89,7 @@ func TestNewRouterWithServicesFallsBackToInMemoryWhenSchemaValidationFails(t *te
 			},
 		},
 		logger,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-	)
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	reqBody, err := json.Marshal(map[string]any{
 		"user_id": "user-step31",
@@ -128,8 +127,7 @@ func TestNewRouterWithServicesTreatsTypedNilWorkerBackendAsMissing(t *testing.T)
 			},
 		},
 		slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)),
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, durableBackend, nil,
-	)
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, durableBackend, nil)
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/health/ready", nil)

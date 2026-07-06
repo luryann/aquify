@@ -6,6 +6,7 @@ import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
 import { reportUIError } from '@/lib/frontend-telemetry'
+import { parseBackendDate, formatDateOnly } from '@/lib/dates'
 import {
   fetchHouseholdAutopay,
   fetchInvoicePayments,
@@ -26,8 +27,7 @@ import {
 } from '@/lib/autopay'
 
 function fmtDate(iso?: string): string {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  return formatDateOnly(iso)
 }
 
 function cents(n: number): string {
@@ -494,7 +494,7 @@ export default function BillingPage() {
   const totalPaid = invoices.reduce((sum, inv) => sum + inv.amount_paid_cents, 0) / 100
   const nextDueInvoice = invoices
     .filter((inv) => ['issued', 'partially_paid'].includes(inv.status) && inv.due_date)
-    .sort((a, b) => new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime())[0]
+    .sort((a, b) => parseBackendDate(a.due_date!).getTime() - parseBackendDate(b.due_date!).getTime())[0]
   const firstDueInvoiceId = nextDueInvoice?.id ?? ''
 
   return (

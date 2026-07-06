@@ -61,11 +61,11 @@ func (h *UserHandlers) countOrgAdmins(ctx context.Context, orgID string) (int, e
 }
 
 // orgHasOnlyOneAdmin reports whether orgID currently has at most one admin.
-// A listing failure fails open (returns false) so it doesn't itself block a
-// legitimate role-removal or delete request.
+// A listing failure fails closed (returns true) so a transient Keycloak error
+// can't be used to strip the sole admin's role or delete the sole admin.
 func (h *UserHandlers) orgHasOnlyOneAdmin(ctx context.Context, orgID string) bool {
 	count, err := h.countOrgAdmins(ctx, orgID)
-	return err == nil && count <= 1
+	return err != nil || count <= 1
 }
 
 // userIsOrgAdmin reports whether userID currently holds the admin realm role.
@@ -1056,6 +1056,12 @@ func (h *UserHandlers) assignRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Assigning a role requires MFA, mirroring the guard on user deletion.
+	if !principal.MFAAuthenticated {
+		httpx.WriteError(w, r, http.StatusForbidden, "mfa_required", "MFA authentication is required to assign roles.", nil)
+		return
+	}
+
 	userID := chi.URLParam(r, "id")
 	if _, ok := h.requireUserInOrg(w, r, userID, orgID); !ok {
 		return
@@ -1101,6 +1107,12 @@ func (h *UserHandlers) assignRole(w http.ResponseWriter, r *http.Request) {
 func (h *UserHandlers) removeRole(w http.ResponseWriter, r *http.Request) {
 	principal, orgID, ok := userScopeFromRequest(w, r)
 	if !ok {
+		return
+	}
+
+	// Removing a role requires MFA, mirroring the guard on user deletion.
+	if !principal.MFAAuthenticated {
+		httpx.WriteError(w, r, http.StatusForbidden, "mfa_required", "MFA authentication is required to remove roles.", nil)
 		return
 	}
 

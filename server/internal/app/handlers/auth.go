@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -99,9 +100,8 @@ func authSessionMetadata(expiresAt any) map[string]any {
 }
 
 func writeCSRFGenerationError(w http.ResponseWriter, r *http.Request, err error) {
-	httpx.WriteError(w, r, http.StatusInternalServerError, "csrf_generation_failed", "Failed to generate CSRF token.", map[string]any{
-		"detail": err.Error(),
-	})
+	slog.Error("csrf: token generation failed", "error", err)
+	httpx.WriteError(w, r, http.StatusInternalServerError, "csrf_generation_failed", "Failed to generate CSRF token.", nil)
 }
 
 func (h *AuthHandlers) oidcCallback(w http.ResponseWriter, r *http.Request) {

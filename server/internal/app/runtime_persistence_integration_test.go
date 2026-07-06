@@ -11,7 +11,6 @@ import (
 	"github.com/dareaquatics/aquify/server/internal/app/compliance"
 	"github.com/dareaquatics/aquify/server/internal/app/exports"
 	"github.com/dareaquatics/aquify/server/internal/app/groups"
-	"github.com/dareaquatics/aquify/server/internal/app/imports"
 	"github.com/dareaquatics/aquify/server/internal/app/meets"
 	"github.com/dareaquatics/aquify/server/internal/app/members"
 	"github.com/dareaquatics/aquify/server/internal/app/performance"
@@ -41,7 +40,6 @@ func TestRuntimeSnapshotsRoundTripAcrossConvertedDomains(t *testing.T) {
 	groupSvc := groups.NewService()
 	meetSvc := meets.NewService()
 	store := storage.NewStubStorage("")
-	importSvc := imports.NewServiceWithStorage(store)
 	exportSvc := exports.NewServiceWithStorage(store)
 	perfSvc := performance.NewService()
 	billingSvc := billing.NewService()
@@ -100,15 +98,6 @@ func TestRuntimeSnapshotsRoundTripAcrossConvertedDomains(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("create meet: %v", err)
-	}
-
-	if _, _, err := importSvc.RequestUploadURL(admin, testutil.DefaultOrgID, imports.RequestUploadURLInput{
-		Filename:  "results.sd3",
-		FileType:  "sd3",
-		SizeBytes: 1024,
-		MIMEType:  "application/octet-stream",
-	}); err != nil {
-		t.Fatalf("request upload url: %v", err)
 	}
 
 	exportJob, _, err := exportSvc.GenerateExport(admin, testutil.DefaultOrgID, meet.ID, exports.ReportInput{
@@ -172,7 +161,6 @@ func TestRuntimeSnapshotsRoundTripAcrossConvertedDomains(t *testing.T) {
 		memberSvc,
 		groupSvc,
 		meetSvc,
-		importSvc,
 		exportSvc,
 		perfSvc,
 		billingSvc,
@@ -187,7 +175,6 @@ func TestRuntimeSnapshotsRoundTripAcrossConvertedDomains(t *testing.T) {
 	reloadedMembers := members.NewService()
 	reloadedGroups := groups.NewService()
 	reloadedMeets := meets.NewService()
-	reloadedImports := imports.NewServiceWithStorage(store)
 	reloadedExports := exports.NewServiceWithStorage(store)
 	reloadedPerformance := performance.NewService()
 	reloadedBilling := billing.NewService()
@@ -200,7 +187,6 @@ func TestRuntimeSnapshotsRoundTripAcrossConvertedDomains(t *testing.T) {
 		reloadedMembers,
 		reloadedGroups,
 		reloadedMeets,
-		reloadedImports,
 		reloadedExports,
 		reloadedPerformance,
 		reloadedBilling,
@@ -220,9 +206,6 @@ func TestRuntimeSnapshotsRoundTripAcrossConvertedDomains(t *testing.T) {
 	}
 	if got := len(reloadedMeets.SnapshotMeets(testutil.DefaultOrgID)); got != 1 {
 		t.Fatalf("expected 1 persisted meet, got %d", got)
-	}
-	if got, err := reloadedImports.ListImports(admin, testutil.DefaultOrgID); err != nil || len(got) != 1 {
-		t.Fatalf("expected 1 persisted import, got %d err=%v", len(got), err)
 	}
 	if got, err := reloadedExports.ListExports(admin, testutil.DefaultOrgID, ""); err != nil || len(got) != 1 {
 		t.Fatalf("expected 1 persisted export, got %d err=%v", len(got), err)

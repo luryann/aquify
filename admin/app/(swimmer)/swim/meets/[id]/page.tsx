@@ -8,6 +8,7 @@ import { useSession } from '@/lib/session'
 import { ApiError, useApiClient } from '@/lib/api'
 import { reportUIError } from '@/lib/frontend-telemetry'
 import { UnlinkedSwimmerNotice } from '@/components/swimmer/UnlinkedSwimmerNotice'
+import { isSwimmerGenderEligibleForEvent } from '@/lib/gender'
 import {
   addCommitmentEventSelection,
   deleteCommitmentEventSelection,
@@ -405,17 +406,13 @@ export default function SwimmerMeetDetailPage() {
   const sessionedEvents = sessions.map((session) => ({
     ...session,
     events: events.filter(
-      (ev) =>
-        ev.session_id === session.id &&
-        (!ev.gender || !swimmerGender || ev.gender.toLowerCase() === swimmerGender.toLowerCase() || ev.gender.toLowerCase() === 'mixed'),
+      (ev) => ev.session_id === session.id && (!swimmerGender || isSwimmerGenderEligibleForEvent(swimmerGender, ev.gender)),
     ),
   })).filter((s) => s.events.length > 0)
 
   // If no sessions, show all events
   const unsessionedEvents = events.filter(
-    (ev) =>
-      !ev.session_id &&
-      (!ev.gender || !swimmerGender || ev.gender.toLowerCase() === swimmerGender.toLowerCase() || ev.gender.toLowerCase() === 'mixed'),
+    (ev) => !ev.session_id && (!swimmerGender || isSwimmerGenderEligibleForEvent(swimmerGender, ev.gender)),
   )
 
   const swimmerInitials = swimmerName

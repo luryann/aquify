@@ -90,10 +90,9 @@ func TestHealthReadyReturns503WhenStripeProbeFails(t *testing.T) {
 			Stripe: StripeConfig{SecretKey: "sk_live_example"},
 		},
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
-		nil, nil, nil, nil, nil, nil, nil, nil,
-		readinessStripeClient{StubClient: stripelib.NewStubClient(), err: errors.New("stripe probe failed")},
 		nil, nil, nil, nil, nil, nil, nil,
-	)
+		readinessStripeClient{StubClient: stripelib.NewStubClient(), err: errors.New("stripe probe failed")},
+		nil, nil, nil, nil, nil, nil, nil)
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/health/ready", nil)
@@ -114,10 +113,9 @@ func TestHealthReadyReportsReadyWhenStripeProbeSucceeds(t *testing.T) {
 			Stripe: StripeConfig{SecretKey: "sk_live_example"},
 		},
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
-		nil, nil, nil, nil, nil, nil, nil, nil,
-		readinessStripeClient{StubClient: stripelib.NewStubClient()},
 		nil, nil, nil, nil, nil, nil, nil,
-	)
+		readinessStripeClient{StubClient: stripelib.NewStubClient()},
+		nil, nil, nil, nil, nil, nil, nil)
 
 	assertReadinessCheckEquals(t, serveReady(t, router), "stripe", "ready")
 }
@@ -134,10 +132,9 @@ func TestHealthReadyReturns503WhenPostmarkProbeFails(t *testing.T) {
 			},
 		},
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
-		nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil,
 		comms.NewServiceWithClient(readinessPostmarkClient{StubClient: postmark.NewStubClient(), err: errors.New("postmark probe failed")}),
-		nil, nil, nil, nil, nil, nil,
-	)
+		nil, nil, nil, nil, nil, nil)
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/health/ready", nil)
@@ -161,10 +158,9 @@ func TestHealthReadyReportsReadyWhenPostmarkProbeSucceeds(t *testing.T) {
 			},
 		},
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
-		nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil,
 		comms.NewServiceWithClient(readinessPostmarkClient{StubClient: postmark.NewStubClient()}),
-		nil, nil, nil, nil, nil, nil,
-	)
+		nil, nil, nil, nil, nil, nil)
 
 	assertReadinessCheckEquals(t, serveReady(t, router), "postmark", "ready")
 }
@@ -183,9 +179,8 @@ func TestHealthReadyReturns503WhenKeycloakProbeFails(t *testing.T) {
 			},
 		},
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		readinessKeycloakClient{StubClient: keycloak.NewStubClient(), err: errors.New("keycloak probe failed")},
-	)
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		readinessKeycloakClient{StubClient: keycloak.NewStubClient(), err: errors.New("keycloak probe failed")})
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/health/ready", nil)
@@ -211,9 +206,8 @@ func TestHealthReadyReportsReadyWhenKeycloakProbeSucceeds(t *testing.T) {
 			},
 		},
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		readinessKeycloakClient{StubClient: keycloak.NewStubClient()},
-	)
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		readinessKeycloakClient{StubClient: keycloak.NewStubClient()})
 
 	assertReadinessCheckEquals(t, serveReady(t, router), "keycloak", "ready")
 }

@@ -8,6 +8,7 @@ import { useSession } from '@/lib/session'
 import { parseBackendDate } from '@/lib/dates'
 import { ApiError, useApiClient } from '@/lib/api'
 import { reportUIError } from '@/lib/frontend-telemetry'
+import { isSwimmerGenderEligibleForEvent } from '@/lib/gender'
 import {
   addCommitmentEventSelection,
   deleteCommitmentEventSelection,
@@ -334,7 +335,7 @@ export default function MeetDetailPage() {
   }
 
   const eligibleEvents = swimmer
-    ? events.filter((ev) => !ev.gender || ev.gender.toLowerCase() === 'mixed' || ev.gender === swimmer.gender)
+    ? events.filter((ev) => isSwimmerGenderEligibleForEvent(swimmer.gender, ev.gender))
     : []
 
   const eligibleSessionGroups = sessionIds

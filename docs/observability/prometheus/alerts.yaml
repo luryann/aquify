@@ -4,43 +4,6 @@
 
 groups:
   # ---------------------------------------------------------------------------
-  # Import Pipeline Alerts
-  # ---------------------------------------------------------------------------
-  - name: dare_imports
-    rules:
-      - alert: ImportFailureSpike
-        expr: |
-          sum(increase(dare_import_files_total{status="failure"}[5m])) > 10
-        for: 2m
-        labels:
-          severity: warning
-          team: engineering
-        annotations:
-          summary: "Import failure spike detected"
-          description: |
-            More than 10 import file failures occurred in the last 5 minutes.
-            This may indicate corrupt uploads, a parser regression, or a storage
-            connectivity issue.
-            Check /api/v1/imports and the parse_import worker logs immediately.
-          runbook_url: "https://github.com/dareaquatics/aquify/blob/main/docs/runbooks/on-call.md#import-failures"
-
-      - alert: ImportFailureRateHigh
-        expr: |
-          sum(rate(dare_import_files_total{status="failure"}[15m]))
-            /
-          sum(rate(dare_import_files_total[15m])) > 0.30
-        for: 5m
-        labels:
-          severity: critical
-          team: engineering
-        annotations:
-          summary: "Import failure rate exceeds 30% (15-minute window)"
-          description: |
-            More than 30% of import files are failing over the past 15 minutes.
-            Investigate the parse_import worker, object storage, and the meetfiles parser.
-          runbook_url: "https://github.com/dareaquatics/aquify/blob/main/docs/runbooks/on-call.md#import-failures"
-
-  # ---------------------------------------------------------------------------
   # Webhook / Payment Alerts
   # ---------------------------------------------------------------------------
   - name: dare_webhooks

@@ -23,10 +23,9 @@ func newStep30ERouter(t *testing.T, kc keycloak.Client, membersSvc *members.Serv
 	return NewRouterWithServices(
 		Config{Auth: AuthConfig{EnableDevStubTokens: true}},
 		logger,
-		nil, membersSvc, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, membersSvc, nil, nil, nil, nil, nil, nil, nil,
 		audit.NewService(), nil, nil, nil, nil,
-		kc,
-	)
+		kc)
 }
 
 func issueStep30EToken(t *testing.T, router http.Handler, userID, orgID string, roles []string) string {

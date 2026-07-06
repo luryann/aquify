@@ -132,7 +132,7 @@ type timeStandardsListEnvelope struct {
 func newPerfRouter(t *testing.T, svc *performance.Service) http.Handler {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, nil, nil, nil, nil, nil, nil, svc, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	return NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, nil, nil, nil, nil, nil, svc, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 // newPerfWithMembersRouter builds a router with both performance and members
@@ -140,7 +140,7 @@ func newPerfRouter(t *testing.T, svc *performance.Service) http.Handler {
 func newPerfWithMembersRouter(t *testing.T, perfSvc *performance.Service, memberSvc *members.Service) http.Handler {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, nil, memberSvc, nil, nil, nil, nil, perfSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	return NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, nil, memberSvc, nil, nil, nil, perfSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 // newPerfAndMeetsRouter builds a router with both performance and meets
@@ -148,7 +148,7 @@ func newPerfWithMembersRouter(t *testing.T, perfSvc *performance.Service, member
 func newPerfAndMeetsRouter(t *testing.T, perfSvc *performance.Service, meetsSvc *meets.Service) http.Handler {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, nil, nil, nil, meetsSvc, nil, nil, perfSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	return NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, nil, nil, nil, meetsSvc, nil, perfSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 func newPerfActivityRouter(
@@ -169,7 +169,6 @@ func newPerfActivityRouter(
 		groupSvc,
 		meetsSvc,
 		nil,
-		nil,
 		perfSvc,
 		nil,
 		nil,
@@ -179,8 +178,7 @@ func newPerfActivityRouter(
 		documentSvc,
 		nil,
 		nil,
-		nil,
-	)
+		nil)
 }
 
 func minimalResultBody(swimmerID string) string {

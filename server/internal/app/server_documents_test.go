@@ -35,11 +35,10 @@ func newDocRouterWithStore(t *testing.T, svc *documents.Service, store storage.O
 	return NewRouterWithServices(
 		Config{Auth: AuthConfig{EnableDevStubTokens: true}},
 		logger,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		svc,
 		nil, nil,
-		nil,
-	)
+		nil)
 }
 
 func issueDocToken(t *testing.T, router http.Handler, userID, orgID, role, householdID string) string {

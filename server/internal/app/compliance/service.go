@@ -286,6 +286,9 @@ func (s *Service) FailDataExport(orgID, requestID string) (*DataExportRequest, e
 	if !ok || req.OrgID != orgID {
 		return nil, ErrExportNotFound
 	}
+	if req.Status != "processing" {
+		return nil, ErrInvalidTransition
+	}
 	cp := *req
 	cp.Status = "failed"
 	cp.UpdatedAt = time.Now().UTC()
@@ -421,6 +424,9 @@ func (s *Service) FailDataDeletion(orgID, requestID, reviewNotes string) (*DataD
 	req, ok := s.deletions[requestID]
 	if !ok || req.OrgID != orgID {
 		return nil, ErrDeletionNotFound
+	}
+	if req.Status != "processing" {
+		return nil, ErrInvalidTransition
 	}
 	cp := *req
 	cp.Status = "failed"

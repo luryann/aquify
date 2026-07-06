@@ -26,10 +26,9 @@ func newMessagesRouter(t *testing.T, svc *comms.Service) http.Handler {
 	return NewRouterWithServices(
 		Config{Auth: AuthConfig{EnableDevStubTokens: true}},
 		logger,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil,
 		svc,
-		nil, nil, nil, nil, nil, nil,
-	)
+		nil, nil, nil, nil, nil, nil)
 }
 
 func issueMessagesToken(t *testing.T, router http.Handler, userID, orgID, role, householdID string) string {

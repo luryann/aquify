@@ -253,6 +253,25 @@ input:focus, textarea:focus, select:focus {
   color: var(--text);
 }
 
+/* ── Skip to content (keyboard/screen-reader users) ── */
+.skip-to-content {
+  position: fixed;
+  top: -100px;
+  left: 1rem;
+  z-index: 9999;
+  padding: 0.6rem 1rem;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  border-radius: var(--r-xs);
+  transition: top 0.15s ease;
+}
+.skip-to-content:focus-visible {
+  top: 1rem;
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
 /* ── Keyframes ── */
 @keyframes fadeIn {
   from { opacity: 0; }

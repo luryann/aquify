@@ -3,6 +3,7 @@ import type {
   SwimmerRecord,
   TimeStandardRecord,
 } from './adminData.ts'
+import { swimmerGenderToEventGender } from './gender.ts'
 
 export type SwimmerCutQualificationCard = {
   standard: TimeStandardRecord
@@ -24,11 +25,7 @@ export function filterApplicableTimeStandards(
   swimmer: SwimmerRecord,
   now = new Date(),
 ): TimeStandardRecord[] {
-  const swimmerGender = swimmer.gender.trim().toUpperCase().startsWith('F')
-    ? 'F'
-    : swimmer.gender.trim().toUpperCase().startsWith('M')
-      ? 'M'
-      : 'X'
+  const swimmerGender = swimmerGenderToEventGender(swimmer.gender)
   const age = swimmerAgeOnDate(swimmer, now)
 
   return standards.filter((standard) => {

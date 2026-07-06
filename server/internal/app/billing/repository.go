@@ -98,6 +98,11 @@ func (r *Repository) UpsertInvoiceItem(ctx context.Context, item *InvoiceItem) e
 	return err
 }
 
+func (r *Repository) DeleteInvoiceItem(ctx context.Context, itemID string) error {
+	_, err := r.pool.Exec(ctx, `DELETE FROM invoice_items WHERE id = $1::uuid`, itemID)
+	return err
+}
+
 func (r *Repository) LoadInvoiceItems(ctx context.Context) ([]*InvoiceItem, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id::text, org_id::text, invoice_id::text,

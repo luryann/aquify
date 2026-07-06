@@ -82,6 +82,11 @@ func (h *TrainingHandlers) listPractices(w http.ResponseWriter, r *http.Request)
 		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to list practices.", err)
 		return
 	}
+	if !hasAnyRole(principal, "admin", "coach") {
+		for i := range practices {
+			practices[i].Notes = ""
+		}
+	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{"practices": practices})
 }
 

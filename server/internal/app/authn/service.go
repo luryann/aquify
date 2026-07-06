@@ -1979,20 +1979,3 @@ func randomAlphaNumeric(length int) string {
 	return string(out)
 }
 
-func randomBase32(length int) string {
-	const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
-	if length <= 0 {
-		return ""
-	}
-
-	buffer := make([]byte, length)
-	if _, err := rand.Read(buffer); err != nil {
-		panic(fmt.Errorf("secure random unavailable for base32 token generation: %w", err))
-	}
-
-	out := make([]byte, length)
-	for i, value := range buffer {
-		out[i] = charset[int(value)%len(charset)]
-	}
-	return string(out)
-}

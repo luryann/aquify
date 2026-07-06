@@ -221,54 +221,6 @@ export type ParsedMeetFileRecord = {
   parse_warnings?: string[]
 }
 
-export type ImportRecord = {
-  id: string
-  org_id: string
-  meet_id?: string
-  filename: string
-  file_type: string
-  status: string
-  storage_key?: string
-  upload_url?: string
-  row_count: number
-  error_count: number
-  conflict_count: number
-  declared_size_bytes?: number
-  created_at: string
-  created_by: string
-}
-
-export type ImportErrorRecord = {
-  row_number?: number
-  error_code: string
-  error_message: string
-}
-
-export type ImportReportRecord = {
-  total_rows: number
-  matched_rows: number
-  error_rows: number
-  conflict_rows: number
-  errors?: ImportErrorRecord[]
-}
-
-export type ImportConflictRecord = {
-  id: string
-  import_id: string
-  org_id: string
-  row_number?: number
-  raw_data?: string
-  status: string
-  conflict_type: string
-  candidate_swimmer_ids: string[]
-  resolved_swimmer_id?: string
-  resolver_id?: string
-  resolution_note?: string
-  resolved_at?: string
-  created_at: string
-  updated_at: string
-}
-
 export type ExportRecord = {
   id: string
   org_id: string
@@ -1003,26 +955,6 @@ export async function respondToMeetCommitment(api: ApiClient, orgId: string, mee
   return res.commitment
 }
 
-export async function fetchImports(api: ApiClient, orgId: string): Promise<ImportRecord[]> {
-  const res = await api.get<{ imports?: ImportRecord[] }>('/api/v1/imports', undefined, withOrgHeaders(orgId))
-  return res.imports ?? []
-}
-
-export async function fetchImport(api: ApiClient, orgId: string, importId: string): Promise<ImportRecord> {
-  const res = await api.get<{ import: ImportRecord }>(`/api/v1/imports/${importId}`, undefined, withOrgHeaders(orgId))
-  return res.import
-}
-
-export async function fetchImportConflicts(api: ApiClient, orgId: string, importId: string): Promise<ImportConflictRecord[]> {
-  const res = await api.get<{ conflicts?: ImportConflictRecord[] }>(`/api/v1/imports/${importId}/conflicts`, undefined, withOrgHeaders(orgId))
-  return res.conflicts ?? []
-}
-
-export async function fetchImportReport(api: ApiClient, orgId: string, importId: string): Promise<ImportReportRecord | null> {
-  const res = await api.get<{ import?: { import_report?: ImportReportRecord | null } }>(`/api/v1/imports/${importId}/report`, undefined, withOrgHeaders(orgId))
-  return res.import?.import_report ?? null
-}
-
 export async function fetchExportsForMeet(api: ApiClient, orgId: string, meetId: string): Promise<ExportRecord[]> {
   const res = await api.get<{ exports?: ExportRecord[] }>(`/api/v1/meets/${meetId}/exports`, undefined, withOrgHeaders(orgId))
   return res.exports ?? []
@@ -1566,11 +1498,6 @@ export async function createDocumentSubmission(api: ApiClient, orgId: string, in
   return res.document
 }
 
-export async function getDocumentSubmission(api: ApiClient, orgId: string, submissionId: string): Promise<DocumentSubmissionRecord> {
-  const res = await api.get<{ document: DocumentSubmissionRecord }>(`/api/v1/documents/${submissionId}`, undefined, withOrgHeaders(orgId))
-  return res.document
-}
-
 export async function attachDocumentFile(api: ApiClient, orgId: string, submissionId: string, input: {
   file_object_key: string
   file_name: string
@@ -1848,6 +1775,19 @@ export async function scratchEntry(
   return res.entry
 }
 
+export async function overrideEntry(api: ApiClient, orgId: string, meetId: string, entryId: string, input: {
+  new_meet_event_id: string
+  reason: string
+  seed_time_ms?: number
+}): Promise<EntryRecord> {
+  const res = await api.post<{ entry: EntryRecord }>(
+    `/api/v1/meets/${meetId}/entries/${entryId}/override`,
+    input,
+    withOrgHeaders(orgId),
+  )
+  return res.entry
+}
+
 export async function lockMeetCommitments(
   api: ApiClient,
   orgId: string,
@@ -1977,6 +1917,20 @@ export async function createRegistration(
   const res = await api.post<{ registration: RegistrationRecord }>(
     '/api/v1/registrations',
     input,
+    withOrgHeaders(orgId),
+  )
+  return res.registration
+}
+
+export async function transitionRegistration(
+  api: ApiClient,
+  orgId: string,
+  registrationId: string,
+  status: string,
+): Promise<RegistrationRecord> {
+  const res = await api.post<{ registration: RegistrationRecord }>(
+    `/api/v1/registrations/${registrationId}/transition`,
+    { status },
     withOrgHeaders(orgId),
   )
   return res.registration
@@ -2176,42 +2130,63 @@ export async function createInvoice(
   return res.invoice
 }
 
-export async function requestImportUploadUrl(
-  api: ApiClient,
-  orgId: string,
-  input: {
-    filename: string
-    size_bytes: number
-    mime_type: string
-    meet_id?: string
-  },
-): Promise<{ import_id: string; upload_url: string; storage_key: string }> {
-  const res = await api.post<{ import: ImportRecord }>(
-    '/api/v1/imports/upload-url',
+export async function addInvoiceItem(api: ApiClient, orgId: string, invoiceId: string, input: {
+  description: string
+  quantity: number
+  unit_amount_cents: number
+  category: 'program_fee' | 'meet_fee' | 'equipment' | 'manual' | 'late_fee' | 'credit'
+  swimmer_id?: string
+  meet_id?: string
+}): Promise<InvoiceItemRecord> {
+  const res = await api.post<{ item: InvoiceItemRecord }>(
+    `/api/v1/invoices/${invoiceId}/items`,
     input,
     withOrgHeaders(orgId),
   )
-  if (!res.import?.id || !res.import.upload_url || !res.import.storage_key) {
-    throw new ApiError(500, 'invalid_import_upload_response', 'Upload URL response was missing import metadata.')
-  }
-  return {
-    import_id: res.import.id,
-    upload_url: res.import.upload_url,
-    storage_key: res.import.storage_key,
-  }
+  return res.item
 }
 
-export async function finalizeImport(
-  api: ApiClient,
-  orgId: string,
-  importId: string,
-): Promise<ImportRecord> {
-  const res = await api.post<{ import: ImportRecord }>(
-    `/api/v1/imports/${importId}/finalize`,
-    undefined,
+export async function issueInvoice(api: ApiClient, orgId: string, invoiceId: string): Promise<InvoiceRecord> {
+  const res = await api.post<{ invoice: InvoiceRecord }>(
+    `/api/v1/invoices/${invoiceId}/issue`,
+    {},
     withOrgHeaders(orgId),
   )
-  return res.import
+  return res.invoice
+}
+
+export async function voidInvoice(api: ApiClient, orgId: string, invoiceId: string): Promise<InvoiceRecord> {
+  const res = await api.post<{ invoice: InvoiceRecord }>(
+    `/api/v1/invoices/${invoiceId}/void`,
+    {},
+    withOrgHeaders(orgId),
+  )
+  return res.invoice
+}
+
+export async function writeOffInvoice(api: ApiClient, orgId: string, invoiceId: string): Promise<InvoiceRecord> {
+  const res = await api.post<{ invoice: InvoiceRecord }>(
+    `/api/v1/invoices/${invoiceId}/write-off`,
+    {},
+    withOrgHeaders(orgId),
+  )
+  return res.invoice
+}
+
+export async function recordInvoicePayment(api: ApiClient, orgId: string, invoiceId: string, input: {
+  amount_cents: number
+  method: 'stripe' | 'check' | 'cash' | 'ach' | 'other'
+  stripe_payment_intent_id?: string
+  external_ref?: string
+  notes?: string
+  paid_at?: string
+}): Promise<PaymentRecord> {
+  const res = await api.post<{ payment: PaymentRecord }>(
+    `/api/v1/invoices/${invoiceId}/payments`,
+    input,
+    withOrgHeaders(orgId),
+  )
+  return res.payment
 }
 
 export type ReportType = 'eligibility_report' | 'entry_report' | 'event_report'
@@ -2328,19 +2303,6 @@ export async function fetchUser(
     withOrgHeaders(orgId),
   )
   return { user: res.user, roles: res.roles ?? [] }
-}
-
-export async function fetchUserRoles(
-  api: ApiClient,
-  orgId: string,
-  userId: string,
-): Promise<UserRoleRecord[]> {
-  const res = await api.get<{ status: string; roles: UserRoleRecord[] }>(
-    `/api/v1/users/${userId}/roles`,
-    undefined,
-    withOrgHeaders(orgId),
-  )
-  return res.roles ?? []
 }
 
 export async function createUser(

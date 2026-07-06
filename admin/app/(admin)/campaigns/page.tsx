@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Tabs } from '@/components/ui/Tabs'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -23,6 +23,18 @@ function CampaignsRootPageContent() {
   const { session } = useSession()
   const canSeeSuppression = canAccess(session?.user.roles ?? [], ['admin'])
   const [tab, setTab] = useState(searchParams.get('tab') === 'suppression' && canSeeSuppression ? 'suppression' : 'campaigns')
+
+  // Session (and therefore canSeeSuppression) resolves asynchronously after
+  // first render, so a `?tab=suppression` deep link taken before it resolves
+  // must be re-applied once we actually know the caller is an admin.
+  const deepLinkAppliedRef = useRef(false)
+  useEffect(() => {
+    if (deepLinkAppliedRef.current || !session) return
+    deepLinkAppliedRef.current = true
+    if (searchParams.get('tab') === 'suppression' && canSeeSuppression) {
+      setTab('suppression')
+    }
+  }, [session, canSeeSuppression, searchParams])
 
   function changeTab(id: string) {
     setTab(id)

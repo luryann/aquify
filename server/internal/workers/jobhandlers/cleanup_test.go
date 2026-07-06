@@ -10,7 +10,6 @@ import (
 
 	"github.com/dareaquatics/aquify/server/internal/app/compliance"
 	"github.com/dareaquatics/aquify/server/internal/app/exports"
-	"github.com/dareaquatics/aquify/server/internal/app/imports"
 	"github.com/dareaquatics/aquify/server/internal/app/members"
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
 	"github.com/dareaquatics/aquify/server/internal/app/reports"
@@ -18,45 +17,16 @@ import (
 	"github.com/dareaquatics/aquify/server/internal/workers"
 )
 
-func TestPurgeExpiredFilesHandler_ExpiresImportsExportsAndReports(t *testing.T) {
+func TestPurgeExpiredFilesHandler_ExpiresExportsAndReports(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	store := storage.NewStubStorage("")
-	importsService := imports.NewServiceWithStorage(store)
 	exportsService := exports.NewServiceWithStorage(store)
 	reportsService := reports.NewService(nil, nil, nil, nil)
 	reportsService.SetStorage(store)
 
 	principal := &appmiddleware.Principal{UserID: "admin-user", OrgID: "org-cleanup", Roles: []string{"admin"}}
-
-	importRecord, _, err := importsService.RequestUploadURL(principal, "org-cleanup", imports.RequestUploadURLInput{
-		Filename:  "results.sd3",
-		FileType:  "sd3",
-		SizeBytes: 1024,
-		MIMEType:  "application/octet-stream",
-	})
-	if err != nil {
-		t.Fatalf("RequestUploadURL: %v", err)
-	}
-	if err := store.PutObject(context.Background(), importRecord.StorageKey, "application/octet-stream", []byte("import-payload")); err != nil {
-		t.Fatalf("seed import object: %v", err)
-	}
-	importSnapshot, err := importsService.ExportRuntimeSnapshot()
-	if err != nil {
-		t.Fatalf("ExportRuntimeSnapshot(imports): %v", err)
-	}
-	var importState struct {
-		Imports map[string]*imports.FileImport `json:"imports"`
-	}
-	if err := json.Unmarshal(importSnapshot, &importState); err != nil {
-		t.Fatalf("decode import snapshot: %v", err)
-	}
-	expiredUploadAt := time.Now().UTC().Add(-time.Minute)
-	importState.Imports[importRecord.ID].UploadURLExpiresAt = &expiredUploadAt
-	if err := importsService.LoadRuntimeSnapshot(mustJSON(t, importState)); err != nil {
-		t.Fatalf("LoadRuntimeSnapshot(imports): %v", err)
-	}
 
 	exportsService.ConfigureArtifactTTL(time.Millisecond)
 	exportRecord, _, err := exportsService.GenerateExport(principal, "org-cleanup", "meet-cleanup", exports.ReportInput{
@@ -91,17 +61,9 @@ func TestPurgeExpiredFilesHandler_ExpiresImportsExportsAndReports(t *testing.T) 
 		t.Fatalf("NewTask: %v", err)
 	}
 
-	handler := PurgeExpiredFilesHandler(logger, importsService, exportsService, reportsService)
+	handler := PurgeExpiredFilesHandler(logger, exportsService, reportsService)
 	if err := handler(context.Background(), task); err != nil {
 		t.Fatalf("handler: %v", err)
-	}
-
-	importAfter, err := importsService.GetImport(principal, "org-cleanup", importRecord.ID)
-	if err != nil {
-		t.Fatalf("GetImport: %v", err)
-	}
-	if importAfter.Status != "expired" {
-		t.Fatalf("import status = %q, want expired", importAfter.Status)
 	}
 
 	exportAfter, err := exportsService.GetExport(principal, "org-cleanup", exportRecord.ID)
@@ -126,7 +88,7 @@ func TestPurgeExpiredFilesHandler_ExpiresImportsExportsAndReports(t *testing.T) 
 		t.Fatalf("expected report artifacts to be purged, got %d", len(snapshot.Files))
 	}
 
-	for _, key := range []string{importRecord.StorageKey, exportRecord.StorageKey, reportArtifact.StorageKey} {
+	for _, key := range []string{exportRecord.StorageKey, reportArtifact.StorageKey} {
 		exists, err := store.Exists(context.Background(), key)
 		if err != nil {
 			t.Fatalf("Exists(%q): %v", key, err)
@@ -247,13 +209,4 @@ func TestProcessDataDeletionHandler_CompletesRequest(t *testing.T) {
 	if after.ReviewNotes == "" {
 		t.Fatal("ReviewNotes is empty")
 	}
-}
-
-func mustJSON(t *testing.T, value any) []byte {
-	t.Helper()
-	data, err := json.Marshal(value)
-	if err != nil {
-		t.Fatalf("marshal snapshot: %v", err)
-	}
-	return data
 }

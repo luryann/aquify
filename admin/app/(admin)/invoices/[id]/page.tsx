@@ -21,6 +21,11 @@ import {
   fetchSwimmers,
   createRefund,
   downloadReportArtifact,
+  addInvoiceItem,
+  issueInvoice,
+  voidInvoice,
+  writeOffInvoice,
+  recordInvoicePayment,
   type InvoiceItemRecord,
   type InvoiceRecord,
   type LedgerEventRecord,
@@ -259,6 +264,194 @@ function IssueRefundPanel({
   )
 }
 
+const ITEM_CATEGORIES = ['program_fee', 'meet_fee', 'equipment', 'manual', 'late_fee', 'credit'] as const
+
+function AddInvoiceItemPanel({
+  api, orgId, invoiceId, onAdded,
+}: {
+  api: ReturnType<typeof useApiClient>
+  orgId: string
+  invoiceId: string
+  onAdded: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [description, setDescription] = useState('')
+  const [quantity, setQuantity] = useState('1')
+  const [unitAmount, setUnitAmount] = useState('')
+  const [category, setCategory] = useState<(typeof ITEM_CATEGORIES)[number]>('manual')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    const qty = Number.parseInt(quantity, 10)
+    const unitCents = Math.round(parseFloat(unitAmount) * 100)
+    if (!description.trim()) {
+      setError('A description is required.')
+      return
+    }
+    if (!Number.isFinite(qty) || qty <= 0) {
+      setError('Enter a valid quantity.')
+      return
+    }
+    if (!Number.isFinite(unitCents) || unitCents <= 0) {
+      setError('Enter a valid unit price.')
+      return
+    }
+    setSubmitting(true)
+    setError(null)
+    try {
+      await addInvoiceItem(api, orgId, invoiceId, {
+        description: description.trim(),
+        quantity: qty,
+        unit_amount_cents: unitCents,
+        category,
+      })
+      setOpen(false)
+      setDescription('')
+      setQuantity('1')
+      setUnitAmount('')
+      setCategory('manual')
+      onAdded()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to add invoice item.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="card" style={{ padding: '16px', marginBottom: '16px' }}>
+      {!open ? (
+        <button type="button" className="btn btn-primary" onClick={() => { setOpen(true); setError(null) }}>
+          Add item
+        </button>
+      ) : (
+        <form onSubmit={(e) => void handleSubmit(e)} style={{ display: 'grid', gap: '14px' }}>
+          {error && (
+            <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '10px 14px', fontSize: '13px' }}>
+              {error}
+            </div>
+          )}
+          <div>
+            <label style={LABEL_STYLE}>Description *</label>
+            <input style={INPUT_STYLE} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="E.g. Fall program fee" />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+            <div>
+              <label style={LABEL_STYLE}>Quantity *</label>
+              <input type="number" min="1" step="1" style={INPUT_STYLE} value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+            </div>
+            <div>
+              <label style={LABEL_STYLE}>Unit price *</label>
+              <input type="number" min="0.01" step="0.01" style={INPUT_STYLE} value={unitAmount} onChange={(e) => setUnitAmount(e.target.value)} placeholder="0.00" />
+            </div>
+          </div>
+          <div>
+            <label style={LABEL_STYLE}>Category *</label>
+            <select style={INPUT_STYLE} value={category} onChange={(e) => setCategory(e.target.value as (typeof ITEM_CATEGORIES)[number])}>
+              {ITEM_CATEGORIES.map((c) => <option key={c} value={c}>{c.replaceAll('_', ' ')}</option>)}
+            </select>
+          </div>
+          <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+            <button type="button" className="btn" onClick={() => setOpen(false)} disabled={submitting}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={submitting}>{submitting ? 'Adding…' : 'Add item'}</button>
+          </div>
+        </form>
+      )}
+    </div>
+  )
+}
+
+const PAYMENT_METHODS = ['check', 'cash', 'ach', 'stripe', 'other'] as const
+
+function RecordPaymentPanel({
+  api, orgId, invoiceId, onRecorded,
+}: {
+  api: ReturnType<typeof useApiClient>
+  orgId: string
+  invoiceId: string
+  onRecorded: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [amount, setAmount] = useState('')
+  const [method, setMethod] = useState<(typeof PAYMENT_METHODS)[number]>('check')
+  const [externalRef, setExternalRef] = useState('')
+  const [notes, setNotes] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    const amountCents = Math.round(parseFloat(amount) * 100)
+    if (!Number.isFinite(amountCents) || amountCents <= 0) {
+      setError('Enter a valid payment amount.')
+      return
+    }
+    setSubmitting(true)
+    setError(null)
+    try {
+      await recordInvoicePayment(api, orgId, invoiceId, {
+        amount_cents: amountCents,
+        method,
+        external_ref: externalRef.trim() || undefined,
+        notes: notes.trim() || undefined,
+      })
+      setOpen(false)
+      setAmount('')
+      setExternalRef('')
+      setNotes('')
+      onRecorded()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to record payment.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="card" style={{ padding: '16px', marginBottom: '16px' }}>
+      {!open ? (
+        <button type="button" className="btn btn-primary" onClick={() => { setOpen(true); setError(null) }}>
+          Record offline payment
+        </button>
+      ) : (
+        <form onSubmit={(e) => void handleSubmit(e)} style={{ display: 'grid', gap: '14px' }}>
+          {error && (
+            <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '10px 14px', fontSize: '13px' }}>
+              {error}
+            </div>
+          )}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+            <div>
+              <label style={LABEL_STYLE}>Amount *</label>
+              <input type="number" min="0.01" step="0.01" style={INPUT_STYLE} value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
+            </div>
+            <div>
+              <label style={LABEL_STYLE}>Method *</label>
+              <select style={INPUT_STYLE} value={method} onChange={(e) => setMethod(e.target.value as (typeof PAYMENT_METHODS)[number])}>
+                {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label style={LABEL_STYLE}>Reference</label>
+            <input style={INPUT_STYLE} value={externalRef} onChange={(e) => setExternalRef(e.target.value)} placeholder="Check #, transaction ID, etc." />
+          </div>
+          <div>
+            <label style={LABEL_STYLE}>Notes</label>
+            <textarea style={{ ...INPUT_STYLE, resize: 'vertical' }} rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
+          </div>
+          <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+            <button type="button" className="btn" onClick={() => setOpen(false)} disabled={submitting}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={submitting}>{submitting ? 'Recording…' : 'Record payment'}</button>
+          </div>
+        </form>
+      )}
+    </div>
+  )
+}
+
 function truncateId(id: string): string {
   return id.length > 8 ? `${id.slice(0, 8)}…` : id
 }
@@ -305,6 +498,25 @@ export default function InvoiceDetailPage() {
   const [reloadKey, setReloadKey] = useState(0)
   const [downloading, setDownloading] = useState(false)
   const [downloadError, setDownloadError] = useState<string | null>(null)
+  const [lifecycleBusy, setLifecycleBusy] = useState(false)
+  const [lifecycleError, setLifecycleError] = useState<string | null>(null)
+
+  async function handleLifecycleAction(action: 'issue' | 'void' | 'write-off', confirmMessage: string) {
+    if (!session?.user.orgId || !invoiceId) return
+    if (!window.confirm(confirmMessage)) return
+    setLifecycleBusy(true)
+    setLifecycleError(null)
+    try {
+      if (action === 'issue') await issueInvoice(api, session.user.orgId, invoiceId)
+      else if (action === 'void') await voidInvoice(api, session.user.orgId, invoiceId)
+      else await writeOffInvoice(api, session.user.orgId, invoiceId)
+      setReloadKey((k) => k + 1)
+    } catch (err) {
+      setLifecycleError(err instanceof ApiError ? err.message : `Failed to ${action} invoice.`)
+    } finally {
+      setLifecycleBusy(false)
+    }
+  }
 
   async function handleDownload() {
     if (!session?.user.orgId || !invoiceId) return
@@ -410,10 +622,28 @@ export default function InvoiceDetailPage() {
           </div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
-          <button type="button" className="btn" onClick={() => void handleDownload()} disabled={downloading} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <Icon name="download-cloud" size={14} />
-            {downloading ? 'Preparing…' : 'Download CSV'}
-          </button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            {invoice.status === 'draft' && (
+              <button type="button" className="btn btn-primary" disabled={lifecycleBusy} onClick={() => void handleLifecycleAction('issue', 'Issue this invoice? The balance will become due and it can no longer have items added.')}>
+                {lifecycleBusy ? '…' : 'Issue'}
+              </button>
+            )}
+            {invoice.status === 'issued' && invoice.amount_paid_cents === 0 && (
+              <button type="button" className="btn btn-secondary" disabled={lifecycleBusy} onClick={() => void handleLifecycleAction('void', 'Void this invoice? This cannot be undone.')}>
+                {lifecycleBusy ? '…' : 'Void'}
+              </button>
+            )}
+            {(invoice.status === 'issued' || invoice.status === 'partially_paid') && canAccess(session?.user.roles ?? [], ['admin']) && (
+              <button type="button" className="btn btn-secondary" style={{ color: 'var(--error)' }} disabled={lifecycleBusy} onClick={() => void handleLifecycleAction('write-off', 'Write off the remaining balance on this invoice? This cannot be undone.')}>
+                {lifecycleBusy ? '…' : 'Write Off'}
+              </button>
+            )}
+            <button type="button" className="btn" onClick={() => void handleDownload()} disabled={downloading} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Icon name="download-cloud" size={14} />
+              {downloading ? 'Preparing…' : 'Download CSV'}
+            </button>
+          </div>
+          {lifecycleError && <span style={{ fontSize: '12px', color: 'var(--error)' }}>{lifecycleError}</span>}
           {downloadError && <span style={{ fontSize: '12px', color: 'var(--error)' }}>{downloadError}</span>}
         </div>
       </div>
@@ -434,8 +664,32 @@ export default function InvoiceDetailPage() {
 
       <Tabs tabs={tabs} active={activeTab} onChange={setActiveTab} />
 
-      {activeTab === 'items' ? <Table columns={itemCols} data={items} emptyTitle="No invoice items" emptyDescription="No line items are attached to this invoice." /> : null}
-      {activeTab === 'payments' ? <Table columns={PAYMENT_COLS} data={payments} emptyTitle="No payments" emptyDescription="No payments have been recorded for this invoice yet." /> : null}
+      {activeTab === 'items' ? (
+        <>
+          {invoice.status === 'draft' && (
+            <AddInvoiceItemPanel
+              api={api}
+              orgId={session?.user.orgId ?? ''}
+              invoiceId={invoiceId}
+              onAdded={() => setReloadKey((k) => k + 1)}
+            />
+          )}
+          <Table columns={itemCols} data={items} emptyTitle="No invoice items" emptyDescription="No line items are attached to this invoice." />
+        </>
+      ) : null}
+      {activeTab === 'payments' ? (
+        <>
+          {(invoice.status === 'issued' || invoice.status === 'partially_paid') && (
+            <RecordPaymentPanel
+              api={api}
+              orgId={session?.user.orgId ?? ''}
+              invoiceId={invoiceId}
+              onRecorded={() => setReloadKey((k) => k + 1)}
+            />
+          )}
+          <Table columns={PAYMENT_COLS} data={payments} emptyTitle="No payments" emptyDescription="No payments have been recorded for this invoice yet." />
+        </>
+      ) : null}
       {activeTab === 'refunds' ? (
         <>
           {canAccess(session?.user.roles ?? [], ['admin']) && (

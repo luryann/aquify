@@ -21,10 +21,9 @@ func newStep30FRouter(t *testing.T, kc keycloak.Client) http.Handler {
 	return NewRouterWithServices(
 		Config{Auth: AuthConfig{EnableDevStubTokens: true}},
 		logger,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		audit.NewService(), nil, nil, nil, nil,
-		kc,
-	)
+		kc)
 }
 
 func issueStep30FToken(t *testing.T, router http.Handler, userID, orgID string, roles []string) string {
@@ -366,10 +365,9 @@ func TestApproveUser_EmitsAuditEvent(t *testing.T) {
 	router := NewRouterWithServices(
 		Config{Auth: AuthConfig{EnableDevStubTokens: true}},
 		logger,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		auditSvc, nil, nil, nil, nil,
-		kc,
-	)
+		kc)
 
 	token := issueStep30FToken(t, router, "admin-1", "org-1", []string{"admin"})
 	do30F(router, http.MethodPost, "/api/v1/users/pending-audit/approve", token, "", "org-1")
@@ -397,10 +395,9 @@ func TestRejectUser_EmitsAuditEvent(t *testing.T) {
 	router := NewRouterWithServices(
 		Config{Auth: AuthConfig{EnableDevStubTokens: true}},
 		logger,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		auditSvc, nil, nil, nil, nil,
-		kc,
-	)
+		kc)
 
 	token := issueStep30FToken(t, router, "admin-1", "org-1", []string{"admin"})
 	do30F(router, http.MethodPost, "/api/v1/users/pending-reject-audit/reject", token, `{"reason":"test"}`, "org-1")

@@ -7,20 +7,17 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/dareaquatics/aquify/server/internal/app/billing"
 	"github.com/dareaquatics/aquify/server/internal/app/comms"
 	"github.com/dareaquatics/aquify/server/internal/app/exports"
 	"github.com/dareaquatics/aquify/server/internal/app/groups"
-	"github.com/dareaquatics/aquify/server/internal/app/imports"
 	"github.com/dareaquatics/aquify/server/internal/app/meets"
 	"github.com/dareaquatics/aquify/server/internal/app/members"
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
 	"github.com/dareaquatics/aquify/server/internal/app/performance"
 	"github.com/dareaquatics/aquify/server/internal/app/training"
-	"github.com/dareaquatics/aquify/server/internal/storage"
 )
 
 func issueSessionTokenWithHousehold(t *testing.T, router http.Handler, userID, orgID, householdID string, roles []string, mfaAuthenticated bool) string {
@@ -43,64 +40,11 @@ func issueSessionTokenWithHousehold(t *testing.T, router http.Handler, userID, o
 	return issuedAccessTokenFromResponse(t, rr)
 }
 
-func TestHY3ImportFinalizationAndReportGeneration(t *testing.T) {
-	t.Parallel()
-
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	store := storage.NewStubStorage("")
-	importsService := imports.NewServiceWithStorage(store)
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-
-	adminToken := issueSessionToken(t, router, "org-hy3", []string{"admin"}, false)
-	importID := requestUploadURL(t, router, "org-hy3", adminToken, "championship.hy3", "hy3")
-	seedUploadedImport(t, store, "org-hy3", importID, "championship.hy3", "application/zip", buildZipFixture(t, "results.sd3", loadImportFixture(t, "valid.sd3")))
-
-	finalizeReq := httptest.NewRequest(http.MethodPost, "/api/v1/imports/"+importID+"/finalize", nil)
-	finalizeReq.Header.Set("X-Org-Id", "org-hy3")
-	finalizeReq.Header.Set("Authorization", "Bearer "+adminToken)
-	finalizeRes := httptest.NewRecorder()
-	router.ServeHTTP(finalizeRes, finalizeReq)
-	if finalizeRes.Code != http.StatusOK {
-		t.Fatalf("expected finalize 200, got %d body=%s", finalizeRes.Code, finalizeRes.Body.String())
-	}
-
-	var finalizeEnv importEnvelope
-	if err := json.Unmarshal(finalizeRes.Body.Bytes(), &finalizeEnv); err != nil {
-		t.Fatalf("decode finalize response: %v", err)
-	}
-	if finalizeEnv.Import.FileType != "hy3" {
-		t.Fatalf("expected hy3 file type, got %q", finalizeEnv.Import.FileType)
-	}
-	if finalizeEnv.Import.Status != "conflicts_pending" {
-		t.Fatalf("expected conflicts_pending status, got %q", finalizeEnv.Import.Status)
-	}
-
-	reportReq := httptest.NewRequest(http.MethodGet, "/api/v1/imports/"+importID+"/report", nil)
-	reportReq.Header.Set("X-Org-Id", "org-hy3")
-	reportReq.Header.Set("Authorization", "Bearer "+adminToken)
-	reportRes := httptest.NewRecorder()
-	router.ServeHTTP(reportRes, reportReq)
-	if reportRes.Code != http.StatusOK {
-		t.Fatalf("expected report 200, got %d body=%s", reportRes.Code, reportRes.Body.String())
-	}
-
-	var reportEnv importReportEnvelope
-	if err := json.Unmarshal(reportRes.Body.Bytes(), &reportEnv); err != nil {
-		t.Fatalf("decode report response: %v", err)
-	}
-	if reportEnv.Report == nil {
-		t.Fatal("expected import report for finalized HY3 import")
-	}
-	if reportEnv.Report.ConflictRows == 0 {
-		t.Fatal("expected finalized HY3 import report to record conflict rows")
-	}
-}
-
 func TestSensitiveRouteRBACMatrix(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, nil, nil, billing.NewService(), nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, nil, billing.NewService(), nil, nil, nil, nil, nil, nil, nil, nil)
 
 	tokens := map[string]string{
 		"admin":   issueSessionTokenForUser(t, router, "admin-user", "org-rbac", []string{"admin"}, true),
@@ -118,15 +62,6 @@ func TestSensitiveRouteRBACMatrix(t *testing.T) {
 	}
 
 	cases := []routeCase{
-		{
-			name:   "import upload url",
-			method: http.MethodPost,
-			path:   "/api/v1/imports/upload-url",
-			body:   `{"filename":"rbac.sd3","file_type":"sd3","size_bytes":1024,"mime_type":"application/octet-stream"}`,
-			allowedRoles: map[string]bool{
-				"admin": true, "coach": true,
-			},
-		},
 		{
 			name:   "invoice creation",
 			method: http.MethodPost,
@@ -190,7 +125,6 @@ func TestParentAndSwimmerPortalReadMatrix(t *testing.T) {
 		groupSvc,
 		meetsSvc,
 		nil,
-		nil,
 		perfSvc,
 		nil,
 		nil,
@@ -200,8 +134,7 @@ func TestParentAndSwimmerPortalReadMatrix(t *testing.T) {
 		nil,
 		trainingSvc,
 		nil,
-		nil,
-	)
+		nil)
 
 	adminToken := issueSessionTokenForUser(t, router, "admin-portal-matrix", "org-portal", []string{"admin"}, true)
 	parentToken := issueSessionTokenForUser(t, router, "parent-portal-matrix", "org-portal", []string{"parent"}, false)
@@ -370,7 +303,7 @@ func TestP0RegistrationToPaymentFlow(t *testing.T) {
 	memberSvc := members.NewService()
 	groupSvc := groups.NewService()
 	billingSvc := billing.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, memberSvc, groupSvc, nil, nil, nil, nil, billingSvc, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, memberSvc, groupSvc, nil, nil, nil, billingSvc, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionTokenForUser(t, router, "admin-user", "org-p0-reg", []string{"admin"}, true)
 	parentToken := issueSessionTokenForUser(t, router, "parent-user", "org-p0-reg", []string{"parent"}, false)
@@ -485,7 +418,7 @@ func TestP0MeetCommitToSD3ExportFlow(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	meetsSvc := meets.NewService()
 	exportsSvc := exports.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsSvc, nil, exportsSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsSvc, exportsSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionTokenForUser(t, router, "admin-user", "org-p0-meet", []string{"admin"}, true)
 	parentToken := issueSessionTokenWithHousehold(t, router, "parent-user", "org-p0-meet", "household-p0", []string{"parent"}, false)
@@ -614,49 +547,6 @@ func TestP0ResultsImportToBestTimeUpdateFlow(t *testing.T) {
 	}
 	if !strings.Contains(bestTimesRes.Body.String(), "58900") {
 		t.Fatalf("expected best-time response to contain 58900ms, got %s", bestTimesRes.Body.String())
-	}
-}
-
-func TestDuplicateImportFinalizeChaos(t *testing.T) {
-	t.Parallel()
-
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	store := storage.NewStubStorage("")
-	importsService := imports.NewServiceWithStorage(store)
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, importsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-	adminToken := issueSessionToken(t, router, "org-chaos", []string{"admin"}, false)
-	importID := requestUploadURL(t, router, "org-chaos", adminToken, "duplicate.sd3", "sd3")
-	seedUploadedImport(t, store, "org-chaos", importID, "duplicate.sd3", "application/octet-stream", loadImportFixture(t, "valid.sd3"))
-
-	var wg sync.WaitGroup
-	results := make(chan int, 2)
-	finalize := func() {
-		defer wg.Done()
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/imports/"+importID+"/finalize", nil)
-		req.Header.Set("X-Org-Id", "org-chaos")
-		req.Header.Set("Authorization", "Bearer "+adminToken)
-		rr := httptest.NewRecorder()
-		router.ServeHTTP(rr, req)
-		results <- rr.Code
-	}
-
-	wg.Add(2)
-	go finalize()
-	go finalize()
-	wg.Wait()
-	close(results)
-
-	var success, conflict int
-	for code := range results {
-		if code == http.StatusOK {
-			success++
-		}
-		if code == http.StatusConflict {
-			conflict++
-		}
-	}
-	if success != 1 || conflict != 1 {
-		t.Fatalf("expected one success and one conflict, got success=%d conflict=%d", success, conflict)
 	}
 }
 

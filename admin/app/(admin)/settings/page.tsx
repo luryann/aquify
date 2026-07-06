@@ -46,7 +46,7 @@ export default function SettingsPage() {
 
   async function handleSaveTeam(e: React.FormEvent) {
     e.preventDefault()
-    if (!session) return
+    if (!session || !canEditTeam) return
     setTeamSaving(true)
     setTeamMsg(null)
     setTeamErr(null)
@@ -63,7 +63,7 @@ export default function SettingsPage() {
 
   async function handleSaveEmail(e: React.FormEvent) {
     e.preventDefault()
-    if (!session) return
+    if (!session || !canEditTeam) return
     setEmailSaving(true)
     setEmailMsg(null)
     setEmailErr(null)

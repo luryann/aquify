@@ -19,8 +19,7 @@ func TestPrometheusMetricsRouteDisabledByDefault(t *testing.T) {
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 		telemetry.NewMetrics(),
 		false,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-	)
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	rr := httptest.NewRecorder()
@@ -39,8 +38,7 @@ func TestPrometheusMetricsRouteCanBeMountedExplicitly(t *testing.T) {
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 		telemetry.NewMetrics(),
 		true,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-	)
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	rr := httptest.NewRecorder()

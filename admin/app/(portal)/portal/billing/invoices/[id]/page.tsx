@@ -7,6 +7,7 @@ import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
 import { reportUIError } from '@/lib/frontend-telemetry'
+import { formatDateOnly } from '@/lib/dates'
 import {
   fetchInvoice,
   fetchInvoiceItems,
@@ -38,8 +39,7 @@ function centsToDisplay(cents: number): string {
 }
 
 function formatDate(iso?: string): string {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  return formatDateOnly(iso)
 }
 
 type Tab = 'summary' | 'payments' | 'receipts'

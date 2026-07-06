@@ -29,7 +29,6 @@ func newReportsRouter(t *testing.T, memberSvc *members.Service, groupSvc *groups
 		meetSvc,
 		nil,
 		nil,
-		nil,
 		billingSvc,
 		nil,
 		nil,
@@ -38,8 +37,7 @@ func newReportsRouter(t *testing.T, memberSvc *members.Service, groupSvc *groups
 		nil,
 		nil,
 		nil,
-	nil,
-	)
+	nil)
 }
 
 func seedReportsFixture(t *testing.T, memberSvc *members.Service, groupSvc *groups.Service, meetSvc *meets.Service, billingSvc *billing.Service) (orgID string, principal *appmiddleware.Principal, household members.Household, swimmer members.Swimmer, group groups.Group, meet meets.Meet, invoice *billing.Invoice) {

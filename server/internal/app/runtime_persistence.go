@@ -12,7 +12,6 @@ import (
 	"github.com/dareaquatics/aquify/server/internal/app/compliance"
 	"github.com/dareaquatics/aquify/server/internal/app/exports"
 	"github.com/dareaquatics/aquify/server/internal/app/groups"
-	"github.com/dareaquatics/aquify/server/internal/app/imports"
 	"github.com/dareaquatics/aquify/server/internal/app/meets"
 	"github.com/dareaquatics/aquify/server/internal/app/members"
 	"github.com/dareaquatics/aquify/server/internal/app/performance"
@@ -34,7 +33,6 @@ func buildRuntimeParticipants(
 	membershipService *members.Service,
 	groupsService *groups.Service,
 	meetsService *meets.Service,
-	importsService *imports.Service,
 	exportsService *exports.Service,
 	performanceService *performance.Service,
 	billingService *billing.Service,
@@ -46,7 +44,6 @@ func buildRuntimeParticipants(
 		{domain: "members", service: membershipService},
 		{domain: "groups", service: groupsService},
 		{domain: "meets", service: meetsService},
-		{domain: "imports", service: importsService},
 		{domain: "exports", service: exportsService},
 		{domain: "performance", service: performanceService},
 		{domain: "billing", service: billingService},

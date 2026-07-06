@@ -86,7 +86,11 @@ export default function DataDeletionsPage() {
     return () => {
       cancelled = true
     }
-  }, [api, selectedHouseholdId, session?.user.orgId])
+    // selectedHouseholdId is intentionally excluded: it's only read here to
+    // seed a default when empty, and including it would refetch immediately
+    // after that seed runs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api, session?.user.orgId])
 
   const householdNameById = useMemo(() => new Map(households.map((household) => [household.id, household.household_name])), [households])
 

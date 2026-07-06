@@ -30,7 +30,7 @@ func newStripeRouter(t *testing.T, billingSvc *billing.Service, stripeClient str
 		Stripe:         StripeConfig{WebhookSecret: "whsec_test", Currency: "usd", ReconciliationAlertThresholdCents: 100},
 		AllowedOrigins: []string{"https://example.com"},
 	}
-	return NewRouterWithServices(cfg, logger, nil, nil, nil, nil, nil, nil, nil, billingSvc, stripeClient, nil, nil, nil, nil, nil, nil, nil)
+	return NewRouterWithServices(cfg, logger, nil, nil, nil, nil, nil, nil, billingSvc, stripeClient, nil, nil, nil, nil, nil, nil, nil)
 }
 
 // ─── Webhook payload builders ─────────────────────────────────────────────────
@@ -348,11 +348,25 @@ func TestStripeWebhookExpiredTimestampRejected(t *testing.T) {
 func TestCreatePaymentIntentSuccess(t *testing.T) {
 	t.Parallel()
 	stub := stripelib.NewStubClient()
-	router := newStripeRouter(t, nil, stub)
+	billingSvc := billing.NewService()
+	p := adminPrincipal()
+	inv, _ := billingSvc.CreateInvoice("org-demo", "actor-1", p, billing.CreateInvoiceInput{
+		HouseholdID:   "hh-001",
+		InvoiceNumber: "INV-PI-1",
+	})
+	billingSvc.AddInvoiceItem("org-demo", "actor-1", p, inv.ID, billing.AddInvoiceItemInput{
+		Description:     "Annual fee",
+		Quantity:        1,
+		UnitAmountCents: 15000,
+		Category:        "program_fee",
+	})
+	billingSvc.IssueInvoice("org-demo", "actor-1", p, inv.ID)
+
+	router := newStripeRouter(t, billingSvc, stub)
 	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
 
 	body, _ := json.Marshal(map[string]any{
-		"invoice_id":   "inv-001",
+		"invoice_id":   inv.ID,
 		"amount_cents": 15000,
 		"description":  "Annual fee",
 	})
@@ -422,11 +436,25 @@ func TestCreatePaymentIntentRequiresIdempotencyKey(t *testing.T) {
 func TestCreatePaymentIntentDuplicateIdempotencyKeyReturnsSameIntent(t *testing.T) {
 	t.Parallel()
 	stub := stripelib.NewStubClient()
-	router := newStripeRouter(t, nil, stub)
+	billingSvc := billing.NewService()
+	p := adminPrincipal()
+	inv, _ := billingSvc.CreateInvoice("org-demo", "actor-1", p, billing.CreateInvoiceInput{
+		HouseholdID:   "hh-001",
+		InvoiceNumber: "INV-PI-2",
+	})
+	billingSvc.AddInvoiceItem("org-demo", "actor-1", p, inv.ID, billing.AddInvoiceItemInput{
+		Description:     "Annual fee",
+		Quantity:        1,
+		UnitAmountCents: 15000,
+		Category:        "program_fee",
+	})
+	billingSvc.IssueInvoice("org-demo", "actor-1", p, inv.ID)
+
+	router := newStripeRouter(t, billingSvc, stub)
 	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
 
 	body, _ := json.Marshal(map[string]any{
-		"invoice_id":   "inv-001",
+		"invoice_id":   inv.ID,
 		"amount_cents": 15000,
 		"description":  "Annual fee",
 	})

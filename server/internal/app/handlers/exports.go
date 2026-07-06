@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/dareaquatics/aquify/server/internal/app/audit"
 	"github.com/dareaquatics/aquify/server/internal/app/exports"
 	"github.com/dareaquatics/aquify/server/internal/app/httpx"
 	"github.com/dareaquatics/aquify/server/internal/app/meets"
@@ -24,6 +25,7 @@ type ExportsHandlers struct {
 	meetsService   *meets.Service
 	membersService *members.Service
 	orgSettings    *orgsettings.Service
+	auditService   *audit.Service
 	validate       *validator.Validate
 }
 
@@ -43,6 +45,30 @@ func NewExportsHandlersWithMeetAccess(service *exports.Service, meetsService *me
 		orgSettings:    orgSettings,
 		validate:       validator.New(),
 	}
+}
+
+// NewExportsHandlersWithAudit returns export handlers additionally wired to
+// the central audit log so report generation and download are recorded
+// alongside every other privileged action in the product.
+func NewExportsHandlersWithAudit(service *exports.Service, meetsService *meets.Service, membersService *members.Service, orgSettings *orgsettings.Service, auditService *audit.Service) *ExportsHandlers {
+	h := NewExportsHandlersWithMeetAccess(service, meetsService, membersService, orgSettings)
+	h.auditService = auditService
+	return h
+}
+
+func (h *ExportsHandlers) emitAudit(principal *appmiddleware.Principal, action, resourceType, resourceID string, metadata map[string]string) {
+	if h.auditService == nil || principal == nil {
+		return
+	}
+	_, _ = h.auditService.Append(audit.AppendRequest{
+		OrgID:        principal.OrgID,
+		ActorUserID:  principal.UserID,
+		ActorRoles:   append([]string{}, principal.Roles...),
+		Action:       action,
+		ResourceType: resourceType,
+		ResourceID:   resourceID,
+		Metadata:     metadata,
+	})
 }
 
 // RegisterRoutes mounts all export routes on the given router.
@@ -171,6 +197,11 @@ func (h *ExportsHandlers) generateExport(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	h.emitAudit(principal, "export.generated", "file_export", job.ID, map[string]string{
+		"meet_id":     meetID,
+		"report_type": body.ReportType,
+	})
+
 	_ = httpx.WriteJSON(w, http.StatusCreated, map[string]any{
 		"export":      job,
 		"audit_event": audit,
@@ -199,6 +230,20 @@ func (h *ExportsHandlers) listMeetExports(w http.ResponseWriter, r *http.Request
 	}
 
 	list := h.service.ListExportsForAuthorizedMeet(orgID, meetID)
+
+	// Parent/swimmer household access to a meet's files must not expose
+	// staff-only reports (e.g. eligibility_report can include other
+	// swimmers' age/eligibility detail). Only admin/coach see every type.
+	if !exportPrincipalHasAnyRole(principal, "admin", "coach") {
+		filtered := list[:0:0]
+		for _, ex := range list {
+			if ex.ExportType == "eligibility_report" {
+				continue
+			}
+			filtered = append(filtered, ex)
+		}
+		list = filtered
+	}
 
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"count":   len(list),

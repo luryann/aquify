@@ -23,10 +23,9 @@ func newStep16Router(t *testing.T, auditSvc *audit.Service, compSvc *compliance.
 	return NewRouterWithServices(
 		Config{Auth: AuthConfig{EnableDevStubTokens: true}},
 		logger,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		auditSvc, compSvc, nil, nil, nil,
-		nil,
-	)
+		nil)
 }
 
 // issueStep16Token issues a session token via the API, supporting household_id

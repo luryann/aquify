@@ -10,7 +10,6 @@ import (
 
 	"github.com/dareaquatics/aquify/server/internal/app/compliance"
 	"github.com/dareaquatics/aquify/server/internal/app/exports"
-	"github.com/dareaquatics/aquify/server/internal/app/imports"
 	"github.com/dareaquatics/aquify/server/internal/app/members"
 	"github.com/dareaquatics/aquify/server/internal/app/reports"
 	"github.com/dareaquatics/aquify/server/internal/storage"
@@ -42,8 +41,8 @@ type ProcessDataDeletionPayload struct {
 }
 
 // PurgeExpiredFilesHandler returns a Handler that removes expired temp files
-// (export objects in object storage and expired import upload URLs).
-func PurgeExpiredFilesHandler(logger *slog.Logger, importsService *imports.Service, exportsService *exports.Service, reportsService *reports.Service) workers.Handler {
+// (export objects in object storage).
+func PurgeExpiredFilesHandler(logger *slog.Logger, exportsService *exports.Service, reportsService *reports.Service) workers.Handler {
 	return func(ctx context.Context, task *workers.Task) error {
 		var p PurgeExpiredFilesPayload
 		if err := json.Unmarshal(task.Payload, &p); err != nil {
@@ -54,13 +53,6 @@ func PurgeExpiredFilesHandler(logger *slog.Logger, importsService *imports.Servi
 
 		cutoff := parseCutoffTime(p.CutoffTime)
 
-		if importsService != nil {
-			for _, artifact := range importsService.ExpirePendingUploads(cutoff) {
-				if artifact.StorageKey != "" {
-					_ = importsService.DeleteArtifact(artifact.StorageKey)
-				}
-			}
-		}
 		if exportsService != nil {
 			for _, artifact := range exportsService.ExpireArtifacts(cutoff) {
 				if artifact.StorageKey != "" {

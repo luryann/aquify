@@ -801,6 +801,12 @@ func (s *Service) RemoveInvoiceItem(orgID, actorID string, principal *appmiddlew
 		return ErrInvoiceItemNotFound
 	}
 
+	if s.repo != nil {
+		if err := s.repo.DeleteInvoiceItem(context.Background(), itemID); err != nil {
+			return fmt.Errorf("delete invoice item: %w", err)
+		}
+	}
+
 	// Remove from slice.
 	s.items[invoiceID] = slices.DeleteFunc(s.items[invoiceID], func(i *InvoiceItem) bool {
 		return i.ID == itemID
@@ -811,6 +817,11 @@ func (s *Service) RemoveInvoiceItem(orgID, actorID string, principal *appmiddlew
 	inv.UpdatedAt = now
 	inv.UpdatedBy = actorID
 	s.recomputeTotals(inv)
+	if s.repo != nil {
+		if err := s.repo.UpsertInvoice(context.Background(), inv); err != nil {
+			return fmt.Errorf("persist invoice after item remove: %w", err)
+		}
+	}
 
 	return nil
 }

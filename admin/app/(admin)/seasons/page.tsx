@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
@@ -285,6 +285,13 @@ export default function SeasonsPage() {
 
   const [goals, setGoals] = useState('')
   const [goalsSaved, setGoalsSaved] = useState(false)
+  const goalsSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (goalsSavedTimerRef.current) clearTimeout(goalsSavedTimerRef.current)
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -390,7 +397,8 @@ export default function SeasonsPage() {
       const updated = await updateSeason(api, orgId, activeSeason.id, { goals })
       replaceSeason(updated)
       setGoalsSaved(true)
-      setTimeout(() => setGoalsSaved(false), 2000)
+      if (goalsSavedTimerRef.current) clearTimeout(goalsSavedTimerRef.current)
+      goalsSavedTimerRef.current = setTimeout(() => setGoalsSaved(false), 2000)
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to save goals.')
     } finally {

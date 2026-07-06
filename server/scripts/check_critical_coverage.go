@@ -20,7 +20,6 @@ var criticalThresholds = []threshold{
 	{pkg: "./internal/app/handlers", min: 1.0},
 	{pkg: "./internal/app/compliance", min: 50.0},
 	{pkg: "./internal/app/documents", min: 30.0},
-	{pkg: "./internal/app/imports", min: 15.0},
 	{pkg: "./internal/app/meets", min: 20.0},
 	{pkg: "./internal/app/performance", min: 14.0},
 	{pkg: "./internal/app/reports", min: 2.0},

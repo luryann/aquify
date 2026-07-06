@@ -11,11 +11,17 @@ import (
 )
 
 type rateLimiter struct {
-	mu           sync.Mutex
-	entries      map[string]*rateLimitEntry
-	limit        int
-	window       time.Duration
-	trustedNets  []*net.IPNet
+	mu          sync.Mutex
+	entries     map[string]*rateLimitEntry
+	limit       int
+	window      time.Duration
+	trustedNets []*net.IPNet
+	// nextSweep gates the full-map stale-entry sweep so it runs at most
+	// once per sweepInterval instead of on every request; without this,
+	// allow() would do an O(n) scan of every distinct client under the
+	// global lock on every single HTTP request app-wide.
+	nextSweep     time.Time
+	sweepInterval time.Duration
 }
 
 type rateLimitEntry struct {
@@ -61,10 +67,11 @@ func NewRateLimiter(limit int, window time.Duration, trustedProxyCIDRs []string)
 	}
 
 	rl := &rateLimiter{
-		entries:     make(map[string]*rateLimitEntry),
-		limit:       limit,
-		window:      window,
-		trustedNets: trustedNets,
+		entries:       make(map[string]*rateLimitEntry),
+		limit:         limit,
+		window:        window,
+		trustedNets:   trustedNets,
+		sweepInterval: window,
 	}
 
 	return func(next http.Handler) http.Handler {
@@ -84,10 +91,13 @@ func (rl *rateLimiter) allow(key string, now time.Time) bool {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
-	for k, entry := range rl.entries {
-		if now.After(entry.windowEnds) {
-			delete(rl.entries, k)
+	if rl.nextSweep.IsZero() || now.After(rl.nextSweep) {
+		for k, entry := range rl.entries {
+			if now.After(entry.windowEnds) {
+				delete(rl.entries, k)
+			}
 		}
+		rl.nextSweep = now.Add(rl.sweepInterval)
 	}
 
 	entry, ok := rl.entries[key]

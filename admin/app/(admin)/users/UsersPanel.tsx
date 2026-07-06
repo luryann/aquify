@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
@@ -144,6 +144,8 @@ export function UsersPanel() {
     return tier <= actorTier
   })
 
+  const loadRequestIdRef = useRef(0)
+
   function loadUsers(roleOverride?: string) {
     if (!session?.user.orgId) {
       setUsers([])
@@ -152,22 +154,29 @@ export function UsersPanel() {
       setLoading(false)
       return
     }
+    const requestId = ++loadRequestIdRef.current
     const role = (roleOverride ?? roleFilter) !== 'all' ? (roleOverride ?? roleFilter) : undefined
     setLoading(true)
     setError(null)
     fetchUsers(api, session.user.orgId, { limit: 200, role })
       .then(({ users: fetched, source }) => {
+        if (loadRequestIdRef.current !== requestId) return
         setUsers(fetched)
         setUserSource(source)
       })
-      .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load users.'))
-      .finally(() => setLoading(false))
+      .catch((err) => {
+        if (loadRequestIdRef.current !== requestId) return
+        setError(err instanceof ApiError ? err.message : 'Failed to load users.')
+      })
+      .finally(() => {
+        if (loadRequestIdRef.current === requestId) setLoading(false)
+      })
   }
 
   useEffect(() => {
     loadUsers()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.user.orgId, roleFilter])
+  }, [session?.user.orgId, roleFilter, api])
 
   const filtered = useMemo(() => {
     return users.filter((u) => {

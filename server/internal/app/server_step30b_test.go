@@ -22,10 +22,9 @@ func newStep30BRouter(t *testing.T, kc keycloak.Client) http.Handler {
 	return NewRouterWithServices(
 		Config{Auth: AuthConfig{EnableDevStubTokens: true}},
 		logger,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		audit.NewService(), nil, nil, nil, nil,
-		kc,
-	)
+		kc)
 }
 
 func issueStep30BToken(t *testing.T, router http.Handler, userID, orgID string, roles []string, mfa bool) string {
@@ -103,10 +102,9 @@ func TestUserMgmt_ListUsers_SeedsDevStubUsersAndIncludesSourceMetadata(t *testin
 			},
 		},
 		logger,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		audit.NewService(), nil, nil, nil, nil,
-		nil,
-	)
+		nil)
 	token := issueStep30BToken(t, router, authn.LocalDevAdminUserID, authn.LocalDevOrgID, []string{"admin"}, false)
 
 	rr := do30B(router, http.MethodGet, "/api/v1/users", token, "", authn.LocalDevOrgID)
@@ -299,10 +297,9 @@ func TestUserMgmt_CreateUser_NoSilentStubFallbackWhenRealOIDCConfigured(t *testi
 			},
 		},
 		logger,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		audit.NewService(), nil, nil, nil, nil,
-		nil,
-	)
+		nil)
 	token := issueStep30BToken(t, router, "admin1", "org-test", []string{"admin"}, false)
 
 	body := `{"first_name":"Bob","last_name":"Smith","email":"bob@example.com","password":"ChangeMe123!","role":"parent"}`
@@ -451,7 +448,7 @@ func TestUserMgmt_AssignRole_Success(t *testing.T) {
 		ID: "u1", Attributes: map[string][]string{"org_id": {"org-test"}},
 	})
 	router := newStep30BRouter(t, kc)
-	token := issueStep30BToken(t, router, "admin1", "org-test", []string{"admin"}, false)
+	token := issueStep30BToken(t, router, "admin1", "org-test", []string{"admin"}, true)
 
 	body := `{"role":"coach"}`
 	rr := do30B(router, http.MethodPost, "/api/v1/users/u1/roles", token, body, "org-test")
@@ -474,7 +471,7 @@ func TestUserMgmt_RemoveRole_Success(t *testing.T) {
 	_ = kc.AssignRealmRole(nil, "u1", "admin") //nolint
 
 	router := newStep30BRouter(t, kc)
-	token := issueStep30BToken(t, router, "admin1", "org-test", []string{"admin"}, false)
+	token := issueStep30BToken(t, router, "admin1", "org-test", []string{"admin"}, true)
 
 	// Remove coach role (not the last admin)
 	rr := do30B(router, http.MethodDelete, "/api/v1/users/u1/roles/coach", token, "", "org-test")
@@ -492,7 +489,7 @@ func TestUserMgmt_RemoveRole_LastAdminBlocked(t *testing.T) {
 	_ = kc.AssignRealmRole(nil, "u1", "admin") //nolint
 
 	router := newStep30BRouter(t, kc)
-	token := issueStep30BToken(t, router, "admin1", "org-test", []string{"admin"}, false)
+	token := issueStep30BToken(t, router, "admin1", "org-test", []string{"admin"}, true)
 
 	rr := do30B(router, http.MethodDelete, "/api/v1/users/u1/roles/admin", token, "", "org-test")
 	if rr.Code != http.StatusConflict {
@@ -624,10 +621,9 @@ func TestUserMgmt_AuditEvents_InviteEmitsEvent(t *testing.T) {
 	router := NewRouterWithServices(
 		Config{Auth: AuthConfig{EnableDevStubTokens: true}},
 		logger,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		auditSvc, nil, nil, nil, nil,
-		kc,
-	)
+		kc)
 	token := issueStep30BToken(t, router, "admin1", "org-test", []string{"admin"}, false)
 
 	body := `{"email":"new@example.com","first_name":"New","last_name":"User"}`
@@ -660,10 +656,9 @@ func TestUserMgmt_AuditEvents_DisableEmitsEvent(t *testing.T) {
 	router := NewRouterWithServices(
 		Config{Auth: AuthConfig{EnableDevStubTokens: true}},
 		logger,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		auditSvc, nil, nil, nil, nil,
-		kc,
-	)
+		kc)
 	token := issueStep30BToken(t, router, "admin1", "org-test", []string{"admin"}, false)
 
 	rr := do30B(router, http.MethodPost, "/api/v1/users/u1/disable", token, "", "org-test")

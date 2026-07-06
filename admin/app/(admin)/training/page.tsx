@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useRef } from 'react'
 import { useSession } from '@/lib/session'
 import { ApiError, useApiClient } from '@/lib/api'
 import {
@@ -301,6 +301,7 @@ export default function TrainingPage() {
   const [mutationError, setMutationError] = useState<string | null>(null)
 
   const [attendanceWorkout, setAttendanceWorkout] = useState<Workout | null>(null)
+  const attendanceRequestIdRef = useRef<string | null>(null)
   const [attendanceRoster, setAttendanceRoster] = useState<AttendanceRosterEntry[]>([])
   const [attendanceLoading, setAttendanceLoading] = useState(false)
   const [attendanceError, setAttendanceError] = useState<string | null>(null)
@@ -404,17 +405,24 @@ export default function TrainingPage() {
   }
 
   async function openAttendance(workout: Workout) {
+    attendanceRequestIdRef.current = workout.id
     setAttendanceWorkout(workout)
     setAttendanceRoster([])
     setAttendanceError(null)
     setAttendanceLoading(true)
     try {
       const roster = await fetchPracticeAttendance(api, orgId, workout.id)
+      // A faster response for a since-superseded request must not overwrite
+      // whichever workout's sheet is now open.
+      if (attendanceRequestIdRef.current !== workout.id) return
       setAttendanceRoster(roster)
     } catch (error) {
+      if (attendanceRequestIdRef.current !== workout.id) return
       setAttendanceError(errorMessage(error, 'Unable to load attendance roster.'))
     } finally {
-      setAttendanceLoading(false)
+      if (attendanceRequestIdRef.current === workout.id) {
+        setAttendanceLoading(false)
+      }
     }
   }
 
@@ -727,7 +735,7 @@ export default function TrainingPage() {
                       fontSize: '11px', fontFamily: 'var(--font-body)', fontWeight: 700,
                       color: 'var(--accent)', textTransform: 'uppercase',
                     }}>
-                      {(group as unknown as { code?: string }).code ?? group.name?.slice(0, 2)}
+                      {group.code || group.name?.slice(0, 2)}
                     </div>
                     <div>
                       <p style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>{group.name}</p>

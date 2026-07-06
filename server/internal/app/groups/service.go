@@ -328,7 +328,7 @@ func (s *Service) CreateGroup(principal *appmiddleware.Principal, orgID string, 
 		return Group{}, GroupAuditEvent{}, err
 	}
 
-	code := strings.TrimSpace(strings.ToLower(input.Code))
+	code := strings.TrimSpace(strings.ToUpper(input.Code))
 	name := strings.TrimSpace(input.Name)
 	if code == "" || name == "" {
 		return Group{}, GroupAuditEvent{}, errors.New("code and name are required")

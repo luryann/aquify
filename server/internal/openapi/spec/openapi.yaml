@@ -3994,7 +3994,7 @@ components:
           example:
             error:
               code: forbidden
-              message: You are not allowed to perform this action.
+              message: You are not allowed to access this resource.
     NotFound:
       description: Resource not found
       content:

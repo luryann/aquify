@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -379,7 +380,9 @@ func swimmerAgeAsOf(dobRaw, refDateRaw string) (int, bool) {
 		ref = d
 	}
 	age := ref.Year() - dob.Year()
-	if ref.YearDay() < dob.YearDay() {
+	// Compare month/day directly (not YearDay) so leap-year differences between
+	// the birth year and reference year don't shift the computed age by one.
+	if ref.Month() < dob.Month() || (ref.Month() == dob.Month() && ref.Day() < dob.Day()) {
 		age--
 	}
 	return age, true
@@ -458,14 +461,14 @@ func (s *Service) loadFromDB(ctx context.Context) error {
 	if s.repo == nil {
 		return nil
 	}
-	ms, sessions, events, commitments, entries, swimmers, households, err := s.repo.LoadAll(ctx)
+	ms, sessions, events, commitments, entries, swimmers, households, selections, err := s.repo.LoadAll(ctx)
 	if err != nil {
 		return err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.resetDBBackedStateLocked()
-	s.populateDBBackedStateLocked(ms, sessions, events, commitments, entries, swimmers, households)
+	s.populateDBBackedStateLocked(ms, sessions, events, commitments, entries, swimmers, households, selections)
 	return nil
 }
 
@@ -473,14 +476,14 @@ func (s *Service) syncFromDB(ctx context.Context) error {
 	if s.repo == nil {
 		return nil
 	}
-	ms, sessions, events, commitments, entries, swimmers, households, err := s.repo.LoadAll(ctx)
+	ms, sessions, events, commitments, entries, swimmers, households, selections, err := s.repo.LoadAll(ctx)
 	if err != nil {
 		return err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.resetDBBackedStateLocked()
-	s.populateDBBackedStateLocked(ms, sessions, events, commitments, entries, swimmers, households)
+	s.populateDBBackedStateLocked(ms, sessions, events, commitments, entries, swimmers, households, selections)
 	return nil
 }
 
@@ -492,6 +495,7 @@ func (s *Service) resetDBBackedStateLocked() {
 	s.entries = make(map[string]Entry)
 	s.swimmers = make(map[string]swimmerRef)
 	s.households = make(map[string]householdRef)
+	s.selections = make(map[string]EventSelection)
 }
 
 func (s *Service) populateDBBackedStateLocked(
@@ -502,6 +506,7 @@ func (s *Service) populateDBBackedStateLocked(
 	entries []Entry,
 	swimmers []swimmerRef,
 	households []householdRef,
+	selections []EventSelection,
 ) {
 	for _, m := range ms {
 		s.meets[m.ID] = m
@@ -523,6 +528,9 @@ func (s *Service) populateDBBackedStateLocked(
 	}
 	for _, household := range households {
 		s.households[household.ID] = household
+	}
+	for _, sel := range selections {
+		s.selections[sel.ID] = sel
 	}
 }
 
@@ -674,8 +682,83 @@ func parsedMeetDefinitionFromResult(sourceFile string, result *meetfiles.ParseRe
 		MeetStartDate: result.MeetStartDate,
 		MeetEndDate:   result.MeetEndDate,
 		Course:        result.Course,
+		Events:        deriveMeetEventsFromParseResult(result),
 		ParseErrors:   append([]meetfiles.ParseError{}, result.ParseErrors...),
 	}
+}
+
+// deriveMeetEventsFromParseResult builds a deduplicated event catalog from
+// SD3/CL2 entry records (D0 individual results, E0 relay headers). Unlike
+// HYV/EV3 files, SD3/CL2 have no dedicated event-definition record — the
+// event catalog is implicit in the (often many) per-swimmer entry rows, so
+// this collapses repeated rows for the same event down to one entry.
+func deriveMeetEventsFromParseResult(result *meetfiles.ParseResult) []meetfiles.ParsedMeetEvent {
+	if result == nil {
+		return nil
+	}
+
+	seen := make(map[string]bool)
+	var out []meetfiles.ParsedMeetEvent
+
+	addEvent := func(ev meetfiles.ParsedEvent, isRelay bool) {
+		eventNumber := strings.TrimSpace(ev.EventNumber)
+		key := eventNumber
+		if key == "" {
+			key = fmt.Sprintf("%d|%s|%s|%s|%t", ev.Distance, ev.Stroke, ev.EventGender, ev.AgeGroup, isRelay)
+		}
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+
+		minAge, maxAge := sdifAgeGroupBounds(ev.AgeGroup)
+		out = append(out, meetfiles.ParsedMeetEvent{
+			EventNumber: eventNumber,
+			Distance:    ev.Distance,
+			Stroke:      ev.Stroke,
+			Gender:      strings.TrimSpace(ev.EventGender),
+			MinAge:      minAge,
+			MaxAge:      maxAge,
+			Course:      ev.Course,
+			IsRelay:     isRelay,
+		})
+	}
+
+	for _, individual := range result.IndividualResults {
+		addEvent(individual.Event, false)
+	}
+	for _, relay := range result.RelayResults {
+		addEvent(relay.Event, true)
+	}
+
+	sort.Slice(out, func(i, j int) bool {
+		ni, erri := strconv.Atoi(out[i].EventNumber)
+		nj, errj := strconv.Atoi(out[j].EventNumber)
+		if erri == nil && errj == nil && ni != nj {
+			return ni < nj
+		}
+		return out[i].EventNumber < out[j].EventNumber
+	})
+	return out
+}
+
+// sdifAgeGroupBounds parses an SDIF-style 4-digit age group field (e.g.
+// "1824" -> ages 18-24, "0018" -> up to 18, "1899" -> 18 and over) into
+// min/max bounds. "OPEN" and blank mean no age restriction.
+func sdifAgeGroupBounds(ageGroup string) (*int, *int) {
+	ag := strings.TrimSpace(ageGroup)
+	if ag == "" || strings.EqualFold(ag, "OPEN") || len(ag) != 4 {
+		return nil, nil
+	}
+
+	var minAge, maxAge *int
+	if minVal, err := strconv.Atoi(ag[:2]); err == nil && minVal > 0 {
+		minAge = &minVal
+	}
+	if maxVal, err := strconv.Atoi(ag[2:]); err == nil && maxVal > 0 && maxVal < 99 {
+		maxAge = &maxVal
+	}
+	return minAge, maxAge
 }
 
 func meetFileTypePriority(fileType meetfiles.FileType) int {
@@ -1560,6 +1643,11 @@ func (s *Service) RespondToCommitment(principal *appmiddleware.Principal, orgID,
 	if response == "committed_no" {
 		for selID, sel := range s.selections {
 			if sel.CommitmentID == cmt.ID {
+				if s.repo != nil {
+					if err := s.repo.DeleteEventSelection(context.Background(), selID); err != nil {
+						return Commitment{}, MeetAuditEvent{}, fmt.Errorf("persist event selection removal: %w", err)
+					}
+				}
 				delete(s.selections, selID)
 			}
 		}
@@ -1625,6 +1713,16 @@ func (s *Service) SelectCommitmentEvent(principal *appmiddleware.Principal, orgI
 		return EventSelection{}, ErrEventNotFound
 	}
 
+	// Enforce gender/age eligibility at selection time for immediate parent
+	// feedback (the authoritative gate at entry creation still applies too).
+	if s.swimmerEligibility != nil {
+		if sw, ok := s.swimmerEligibility(orgID, cmt.SwimmerID); ok {
+			if err := validateSwimmerEventEligibility(sw, ev, meet.StartDate); err != nil {
+				return EventSelection{}, err
+			}
+		}
+	}
+
 	// Idempotency: one selection per commitment+event.
 	for _, sel := range s.selections {
 		if sel.CommitmentID == cmt.ID && sel.MeetEventID == meetEventID {
@@ -1641,6 +1739,11 @@ func (s *Service) SelectCommitmentEvent(principal *appmiddleware.Principal, orgI
 		SeedTimeMs:   input.SeedTimeMs,
 		CreatedAt:    now,
 		CreatedBy:    principal.UserID,
+	}
+	if s.repo != nil {
+		if err := s.repo.UpsertEventSelection(context.Background(), sel); err != nil {
+			return EventSelection{}, err
+		}
 	}
 	s.selections[sel.ID] = sel
 	return sel, nil
@@ -1681,6 +1784,11 @@ func (s *Service) RemoveCommitmentEventSelection(principal *appmiddleware.Princi
 		return ErrSelectionNotFound
 	}
 
+	if s.repo != nil {
+		if err := s.repo.DeleteEventSelection(context.Background(), sel.ID); err != nil {
+			return err
+		}
+	}
 	delete(s.selections, sel.ID)
 	return nil
 }

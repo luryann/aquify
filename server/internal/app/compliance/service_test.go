@@ -89,12 +89,21 @@ func TestDataExportStatusTransitions(t *testing.T) {
 	if _, err := svc.CompleteDataExport("org-a", req.ID, "https://example.test/export.json", expiresAt); !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("second CompleteDataExport() error = %v, want %v", err, ErrInvalidTransition)
 	}
-	if _, err := svc.FailDataExport("org-a", req.ID); err != nil {
-		t.Fatalf("FailDataExport() error = %v", err)
+	// A terminal (ready) request must not be force-failed.
+	if _, err := svc.FailDataExport("org-a", req.ID); !errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("FailDataExport() from ready error = %v, want %v", err, ErrInvalidTransition)
 	}
-	failed, err := svc.GetDataExportRequest("org-a", req.ID)
+
+	req2, err := svc.CreateDataExportRequest("org-a", "household-2", "parent-2")
 	if err != nil {
-		t.Fatalf("GetDataExportRequest() error = %v", err)
+		t.Fatalf("CreateDataExportRequest() error = %v", err)
+	}
+	if _, err := svc.MarkDataExportProcessing("org-a", req2.ID); err != nil {
+		t.Fatalf("MarkDataExportProcessing() error = %v", err)
+	}
+	failed, err := svc.FailDataExport("org-a", req2.ID)
+	if err != nil {
+		t.Fatalf("FailDataExport() from processing error = %v", err)
 	}
 	if failed.Status != "failed" {
 		t.Fatalf("failed status = %q, want failed", failed.Status)
@@ -131,14 +140,23 @@ func TestDataDeletionStatusTransitions(t *testing.T) {
 	if _, err := svc.CompleteDataDeletion("org-a", req.ID, "again"); !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("second CompleteDataDeletion() error = %v, want %v", err, ErrInvalidTransition)
 	}
-	if _, err := svc.FailDataDeletion("org-a", req.ID, "failed after completion"); err != nil {
-		t.Fatalf("FailDataDeletion() error = %v", err)
+	// A terminal (completed) request must not be force-failed.
+	if _, err := svc.FailDataDeletion("org-a", req.ID, "failed after completion"); !errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("FailDataDeletion() from completed error = %v, want %v", err, ErrInvalidTransition)
 	}
-	failed, err := svc.GetDataDeletionRequest("org-a", req.ID)
+
+	req2, err := svc.CreateDataDeletionRequest("org-a", "household-2", "parent-2", "requested")
 	if err != nil {
-		t.Fatalf("GetDataDeletionRequest() error = %v", err)
+		t.Fatalf("CreateDataDeletionRequest() error = %v", err)
 	}
-	if failed.Status != "failed" || failed.ReviewNotes != "failed after completion" {
+	if _, err := svc.MarkDataDeletionProcessing("org-a", req2.ID); err != nil {
+		t.Fatalf("MarkDataDeletionProcessing() error = %v", err)
+	}
+	failed, err := svc.FailDataDeletion("org-a", req2.ID, "failed while processing")
+	if err != nil {
+		t.Fatalf("FailDataDeletion() from processing error = %v", err)
+	}
+	if failed.Status != "failed" || failed.ReviewNotes != "failed while processing" {
 		t.Fatalf("failed deletion = %+v, want failed request with notes", failed)
 	}
 }

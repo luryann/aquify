@@ -655,10 +655,9 @@ func TestCreateSwimmer_DoesNotCreateUserAccount(t *testing.T) {
 	router := NewRouterWithServices(
 		Config{Auth: AuthConfig{EnableDevStubTokens: true}},
 		logger,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		nil, nil, nil, nil, nil,
-		kc,
-	)
+		kc)
 	parentToken := issueSessionToken(t, router, "org-demo", []string{"parent"}, false)
 	coachToken := issueSessionToken(t, router, "org-demo", []string{"coach"}, false)
 
@@ -800,7 +799,7 @@ func TestParentCanListOnlyOwnHouseholds(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	memberSvc := members.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, memberSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, memberSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionTokenForUser(t, router, "admin-household-scope", "org-demo", []string{"admin"}, false)
 	parentOneToken := issueSessionTokenForUser(t, router, "parent-household-one", "org-demo", []string{"parent"}, false)
@@ -1006,7 +1005,7 @@ func TestParentAssociatedToExistingHouseholdCanManageOwnSwimmer(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	membershipService := members.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, membershipService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, nil, membershipService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	adminToken := issueSessionTokenForUser(t, router, "admin-user", "org-demo", []string{"admin"}, false)
 	parentToken := issueSessionTokenForUser(t, router, "parent-user", "org-demo", []string{"parent"}, false)

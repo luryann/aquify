@@ -215,7 +215,7 @@ func main() {
 			os.Exit(1)
 		}
 		app.NewRouterWithServices(cfg, logger,
-			nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+			nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 			nil,
 			backend,
 			nil,
@@ -246,7 +246,7 @@ func main() {
 
 	// Build the HTTP router with the configured durable backend when available.
 	handler := app.NewRouterWithServicesAndMetrics(cfg, logger, metrics, false,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		nil,
 		backend,
 		nil,
