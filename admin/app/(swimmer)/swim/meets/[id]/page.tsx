@@ -170,13 +170,7 @@ export default function SwimmerMeetDetailPage() {
       setFilesLoading(false)
       return
     }
-    if (!mySwimmerId) {
-      setNoLinkedSwimmer(true)
-      setLoading(false)
-      setFilesLoading(false)
-      return
-    }
-    setNoLinkedSwimmer(false)
+    setNoLinkedSwimmer(!mySwimmerId)
 
     let cancelled = false
 
@@ -202,11 +196,19 @@ export default function SwimmerMeetDetailPage() {
       setSelectionError(null)
 
       try {
-        const meetData = await fetchMeet(api, orgId, meetId)
+        // Meet name/date/location come from the meet record itself, not the
+        // swimmer link — always fetch it so an unlinked account still sees
+        // basic meet info instead of a blank page. Sessions/events/roster are
+        // only rendered behind a linked swimmer, so fetch those only when
+        // there's a swimmer to fetch them for.
+        const [meetData, allSwimmers] = await Promise.all([
+          fetchMeet(api, orgId, meetId),
+          mySwimmerId ? fetchSwimmers(api, orgId) : Promise.resolve([]),
+        ])
         if (cancelled) return
+        setMeet(meetData)
 
-        const allSwimmers = await fetchSwimmers(api, orgId)
-        if (cancelled) return
+        if (!mySwimmerId) return
 
         const hhSwimmer = allSwimmers.find((s) => s.id === mySwimmerId)
         if (!hhSwimmer) {
@@ -242,7 +244,6 @@ export default function SwimmerMeetDetailPage() {
         if (cancelled) return
 
         const swimmerState = buildSwimmerMeetDetailState(myCommitment, persistedSelections)
-        setMeet(meetData)
         setSessions(meetSessions)
         setEvents(meetEvents)
         setMeetFiles(files)
@@ -442,18 +443,6 @@ export default function SwimmerMeetDetailPage() {
     )
   }
 
-  if (!loading && noLinkedSwimmer) {
-    return (
-      <div style={{ maxWidth: '720px' }}>
-        <Link href="/swim/schedule" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', color: C.subtle, textDecoration: 'none', fontSize: '13px', marginBottom: '22px' }}>
-          <Icon name="chevron-left" size={14} />
-          Schedule
-        </Link>
-        <UnlinkedSwimmerNotice />
-      </div>
-    )
-  }
-
   if (!loading && loadError) {
     return (
       <div style={{ maxWidth: '720px' }}>
@@ -490,7 +479,7 @@ export default function SwimmerMeetDetailPage() {
 
       <Link href="/swim/schedule" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', color: C.subtle, textDecoration: 'none', fontSize: '13px', marginBottom: '22px' }}>
         <Icon name="chevron-left" size={14} />
-        Schedule
+        Back
       </Link>
 
       {/* Meet header */}
@@ -542,6 +531,9 @@ export default function SwimmerMeetDetailPage() {
         )}
       </div>
 
+      {!loading && noLinkedSwimmer && <UnlinkedSwimmerNotice />}
+
+      {!noLinkedSwimmer && (
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 290px', gap: '18px', alignItems: 'start' }}>
         {/* Left: commitment + event signup */}
         <div className="card" style={{ overflow: 'hidden' }}>
@@ -570,8 +562,18 @@ export default function SwimmerMeetDetailPage() {
 
           {/* Commitment buttons */}
           <div style={{ padding: '18px 20px', borderBottom: `1px solid ${C.border}` }}>
-            <div style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: C.subtle, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '12px' }}>
-              Commitment
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', marginBottom: '12px' }}>
+              <div style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: C.subtle, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                Commitment
+              </div>
+              <span style={{
+                fontSize: '11px', fontWeight: 600, padding: '4px 10px', borderRadius: '999px',
+                color: commitment === 'yes' ? C.accent : commitment === 'no' ? 'var(--error)' : 'var(--warning)',
+                background: commitment === 'yes' ? C.accentDim : commitment === 'no' ? 'var(--error-bg)' : 'var(--warning-bg)',
+                border: `1px solid ${commitment === 'yes' ? C.accentBorder : commitment === 'no' ? 'var(--error-border)' : 'var(--warning-border)'}`,
+              }}>
+                {commitment === 'yes' ? 'Going' : commitment === 'no' ? 'Not going' : 'Waiting for your answer'}
+              </span>
             </div>
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
               {[
@@ -605,8 +607,11 @@ export default function SwimmerMeetDetailPage() {
           {/* Event signup */}
           {commitmentOpen && commitment !== 'no' && (
             <div style={{ padding: '18px 20px' }}>
-              <div style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: C.subtle, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '12px' }}>
+              <div style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: C.subtle, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>
                 Session-Split Signup
+              </div>
+              <div style={{ fontSize: '11.5px', color: C.muted, marginBottom: '12px', lineHeight: 1.5 }}>
+                &ldquo;Cut&rdquo; is the qualifying time for an event — your best time shows whether you&rsquo;ve met it.
               </div>
               {selectionError && (
                 <div style={{ marginBottom: '12px', fontSize: '12px', color: 'var(--error)', lineHeight: 1.6 }}>
@@ -736,6 +741,7 @@ export default function SwimmerMeetDetailPage() {
           </div>
         </div>
       </div>
+      )}
     </div>
   )
 }
@@ -758,7 +764,7 @@ function EventButton({
 }) {
   const selected = selectedEvents.includes(ev.id)
   const btMs = meet ? getBestTimeMs(bestTimes, ev, meet.course) : null
-  const btLabel = btMs !== null ? fmtMs(btMs) : 'NT'
+  const btLabel = btMs !== null ? fmtMs(btMs) : 'No time yet'
 
   const qualMs = ev.qualifying_time_cents != null
     ? ev.qualifying_time_cents * 10

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { AuthGuard } from '@/components/auth/AuthGuard'
 import { useSession } from '@/lib/session'
 import { ApiError, useApiClient } from '@/lib/api'
 import {
@@ -31,6 +32,14 @@ function formatDateTime(value?: string) {
 }
 
 export default function JobsPage() {
+  return (
+    <AuthGuard requiredRoles={['admin']}>
+      <JobsPageContent />
+    </AuthGuard>
+  )
+}
+
+function JobsPageContent() {
   const { session } = useSession()
   const api = useApiClient(session?.token)
   const orgId = session?.user.orgId ?? ''
@@ -148,7 +157,7 @@ export default function JobsPage() {
             Background Jobs
           </h1>
           <p className="page-subtitle">
-            Queue depth, task status, metrics, and DLQ actions from the live worker server.
+            Engineering use only, not needed for day-to-day club administration. Shows the status of automated background tasks running on the server.
           </p>
         </div>
         <button

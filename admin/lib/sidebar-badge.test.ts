@@ -33,7 +33,6 @@ test('buildSidebarSessionProps forwards org scope for the approvals badge', () =
 
 test('shouldFetchPendingApprovals only enables privileged scoped sessions', () => {
   assert.equal(shouldFetchPendingApprovals('admin', 'org-42'), true)
-  assert.equal(shouldFetchPendingApprovals('owner', 'org-42'), true)
   assert.equal(shouldFetchPendingApprovals('coach', 'org-42'), false)
   assert.equal(shouldFetchPendingApprovals(['coach', 'admin'], 'org-42'), true)
   assert.equal(shouldFetchPendingApprovals('admin', ''), false)

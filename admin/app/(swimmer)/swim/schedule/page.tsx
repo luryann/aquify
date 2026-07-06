@@ -11,9 +11,27 @@ import { reportUIError } from '@/lib/frontend-telemetry'
 import {
   fetchMeets,
   fetchPractices,
+  fetchMeetCommitments,
   type MeetRecord,
   type PracticeRecord,
 } from '@/lib/adminData'
+
+// Convert raw commitment status to a plain-language answer, mirroring the
+// dashboard's own commitment badge so the swimmer sees the same wording
+// everywhere they can see their own going/not-going status.
+function commitmentAnswer(raw: string | undefined): 'yes' | 'no' | 'waiting' | undefined {
+  if (!raw) return undefined
+  if (raw === 'committed_yes') return 'yes'
+  if (raw === 'committed_no') return 'no'
+  if (raw === 'invited') return 'waiting'
+  return undefined
+}
+
+const COMMITMENT_ANSWER_STYLE: Record<'yes' | 'no' | 'waiting', { label: string; color: string; bg: string; border: string }> = {
+  yes:     { label: 'Going',     color: 'var(--accent)',  bg: 'var(--border)',      border: 'var(--accent-border)' },
+  no:      { label: 'Not going', color: 'var(--error)',   bg: 'var(--error-bg)',    border: 'var(--error-border)' },
+  waiting: { label: 'Waiting for your answer', color: 'var(--warning)', bg: 'var(--warning-bg)', border: 'var(--warning-border)' },
+}
 
 // ── Design tokens ──────────────────────────────────────────────────────────
 const C = {
@@ -40,6 +58,7 @@ type ScheduleEvent = {
   course?: string
   detail?: string
   meetPath?: string
+  commitmentAnswer?: 'yes' | 'no' | 'waiting'
 }
 
 const EVENT_STYLE: Record<EventType, { dot: string; bg: string; border: string; color: string; label: string; leftBorder: string }> = {
@@ -57,7 +76,7 @@ function fmtSectionHeading(d: Date): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
-function buildScheduleFromMeets(meets: MeetRecord[]): ScheduleEvent[] {
+function buildScheduleFromMeets(meets: MeetRecord[], commitmentAnswers: Record<string, 'yes' | 'no' | 'waiting'>): ScheduleEvent[] {
   const now = new Date()
   const events: ScheduleEvent[] = []
 
@@ -79,6 +98,7 @@ function buildScheduleFromMeets(meets: MeetRecord[]): ScheduleEvent[] {
         ? `Meet runs ${parseBackendDate(m.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${parseBackendDate(m.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}.`
         : undefined,
       meetPath: `/swim/meets/${m.id}`,
+      commitmentAnswer: commitmentAnswers[m.id],
     })
 
     // Commitment deadline event
@@ -87,7 +107,7 @@ function buildScheduleFromMeets(meets: MeetRecord[]): ScheduleEvent[] {
       if (deadlineDate >= now) {
         events.push({
           id: `deadline-${m.id}`,
-          title: `Commitment Deadline — ${m.name}`,
+          title: `Parent RSVP due: ${m.name}`,
           type: 'deadline',
           date: deadlineDate,
           dateLabel: fmtDayLabel(deadlineDate),
@@ -205,11 +225,21 @@ function EventCard({ ev }: { ev: ScheduleEvent }) {
         </div>
 
         {/* Meta row */}
-        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
           {ev.location && (
             <span style={{ fontSize: '12px', color: C.subtle, display: 'flex', alignItems: 'center', gap: '4px' }}>
               <Icon name="map-pin" size={11} />
               {ev.location}
+            </span>
+          )}
+          {ev.commitmentAnswer && (
+            <span style={{
+              fontSize: '10.5px', fontWeight: 600, padding: '2px 8px', borderRadius: '999px',
+              color: COMMITMENT_ANSWER_STYLE[ev.commitmentAnswer].color,
+              background: COMMITMENT_ANSWER_STYLE[ev.commitmentAnswer].bg,
+              border: `1px solid ${COMMITMENT_ANSWER_STYLE[ev.commitmentAnswer].border}`,
+            }}>
+              {COMMITMENT_ANSWER_STYLE[ev.commitmentAnswer].label}
             </span>
           )}
         </div>
@@ -276,6 +306,7 @@ export default function SwimmerSchedulePage() {
   const { session } = useSession()
   const api = useApiClient(session?.token)
   const orgId = session?.user.orgId ?? ''
+  const mySwimmerId = session?.user.swimmerId ?? ''
 
   const [schedule, setSchedule] = useState<ScheduleEvent[]>([])
   const [loading, setLoading] = useState(true)
@@ -296,14 +327,29 @@ export default function SwimmerSchedulePage() {
       fetchMeets(api, orgId),
       fetchPractices(api, orgId),
     ])
-      .then(([meets, practices]) => {
+      .then(async ([meets, practices]) => {
         const futureMeets = meets.filter(m => {
           if (m.end_date) return new Date(m.end_date) >= now
           if (m.start_date) return new Date(m.start_date) >= now
           return false
         })
+
+        const commitmentAnswers: Record<string, 'yes' | 'no' | 'waiting'> = {}
+        if (mySwimmerId) {
+          await Promise.all(futureMeets.map(async (m) => {
+            try {
+              const commitments = await fetchMeetCommitments(api, orgId, m.id)
+              const mine = commitments.find((c) => c.swimmer_id === mySwimmerId)
+              const answer = commitmentAnswer(mine?.status)
+              if (answer) commitmentAnswers[m.id] = answer
+            } catch {
+              // Sign-ups may not be open yet for this meet — leave the badge off.
+            }
+          }))
+        }
+
         const allEvents = [
-          ...buildScheduleFromMeets(futureMeets),
+          ...buildScheduleFromMeets(futureMeets, commitmentAnswers),
           ...buildScheduleFromPractices(practices, now),
         ].sort((a, b) => a.date.getTime() - b.date.getTime())
         setSchedule(allEvents)
@@ -318,7 +364,7 @@ export default function SwimmerSchedulePage() {
         ))
       })
       .finally(() => setLoading(false))
-  }, [api, orgId, reloadKey])
+  }, [api, orgId, mySwimmerId, reloadKey])
 
   const filtered = typeFilter === 'all'
     ? schedule

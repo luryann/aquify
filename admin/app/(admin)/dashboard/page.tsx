@@ -10,7 +10,6 @@ import {
   fetchSwimmers,
   fetchMeets,
   fetchInvoices,
-  fetchImports,
   fetchGroups,
   fetchAuditEvents,
   fetchPerformanceBestTimes,
@@ -20,7 +19,6 @@ import {
   type SwimmerRecord,
   type MeetRecord,
   type InvoiceRecord,
-  type ImportRecord,
   type GroupRecord,
   type AuditEventRecord,
   type BestTimeRecord,
@@ -33,8 +31,28 @@ function displayNameForUser(user: UserRecord): string {
   return name || user.email || user.id
 }
 
-// Turns an internal action identifier like "report.meet_fees.run" into a
-// readable phrase ("report meet fees run") for the recent-activity feed —
+// A dev-stub/system principal ID renders as all zeros (e.g.
+// "00000000-0000-0000-0000-000000000000") — treat it as an unattributed
+// system actor rather than showing the raw ID fragment as if it were a name.
+function isSystemActorId(id: string): boolean {
+  return /^[0-]+$/.test(id)
+}
+
+function titleCase(words: string): string {
+  return words.replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+// Report-run audit events use a fixed slug ("payment_reconciliation") as
+// their resource_id rather than a real record ID, so truncating it like a
+// UUID produces garbage ("#payment_"). Describe these as a single generated-
+// report line instead of the generic actor/action/subject shape.
+function describeReportEvent(action: string): string {
+  const slug = action.split('.')[1] ?? action
+  return `${titleCase(slug.replace(/_/g, ' '))} report generated`
+}
+
+// Turns an internal action identifier like "meet.published" into a
+// readable phrase ("meet published") for the recent-activity feed —
 // admins reviewing "who did what" shouldn't have to parse dotted job codes.
 function humanizeAction(action: string): string {
   return action.replace(/[._]/g, ' ')
@@ -56,14 +74,13 @@ function formatSwimTime(ms?: number | null): string {
 }
 
 const UPCOMING_STATUSES = new Set(['published', 'commitment_open', 'commitment_closed', 'entry_finalized'])
-const PENDING_IMPORT_STATUSES = new Set(['uploaded', 'scanning', 'parsing', 'matching', 'conflicts_pending'])
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function StatCard({
-  label, value, delta, positive, mono, loading,
+  label, value, delta, positive, caption, loading,
 }: {
-  label: string; value: string; delta?: string; positive?: boolean; mono?: boolean; loading?: boolean
+  label: string; value: string; delta?: string; positive?: boolean; caption?: string; loading?: boolean
 }) {
   return (
     <div className="card-elevated" style={{ padding: '20px 22px' }}>
@@ -73,7 +90,7 @@ function StatCard({
       {loading ? (
         <div style={{ height: '32px', background: 'var(--bg-elevated)', borderRadius: '4px', animation: 'pulse 1.5s ease-in-out infinite' }} />
       ) : (
-        <p style={{ fontSize: '26px', fontFamily: mono ? 'var(--font-body)' : 'var(--font-display)', color: 'var(--text)', lineHeight: 1.1, letterSpacing: mono ? '0.02em' : '-0.01em', marginBottom: '6px' }}>
+        <p style={{ fontSize: '26px', fontFamily: 'var(--font-display)', color: 'var(--text)', lineHeight: 1.1, letterSpacing: '-0.01em', marginBottom: '6px' }}>
           {value}
         </p>
       )}
@@ -82,39 +99,33 @@ function StatCard({
           {positive ? '↑' : '↓'} {delta}
         </p>
       )}
+      {caption && !loading && (
+        <p style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+          {caption}
+        </p>
+      )}
     </div>
   )
 }
 
-function ActivityItem({ action, subject, time, actor }: { action: string; subject: string; time: string; actor: string }) {
+function ActivityItem({ description, time, actor }: { description: string; time: string; actor?: string }) {
   return (
     <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
       <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent)', flexShrink: 0, marginTop: '5px' }} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <p style={{ fontSize: '13px', color: 'var(--text)', lineHeight: 1.4 }}>
-          <span style={{ color: 'var(--text-subtle)', fontWeight: 500 }}>{actor}</span>
-          {' '}
-          <span style={{ color: 'var(--text-muted)' }}>{action}</span>
-          {' '}
-          <span style={{ fontWeight: 500 }}>{subject}</span>
+          {actor && (
+            <>
+              <span style={{ color: 'var(--text-subtle)', fontWeight: 500 }}>{actor}</span>
+              {' '}
+            </>
+          )}
+          <span style={{ color: actor ? 'var(--text-muted)' : 'var(--text)' }}>{description}</span>
         </p>
       </div>
       <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', flexShrink: 0, whiteSpace: 'nowrap' }}>
         {time}
       </p>
-    </div>
-  )
-}
-
-function StatusRow({ label, status, detail }: { label: string; status: 'ok' | 'warn' | 'error'; detail: string }) {
-  const color = status === 'ok' ? 'var(--success)' : status === 'warn' ? 'var(--warning)' : 'var(--error)'
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--border)', gap: '12px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: color, flexShrink: 0 }} />
-        <span style={{ fontSize: '13px', color: 'var(--text)' }}>{label}</span>
-      </div>
-      <span style={{ fontSize: '12px', fontFamily: 'var(--font-body)', color: 'var(--text-subtle)' }}>{detail}</span>
     </div>
   )
 }
@@ -235,7 +246,6 @@ export default function DashboardPage() {
   const [households, setHouseholds] = useState<HouseholdRecord[]>([])
   const [meets, setMeets] = useState<MeetRecord[]>([])
   const [invoices, setInvoices] = useState<InvoiceRecord[]>([])
-  const [imports, setImports] = useState<ImportRecord[]>([])
   const [groups, setGroups] = useState<GroupRecord[]>([])
   const [auditEvents, setAuditEvents] = useState<AuditEventRecord[]>([])
   const [bestTimes, setBestTimes] = useState<BestTimeRecord[]>([])
@@ -248,12 +258,11 @@ export default function DashboardPage() {
       if (!session?.user.orgId) { setLoading(false); return }
       try {
         setLoading(true)
-        const [sw, hh, mm, inv, imp, gr, audit, bt, users, sn] = await Promise.all([
+        const [sw, hh, mm, inv, gr, audit, bt, users, sn] = await Promise.all([
           fetchSwimmers(api, session.user.orgId).catch(() => [] as SwimmerRecord[]),
           fetchHouseholds(api, session.user.orgId).catch(() => [] as HouseholdRecord[]),
           fetchMeets(api, session.user.orgId).catch(() => [] as MeetRecord[]),
           fetchInvoices(api, session.user.orgId).catch(() => [] as InvoiceRecord[]),
-          fetchImports(api, session.user.orgId).catch(() => [] as ImportRecord[]),
           fetchGroups(api, session.user.orgId).catch(() => [] as GroupRecord[]),
           fetchAuditEvents(api, session.user.orgId).catch(() => ({ events: [] as AuditEventRecord[] })),
           fetchPerformanceBestTimes(api, session.user.orgId).catch(() => [] as BestTimeRecord[]),
@@ -265,7 +274,6 @@ export default function DashboardPage() {
         setHouseholds(hh)
         setMeets(mm)
         setInvoices(inv)
-        setImports(imp)
         setGroups(gr)
         setAuditEvents(audit.events.slice(0, 5))
         setBestTimes(bt)
@@ -291,8 +299,15 @@ export default function DashboardPage() {
   const openInvoiceAmount = openInvoices.reduce((sum, i) => sum + i.amount_due_cents, 0)
   const overdueInvoices = openInvoices.filter((i) => i.due_date && new Date(i.due_date) < new Date())
   const overdueAmount = overdueInvoices.reduce((sum, i) => sum + i.amount_due_cents, 0)
-  const pendingImports = imports.filter((i) => PENDING_IMPORT_STATUSES.has(i.status)).length
   const activeGroups = groups.filter((g) => g.is_active).length
+  const pendingRegistrations = swimmers.filter((s) => s.registration_status === 'pending').length
+  const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000
+  const recentBestTimes = bestTimes.filter((bt) => bt.recorded_at && new Date(bt.recorded_at).getTime() >= thirtyDaysAgo).length
+  const nextCommitmentDeadlineDays = meets
+    .filter((m) => UPCOMING_STATUSES.has(m.status) && m.commitment_deadline)
+    .map((m) => Math.ceil((new Date(m.commitment_deadline as string).getTime() - Date.now()) / (24 * 60 * 60 * 1000)))
+    .filter((days) => days >= 0)
+    .sort((a, b) => a - b)[0]
 
   // Performance snapshot derivations
   const swimmerNameMap = new Map(swimmers.map((s) => [s.id, `${s.first_name} ${s.last_name}`]))
@@ -351,61 +366,16 @@ export default function DashboardPage() {
         <StatCard label="Active Swimmers" value={activeSwimmers.toString()} delta={totalSwimmers !== activeSwimmers ? `${totalSwimmers} total` : undefined} positive loading={loading} />
         <StatCard label="Households" value={households.length.toString()} loading={loading} />
         <StatCard label="Upcoming Meets" value={upcomingMeets.toString()} loading={loading} />
-        <StatCard label="Open Invoices" value={formatCurrency(openInvoiceAmount)} mono delta={overdueAmount > 0 ? `${formatCurrency(overdueAmount)} overdue` : undefined} loading={loading} />
-        <StatCard label="Pending Imports" value={pendingImports.toString()} loading={loading} />
+        <StatCard label="Open Invoices" value={formatCurrency(openInvoiceAmount)} delta={overdueAmount > 0 ? `${formatCurrency(overdueAmount)} overdue` : undefined} loading={loading} />
         <StatCard label="Active Groups" value={activeGroups.toString()} loading={loading} />
-      </div>
-
-      {/* Two-column lower section */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: '16px', alignItems: 'start', marginBottom: '16px' }}>
-        {/* Recent activity */}
-        <div className="card-elevated" style={{ padding: '20px 22px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-            <p style={{ fontSize: '12px', fontWeight: 600, fontFamily: 'var(--font-body)', color: 'var(--text-subtle)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-              Recent Activity
-            </p>
-            <a href="/audit" style={{ fontSize: '12px', color: 'var(--accent)', textDecoration: 'none', fontFamily: 'var(--font-body)' }}>
-              view audit log →
-            </a>
-          </div>
-          {loading ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {[1,2,3,4,5].map((i) => (
-                <div key={i} style={{ height: '20px', background: 'var(--bg-elevated)', borderRadius: '4px', animation: 'pulse 1.5s ease-in-out infinite', animationDelay: `${i * 0.1}s` }} />
-              ))}
-            </div>
-          ) : auditEvents.length === 0 ? (
-            <p style={{ fontSize: '13px', color: 'var(--text-muted)', fontStyle: 'italic', padding: '8px 0' }}>
-              No recent activity recorded yet.
-            </p>
-          ) : (
-            auditEvents.map((ev) => (
-              <ActivityItem
-                key={ev.id}
-                actor={ev.actor_user_id ? (actorNames[ev.actor_user_id] ?? `${ev.actor_user_id.slice(0, 8)}…`) : 'System'}
-                action={humanizeAction(ev.action)}
-                subject={ev.resource_type + (ev.resource_id ? ` #${ev.resource_id.slice(0, 8)}` : '')}
-                time={timeAgo(ev.occurred_at)}
-              />
-            ))
-          )}
-        </div>
-
-        {/* System status */}
-        <div className="card-elevated" style={{ padding: '20px 22px' }}>
-          <p style={{ fontSize: '12px', fontWeight: 600, fontFamily: 'var(--font-body)', color: 'var(--text-subtle)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '14px' }}>
-            System Status
-          </p>
-          <StatusRow label="API" status="ok" detail="healthy" />
-          <StatusRow label="Database" status="ok" detail="16ms p95" />
-          <StatusRow label="Worker Queue" status="ok" detail="active" />
-          <StatusRow label="Storage" status="ok" detail="MinIO" />
-          <StatusRow label="Email" status="ok" detail="Postmark" />
-          <StatusRow label="Billing" status="ok" detail="Stripe" />
-          <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginTop: '14px', textAlign: 'right' }}>
-            {loading ? 'loading…' : 'updated just now'}
-          </p>
-        </div>
+        <StatCard label="New Best Times" value={recentBestTimes.toString()} caption="last 30 days" loading={loading} />
+        <StatCard label="Pending Registrations" value={pendingRegistrations.toString()} loading={loading} />
+        <StatCard
+          label="Next Commitment Due"
+          value={nextCommitmentDeadlineDays != null ? `${nextCommitmentDeadlineDays}d` : '—'}
+          caption={nextCommitmentDeadlineDays != null ? 'until deadline' : 'no deadline set'}
+          loading={loading}
+        />
       </div>
 
       {/* Upcoming Meets + Quick Actions */}
@@ -468,11 +438,10 @@ export default function DashboardPage() {
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {[
-              { label: 'New Meet', href: '/meets/new', icon: '＋', roles: ['owner', 'admin', 'coach'] },
-              { label: 'Add Swimmer', href: '/members/swimmers?new=1', icon: '＋', roles: ['owner', 'admin', 'coach'] },
-              { label: 'New Household', href: '/members/households?new=1', icon: '＋', roles: ['owner', 'admin'] },
-              { label: 'New Invoice', href: '/invoices?new=1', icon: '＋', roles: ['owner', 'admin', 'billing'] },
-              { label: 'Upload Import', href: '/imports?upload=1', icon: '↑', roles: ['owner', 'admin'] },
+              { label: 'New Meet', href: '/meets/new', icon: '＋', roles: ['admin', 'coach'] },
+              { label: 'Add Swimmer', href: '/members?tab=swimmers', icon: '＋', roles: ['admin', 'coach'] },
+              { label: 'New Household', href: '/members?tab=households', icon: '＋', roles: ['admin'] },
+              { label: 'New Invoice', href: '/billing?tab=invoices', icon: '＋', roles: ['admin'] },
             ]
               .filter((action) => {
                 const roles = session?.user.roles ?? (session?.user.role ? [session.user.role] : [])
@@ -504,6 +473,53 @@ export default function DashboardPage() {
 
       {/* Performance snapshot — full width */}
       <PerfSnapshot loading={loading} topEvents={topEvents} topSwimmers={topSwimmers} maxCount={maxCount} />
+
+      {/* Recent activity — full width, bottom of page */}
+      <div className="card-elevated" style={{ padding: '20px 22px', marginTop: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+          <p style={{ fontSize: '12px', fontWeight: 600, fontFamily: 'var(--font-body)', color: 'var(--text-subtle)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+            Recent Activity
+          </p>
+          <a href="/audit" style={{ fontSize: '12px', color: 'var(--accent)', textDecoration: 'none', fontFamily: 'var(--font-body)' }}>
+            view audit log →
+          </a>
+        </div>
+        {loading ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {[1,2,3,4,5].map((i) => (
+              <div key={i} style={{ height: '20px', background: 'var(--bg-elevated)', borderRadius: '4px', animation: 'pulse 1.5s ease-in-out infinite', animationDelay: `${i * 0.1}s` }} />
+            ))}
+          </div>
+        ) : auditEvents.length === 0 ? (
+          <p style={{ fontSize: '13px', color: 'var(--text-muted)', fontStyle: 'italic', padding: '8px 0' }}>
+            No recent activity recorded yet.
+          </p>
+        ) : (
+          auditEvents.map((ev) => {
+            const isReport = ev.resource_type === 'report'
+            if (isReport) {
+              return (
+                <ActivityItem
+                  key={ev.id}
+                  description={describeReportEvent(ev.action)}
+                  time={timeAgo(ev.occurred_at)}
+                />
+              )
+            }
+            const actor = ev.actor_user_id
+              ? (actorNames[ev.actor_user_id] ?? (isSystemActorId(ev.actor_user_id) ? 'System' : 'A team member'))
+              : 'System'
+            return (
+              <ActivityItem
+                key={ev.id}
+                actor={actor}
+                description={`${humanizeAction(ev.action)} ${ev.resource_type}${ev.resource_id ? ` #${ev.resource_id.slice(0, 8)}` : ''}`}
+                time={timeAgo(ev.occurred_at)}
+              />
+            )
+          })
+        )}
+      </div>
     </div>
   )
 }

@@ -6,12 +6,11 @@ import { resolvePublicOrg } from '@/lib/public-org'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
 
-type Role = 'parent' | 'coach' | 'read_only_staff'
+type Role = 'parent' | 'coach'
 
 const ROLE_OPTIONS: { value: Role; label: string; desc: string }[] = [
   { value: 'parent',  label: 'Parent / Guardian', desc: 'Manage swimmers, meets, billing' },
   { value: 'coach',   label: 'Coach',              desc: 'Access training tools and entries' },
-  { value: 'read_only_staff', label: 'Admin Staff', desc: 'Read-only or administrative access' },
 ]
 
 type FormState = {
@@ -187,7 +186,7 @@ function RegisterPageContent() {
               <path d="M7 22V8h6.5c3.87 0 7 3.13 7 7s-3.13 7-7 7H7z" fill="#eb5d1e" />
               <path d="M11 18v-6h2.5c1.66 0 3 1.34 3 3s-1.34 3-3 3H11z" fill="#040C16" />
             </svg>
-            <span className="rp-brandname">DARE</span>
+            <span className="rp-brandname">aquify</span>
           </div>
 
           <div className="rp-heading">
@@ -310,7 +309,7 @@ function RegisterPageContent() {
                 id="rp-code"
                 type="text"
                 className="rp-input"
-                placeholder="DARE2026"
+                placeholder="AQUIFY2026"
                 value={form.clubCode}
                 onChange={set('clubCode')}
                 autoComplete="off"

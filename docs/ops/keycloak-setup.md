@@ -42,14 +42,21 @@ All local Keycloak configuration lives in `deploy/keycloak/`:
 | Admin service account | `aquify-admin` / `aquify-local-admin-secret` (realm-admin) |
 | Redirect URIs | `http://localhost:3000/auth/callback`, `http://127.0.0.1:3000/auth/callback` |
 | Protocol mappers | realm roles → `realm_access.roles`; user attribute `org_id` → token claim `org_id` |
-| Realm roles | `owner`, `admin`, `coach`, `parent`, `swimmer`, `billing`, `read-only`, `read_only_staff` |
+| Realm roles | `admin`, `coach`, `parent`, `swimmer` |
 | SMTP | `localhost:1025` (Mailpit — inbox UI at http://localhost:8025) |
 | Password policy | min length 10, not username, not email |
 | Sessions | SSO idle 8h, max 24h; access tokens 15m; reset links valid 30m |
 
 Seed users (password: `ChangeMe123!`):
-- `owner@dare.local`, `admin@dare.local`, `coach@dare.local`
-- `parent@dare.local`, `swimmer@dare.local`, `billing@dare.local`, `readonly@dare.local`
+- `owner@dare.local`, `admin@dare.local`, `billing@dare.local` — all three now
+  assigned the `admin` role (the `owner` and `billing` realm roles no longer
+  exist)
+- `coach@dare.local`
+- `parent@dare.local`, `swimmer@dare.local`
+
+Note: the legacy `owner`, `billing`, `read-only`, and `read_only_staff` roles
+have been removed. The former read-only staff seed user (`readonly@dare.local`)
+has been removed entirely.
 
 ### Start commands
 
@@ -207,13 +214,14 @@ credentials are configured.
 
 | Role | Description |
 |---|---|
-| `owner` | Full platform access. Can manage all users, billing, and configuration. |
-| `admin` | Administrative access. Cannot assign/remove the `owner` role. |
+| `admin` | Full platform access. Manages all users, billing, and configuration. |
 | `coach` | Meet management, entry approval, group assignment. |
-| `billing` | Invoice and payment management. |
 | `parent` | Parent portal access. Scoped to household. |
 | `swimmer` | Swimmer portal access. Scoped to swimmer record. |
-| `read_only_staff` | Read-only access to admin views. No write operations. |
+
+> The legacy `owner`, `billing`, `read-only`, and `read_only_staff` roles have
+> been retired. Accounts that previously held `owner` or `billing` are now
+> assigned `admin`; accounts that only held a read-only role were removed.
 
 ### Create realm roles manually (if needed)
 
@@ -221,7 +229,6 @@ In the Keycloak admin console:
 
 1. Navigate to **Realm roles** → **Add role**
 2. Create each role from the table above
-3. For `owner`, add a **Description**: "Full platform owner — assign sparingly"
 
 ---
 
@@ -301,15 +308,15 @@ http://127.0.0.1:3000/auth/callback
 
 ## 7. First-Admin Bootstrap
 
-After realm creation, provision the first owner account:
+After realm creation, provision the first admin account:
 
 ### Option A: Via Keycloak UI
 
 1. Navigate to **Users** → **Add user**
-2. Username: first owner's email address
+2. Username: first admin's email address
 3. **Credentials** tab → set a temporary password
 4. **Attributes** tab → add `org_id` = `<your-org-id>`
-5. **Role mappings** tab → assign realm role `owner`
+5. **Role mappings** tab → assign realm role `admin`
 6. Send a password reset email or provide the temp password out-of-band
 
 ### Option B: Via DARE invite API
@@ -318,19 +325,19 @@ Once the Keycloak admin client is configured and the API is running:
 
 ```sh
 curl -X POST https://api.yourdomain.com/api/v1/users/invite \
-  -H "Authorization: Bearer <owner-token>" \
+  -H "Authorization: Bearer <admin-token>" \
   -H "X-Org-Id: <org-id>" \
   -H "Content-Type: application/json" \
   -d '{
-    "email": "owner@yourdomain.com",
+    "email": "admin@yourdomain.com",
     "first_name": "Admin",
-    "last_name": "Owner",
-    "role": "owner",
+    "last_name": "User",
+    "role": "admin",
     "create_household": false
   }'
 ```
 
-The API will provision the Keycloak user, set `org_id`, assign the `owner`
+The API will provision the Keycloak user, set `org_id`, assign the `admin`
 role, and send a welcome/verification email.
 
 ---

@@ -406,7 +406,7 @@ func newID() string {
 func (s *Service) requireBillingRole(principal *appmiddleware.Principal) error {
 	for _, r := range principal.Roles {
 		switch strings.ToLower(r) {
-		case "admin", "owner", "billing":
+		case "admin":
 			return nil
 		}
 	}
@@ -423,7 +423,7 @@ func (s *Service) RequireBillingWriteAccess(principal *appmiddleware.Principal) 
 func (s *Service) requireAdmin(principal *appmiddleware.Principal) error {
 	for _, r := range principal.Roles {
 		switch strings.ToLower(r) {
-		case "admin", "owner":
+		case "admin":
 			return nil
 		}
 	}
@@ -433,7 +433,7 @@ func (s *Service) requireAdmin(principal *appmiddleware.Principal) error {
 func (s *Service) requireBillingReadAccess(principal *appmiddleware.Principal) error {
 	for _, r := range principal.Roles {
 		switch strings.ToLower(r) {
-		case "admin", "owner", "billing", "parent":
+		case "admin", "parent":
 			return nil
 		}
 	}
@@ -449,7 +449,7 @@ func (s *Service) parentHouseholdScope(principal *appmiddleware.Principal) (stri
 		switch strings.ToLower(r) {
 		case "parent":
 			parentOnly = true
-		case "admin", "owner", "billing":
+		case "admin":
 			return "", false
 		}
 	}
@@ -473,7 +473,7 @@ func (s *Service) ensureParentHouseholdAccess(principal *appmiddleware.Principal
 func (s *Service) requireLedgerReadAccess(principal *appmiddleware.Principal) error {
 	for _, r := range principal.Roles {
 		switch strings.ToLower(r) {
-		case "admin", "owner", "billing":
+		case "admin":
 			return nil
 		}
 	}
@@ -548,7 +548,7 @@ func (s *Service) requireAutopayWriteAccess(principal *appmiddleware.Principal, 
 	}
 	for _, role := range principal.Roles {
 		switch strings.ToLower(role) {
-		case "admin", "owner", "billing":
+		case "admin":
 			return nil
 		}
 	}
@@ -1636,7 +1636,7 @@ func (s *Service) MarkWebhookProcessed(provider, eventID string, processErr erro
 	}
 }
 
-// ListWebhookEvents returns all webhook event records visible to admin/billing roles.
+// ListWebhookEvents returns all webhook event records visible to the admin role.
 func (s *Service) ListWebhookEvents(orgID string, principal *appmiddleware.Principal) ([]*WebhookEventRecord, error) {
 	if err := s.requireLedgerReadAccess(principal); err != nil {
 		return nil, err

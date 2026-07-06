@@ -42,13 +42,13 @@ func RejectImpersonationHeaders(enabled bool) func(http.Handler) http.Handler {
 
 			allowed := false
 			for _, role := range principal.Roles {
-				if role == "owner" {
+				if role == "admin" {
 					allowed = true
 					break
 				}
 			}
 			if !allowed {
-				httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only owners may impersonate users.", nil)
+				httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only admins may impersonate users.", nil)
 				return
 			}
 

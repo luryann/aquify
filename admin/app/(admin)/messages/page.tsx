@@ -1,13 +1,20 @@
 'use client'
 
-import { useEffect, useMemo, useState, useCallback, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, useCallback, useRef, type FormEvent } from 'react'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
 import { ApiError, useApiClient } from '@/lib/api'
+import { useMessageStream } from '@/lib/useMessageStream'
 import {
   fetchMessageThreads,
   fetchMessages,
   sendMessage,
+  editMessage,
+  addReaction,
+  removeReaction,
+  markThreadRead,
+  requestMessageUploadURL,
   fetchHouseholds,
   fetchSwimmers,
   type MessageThreadRecord,
@@ -15,6 +22,8 @@ import {
   type HouseholdRecord,
   type SwimmerRecord,
 } from '@/lib/adminData'
+
+const QUICK_REACTIONS = ['👍', '❤️', '😂', '🎉', '😮', '😢']
 
 function formatDateTime(value?: string) {
   if (!value) return '—'
@@ -24,14 +33,20 @@ function formatDateTime(value?: string) {
 function senderLabel(role: string): string {
   if (role === 'parent' || role === 'swimmer') return 'Family'
   if (role === 'coach') return 'Coach'
-  if (role === 'owner' || role === 'admin') return 'Staff'
+  if (role === 'admin') return 'Staff'
   return role || 'Staff'
+}
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/)
+  return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase() || '?'
 }
 
 export default function MessagesInboxPage() {
   const { session } = useSession()
   const api = useApiClient(session?.token)
   const orgId = session?.user.orgId ?? ''
+  const userId = session?.user.id ?? ''
 
   const [threads, setThreads] = useState<MessageThreadRecord[]>([])
   const [households, setHouseholds] = useState<HouseholdRecord[]>([])
@@ -39,6 +54,7 @@ export default function MessagesInboxPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<{ householdId: string; swimmerId: string } | null>(null)
+  const [search, setSearch] = useState('')
 
   const [messages, setMessages] = useState<MessageRecord[]>([])
   const [threadLoading, setThreadLoading] = useState(false)
@@ -48,6 +64,17 @@ export default function MessagesInboxPage() {
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
+
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editDraft, setEditDraft] = useState('')
+  const [reactionPickerId, setReactionPickerId] = useState<string | null>(null)
+  const [pendingAttachment, setPendingAttachment] = useState<{ object_key: string; file_name: string; file_mime: string } | null>(null)
+  const [attachError, setAttachError] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+
+  const selectedRef = useRef(selected)
+  selectedRef.current = selected
 
   useEffect(() => {
     let cancelled = false
@@ -84,6 +111,21 @@ export default function MessagesInboxPage() {
   const householdNameById = useMemo(() => new Map(households.map((h) => [h.id, h.household_name])), [households])
   const swimmerNameById = useMemo(() => new Map(swimmers.map((s) => [s.id, `${s.first_name} ${s.last_name}`])), [swimmers])
 
+  const visibleThreads = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return threads
+    return threads.filter((t) => {
+      const swimmerName = swimmerNameById.get(t.swimmer_id) ?? ''
+      const householdName = householdNameById.get(t.household_id) ?? ''
+      return `${swimmerName} ${householdName}`.toLowerCase().includes(q)
+    })
+  }, [threads, search, swimmerNameById, householdNameById])
+
+  const refreshThreads = useCallback(() => {
+    if (!orgId) return
+    fetchMessageThreads(api, orgId).then(setThreads).catch(() => {})
+  }, [api, orgId])
+
   const loadThread = useCallback(() => {
     if (!orgId || !selected) return
     setThreadLoading(true)
@@ -98,17 +140,51 @@ export default function MessagesInboxPage() {
     loadThread()
   }, [loadThread, threadReloadKey])
 
+  // Mark the opened thread read, and reflect it locally without waiting on a refetch.
+  useEffect(() => {
+    if (!orgId || !selected) return
+    markThreadRead(api, orgId, selected.householdId, selected.swimmerId).catch(() => {})
+    setThreads((prev) => prev.map((t) =>
+      t.household_id === selected.householdId && t.swimmer_id === selected.swimmerId ? { ...t, unread_count: 0 } : t,
+    ))
+  }, [api, orgId, selected])
+
+  useMessageStream({
+    orgId,
+    token: session?.token,
+    onEvent: (event) => {
+      refreshThreads()
+      const current = selectedRef.current
+      if (!current || current.householdId !== event.household_id || current.swimmerId !== event.swimmer_id) return
+      setMessages((prev) => {
+        const idx = prev.findIndex((m) => m.id === event.message.id)
+        if (idx === -1) return [...prev, event.message]
+        const next = [...prev]
+        next[idx] = event.message
+        return next
+      })
+      if (event.type === 'message.created' && event.message.sender_user_id !== userId) {
+        markThreadRead(api, orgId, event.household_id, event.swimmer_id).catch(() => {})
+      }
+    },
+  })
+
   async function handleSend(e: FormEvent) {
     e.preventDefault()
-    if (!orgId || !selected || !draft.trim()) return
+    if (!orgId || !selected || (!draft.trim() && !pendingAttachment)) return
     setSending(true)
     setSendError(null)
     try {
-      await sendMessage(api, orgId, { household_id: selected.householdId, swimmer_id: selected.swimmerId, body: draft.trim() })
+      await sendMessage(api, orgId, {
+        household_id: selected.householdId,
+        swimmer_id: selected.swimmerId,
+        body: draft.trim() || '(attachment)',
+        attachments: pendingAttachment ? [pendingAttachment] : undefined,
+      })
       setDraft('')
+      setPendingAttachment(null)
       setThreadReloadKey((k) => k + 1)
-      const nextThreads = await fetchMessageThreads(api, orgId)
-      setThreads(nextThreads)
+      refreshThreads()
     } catch (err) {
       setSendError(err instanceof ApiError ? err.message : 'Failed to send your reply.')
     } finally {
@@ -116,56 +192,148 @@ export default function MessagesInboxPage() {
     }
   }
 
+  async function handleFileSelect(file: File) {
+    if (!orgId || !selected) return
+    setAttachError(null)
+    setUploading(true)
+    try {
+      const { upload_url, object_key, expected_file_name } = await requestMessageUploadURL(api, orgId, {
+        household_id: selected.householdId,
+        swimmer_id: selected.swimmerId,
+        file_name: file.name,
+        file_mime: file.type,
+        file_size_bytes: file.size,
+      })
+      const putResp = await fetch(upload_url, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } })
+      if (!putResp.ok) throw new Error('Upload failed')
+      setPendingAttachment({ object_key, file_name: expected_file_name, file_mime: file.type })
+    } catch {
+      setAttachError('Could not upload that image. Try a smaller file or a different format.')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  async function handleEditSave(messageId: string) {
+    if (!orgId || !editDraft.trim()) return
+    try {
+      const updated = await editMessage(api, orgId, messageId, editDraft.trim())
+      setMessages((prev) => prev.map((m) => (m.id === messageId ? updated : m)))
+    } catch {
+      // Leave the bubble as-is; the user can retry.
+    } finally {
+      setEditingId(null)
+    }
+  }
+
+  async function handleToggleReaction(message: MessageRecord, emoji: string) {
+    if (!orgId || !selected) return
+    const already = message.reactions?.some((r) => r.emoji === emoji && r.reacted_by_me)
+    try {
+      if (already) await removeReaction(api, orgId, message.id, emoji)
+      else await addReaction(api, orgId, message.id, emoji)
+      // Realtime (when connected) will also deliver this update, but don't
+      // depend on it — refetch so the reaction shows immediately even
+      // without Redis configured.
+      const next = await fetchMessages(api, orgId, selected.householdId, selected.swimmerId)
+      setMessages(next)
+    } catch {
+      // Leave state as-is; the user can retry.
+    }
+    setReactionPickerId(null)
+  }
+
   return (
-    <div style={{ padding: '24px', maxWidth: '1200px' }}>
-      <div style={{ marginBottom: '24px' }}>
+    <div style={{ padding: '32px 36px 40px', maxWidth: '1240px', margin: '0 auto', height: 'calc(100vh - 52px)', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ marginBottom: '20px', flexShrink: 0 }}>
+        <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
+          Communications
+        </p>
         <h1 className="page-title">Messages</h1>
         <p className="page-subtitle">Direct conversations between families and staff, one thread per swimmer.</p>
       </div>
 
       {loading ? (
-        <EmptyState icon="mail" title="Loading messages" description="Fetching message threads from the API." />
+        <EmptyState icon="mail" title="Loading messages" description="Fetching message threads." />
       ) : error ? (
         <EmptyState icon="alert-circle" title="Unable to load messages" description={error} />
       ) : threads.length === 0 ? (
         <EmptyState icon="mail" title="No conversations yet" description="Messages from parents will appear here once a family starts one." />
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '16px', alignItems: 'start' }}>
-          <div className="card" style={{ padding: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            {threads.map((t) => {
-              const active = selected?.householdId === t.household_id && selected?.swimmerId === t.swimmer_id
-              return (
-                <button
-                  key={`${t.household_id}-${t.swimmer_id}`}
-                  onClick={() => setSelected({ householdId: t.household_id, swimmerId: t.swimmer_id })}
-                  style={{
-                    textAlign: 'left',
-                    padding: '10px 12px',
-                    borderRadius: 'var(--r-md)',
-                    border: 'none',
-                    background: active ? 'var(--accent-subtle)' : 'transparent',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>
-                    {swimmerNameById.get(t.swimmer_id) ?? 'Unknown swimmer'}
-                  </div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                    {householdNameById.get(t.household_id) ?? 'Unknown household'}
-                  </div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-subtle)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {t.last_body}
-                  </div>
-                  <div style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginTop: '2px' }}>
-                    {formatDateTime(t.last_message_at)}
-                  </div>
-                </button>
-              )
-            })}
+        <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '16px', flex: 1, minHeight: 0 }}>
+          <div className="card" style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+            <div style={{ padding: '10px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+              <div style={{ position: 'relative' }}>
+                <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}>
+                  <Icon name="search" size={13} />
+                </span>
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search conversations…"
+                  style={{ width: '100%', padding: '8px 10px 8px 30px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: '12.5px', boxSizing: 'border-box' }}
+                />
+              </div>
+            </div>
+            <div style={{ overflowY: 'auto', flex: 1, padding: '6px' }}>
+              {visibleThreads.map((t) => {
+                const active = selected?.householdId === t.household_id && selected?.swimmerId === t.swimmer_id
+                const swimmerName = swimmerNameById.get(t.swimmer_id) ?? 'Unknown swimmer'
+                return (
+                  <button
+                    key={`${t.household_id}-${t.swimmer_id}`}
+                    onClick={() => setSelected({ householdId: t.household_id, swimmerId: t.swimmer_id })}
+                    style={{
+                      width: '100%',
+                      textAlign: 'left',
+                      display: 'flex',
+                      gap: '10px',
+                      padding: '10px',
+                      borderRadius: 'var(--r-md)',
+                      border: active ? '1px solid var(--accent-border)' : '1px solid transparent',
+                      background: active ? 'var(--accent-subtle)' : 'transparent',
+                      cursor: 'pointer',
+                      marginBottom: '2px',
+                    }}
+                  >
+                    <div style={{ position: 'relative', flexShrink: 0 }}>
+                      <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--bg-elevated)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 600, color: 'var(--text-subtle)' }}>
+                        {initials(swimmerName)}
+                      </div>
+                      {t.unread_count > 0 && (
+                        <span style={{
+                          position: 'absolute', top: '-4px', right: '-4px', minWidth: '16px', height: '16px', padding: '0 4px',
+                          borderRadius: '999px', background: 'var(--accent)', color: '#fff', fontSize: '10px', fontWeight: 700,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-body)',
+                        }}>
+                          {t.unread_count > 9 ? '9+' : t.unread_count}
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                        <span style={{ fontSize: '13px', fontWeight: t.unread_count > 0 ? 700 : 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {swimmerName}
+                        </span>
+                        <span style={{ fontSize: '10.5px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', flexShrink: 0 }}>
+                          {formatDateTime(t.last_message_at)}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '2px' }}>
+                        {householdNameById.get(t.household_id) ?? 'Unknown household'}
+                      </div>
+                      <div style={{ fontSize: '12px', color: 'var(--text-subtle)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {t.last_body}
+                      </div>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
           </div>
 
-          <div className="card" style={{ display: 'flex', flexDirection: 'column', minHeight: '480px' }}>
-            <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
+          <div className="card" style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+            <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
               <p style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text)' }}>
                 {selected ? (swimmerNameById.get(selected.swimmerId) ?? 'Conversation') : 'Select a conversation'}
               </p>
@@ -176,7 +344,7 @@ export default function MessagesInboxPage() {
               )}
             </div>
 
-            <div style={{ flex: 1, padding: '18px', display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto', maxHeight: '480px' }}>
+            <div style={{ flex: 1, padding: '18px', display: 'flex', flexDirection: 'column', gap: '14px', overflowY: 'auto', minHeight: 0 }}>
               {threadError ? (
                 <p style={{ fontSize: '13px', color: 'var(--error)' }}>{threadError}</p>
               ) : threadLoading ? (
@@ -185,32 +353,131 @@ export default function MessagesInboxPage() {
                 <p className="page-subtitle">No messages in this thread yet.</p>
               ) : (
                 messages.map((m) => {
+                  // Bubble side/color reflects staff-vs-family, not which specific
+                  // staff member sent it, so multi-staff threads stay grouped.
                   const mine = m.sender_role !== 'parent' && m.sender_role !== 'swimmer'
+                  const canEdit = m.sender_user_id === userId
+                  const isEditing = editingId === m.id
                   return (
-                    <div key={m.id} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '75%' }}>
-                      <div
-                        style={{
-                          background: mine ? 'var(--accent)' : 'var(--bg-elevated)',
-                          color: mine ? '#fff' : 'var(--text)',
-                          padding: '10px 14px',
-                          borderRadius: mine ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
-                          fontSize: '13.5px',
-                          lineHeight: 1.5,
-                          whiteSpace: 'pre-wrap',
-                        }}
-                      >
-                        {m.body}
+                    <div key={m.id} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '75%', position: 'relative' }} className="message-bubble-group">
+                      {isEditing ? (
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-end' }}>
+                          <textarea
+                            value={editDraft}
+                            onChange={(e) => setEditDraft(e.target.value)}
+                            rows={2}
+                            style={{ minWidth: '220px', padding: '8px 10px', borderRadius: 'var(--r-md)', border: '1px solid var(--accent-border)', background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: '13px', resize: 'vertical' }}
+                          />
+                          <button className="btn btn-sm btn-primary" onClick={() => void handleEditSave(m.id)}>Save</button>
+                          <button className="btn btn-sm btn-secondary" onClick={() => setEditingId(null)}>Cancel</button>
+                        </div>
+                      ) : (
+                        <div
+                          style={{
+                            background: mine ? 'var(--accent)' : 'var(--bg-elevated)',
+                            color: mine ? '#fff' : 'var(--text)',
+                            padding: '10px 14px',
+                            borderRadius: mine ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
+                            fontSize: '13.5px',
+                            lineHeight: 1.5,
+                            whiteSpace: 'pre-wrap',
+                          }}
+                        >
+                          {m.body}
+                          {m.attachments?.map((a) => (
+                            a.download_url ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img key={a.filename} src={a.download_url} alt={a.filename} style={{ display: 'block', marginTop: '8px', maxWidth: '220px', maxHeight: '220px', borderRadius: '8px' }} />
+                            ) : null
+                          ))}
+                        </div>
+                      )}
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', justifyContent: mine ? 'flex-end' : 'flex-start' }}>
+                        <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                          {senderLabel(m.sender_role)} · {formatDateTime(m.created_at)}{m.edited_at ? ' · (edited)' : ''}
+                        </p>
+                        {canEdit && !isEditing && (
+                          <button
+                            onClick={() => { setEditingId(m.id); setEditDraft(m.body) }}
+                            title="Edit"
+                            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px', display: 'flex' }}
+                          >
+                            <Icon name="edit-2" size={11} />
+                          </button>
+                        )}
+                        <button
+                          onClick={() => setReactionPickerId(reactionPickerId === m.id ? null : m.id)}
+                          title="React"
+                          style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px', display: 'flex' }}
+                        >
+                          <Icon name="plus" size={11} />
+                        </button>
                       </div>
-                      <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', textAlign: mine ? 'right' : 'left' }}>
-                        {senderLabel(m.sender_role)} · {formatDateTime(m.created_at)}
-                      </p>
+
+                      {reactionPickerId === m.id && (
+                        <div style={{ display: 'flex', gap: '4px', marginTop: '4px', padding: '4px 6px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg-elevated)', width: 'fit-content' }}>
+                          {QUICK_REACTIONS.map((emoji) => (
+                            <button key={emoji} onClick={() => void handleToggleReaction(m, emoji)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '15px', padding: '2px' }}>
+                              {emoji}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {m.reactions && m.reactions.length > 0 && (
+                        <div style={{ display: 'flex', gap: '4px', marginTop: '4px', flexWrap: 'wrap', justifyContent: mine ? 'flex-end' : 'flex-start' }}>
+                          {m.reactions.map((r) => (
+                            <button
+                              key={r.emoji}
+                              onClick={() => void handleToggleReaction(m, r.emoji)}
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: '3px', padding: '2px 7px', borderRadius: '999px', fontSize: '11.5px', cursor: 'pointer',
+                                border: r.reacted_by_me ? '1px solid var(--accent-border)' : '1px solid var(--border)',
+                                background: r.reacted_by_me ? 'var(--accent-subtle)' : 'var(--bg-surface)',
+                                color: 'var(--text)',
+                              }}
+                            >
+                              <span>{r.emoji}</span>
+                              <span style={{ fontFamily: 'var(--font-body)' }}>{r.count}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )
                 })
               )}
             </div>
 
-            <form onSubmit={(e) => void handleSend(e)} style={{ padding: '14px 18px', borderTop: '1px solid var(--border)', display: 'flex', gap: '10px' }}>
+            {pendingAttachment && (
+              <div style={{ padding: '0 18px 8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span className="badge badge-default">{pendingAttachment.file_name}</span>
+                <button onClick={() => setPendingAttachment(null)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex' }}>
+                  <Icon name="x" size={12} />
+                </button>
+              </div>
+            )}
+            {attachError && <p style={{ padding: '0 18px 8px', fontSize: '12px', color: 'var(--error)' }}>{attachError}</p>}
+
+            <form onSubmit={(e) => void handleSend(e)} style={{ padding: '14px 18px', borderTop: '1px solid var(--border)', display: 'flex', gap: '10px', flexShrink: 0 }}>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                style={{ display: 'none' }}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleFileSelect(f); e.target.value = '' }}
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={!selected || uploading}
+                title="Attach an image"
+                className="btn-icon"
+                style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', color: 'var(--text-muted)', cursor: 'pointer', padding: '9px', display: 'flex' }}
+              >
+                <Icon name="upload-cloud" size={15} />
+              </button>
               <input
                 type="text"
                 value={draft}
@@ -220,7 +487,7 @@ export default function MessagesInboxPage() {
                 maxLength={4000}
                 style={{ flex: 1, padding: '9px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none' }}
               />
-              <button type="submit" className="btn btn-primary" disabled={!selected || sending || !draft.trim()}>
+              <button type="submit" className="btn btn-primary" disabled={!selected || sending || (!draft.trim() && !pendingAttachment)}>
                 {sending ? 'Sending…' : 'Send'}
               </button>
             </form>

@@ -278,7 +278,7 @@ export default function SwimmerProfilePage() {
                     textTransform: 'capitalize',
                   }}
                 >
-                  {swimmer?.registration_status ?? 'Unknown'}
+                  {swimmer?.registration_status ?? 'Not set'}
                 </span>
               </div>
             </>
@@ -430,9 +430,11 @@ export default function SwimmerProfilePage() {
                 )}
               </FieldGroup>
             ) : shouldShowCollectionEmptyState(loading, loadError, swimmer ? 1 : 0) ? (
-              <div className="card" style={{ padding: '24px', textAlign: 'center' }}>
-                <p style={{ fontSize: '14px', color: C.muted }}>No swimmer profile found for your account.</p>
-              </div>
+              noLinkedSwimmer ? null : (
+                <div className="card" style={{ padding: '24px', textAlign: 'center' }}>
+                  <p style={{ fontSize: '14px', color: C.muted }}>No swimmer profile found for your account.</p>
+                </div>
+              )
             ) : (
               <div className="card" style={{ padding: '24px', textAlign: 'center' }}>
                 <p style={{ fontSize: '14px', color: C.muted }}>Profile details are unavailable until the latest data loads successfully.</p>

@@ -265,9 +265,9 @@ func (s *Service) SetKnownEventsLoader(loader KnownEventsLoader) {
 // ─── RequestUploadURL ─────────────────────────────────────────────────────────
 
 // RequestUploadURL creates a new file import record and returns a presigned
-// upload URL.  Only owner, admin, and coach may request uploads.
+// upload URL.  Only admin and coach may request uploads.
 func (s *Service) RequestUploadURL(principal *appmiddleware.Principal, orgID string, input RequestUploadURLInput) (*FileImport, *ImportAuditEvent, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		return nil, nil, ErrForbidden
 	}
 
@@ -353,9 +353,9 @@ func (s *Service) RequestUploadURL(principal *appmiddleware.Principal, orgID str
 
 // FinalizeImport marks an uploaded artifact as ready for parsing, runs the
 // configured malware scan gate, and then processes the import artifact into a
-// real report/conflict set. Only owner, admin, and coach may finalize.
+// real report/conflict set. Only admin and coach may finalize.
 func (s *Service) FinalizeImport(principal *appmiddleware.Principal, orgID, importID string, _ FinalizeImportInput) (*FileImport, *ImportAuditEvent, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		return nil, nil, ErrForbidden
 	}
 
@@ -551,9 +551,9 @@ func (s *Service) ProcessImport(ctx context.Context, importID string) error {
 // ─── ListImports ──────────────────────────────────────────────────────────────
 
 // ListImports returns all import jobs for an org.
-// Only owner, admin, and coach may list.
+// Only admin and coach may list.
 func (s *Service) ListImports(principal *appmiddleware.Principal, orgID string) ([]FileImport, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		return nil, ErrForbidden
 	}
 
@@ -572,9 +572,9 @@ func (s *Service) ListImports(principal *appmiddleware.Principal, orgID string) 
 // ─── GetImport ────────────────────────────────────────────────────────────────
 
 // GetImport returns a single import job by ID.
-// Only owner, admin, and coach may get.
+// Only admin and coach may get.
 func (s *Service) GetImport(principal *appmiddleware.Principal, orgID, importID string) (*FileImport, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		return nil, ErrForbidden
 	}
 
@@ -592,9 +592,9 @@ func (s *Service) GetImport(principal *appmiddleware.Principal, orgID, importID 
 // ─── ListConflicts ────────────────────────────────────────────────────────────
 
 // ListConflicts returns all match conflicts for a given import.
-// Only owner, admin, and coach may list.
+// Only admin and coach may list.
 func (s *Service) ListConflicts(principal *appmiddleware.Principal, orgID, importID string) ([]MatchConflict, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		return nil, ErrForbidden
 	}
 
@@ -619,9 +619,9 @@ func (s *Service) ListConflicts(principal *appmiddleware.Principal, orgID, impor
 // ─── ResolveConflict ─────────────────────────────────────────────────────────
 
 // ResolveConflict manually resolves a match conflict by assigning a swimmer.
-// Only owner and admin may resolve conflicts.
+// Only admin may resolve conflicts.
 func (s *Service) ResolveConflict(principal *appmiddleware.Principal, orgID, importID, conflictID string, input ResolveConflictInput) (*MatchConflict, *ImportAuditEvent, error) {
-	if !hasAnyRole(principal, "owner", "admin") {
+	if !hasAnyRole(principal, "admin") {
 		return nil, nil, ErrForbidden
 	}
 
@@ -690,9 +690,9 @@ func (s *Service) allConflictsResolvedLocked(importID string) bool {
 // ─── GetImportReport ─────────────────────────────────────────────────────────
 
 // GetImportReport returns the full import record (including the report JSON)
-// for a given import.  Only owner, admin, and coach may download.
+// for a given import.  Only admin and coach may download.
 func (s *Service) GetImportReport(principal *appmiddleware.Principal, orgID, importID string) (*FileImport, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		return nil, ErrForbidden
 	}
 

@@ -112,8 +112,8 @@ func TestSeasonCRUD(t *testing.T) {
 	}
 }
 
-// TestSeasonRBAC verifies write access is limited to owner/admin, read access
-// includes coach and read-only staff, and parent/swimmer are denied.
+// TestSeasonRBAC verifies write access is limited to admin, read access
+// includes coach, and parent/swimmer are denied.
 func TestSeasonRBAC(t *testing.T) {
 	router := newSeasonsRouter(t)
 	orgID := "org-seasons-rbac"
@@ -122,7 +122,6 @@ func TestSeasonRBAC(t *testing.T) {
 	coachToken := issueTrainingToken(t, router, "coach-1", orgID, "coach")
 	parentToken := issueTrainingToken(t, router, "parent-1", orgID, "parent")
 	swimToken := issueTrainingToken(t, router, "swim-1", orgID, "swimmer")
-	roToken := issueTrainingToken(t, router, "ro-1", orgID, "read-only")
 
 	body := `{"name":"2026–2027 Season","status":"upcoming"}`
 	rr := doTrainingReq(router, http.MethodPost, "/api/v1/seasons", adminToken, orgID, body)
@@ -139,12 +138,10 @@ func TestSeasonRBAC(t *testing.T) {
 	}
 	id := created.Season.ID
 
-	// Coach and read-only can list.
-	for name, token := range map[string]string{"coach": coachToken, "read-only": roToken} {
-		rr = doTrainingReq(router, http.MethodGet, "/api/v1/seasons", token, orgID, "")
-		if rr.Code != http.StatusOK {
-			t.Fatalf("%s list seasons: want 200, got %d: %s", name, rr.Code, rr.Body.String())
-		}
+	// Coach can list.
+	rr = doTrainingReq(router, http.MethodGet, "/api/v1/seasons", coachToken, orgID, "")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("coach list seasons: want 200, got %d: %s", rr.Code, rr.Body.String())
 	}
 
 	// Parent and swimmer are denied reads.

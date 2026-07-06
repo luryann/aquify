@@ -359,7 +359,7 @@ paths:
   /auth/roles/assign:
     post:
       tags: [Auth]
-      summary: Assign role to user (owner/admin + MFA)
+      summary: Assign role to user (admin + MFA)
       security:
         - BearerAuth: []
           OrgScope: []
@@ -411,7 +411,7 @@ paths:
     get:
       tags: [Users]
       summary: List users in org
-      description: Lists users in the caller's org with optional search, role, status, and pagination filters. Owner/admin only.
+      description: Lists users in the caller's org with optional search, role, status, and pagination filters. Admin only.
       operationId: listUsers
       parameters:
         - in: query
@@ -421,7 +421,7 @@ paths:
           name: role
           schema:
             type: string
-            enum: [owner, admin, coach, billing, parent, swimmer, read_only_staff]
+            enum: [admin, coach, parent, swimmer]
         - in: query
           name: status
           schema:
@@ -450,7 +450,7 @@ paths:
     post:
       tags: [Users]
       summary: Create user with direct password
-      description: Creates a Keycloak user, sets a password directly, optionally assigns a role, and can auto-create a linked household. Owner/admin only.
+      description: Creates a Keycloak user, sets a password directly, optionally assigns a role, and can auto-create a linked household. Admin only.
       operationId: createUser
       requestBody:
         required: true
@@ -478,7 +478,7 @@ paths:
     post:
       tags: [Users]
       summary: Invite user
-      description: Provisions a Keycloak user, optionally assigns a role, optionally creates a linked household, and sends a verification or welcome email. Owner/admin only.
+      description: Provisions a Keycloak user, optionally assigns a role, optionally creates a linked household, and sends a verification or welcome email. Admin only.
       operationId: inviteUser
       requestBody:
         required: true
@@ -506,7 +506,7 @@ paths:
     get:
       tags: [Users]
       summary: Get user detail
-      description: Returns the Keycloak profile plus normalized realm roles for a user in the caller's org. Owner/admin only.
+      description: Returns the Keycloak profile plus normalized realm roles for a user in the caller's org. Admin only.
       operationId: getUser
       parameters:
         - $ref: "#/components/parameters/UserID"
@@ -527,7 +527,7 @@ paths:
     put:
       tags: [Users]
       summary: Update user profile fields
-      description: Updates email and display-name fields for an existing user in the caller's org. Owner/admin only.
+      description: Updates email and display-name fields for an existing user in the caller's org. Admin only.
       operationId: updateUser
       parameters:
         - $ref: "#/components/parameters/UserID"
@@ -555,7 +555,7 @@ paths:
     delete:
       tags: [Users]
       summary: Delete user
-      description: Deletes a Keycloak user in the caller's org. Owner only and requires MFA-authenticated session state.
+      description: Deletes a Keycloak user in the caller's org. Admin only and requires MFA-authenticated session state.
       operationId: deleteUser
       parameters:
         - $ref: "#/components/parameters/UserID"
@@ -578,7 +578,7 @@ paths:
     post:
       tags: [Users]
       summary: Disable user
-      description: Disables a Keycloak user in the caller's org. Owner/admin only.
+      description: Disables a Keycloak user in the caller's org. Admin only.
       operationId: disableUser
       parameters:
         - $ref: "#/components/parameters/UserID"
@@ -601,7 +601,7 @@ paths:
     post:
       tags: [Users]
       summary: Enable user
-      description: Re-enables a Keycloak user in the caller's org. Owner/admin only.
+      description: Re-enables a Keycloak user in the caller's org. Admin only.
       operationId: enableUser
       parameters:
         - $ref: "#/components/parameters/UserID"
@@ -624,7 +624,7 @@ paths:
     post:
       tags: [Users]
       summary: Approve self-registration
-      description: Activates a pending self-registration request, assigns the requested role when no roles exist yet, and sends the welcome or verification email. Owner/admin only.
+      description: Activates a pending self-registration request, assigns the requested role when no roles exist yet, and sends the welcome or verification email. Admin only.
       operationId: approveUser
       parameters:
         - $ref: "#/components/parameters/UserID"
@@ -647,7 +647,7 @@ paths:
     post:
       tags: [Users]
       summary: Reject self-registration
-      description: Rejects a pending self-registration request and disables the user account. Owner/admin only.
+      description: Rejects a pending self-registration request and disables the user account. Admin only.
       operationId: rejectUser
       parameters:
         - $ref: "#/components/parameters/UserID"
@@ -677,7 +677,7 @@ paths:
     get:
       tags: [Users]
       summary: List user roles
-      description: Lists normalized Keycloak realm roles for a user in the caller's org. Owner/admin only.
+      description: Lists normalized Keycloak realm roles for a user in the caller's org. Admin only.
       operationId: listUserRoles
       parameters:
         - $ref: "#/components/parameters/UserID"
@@ -698,7 +698,7 @@ paths:
     post:
       tags: [Users]
       summary: Assign user role
-      description: Assigns a realm role at or below the actor's privilege tier. Owner/admin only.
+      description: Assigns a realm role at or below the actor's privilege tier. Admin only.
       operationId: assignUserRole
       parameters:
         - $ref: "#/components/parameters/UserID"
@@ -728,7 +728,7 @@ paths:
     delete:
       tags: [Users]
       summary: Remove user role
-      description: Removes a realm role at or below the actor's privilege tier. Prevents removing the final owner role in an org. Owner/admin only.
+      description: Removes a realm role at or below the actor's privilege tier. Prevents removing the final admin role in an org. Admin only.
       operationId: removeUserRole
       parameters:
         - $ref: "#/components/parameters/UserID"
@@ -756,7 +756,7 @@ paths:
     post:
       tags: [Users]
       summary: Send password reset email
-      description: Triggers the Keycloak password-reset flow for a user in the caller's org. Owner/admin only.
+      description: Triggers the Keycloak password-reset flow for a user in the caller's org. Admin only.
       operationId: passwordResetUser
       parameters:
         - $ref: "#/components/parameters/UserID"
@@ -779,7 +779,7 @@ paths:
     get:
       tags: [Users]
       summary: Get linked household
-      description: Returns the household linked to the user when it belongs to the same org; otherwise returns `null`. Owner/admin only.
+      description: Returns the household linked to the user when it belongs to the same org; otherwise returns `null`. Admin only.
       operationId: getUserHousehold
       parameters:
         - $ref: "#/components/parameters/UserID"
@@ -802,7 +802,7 @@ paths:
     post:
       tags: [Users]
       summary: Link household to user
-      description: Links an existing household in the caller's org to the specified Keycloak user. Owner/admin only.
+      description: Links an existing household in the caller's org to the specified Keycloak user. Admin only.
       operationId: linkUserHousehold
       parameters:
         - $ref: "#/components/parameters/UserID"
@@ -834,7 +834,7 @@ paths:
     post:
       tags: [Users]
       summary: Unlink household from user
-      description: Removes the Keycloak user linkage from the specified household in the caller's org. Owner/admin only.
+      description: Removes the Keycloak user linkage from the specified household in the caller's org. Admin only.
       operationId: unlinkUserHousehold
       parameters:
         - $ref: "#/components/parameters/UserID"
@@ -2108,7 +2108,7 @@ paths:
   /imports/{importID}/conflicts/{conflictID}/resolve:
     post:
       tags: [Imports]
-      summary: Resolve match conflict (admin/owner only, audited)
+      summary: Resolve match conflict (admin only, audited)
       operationId: resolveImportConflict
       parameters:
         - $ref: "#/components/parameters/ImportID"
@@ -2230,7 +2230,7 @@ paths:
           $ref: "#/components/responses/Forbidden"
     put:
       tags: [Settings]
-      summary: Update org export identity (owner/admin)
+      summary: Update org export identity (admin)
       operationId: updateOrgSettings
       requestBody:
         required: true
@@ -2844,7 +2844,7 @@ paths:
   /invoices/{invoiceID}/write-off:
     post:
       tags: [Billing]
-      summary: Write off invoice (owner/admin only, audited)
+      summary: Write off invoice (admin only, audited)
       operationId: writeOffInvoice
       parameters:
         - $ref: "#/components/parameters/InvoiceID"
@@ -3566,7 +3566,7 @@ paths:
   /audit-events:
     get:
       tags: [Audit]
-      summary: Query audit events (owner/admin only)
+      summary: Query audit events (admin only)
       operationId: listAuditEvents
       parameters:
         - name: actor_id
@@ -3740,7 +3740,7 @@ paths:
   /jobs:
     get:
       tags: [Jobs]
-      summary: List background tasks (owner/admin only)
+      summary: List background tasks (admin only)
       operationId: listJobs
       parameters:
         - name: queue
@@ -3894,7 +3894,7 @@ components:
       required: true
       schema:
         type: string
-        enum: [owner, admin, coach, billing, parent, swimmer, read_only_staff]
+        enum: [admin, coach, parent, swimmer]
     SwimmerID:
       name: swimmerID
       in: path
@@ -4128,7 +4128,7 @@ components:
         target_user_id: { type: string }
         role:
           type: string
-          enum: [owner, admin, coach, parent, swimmer, billing, read_only]
+          enum: [admin, coach, parent, swimmer]
         scope_type: { type: string }
         scope_id: { type: string }
         reason: { type: string }
@@ -4151,7 +4151,7 @@ components:
         id: { type: string }
         name:
           type: string
-          enum: [owner, admin, coach, billing, parent, swimmer, read_only_staff]
+          enum: [admin, coach, parent, swimmer]
         description: { type: string }
         composite: { type: boolean }
         clientRole: { type: boolean }
@@ -4172,7 +4172,7 @@ components:
           type: array
           items:
             type: string
-            enum: [owner, admin, coach, billing, parent, swimmer, read_only_staff]
+            enum: [admin, coach, parent, swimmer]
 
     UserDetail:
       allOf:
@@ -4213,7 +4213,7 @@ components:
         password: { type: string, minLength: 8 }
         role:
           type: string
-          enum: [owner, admin, coach, billing, parent, swimmer, read_only_staff]
+          enum: [admin, coach, parent, swimmer]
         temporary_password: { type: boolean, default: false }
         create_household: { type: boolean, default: false }
 
@@ -4226,7 +4226,7 @@ components:
         email: { type: string, format: email }
         role:
           type: string
-          enum: [owner, admin, coach, billing, parent, swimmer, read_only_staff]
+          enum: [admin, coach, parent, swimmer]
         create_household: { type: boolean, default: false }
 
     UpdateUserRequest:
@@ -4260,7 +4260,7 @@ components:
         org_id: { type: string }
         requested_role:
           type: string
-          enum: [owner, admin, coach, billing, parent, swimmer, read_only_staff]
+          enum: [admin, coach, parent, swimmer]
         club_code: { type: string, maxLength: 20 }
         note: { type: string, maxLength: 500 }
 
@@ -4281,7 +4281,7 @@ components:
       properties:
         role:
           type: string
-          enum: [owner, admin, coach, billing, parent, swimmer, read_only_staff]
+          enum: [admin, coach, parent, swimmer]
 
     UserRolesResponse:
       type: object

@@ -232,7 +232,7 @@ func (h *MembershipHandlers) deleteHousehold(w http.ResponseWriter, r *http.Requ
 		case errors.Is(err, members.ErrHouseholdHasSwimmers):
 			httpx.WriteError(w, r, http.StatusConflict, "household_has_swimmers", "Household cannot be deleted while swimmers are still assigned to it.", nil)
 		case errors.Is(err, members.ErrForbidden):
-			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only owner or admin can delete households.", nil)
+			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only admin can delete households.", nil)
 		default:
 			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
 		}
@@ -530,7 +530,7 @@ func (h *MembershipHandlers) deleteSwimmer(w http.ResponseWriter, r *http.Reques
 				"dependencies": dependencies,
 			})
 		case errors.Is(err, members.ErrForbidden):
-			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only owner or admin can delete swimmers.", nil)
+			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only admin can delete swimmers.", nil)
 		default:
 			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
 		}
@@ -593,7 +593,7 @@ func (h *MembershipHandlers) assignSwimmerGroup(w http.ResponseWriter, r *http.R
 		case errors.Is(err, members.ErrSwimmerNotFound):
 			httpx.WriteError(w, r, http.StatusNotFound, "swimmer_not_found", "Swimmer was not found.", nil)
 		case errors.Is(err, members.ErrForbidden):
-			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only owner/admin/coach can assign swimmer groups.", nil)
+			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only admin/coach can assign swimmer groups.", nil)
 		default:
 			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_group_assignment", err.Error(), nil)
 		}

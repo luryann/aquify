@@ -515,7 +515,7 @@ func TestCreateCheckoutSessionSuccess(t *testing.T) {
 	t.Parallel()
 	stub := stripelib.NewStubClient()
 	router := newStripeRouter(t, nil, stub)
-	token := issueSessionToken(t, router, "org-demo", []string{"billing"}, false)
+	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
 
 	body, _ := json.Marshal(map[string]any{
 		"invoice_id":   "inv-cs-001",
@@ -645,7 +645,7 @@ func TestCreateCheckoutSessionDuplicateIdempotencyKeyReturnsSameSession(t *testi
 	t.Parallel()
 	stub := stripelib.NewStubClient()
 	router := newStripeRouter(t, nil, stub)
-	token := issueSessionToken(t, router, "org-demo", []string{"billing"}, false)
+	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
 
 	body, _ := json.Marshal(map[string]any{
 		"invoice_id":   "inv-cs-001",

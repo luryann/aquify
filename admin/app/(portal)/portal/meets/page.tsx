@@ -340,7 +340,7 @@ export default function MeetsPage() {
                             {meet.deadlineDate && (
                               <>
                                 <span>·</span>
-                                <span>Deadline: {fmtDate(meet.deadlineDate)}</span>
+                                <span title="Respond by this date or your swimmer won't be entered in this meet">Deadline: {fmtDate(meet.deadlineDate)}</span>
                                 <DeadlineCountdown days={meet.daysUntilDeadline} />
                               </>
                             )}
@@ -434,7 +434,10 @@ export default function MeetsPage() {
                       <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
                         {meet.course}
                       </span>
-                      <span style={{ padding: '2px 8px', background: 'rgba(0,0,0,0.05)', borderRadius: '5px', fontSize: '11.5px', color: 'var(--text-muted)' }}>
+                      <span
+                        title={meet.status === 'entry_finalized' ? "Entries are locked. Contact your coach for any changes." : undefined}
+                        style={{ padding: '2px 8px', background: 'rgba(0,0,0,0.05)', borderRadius: '5px', fontSize: '11.5px', color: 'var(--text-muted)' }}
+                      >
                         {MEET_STATUS_LABEL[meet.status] ?? meet.status}
                       </span>
                       <Icon name="chevron-right" size={14} style={{ color: 'var(--border-strong)' }} />

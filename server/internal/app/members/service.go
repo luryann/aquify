@@ -24,7 +24,7 @@ var (
 	ErrHouseholdHasSwimmers   = errors.New("household has swimmers")
 	ErrSwimmerNotFound        = errors.New("swimmer not found")
 	ErrSwimmerHasDependencies = errors.New("swimmer has related records")
-	ErrMedicalFlagsRestricted = errors.New("medical flags can only be changed by owner/admin/coach")
+	ErrMedicalFlagsRestricted = errors.New("medical flags can only be changed by admin/coach")
 	ErrInvalidDateOfBirth     = errors.New("date_of_birth must use YYYY-MM-DD format")
 	ErrParentHouseholdScope   = errors.New("parent can only access swimmers in their own household")
 	ErrSwimmerBioTooLong      = errors.New("swimmer bio must be 400 characters or fewer")
@@ -306,7 +306,7 @@ type SwimmerAuditEvent struct {
 }
 
 func (s *Service) CreateHousehold(principal *appmiddleware.Principal, input CreateHouseholdInput) (Household, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent") {
+	if !hasAnyRole(principal, "admin", "coach", "parent") {
 		return Household{}, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -352,7 +352,7 @@ func (s *Service) CreateHousehold(principal *appmiddleware.Principal, input Crea
 }
 
 func (s *Service) UpdateHousehold(principal *appmiddleware.Principal, orgID, householdID string, input UpdateHouseholdInput) (Household, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent") {
+	if !hasAnyRole(principal, "admin", "coach", "parent") {
 		return Household{}, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -401,7 +401,7 @@ func (s *Service) UpdateHousehold(principal *appmiddleware.Principal, orgID, hou
 }
 
 func (s *Service) DeleteHousehold(principal *appmiddleware.Principal, orgID, householdID string) (Household, error) {
-	if !hasAnyRole(principal, "owner", "admin") {
+	if !hasAnyRole(principal, "admin") {
 		return Household{}, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -510,7 +510,7 @@ func (s *Service) AnonymizeHousehold(orgID, householdID string) error {
 }
 
 func (s *Service) GetHousehold(principal *appmiddleware.Principal, orgID, householdID string) (Household, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "billing", "read-only") {
+	if !hasAnyRole(principal, "admin", "coach", "parent") {
 		return Household{}, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -534,7 +534,7 @@ func (s *Service) GetHousehold(principal *appmiddleware.Principal, orgID, househ
 // ListHouseholds returns the households visible to the principal.
 // Parent and swimmer roles are strictly limited to their own household scope.
 func (s *Service) ListHouseholds(principal *appmiddleware.Principal, orgID string) ([]Household, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "billing", "read-only", "swimmer") {
+	if !hasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
 		return nil, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -545,7 +545,7 @@ func (s *Service) ListHouseholds(principal *appmiddleware.Principal, orgID strin
 	defer s.mu.RUnlock()
 
 	swimmerScopedHouseholdID := ""
-	if hasAnyRole(principal, "swimmer") && !hasAnyRole(principal, "owner", "admin", "coach", "parent", "billing", "read-only") {
+	if hasAnyRole(principal, "swimmer") && !hasAnyRole(principal, "admin", "coach", "parent") {
 		swimmerScopedHouseholdID = strings.TrimSpace(principal.HouseholdID)
 		if swimmerScopedHouseholdID == "" {
 			return nil, ErrForbidden
@@ -583,7 +583,7 @@ func (s *Service) ListHouseholds(principal *appmiddleware.Principal, orgID strin
 }
 
 func (s *Service) AddContact(principal *appmiddleware.Principal, orgID, householdID string, input AddContactInput) (Contact, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent") {
+	if !hasAnyRole(principal, "admin", "coach", "parent") {
 		return Contact{}, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -634,7 +634,7 @@ func (s *Service) AddContact(principal *appmiddleware.Principal, orgID, househol
 }
 
 func (s *Service) CreateSwimmer(principal *appmiddleware.Principal, orgID string, input CreateSwimmerInput) (Swimmer, SwimmerAuditEvent, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent") {
+	if !hasAnyRole(principal, "admin", "coach", "parent") {
 		return Swimmer{}, SwimmerAuditEvent{}, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -724,7 +724,7 @@ func (s *Service) CreateSwimmer(principal *appmiddleware.Principal, orgID string
 }
 
 func (s *Service) UpdateSwimmer(principal *appmiddleware.Principal, orgID, swimmerID string, input UpdateSwimmerInput) (Swimmer, SwimmerAuditEvent, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "swimmer") {
+	if !hasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
 		return Swimmer{}, SwimmerAuditEvent{}, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -741,7 +741,7 @@ func (s *Service) UpdateSwimmer(principal *appmiddleware.Principal, orgID, swimm
 	if err := s.enforceParentHouseholdAccess(principal, swimmer.HouseholdID); err != nil {
 		return Swimmer{}, SwimmerAuditEvent{}, err
 	}
-	swimmerOnly := hasAnyRole(principal, "swimmer") && !hasAnyRole(principal, "owner", "admin", "coach", "parent")
+	swimmerOnly := hasAnyRole(principal, "swimmer") && !hasAnyRole(principal, "admin", "coach", "parent")
 	if swimmerOnly {
 		if strings.TrimSpace(principal.HouseholdID) == "" || strings.TrimSpace(principal.HouseholdID) != strings.TrimSpace(swimmer.HouseholdID) {
 			return Swimmer{}, SwimmerAuditEvent{}, ErrForbidden
@@ -812,7 +812,7 @@ func (s *Service) UpdateSwimmer(principal *appmiddleware.Principal, orgID, swimm
 		swimmer.RegistrationStatus = nextStatus
 	}
 	if input.MedicalFlags != nil {
-		if !hasAnyRole(principal, "owner", "admin", "coach") {
+		if !hasAnyRole(principal, "admin", "coach") {
 			return Swimmer{}, SwimmerAuditEvent{}, ErrMedicalFlagsRestricted
 		}
 		swimmer.MedicalFlags = normalizeFlags(*input.MedicalFlags)
@@ -869,7 +869,7 @@ func (s *Service) UpdateSwimmer(principal *appmiddleware.Principal, orgID, swimm
 }
 
 func (s *Service) DeleteSwimmer(principal *appmiddleware.Principal, orgID, swimmerID string) (Swimmer, []SwimmerDeleteDependency, error) {
-	if !hasAnyRole(principal, "owner", "admin") {
+	if !hasAnyRole(principal, "admin") {
 		return Swimmer{}, nil, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -932,7 +932,7 @@ func (s *Service) DeleteSwimmer(principal *appmiddleware.Principal, orgID, swimm
 }
 
 func (s *Service) GetSwimmer(principal *appmiddleware.Principal, orgID, swimmerID string, includeMedical bool) (SwimmerView, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "billing", "read-only") {
+	if !hasAnyRole(principal, "admin", "coach", "parent") {
 		return SwimmerView{}, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -962,7 +962,7 @@ func (s *Service) GetSwimmer(principal *appmiddleware.Principal, orgID, swimmerI
 }
 
 func (s *Service) AssignSwimmerToGroup(principal *appmiddleware.Principal, orgID, swimmerID string, input AssignSwimmerGroupInput) (SwimmerGroupLink, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		return SwimmerGroupLink{}, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -1022,7 +1022,7 @@ func (s *Service) AssignSwimmerToGroup(principal *appmiddleware.Principal, orgID
 }
 
 func (s *Service) ListSwimmers(principal *appmiddleware.Principal, orgID string, input ListSwimmersInput) ([]SwimmerView, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "billing", "read-only", "swimmer") {
+	if !hasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
 		return nil, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -1034,7 +1034,7 @@ func (s *Service) ListSwimmers(principal *appmiddleware.Principal, orgID string,
 
 	householdFilter := strings.TrimSpace(input.HouseholdID)
 	// Swimmer-only accounts can only list swimmers in their own household.
-	if hasAnyRole(principal, "swimmer") && !hasAnyRole(principal, "owner", "admin", "coach", "parent", "billing", "read-only") {
+	if hasAnyRole(principal, "swimmer") && !hasAnyRole(principal, "admin", "coach", "parent") {
 		swimmerHouseholdID := strings.TrimSpace(principal.HouseholdID)
 		if swimmerHouseholdID == "" {
 			return nil, ErrForbidden
@@ -1100,7 +1100,7 @@ func (s *Service) ListSwimmers(principal *appmiddleware.Principal, orgID string,
 // ListSwimmerGroupLinks returns swimmer-group links visible to the principal.
 // Parent and swimmer accounts are strictly limited to their own household.
 func (s *Service) ListSwimmerGroupLinks(principal *appmiddleware.Principal, orgID string) ([]SwimmerGroupLink, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "billing", "read-only", "swimmer") {
+	if !hasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
 		return nil, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -1111,7 +1111,7 @@ func (s *Service) ListSwimmerGroupLinks(principal *appmiddleware.Principal, orgI
 	defer s.mu.RUnlock()
 
 	swimmerScopedHouseholdID := ""
-	if hasAnyRole(principal, "swimmer") && !hasAnyRole(principal, "owner", "admin", "coach", "parent", "billing", "read-only") {
+	if hasAnyRole(principal, "swimmer") && !hasAnyRole(principal, "admin", "coach", "parent") {
 		swimmerScopedHouseholdID = strings.TrimSpace(principal.HouseholdID)
 		if swimmerScopedHouseholdID == "" {
 			return nil, ErrForbidden
@@ -1191,7 +1191,7 @@ func (s *Service) enforceParentHouseholdAccess(principal *appmiddleware.Principa
 // AssociateParentToHousehold creates explicit parent-household access links,
 // allowing imported/admin-created households to be accessible to a parent.
 func (s *Service) AssociateParentToHousehold(principal *appmiddleware.Principal, orgID, parentUserID, householdID string) error {
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		return ErrForbidden
 	}
 	if strings.TrimSpace(principal.OrgID) != strings.TrimSpace(orgID) {
@@ -1220,7 +1220,7 @@ func (s *Service) canViewMedicalLocked(principal *appmiddleware.Principal, house
 	if principal == nil {
 		return false
 	}
-	if hasAnyRole(principal, "owner", "admin", "coach") {
+	if hasAnyRole(principal, "admin", "coach") {
 		return true
 	}
 	if hasAnyRole(principal, "parent") {
@@ -1442,7 +1442,7 @@ func (s *Service) SnapshotContacts(orgID string) []Contact {
 }
 
 func (s *Service) ListContacts(principal *appmiddleware.Principal, orgID, householdID string) ([]Contact, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "billing", "read-only") {
+	if !hasAnyRole(principal, "admin", "coach", "parent") {
 		return nil, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {

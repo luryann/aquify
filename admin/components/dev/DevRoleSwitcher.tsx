@@ -7,11 +7,8 @@ import { ROLE_LABELS } from '@/lib/roles'
 import { DEV_STUB_TOKENS_ENABLED } from '@/lib/featureFlags'
 
 const STUB_ORDER = [
-  'stub-owner',
   'stub-admin',
   'stub-coach',
-  'stub-billing',
-  'stub-readonly',
   'stub-parent',
   'stub-swimmer',
 ] as const

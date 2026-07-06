@@ -60,8 +60,8 @@ func (h *ComplianceHandlers) createDataExportRequest(w http.ResponseWriter, r *h
 	if !ok {
 		return
 	}
-	// owner/admin can request for any household; parent can request for their own household.
-	if !hasAnyRole(principal, "owner", "admin", "parent") {
+	// admin can request for any household; parent can request for their own household.
+	if !hasAnyRole(principal, "admin", "parent") {
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role to request data export.", nil)
 		return
 	}
@@ -77,7 +77,7 @@ func (h *ComplianceHandlers) createDataExportRequest(w http.ResponseWriter, r *h
 	}
 
 	// Parents may only request data for their own household.
-	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "owner", "admin") {
+	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "admin") {
 		if principal.HouseholdID == "" || principal.HouseholdID != body.HouseholdID {
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Parent may only request a data export for their own household.", nil)
 			return
@@ -112,8 +112,8 @@ func (h *ComplianceHandlers) listDataExportRequests(w http.ResponseWriter, r *ht
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin") {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Listing data export requests requires owner or admin role.", nil)
+	if !hasAnyRole(principal, "admin") {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Listing data export requests requires admin role.", nil)
 		return
 	}
 
@@ -140,10 +140,10 @@ func (h *ComplianceHandlers) getDataExportRequest(w http.ResponseWriter, r *http
 		return
 	}
 
-	// owner/admin can view any; requester can view their own.
-	// For non-owner/non-admin callers, return 404 in both the "not found" and
+	// admin can view any; requester can view their own.
+	// For non-admin callers, return 404 in both the "not found" and
 	// "unauthorized" cases to prevent resource-existence enumeration.
-	if !hasAnyRole(principal, "owner", "admin") && req.RequestedBy != principal.UserID {
+	if !hasAnyRole(principal, "admin") && req.RequestedBy != principal.UserID {
 		httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Data export request not found.", nil)
 		return
 	}
@@ -164,7 +164,7 @@ func (h *ComplianceHandlers) createDataDeletionRequest(w http.ResponseWriter, r 
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin", "parent") {
+	if !hasAnyRole(principal, "admin", "parent") {
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role to request data deletion.", nil)
 		return
 	}
@@ -180,7 +180,7 @@ func (h *ComplianceHandlers) createDataDeletionRequest(w http.ResponseWriter, r 
 	}
 
 	// Parents may only request deletion for their own household.
-	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "owner", "admin") {
+	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "admin") {
 		if principal.HouseholdID == "" || principal.HouseholdID != body.HouseholdID {
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Parent may only request data deletion for their own household.", nil)
 			return
@@ -215,8 +215,8 @@ func (h *ComplianceHandlers) listDataDeletionRequests(w http.ResponseWriter, r *
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin") {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Listing deletion requests requires owner or admin role.", nil)
+	if !hasAnyRole(principal, "admin") {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Listing deletion requests requires admin role.", nil)
 		return
 	}
 
@@ -243,9 +243,9 @@ func (h *ComplianceHandlers) getDataDeletionRequest(w http.ResponseWriter, r *ht
 		return
 	}
 
-	// For non-owner/non-admin callers, return 404 in both the "not found" and
+	// For non-admin callers, return 404 in both the "not found" and
 	// "unauthorized" cases to prevent resource-existence enumeration.
-	if !hasAnyRole(principal, "owner", "admin") && req.RequestedBy != principal.UserID {
+	if !hasAnyRole(principal, "admin") && req.RequestedBy != principal.UserID {
 		httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Data deletion request not found.", nil)
 		return
 	}

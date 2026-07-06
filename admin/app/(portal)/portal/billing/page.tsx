@@ -335,7 +335,7 @@ function AutopayTab(props: {
       <div style={{ background: 'var(--info-bg)', border: '1px solid rgba(37,99,235,0.15)', borderRadius: '12px', padding: '16px 20px', display: 'flex', gap: '12px' }}>
         <Icon name="info" size={16} style={{ color: 'var(--info)', flexShrink: 0, marginTop: '1px' }} />
         <div style={{ fontSize: '13px', color: '#1e40af', lineHeight: 1.6 }}>
-          This page stores billing metadata only. Live card numbers are still handled by Stripe and are not stored in the app runtime.
+          This page shows billing summary details only. Your card number is handled directly by Stripe and is never stored here.
         </div>
       </div>
     </div>

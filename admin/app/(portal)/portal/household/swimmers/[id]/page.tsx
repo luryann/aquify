@@ -391,7 +391,7 @@ export default function SwimmerProfilePage() {
                 { label: 'Date of Birth',        value: fmtDOB(swimmer?.date_of_birth) },
                 { label: 'Age',                  value: age !== null ? `${age} years old` : '—' },
                 { label: 'Gender',               value: swimmer?.gender ?? '—' },
-                { label: 'USS Number',           value: swimmer?.swimmer_external_id ?? '—', mono: true },
+                { label: 'External ID',          value: swimmer?.swimmer_external_id ?? '—', mono: true },
                 { label: 'Training Group',       value: groupName },
                 { label: 'Registration Status',  value: swimmer?.registration_status ?? '—' },
               ].map((field, i, arr) => (

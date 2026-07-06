@@ -44,9 +44,6 @@ function requestedRoleLabel(role: string): string {
       return 'Parent / Guardian'
     case 'coach':
       return 'Coach'
-    case 'read_only_staff':
-    case 'staff':
-      return 'Admin Staff'
     default:
       return role || 'Unspecified'
   }
@@ -278,34 +275,37 @@ export default function ApprovalsPage() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
                       <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text)' }}>{displayName}</span>
                       <span className="badge" style={{ background: 'var(--warning-bg)', color: 'var(--warning)' }}>Pending</span>
+                      {requestedRole && (
+                        <span className="badge badge-default">{requestedRoleLabel(requestedRole)}</span>
+                      )}
+                      <button
+                        onClick={() => void navigator.clipboard.writeText(user.id)}
+                        title={`Copy user ID (${user.id})`}
+                        aria-label="Copy user ID"
+                        style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', padding: '3px', background: 'none', border: 'none', color: 'var(--text-disabled)', cursor: 'pointer', borderRadius: 'var(--r-xs)' }}
+                      >
+                        <Icon name="copy" size={12} />
+                      </button>
                     </div>
                     <div style={{ fontSize: '12px', color: 'var(--text-subtle)', marginBottom: '4px', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
                       <span>{user.email}</span>
                       {user.firstName && user.lastName && (
                         <span style={{ fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>Self-registered</span>
                       )}
+                      {submittedAt && (
+                        <span style={{ color: 'var(--text-muted)' }}>Submitted {new Date(submittedAt).toLocaleDateString()}</span>
+                      )}
                     </div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
-                      ID: {user.id}
-                    </div>
-                    {(requestedRole || clubCode || registrationNote || submittedAt || swimmerName) && (
+                    {(swimmerName || clubCode || registrationNote) && (
                       <div style={{ marginTop: '12px', display: 'grid', gap: '6px' }}>
-                        <div style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>
-                          Requested role: <strong style={{ color: 'var(--text)' }}>{requestedRoleLabel(requestedRole)}</strong>
-                        </div>
                         {swimmerName && (
                           <div style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>
-                            Swimmer: <strong style={{ color: 'var(--text)' }}>{swimmerName}</strong> <span style={{ color: 'var(--text-muted)' }}>(account only — not yet registered for the season)</span>
+                            Swimmer: <strong style={{ color: 'var(--text)' }}>{swimmerName}</strong> <span style={{ color: 'var(--text-muted)' }}>(not registered yet, will need to register after approval)</span>
                           </div>
                         )}
                         {clubCode && (
                           <div style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>
                             Club code: <span style={{ fontFamily: 'var(--font-body)', color: 'var(--text)' }}>{clubCode}</span>
-                          </div>
-                        )}
-                        {submittedAt && (
-                          <div style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>
-                            Submitted: <span style={{ color: 'var(--text)' }}>{new Date(submittedAt).toLocaleString()}</span>
                           </div>
                         )}
                         {registrationNote && (

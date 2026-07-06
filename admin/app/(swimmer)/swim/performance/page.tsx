@@ -370,7 +370,7 @@ export default function PerformancePage() {
             Performance
           </h1>
           <p style={{ fontSize: '14px', color: C.subtle }}>
-            Best times, cut qualifications, and progression history.
+            Your best times, and whether you&apos;ve hit any qualifying times (&quot;cuts&quot;) set by meets or leagues.
           </p>
         </div>
         <UnlinkedSwimmerNotice />
@@ -390,7 +390,7 @@ export default function PerformancePage() {
             Performance
           </h1>
           <p style={{ fontSize: '14px', color: C.subtle }}>
-            Best times, cut qualifications, and progression history.
+            Your best times, and whether you&apos;ve hit any qualifying times (&quot;cuts&quot;) set by meets or leagues.
           </p>
         </div>
         <div className="card" style={{ padding: '24px 22px' }}>
@@ -634,7 +634,7 @@ export default function PerformancePage() {
                           </div>
                           <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', color: C.muted, fontFamily: 'var(--font-body)', marginBottom: '4px' }}>Best Time</div>
                           <div style={{ fontSize: '15px', fontFamily: 'var(--font-body)', fontWeight: 700, color: qualification.best_time_ms != null ? colors.text : C.muted }}>
-                            {qualification.best_time_ms != null ? fmtTime(qualification.best_time_ms) : 'NT'}
+                            {qualification.best_time_ms != null ? fmtTime(qualification.best_time_ms) : 'No time yet'}
                           </div>
                         </div>
                       </div>

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
@@ -175,6 +176,10 @@ export default function CommunicationsPage() {
         </h1>
         <p className="page-subtitle">
           Announcements and notification settings from your club.
+        </p>
+        <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '6px' }}>
+          Need to talk to your child&rsquo;s coach directly? Visit{' '}
+          <Link href="/portal/messages" style={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>Messages</Link>.
         </p>
       </div>
 

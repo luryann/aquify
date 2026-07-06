@@ -21,7 +21,7 @@ func NewJobsHandlers(srv workers.Backend) *JobsHandlers {
 }
 
 // RegisterRoutes mounts all jobs admin routes.
-// All routes require owner or admin role.
+// All routes require admin role.
 func (h *JobsHandlers) RegisterRoutes(router chi.Router) {
 	router.Get("/jobs", h.listJobs)
 	router.Get("/jobs/queues", h.queueStats)
@@ -39,8 +39,8 @@ func (h *JobsHandlers) listJobs(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Authentication context is missing.", nil)
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin") {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Job visibility requires owner or admin role.", nil)
+	if !hasAnyRole(principal, "admin") {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Job visibility requires admin role.", nil)
 		return
 	}
 
@@ -69,8 +69,8 @@ func (h *JobsHandlers) queueStats(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Authentication context is missing.", nil)
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin") {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Queue stats requires owner or admin role.", nil)
+	if !hasAnyRole(principal, "admin") {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Queue stats requires admin role.", nil)
 		return
 	}
 
@@ -91,8 +91,8 @@ func (h *JobsHandlers) jobMetrics(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Authentication context is missing.", nil)
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin") {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Job metrics requires owner or admin role.", nil)
+	if !hasAnyRole(principal, "admin") {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Job metrics requires admin role.", nil)
 		return
 	}
 
@@ -110,8 +110,8 @@ func (h *JobsHandlers) listDLQ(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Authentication context is missing.", nil)
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin") {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "DLQ access requires owner or admin role.", nil)
+	if !hasAnyRole(principal, "admin") {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "DLQ access requires admin role.", nil)
 		return
 	}
 
@@ -133,8 +133,8 @@ func (h *JobsHandlers) retryDLQTask(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Authentication context is missing.", nil)
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin") {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "DLQ retry requires owner or admin role.", nil)
+	if !hasAnyRole(principal, "admin") {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "DLQ retry requires admin role.", nil)
 		return
 	}
 
@@ -166,8 +166,8 @@ func (h *JobsHandlers) deleteDLQTask(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Authentication context is missing.", nil)
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin") {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "DLQ delete requires owner or admin role.", nil)
+	if !hasAnyRole(principal, "admin") {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "DLQ delete requires admin role.", nil)
 		return
 	}
 

@@ -74,10 +74,10 @@ func TestStep30E_InviteCreatesHousehold(t *testing.T) {
 	membersSvc := members.NewService()
 	router := newStep30ERouter(t, kc, membersSvc)
 
-	ownerToken := issueStep30EToken(t, router, "owner-1", "org-1", []string{"owner"})
+	adminToken := issueStep30EToken(t, router, "owner-1", "org-1", []string{"admin"})
 
 	body := `{"first_name":"Alice","last_name":"Smith","email":"alice@example.com","role":"parent","create_household":true}`
-	rr := do30E(router, http.MethodPost, "/api/v1/users/invite", ownerToken, body, "org-1")
+	rr := do30E(router, http.MethodPost, "/api/v1/users/invite", adminToken, body, "org-1")
 	if rr.Code != http.StatusCreated {
 		t.Fatalf("want 201, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -111,10 +111,10 @@ func TestStep30E_InviteWithoutCreateHousehold(t *testing.T) {
 	membersSvc := members.NewService()
 	router := newStep30ERouter(t, kc, membersSvc)
 
-	ownerToken := issueStep30EToken(t, router, "owner-1", "org-1", []string{"owner"})
+	adminToken := issueStep30EToken(t, router, "owner-1", "org-1", []string{"admin"})
 
 	body := `{"first_name":"Bob","last_name":"Jones","email":"bob@example.com","role":"parent","create_household":false}`
-	rr := do30E(router, http.MethodPost, "/api/v1/users/invite", ownerToken, body, "org-1")
+	rr := do30E(router, http.MethodPost, "/api/v1/users/invite", adminToken, body, "org-1")
 	if rr.Code != http.StatusCreated {
 		t.Fatalf("want 201, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -139,7 +139,7 @@ func TestStep30E_GetUserHousehold_Linked(t *testing.T) {
 	membersSvc := members.NewService()
 	// Pre-create a household linked to u-parent-1.
 	hh, _ := membersSvc.CreateHousehold(
-		&appmiddleware.Principal{UserID: "admin-1", Roles: []string{"owner"}, OrgID: "org-1"},
+		&appmiddleware.Principal{UserID: "admin-1", Roles: []string{"admin"}, OrgID: "org-1"},
 		members.CreateHouseholdInput{
 			OrgID:          "org-1",
 			HouseholdName:  "Carol White",
@@ -149,9 +149,9 @@ func TestStep30E_GetUserHousehold_Linked(t *testing.T) {
 	)
 
 	router := newStep30ERouter(t, kc, membersSvc)
-	ownerToken := issueStep30EToken(t, router, "admin-1", "org-1", []string{"owner"})
+	adminToken := issueStep30EToken(t, router, "admin-1", "org-1", []string{"admin"})
 
-	rr := do30E(router, http.MethodGet, "/api/v1/users/u-parent-1/household", ownerToken, "", "org-1")
+	rr := do30E(router, http.MethodGet, "/api/v1/users/u-parent-1/household", adminToken, "", "org-1")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -177,9 +177,9 @@ func TestStep30E_GetUserHousehold_NotLinked(t *testing.T) {
 
 	membersSvc := members.NewService()
 	router := newStep30ERouter(t, kc, membersSvc)
-	ownerToken := issueStep30EToken(t, router, "admin-1", "org-1", []string{"owner"})
+	adminToken := issueStep30EToken(t, router, "admin-1", "org-1", []string{"admin"})
 
-	rr := do30E(router, http.MethodGet, "/api/v1/users/u-2/household", ownerToken, "", "org-1")
+	rr := do30E(router, http.MethodGet, "/api/v1/users/u-2/household", adminToken, "", "org-1")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -203,7 +203,7 @@ func TestStep30E_LinkAndUnlink(t *testing.T) {
 
 	membersSvc := members.NewService()
 	hh, _ := membersSvc.CreateHousehold(
-		&appmiddleware.Principal{UserID: "admin-1", Roles: []string{"owner"}, OrgID: "org-1"},
+		&appmiddleware.Principal{UserID: "admin-1", Roles: []string{"admin"}, OrgID: "org-1"},
 		members.CreateHouseholdInput{
 			OrgID:         "org-1",
 			HouseholdName: "Eve Green",
@@ -212,12 +212,12 @@ func TestStep30E_LinkAndUnlink(t *testing.T) {
 	)
 
 	router := newStep30ERouter(t, kc, membersSvc)
-	ownerToken := issueStep30EToken(t, router, "admin-1", "org-1", []string{"owner"})
+	adminToken := issueStep30EToken(t, router, "admin-1", "org-1", []string{"admin"})
 
 	// Link household to user.
 	linkBody, _ := json.Marshal(map[string]any{"household_id": hh.ID})
 	rr := do30E(router, http.MethodPost, "/api/v1/users/u-link-1/household/link",
-		ownerToken, string(linkBody), "org-1")
+		adminToken, string(linkBody), "org-1")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("link: want 200, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -231,7 +231,7 @@ func TestStep30E_LinkAndUnlink(t *testing.T) {
 	// Unlink.
 	unlinkBody, _ := json.Marshal(map[string]any{"household_id": hh.ID})
 	rr = do30E(router, http.MethodPost, "/api/v1/users/u-link-1/household/unlink",
-		ownerToken, string(unlinkBody), "org-1")
+		adminToken, string(unlinkBody), "org-1")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("unlink: want 200, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -252,11 +252,11 @@ func TestStep30E_Link_NotFound(t *testing.T) {
 
 	membersSvc := members.NewService()
 	router := newStep30ERouter(t, kc, membersSvc)
-	ownerToken := issueStep30EToken(t, router, "admin-1", "org-1", []string{"owner"})
+	adminToken := issueStep30EToken(t, router, "admin-1", "org-1", []string{"admin"})
 
 	linkBody, _ := json.Marshal(map[string]any{"household_id": "nonexistent-hh"})
 	rr := do30E(router, http.MethodPost, "/api/v1/users/u-link-2/household/link",
-		ownerToken, string(linkBody), "org-1")
+		adminToken, string(linkBody), "org-1")
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("want 404, got %d: %s", rr.Code, rr.Body.String())
 	}

@@ -28,9 +28,9 @@ func TestRejectImpersonationHeadersRejectsWhenFeatureDisabled(t *testing.T) {
 	t.Parallel()
 
 	rr := serveImpersonationRequest(t, false, &Principal{
-		UserID:           "owner-1",
+		UserID:           "admin-1",
 		OrgID:            "org-demo",
-		Roles:            []string{"owner"},
+		Roles:            []string{"admin"},
 		MFAAuthenticated: true,
 	}, "target-1", "Support escalation")
 
@@ -49,9 +49,9 @@ func TestRejectImpersonationHeadersRequiresMFA(t *testing.T) {
 	t.Parallel()
 
 	rr := serveImpersonationRequest(t, true, &Principal{
-		UserID:           "owner-1",
+		UserID:           "admin-1",
 		OrgID:            "org-demo",
-		Roles:            []string{"owner"},
+		Roles:            []string{"admin"},
 		MFAAuthenticated: false,
 	}, "target-1", "Support escalation")
 
@@ -62,9 +62,9 @@ func TestRejectImpersonationHeadersRequiresReason(t *testing.T) {
 	t.Parallel()
 
 	rr := serveImpersonationRequest(t, true, &Principal{
-		UserID:           "owner-1",
+		UserID:           "admin-1",
 		OrgID:            "org-demo",
-		Roles:            []string{"owner"},
+		Roles:            []string{"admin"},
 		MFAAuthenticated: true,
 	}, "target-1", "")
 
@@ -75,22 +75,22 @@ func TestRejectImpersonationHeadersRequiresTargetUserID(t *testing.T) {
 	t.Parallel()
 
 	rr := serveImpersonationRequest(t, true, &Principal{
-		UserID:           "owner-1",
+		UserID:           "admin-1",
 		OrgID:            "org-demo",
-		Roles:            []string{"owner"},
+		Roles:            []string{"admin"},
 		MFAAuthenticated: true,
 	}, "", "Support escalation")
 
 	assertImpersonationErrorCode(t, rr, http.StatusForbidden, "impersonation_target_required")
 }
 
-func TestRejectImpersonationHeadersRestrictsToOwners(t *testing.T) {
+func TestRejectImpersonationHeadersRestrictsToAdmins(t *testing.T) {
 	t.Parallel()
 
 	rr := serveImpersonationRequest(t, true, &Principal{
-		UserID:           "admin-1",
+		UserID:           "coach-1",
 		OrgID:            "org-demo",
-		Roles:            []string{"admin"},
+		Roles:            []string{"coach"},
 		MFAAuthenticated: true,
 	}, "target-1", "Support escalation")
 
@@ -101,9 +101,9 @@ func TestRejectImpersonationHeadersFailsClosedUntilFeatureIsImplemented(t *testi
 	t.Parallel()
 
 	rr := serveImpersonationRequest(t, true, &Principal{
-		UserID:           "owner-1",
+		UserID:           "admin-1",
 		OrgID:            "org-demo",
-		Roles:            []string{"owner"},
+		Roles:            []string{"admin"},
 		MFAAuthenticated: true,
 	}, "target-1", "Support escalation")
 

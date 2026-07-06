@@ -4,7 +4,7 @@ import { SwimmerShell } from '@/components/swimmer/SwimmerShell'
 
 export default function SwimmerLayout({ children }: { children: ReactNode }) {
   return (
-    <AuthGuard requiredRoles={['swimmer', 'owner', 'admin']}>
+    <AuthGuard requiredRoles={['swimmer', 'admin']}>
       <SwimmerShell>{children}</SwimmerShell>
     </AuthGuard>
   )

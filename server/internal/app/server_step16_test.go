@@ -79,7 +79,7 @@ func step16Body(fields map[string]any) string {
 
 func TestAuditEvents_OwnerCanQuery(t *testing.T) {
 	router := newStep16Router(t, nil, nil)
-	token := issueStep16Token(t, router, "owner-user", "org-demo", "owner", "")
+	token := issueStep16Token(t, router, "admin-user", "org-demo", "admin", "")
 
 	rr := doStep16Req(router, http.MethodGet, "/api/v1/audit-events", token, "")
 	if rr.Code != http.StatusOK {
@@ -125,20 +125,20 @@ func TestAuditEvents_CoachForbidden(t *testing.T) {
 func TestAuditEvents_WithFilters(t *testing.T) {
 	auditSvc := audit.NewService()
 	router := newStep16Router(t, auditSvc, nil)
-	token := issueStep16Token(t, router, "owner-user", "org-demo", "owner", "")
+	token := issueStep16Token(t, router, "admin-user", "org-demo", "admin", "")
 
 	// Seed one event.
 	auditSvc.Append(audit.AppendRequest{
 		OrgID:        "org-demo",
-		ActorUserID:  "owner-user",
-		ActorRoles:   []string{"owner"},
+		ActorUserID:  "admin-user",
+		ActorRoles:   []string{"admin"},
 		Action:       "billing.invoice.issue",
 		ResourceType: "invoice",
 		ResourceID:   "inv-001",
 	})
 
 	// Filter by actor_id — should return the seeded event.
-	rr := doStep16Req(router, http.MethodGet, "/api/v1/audit-events?actor_id=owner-user", token, "")
+	rr := doStep16Req(router, http.MethodGet, "/api/v1/audit-events?actor_id=admin-user", token, "")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -158,7 +158,7 @@ func TestAuditEvents_WithFilters(t *testing.T) {
 
 func TestAuditEvents_InvalidFromTimestamp_Returns400(t *testing.T) {
 	router := newStep16Router(t, nil, nil)
-	token := issueStep16Token(t, router, "owner-user", "org-demo", "owner", "")
+	token := issueStep16Token(t, router, "admin-user", "org-demo", "admin", "")
 
 	rr := doStep16Req(router, http.MethodGet, "/api/v1/audit-events?from=not-a-date", token, "")
 	if rr.Code != http.StatusBadRequest {
@@ -168,7 +168,7 @@ func TestAuditEvents_InvalidFromTimestamp_Returns400(t *testing.T) {
 
 func TestAuditEvents_InvalidToTimestamp_Returns400(t *testing.T) {
 	router := newStep16Router(t, nil, nil)
-	token := issueStep16Token(t, router, "owner-user", "org-demo", "owner", "")
+	token := issueStep16Token(t, router, "admin-user", "org-demo", "admin", "")
 
 	rr := doStep16Req(router, http.MethodGet, "/api/v1/audit-events?to=2026-01-01", token, "")
 	if rr.Code != http.StatusBadRequest {
@@ -179,7 +179,7 @@ func TestAuditEvents_InvalidToTimestamp_Returns400(t *testing.T) {
 func TestAuditEvents_ValidTimeRange(t *testing.T) {
 	auditSvc := audit.NewService()
 	router := newStep16Router(t, auditSvc, nil)
-	token := issueStep16Token(t, router, "owner-user", "org-demo", "owner", "")
+	token := issueStep16Token(t, router, "admin-user", "org-demo", "admin", "")
 
 	from := time.Now().UTC().Add(-time.Hour).Format(time.RFC3339)
 	to := time.Now().UTC().Add(time.Hour).Format(time.RFC3339)
@@ -194,7 +194,7 @@ func TestAuditEvents_ValidTimeRange(t *testing.T) {
 
 func TestComplianceExport_OwnerCanCreate(t *testing.T) {
 	router := newStep16Router(t, nil, nil)
-	token := issueStep16Token(t, router, "owner-user", "org-demo", "owner", "")
+	token := issueStep16Token(t, router, "admin-user", "org-demo", "admin", "")
 
 	rr := doStep16Req(router, http.MethodPost, "/api/v1/compliance/data-export-requests", token,
 		step16Body(map[string]any{"household_id": "hsh-001"}))
@@ -255,10 +255,10 @@ func TestComplianceExport_CoachForbidden(t *testing.T) {
 func TestComplianceExport_GetByOwner(t *testing.T) {
 	svc := compliance.NewServiceWithConfig(30, 30)
 	router := newStep16Router(t, nil, svc)
-	ownerToken := issueStep16Token(t, router, "owner-user", "org-demo", "owner", "")
+	adminToken := issueStep16Token(t, router, "admin-user", "org-demo", "admin", "")
 
 	// Create a request.
-	rr := doStep16Req(router, http.MethodPost, "/api/v1/compliance/data-export-requests", ownerToken,
+	rr := doStep16Req(router, http.MethodPost, "/api/v1/compliance/data-export-requests", adminToken,
 		step16Body(map[string]any{"household_id": "hsh-001"}))
 	if rr.Code != http.StatusCreated {
 		t.Fatalf("create: want 201, got %d", rr.Code)
@@ -269,7 +269,7 @@ func TestComplianceExport_GetByOwner(t *testing.T) {
 	json.NewDecoder(rr.Body).Decode(&created)
 
 	// Owner can fetch it.
-	rr2 := doStep16Req(router, http.MethodGet, "/api/v1/compliance/data-export-requests/"+created.ID, ownerToken, "")
+	rr2 := doStep16Req(router, http.MethodGet, "/api/v1/compliance/data-export-requests/"+created.ID, adminToken, "")
 	if rr2.Code != http.StatusOK {
 		t.Fatalf("get by owner: want 200, got %d: %s", rr2.Code, rr2.Body.String())
 	}
@@ -278,11 +278,11 @@ func TestComplianceExport_GetByOwner(t *testing.T) {
 func TestComplianceExport_GetByNonRequesterReturns404(t *testing.T) {
 	svc := compliance.NewServiceWithConfig(30, 30)
 	router := newStep16Router(t, nil, svc)
-	ownerToken := issueStep16Token(t, router, "owner-user", "org-demo", "owner", "")
+	adminToken := issueStep16Token(t, router, "admin-user", "org-demo", "admin", "")
 	parentToken := issueStep16Token(t, router, "parent-user", "org-demo", "parent", "hsh-parent")
 
 	// Owner creates a request.
-	rr := doStep16Req(router, http.MethodPost, "/api/v1/compliance/data-export-requests", ownerToken,
+	rr := doStep16Req(router, http.MethodPost, "/api/v1/compliance/data-export-requests", adminToken,
 		step16Body(map[string]any{"household_id": "hsh-001"}))
 	if rr.Code != http.StatusCreated {
 		t.Fatalf("create: want 201, got %d", rr.Code)
@@ -312,7 +312,7 @@ func TestComplianceExport_ListRequiresOwnerOrAdmin(t *testing.T) {
 func TestComplianceExport_ExpiresAtIsSet(t *testing.T) {
 	svc := compliance.NewServiceWithConfig(14, 30) // 14-day TTL
 	router := newStep16Router(t, nil, svc)
-	token := issueStep16Token(t, router, "owner-user", "org-demo", "owner", "")
+	token := issueStep16Token(t, router, "admin-user", "org-demo", "admin", "")
 
 	before := time.Now().UTC()
 	rr := doStep16Req(router, http.MethodPost, "/api/v1/compliance/data-export-requests", token,
@@ -338,7 +338,7 @@ func TestComplianceExport_ExpiresAtIsSet(t *testing.T) {
 
 func TestComplianceDeletion_OwnerCanCreate(t *testing.T) {
 	router := newStep16Router(t, nil, nil)
-	token := issueStep16Token(t, router, "owner-user", "org-demo", "owner", "")
+	token := issueStep16Token(t, router, "admin-user", "org-demo", "admin", "")
 
 	rr := doStep16Req(router, http.MethodPost, "/api/v1/compliance/data-deletion-requests", token,
 		step16Body(map[string]any{"household_id": "hsh-001", "reason": "test"}))
@@ -383,11 +383,11 @@ func TestComplianceDeletion_ParentCannotCreateForOtherHousehold(t *testing.T) {
 func TestComplianceDeletion_GetByNonRequesterReturns404(t *testing.T) {
 	svc := compliance.NewServiceWithConfig(30, 30)
 	router := newStep16Router(t, nil, svc)
-	ownerToken := issueStep16Token(t, router, "owner-user", "org-demo", "owner", "")
+	adminToken := issueStep16Token(t, router, "admin-user", "org-demo", "admin", "")
 	parentToken := issueStep16Token(t, router, "parent-user", "org-demo", "parent", "hsh-parent")
 
 	// Owner creates a deletion request.
-	rr := doStep16Req(router, http.MethodPost, "/api/v1/compliance/data-deletion-requests", ownerToken,
+	rr := doStep16Req(router, http.MethodPost, "/api/v1/compliance/data-deletion-requests", adminToken,
 		step16Body(map[string]any{"household_id": "hsh-001", "reason": "test"}))
 	if rr.Code != http.StatusCreated {
 		t.Fatalf("create: want 201, got %d", rr.Code)
@@ -407,7 +407,7 @@ func TestComplianceDeletion_GetByNonRequesterReturns404(t *testing.T) {
 func TestComplianceDeletion_DeletionReviewDaysApplied(t *testing.T) {
 	svc := compliance.NewServiceWithConfig(30, 7) // 7-day review window
 	router := newStep16Router(t, nil, svc)
-	token := issueStep16Token(t, router, "owner-user", "org-demo", "owner", "")
+	token := issueStep16Token(t, router, "admin-user", "org-demo", "admin", "")
 
 	before := time.Now().UTC()
 	rr := doStep16Req(router, http.MethodPost, "/api/v1/compliance/data-deletion-requests", token,

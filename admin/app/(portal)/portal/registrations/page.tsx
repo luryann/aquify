@@ -131,6 +131,7 @@ export default function RegistrationsPage() {
   }
 
   const activeRegs = registrations.filter((r) => r.status === 'active')
+  const pendingRegs = registrations.filter((r) => r.status === 'pending')
   const pastRegs = registrations.filter((r) => ['expired', 'inactive'].includes(r.status))
 
   return (
@@ -151,9 +152,9 @@ export default function RegistrationsPage() {
       </div>
 
       {/* Stats strip */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '28px', animation: 'slideUp 0.4s ease both' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '28px', animation: 'slideUp 0.4s ease both' }}>
         {loading ? (
-          [0, 1, 2].map((i) => (
+          [0, 1, 2, 3].map((i) => (
             <div key={i} className="card" style={{ padding: '16px 20px' }}>
               <Skeleton w="40%" h={22} r={4} />
               <div style={{ marginTop: '8px' }}><Skeleton w="80%" h={12} /></div>
@@ -162,8 +163,9 @@ export default function RegistrationsPage() {
         ) : (
           [
             { label: 'Active Registrations', value: String(activeRegs.length), color: 'var(--success)' },
+            { label: 'Pending Registrations', value: String(pendingRegs.length), color: 'var(--warning)' },
             { label: 'Total Swimmers',        value: String(swimmers.length),   color: 'var(--info)' },
-            { label: 'Season',               value: activeRegs[0]?.season ?? '—', color: 'var(--accent)' },
+            { label: 'Season',               value: activeRegs[0]?.season ?? pendingRegs[0]?.season ?? '—', color: 'var(--accent)' },
           ].map((stat) => (
             <div key={stat.label} className="card" style={{ padding: '16px 20px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
               <div style={{ fontSize: '22px', fontWeight: 700, color: stat.color, fontFamily: 'var(--font-body)' }}>

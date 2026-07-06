@@ -233,7 +233,7 @@ func (h *PerformanceHandlers) upsertResult(w http.ResponseWriter, r *http.Reques
 }
 
 // listBestTimes GET /swimmers/{swimmerID}/best-times
-// Allowed roles: owner, admin, coach, parent (parent household scoping deferred to DB layer).
+// Allowed roles: admin, coach, parent (parent household scoping deferred to DB layer).
 func (h *PerformanceHandlers) listBestTimes(w http.ResponseWriter, r *http.Request) {
 	principal, orgID, ok := perfScopeFromRequest(w, r)
 	if !ok {
@@ -350,7 +350,7 @@ func (h *PerformanceHandlers) overrideBestTime(w http.ResponseWriter, r *http.Re
 }
 
 // listProgression GET /swimmers/{swimmerID}/progression
-// Allowed roles: owner, admin, coach, parent (parent household scoping deferred to DB layer).
+// Allowed roles: admin, coach, parent (parent household scoping deferred to DB layer).
 func (h *PerformanceHandlers) listProgression(w http.ResponseWriter, r *http.Request) {
 	principal, orgID, ok := perfScopeFromRequest(w, r)
 	if !ok {
@@ -640,7 +640,7 @@ func formatActivityTime(ms int) string {
 }
 
 // evaluateCutQualification GET /swimmers/{swimmerID}/cut-qualification?standard_id=...
-// Allowed roles: owner, admin, coach, parent (parent household scoping deferred to DB layer).
+// Allowed roles: admin, coach, parent (parent household scoping deferred to DB layer).
 func (h *PerformanceHandlers) evaluateCutQualification(w http.ResponseWriter, r *http.Request) {
 	principal, orgID, ok := perfScopeFromRequest(w, r)
 	if !ok {

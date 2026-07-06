@@ -9,7 +9,6 @@ import { Table, type Column } from '@/components/ui/Table'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
 import { useApiClient, ApiError } from '@/lib/api'
-import { canWrite } from '@/lib/roles'
 import {
   assignSwimmerToGroup,
   fetchGroup,
@@ -46,6 +45,13 @@ type RuleRow = {
   description: string
   active: boolean
   createdAt: string
+}
+
+function formatAgeRange(minAge: number | null | undefined, maxAge: number | null | undefined) {
+  if (minAge == null && maxAge == null) return 'All ages'
+  if (minAge == null) return `Up to ${maxAge}`
+  if (maxAge == null) return `${minAge}+`
+  return `${minAge}-${maxAge}`
 }
 
 function formatDate(value?: string | null) {
@@ -100,7 +106,7 @@ const SWIMMER_COLS: Column<SwimmerRow>[] = [
   },
   { key: 'age', label: 'Age', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '13px', color: 'var(--text)' }}>{row.age}</span> },
   { key: 'gender', label: 'Gender', render: (row) => <span style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>{row.gender}</span> },
-  { key: 'isPrimary', label: 'Role', render: (row) => <span className="badge" style={{ background: row.isPrimary ? 'var(--accent-subtle)' : 'var(--bg-elevated)', color: row.isPrimary ? 'var(--accent)' : 'var(--text-muted)' }}>{row.isPrimary ? 'primary' : 'secondary'}</span> },
+  { key: 'isPrimary', label: 'Primary group?', render: (row) => <span className="badge" style={{ background: row.isPrimary ? 'var(--accent-subtle)' : 'var(--bg-elevated)', color: row.isPrimary ? 'var(--accent)' : 'var(--text-muted)' }}>{row.isPrimary ? 'Yes' : 'No'}</span> },
   { key: 'status', label: 'Status', render: (row) => <span className="badge" style={{ background: row.status === 'active' ? 'var(--success-bg)' : 'var(--bg-elevated)', color: row.status === 'active' ? 'var(--success)' : 'var(--text-muted)' }}>{row.status}</span> },
   { key: 'joinedGroup', label: 'Since', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-muted)' }}>{formatDate(row.joinedGroup)}</span> },
 ]
@@ -151,7 +157,6 @@ export default function GroupDetailPage() {
   const groupId = typeof params?.id === 'string' ? params.id : ''
   const { session } = useSession()
   const api = useApiClient(session?.token)
-  const allowWrite = canWrite(session?.user.roles ?? [])
   const [activeTab, setActiveTab] = useState('members')
   const [group, setGroup] = useState<GroupRecord | null>(null)
   const [swimmers, setSwimmers] = useState<SwimmerRecord[]>([])
@@ -275,7 +280,7 @@ export default function GroupDetailPage() {
 
   return (
     <div style={{ padding: '24px', maxWidth: '1100px' }}>
-      <Link href="/members/groups" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '13px', color: 'var(--text-subtle)', textDecoration: 'none', marginBottom: '20px' }}>
+      <Link href="/members?tab=groups" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '13px', color: 'var(--text-subtle)', textDecoration: 'none', marginBottom: '20px' }}>
         <Icon name="chevron-left" size={14} /> Groups
       </Link>
 
@@ -291,7 +296,7 @@ export default function GroupDetailPage() {
             </span>
           </div>
           <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
-            {group.id} · {group.code}
+            {group.code}
           </div>
         </div>
       </div>
@@ -300,7 +305,7 @@ export default function GroupDetailPage() {
         {[
           { label: 'Swimmers', value: members.length.toString(), color: 'var(--text)' },
           { label: 'Coach', value: coachName || 'Unassigned', color: 'var(--text-subtle)' },
-          { label: 'Age Range', value: `${group.min_age ?? '—'}-${group.max_age ?? '+'}`, color: 'var(--text)' },
+          { label: 'Age Range', value: formatAgeRange(group.min_age, group.max_age), color: 'var(--text)' },
           { label: 'Rules', value: rules.length.toString(), color: 'var(--accent)' },
         ].map((stat) => (
           <div key={stat.label} className="card" style={{ padding: '14px 16px' }}>
@@ -314,15 +319,14 @@ export default function GroupDetailPage() {
 
       {activeTab === 'members' ? (
         <div>
-          <div style={{ display: 'grid', gridTemplateColumns: allowWrite ? 'minmax(0, 1fr) 320px' : '1fr', gap: '16px', alignItems: 'start', marginBottom: '16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 320px', gap: '16px', alignItems: 'start', marginBottom: '16px' }}>
             <div style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>
               {group.description || 'No group description recorded yet.'}
             </div>
-            {allowWrite && (
-              <form className="card" onSubmit={handleAssignSwimmer} style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <form className="card" onSubmit={handleAssignSwimmer} style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 <div>
                   <h3 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', marginBottom: '4px' }}>Add Swimmer To Group</h3>
-                  <p style={{ fontSize: '12px', color: 'var(--text-subtle)', lineHeight: 1.5 }}>Assign a swimmer to this training group so they appear on the live roster immediately.</p>
+                  <p style={{ fontSize: '12px', color: 'var(--text-subtle)', lineHeight: 1.5 }}>Assign a swimmer to this training group so they appear on the roster immediately.</p>
                 </div>
                 <select
                   value={assignForm.swimmerId}
@@ -351,8 +355,7 @@ export default function GroupDetailPage() {
                 <button className="btn btn-primary" type="submit" disabled={assigning || !assignForm.swimmerId}>
                   {assigning ? 'Adding...' : 'Add Swimmer'}
                 </button>
-              </form>
-            )}
+            </form>
           </div>
           <Table columns={SWIMMER_COLS} data={members} emptyTitle="No members" emptyDescription="No swimmers are currently assigned to this group." />
         </div>
@@ -361,7 +364,7 @@ export default function GroupDetailPage() {
       {activeTab === 'eligibility' ? (
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <p className="page-subtitle">Rules below are loaded from the persisted eligibility-rule store.</p>
+            <p className="page-subtitle">Rules that determine which swimmers are eligible for this group</p>
           </div>
           <Table columns={RULE_COLS} data={rules} emptyTitle="No rules" emptyDescription="No eligibility rules are configured for this group." />
         </div>

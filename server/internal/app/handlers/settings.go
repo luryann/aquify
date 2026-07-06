@@ -26,8 +26,8 @@ func (h *SettingsHandlers) runtimeSettings(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin") {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Runtime settings visibility requires owner or admin role.", nil)
+	if !hasAnyRole(principal, "admin") {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Runtime settings visibility requires admin role.", nil)
 		return
 	}
 

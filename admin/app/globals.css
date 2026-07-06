@@ -264,8 +264,19 @@ input:focus, textarea:focus, select:focus {
   to   { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes navProgressIndeterminate {
+  0%   { transform: translateX(-100%) scaleX(0.4); }
+  60%  { transform: translateX(20%) scaleX(0.8); }
+  100% { transform: translateX(120%) scaleX(0.4); }
+}
+
 @keyframes slideInFromRight {
   from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slideInFromLeft {
+  from { opacity: 0; transform: translateX(-16px); }
   to   { opacity: 1; transform: translateX(0); }
 }
 
@@ -624,3 +635,50 @@ input:focus, textarea:focus, select:focus {
 .gap-2 { gap: 8px; }
 .gap-3 { gap: 12px; }
 .gap-4 { gap: 16px; }
+
+/* ── Mobile nav (shared across admin sidebar, portal nav, swimmer nav) ──
+   One breakpoint, one interaction pattern: below 768px a hamburger button
+   opens a left slide-over drawer with the same links stacked vertically. */
+.mobile-nav-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-md);
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-subtle);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  flex-shrink: 0;
+}
+.mobile-nav-toggle:hover { background: var(--bg-elevated); color: var(--text); }
+
+.mobile-only { display: none; }
+
+.mobile-nav-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg-overlay);
+  z-index: 199;
+  animation: fadeIn 180ms ease both;
+}
+
+.mobile-nav-drawer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  z-index: 200;
+  animation: slideInFromLeft 220ms var(--ease-out) both;
+  display: flex;
+}
+
+@media (max-width: 768px) {
+  .admin-sidebar-wrap { display: none; }
+  .admin-content { padding: 20px 16px; }
+  .mobile-nav-toggle { display: inline-flex !important; }
+  .desktop-nav-links { display: none !important; }
+  .mobile-only { display: flex !important; }
+}

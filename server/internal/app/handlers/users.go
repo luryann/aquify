@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"slices"
@@ -18,14 +19,10 @@ import (
 // roleTier maps each role name to its numeric tier (higher = more privileged).
 // An actor may only assign/remove roles at or below their own tier.
 var roleTier = map[string]int{
-	"owner":           5,
-	"admin":           4,
-	"coach":           3,
-	"billing":         2,
-	"parent":          1,
-	"swimmer":         1,
-	"read-only":       1,
-	"read_only_staff": 1,
+	"admin":   3,
+	"coach":   2,
+	"parent":  1,
+	"swimmer": 1,
 }
 
 // actorMaxTier returns the highest tier among the actor's roles.
@@ -39,13 +36,51 @@ func actorMaxTier(roles []string) int {
 	return max
 }
 
-func normalizeUserRole(role string) string {
-	switch strings.TrimSpace(strings.ToLower(role)) {
-	case "staff", "read-only", "read_only_staff":
-		return "read_only_staff"
-	default:
-		return strings.TrimSpace(strings.ToLower(role))
+// countOrgAdmins returns how many users in orgID currently hold the admin
+// realm role. Errors listing users/roles are treated as zero found for that
+// user, matching the fail-open behavior already used by the role-removal
+// guard (a listing failure should not itself block a legitimate action).
+func (h *UserHandlers) countOrgAdmins(ctx context.Context, orgID string) (int, error) {
+	users, err := h.kc.ListUsers(ctx, orgID, "", 500, 0)
+	if err != nil {
+		return 0, err
 	}
+	count := 0
+	for _, u := range users {
+		roles, rerr := h.kc.GetUserRealmRoles(ctx, u.ID)
+		if rerr != nil {
+			continue
+		}
+		if slices.ContainsFunc(roles, func(rl keycloak.Role) bool {
+			return strings.EqualFold(rl.Name, "admin")
+		}) {
+			count++
+		}
+	}
+	return count, nil
+}
+
+// orgHasOnlyOneAdmin reports whether orgID currently has at most one admin.
+// A listing failure fails open (returns false) so it doesn't itself block a
+// legitimate role-removal or delete request.
+func (h *UserHandlers) orgHasOnlyOneAdmin(ctx context.Context, orgID string) bool {
+	count, err := h.countOrgAdmins(ctx, orgID)
+	return err == nil && count <= 1
+}
+
+// userIsOrgAdmin reports whether userID currently holds the admin realm role.
+func (h *UserHandlers) userIsOrgAdmin(ctx context.Context, userID string) bool {
+	roles, err := h.kc.GetUserRealmRoles(ctx, userID)
+	if err != nil {
+		return false
+	}
+	return slices.ContainsFunc(roles, func(rl keycloak.Role) bool {
+		return strings.EqualFold(rl.Name, "admin")
+	})
+}
+
+func normalizeUserRole(role string) string {
+	return strings.TrimSpace(strings.ToLower(role))
 }
 
 func normalizeRealmRoles(roles []keycloak.Role) []string {
@@ -155,38 +190,38 @@ func (h *UserHandlers) RegisterPublicRoutes(r chi.Router) {
 // The router must already have auth + org-scope middleware applied.
 func (h *UserHandlers) RegisterRoutes(r chi.Router) {
 	r.Route("/users", func(users chi.Router) {
-		// owner/admin only
-		users.With(appmiddleware.RBACStub("owner", "admin")).Get("/", h.listUsers)
-		users.With(appmiddleware.RBACStub("owner", "admin")).Post("/", h.createUser)
-		users.With(appmiddleware.RBACStub("owner", "admin")).Post("/invite", h.inviteUser)
-		users.With(appmiddleware.RBACStub("owner", "admin")).Get("/{id}", h.getUser)
-		users.With(appmiddleware.RBACStub("owner", "admin")).Put("/{id}", h.updateUser)
-		users.With(appmiddleware.RBACStub("owner", "admin")).Post("/{id}/disable", h.disableUser)
-		users.With(appmiddleware.RBACStub("owner", "admin")).Post("/{id}/enable", h.enableUser)
-		users.With(appmiddleware.RBACStub("owner", "admin")).Get("/{id}/roles", h.listUserRoles)
-		users.With(appmiddleware.RBACStub("owner", "admin")).Post("/{id}/roles", h.assignRole)
-		users.With(appmiddleware.RBACStub("owner", "admin")).Delete("/{id}/roles/{role}", h.removeRole)
-		users.With(appmiddleware.RBACStub("owner", "admin")).Post("/{id}/password-reset", h.passwordReset)
-		// approval flow (owner/admin only)
-		users.With(appmiddleware.RBACStub("owner", "admin")).Post("/{id}/approve", h.approveUser)
-		users.With(appmiddleware.RBACStub("owner", "admin")).Post("/{id}/reject", h.rejectUser)
-		// household linkage (owner/admin only)
-		users.With(appmiddleware.RBACStub("owner", "admin")).Get("/{id}/household", h.getUserHousehold)
-		users.With(appmiddleware.RBACStub("owner", "admin")).Post("/{id}/household/link", h.linkUserHousehold)
-		users.With(appmiddleware.RBACStub("owner", "admin")).Post("/{id}/household/unlink", h.unlinkUserHousehold)
-		// swimmer linkage (owner/admin only) — links a swimmer-role user's Keycloak
+		// admin only
+		users.With(appmiddleware.RBACStub("admin")).Get("/", h.listUsers)
+		users.With(appmiddleware.RBACStub("admin")).Post("/", h.createUser)
+		users.With(appmiddleware.RBACStub("admin")).Post("/invite", h.inviteUser)
+		users.With(appmiddleware.RBACStub("admin")).Get("/{id}", h.getUser)
+		users.With(appmiddleware.RBACStub("admin")).Put("/{id}", h.updateUser)
+		users.With(appmiddleware.RBACStub("admin")).Post("/{id}/disable", h.disableUser)
+		users.With(appmiddleware.RBACStub("admin")).Post("/{id}/enable", h.enableUser)
+		users.With(appmiddleware.RBACStub("admin")).Get("/{id}/roles", h.listUserRoles)
+		users.With(appmiddleware.RBACStub("admin")).Post("/{id}/roles", h.assignRole)
+		users.With(appmiddleware.RBACStub("admin")).Delete("/{id}/roles/{role}", h.removeRole)
+		users.With(appmiddleware.RBACStub("admin")).Post("/{id}/password-reset", h.passwordReset)
+		// approval flow (admin only)
+		users.With(appmiddleware.RBACStub("admin")).Post("/{id}/approve", h.approveUser)
+		users.With(appmiddleware.RBACStub("admin")).Post("/{id}/reject", h.rejectUser)
+		// household linkage (admin only)
+		users.With(appmiddleware.RBACStub("admin")).Get("/{id}/household", h.getUserHousehold)
+		users.With(appmiddleware.RBACStub("admin")).Post("/{id}/household/link", h.linkUserHousehold)
+		users.With(appmiddleware.RBACStub("admin")).Post("/{id}/household/unlink", h.unlinkUserHousehold)
+		// swimmer linkage (admin only) — links a swimmer-role user's Keycloak
 		// account to a specific swimmer record, so their portal session resolves
 		// deterministically instead of guessing from the household roster.
-		users.With(appmiddleware.RBACStub("owner", "admin")).Get("/{id}/swimmer", h.getUserSwimmer)
-		users.With(appmiddleware.RBACStub("owner", "admin")).Post("/{id}/swimmer/link", h.linkUserSwimmer)
-		users.With(appmiddleware.RBACStub("owner", "admin")).Post("/{id}/swimmer/unlink", h.unlinkUserSwimmer)
+		users.With(appmiddleware.RBACStub("admin")).Get("/{id}/swimmer", h.getUserSwimmer)
+		users.With(appmiddleware.RBACStub("admin")).Post("/{id}/swimmer/link", h.linkUserSwimmer)
+		users.With(appmiddleware.RBACStub("admin")).Post("/{id}/swimmer/unlink", h.unlinkUserSwimmer)
 		// self-service swimmer-link recovery: any authenticated user may submit a
-		// request for their own account; only owner/admin may view/resolve the queue.
+		// request for their own account; only admin may view/resolve the queue.
 		users.Post("/me/swimmer-link-requests", h.createSwimmerLinkRequest)
-		users.With(appmiddleware.RBACStub("owner", "admin")).Get("/swimmer-link-requests", h.listSwimmerLinkRequests)
-		users.With(appmiddleware.RBACStub("owner", "admin")).Post("/swimmer-link-requests/{requestID}/resolve", h.resolveSwimmerLinkRequest)
-		// owner only (destructive)
-		users.With(appmiddleware.RBACStub("owner")).Delete("/{id}", h.deleteUser)
+		users.With(appmiddleware.RBACStub("admin")).Get("/swimmer-link-requests", h.listSwimmerLinkRequests)
+		users.With(appmiddleware.RBACStub("admin")).Post("/swimmer-link-requests/{requestID}/resolve", h.resolveSwimmerLinkRequest)
+		// admin only (destructive)
+		users.With(appmiddleware.RBACStub("admin")).Delete("/{id}", h.deleteUser)
 	})
 }
 
@@ -871,7 +906,8 @@ func (h *UserHandlers) approveUser(w http.ResponseWriter, r *http.Request) {
 	// Approval must not let an approver grant a role above their own tier —
 	// the same guard applied to direct create/invite/assign-role paths.
 	// Self-registration can request any role, so this is the only gate that
-	// prevents e.g. an admin approver from indirectly granting owner.
+	// prevents a lower-tier approver from indirectly granting a role above
+	// their own.
 	targetTier := roleTier[requestedRole]
 	if actorMaxTier(principal.Roles) < targetTier {
 		httpx.WriteError(w, r, http.StatusForbidden, "insufficient_role_tier", "You cannot approve a user for a role above your own.", nil)
@@ -957,6 +993,13 @@ func (h *UserHandlers) deleteUser(w http.ResponseWriter, r *http.Request) {
 
 	userID := chi.URLParam(r, "id")
 	if _, ok := h.requireUserInOrg(w, r, userID, orgID); !ok {
+		return
+	}
+
+	// Last-admin guard: deleting the target must not leave the org with zero
+	// admins, mirroring the guard on admin role removal.
+	if h.userIsOrgAdmin(r.Context(), userID) && h.orgHasOnlyOneAdmin(r.Context(), orgID) {
+		httpx.WriteError(w, r, http.StatusConflict, "last_admin", "Cannot delete the last admin in this org.", nil)
 		return
 	}
 
@@ -1078,34 +1121,17 @@ func (h *UserHandlers) removeRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Last-owner guard: prevent removal of the final owner role in the org.
-	if roleName == "owner" {
-		owners, err := h.kc.ListUsers(r.Context(), orgID, "", 500, 0)
-		if err == nil {
-			ownerCount := 0
-			for _, u := range owners {
-				roles, rerr := h.kc.GetUserRealmRoles(r.Context(), u.ID)
-				if rerr != nil {
-					continue
-				}
-				if slices.ContainsFunc(roles, func(rl keycloak.Role) bool {
-					return strings.EqualFold(rl.Name, "owner")
-				}) {
-					ownerCount++
-				}
-			}
-			if ownerCount <= 1 {
-				httpx.WriteError(w, r, http.StatusConflict, "last_owner", "Cannot remove the last owner role assignment.", nil)
-				return
-			}
-		}
+	// Last-admin guard: prevent removal of the final admin role in the org.
+	if roleName == "admin" && h.orgHasOnlyOneAdmin(r.Context(), orgID) {
+		httpx.WriteError(w, r, http.StatusConflict, "last_admin", "Cannot remove the last admin role assignment.", nil)
+		return
 	}
 
 	if err := h.kc.RemoveRealmRole(r.Context(), userID, roleName); err != nil {
 		if errors.Is(err, keycloak.ErrRoleNotFound) {
 			httpx.WriteError(w, r, http.StatusBadRequest, "role_not_found", "Role does not exist.", nil)
-		} else if errors.Is(err, keycloak.ErrLastOwner) {
-			httpx.WriteError(w, r, http.StatusConflict, "last_owner", "Cannot remove the last owner role assignment.", nil)
+		} else if errors.Is(err, keycloak.ErrLastAdmin) {
+			httpx.WriteError(w, r, http.StatusConflict, "last_admin", "Cannot remove the last admin role assignment.", nil)
 		} else {
 			writeKeycloakAdminError(w, r, err, "Failed to remove role.")
 		}

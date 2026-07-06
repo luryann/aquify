@@ -40,14 +40,10 @@
   },
   "roles": {
     "realm": [
-      { "name": "owner", "description": "Full platform access — manage all users, billing, and configuration" },
-      { "name": "admin", "description": "Administrative access — cannot assign or remove the owner role" },
+      { "name": "admin", "description": "Administrative access — full platform access, manages all users, billing, and configuration" },
       { "name": "coach", "description": "Meet management, entry approval, group assignment" },
       { "name": "parent", "description": "Parent portal access, scoped to household" },
-      { "name": "swimmer", "description": "Swimmer portal access, scoped to swimmer record" },
-      { "name": "billing", "description": "Invoice and payment management" },
-      { "name": "read-only", "description": "View-only staff access (token claim form)" },
-      { "name": "read_only_staff", "description": "View-only staff access (canonical API form)" }
+      { "name": "swimmer", "description": "Swimmer portal access, scoped to swimmer record" }
     ]
   },
   "components": {
@@ -156,7 +152,7 @@
       "credentials": [
         { "type": "password", "value": "ChangeMe123!", "temporary": false }
       ],
-      "realmRoles": ["owner"]
+      "realmRoles": ["admin"]
     },
     {
       "id": "00000000-0000-0000-0000-00000000a102",
@@ -226,21 +222,7 @@
       "credentials": [
         { "type": "password", "value": "ChangeMe123!", "temporary": false }
       ],
-      "realmRoles": ["billing"]
-    },
-    {
-      "id": "00000000-0000-0000-0000-00000000a106",
-      "username": "readonly@dare.local",
-      "enabled": true,
-      "email": "readonly@dare.local",
-      "emailVerified": true,
-      "firstName": "Dev",
-      "lastName": "Read Only",
-      "attributes": { "org_id": ["00000000-0000-0000-0000-00000000a001"] },
-      "credentials": [
-        { "type": "password", "value": "ChangeMe123!", "temporary": false }
-      ],
-      "realmRoles": ["read-only", "read_only_staff"]
+      "realmRoles": ["admin"]
     }
   ]
 }

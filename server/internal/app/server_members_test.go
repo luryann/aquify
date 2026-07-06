@@ -91,7 +91,6 @@ func TestMembersMedicalVisibilityByRole(t *testing.T) {
 
 	router := NewRouter(Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	parentToken := issueSessionToken(t, router, "org-demo", []string{"parent"}, false)
-	billingToken := issueSessionToken(t, router, "org-demo", []string{"billing"}, false)
 	coachToken := issueSessionToken(t, router, "org-demo", []string{"coach"}, false)
 
 	createHouseholdReq := httptest.NewRequest(http.MethodPost, "/api/v1/members/households", encodeJSONBody(t, map[string]any{
@@ -131,29 +130,6 @@ func TestMembersMedicalVisibilityByRole(t *testing.T) {
 	router.ServeHTTP(createSwimmerRes, createSwimmerReq)
 	if createSwimmerRes.Code != http.StatusCreated {
 		t.Fatalf("expected swimmer create status %d, got %d body=%s", http.StatusCreated, createSwimmerRes.Code, createSwimmerRes.Body.String())
-	}
-
-	billingListReq := httptest.NewRequest(http.MethodGet, "/api/v1/members/swimmers?include_medical=true", nil)
-	billingListReq.Header.Set("X-Org-Id", "org-demo")
-	billingListReq.Header.Set("Authorization", "Bearer "+billingToken)
-	billingListRes := httptest.NewRecorder()
-	router.ServeHTTP(billingListRes, billingListReq)
-	if billingListRes.Code != http.StatusOK {
-		t.Fatalf("expected swimmer list status %d, got %d body=%s", http.StatusOK, billingListRes.Code, billingListRes.Body.String())
-	}
-
-	var billingList swimmersListEnvelope
-	if err := json.Unmarshal(billingListRes.Body.Bytes(), &billingList); err != nil {
-		t.Fatalf("failed to decode billing list response: %v", err)
-	}
-	if billingList.Count != 1 {
-		t.Fatalf("expected 1 swimmer in billing list, got %d", billingList.Count)
-	}
-	if !billingList.Swimmers[0].MedicalFlagsRedacted {
-		t.Fatal("expected billing list to redact medical flags")
-	}
-	if len(billingList.Swimmers[0].MedicalFlags) != 0 {
-		t.Fatal("expected billing list medical flags to be empty")
 	}
 
 	coachListReq := httptest.NewRequest(http.MethodGet, "/api/v1/members/swimmers?include_medical=true", nil)

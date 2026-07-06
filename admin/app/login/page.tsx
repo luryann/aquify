@@ -8,12 +8,9 @@ import { DEV_STUB_TOKENS_ENABLED } from '@/lib/featureFlags'
 import { resolvePublicOrg } from '@/lib/public-org'
 
 const STUB_ROLES = [
-  { id: 'stub-owner', label: 'Owner', color: '#eb5d1e', rgb: '235,93,30', desc: 'Full system access' },
-  { id: 'stub-admin', label: 'Admin', color: '#60a5fa', rgb: '96,165,250', desc: 'Administrative access' },
+  { id: 'stub-admin', label: 'Admin', color: '#60a5fa', rgb: '96,165,250', desc: 'Full administrative access' },
   { id: 'stub-coach', label: 'Coach', color: '#34d399', rgb: '52,211,153', desc: 'Training & meets' },
   { id: 'stub-parent', label: 'Parent', color: '#a78bfa', rgb: '167,139,250', desc: 'Household portal' },
-  { id: 'stub-billing', label: 'Billing', color: '#fbbf24', rgb: '251,191,36', desc: 'Financial access' },
-  { id: 'stub-readonly', label: 'Read-Only', color: '#9ca3af', rgb: '156,163,175', desc: 'View-only staff' },
   { id: 'stub-swimmer', label: 'Swimmer', color: '#22d3ee', rgb: '34,211,238', desc: 'Swimmer portal' },
 ] as const
 
@@ -106,7 +103,7 @@ function LoginPageContent() {
           {/* Heading */}
           <div className="sl-heading">
             <h1 className="sl-title">Sign in</h1>
-            <p className="sl-subtitle">Enter your email to continue with SSO</p>
+            <p className="sl-subtitle">Enter your email to sign in through your club&apos;s account system</p>
           </div>
 
           {/* Form */}
@@ -157,12 +154,12 @@ function LoginPageContent() {
                     <circle cx="10" cy="10" r="8.5" stroke="currentColor" strokeWidth="1.4" />
                     <path d="M10 1.5c-2.5 0-4 4-4 8.5s1.5 8.5 4 8.5m0-17c2.5 0 4 4 4 8.5s-1.5 8.5-4 8.5M1.5 10h17" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
                   </svg>
-                  Continue with SSO
+                  Continue
                 </>
               )}
             </button>
 
-            <p className="sl-hint">{"You'll be redirected to your club's identity provider."}</p>
+            <p className="sl-hint">{"You'll be sent to your club's sign-in page."}</p>
           </div>
 
           <div className="sl-sep"><span>or</span></div>
@@ -205,13 +202,6 @@ function LoginPageContent() {
             </div>
           )}
 
-          <footer className="sl-footer">
-            <a href="#" className="sl-foot-link">Privacy</a>
-            <span className="sl-foot-sep">·</span>
-            <a href="#" className="sl-foot-link">Terms</a>
-            <span className="sl-foot-sep">·</span>
-            <a href="#" className="sl-foot-link">Support</a>
-          </footer>
         </div>
       </div>
 

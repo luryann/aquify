@@ -162,7 +162,7 @@ func (h *MeetsHandlers) parseEntryFile(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to parse meet files.", nil)
 		return
 	}

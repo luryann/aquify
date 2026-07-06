@@ -303,7 +303,7 @@ func TestOrgWideBillingListEndpointsReturnInvoicesAndPayments(t *testing.T) {
 	t.Parallel()
 	svc := billing.NewService()
 	router := newBillingRouter(t, svc)
-	token := issueSessionToken(t, router, "org-demo", []string{"billing"}, true)
+	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, true)
 
 	first := createInvoiceForHousehold(t, router, token, "org-demo", "hh-001", "INV-ORG-1")
 	addItem(t, router, token, "org-demo", first.Invoice.ID, 5000)
@@ -393,7 +393,7 @@ func TestCreateInvoiceBillingRoleSuccess(t *testing.T) {
 	t.Parallel()
 	svc := billing.NewService()
 	router := newBillingRouter(t, svc)
-	token := issueSessionToken(t, router, "org-demo", []string{"billing"}, false)
+	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
 
 	env := createInvoice(t, router, token, "org-demo", "INV-B001")
 	if env.Invoice.ID == "" {
@@ -630,21 +630,21 @@ func TestWriteOffInvoiceAdminOnly(t *testing.T) {
 	t.Parallel()
 	svc := billing.NewService()
 	router := newBillingRouter(t, svc)
-	billingToken := issueSessionToken(t, router, "org-demo", []string{"billing"}, false)
+	coachToken := issueSessionToken(t, router, "org-demo", []string{"coach"}, false)
 	adminToken := issueSessionToken(t, router, "org-demo", []string{"admin"}, true)
 
 	inv := createInvoice(t, router, adminToken, "org-demo", "INV-WO")
 	addItem(t, router, adminToken, "org-demo", inv.Invoice.ID, 5000)
 	issueInvoiceReq(t, router, adminToken, "org-demo", inv.Invoice.ID)
 
-	// billing role should be rejected.
+	// coach role should be rejected.
 	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/invoices/%s/write-off", inv.Invoice.ID), nil)
 	req.Header.Set("X-Org-Id", "org-demo")
-	req.Header.Set("Authorization", "Bearer "+billingToken)
+	req.Header.Set("Authorization", "Bearer "+coachToken)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 	if rr.Code != http.StatusForbidden {
-		t.Fatalf("expected 403 for billing role on write-off, got %d", rr.Code)
+		t.Fatalf("expected 403 for coach role on write-off, got %d", rr.Code)
 	}
 
 	// admin role should succeed.
@@ -1286,13 +1286,12 @@ func TestHouseholdAutopayParentCannotManageForeignHousehold(t *testing.T) {
 	}
 }
 
-func TestListHouseholdAutopayBillingCanReadAll(t *testing.T) {
+func TestListHouseholdAutopayAdminCanReadAll(t *testing.T) {
 	t.Parallel()
 
 	svc := billing.NewService()
 	router := newBillingRouter(t, svc)
 	adminToken := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
-	billingToken := issueSessionToken(t, router, "org-demo", []string{"billing"}, false)
 
 	for _, householdID := range []string{"hh-001", "hh-002"} {
 		req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v1/households/%s/autopay", householdID), strings.NewReader(billingBody(map[string]any{
@@ -1311,7 +1310,7 @@ func TestListHouseholdAutopayBillingCanReadAll(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/autopay/households", nil)
 	req.Header.Set("X-Org-Id", "org-demo")
-	req.Header.Set("Authorization", "Bearer "+billingToken)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {

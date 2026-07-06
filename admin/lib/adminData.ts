@@ -663,6 +663,19 @@ export type AnnouncementRecord = {
   updated_by: string
 }
 
+export type MessageReactionSummary = {
+  emoji: string
+  count: number
+  reacted_by_me: boolean
+}
+
+export type MessageAttachmentRecord = {
+  filename: string
+  mime_type: string
+  size_bytes: number
+  download_url?: string
+}
+
 export type MessageRecord = {
   id: string
   org_id: string
@@ -671,8 +684,11 @@ export type MessageRecord = {
   sender_user_id: string
   sender_role: string
   body: string
+  edited_at?: string
   created_at: string
   updated_at: string
+  reactions?: MessageReactionSummary[]
+  attachments?: MessageAttachmentRecord[]
 }
 
 export type MessageThreadRecord = {
@@ -682,6 +698,7 @@ export type MessageThreadRecord = {
   last_body: string
   last_sender_role: string
   last_message_at: string
+  unread_count: number
 }
 
 export type EmailCampaignRecord = {
@@ -1298,7 +1315,12 @@ export async function fetchMessages(api: ApiClient, orgId: string, householdId: 
 export async function sendMessage(
   api: ApiClient,
   orgId: string,
-  input: { household_id: string; swimmer_id: string; body: string },
+  input: {
+    household_id: string
+    swimmer_id: string
+    body: string
+    attachments?: { object_key: string; file_name: string; file_mime: string }[]
+  },
 ): Promise<MessageRecord> {
   const res = await api.post<{ message: MessageRecord }>('/api/v1/messages', input, withOrgHeaders(orgId))
   return res.message
@@ -1307,6 +1329,32 @@ export async function sendMessage(
 export async function fetchMessageThreads(api: ApiClient, orgId: string): Promise<MessageThreadRecord[]> {
   const res = await api.get<{ threads?: MessageThreadRecord[] }>('/api/v1/message-threads', undefined, withOrgHeaders(orgId))
   return res.threads ?? []
+}
+
+export async function editMessage(api: ApiClient, orgId: string, messageId: string, body: string): Promise<MessageRecord> {
+  const res = await api.patch<{ message: MessageRecord }>(`/api/v1/messages/${messageId}`, { body }, withOrgHeaders(orgId))
+  return res.message
+}
+
+export async function addReaction(api: ApiClient, orgId: string, messageId: string, emoji: string): Promise<void> {
+  await api.post(`/api/v1/messages/${messageId}/reactions`, { emoji }, withOrgHeaders(orgId))
+}
+
+export async function removeReaction(api: ApiClient, orgId: string, messageId: string, emoji: string): Promise<void> {
+  await api.delete(`/api/v1/messages/${messageId}/reactions/${encodeURIComponent(emoji)}`, withOrgHeaders(orgId))
+}
+
+export async function markThreadRead(api: ApiClient, orgId: string, householdId: string, swimmerId: string): Promise<void> {
+  const query = new URLSearchParams({ household_id: householdId, swimmer_id: swimmerId }).toString()
+  await api.post(`/api/v1/messages/read?${query}`, undefined, withOrgHeaders(orgId))
+}
+
+export async function requestMessageUploadURL(
+  api: ApiClient,
+  orgId: string,
+  input: { household_id: string; swimmer_id: string; file_name: string; file_mime: string; file_size_bytes: number },
+): Promise<{ upload_url: string; object_key: string; expected_file_name: string }> {
+  return api.post('/api/v1/messages/upload-url', input, withOrgHeaders(orgId))
 }
 
 export async function fetchCommunicationPreferences(api: ApiClient, orgId: string): Promise<CommunicationPreferenceRecord[]> {
@@ -2196,6 +2244,8 @@ export type OrgSettingsRecord = {
   team_code: string
   team_name: string
   lsc_code: string
+  email_sender_name: string
+  email_sender_address: string
   updated_at?: string
   updated_by?: string
 }
@@ -2212,7 +2262,7 @@ export async function fetchOrgSettings(api: ApiClient, orgId: string): Promise<O
 export async function updateOrgSettings(
   api: ApiClient,
   orgId: string,
-  input: { team_code?: string; team_name?: string; lsc_code?: string },
+  input: { team_code?: string; team_name?: string; lsc_code?: string; email_sender_name?: string; email_sender_address?: string },
 ): Promise<OrgSettingsRecord> {
   const res = await api.put<{ org_settings: OrgSettingsRecord }>(
     '/api/v1/org-settings',

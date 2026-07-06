@@ -207,7 +207,7 @@ export default function SwimmerDetailPage() {
   ], [bestTimes.length, groupMemberships.length, history.length])
 
   const bestEvent = bestTimes[0]
-  const canDelete = session?.user.role === 'owner' || session?.user.role === 'admin'
+  const canDelete = session?.user.role === 'admin'
 
   async function handleDeleteSwimmer() {
     if (!session?.user.orgId || !swimmer) return
@@ -216,7 +216,7 @@ export default function SwimmerDetailPage() {
     setDeleteError(null)
     try {
       await deleteSwimmer(api, session.user.orgId, swimmer.id)
-      router.push('/members/swimmers')
+      router.push('/members?tab=swimmers')
     } catch (err) {
       setDeleteError(err instanceof ApiError ? err.message : 'Failed to delete swimmer.')
       setShowDeleteConfirm(false)
@@ -237,7 +237,7 @@ export default function SwimmerDetailPage() {
 
   return (
     <div style={{ padding: '24px', maxWidth: '1100px' }}>
-      <Link href="/members/swimmers" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '13px', color: 'var(--text-subtle)', textDecoration: 'none', marginBottom: '20px' }}>
+      <Link href="/members?tab=swimmers" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '13px', color: 'var(--text-subtle)', textDecoration: 'none', marginBottom: '20px' }}>
         <Icon name="chevron-left" size={14} /> Swimmers
       </Link>
 
@@ -336,7 +336,7 @@ export default function SwimmerDetailPage() {
         {[
           { label: 'DOB', value: formatDate(swimmer.date_of_birth), color: 'var(--text)' },
           { label: 'Best Event', value: bestEvent?.event || '—', color: 'var(--accent)' },
-          { label: 'Best Time', value: bestEvent?.time || 'NT', color: 'var(--accent)' },
+          { label: 'Best Time', value: bestEvent?.time || 'No time yet', color: 'var(--accent)' },
           { label: 'Current Group', value: groupMemberships[0]?.groupName || '—', color: 'var(--text)' },
         ].map((stat) => (
           <div key={stat.label} className="card" style={{ padding: '14px 16px' }}>
@@ -359,7 +359,7 @@ export default function SwimmerDetailPage() {
                 { label: 'Date of Birth', value: formatDate(swimmer.date_of_birth) },
                 { label: 'Age', value: computeAge(swimmer.date_of_birth) },
                 { label: 'Gender', value: swimmer.gender },
-                { label: 'Medical Flags', value: swimmer.medical_flags_redacted ? 'Restricted' : (swimmer.medical_flags?.join(', ') || 'None') },
+                { label: 'Medical Flags', value: swimmer.medical_flags_redacted ? 'Hidden from you (medical staff only)' : (swimmer.medical_flags?.join(', ') || 'None') },
               ].map((row) => (
                 <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px', borderBottom: '1px solid var(--border)', paddingBottom: '10px' }}>
                   <span style={{ color: 'var(--text-muted)' }}>{row.label}</span>
@@ -380,7 +380,7 @@ export default function SwimmerDetailPage() {
       {activeTab === 'performance' ? (
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <p className="page-subtitle">Best times are loaded from the live performance service for this swimmer.</p>
+            <p className="page-subtitle">This swimmer&rsquo;s recorded best times by event and course</p>
           </div>
           <Table columns={BT_COLS} data={bestTimes} emptyTitle="No times recorded" emptyDescription="Times will appear here after results are imported." />
         </div>

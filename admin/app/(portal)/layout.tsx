@@ -5,7 +5,7 @@ import { DevRoleSwitcher } from '@/components/dev/DevRoleSwitcher'
 
 export default function PortalLayout({ children }: { children: ReactNode }) {
   return (
-    <AuthGuard requiredRoles={['parent', 'owner', 'admin']}>
+    <AuthGuard requiredRoles={['parent', 'admin']}>
       <PortalShell>{children}</PortalShell>
       <DevRoleSwitcher />
     </AuthGuard>

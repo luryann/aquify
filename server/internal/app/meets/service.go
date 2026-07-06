@@ -534,7 +534,7 @@ func (s *Service) newID(prefix string) string {
 }
 
 func (s *Service) ParseMeetFile(principal *appmiddleware.Principal, orgID string, input ParseMeetFileInput) (*ParseMeetFileResult, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		return nil, ErrForbidden
 	}
 	if strings.TrimSpace(orgID) == "" {
@@ -888,7 +888,7 @@ func (s *Service) SeedParentHousehold(parentUserID, householdID string) {
 
 // CreateMeet creates a new meet record.
 func (s *Service) CreateMeet(principal *appmiddleware.Principal, orgID string, input CreateMeetInput) (Meet, MeetAuditEvent, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		return Meet{}, MeetAuditEvent{}, ErrForbidden
 	}
 
@@ -1079,7 +1079,7 @@ func (s *Service) CreateMeet(principal *appmiddleware.Principal, orgID string, i
 
 // ListMeets returns all meets in an org.
 func (s *Service) ListMeets(principal *appmiddleware.Principal, orgID string) ([]Meet, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "billing", "read-only", "swimmer") {
+	if !hasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
 		return nil, ErrForbidden
 	}
 
@@ -1097,7 +1097,7 @@ func (s *Service) ListMeets(principal *appmiddleware.Principal, orgID string) ([
 
 // GetMeet retrieves a single meet by ID.
 func (s *Service) GetMeet(principal *appmiddleware.Principal, orgID, meetID string) (Meet, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "billing", "read-only", "swimmer") {
+	if !hasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
 		return Meet{}, ErrForbidden
 	}
 
@@ -1113,7 +1113,7 @@ func (s *Service) GetMeet(principal *appmiddleware.Principal, orgID, meetID stri
 
 // TransitionMeetStatus moves a meet through its lifecycle state machine.
 func (s *Service) TransitionMeetStatus(principal *appmiddleware.Principal, orgID, meetID, toStatus string) (Meet, MeetAuditEvent, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		return Meet{}, MeetAuditEvent{}, ErrForbidden
 	}
 
@@ -1173,7 +1173,7 @@ func (s *Service) TransitionMeetStatus(principal *appmiddleware.Principal, orgID
 
 // CreateMeetSession adds a session to a meet.
 func (s *Service) CreateMeetSession(principal *appmiddleware.Principal, orgID, meetID string, input CreateMeetSessionInput) (MeetSession, MeetAuditEvent, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		return MeetSession{}, MeetAuditEvent{}, ErrForbidden
 	}
 
@@ -1235,7 +1235,7 @@ func (s *Service) CreateMeetSession(principal *appmiddleware.Principal, orgID, m
 
 // ListMeetSessions returns all sessions for a meet.
 func (s *Service) ListMeetSessions(principal *appmiddleware.Principal, orgID, meetID string) ([]MeetSession, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "billing", "read-only", "swimmer") {
+	if !hasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
 		return nil, ErrForbidden
 	}
 
@@ -1260,7 +1260,7 @@ func (s *Service) ListMeetSessions(principal *appmiddleware.Principal, orgID, me
 
 // CreateMeetEvent adds an event to a meet.
 func (s *Service) CreateMeetEvent(principal *appmiddleware.Principal, orgID, meetID string, input CreateMeetEventInput) (MeetEvent, MeetAuditEvent, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		return MeetEvent{}, MeetAuditEvent{}, ErrForbidden
 	}
 
@@ -1352,7 +1352,7 @@ func (s *Service) CreateMeetEvent(principal *appmiddleware.Principal, orgID, mee
 
 // ListMeetEvents returns all events for a meet.
 func (s *Service) ListMeetEvents(principal *appmiddleware.Principal, orgID, meetID string) ([]MeetEvent, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "billing", "read-only", "swimmer") {
+	if !hasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
 		return nil, ErrForbidden
 	}
 
@@ -1378,7 +1378,7 @@ func (s *Service) ListMeetEvents(principal *appmiddleware.Principal, orgID, meet
 // PublishCommitmentRequest opens the commitment window for a meet and creates commitment
 // records for all seeded swimmers in the org.
 func (s *Service) PublishCommitmentRequest(principal *appmiddleware.Principal, orgID, meetID string) (Meet, []Commitment, MeetAuditEvent, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		return Meet{}, nil, MeetAuditEvent{}, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -1462,7 +1462,7 @@ func (s *Service) PublishCommitmentRequest(principal *appmiddleware.Principal, o
 
 // ListCommitments returns commitments for a meet. Parents only see their own household's commitments.
 func (s *Service) ListCommitments(principal *appmiddleware.Principal, orgID, meetID string) ([]Commitment, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "swimmer", "billing", "read-only") {
+	if !hasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
 		return nil, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -1483,13 +1483,13 @@ func (s *Service) ListCommitments(principal *appmiddleware.Principal, orgID, mee
 			continue
 		}
 		// Parent scope: only see their own household's commitments.
-		if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "owner", "admin", "coach") {
+		if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "admin", "coach") {
 			if !s.principalOwnsHouseholdLocked(principal, c.HouseholdID) {
 				continue
 			}
 		}
 		// Swimmer-only scope: only commitments for their own household.
-		if hasAnyRole(principal, "swimmer") && !hasAnyRole(principal, "owner", "admin", "coach", "parent") {
+		if hasAnyRole(principal, "swimmer") && !hasAnyRole(principal, "admin", "coach", "parent") {
 			if strings.TrimSpace(principal.HouseholdID) == "" || strings.TrimSpace(c.HouseholdID) != strings.TrimSpace(principal.HouseholdID) {
 				continue
 			}
@@ -1501,11 +1501,11 @@ func (s *Service) ListCommitments(principal *appmiddleware.Principal, orgID, mee
 
 // RespondToCommitment records a parent's yes/no commitment response.
 func (s *Service) RespondToCommitment(principal *appmiddleware.Principal, orgID, meetID, commitmentID string, input CommitmentRespondInput) (Commitment, MeetAuditEvent, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent") {
+	if !hasAnyRole(principal, "admin", "coach", "parent") {
 		return Commitment{}, MeetAuditEvent{}, ErrForbidden
 	}
 	// Coach role is not permitted to respond to commitments per RBAC table.
-	if hasAnyRole(principal, "coach") && !hasAnyRole(principal, "owner", "admin") {
+	if hasAnyRole(principal, "coach") && !hasAnyRole(principal, "admin") {
 		return Commitment{}, MeetAuditEvent{}, ErrForbidden
 	}
 
@@ -1532,7 +1532,7 @@ func (s *Service) RespondToCommitment(principal *appmiddleware.Principal, orgID,
 	}
 
 	// Parent scope: can only respond for their own household.
-	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "owner", "admin", "coach") {
+	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "admin", "coach") {
 		if !s.principalOwnsHouseholdLocked(principal, cmt.HouseholdID) {
 			return Commitment{}, MeetAuditEvent{}, ErrForbidden
 		}
@@ -1581,7 +1581,7 @@ func (s *Service) RespondToCommitment(principal *appmiddleware.Principal, orgID,
 // SelectCommitmentEvent adds an event selection for a parent-committed swimmer.
 // Only allowed when commitment status is committed_yes and meet is commitment_open.
 func (s *Service) SelectCommitmentEvent(principal *appmiddleware.Principal, orgID, meetID, commitmentID string, input SelectEventInput) (EventSelection, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent") {
+	if !hasAnyRole(principal, "admin", "coach", "parent") {
 		return EventSelection{}, ErrForbidden
 	}
 
@@ -1609,7 +1609,7 @@ func (s *Service) SelectCommitmentEvent(principal *appmiddleware.Principal, orgI
 	}
 
 	// Parent scope: can only select events for their own household.
-	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "owner", "admin", "coach") {
+	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "admin", "coach") {
 		if !s.principalOwnsHouseholdLocked(principal, cmt.HouseholdID) {
 			return EventSelection{}, ErrForbidden
 		}
@@ -1648,7 +1648,7 @@ func (s *Service) SelectCommitmentEvent(principal *appmiddleware.Principal, orgI
 
 // RemoveCommitmentEventSelection removes a parent's event selection before lock.
 func (s *Service) RemoveCommitmentEventSelection(principal *appmiddleware.Principal, orgID, meetID, commitmentID, selectionID string) error {
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent") {
+	if !hasAnyRole(principal, "admin", "coach", "parent") {
 		return ErrForbidden
 	}
 
@@ -1670,7 +1670,7 @@ func (s *Service) RemoveCommitmentEventSelection(principal *appmiddleware.Princi
 	}
 
 	// Parent scope.
-	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "owner", "admin", "coach") {
+	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "admin", "coach") {
 		if !s.principalOwnsHouseholdLocked(principal, cmt.HouseholdID) {
 			return ErrForbidden
 		}
@@ -1687,7 +1687,7 @@ func (s *Service) RemoveCommitmentEventSelection(principal *appmiddleware.Princi
 
 // ListCommitmentEventSelections returns the event selections for a commitment.
 func (s *Service) ListCommitmentEventSelections(principal *appmiddleware.Principal, orgID, meetID, commitmentID string) ([]EventSelection, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent") {
+	if !hasAnyRole(principal, "admin", "coach", "parent") {
 		return nil, ErrForbidden
 	}
 
@@ -1705,7 +1705,7 @@ func (s *Service) ListCommitmentEventSelections(principal *appmiddleware.Princip
 	}
 
 	// Parent scope.
-	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "owner", "admin", "coach") {
+	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "admin", "coach") {
 		if !s.principalOwnsHouseholdLocked(principal, cmt.HouseholdID) {
 			return nil, ErrForbidden
 		}
@@ -1725,7 +1725,7 @@ func (s *Service) ListCommitmentEventSelections(principal *appmiddleware.Princip
 // LockCommitments closes the commitment window and locks all commitments.
 // Transitions meet to commitment_closed and all commitments to locked.
 func (s *Service) LockCommitments(principal *appmiddleware.Principal, orgID, meetID string) (Meet, MeetAuditEvent, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		return Meet{}, MeetAuditEvent{}, ErrForbidden
 	}
 
@@ -1786,7 +1786,7 @@ func (s *Service) LockCommitments(principal *appmiddleware.Principal, orgID, mee
 
 // ListEntries returns all entries for a meet.
 func (s *Service) ListEntries(principal *appmiddleware.Principal, orgID, meetID string) ([]Entry, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "read-only") {
+	if !hasAnyRole(principal, "admin", "coach", "parent") {
 		return nil, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -1809,7 +1809,7 @@ func (s *Service) ListEntries(principal *appmiddleware.Principal, orgID, meetID 
 	}
 
 	// Parent scope: only see entries for swimmers in their own household.
-	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "owner", "admin", "coach") {
+	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "admin", "coach") {
 		var filtered []Entry
 		for _, e := range result {
 			swimmer, ok := s.swimmers[e.SwimmerID]
@@ -1826,7 +1826,7 @@ func (s *Service) ListEntries(principal *appmiddleware.Principal, orgID, meetID 
 // ProposeEntry creates a new entry for a swimmer in a meet event.
 // Entries are created with status "submitted".
 func (s *Service) ProposeEntry(principal *appmiddleware.Principal, orgID, meetID string, input ProposeEntryInput) (Entry, MeetAuditEvent, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		return Entry{}, MeetAuditEvent{}, ErrForbidden
 	}
 
@@ -1930,7 +1930,7 @@ func (s *Service) ProposeEntry(principal *appmiddleware.Principal, orgID, meetID
 // OverrideEntry allows a coach to change the event on an existing entry.
 // Captures a full before/after audit event with a required reason.
 func (s *Service) OverrideEntry(principal *appmiddleware.Principal, orgID, meetID, entryID string, input OverrideEntryInput) (Entry, MeetAuditEvent, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		return Entry{}, MeetAuditEvent{}, ErrForbidden
 	}
 
@@ -2033,7 +2033,7 @@ func (s *Service) OverrideEntry(principal *appmiddleware.Principal, orgID, meetI
 // swimmer withdraws or a duplicate was created. Blocked once the meet is
 // finalized/closed or the entry has already been exported.
 func (s *Service) ScratchEntry(principal *appmiddleware.Principal, orgID, meetID, entryID, reason string) (Entry, MeetAuditEvent, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		return Entry{}, MeetAuditEvent{}, ErrForbidden
 	}
 	reason = strings.TrimSpace(reason)
@@ -2091,7 +2091,7 @@ func (s *Service) ScratchEntry(principal *appmiddleware.Principal, orgID, meetID
 
 // ApproveEntry moves an entry from submitted to approved.
 func (s *Service) ApproveEntry(principal *appmiddleware.Principal, orgID, meetID, entryID string) (Entry, MeetAuditEvent, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		return Entry{}, MeetAuditEvent{}, ErrForbidden
 	}
 

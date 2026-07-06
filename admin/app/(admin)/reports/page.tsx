@@ -28,10 +28,10 @@ type ReportSummary = {
 }
 
 const REPORTS: Array<{ key: ReportKey; title: string; category: string; description: string; accent: string }> = [
-  { key: 'membership-status', title: 'Membership Status', category: 'Members', description: 'Live roster, household, and primary group coverage.', accent: 'var(--accent)' },
-  { key: 'meet-fees', title: 'Meet Fees', category: 'Billing', description: 'Issued meet-fee invoice lines grouped from the persisted billing data.', accent: 'var(--warning)' },
+  { key: 'membership-status', title: 'Membership Status', category: 'Members', description: 'Roster, household, and primary group coverage.', accent: 'var(--accent)' },
+  { key: 'meet-fees', title: 'Meet Fees', category: 'Billing', description: 'Issued meet-fee invoice lines grouped by household.', accent: 'var(--warning)' },
   { key: 'invoice-aging', title: 'Invoice Aging', category: 'Billing', description: 'Outstanding balances bucketed by current aging windows.', accent: 'var(--error)' },
-  { key: 'payment-reconciliation', title: 'Payment Reconciliation', category: 'Billing', description: 'Payment, refund, and ledger agreement from the live billing service.', accent: 'var(--success)' },
+  { key: 'payment-reconciliation', title: 'Payment Check', category: 'Billing', description: 'Confirms payments, refunds, and account totals all match up.', accent: 'var(--success)' },
   { key: 'registration-status', title: 'Registration Status', category: 'Members', description: 'Current season registration and waiver completion view.', accent: 'var(--info)' },
 ]
 
@@ -96,17 +96,17 @@ export default function ReportsPage() {
         ])
 
         const next: ReportSummary[] = [
-          { key: 'membership-status', title: 'Membership Status', category: 'Members', description: 'Live roster, household, and primary group coverage.', rowCount: membership.row_count, generatedAt: membership.generated_at, accent: 'var(--accent)' },
-          { key: 'meet-fees', title: 'Meet Fees', category: 'Billing', description: 'Issued meet-fee invoice lines grouped from the persisted billing data.', rowCount: meetFees.row_count, generatedAt: meetFees.generated_at, accent: 'var(--warning)' },
+          { key: 'membership-status', title: 'Membership Status', category: 'Members', description: 'Roster, household, and primary group coverage.', rowCount: membership.row_count, generatedAt: membership.generated_at, accent: 'var(--accent)' },
+          { key: 'meet-fees', title: 'Meet Fees', category: 'Billing', description: 'Issued meet-fee invoice lines grouped by household.', rowCount: meetFees.row_count, generatedAt: meetFees.generated_at, accent: 'var(--warning)' },
           { key: 'invoice-aging', title: 'Invoice Aging', category: 'Billing', description: 'Outstanding balances bucketed by current aging windows.', rowCount: invoiceAging.row_count, generatedAt: invoiceAging.generated_at, accent: 'var(--error)' },
-          { key: 'payment-reconciliation', title: 'Payment Reconciliation', category: 'Billing', description: 'Payment, refund, and ledger agreement from the live billing service.', rowCount: reconciliation.row_count, generatedAt: reconciliation.generated_at, accent: 'var(--success)' },
+          { key: 'payment-reconciliation', title: 'Payment Check', category: 'Billing', description: 'Confirms payments, refunds, and account totals all match up.', rowCount: reconciliation.row_count, generatedAt: reconciliation.generated_at, accent: 'var(--success)' },
           { key: 'registration-status', title: 'Registration Status', category: 'Members', description: 'Current season registration and waiver completion view.', rowCount: registration.row_count, generatedAt: registration.generated_at, accent: 'var(--info)' },
         ]
 
         if (!cancelled) setSummaries(next)
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof ApiError ? err.message : 'Unable to load live report summaries.')
+          setError(err instanceof ApiError ? err.message : 'Unable to load report summaries.')
           setSummaries([])
         }
       } finally {
@@ -148,7 +148,7 @@ export default function ReportsPage() {
   }
 
   if (!session) {
-    return <div style={{ padding: '32px' }}><EmptyState icon="bar-chart-2" title="Sign in required" description="Authenticate to run live reports." /></div>
+    return <div style={{ padding: '32px' }}><EmptyState icon="bar-chart-2" title="Sign in required" description="Sign in to run reports." /></div>
   }
 
   return (
@@ -158,10 +158,10 @@ export default function ReportsPage() {
           Reporting
         </p>
         <h1 className="page-title">
-          Live Report Console
+          Reports
         </h1>
         <p style={{ fontSize: '13px', color: 'var(--text-subtle)', maxWidth: '68ch' }}>
-          These report cards are backed by the production report endpoints. Row counts and generated timestamps come from the live API, and CSV exports are stored as report artifacts instead of mock downloads.
+          Generate and download CSV reports on membership, billing, and registrations.
         </p>
       </div>
 
@@ -172,9 +172,9 @@ export default function ReportsPage() {
       ) : null}
 
       {loading ? (
-        <EmptyState icon="bar-chart-2" title="Loading report definitions" description="Fetching live summaries from the backend reporting pack." />
+        <EmptyState icon="bar-chart-2" title="Loading reports" description="Fetching the latest report summaries." />
       ) : summaries.length === 0 ? (
-        <EmptyState icon="bar-chart-2" title="No reports available" description="Live report endpoints returned no data for this organisation yet." />
+        <EmptyState icon="bar-chart-2" title="No reports available" description="No report data is available for this organization yet." />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           {grouped.map(([category, items]) => (
@@ -202,7 +202,7 @@ export default function ReportsPage() {
 
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
                         <div style={{ padding: '12px', borderRadius: '8px', background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
-                          <div style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>Rows</div>
+                          <div style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>Records</div>
                           <div style={{ fontSize: '22px', fontFamily: 'var(--font-body)', color: 'var(--text)' }}>{report.rowCount}</div>
                         </div>
                         <div style={{ padding: '12px', borderRadius: '8px', background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
@@ -238,7 +238,7 @@ export default function ReportsPage() {
                             {artifact.filename} · {formatBytes(artifact.size_bytes)}
                           </a>
                         ) : (
-                          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Artifact delivery enabled</span>
+                          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Ready to download</span>
                         )}
                       </div>
                     </div>

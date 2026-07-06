@@ -27,24 +27,17 @@ import {
 import { ROLE_HIERARCHY, type Role } from '@/lib/roles'
 
 const ROLE_OPTIONS: { value: string; label: string }[] = [
-  { value: 'owner', label: 'Owner' },
   { value: 'admin', label: 'Admin' },
   { value: 'coach', label: 'Coach' },
-  { value: 'billing', label: 'Billing' },
   { value: 'parent', label: 'Parent' },
   { value: 'swimmer', label: 'Swimmer' },
-  { value: 'read_only_staff', label: 'Read-Only' },
 ]
 
 const ROLE_COLORS: Record<string, { bg: string; color: string }> = {
-  owner:           { bg: 'rgba(235,93,30,0.15)',   color: '#eb5d1e' },
   admin:           { bg: 'rgba(251,191,36,0.12)',   color: '#fbbf24' },
   coach:           { bg: 'rgba(74,222,128,0.10)',   color: '#4ade80' },
-  billing:         { bg: 'rgba(96,165,250,0.10)',   color: '#60a5fa' },
   parent:          { bg: 'rgba(196,148,255,0.10)',  color: '#c484ff' },
   swimmer:         { bg: 'rgba(248,113,113,0.10)',  color: '#f87171' },
-  read_only_staff: { bg: 'rgba(155,155,155,0.10)',  color: '#9a9693' },
-  'read-only':     { bg: 'rgba(155,155,155,0.10)',  color: '#9a9693' },
 }
 
 function RoleChip({ roleName, onRemove, canRemove }: { roleName: string; onRemove?: () => void; canRemove: boolean }) {
@@ -169,7 +162,7 @@ export default function UserDetailPage() {
 
   const actorRole = session?.user.role as Role | undefined
   const actorTier = actorRole ? ROLE_HIERARCHY[actorRole] : 0
-  const isOwner = actorRole === 'owner'
+  const isAdmin = actorRole === 'admin'
 
   function canManageRole(roleName: string): boolean {
     const tier = ROLE_HIERARCHY[roleName as Role] ?? 1
@@ -692,7 +685,7 @@ export default function UserDetailPage() {
             </button>
           )}
 
-          {isOwner && (
+          {isAdmin && (
             <button
               className="btn"
               style={{ fontSize: '12px', padding: '7px 14px', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--error)', borderColor: 'var(--error-border)', marginLeft: 'auto' }}

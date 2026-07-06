@@ -32,9 +32,9 @@ func (h *OrgSettingsHandlers) get(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	// Read access is broad (coach/read-only need team identity for reports UI);
-	// writes are owner/admin only.
-	if !hasAnyRole(principal, "owner", "admin", "coach", "read-only") {
+	// Read access is broad (coach needs team identity for reports UI);
+	// writes are admin only.
+	if !hasAnyRole(principal, "admin", "coach") {
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role.", nil)
 		return
 	}
@@ -48,9 +48,11 @@ func (h *OrgSettingsHandlers) get(w http.ResponseWriter, r *http.Request) {
 }
 
 type updateOrgSettingsBody struct {
-	TeamCode *string `json:"team_code"`
-	TeamName *string `json:"team_name"`
-	LSCCode  *string `json:"lsc_code"`
+	TeamCode           *string `json:"team_code"`
+	TeamName           *string `json:"team_name"`
+	LSCCode            *string `json:"lsc_code"`
+	EmailSenderName    *string `json:"email_sender_name"`
+	EmailSenderAddress *string `json:"email_sender_address"`
 }
 
 func (h *OrgSettingsHandlers) update(w http.ResponseWriter, r *http.Request) {
@@ -58,8 +60,8 @@ func (h *OrgSettingsHandlers) update(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin") {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only owner/admin may update org settings.", nil)
+	if !hasAnyRole(principal, "admin") {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only admin may update org settings.", nil)
 		return
 	}
 
@@ -70,9 +72,11 @@ func (h *OrgSettingsHandlers) update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	settings, err := h.service.Update(orgID, orgsettings.Updates{
-		TeamCode: body.TeamCode,
-		TeamName: body.TeamName,
-		LSCCode:  body.LSCCode,
+		TeamCode:           body.TeamCode,
+		TeamName:           body.TeamName,
+		LSCCode:            body.LSCCode,
+		EmailSenderName:    body.EmailSenderName,
+		EmailSenderAddress: body.EmailSenderAddress,
 	}, principal.UserID)
 	if err != nil {
 		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to update org settings.", err)

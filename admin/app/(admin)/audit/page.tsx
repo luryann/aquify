@@ -39,6 +39,38 @@ const FAMILY_COLOR: Record<string, string> = {
   report: 'var(--accent)',
 }
 
+const FAMILY_LABEL: Record<string, string> = {
+  auth: 'Sign-ins',
+  billing: 'Billing',
+  meet: 'Meets',
+  performance: 'Performance',
+  import: 'Imports',
+  members: 'Members',
+  compliance: 'Compliance',
+  report: 'Reports',
+  comms: 'Messages & Announcements',
+  season: 'Seasons',
+  practice: 'Practices',
+}
+
+function familyLabel(value: string) {
+  return FAMILY_LABEL[value] ?? value
+}
+
+const RESOURCE_LABEL: Record<string, string> = {
+  keycloak_user: 'Sign-in account',
+  communication_preferences: 'Notification preferences',
+  message: 'Message',
+  practice_attendance: 'Practice attendance',
+  report: 'Report',
+  season: 'Season',
+  swimmer: 'Swimmer',
+}
+
+function resourceLabel(value: string) {
+  return RESOURCE_LABEL[value] ?? value
+}
+
 export default function AuditLogPage() {
   const { session } = useSession()
   const api = useApiClient(session?.token)
@@ -124,7 +156,7 @@ export default function AuditLogPage() {
           Audit Log
         </h1>
         <p className="page-subtitle">
-          Immutable privileged-action history returned by the live audit event endpoint.
+          A permanent record of important actions taken in your club&apos;s account.
         </p>
       </div>
 
@@ -139,12 +171,12 @@ export default function AuditLogPage() {
           />
         </div>
         <select value={actionFilter} onChange={(event) => setActionFilter(event.target.value)} style={{ padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)', fontSize: '13px' }}>
-          <option value="">All action families</option>
-          {families.map((item) => <option key={item} value={item}>{item}</option>)}
+          <option value="">All categories</option>
+          {families.map((item) => <option key={item} value={item}>{familyLabel(item)}</option>)}
         </select>
         <select value={resourceFilter} onChange={(event) => setResourceFilter(event.target.value)} style={{ padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)', fontSize: '13px' }}>
-          <option value="">All resources</option>
-          {resources.map((item) => <option key={item} value={item}>{item}</option>)}
+          <option value="">All types</option>
+          {resources.map((item) => <option key={item} value={item}>{resourceLabel(item)}</option>)}
         </select>
         <span style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>{filtered.length} events</span>
       </div>
@@ -184,7 +216,7 @@ export default function AuditLogPage() {
                           {event.action}
                         </span>
                         <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>
-                          {event.resource_type}
+                          {resourceLabel(event.resource_type)}
                         </span>
                       </div>
                       <div style={{ fontSize: '13px', color: 'var(--text)' }}>

@@ -1,6 +1,6 @@
 import type { Role } from './roles'
 
-const MFA_REQUIRED_ROLES: Role[] = ['owner', 'admin', 'coach', 'billing']
+const MFA_REQUIRED_ROLES: Role[] = ['admin', 'coach']
 
 function normalizeRoles(roles: Role | Role[]): Role[] {
   return Array.isArray(roles) ? roles : [roles]

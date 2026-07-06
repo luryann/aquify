@@ -65,7 +65,7 @@ export function UnlinkedSwimmerNotice() {
       >
         <Icon name="check-circle" size={16} style={{ color: C.success, marginTop: '1px', flexShrink: 0 }} />
         <p style={{ margin: 0, fontSize: '13px', color: C.text, lineHeight: 1.5 }}>
-          Request sent — an admin will link your account soon.
+          Request sent. Your coach will connect your account, usually within a day or two.
         </p>
       </div>
     )
@@ -88,7 +88,7 @@ export function UnlinkedSwimmerNotice() {
         <Icon name="alert-circle" size={16} style={{ color: C.warn, marginTop: '1px', flexShrink: 0 }} />
         <p style={{ margin: 0, fontSize: '13px', color: C.text, lineHeight: 1.5 }}>
           Your account isn&apos;t linked to a swimmer profile yet, so times and meet commitments can&apos;t be shown.
-          Let your club admin know below, or ask them directly.
+          Let your club admin know below, or ask them directly. This usually takes a day or two to fix.
         </p>
       </div>
 

@@ -27,7 +27,26 @@ type MeetDraft = MeetCreateDraftState & {
 type PackageFile = { name: string; size: number; type: string; file?: File }
 
 const STEP_LABELS = ['Basic Info', 'Schedule', 'Entry Rules', 'Review']
+function formatReviewDate(value?: string | null) {
+  if (!value) return '—'
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function formatReviewDateTime(value?: string | null) {
+  if (!value) return '—'
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return parsed.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+}
+
 const COURSES: Course[] = ['SCY', 'SCM', 'LCM']
+const COURSE_FULL_NAMES: Record<Course, string> = {
+  SCY: 'Short Course Yards',
+  SCM: 'Short Course Meters',
+  LCM: 'Long Course Meters',
+}
 const DEFAULT_AGE_GROUPS = ['8 & Under', '9-10', '11-12', '13-14', '15-16', '17-18', 'Open']
 const MEET_ENTRY_EXTS = ['.cl2', '.sd3', '.zip', '.hy3', '.hyv', '.ev3']
 
@@ -574,7 +593,7 @@ export default function NewMeetPage() {
                   <FieldLabel required>Course</FieldLabel>
                   <div style={{ display: 'flex', gap: '4px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '8px', padding: '3px' }}>
                     {COURSES.map((c) => (
-                      <button key={c} onClick={() => update('course', c)}
+                      <button key={c} onClick={() => update('course', c)} title={COURSE_FULL_NAMES[c]}
                         style={{
                           flex: 1, padding: '7px', borderRadius: '6px', border: 'none', cursor: 'pointer',
                           background: draft.course === c ? 'var(--accent)' : 'transparent',
@@ -583,6 +602,7 @@ export default function NewMeetPage() {
                         }}>{c}</button>
                     ))}
                   </div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '5px' }}>{COURSE_FULL_NAMES[draft.course as Course]}</div>
                 </div>
                 <div>
                   <FieldLabel required>Host Club</FieldLabel>
@@ -632,8 +652,8 @@ export default function NewMeetPage() {
 
                   <div>
                     <UploadZone
-                      label="Meet Entry File"
-                      hint="Accepts cl2, sd3, zip, hy3, hyv, ev3"
+                      label="Meet Entry File (optional)"
+                      hint="Export this from your meet timing software (e.g. Meet Manager, TouchPad). Skip this if you don't have one yet."
                       accept=".cl2,.sd3,.zip,.hy3,.hyv,.ev3"
                       files={entryFiles}
                       onFiles={handleEntryFileUpload}
@@ -832,7 +852,7 @@ export default function NewMeetPage() {
               <div style={{ marginBottom: '16px', display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '12px 14px', borderRadius: '8px', background: 'var(--warning-bg)', border: '1px solid var(--warning-border)' }}>
                 <Icon name="alert-triangle" size={15} style={{ color: 'var(--warning)', marginTop: '1px', flexShrink: 0 }} />
                 <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--text)', lineHeight: 1.5 }}>
-                  A meet named &quot;{duplicateMeet.name}&quot; on {duplicateMeet.start_date} already exists — check you&apos;re not creating a duplicate before continuing.
+                  A meet named &quot;{duplicateMeet.name}&quot; on {duplicateMeet.start_date} already exists. Check you&apos;re not creating a duplicate before continuing.
                 </p>
               </div>
             )}
@@ -842,9 +862,9 @@ export default function NewMeetPage() {
                 { label: 'Course',       value: draft.course },
                 { label: 'Host Club',    value: draft.hostClub || '—' },
                 { label: 'Location',     value: draft.location || '—' },
-                { label: 'Dates',        value: draft.startDate && draft.endDate ? `${draft.startDate} → ${draft.endDate}` : '—' },
-                { label: 'Commit By',    value: draft.commitmentDeadline || '—' },
-                { label: 'Entry By',     value: draft.entryDeadline || '—' },
+                { label: 'Dates',        value: draft.startDate && draft.endDate ? `${formatReviewDate(draft.startDate)} to ${formatReviewDate(draft.endDate)}` : '—' },
+                { label: 'Commit By',    value: formatReviewDateTime(draft.commitmentDeadline) },
+                { label: 'Entry By',     value: formatReviewDateTime(draft.entryDeadline) },
                 { label: 'Age Groups',   value: draft.ageGroups.join(', ') || '—' },
                 { label: 'Max Events',   value: draft.maxEntriesPerSwimmer },
                 { label: 'Self-Signup',  value: draft.swimmerSelfSignup ? 'Enabled' : 'Disabled' },

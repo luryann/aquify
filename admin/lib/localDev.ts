@@ -19,15 +19,6 @@ export type LocalDevUser = {
 }
 
 export const LOCAL_DEV_USERS: Record<string, LocalDevUser> = {
-  'stub-owner': {
-    id: '00000000-0000-0000-0000-00000000a101',
-    email: 'owner@dare.local',
-    name: 'Dev Owner',
-    role: 'owner',
-    orgId: LOCAL_DEV_ORG_ID,
-    avatarInitials: 'DO',
-    mfaAuthenticated: true,
-  },
   'stub-admin': {
     id: '00000000-0000-0000-0000-00000000a102',
     email: 'admin@dare.local',
@@ -54,23 +45,6 @@ export const LOCAL_DEV_USERS: Record<string, LocalDevUser> = {
     orgId: LOCAL_DEV_ORG_ID,
     avatarInitials: 'DP',
     householdId: LOCAL_DEV_HOUSEHOLD_ID,
-  },
-  'stub-billing': {
-    id: '00000000-0000-0000-0000-00000000a105',
-    email: 'billing@dare.local',
-    name: 'Dev Billing',
-    role: 'billing',
-    orgId: LOCAL_DEV_ORG_ID,
-    avatarInitials: 'DB',
-    mfaAuthenticated: true,
-  },
-  'stub-readonly': {
-    id: '00000000-0000-0000-0000-00000000a106',
-    email: 'readonly@dare.local',
-    name: 'Dev Read-Only',
-    role: 'read-only',
-    orgId: LOCAL_DEV_ORG_ID,
-    avatarInitials: 'DR',
   },
   'stub-swimmer': {
     id: '00000000-0000-0000-0000-00000000a107',

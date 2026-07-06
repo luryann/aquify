@@ -10,7 +10,6 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
 import { useApiClient, ApiError } from '@/lib/api'
 import { fetchMeetCommitments, fetchMeetEntries, fetchMeetEvents, fetchMeets, type MeetRecord } from '@/lib/adminData'
-import { canWrite } from '@/lib/roles'
 
 type MeetStatus = 'draft' | 'published' | 'commitment_open' | 'commitment_closed' | 'entry_finalized' | 'completed' | 'archived'
 type MeetCourse = 'SCY' | 'SCM' | 'LCM'
@@ -125,7 +124,6 @@ export default function MeetsPage() {
 function MeetsPageContent() {
   const { session } = useSession()
   const api = useApiClient(session?.token)
-  const allowWrite = canWrite(session?.user.roles ?? [])
   const searchParams = useSearchParams()
   const [rows, setRows] = useState<MeetRow[]>([])
   const [viewTab, setViewTab] = useState('upcoming')
@@ -187,19 +185,16 @@ function MeetsPageContent() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Meets</h1>
-          <p className="page-subtitle">Live meet operations from persisted backend state</p>
+          <p className="page-subtitle">Every meet your club is planning, running, or has completed</p>
         </div>
-        {allowWrite && (
-          <Link href="/meets/new" className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px', textDecoration: 'none' }}>
-            <Icon name="plus" size={14} /> New Meet
-          </Link>
-        )}
+        <Link href="/meets/new" className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px', textDecoration: 'none' }}>
+          <Icon name="plus" size={14} /> New Meet
+        </Link>
       </div>
 
       {createdNotice === '1' && (
         <div className="card" style={{ padding: '14px 16px', marginBottom: '20px', borderColor: 'var(--success-border)', background: 'var(--success-bg)' }}>
-          <div style={{ fontSize: '12px', fontFamily: 'var(--font-body)', color: 'var(--success)', marginBottom: '4px', letterSpacing: '0.04em' }}>LIVE DATA ENABLED</div>
-          <div style={{ fontSize: '13px', color: 'var(--text-subtle)', lineHeight: 1.6 }}>The meet list now reloads from persisted API data. Newly created meets appear once the create flow posts to the backend.</div>
+          <div style={{ fontSize: '13px', color: 'var(--success)', fontWeight: 600 }}>Meet created.</div>
         </div>
       )}
 
@@ -226,15 +221,15 @@ function MeetsPageContent() {
         </div>
         <select value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)} style={{ padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none', cursor: 'pointer' }}>
           <option value="all">All Courses</option>
-          <option value="SCY">SCY</option>
-          <option value="SCM">SCM</option>
-          <option value="LCM">LCM</option>
+          <option value="SCY">SCY - Short Course Yards</option>
+          <option value="SCM">SCM - Short Course Meters</option>
+          <option value="LCM">LCM - Long Course Meters</option>
         </select>
         <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginLeft: 'auto' }}>{filtered.length} meets</span>
       </div>
 
       {loading ? (
-        <EmptyState icon="calendar" title="Loading meets" description="Fetching live meet data from the API." />
+        <EmptyState icon="calendar" title="Loading meets" description="Fetching your meets." />
       ) : error ? (
         <EmptyState icon="alert-circle" title="Unable to load meets" description={error} />
       ) : (

@@ -13,6 +13,7 @@ type SwimmerNavProps = {
 
 const NAV_LINKS = [
   { label: 'Dashboard',   path: '/swim' },
+  { label: 'Messages',    path: '/swim/messages' },
   { label: 'Performance', path: '/swim/performance' },
   { label: 'Schedule',    path: '/swim/schedule' },
   { label: 'Profile',     path: '/swim/profile' },
@@ -32,11 +33,13 @@ const C = {
 export function SwimmerNav({ swimmerName, initials, onSignOut }: SwimmerNavProps) {
   const pathname = usePathname()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
   const isActive = (path: string) =>
     path === '/swim' ? pathname === '/swim' : pathname.startsWith(path)
 
   return (
+    <>
     <header
       style={{
         position: 'sticky',
@@ -116,8 +119,9 @@ export function SwimmerNav({ swimmerName, initials, onSignOut }: SwimmerNavProps
           </span>
         </Link>
 
-        {/* Nav links */}
+        {/* Nav links (desktop) */}
         <nav
+          className="desktop-nav-links"
           style={{ display: 'flex', alignItems: 'center', gap: '2px', flex: 1 }}
           aria-label="Athlete navigation"
         >
@@ -157,8 +161,17 @@ export function SwimmerNav({ swimmerName, initials, onSignOut }: SwimmerNavProps
           })}
         </nav>
 
+        <button
+          className="mobile-nav-toggle"
+          onClick={() => setMobileNavOpen(true)}
+          aria-label="Open navigation menu"
+          style={{ marginLeft: 'auto' }}
+        >
+          <Icon name="menu" size={16} />
+        </button>
+
         {/* User area */}
-        <div style={{ position: 'relative', flexShrink: 0 }}>
+        <div style={{ position: 'relative', flexShrink: 0, marginLeft: '8px' }}>
           <button
             onClick={() => setMenuOpen((v) => !v)}
             aria-label="Athlete menu"
@@ -290,5 +303,56 @@ export function SwimmerNav({ swimmerName, initials, onSignOut }: SwimmerNavProps
         </div>
       </div>
     </header>
+
+    {mobileNavOpen && (
+      <>
+        <div className="mobile-nav-overlay" onClick={() => setMobileNavOpen(false)} />
+        <div
+          className="mobile-nav-drawer"
+          style={{
+            width: 'min(280px, 84vw)',
+            background: C.surface,
+            borderRight: `1px solid ${C.border}`,
+            flexDirection: 'column',
+            padding: '18px 10px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 8px 16px' }}>
+            <span style={{ fontFamily: 'var(--font-display)', fontSize: '18px', color: C.text }}>aquify</span>
+            <button
+              className="btn-icon"
+              onClick={() => setMobileNavOpen(false)}
+              aria-label="Close navigation menu"
+            >
+              <Icon name="x" size={16} />
+            </button>
+          </div>
+          <nav style={{ display: 'flex', flexDirection: 'column', gap: '2px' }} aria-label="Athlete navigation">
+            {NAV_LINKS.map((link) => {
+              const active = isActive(link.path)
+              return (
+                <Link
+                  key={link.path}
+                  href={link.path}
+                  onClick={() => setMobileNavOpen(false)}
+                  style={{
+                    padding: '11px 12px',
+                    borderRadius: '9px',
+                    fontSize: '14.5px',
+                    fontWeight: active ? 600 : 400,
+                    color: active ? C.accent : C.subtle,
+                    background: active ? 'rgba(0,212,170,0.10)' : 'transparent',
+                    textDecoration: 'none',
+                  }}
+                >
+                  {link.label}
+                </Link>
+              )
+            })}
+          </nav>
+        </div>
+      </>
+    )}
+    </>
   )
 }

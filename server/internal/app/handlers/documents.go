@@ -39,7 +39,7 @@ func NewDocumentHandlers(svc *documents.Service, auditSvc *audit.Service, store 
 
 // RegisterRoutes mounts all document center routes on the protected router.
 func (h *DocumentHandlers) RegisterRoutes(router chi.Router) {
-	// Document type management (admin/owner)
+	// Document type management (admin)
 	router.Get("/document-types", h.listDocumentTypes)
 	router.Post("/document-types", h.createDocumentType)
 	router.Put("/document-types/{typeID}", h.updateDocumentType)
@@ -69,7 +69,7 @@ func (h *DocumentHandlers) listDocumentTypes(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent") {
+	if !hasAnyRole(principal, "admin", "coach", "parent") {
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role.", nil)
 		return
 	}
@@ -99,8 +99,8 @@ func (h *DocumentHandlers) createDocumentType(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin") {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only owner/admin may create document types.", nil)
+	if !hasAnyRole(principal, "admin") {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only admin may create document types.", nil)
 		return
 	}
 
@@ -163,8 +163,8 @@ func (h *DocumentHandlers) updateDocumentType(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin") {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only owner/admin may update document types.", nil)
+	if !hasAnyRole(principal, "admin") {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only admin may update document types.", nil)
 		return
 	}
 	typeID := chi.URLParam(r, "typeID")
@@ -233,8 +233,8 @@ func (h *DocumentHandlers) deleteDocumentType(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin") {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only owner/admin may delete document types.", nil)
+	if !hasAnyRole(principal, "admin") {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only admin may delete document types.", nil)
 		return
 	}
 	typeID := chi.URLParam(r, "typeID")
@@ -270,7 +270,7 @@ func (h *DocumentHandlers) listSubmissions(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent") {
+	if !hasAnyRole(principal, "admin", "coach", "parent") {
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role.", nil)
 		return
 	}
@@ -278,7 +278,7 @@ func (h *DocumentHandlers) listSubmissions(w http.ResponseWriter, r *http.Reques
 	householdID := strings.TrimSpace(r.URL.Query().Get("household_id"))
 
 	// Parents may only query their own household.
-	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "owner", "admin", "coach") {
+	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "admin", "coach") {
 		if principal.HouseholdID == "" {
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Parent session has no household.", nil)
 			return
@@ -310,7 +310,7 @@ func (h *DocumentHandlers) createSubmission(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin", "parent") {
+	if !hasAnyRole(principal, "admin", "parent") {
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role.", nil)
 		return
 	}
@@ -326,7 +326,7 @@ func (h *DocumentHandlers) createSubmission(w http.ResponseWriter, r *http.Reque
 	}
 
 	// Parents may only create submissions for their own household.
-	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "owner", "admin") {
+	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "admin") {
 		if principal.HouseholdID == "" || principal.HouseholdID != body.HouseholdID {
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Parents may only submit documents for their own household.", nil)
 			return
@@ -364,7 +364,7 @@ func (h *DocumentHandlers) getSubmission(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent") {
+	if !hasAnyRole(principal, "admin", "coach", "parent") {
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role.", nil)
 		return
 	}
@@ -377,7 +377,7 @@ func (h *DocumentHandlers) getSubmission(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Parent can only see their own household.
-	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "owner", "admin", "coach") {
+	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "admin", "coach") {
 		if sub.HouseholdID != principal.HouseholdID {
 			httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Document submission not found.", nil)
 			return
@@ -420,7 +420,7 @@ func (h *DocumentHandlers) validateUploadAccess(principal *appmiddleware.Princip
 	if err != nil {
 		return nil, false
 	}
-	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "owner", "admin") {
+	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "admin") {
 		if existing.HouseholdID != principal.HouseholdID {
 			return nil, false
 		}
@@ -460,7 +460,7 @@ func (h *DocumentHandlers) requestUploadURL(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin", "parent") {
+	if !hasAnyRole(principal, "admin", "parent") {
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role.", nil)
 		return
 	}
@@ -522,7 +522,7 @@ func (h *DocumentHandlers) attachFile(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin", "parent") {
+	if !hasAnyRole(principal, "admin", "parent") {
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role.", nil)
 		return
 	}
@@ -618,8 +618,8 @@ func (h *DocumentHandlers) verifySubmission(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin") {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only owner/admin may verify documents.", nil)
+	if !hasAnyRole(principal, "admin") {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only admin may verify documents.", nil)
 		return
 	}
 	submissionID := chi.URLParam(r, "id")
@@ -665,8 +665,8 @@ func (h *DocumentHandlers) rejectSubmission(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin") {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only owner/admin may reject documents.", nil)
+	if !hasAnyRole(principal, "admin") {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only admin may reject documents.", nil)
 		return
 	}
 	submissionID := chi.URLParam(r, "id")

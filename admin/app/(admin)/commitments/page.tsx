@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useMemo, useEffect, useCallback, useRef, type CSSProperties } from 'react'
+import { Suspense, useState, useMemo, useEffect, useCallback, useRef, type CSSProperties } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { Icon } from '@/components/ui/icons'
 import { Table, type Column } from '@/components/ui/Table'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -377,7 +378,7 @@ function SwimmerPanel({
                 {sessionGroups.map((group) => (
                   <div key={group.id}>
                     <div style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px', paddingLeft: '2px' }}>
-                      {group.id === 'main' ? 'Main Session' : `Session ${group.id.slice(-4)}`}
+                      {group.id === 'main' ? 'Main Session' : 'Unscheduled'}
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
                       {group.events.map((ev) => {
@@ -454,10 +455,11 @@ function SwimmerPanel({
                 {localEntries.map((e) => {
                   const cfg = ENTRY_STATUS_CFG[e.status] ?? { label: e.status, color: 'var(--text-muted)', bg: 'var(--bg-elevated)' }
                   const isApproving = approvingEntry.has(e.id)
+                  const entryEvent = events.find((ev) => ev.id === e.meet_event_id)
                   return (
                     <div key={e.id} className="card" style={{ padding: '9px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
                       <span style={{ fontSize: '12px', color: 'var(--text)', fontFamily: 'var(--font-body)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        Entry #{e.id.slice(-6)}
+                        {entryEvent ? eventLabel(entryEvent) : `Entry #${e.id.slice(-6)}`}
                       </span>
                       <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '8px', background: cfg.bg, color: cfg.color, fontFamily: 'var(--font-body)', fontWeight: 600, whiteSpace: 'nowrap' }}>
                         {cfg.label}
@@ -551,13 +553,23 @@ function SwimmerPanel({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function CommitmentsPage() {
+  return (
+    <Suspense fallback={null}>
+      <CommitmentsPageContent />
+    </Suspense>
+  )
+}
+
+function CommitmentsPageContent() {
   const { session } = useSession()
   const api = useApiClient(session?.token)
+  const searchParams = useSearchParams()
+  const lockedMeetId = searchParams.get('meet')
 
   const [rows, setRows] = useState<CommitmentRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [meetFilter, setMeetFilter] = useState('all')
+  const [meetFilter, setMeetFilter] = useState(lockedMeetId ?? 'all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
@@ -806,6 +818,12 @@ export default function CommitmentsPage() {
   return (
     <div style={{ padding: '24px', maxWidth: '1200px' }}>
 
+      {lockedMeetId && (
+        <Link href={`/meets/${lockedMeetId}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '13px', color: 'var(--text-subtle)', textDecoration: 'none', marginBottom: '16px' }}>
+          <Icon name="chevron-left" size={14} /> Back to meet
+        </Link>
+      )}
+
       {/* Page header */}
       <div className="page-header">
         <div>
@@ -813,7 +831,9 @@ export default function CommitmentsPage() {
             Commitments
           </h1>
           <p className="page-subtitle">
-            Cross-meet commitment tracker — click a swimmer to view their entries and event selections
+            {lockedMeetId
+              ? 'Commitment tracker for this meet — click a swimmer to view their entries and event selections'
+              : 'Cross-meet commitment tracker — click a swimmer to view their entries and event selections'}
           </p>
         </div>
       </div>
@@ -868,9 +888,17 @@ export default function CommitmentsPage() {
             style={{ paddingLeft: '32px', width: '100%' }}
           />
         </div>
-        <select value={meetFilter} onChange={(e) => setMeetFilter(e.target.value)} className="input" style={{ minWidth: '180px' }}>
-          {meetOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
+        {lockedMeetId ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg-elevated)', fontSize: '13px', color: 'var(--text)' }}>
+            <Icon name="calendar" size={13} color="var(--text-muted)" />
+            {meetOptions.find((o) => o.value === lockedMeetId)?.label ?? 'This meet'}
+            <Link href="/commitments" style={{ fontSize: '11px', color: 'var(--accent)', textDecoration: 'none' }}>Clear</Link>
+          </div>
+        ) : (
+          <select value={meetFilter} onChange={(e) => setMeetFilter(e.target.value)} className="input" style={{ minWidth: '180px' }}>
+            {meetOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        )}
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="input" style={{ minWidth: '150px' }}>
           <option value="all">All Statuses</option>
           <option value="invited">Awaiting</option>

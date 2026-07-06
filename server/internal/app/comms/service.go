@@ -42,6 +42,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/dareaquatics/aquify/server/internal/postmark"
+	"github.com/dareaquatics/aquify/server/internal/storage"
 )
 
 // ─── Sentinel errors ──────────────────────────────────────────────────────────
@@ -55,6 +56,8 @@ var (
 	ErrInvalidTransition    = errors.New("invalid state transition")
 	ErrDuplicateSuppression = errors.New("email already suppressed for this organisation")
 	ErrCampaignNotDraft     = errors.New("campaign must be in draft status to send")
+	ErrMessageNotFound      = errors.New("message not found")
+	ErrInvalidReaction      = errors.New("emoji is not in the allowed reaction set")
 )
 
 // ─── Domain types ─────────────────────────────────────────────────────────────
@@ -77,18 +80,86 @@ type Announcement struct {
 }
 
 // Message is a direct note in a household+swimmer thread between a parent/swimmer
-// and staff (coach/admin/owner). Threads are scoped per swimmer so a household with
+// and staff (coach/admin). Threads are scoped per swimmer so a household with
 // multiple kids gets a separate conversation for each one.
 type Message struct {
+	ID           string     `json:"id"`
+	OrgID        string     `json:"org_id"`
+	HouseholdID  string     `json:"household_id"`
+	SwimmerID    string     `json:"swimmer_id"`
+	SenderUserID string     `json:"sender_user_id"`
+	SenderRole   string     `json:"sender_role"`
+	Body         string     `json:"body"`
+	EditedAt     *time.Time `json:"edited_at,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
+}
+
+// MessageEdit records the prior body of a message each time its sender edits it.
+type MessageEdit struct {
 	ID           string    `json:"id"`
-	OrgID        string    `json:"org_id"`
-	HouseholdID  string    `json:"household_id"`
-	SwimmerID    string    `json:"swimmer_id"`
-	SenderUserID string    `json:"sender_user_id"`
-	SenderRole   string    `json:"sender_role"`
-	Body         string    `json:"body"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	MessageID    string    `json:"message_id"`
+	PreviousBody string    `json:"previous_body"`
+	EditedAt     time.Time `json:"edited_at"`
+	EditedBy     string    `json:"edited_by"`
+}
+
+// AllowedMessageReactions is the fixed set of emoji a message may be reacted with.
+var AllowedMessageReactions = map[string]bool{
+	"👍": true, "❤️": true, "😂": true, "🎉": true, "😮": true, "😢": true,
+}
+
+// MessageReaction is one user's emoji reaction on a message.
+type MessageReaction struct {
+	ID        string    `json:"id"`
+	MessageID string    `json:"message_id"`
+	UserID    string    `json:"user_id"`
+	Emoji     string    `json:"emoji"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// MessageAttachment is a file (image) sent along with a message.
+type MessageAttachment struct {
+	ID        string    `json:"id"`
+	MessageID string    `json:"message_id"`
+	ObjectKey string    `json:"object_key"`
+	Filename  string    `json:"filename"`
+	MimeType  string    `json:"mime_type"`
+	SizeBytes int64     `json:"size_bytes"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// MessageRead is a per-user read watermark for a household+swimmer thread.
+type MessageRead struct {
+	ID          string    `json:"id"`
+	OrgID       string    `json:"org_id"`
+	HouseholdID string    `json:"household_id"`
+	SwimmerID   string    `json:"swimmer_id"`
+	UserID      string    `json:"user_id"`
+	LastReadAt  time.Time `json:"last_read_at"`
+}
+
+// ReactionSummary aggregates one emoji's reaction count on a message for display.
+type ReactionSummary struct {
+	Emoji       string `json:"emoji"`
+	Count       int    `json:"count"`
+	ReactedByMe bool   `json:"reacted_by_me"`
+}
+
+// AttachmentView is the read-facing shape of an attachment, with a freshly
+// signed download URL rather than the raw object key.
+type AttachmentView struct {
+	Filename    string `json:"filename"`
+	MimeType    string `json:"mime_type"`
+	SizeBytes   int64  `json:"size_bytes"`
+	DownloadURL string `json:"download_url,omitempty"`
+}
+
+// MessageView is a Message enriched with reactions and attachments for API responses.
+type MessageView struct {
+	Message
+	Reactions   []ReactionSummary `json:"reactions,omitempty"`
+	Attachments []AttachmentView  `json:"attachments,omitempty"`
 }
 
 // MessageThreadSummary describes one household+swimmer conversation for an inbox view.
@@ -99,6 +170,7 @@ type MessageThreadSummary struct {
 	LastBody       string    `json:"last_body"`
 	LastSenderRole string    `json:"last_sender_role"`
 	LastMessageAt  time.Time `json:"last_message_at"`
+	UnreadCount    int       `json:"unread_count"`
 }
 
 // EmailCampaign is a bulk-email job targeting all org members or a group.
@@ -182,6 +254,16 @@ type NotificationPreferenceView struct {
 
 // ─── Input types ──────────────────────────────────────────────────────────────
 
+// AttachmentInput describes one already-uploaded object to link to a new message.
+// The caller (handler layer) must have already validated the object's real MIME
+// type/size/existence in storage before constructing this.
+type AttachmentInput struct {
+	ObjectKey string
+	Filename  string
+	MimeType  string
+	SizeBytes int64
+}
+
 // CreateMessageInput holds fields for sending a message into a household+swimmer thread.
 type CreateMessageInput struct {
 	OrgID        string `json:"org_id"       validate:"required"`
@@ -190,6 +272,7 @@ type CreateMessageInput struct {
 	Body         string `json:"body"         validate:"required,max=4000"`
 	SenderUserID string `json:"-"`
 	SenderRole   string `json:"-"`
+	Attachments  []AttachmentInput `json:"-"`
 }
 
 type CreateAnnouncementInput struct {
@@ -268,29 +351,66 @@ var notificationPreferenceDefinitions = []notificationPreferenceDefinition{
 
 // Service is the in-memory communications service.
 type Service struct {
-	mu            sync.RWMutex
-	repo          *Repository
-	announcements map[string]*Announcement
-	campaigns     map[string]*EmailCampaign
-	deliveries    map[string]*EmailDelivery
-	suppression   map[string]*SuppressionEntry // key: orgID|email (lowercase)
-	preferences   map[string]*NotificationPreference
-	messages      map[string]*Message
+	mu                 sync.RWMutex
+	repo               *Repository
+	announcements      map[string]*Announcement
+	campaigns          map[string]*EmailCampaign
+	deliveries         map[string]*EmailDelivery
+	suppression        map[string]*SuppressionEntry // key: orgID|email (lowercase)
+	preferences        map[string]*NotificationPreference
+	messages           map[string]*Message
+	messageEdits       map[string]*MessageEdit
+	messageReactions   map[string]*MessageReaction
+	messageAttachments map[string]*MessageAttachment
+	messageReads       map[string]*MessageRead // key: orgID|householdID|swimmerID|userID
 
 	postmarkClient postmark.Client
+	store          storage.ObjectStorage
+	broadcaster    *MessageBroadcaster
 }
 
 // NewService returns a new in-memory Service with a stub Postmark client.
 func NewService() *Service {
 	return &Service{
-		announcements:  make(map[string]*Announcement),
-		campaigns:      make(map[string]*EmailCampaign),
-		deliveries:     make(map[string]*EmailDelivery),
-		suppression:    make(map[string]*SuppressionEntry),
-		preferences:    make(map[string]*NotificationPreference),
-		messages:       make(map[string]*Message),
-		postmarkClient: postmark.NewStubClient(),
+		announcements:      make(map[string]*Announcement),
+		campaigns:          make(map[string]*EmailCampaign),
+		deliveries:         make(map[string]*EmailDelivery),
+		suppression:        make(map[string]*SuppressionEntry),
+		preferences:        make(map[string]*NotificationPreference),
+		messages:           make(map[string]*Message),
+		messageEdits:       make(map[string]*MessageEdit),
+		messageReactions:   make(map[string]*MessageReaction),
+		messageAttachments: make(map[string]*MessageAttachment),
+		messageReads:       make(map[string]*MessageRead),
+		postmarkClient:     postmark.NewStubClient(),
 	}
+}
+
+// SetStorage attaches object storage used to sign message-attachment download URLs.
+func (s *Service) SetStorage(store storage.ObjectStorage) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.store = store
+}
+
+// SetBroadcaster attaches a realtime broadcaster used to publish message events.
+// A nil broadcaster (the default) simply means no realtime push is available —
+// sends/edits/reactions still persist normally.
+func (s *Service) SetBroadcaster(b *MessageBroadcaster) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.broadcaster = b
+}
+
+// Broadcaster returns the currently configured realtime broadcaster, or nil.
+func (s *Service) Broadcaster() *MessageBroadcaster {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.broadcaster
+}
+
+func messageReadKey(orgID, householdID, swimmerID, userID string) string {
+	return orgID + "|" + householdID + "|" + swimmerID + "|" + userID
 }
 
 // NewServiceWithClient returns a Service using the provided Postmark client.
@@ -326,7 +446,8 @@ func NewServiceWithPool(pool *pgxpool.Pool) *Service {
 }
 
 func (s *Service) loadFromDB(ctx context.Context) error {
-	announcements, campaigns, deliveries, suppressions, preferences, messages, err := s.repo.LoadAll(ctx)
+	announcements, campaigns, deliveries, suppressions, preferences, messages,
+		messageEdits, messageReactions, messageAttachments, messageReads, err := s.repo.LoadAll(ctx)
 	if err != nil {
 		return err
 	}
@@ -349,6 +470,18 @@ func (s *Service) loadFromDB(ctx context.Context) error {
 	}
 	for _, m := range messages {
 		s.messages[m.ID] = m
+	}
+	for _, e := range messageEdits {
+		s.messageEdits[e.ID] = e
+	}
+	for _, react := range messageReactions {
+		s.messageReactions[react.ID] = react
+	}
+	for _, a := range messageAttachments {
+		s.messageAttachments[a.ID] = a
+	}
+	for _, read := range messageReads {
+		s.messageReads[messageReadKey(read.OrgID, read.HouseholdID, read.SwimmerID, read.UserID)] = read
 	}
 	return nil
 }
@@ -590,10 +723,24 @@ func (s *Service) ListAnnouncements(orgID, statusFilter string) ([]*Announcement
 
 // ─── Message operations ───────────────────────────────────────────────────────
 
-// SendMessage appends a message to a household+swimmer thread.
+// MessageThread returns which household+swimmer thread a message belongs to, so
+// message-ID-addressed endpoints (reactions) can run the same thread-scoped
+// authorization used everywhere else in the messages API.
+func (s *Service) MessageThread(orgID, messageID string) (householdID, swimmerID string, ok bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	m, found := s.messages[messageID]
+	if !found || m.OrgID != orgID {
+		return "", "", false
+	}
+	return m.HouseholdID, m.SwimmerID, true
+}
+
+// SendMessage appends a message to a household+swimmer thread, optionally with
+// attachments that have already been uploaded and validated by the caller.
 func (s *Service) SendMessage(inp CreateMessageInput) (*Message, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	now := time.Now().UTC()
 	m := &Message{
@@ -609,34 +756,111 @@ func (s *Service) SendMessage(inp CreateMessageInput) (*Message, error) {
 	}
 	if s.repo != nil {
 		if err := s.repo.UpsertMessage(context.Background(), m); err != nil {
+			s.mu.Unlock()
 			return nil, fmt.Errorf("persist message: %w", err)
 		}
 	}
 	s.messages[m.ID] = m
+
+	for _, in := range inp.Attachments {
+		a := &MessageAttachment{
+			ID:        s.newID(),
+			MessageID: m.ID,
+			ObjectKey: in.ObjectKey,
+			Filename:  in.Filename,
+			MimeType:  in.MimeType,
+			SizeBytes: in.SizeBytes,
+			CreatedAt: now,
+		}
+		if s.repo != nil {
+			if err := s.repo.InsertMessageAttachment(context.Background(), a); err != nil {
+				s.mu.Unlock()
+				return nil, fmt.Errorf("persist message attachment: %w", err)
+			}
+		}
+		s.messageAttachments[a.ID] = a
+	}
+	broadcaster := s.broadcaster
+	view := s.buildMessageView(m, inp.SenderUserID)
+	s.mu.Unlock()
+
+	if broadcaster != nil {
+		broadcaster.Publish(context.Background(), inp.OrgID, MessageEvent{
+			Type:        "message.created",
+			HouseholdID: m.HouseholdID,
+			SwimmerID:   m.SwimmerID,
+			Message:     view,
+		})
+	}
 	return m, nil
 }
 
-// ListMessages returns every message in a household+swimmer thread, oldest first.
-func (s *Service) ListMessages(orgID, householdID, swimmerID string) []*Message {
+// buildMessageView enriches a Message with its reactions and attachments for API
+// responses. Caller must hold at least a read lock, or call before/after locking.
+func (s *Service) buildMessageView(m *Message, viewerUserID string) MessageView {
+	counts := make(map[string]int)
+	reactedByMe := make(map[string]bool)
+	for _, react := range s.messageReactions {
+		if react.MessageID != m.ID {
+			continue
+		}
+		counts[react.Emoji]++
+		if react.UserID == viewerUserID {
+			reactedByMe[react.Emoji] = true
+		}
+	}
+	reactions := make([]ReactionSummary, 0, len(counts))
+	for emoji, count := range counts {
+		reactions = append(reactions, ReactionSummary{Emoji: emoji, Count: count, ReactedByMe: reactedByMe[emoji]})
+	}
+	sort.Slice(reactions, func(i, j int) bool { return reactions[i].Emoji < reactions[j].Emoji })
+
+	attachments := make([]AttachmentView, 0)
+	for _, a := range s.messageAttachments {
+		if a.MessageID != m.ID {
+			continue
+		}
+		view := AttachmentView{Filename: a.Filename, MimeType: a.MimeType, SizeBytes: a.SizeBytes}
+		if s.store != nil {
+			if url, err := s.store.PresignedGetURL(a.ObjectKey, 15*time.Minute); err == nil {
+				view.DownloadURL = url
+			}
+		}
+		attachments = append(attachments, view)
+	}
+	sort.Slice(attachments, func(i, j int) bool { return attachments[i].Filename < attachments[j].Filename })
+
+	return MessageView{Message: *m, Reactions: reactions, Attachments: attachments}
+}
+
+// ListMessages returns every message in a household+swimmer thread, oldest first,
+// enriched with reactions/attachments and reacted-by-me flags for viewerUserID.
+func (s *Service) ListMessages(orgID, householdID, swimmerID, viewerUserID string) []MessageView {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	out := make([]*Message, 0)
+	msgs := make([]*Message, 0)
 	for _, m := range s.messages {
 		if m.OrgID != orgID || m.HouseholdID != householdID || m.SwimmerID != swimmerID {
 			continue
 		}
-		out = append(out, m)
+		msgs = append(msgs, m)
 	}
-	sort.Slice(out, func(i, j int) bool {
-		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	sort.Slice(msgs, func(i, j int) bool {
+		return msgs[i].CreatedAt.Before(msgs[j].CreatedAt)
 	})
+
+	out := make([]MessageView, 0, len(msgs))
+	for _, m := range msgs {
+		out = append(out, s.buildMessageView(m, viewerUserID))
+	}
 	return out
 }
 
 // ListMessageThreads returns one summary row per household+swimmer thread for an
-// org, most recently active first — used for a coach/admin inbox view.
-func (s *Service) ListMessageThreads(orgID string) []MessageThreadSummary {
+// org, most recently active first — used for a coach/admin inbox view. UnreadCount
+// is computed relative to viewerUserID's read watermark for each thread.
+func (s *Service) ListMessageThreads(orgID, viewerUserID string) []MessageThreadSummary {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -658,6 +882,10 @@ func (s *Service) ListMessageThreads(orgID string) []MessageThreadSummary {
 			summary.LastBody = m.Body
 			summary.LastSenderRole = m.SenderRole
 		}
+		watermark := s.messageReads[messageReadKey(orgID, m.HouseholdID, m.SwimmerID, viewerUserID)]
+		if m.SenderUserID != viewerUserID && (watermark == nil || m.CreatedAt.After(watermark.LastReadAt)) {
+			summary.UnreadCount++
+		}
 	}
 
 	out := make([]MessageThreadSummary, 0, len(threads))
@@ -668,6 +896,164 @@ func (s *Service) ListMessageThreads(orgID string) []MessageThreadSummary {
 		return out[i].LastMessageAt.After(out[j].LastMessageAt)
 	})
 	return out
+}
+
+// EditMessage updates a message's body, sender-only, keeping a history entry of
+// the prior body. Edits are unrestricted (no time window).
+func (s *Service) EditMessage(orgID, messageID, userID, newBody string) (*Message, error) {
+	s.mu.Lock()
+
+	m, ok := s.messages[messageID]
+	if !ok || m.OrgID != orgID {
+		s.mu.Unlock()
+		return nil, ErrMessageNotFound
+	}
+	if m.SenderUserID != userID {
+		s.mu.Unlock()
+		return nil, ErrForbidden
+	}
+
+	now := time.Now().UTC()
+	edit := &MessageEdit{
+		ID:           s.newID(),
+		MessageID:    m.ID,
+		PreviousBody: m.Body,
+		EditedAt:     now,
+		EditedBy:     userID,
+	}
+	m.Body = strings.TrimSpace(newBody)
+	m.EditedAt = &now
+	m.UpdatedAt = now
+
+	if s.repo != nil {
+		if err := s.repo.InsertMessageEdit(context.Background(), edit); err != nil {
+			s.mu.Unlock()
+			return nil, fmt.Errorf("persist message edit: %w", err)
+		}
+		if err := s.repo.UpdateMessageBody(context.Background(), m.ID, m.Body, now); err != nil {
+			s.mu.Unlock()
+			return nil, fmt.Errorf("persist message body: %w", err)
+		}
+	}
+	s.messageEdits[edit.ID] = edit
+	broadcaster := s.broadcaster
+	view := s.buildMessageView(m, userID)
+	s.mu.Unlock()
+
+	if broadcaster != nil {
+		broadcaster.Publish(context.Background(), orgID, MessageEvent{
+			Type:        "message.updated",
+			HouseholdID: m.HouseholdID,
+			SwimmerID:   m.SwimmerID,
+			Message:     view,
+		})
+	}
+	return m, nil
+}
+
+// AddReaction records userID's emoji reaction on a message. Adding the same
+// (message, user, emoji) twice is a no-op.
+func (s *Service) AddReaction(orgID, messageID, userID, emoji string) error {
+	if !AllowedMessageReactions[emoji] {
+		return ErrInvalidReaction
+	}
+	s.mu.Lock()
+
+	m, ok := s.messages[messageID]
+	if !ok || m.OrgID != orgID {
+		s.mu.Unlock()
+		return ErrMessageNotFound
+	}
+	for _, react := range s.messageReactions {
+		if react.MessageID == messageID && react.UserID == userID && react.Emoji == emoji {
+			s.mu.Unlock()
+			return nil
+		}
+	}
+	react := &MessageReaction{ID: s.newID(), MessageID: messageID, UserID: userID, Emoji: emoji, CreatedAt: time.Now().UTC()}
+	if s.repo != nil {
+		if err := s.repo.UpsertMessageReaction(context.Background(), react); err != nil {
+			s.mu.Unlock()
+			return fmt.Errorf("persist reaction: %w", err)
+		}
+	}
+	s.messageReactions[react.ID] = react
+	broadcaster := s.broadcaster
+	view := s.buildMessageView(m, userID)
+	s.mu.Unlock()
+
+	if broadcaster != nil {
+		broadcaster.Publish(context.Background(), orgID, MessageEvent{
+			Type:        "message.reaction_added",
+			HouseholdID: m.HouseholdID,
+			SwimmerID:   m.SwimmerID,
+			Message:     view,
+		})
+	}
+	return nil
+}
+
+// RemoveReaction removes userID's own emoji reaction from a message, if present.
+func (s *Service) RemoveReaction(orgID, messageID, userID, emoji string) error {
+	s.mu.Lock()
+
+	m, ok := s.messages[messageID]
+	if !ok || m.OrgID != orgID {
+		s.mu.Unlock()
+		return ErrMessageNotFound
+	}
+	for id, react := range s.messageReactions {
+		if react.MessageID == messageID && react.UserID == userID && react.Emoji == emoji {
+			delete(s.messageReactions, id)
+		}
+	}
+	if s.repo != nil {
+		if err := s.repo.DeleteMessageReaction(context.Background(), messageID, userID, emoji); err != nil {
+			s.mu.Unlock()
+			return fmt.Errorf("delete reaction: %w", err)
+		}
+	}
+	broadcaster := s.broadcaster
+	view := s.buildMessageView(m, userID)
+	s.mu.Unlock()
+
+	if broadcaster != nil {
+		broadcaster.Publish(context.Background(), orgID, MessageEvent{
+			Type:        "message.reaction_removed",
+			HouseholdID: m.HouseholdID,
+			SwimmerID:   m.SwimmerID,
+			Message:     view,
+		})
+	}
+	return nil
+}
+
+// MarkThreadRead records that userID has read a household+swimmer thread as of now.
+func (s *Service) MarkThreadRead(orgID, householdID, swimmerID, userID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	key := messageReadKey(orgID, householdID, swimmerID, userID)
+	existing := s.messageReads[key]
+	now := time.Now().UTC()
+	read := &MessageRead{
+		ID:          s.newID(),
+		OrgID:       orgID,
+		HouseholdID: householdID,
+		SwimmerID:   swimmerID,
+		UserID:      userID,
+		LastReadAt:  now,
+	}
+	if existing != nil {
+		read.ID = existing.ID
+	}
+	if s.repo != nil {
+		if err := s.repo.UpsertMessageRead(context.Background(), read); err != nil {
+			return fmt.Errorf("persist message read: %w", err)
+		}
+	}
+	s.messageReads[key] = read
+	return nil
 }
 
 // ─── Campaign operations ──────────────────────────────────────────────────────

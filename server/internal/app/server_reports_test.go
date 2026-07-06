@@ -242,7 +242,7 @@ func TestReportsEndpointsCSVExport(t *testing.T) {
 
 	orgID, _, _, _, _, _, _ := seedReportsFixture(t, memberSvc, groupSvc, meetSvc, billingSvc)
 	router := newReportsRouter(t, memberSvc, groupSvc, meetSvc, billingSvc, audit.NewService())
-	token := issueSessionToken(t, router, orgID, []string{"billing"}, false)
+	token := issueSessionToken(t, router, orgID, []string{"admin"}, false)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/invoice-aging?format=csv&as_of=2026-03-18", nil)
 	req.Header.Set("Authorization", "Bearer "+token)

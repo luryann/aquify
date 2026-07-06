@@ -287,7 +287,7 @@ func TestJobsEndpoints_Forbidden(t *testing.T) {
 func TestJobsEndpoints_QueueStats(t *testing.T) {
 	srv := buildTestWorkerServer(t)
 	router := newStep17Router(t, srv)
-	token := issueStep17Token(t, router, "owner")
+	token := issueStep17Token(t, router, "admin")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs/queues", nil)
 	req.Header.Set("Authorization", "Bearer "+token)

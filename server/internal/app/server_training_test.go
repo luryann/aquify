@@ -171,7 +171,6 @@ func TestPracticeRoleEnforcement(t *testing.T) {
 	coachToken := issueTrainingToken(t, router, "coach-1", orgID, "coach")
 	parentToken := issueTrainingToken(t, router, "parent-1", orgID, "parent")
 	swimToken := issueTrainingToken(t, router, "swimmer-1", orgID, "swimmer")
-	readOnlyToken := issueTrainingToken(t, router, "ro-1", orgID, "read-only")
 
 	// Coach creates a practice
 	body := `{"date":"2026-03-25","group_id":"grp1","type":"dryland","description":"Core circuit"}`
@@ -223,23 +222,6 @@ func TestPracticeRoleEnforcement(t *testing.T) {
 		t.Errorf("parent delete: want 403, got %d", rr.Code)
 	}
 
-	// Read-only can list
-	rr = doTrainingReq(router, http.MethodGet, "/api/v1/practices", readOnlyToken, orgID, "")
-	if rr.Code != http.StatusOK {
-		t.Errorf("read-only list: want 200, got %d", rr.Code)
-	}
-
-	// Read-only can get by ID
-	rr = doTrainingReq(router, http.MethodGet, "/api/v1/practices/"+id, readOnlyToken, orgID, "")
-	if rr.Code != http.StatusOK {
-		t.Errorf("read-only get: want 200, got %d", rr.Code)
-	}
-
-	// Read-only cannot create
-	rr = doTrainingReq(router, http.MethodPost, "/api/v1/practices", readOnlyToken, orgID, body)
-	if rr.Code != http.StatusForbidden {
-		t.Errorf("read-only create: want 403, got %d", rr.Code)
-	}
 }
 
 // TestPracticeOrgIsolation verifies that practices from one org are not visible

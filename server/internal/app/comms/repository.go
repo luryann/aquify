@@ -3,6 +3,7 @@ package comms
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -304,12 +305,13 @@ func (r *Repository) LoadNotificationPreferences(ctx context.Context) ([]*Notifi
 
 func (r *Repository) UpsertMessage(ctx context.Context, m *Message) error {
 	_, err := r.pool.Exec(ctx, `
-		INSERT INTO messages (id, org_id, household_id, swimmer_id, sender_user_id, sender_role, body, created_at, updated_at)
-		VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6, $7, $8, $9)
+		INSERT INTO messages (id, org_id, household_id, swimmer_id, sender_user_id, sender_role, body, edited_at, created_at, updated_at)
+		VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6, $7, $8, $9, $10)
 		ON CONFLICT (id) DO UPDATE SET
 		  body       = EXCLUDED.body,
+		  edited_at  = EXCLUDED.edited_at,
 		  updated_at = EXCLUDED.updated_at`,
-		m.ID, m.OrgID, m.HouseholdID, m.SwimmerID, m.SenderUserID, m.SenderRole, m.Body,
+		m.ID, m.OrgID, m.HouseholdID, m.SwimmerID, m.SenderUserID, m.SenderRole, m.Body, m.EditedAt,
 		m.CreatedAt, m.UpdatedAt,
 	)
 	return err
@@ -318,7 +320,7 @@ func (r *Repository) UpsertMessage(ctx context.Context, m *Message) error {
 func (r *Repository) LoadMessages(ctx context.Context) ([]*Message, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id::text, org_id::text, household_id::text, swimmer_id::text,
-		       sender_user_id::text, sender_role, body, created_at, updated_at
+		       sender_user_id::text, sender_role, body, edited_at, created_at, updated_at
 		FROM messages`)
 	if err != nil {
 		return nil, fmt.Errorf("comms: load messages: %w", err)
@@ -329,11 +331,152 @@ func (r *Repository) LoadMessages(ctx context.Context) ([]*Message, error) {
 		m := &Message{}
 		if err := rows.Scan(
 			&m.ID, &m.OrgID, &m.HouseholdID, &m.SwimmerID,
-			&m.SenderUserID, &m.SenderRole, &m.Body, &m.CreatedAt, &m.UpdatedAt,
+			&m.SenderUserID, &m.SenderRole, &m.Body, &m.EditedAt, &m.CreatedAt, &m.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("comms: scan message: %w", err)
 		}
 		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// ─── Message edits ────────────────────────────────────────────────────────────
+
+func (r *Repository) InsertMessageEdit(ctx context.Context, e *MessageEdit) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO message_edits (id, message_id, previous_body, edited_at, edited_by)
+		VALUES ($1::uuid, $2::uuid, $3, $4, $5::uuid)
+		ON CONFLICT (id) DO NOTHING`,
+		e.ID, e.MessageID, e.PreviousBody, e.EditedAt, e.EditedBy,
+	)
+	return err
+}
+
+func (r *Repository) UpdateMessageBody(ctx context.Context, messageID, body string, editedAt time.Time) error {
+	_, err := r.pool.Exec(ctx, `
+		UPDATE messages SET body = $2, edited_at = $3, updated_at = $3 WHERE id = $1::uuid`,
+		messageID, body, editedAt,
+	)
+	return err
+}
+
+func (r *Repository) LoadMessageEdits(ctx context.Context) ([]*MessageEdit, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, message_id::text, previous_body, edited_at, edited_by::text
+		FROM message_edits`)
+	if err != nil {
+		return nil, fmt.Errorf("comms: load message_edits: %w", err)
+	}
+	defer rows.Close()
+	var out []*MessageEdit
+	for rows.Next() {
+		e := &MessageEdit{}
+		if err := rows.Scan(&e.ID, &e.MessageID, &e.PreviousBody, &e.EditedAt, &e.EditedBy); err != nil {
+			return nil, fmt.Errorf("comms: scan message_edit: %w", err)
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// ─── Message reactions ─────────────────────────────────────────────────────────
+
+func (r *Repository) UpsertMessageReaction(ctx context.Context, react *MessageReaction) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO message_reactions (id, message_id, user_id, emoji, created_at)
+		VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5)
+		ON CONFLICT (message_id, user_id, emoji) DO NOTHING`,
+		react.ID, react.MessageID, react.UserID, react.Emoji, react.CreatedAt,
+	)
+	return err
+}
+
+func (r *Repository) DeleteMessageReaction(ctx context.Context, messageID, userID, emoji string) error {
+	_, err := r.pool.Exec(ctx, `
+		DELETE FROM message_reactions WHERE message_id = $1::uuid AND user_id = $2::uuid AND emoji = $3`,
+		messageID, userID, emoji,
+	)
+	return err
+}
+
+func (r *Repository) LoadMessageReactions(ctx context.Context) ([]*MessageReaction, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, message_id::text, user_id::text, emoji, created_at
+		FROM message_reactions`)
+	if err != nil {
+		return nil, fmt.Errorf("comms: load message_reactions: %w", err)
+	}
+	defer rows.Close()
+	var out []*MessageReaction
+	for rows.Next() {
+		react := &MessageReaction{}
+		if err := rows.Scan(&react.ID, &react.MessageID, &react.UserID, &react.Emoji, &react.CreatedAt); err != nil {
+			return nil, fmt.Errorf("comms: scan message_reaction: %w", err)
+		}
+		out = append(out, react)
+	}
+	return out, rows.Err()
+}
+
+// ─── Message attachments ───────────────────────────────────────────────────────
+
+func (r *Repository) InsertMessageAttachment(ctx context.Context, a *MessageAttachment) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO message_attachments (id, message_id, object_key, filename, mime_type, size_bytes, created_at)
+		VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7)
+		ON CONFLICT (id) DO NOTHING`,
+		a.ID, a.MessageID, a.ObjectKey, a.Filename, a.MimeType, a.SizeBytes, a.CreatedAt,
+	)
+	return err
+}
+
+func (r *Repository) LoadMessageAttachments(ctx context.Context) ([]*MessageAttachment, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, message_id::text, object_key, filename, mime_type, size_bytes, created_at
+		FROM message_attachments`)
+	if err != nil {
+		return nil, fmt.Errorf("comms: load message_attachments: %w", err)
+	}
+	defer rows.Close()
+	var out []*MessageAttachment
+	for rows.Next() {
+		a := &MessageAttachment{}
+		if err := rows.Scan(&a.ID, &a.MessageID, &a.ObjectKey, &a.Filename, &a.MimeType, &a.SizeBytes, &a.CreatedAt); err != nil {
+			return nil, fmt.Errorf("comms: scan message_attachment: %w", err)
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+// ─── Message reads ──────────────────────────────────────────────────────────────
+
+func (r *Repository) UpsertMessageRead(ctx context.Context, read *MessageRead) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO message_reads (id, org_id, household_id, swimmer_id, user_id, last_read_at)
+		VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6)
+		ON CONFLICT (org_id, household_id, swimmer_id, user_id) DO UPDATE SET
+			last_read_at = EXCLUDED.last_read_at`,
+		read.ID, read.OrgID, read.HouseholdID, read.SwimmerID, read.UserID, read.LastReadAt,
+	)
+	return err
+}
+
+func (r *Repository) LoadMessageReads(ctx context.Context) ([]*MessageRead, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, org_id::text, household_id::text, swimmer_id::text, user_id::text, last_read_at
+		FROM message_reads`)
+	if err != nil {
+		return nil, fmt.Errorf("comms: load message_reads: %w", err)
+	}
+	defer rows.Close()
+	var out []*MessageRead
+	for rows.Next() {
+		read := &MessageRead{}
+		if err := rows.Scan(&read.ID, &read.OrgID, &read.HouseholdID, &read.SwimmerID, &read.UserID, &read.LastReadAt); err != nil {
+			return nil, fmt.Errorf("comms: scan message_read: %w", err)
+		}
+		out = append(out, read)
 	}
 	return out, rows.Err()
 }
@@ -347,6 +490,10 @@ func (r *Repository) LoadAll(ctx context.Context) (
 	suppressions []*SuppressionEntry,
 	preferences []*NotificationPreference,
 	messages []*Message,
+	messageEdits []*MessageEdit,
+	messageReactions []*MessageReaction,
+	messageAttachments []*MessageAttachment,
+	messageReads []*MessageRead,
 	err error,
 ) {
 	if announcements, err = r.LoadAnnouncements(ctx); err != nil {
@@ -364,6 +511,18 @@ func (r *Repository) LoadAll(ctx context.Context) (
 	if preferences, err = r.LoadNotificationPreferences(ctx); err != nil {
 		return
 	}
-	messages, err = r.LoadMessages(ctx)
+	if messages, err = r.LoadMessages(ctx); err != nil {
+		return
+	}
+	if messageEdits, err = r.LoadMessageEdits(ctx); err != nil {
+		return
+	}
+	if messageReactions, err = r.LoadMessageReactions(ctx); err != nil {
+		return
+	}
+	if messageAttachments, err = r.LoadMessageAttachments(ctx); err != nil {
+		return
+	}
+	messageReads, err = r.LoadMessageReads(ctx)
 	return
 }

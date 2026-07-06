@@ -9,6 +9,7 @@ import { NAV_ITEMS } from '@/lib/roles'
 
 type TopbarProps = {
   actions?: ReactNode
+  onOpenMobileNav?: () => void
 }
 
 // Build breadcrumb from pathname
@@ -115,7 +116,7 @@ function ThemeToggle() {
   )
 }
 
-export function Topbar({ actions }: TopbarProps) {
+export function Topbar({ actions, onOpenMobileNav }: TopbarProps) {
   const crumbs = useBreadcrumb()
 
   return (
@@ -131,6 +132,28 @@ export function Topbar({ actions }: TopbarProps) {
         flexShrink: 0,
       }}
     >
+      <button
+        className="mobile-nav-toggle"
+        onClick={onOpenMobileNav}
+        aria-label="Open navigation menu"
+      >
+        <Icon name="menu" size={16} />
+      </button>
+
+      <span
+        className="mobile-only"
+        style={{
+          fontFamily: 'var(--font-display)',
+          fontWeight: 'bold',
+          fontSize: '16px',
+          color: 'var(--text)',
+          letterSpacing: '-0.01em',
+          flexShrink: 0,
+        }}
+      >
+        aquify
+      </span>
+
       {/* Breadcrumb */}
       <nav
         aria-label="Breadcrumb"
@@ -199,34 +222,6 @@ export function Topbar({ actions }: TopbarProps) {
         {actions}
 
         <ThemeToggle />
-
-        {/* Separator */}
-        <div
-          style={{ width: '1px', height: '20px', background: 'var(--border-strong)', margin: '0 4px' }}
-        />
-
-        {/* Status indicator */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '5px',
-            fontSize: '11px',
-            fontFamily: 'var(--font-body)',
-            color: 'var(--text-muted)',
-          }}
-        >
-          <div
-            style={{
-              width: '6px',
-              height: '6px',
-              borderRadius: '50%',
-              background: 'var(--success)',
-              animation: 'pulseDot 3s ease-in-out infinite',
-            }}
-          />
-          <span>connected</span>
-        </div>
       </div>
     </header>
   )

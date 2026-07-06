@@ -261,7 +261,7 @@ function CallbackInner() {
           >
             {stage === 'mfa'
               ? 'MFA required for your role'
-              : 'Exchanging token with Keycloak'}
+              : 'Setting up your session…'}
           </p>
 
           {/* Progress steps */}

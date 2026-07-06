@@ -84,7 +84,7 @@ func exportPrincipalHasAnyRole(principal *appmiddleware.Principal, roles ...stri
 }
 
 func (h *ExportsHandlers) authorizeMeetExportListing(principal *appmiddleware.Principal, orgID, meetID string) error {
-	if exportPrincipalHasAnyRole(principal, "owner", "admin", "coach") {
+	if exportPrincipalHasAnyRole(principal, "admin", "coach") {
 		return nil
 	}
 	if !exportPrincipalHasAnyRole(principal, "parent", "swimmer") {
@@ -130,7 +130,7 @@ func (h *ExportsHandlers) generateExport(w http.ResponseWriter, r *http.Request)
 	}
 	// Gate on role before touching meet data so unauthorized callers can't probe
 	// meet existence via the report endpoint.
-	if !exportPrincipalHasAnyRole(principal, "owner", "admin", "coach") {
+	if !exportPrincipalHasAnyRole(principal, "admin", "coach") {
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient permissions to generate reports.", nil)
 		return
 	}

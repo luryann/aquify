@@ -1,7 +1,8 @@
 'use client'
 
-import { useCallback, useMemo, useState, useEffect, type CSSProperties } from 'react'
+import { Suspense, useCallback, useMemo, useState, useEffect, type CSSProperties } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { Icon } from '@/components/ui/icons'
 import { Table, type Column } from '@/components/ui/Table'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -382,7 +383,7 @@ function AddEntryPanel({
                       {eligibleSessionGroups.map((group) => (
                         <div key={group.id}>
                           <div style={{ fontSize: '10.5px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '6px' }}>
-                            {group.id === 'main' ? 'Main Session' : `Session ${group.id.slice(-4)}`}
+                            {group.id === 'main' ? 'Main Session' : 'Unscheduled'}
                           </div>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
                             {group.events.map((ev) => {
@@ -479,13 +480,23 @@ function AddEntryPanel({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function EntriesPage() {
+  return (
+    <Suspense fallback={null}>
+      <EntriesPageContent />
+    </Suspense>
+  )
+}
+
+function EntriesPageContent() {
   const { session } = useSession()
   const api = useApiClient(session?.token)
+  const searchParams = useSearchParams()
+  const lockedMeetId = searchParams.get('meet')
 
   const [rows, setRows] = useState<EntryRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [meetFilter, setMeetFilter] = useState('all')
+  const [meetFilter, setMeetFilter] = useState(lockedMeetId ?? 'all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [showAddPanel, setShowAddPanel] = useState(false)
@@ -662,8 +673,11 @@ export default function EntriesPage() {
               {c.label}
             </span>
             {r.override && (
-              <span style={{ fontSize: '10px', fontWeight: 700, padding: '2px 6px', borderRadius: '8px', background: 'var(--accent-subtle)', color: 'var(--accent)', fontFamily: 'var(--font-body)' }}>
-                OVERRIDE
+              <span
+                title={r.overrideNote ? `Seed time changed by hand: ${r.overrideNote}` : 'Seed time changed by hand'}
+                style={{ fontSize: '10px', fontWeight: 700, padding: '2px 6px', borderRadius: '8px', background: 'var(--accent-subtle)', color: 'var(--accent)', fontFamily: 'var(--font-body)' }}
+              >
+                CHANGED
               </span>
             )}
           </div>
@@ -723,14 +737,22 @@ export default function EntriesPage() {
     <div style={{ padding: '24px', maxWidth: '1200px' }}>
       <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }`}</style>
 
+      {lockedMeetId && (
+        <Link href={`/meets/${lockedMeetId}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '13px', color: 'var(--text-subtle)', textDecoration: 'none', marginBottom: '16px' }}>
+          <Icon name="chevron-left" size={14} /> Back to meet
+        </Link>
+      )}
+
       {/* Page header */}
       <div className="page-header">
         <div>
           <h1 className="page-title">
-            Entry Approvals
+            Entries
           </h1>
           <p className="page-subtitle">
-            Cross-meet entry approval queue — review submitted entries or add entries for a swimmer
+            {lockedMeetId
+              ? 'Entry approval queue for this meet — review submitted entries or add entries for a swimmer'
+              : 'Cross-meet entry approval queue — review submitted entries or add entries for a swimmer'}
           </p>
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -791,9 +813,17 @@ export default function EntriesPage() {
           <Icon name="search" size={14} color="var(--text-muted)" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' } as CSSProperties} />
           <input type="text" placeholder="Search swimmer, event, or meet…" value={search} onChange={(e) => setSearch(e.target.value)} className="input" style={{ paddingLeft: '32px', width: '100%' }} />
         </div>
-        <select value={meetFilter} onChange={(e) => setMeetFilter(e.target.value)} className="input" style={{ minWidth: '180px' }}>
-          {meetOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
+        {lockedMeetId ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg-elevated)', fontSize: '13px', color: 'var(--text)' }}>
+            <Icon name="calendar" size={13} color="var(--text-muted)" />
+            {meetOptions.find((o) => o.value === lockedMeetId)?.label ?? 'This meet'}
+            <Link href="/entries" style={{ fontSize: '11px', color: 'var(--accent)', textDecoration: 'none' }}>Clear</Link>
+          </div>
+        ) : (
+          <select value={meetFilter} onChange={(e) => setMeetFilter(e.target.value)} className="input" style={{ minWidth: '180px' }}>
+            {meetOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        )}
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="input" style={{ minWidth: '150px' }}>
           {STATUS_FILTER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>

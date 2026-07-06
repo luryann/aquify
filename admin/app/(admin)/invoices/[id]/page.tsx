@@ -9,7 +9,8 @@ import { Table, type Column } from '@/components/ui/Table'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
 import { useApiClient, ApiError } from '@/lib/api'
-import { canWrite } from '@/lib/roles'
+import { canAccess } from '@/lib/roles'
+import { formatDateOnly, parseBackendDate } from '@/lib/dates'
 import {
   fetchHousehold,
   fetchInvoice,
@@ -33,16 +34,11 @@ function formatCents(cents: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100)
 }
 
-function formatDate(value?: string | null) {
-  if (!value) return '—'
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return value
-  return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
+const formatDate = formatDateOnly
 
 function formatDateTime(value?: string | null) {
   if (!value) return '—'
-  const parsed = new Date(value)
+  const parsed = parseBackendDate(value)
   if (Number.isNaN(parsed.getTime())) return value
   return parsed.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
@@ -380,7 +376,7 @@ export default function InvoiceDetailPage() {
     { id: 'items', label: 'Items', count: items.length },
     { id: 'payments', label: 'Payments', count: payments.length },
     { id: 'refunds', label: 'Refunds', count: refunds.length },
-    { id: 'ledger', label: 'Ledger', count: ledger.length },
+    { id: 'ledger', label: 'History', count: ledger.length },
   ], [items.length, ledger.length, payments.length, refunds.length])
 
   const swimmerNameById = useMemo(
@@ -399,7 +395,7 @@ export default function InvoiceDetailPage() {
 
   return (
     <div style={{ padding: '24px', maxWidth: '1200px' }}>
-      <Link href="/invoices" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '13px', color: 'var(--text-subtle)', textDecoration: 'none', marginBottom: '20px' }}>
+      <Link href="/billing?tab=invoices" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '13px', color: 'var(--text-subtle)', textDecoration: 'none', marginBottom: '20px' }}>
         <Icon name="chevron-left" size={14} /> Invoices
       </Link>
 
@@ -442,7 +438,7 @@ export default function InvoiceDetailPage() {
       {activeTab === 'payments' ? <Table columns={PAYMENT_COLS} data={payments} emptyTitle="No payments" emptyDescription="No payments have been recorded for this invoice yet." /> : null}
       {activeTab === 'refunds' ? (
         <>
-          {canWrite(session?.user.roles ?? []) && (
+          {canAccess(session?.user.roles ?? [], ['admin']) && (
             <IssueRefundPanel
               api={api}
               orgId={session?.user.orgId ?? ''}

@@ -135,7 +135,7 @@ func (s *Service) ConfigureArtifactTTL(ttl time.Duration) {
 }
 
 func (s *Service) GenerateExport(principal *appmiddleware.Principal, orgID, meetID string, input ReportInput) (*FileExport, *ExportAuditEvent, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		return nil, nil, ErrForbidden
 	}
 	if err := validateReportInput(input); err != nil {
@@ -258,7 +258,7 @@ func (s *Service) FailExport(exportID string, cause error) {
 }
 
 func (s *Service) ListExports(principal *appmiddleware.Principal, orgID, meetID string) ([]FileExport, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		return nil, ErrForbidden
 	}
 	return s.ListExportsForAuthorizedMeet(orgID, meetID), nil
@@ -285,7 +285,7 @@ func (s *Service) ListExportsForAuthorizedMeet(orgID, meetID string) []FileExpor
 }
 
 func (s *Service) GetExport(principal *appmiddleware.Principal, orgID, exportID string) (*FileExport, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		return nil, ErrForbidden
 	}
 	s.mu.RLock()
@@ -299,7 +299,7 @@ func (s *Service) GetExport(principal *appmiddleware.Principal, orgID, exportID 
 }
 
 func (s *Service) DownloadExport(principal *appmiddleware.Principal, orgID, exportID string) (*FileExport, []byte, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		return nil, nil, ErrForbidden
 	}
 

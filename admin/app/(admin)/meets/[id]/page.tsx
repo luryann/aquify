@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { useParams } from 'next/navigation'
+import { useParams, useSearchParams } from 'next/navigation'
 import { Icon } from '@/components/ui/icons'
 import { Tabs } from '@/components/ui/Tabs'
 import { Table, type Column } from '@/components/ui/Table'
@@ -10,6 +10,8 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
 import { parseBackendDate } from '@/lib/dates'
 import { useApiClient, ApiError } from '@/lib/api'
+import { ImportHistoryPanel } from './ImportHistoryPanel'
+import { ReportsPanel } from './ReportsPanel'
 import {
   fetchHouseholds,
   fetchMeet,
@@ -291,11 +293,20 @@ function MeetLifecycleBar({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function MeetDetailPage() {
+  return (
+    <Suspense fallback={null}>
+      <MeetDetailPageContent />
+    </Suspense>
+  )
+}
+
+function MeetDetailPageContent() {
   const params = useParams<{ id: string }>()
   const meetId = typeof params?.id === 'string' ? params.id : ''
   const { session } = useSession()
   const api = useApiClient(session?.token)
-  const [activeTab, setActiveTab] = useState('overview')
+  const searchParams = useSearchParams()
+  const [activeTab, setActiveTab] = useState(searchParams.get('tab') ?? 'overview')
   const [meet, setMeet] = useState<MeetRecord | null>(null)
   const [sessions, setSessions] = useState<SessionRow[]>([])
   const [events, setEvents] = useState<EventRow[]>([])
@@ -422,10 +433,12 @@ export default function MeetDetailPage() {
     { id: 'events', label: 'Events', count: events.length },
     { id: 'commitments', label: 'Commitments', count: commitments.length },
     { id: 'entries', label: 'Entries', count: entries.length },
+    { id: 'imports', label: 'Import History' },
+    { id: 'reports', label: 'Reports' },
   ], [commitments.length, entries.length, events.length, sessions.length])
 
   if (loading) {
-    return <div style={{ padding: '24px', maxWidth: '1200px' }}><EmptyState icon="calendar" title="Loading meet" description="Fetching live meet detail data from the API." /></div>
+    return <div style={{ padding: '24px', maxWidth: '1200px' }}><EmptyState icon="calendar" title="Loading meet" description="Fetching meet details." /></div>
   }
 
   if (error || !meet) {
@@ -518,8 +531,28 @@ export default function MeetDetailPage() {
 
       {activeTab === 'sessions' ? <Table columns={SESSION_COLS} data={sessions} emptyTitle="No sessions" emptyDescription="No meet sessions have been created yet." /> : null}
       {activeTab === 'events' ? <Table columns={EVENT_COLS} data={events} emptyTitle="No events" emptyDescription="No events have been configured yet." /> : null}
-      {activeTab === 'commitments' ? <Table columns={COMMITMENT_COLS} data={commitments} emptyTitle="No commitments" emptyDescription="No swimmer commitments are recorded for this meet." /> : null}
-      {activeTab === 'entries' ? <Table columns={ENTRY_COLS} data={entries} emptyTitle="No entries" emptyDescription="No entries have been proposed for this meet yet." /> : null}
+      {activeTab === 'commitments' ? (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
+            <Link href={`/commitments?meet=${meetId}`} style={{ fontSize: '12px', color: 'var(--accent)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+              Manage commitments (selections, approvals, lock) <Icon name="chevron-right" size={12} />
+            </Link>
+          </div>
+          <Table columns={COMMITMENT_COLS} data={commitments} emptyTitle="No commitments" emptyDescription="No swimmer commitments are recorded for this meet." />
+        </div>
+      ) : null}
+      {activeTab === 'entries' ? (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
+            <Link href={`/entries?meet=${meetId}`} style={{ fontSize: '12px', color: 'var(--accent)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+              Manage entries (approve, scratch, add) <Icon name="chevron-right" size={12} />
+            </Link>
+          </div>
+          <Table columns={ENTRY_COLS} data={entries} emptyTitle="No entries" emptyDescription="No entries have been proposed for this meet yet." />
+        </div>
+      ) : null}
+      {activeTab === 'imports' ? <ImportHistoryPanel meetId={meetId} /> : null}
+      {activeTab === 'reports' ? <ReportsPanel meetId={meetId} /> : null}
     </div>
   )
 }

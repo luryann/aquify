@@ -149,8 +149,8 @@ export default function ImportDetailPage() {
 
   return (
     <div style={{ padding: '24px', maxWidth: '1200px' }}>
-      <Link href="/imports" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '13px', color: 'var(--text-subtle)', textDecoration: 'none', marginBottom: '20px' }}>
-        <Icon name="chevron-left" size={14} /> Imports
+      <Link href={fileImport?.meet_id ? `/meets/${fileImport.meet_id}?tab=imports` : '/meets'} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '13px', color: 'var(--text-subtle)', textDecoration: 'none', marginBottom: '20px' }}>
+        <Icon name="chevron-left" size={14} /> {fileImport?.meet_id ? 'Back to meet' : 'Meets'}
       </Link>
 
       <div className="page-header">

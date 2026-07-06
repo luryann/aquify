@@ -2,6 +2,9 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { Modal } from '@/components/ui/Modal'
+import { Table, col } from '@/components/ui/Table'
+import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
 import { ApiError, useApiClient } from '@/lib/api'
 import {
@@ -20,6 +23,13 @@ function formatSwimTime(milliseconds: number) {
   return `${minutes}:${seconds}`
 }
 
+function genderLabel(gender: string) {
+  if (gender === 'F') return 'Girls'
+  if (gender === 'M') return 'Boys'
+  if (gender === 'X') return 'Mixed'
+  return gender
+}
+
 function msFromParts(minutes: string, seconds: string, hundredths: string): number {
   const m = Number(minutes) || 0
   const s = Number(seconds) || 0
@@ -36,6 +46,9 @@ const FIELD_INPUT_STYLE: React.CSSProperties = {
   background: 'var(--bg-elevated)', color: 'var(--text)', boxSizing: 'border-box',
 }
 
+const STROKE_OPTIONS = ['free', 'back', 'breast', 'fly', 'im']
+const COURSE_OPTIONS = ['SCY', 'SCM', 'LCM']
+
 export default function TimeStandardsPage() {
   const { session } = useSession()
   const api = useApiClient(session?.token)
@@ -44,6 +57,12 @@ export default function TimeStandardsPage() {
   const [submitting, setSubmitting] = useState(false)
   const [workingId, setWorkingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [modalOpen, setModalOpen] = useState(false)
+
+  const [search, setSearch] = useState('')
+  const [strokeFilter, setStrokeFilter] = useState('')
+  const [courseFilter, setCourseFilter] = useState('')
+
   const [form, setForm] = useState({
     name: '2026 Senior Cuts',
     season_year: '2026',
@@ -92,6 +111,16 @@ export default function TimeStandardsPage() {
 
   const activeCount = useMemo(() => standards.filter((standard) => standard.is_active).length, [standards])
 
+  const filteredStandards = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return standards.filter((standard) => {
+      if (strokeFilter && standard.stroke !== strokeFilter) return false
+      if (courseFilter && standard.course !== courseFilter) return false
+      if (q && !`${standard.name} ${standard.standard_code}`.toLowerCase().includes(q)) return false
+      return true
+    })
+  }, [standards, search, strokeFilter, courseFilter])
+
   async function handleCreate() {
     if (!session?.user.orgId) return
     setSubmitting(true)
@@ -109,6 +138,7 @@ export default function TimeStandardsPage() {
         is_active: true,
       })
       await loadStandards()
+      setModalOpen(false)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Unable to create time standard.')
     } finally {
@@ -150,18 +180,80 @@ export default function TimeStandardsPage() {
     return <div style={{ padding: '32px' }}><EmptyState icon="check-circle" title="Sign in required" description="Authenticate to manage live time standards." /></div>
   }
 
+  const columns = [
+    col<TimeStandardRecord>({ key: 'name', label: 'Name', sortable: true }),
+    col<TimeStandardRecord>({
+      key: 'standard_code',
+      label: 'Code',
+      sortable: true,
+      render: (row) => <span className="badge badge-accent" title="Qualifying time standard level">{row.standard_code}</span>,
+    }),
+    col<TimeStandardRecord>({
+      key: 'event_distance',
+      label: 'Event',
+      sortable: true,
+      render: (row) => (
+        <span style={{ color: 'var(--text-subtle)' }}>{row.event_distance} {row.stroke} · {genderLabel(row.gender)}</span>
+      ),
+    }),
+    col<TimeStandardRecord>({ key: 'course', label: 'Course', sortable: true }),
+    col<TimeStandardRecord>({
+      key: 'time_ms',
+      label: 'Cut Time',
+      sortable: true,
+      render: (row) => <span style={{ fontFamily: 'var(--font-body)' }} title="Time a swimmer must beat to qualify">{formatSwimTime(row.time_ms)}</span>,
+    }),
+    col<TimeStandardRecord>({ key: 'season_year', label: 'Season', sortable: true }),
+    col<TimeStandardRecord>({
+      key: 'is_active',
+      label: 'Status',
+      sortable: true,
+      render: (row) => (
+        <span className={`badge ${row.is_active ? 'badge-success' : 'badge-default'}`}>
+          {row.is_active ? 'Active' : 'Paused'}
+        </span>
+      ),
+    }),
+    col<TimeStandardRecord>({
+      key: 'actions',
+      label: '',
+      sortable: false,
+      align: 'right',
+      render: (row) => (
+        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+          <button
+            onClick={(e) => { e.stopPropagation(); void handleToggle(row) }}
+            disabled={workingId === row.id}
+            className="btn btn-sm btn-secondary"
+          >
+            {row.is_active ? 'Pause' : 'Activate'}
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); void handleDelete(row.id) }}
+            disabled={workingId === row.id}
+            className="btn btn-sm btn-danger"
+          >
+            Delete
+          </button>
+        </div>
+      ),
+    }),
+  ]
+
   return (
-    <div style={{ padding: '32px 36px 80px', maxWidth: 1180, margin: '0 auto' }}>
-      <div style={{ marginBottom: '28px' }}>
-        <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
-          Performance
-        </p>
-        <h1 className="page-title">
-          Time Standards
-        </h1>
-        <p className="page-subtitle">
-          Live cut standards with admin create, toggle, and delete actions backed by the API.
-        </p>
+    <div style={{ padding: '32px 36px 80px', maxWidth: 1240, margin: '0 auto' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px', marginBottom: '24px', flexWrap: 'wrap' }}>
+        <div>
+          <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
+            Performance
+          </p>
+          <h1 className="page-title">Time Standards</h1>
+          <p className="page-subtitle">Qualifying time standards used to evaluate swimmer cuts.</p>
+        </div>
+        <button onClick={() => setModalOpen(true)} className="btn btn-primary">
+          <Icon name="plus" size={14} />
+          New Standard
+        </button>
       </div>
 
       {error ? (
@@ -170,137 +262,130 @@ export default function TimeStandardsPage() {
         </div>
       ) : null}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: '20px', alignItems: 'start' }}>
-        <div className="card" style={{ padding: '18px' }}>
-          <h2 style={{ fontSize: '14px', color: 'var(--text)', marginBottom: '12px' }}>Create Standard</h2>
-          <div style={{ display: 'grid', gap: '14px' }}>
-            <div>
-              <label style={FIELD_LABEL_STYLE}>Standard Name</label>
-              <input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder="e.g. 2026 Senior Cuts" style={FIELD_INPUT_STYLE} />
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-              <div>
-                <label style={FIELD_LABEL_STYLE}>Season</label>
-                <input value={form.season_year} onChange={(event) => setForm((current) => ({ ...current, season_year: event.target.value }))} placeholder="2026" style={FIELD_INPUT_STYLE} />
-              </div>
-              <div>
-                <label style={FIELD_LABEL_STYLE}>Standard Code</label>
-                <input value={form.standard_code} onChange={(event) => setForm((current) => ({ ...current, standard_code: event.target.value }))} placeholder="A / AA / AAA" style={FIELD_INPUT_STYLE} />
-              </div>
-            </div>
-            <div>
-              <label style={FIELD_LABEL_STYLE}>Distance ({form.course === 'LCM' || form.course === 'SCM' ? 'm' : 'yd'})</label>
-              <input value={form.event_distance} onChange={(event) => setForm((current) => ({ ...current, event_distance: event.target.value }))} placeholder="100" style={FIELD_INPUT_STYLE} />
-            </div>
-            <div>
-              <label style={FIELD_LABEL_STYLE}>Cut Time (min : sec . hundredths)</label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr auto 1fr', gap: '6px', alignItems: 'center' }}>
-                <input
-                  value={cutTime.minutes}
-                  onChange={(event) => setCutTime((current) => ({ ...current, minutes: event.target.value.replace(/\D/g, '') }))}
-                  placeholder="0"
-                  inputMode="numeric"
-                  style={{ ...FIELD_INPUT_STYLE, textAlign: 'center', fontFamily: 'var(--font-body)' }}
-                />
-                <span style={{ color: 'var(--text-muted)' }}>:</span>
-                <input
-                  value={cutTime.seconds}
-                  onChange={(event) => setCutTime((current) => ({ ...current, seconds: event.target.value.replace(/\D/g, '').slice(0, 2) }))}
-                  placeholder="58"
-                  inputMode="numeric"
-                  style={{ ...FIELD_INPUT_STYLE, textAlign: 'center', fontFamily: 'var(--font-body)' }}
-                />
-                <span style={{ color: 'var(--text-muted)' }}>.</span>
-                <input
-                  value={cutTime.hundredths}
-                  onChange={(event) => setCutTime((current) => ({ ...current, hundredths: event.target.value.replace(/\D/g, '').slice(0, 2) }))}
-                  placeholder="00"
-                  inputMode="numeric"
-                  style={{ ...FIELD_INPUT_STYLE, textAlign: 'center', fontFamily: 'var(--font-body)' }}
-                />
-              </div>
-              <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '5px', fontFamily: 'var(--font-body)' }}>
-                = {formatSwimTime(msFromParts(cutTime.minutes, cutTime.seconds, cutTime.hundredths))}
-              </p>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
-              <div>
-                <label style={FIELD_LABEL_STYLE}>Stroke</label>
-                <select value={form.stroke} onChange={(event) => setForm((current) => ({ ...current, stroke: event.target.value }))} style={FIELD_INPUT_STYLE}>
-                  <option value="free">free</option>
-                  <option value="back">back</option>
-                  <option value="breast">breast</option>
-                  <option value="fly">fly</option>
-                  <option value="im">im</option>
-                </select>
-              </div>
-              <div>
-                <label style={FIELD_LABEL_STYLE}>Course</label>
-                <select value={form.course} onChange={(event) => setForm((current) => ({ ...current, course: event.target.value }))} style={FIELD_INPUT_STYLE}>
-                  <option value="SCY">SCY</option>
-                  <option value="SCM">SCM</option>
-                  <option value="LCM">LCM</option>
-                </select>
-              </div>
-              <div>
-                <label style={FIELD_LABEL_STYLE}>Gender</label>
-                <select value={form.gender} onChange={(event) => setForm((current) => ({ ...current, gender: event.target.value }))} style={FIELD_INPUT_STYLE}>
-                  <option value="F">F</option>
-                  <option value="M">M</option>
-                  <option value="X">X</option>
-                </select>
-              </div>
-            </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
+        <div style={{ position: 'relative', flex: '1 1 220px', maxWidth: '320px' }}>
+          <span style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}>
+            <Icon name="search" size={14} />
+          </span>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by name or code…"
+            style={{ ...FIELD_INPUT_STYLE, paddingLeft: '32px' }}
+          />
+        </div>
+        <select value={strokeFilter} onChange={(e) => setStrokeFilter(e.target.value)} style={{ ...FIELD_INPUT_STYLE, width: 'auto' }}>
+          <option value="">All strokes</option>
+          {STROKE_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)} style={{ ...FIELD_INPUT_STYLE, width: 'auto' }}>
+          <option value="">All courses</option>
+          {COURSE_OPTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <span style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap' }}>
+          {standards.length} total · {activeCount} active
+        </span>
+      </div>
+
+      <Table
+        columns={columns}
+        data={filteredStandards}
+        keyField="id"
+        loading={loading}
+        paginated
+        pageSize={20}
+        emptyTitle={standards.length === 0 ? 'No standards yet' : 'No matches'}
+        emptyDescription={standards.length === 0 ? 'Create a standard to populate this table.' : 'Try a different search or filter.'}
+      />
+
+      <Modal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title="New Time Standard"
+        description="Add a qualifying cut time used to evaluate swimmer results."
+        footer={
+          <>
+            <button onClick={() => setModalOpen(false)} className="btn btn-secondary">Cancel</button>
             <button onClick={() => void handleCreate()} disabled={submitting} className="btn btn-primary">
               {submitting ? 'Creating…' : 'Create Standard'}
             </button>
+          </>
+        }
+      >
+        <div style={{ display: 'grid', gap: '14px' }}>
+          <div>
+            <label style={FIELD_LABEL_STYLE}>Standard Name</label>
+            <input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder="e.g. 2026 Senior Cuts" style={FIELD_INPUT_STYLE} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+            <div>
+              <label style={FIELD_LABEL_STYLE}>Season</label>
+              <input value={form.season_year} onChange={(event) => setForm((current) => ({ ...current, season_year: event.target.value }))} placeholder="2026" style={FIELD_INPUT_STYLE} />
+            </div>
+            <div>
+              <label style={FIELD_LABEL_STYLE}>Standard Code</label>
+              <input value={form.standard_code} onChange={(event) => setForm((current) => ({ ...current, standard_code: event.target.value }))} placeholder="A / AA / AAA" style={FIELD_INPUT_STYLE} />
+            </div>
+          </div>
+          <div>
+            <label style={FIELD_LABEL_STYLE}>Distance ({form.course === 'LCM' || form.course === 'SCM' ? 'm' : 'yd'})</label>
+            <input value={form.event_distance} onChange={(event) => setForm((current) => ({ ...current, event_distance: event.target.value }))} placeholder="100" style={FIELD_INPUT_STYLE} />
+          </div>
+          <div>
+            <label style={FIELD_LABEL_STYLE}>Cut Time (min : sec . hundredths)</label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr auto 1fr', gap: '6px', alignItems: 'center' }}>
+              <input
+                value={cutTime.minutes}
+                onChange={(event) => setCutTime((current) => ({ ...current, minutes: event.target.value.replace(/\D/g, '') }))}
+                placeholder="0"
+                inputMode="numeric"
+                style={{ ...FIELD_INPUT_STYLE, textAlign: 'center', fontFamily: 'var(--font-body)' }}
+              />
+              <span style={{ color: 'var(--text-muted)' }}>:</span>
+              <input
+                value={cutTime.seconds}
+                onChange={(event) => setCutTime((current) => ({ ...current, seconds: event.target.value.replace(/\D/g, '').slice(0, 2) }))}
+                placeholder="58"
+                inputMode="numeric"
+                style={{ ...FIELD_INPUT_STYLE, textAlign: 'center', fontFamily: 'var(--font-body)' }}
+              />
+              <span style={{ color: 'var(--text-muted)' }}>.</span>
+              <input
+                value={cutTime.hundredths}
+                onChange={(event) => setCutTime((current) => ({ ...current, hundredths: event.target.value.replace(/\D/g, '').slice(0, 2) }))}
+                placeholder="00"
+                inputMode="numeric"
+                style={{ ...FIELD_INPUT_STYLE, textAlign: 'center', fontFamily: 'var(--font-body)' }}
+              />
+            </div>
+            <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '5px', fontFamily: 'var(--font-body)' }}>
+              = {formatSwimTime(msFromParts(cutTime.minutes, cutTime.seconds, cutTime.hundredths))}
+            </p>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
+            <div>
+              <label style={FIELD_LABEL_STYLE}>Stroke</label>
+              <select value={form.stroke} onChange={(event) => setForm((current) => ({ ...current, stroke: event.target.value }))} style={FIELD_INPUT_STYLE}>
+                {STROKE_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={FIELD_LABEL_STYLE}>Course</label>
+              <select value={form.course} onChange={(event) => setForm((current) => ({ ...current, course: event.target.value }))} style={FIELD_INPUT_STYLE}>
+                {COURSE_OPTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={FIELD_LABEL_STYLE}>Gender</label>
+              <select value={form.gender} onChange={(event) => setForm((current) => ({ ...current, gender: event.target.value }))} style={FIELD_INPUT_STYLE}>
+                <option value="F">Girls</option>
+                <option value="M">Boys</option>
+                <option value="X">Mixed</option>
+              </select>
+            </div>
           </div>
         </div>
-
-        <div className="card" style={{ overflow: 'hidden' }}>
-          <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
-            <h2 style={{ fontSize: '14px', color: 'var(--text)' }}>Live Standards</h2>
-            <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>{standards.length} total · {activeCount} active</span>
-          </div>
-          {loading ? (
-            <div style={{ padding: '20px' }}><EmptyState icon="check-circle" title="Loading standards" description="Fetching the live time-standard registry." /></div>
-          ) : standards.length === 0 ? (
-            <div style={{ padding: '20px' }}><EmptyState icon="check-circle" title="No standards yet" description="Create a standard to populate this table." /></div>
-          ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                  {['Name', 'Code', 'Event', 'Cut', 'Season', 'Status', ''].map((header) => (
-                    <th key={header} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{header}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {standards.map((standard) => (
-                  <tr key={standard.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                    <td style={{ padding: '11px 14px', fontSize: '13px', color: 'var(--text)' }}>{standard.name}</td>
-                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-body)', fontSize: '11px', color: 'var(--accent)' }}>{standard.standard_code}</td>
-                    <td style={{ padding: '11px 14px', fontSize: '12px', color: 'var(--text-subtle)' }}>{standard.event_distance} {standard.stroke} · {standard.course} · {standard.gender}</td>
-                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text)' }}>{formatSwimTime(standard.time_ms)}</td>
-                    <td style={{ padding: '11px 14px', fontSize: '12px', color: 'var(--text-subtle)' }}>{standard.season_year}</td>
-                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-body)', fontSize: '11px', color: standard.is_active ? 'var(--success)' : 'var(--text-muted)' }}>{standard.is_active ? 'active' : 'inactive'}</td>
-                    <td style={{ padding: '11px 14px' }}>
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <button onClick={() => void handleToggle(standard)} disabled={workingId === standard.id} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: '12px', cursor: workingId === standard.id ? 'not-allowed' : 'pointer' }}>
-                          {standard.is_active ? 'Pause' : 'Activate'}
-                        </button>
-                        <button onClick={() => void handleDelete(standard.id)} disabled={workingId === standard.id} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--error-border)', background: 'var(--error-bg)', color: 'var(--error)', fontSize: '12px', cursor: workingId === standard.id ? 'not-allowed' : 'pointer' }}>
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
+      </Modal>
     </div>
   )
 }

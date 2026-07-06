@@ -44,7 +44,7 @@ func (h *SeasonsHandlers) listSeasons(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin", "coach", "read-only") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role.", nil)
 		return
 	}
@@ -71,8 +71,8 @@ func (h *SeasonsHandlers) createSeason(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin") {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only owner/admin may create seasons.", nil)
+	if !hasAnyRole(principal, "admin") {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only admin may create seasons.", nil)
 		return
 	}
 
@@ -117,7 +117,7 @@ func (h *SeasonsHandlers) getSeason(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin", "coach", "read-only") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role.", nil)
 		return
 	}
@@ -149,8 +149,8 @@ func (h *SeasonsHandlers) updateSeason(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin") {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only owner/admin may update seasons.", nil)
+	if !hasAnyRole(principal, "admin") {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only admin may update seasons.", nil)
 		return
 	}
 	id := chi.URLParam(r, "id")
@@ -204,8 +204,8 @@ func (h *SeasonsHandlers) deleteSeason(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin") {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only owner/admin may delete seasons.", nil)
+	if !hasAnyRole(principal, "admin") {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only admin may delete seasons.", nil)
 		return
 	}
 	id := chi.URLParam(r, "id")

@@ -477,44 +477,6 @@ func TestUpsertResultEmitsAuditEvent(t *testing.T) {
 
 // ─── Tests: read endpoint role checks ────────────────────────────────────────
 
-// TestBillingRoleCannotReadBestTimes verifies that the billing role is denied
-// access to swimmer best-time data (only owner/admin/coach/parent may read).
-func TestBillingRoleCannotReadBestTimes(t *testing.T) {
-	t.Parallel()
-	svc := performance.NewService()
-	router := newPerfRouter(t, svc)
-	token := issueSessionToken(t, router, "org-demo", []string{"billing"}, false)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/swimmers/swimmer-x/best-times", nil)
-	req.Header.Set("X-Org-Id", "org-demo")
-	req.Header.Set("Authorization", "Bearer "+token)
-	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusForbidden {
-		t.Fatalf("expected 403 for billing role on best-times, got %d", rr.Code)
-	}
-}
-
-// TestBillingRoleCannotReadProgression verifies that the billing role is denied
-// access to swimmer progression data.
-func TestBillingRoleCannotReadProgression(t *testing.T) {
-	t.Parallel()
-	svc := performance.NewService()
-	router := newPerfRouter(t, svc)
-	token := issueSessionToken(t, router, "org-demo", []string{"billing"}, false)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/swimmers/swimmer-x/progression", nil)
-	req.Header.Set("X-Org-Id", "org-demo")
-	req.Header.Set("Authorization", "Bearer "+token)
-	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusForbidden {
-		t.Fatalf("expected 403 for billing role on progression, got %d", rr.Code)
-	}
-}
-
 func TestOrgPerformanceSummaryEndpointsReturnAggregatedData(t *testing.T) {
 	t.Parallel()
 	svc := performance.NewService()
@@ -568,37 +530,6 @@ func TestOrgPerformanceSummaryEndpointsReturnAggregatedData(t *testing.T) {
 	}
 }
 
-// TestBillingRoleCannotReadCutQualification verifies that the billing role is
-// denied access to cut qualification evaluation.
-func TestBillingRoleCannotReadCutQualification(t *testing.T) {
-	t.Parallel()
-	svc := performance.NewService()
-	router := newPerfRouter(t, svc)
-	adminToken := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
-	billingToken := issueSessionToken(t, router, "org-demo", []string{"billing"}, false)
-
-	// Create a standard to have a valid standard_id.
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/time-standards",
-		strings.NewReader(minimalTimeStandardBody("AA")))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Org-Id", "org-demo")
-	req.Header.Set("Authorization", "Bearer "+adminToken)
-	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, req)
-	var createEnv timeStandardEnvelope
-	json.NewDecoder(rr.Body).Decode(&createEnv)
-	standardID := createEnv.TimeStandard.ID
-
-	req2 := httptest.NewRequest(http.MethodGet, "/api/v1/swimmers/swimmer-x/cut-qualification?standard_id="+standardID, nil)
-	req2.Header.Set("X-Org-Id", "org-demo")
-	req2.Header.Set("Authorization", "Bearer "+billingToken)
-	rr2 := httptest.NewRecorder()
-	router.ServeHTTP(rr2, req2)
-
-	if rr2.Code != http.StatusForbidden {
-		t.Fatalf("expected 403 for billing role on cut-qualification, got %d", rr2.Code)
-	}
-}
 
 // TestParentRoleCanReadBestTimesForOwnHousehold verifies that a parent can read
 // best-time data for a swimmer who belongs to their household.

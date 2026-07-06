@@ -25,7 +25,7 @@ func TestRBACStubAllowsAuthorizedRole(t *testing.T) {
 	req = req.WithContext(ctx)
 
 	rr := httptest.NewRecorder()
-	h := RBACStub("owner", "admin", "coach")(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	h := RBACStub("admin", "coach")(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 
@@ -41,13 +41,13 @@ func TestRBACStubRejectsUnauthorizedRole(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/authz/ping", nil)
 	ctx := context.WithValue(req.Context(), principalContextKey{}, &Principal{
-		UserID: "billing-user",
-		Roles:  []string{"billing"},
+		UserID: "parent-user",
+		Roles:  []string{"parent"},
 	})
 	req = req.WithContext(ctx)
 
 	rr := httptest.NewRecorder()
-	h := RBACStub("owner", "admin", "coach")(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+	h := RBACStub("admin", "coach")(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		t.Fatal("next handler should not be called for unauthorized role")
 	}))
 

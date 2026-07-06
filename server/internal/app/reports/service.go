@@ -182,7 +182,7 @@ func (s *Service) requireReportAccess(principal *appmiddleware.Principal) error 
 	}
 	for _, role := range principal.Roles {
 		switch strings.ToLower(role) {
-		case "owner", "admin", "billing", "read-only":
+		case "admin":
 			return nil
 		}
 	}

@@ -10,14 +10,17 @@ import {
   fetchDocumentTypes,
   fetchDocumentSubmissions,
   fetchSwimmers,
+  fetchRegistrations,
   createDocumentSubmission,
   requestDocumentUploadUrl,
   attachDocumentFile,
   type DocumentTypeRecord,
   type DocumentSubmissionRecord,
   type SwimmerRecord,
+  type RegistrationRecord,
 } from '@/lib/adminData'
 import { getPortalDocumentAction, selectLatestSubmission } from '@/lib/document-submissions'
+import { summarizeRegistrationWaiver } from '@/lib/portal-registration-status'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -174,6 +177,7 @@ export default function DocumentsPage() {
   const [docTypes, setDocTypes] = useState<DocumentTypeRecord[]>([])
   const [submissions, setSubmissions] = useState<DocumentSubmissionRecord[]>([])
   const [swimmers, setSwimmers] = useState<SwimmerRecord[]>([])
+  const [registrations, setRegistrations] = useState<RegistrationRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [uploadingId, setUploadingId] = useState<string | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
@@ -194,21 +198,24 @@ export default function DocumentsPage() {
       try {
         setLoading(true)
         setLoadError(null)
-        const [types, subs, allSwimmers] = await Promise.all([
+        const [types, subs, allSwimmers, allRegs] = await Promise.all([
           fetchDocumentTypes(api, orgId, true),
           fetchDocumentSubmissions(api, orgId, householdId),
           fetchSwimmers(api, orgId),
+          fetchRegistrations(api, orgId),
         ])
         if (cancelled) return
         setDocTypes(types)
         setSubmissions(subs)
         // Only keep swimmers that belong to this household
         setSwimmers(allSwimmers.filter(s => s.household_id === householdId))
+        setRegistrations(allRegs.filter(r => r.household_id === householdId && (r.status === 'active' || r.status === 'pending')))
       } catch (error) {
         if (!cancelled) {
           setDocTypes([])
           setSubmissions([])
           setSwimmers([])
+          setRegistrations([])
           setLoadError(reportUIError(
             'portal-documents-load',
             error,
@@ -231,7 +238,30 @@ export default function DocumentsPage() {
 
   const categories = [...new Set(visibleDocs.map(d => d.typeCategory))]
 
+  // Registration waiver acceptance lives on the registration record itself, separately
+  // from the document_types/submissions system above — surface it here too so this
+  // page and the Registrations page never disagree about whether a waiver is pending.
+  const waiverRows = registrations.map(reg => {
+    const swimmer = swimmers.find(s => s.id === reg.swimmer_id)
+    const summary = summarizeRegistrationWaiver(reg)
+    return {
+      id: reg.id,
+      swimmerLabel: swimmer ? `${swimmer.first_name} ${swimmer.last_name}` : 'Household',
+      season: reg.season,
+      accepted: summary.accepted,
+      count: summary.count,
+      types: summary.types,
+      lastAcceptedAt: summary.lastAcceptedAt ?? null,
+    }
+  })
+  const pendingWaivers = waiverRows.filter(w => !w.accepted)
+  const visibleWaivers = filter === 'pending' ? pendingWaivers : waiverRows
+
+  const totalItemCount = merged.length + waiverRows.length
+  const totalPendingCount = pendingDocs.length + pendingWaivers.length
+
   const completedCount = merged.filter(d => d.effectiveStatus === 'verified' || d.effectiveStatus === 'submitted').length
+    + waiverRows.filter(w => w.accepted).length
   const expiringCount = merged.filter(d => {
     const days = daysUntil(d.expiresAt)
     return days !== null && days >= 0 && days <= 30
@@ -354,7 +384,7 @@ export default function DocumentsPage() {
       />
 
       {/* Action needed alert */}
-      {!loadError && pendingDocs.length > 0 && (
+      {!loadError && totalPendingCount > 0 && (
         <div style={{ background: 'linear-gradient(135deg, #fef2f2 0%, #fff7f5 100%)', border: '1px solid rgba(220,38,38,0.18)', borderRadius: '14px', padding: '18px 22px', marginBottom: '24px', animation: 'slideUp 0.35s ease both' }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
             <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(220,38,38,0.10)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -362,7 +392,7 @@ export default function DocumentsPage() {
             </div>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--error)', marginBottom: '4px' }}>
-                {pendingDocs.length} document{pendingDocs.length !== 1 ? 's' : ''} require immediate action
+                {totalPendingCount} item{totalPendingCount !== 1 ? 's' : ''} require immediate action
               </div>
               <ul style={{ margin: 0, padding: '0 0 0 16px', fontSize: '13px', color: 'var(--error)', lineHeight: 1.7 }}>
                 {pendingDocs.map(doc => (
@@ -371,6 +401,11 @@ export default function DocumentsPage() {
                     {doc.expiresAt && daysUntil(doc.expiresAt) !== null && (daysUntil(doc.expiresAt) ?? 99) <= 14
                       ? ` — due by ${fmtDate(doc.expiresAt)}`
                       : ''}
+                  </li>
+                ))}
+                {pendingWaivers.map(w => (
+                  <li key={w.id}>
+                    <strong>Registration waiver — {w.swimmerLabel}</strong> — not yet accepted
                   </li>
                 ))}
               </ul>
@@ -382,9 +417,9 @@ export default function DocumentsPage() {
       {/* Stats strip */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '24px', animation: 'slideUp 0.4s ease both' }}>
         {[
-          { label: 'Complete',      value: completedCount,      total: merged.length, color: 'var(--success)' },
-          { label: 'Action Needed', value: pendingDocs.length,  total: merged.length, color: 'var(--error)' },
-          { label: 'Expiring Soon', value: expiringCount,        total: merged.length, color: 'var(--warning)' },
+          { label: 'Complete',      value: completedCount,     total: totalItemCount, color: 'var(--success)' },
+          { label: 'Action Needed', value: totalPendingCount,  total: totalItemCount, color: 'var(--error)' },
+          { label: 'Expiring Soon', value: expiringCount,       total: totalItemCount, color: 'var(--warning)' },
         ].map(stat => (
           <div key={stat.label} className="card" style={{ padding: '16px 20px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
             <div style={{ fontSize: '22px', fontWeight: 700, color: stat.color, fontFamily: 'var(--font-body)' }}>
@@ -397,7 +432,7 @@ export default function DocumentsPage() {
 
       {/* Filter tabs */}
       <div style={{ display: 'flex', gap: '2px', marginBottom: '20px', background: 'rgba(0,0,0,0.04)', borderRadius: '10px', padding: '4px', maxWidth: '320px', animation: 'slideUp 0.42s ease both' }}>
-        {[{ key: 'all', label: 'All Documents' }, { key: 'pending', label: `Needs Action (${pendingDocs.length})` }].map(({ key, label }) => (
+        {[{ key: 'all', label: 'All Documents' }, { key: 'pending', label: `Needs Action (${totalPendingCount})` }].map(({ key, label }) => (
           <button key={key} onClick={() => setFilter(key as 'all' | 'pending')} style={{ flex: 1, padding: '7px 12px', borderRadius: '7px', border: 'none', background: filter === key ? 'var(--bg-elevated)' : 'transparent', color: filter === key ? 'var(--text)' : 'var(--text-subtle)', fontSize: '13px', fontWeight: filter === key ? 600 : 450, cursor: 'pointer', boxShadow: filter === key ? '0 1px 4px rgba(0,0,0,0.08)' : 'none', transition: 'all 120ms ease', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap' }}>
             {label}
           </button>
@@ -405,12 +440,46 @@ export default function DocumentsPage() {
       </div>
 
       {/* Empty state */}
-      {shouldShowCollectionEmptyState(loading, loadError, merged.length) && (
+      {shouldShowCollectionEmptyState(loading, loadError, totalItemCount) && (
         <div className="card" style={{ textAlign: 'center', padding: '60px 20px' }}>
           <div style={{ fontSize: '32px', marginBottom: '12px' }}>📄</div>
           <div style={{ fontFamily: 'var(--font-display)', fontSize: '20px', color: 'var(--text)', marginBottom: '6px' }}>No documents required yet</div>
           <div style={{ fontSize: '14px', color: 'var(--text-muted)' }}>Your coach will request documents when needed.</div>
         </div>
+      )}
+
+      {/* Registration waivers */}
+      {!loadError && visibleWaivers.length > 0 && (
+        <section style={{ marginBottom: '24px', animation: 'slideUp 0.45s ease both' }}>
+          <div style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '12px' }}>
+            Registration Waivers
+          </div>
+          <div className="card" style={{ boxShadow: '0 1px 6px rgba(0,0,0,0.04)', overflow: 'hidden' }}>
+            {visibleWaivers.map((w, i) => {
+              const statusCfg = w.accepted ? STATUS_CONFIG.verified : STATUS_CONFIG.pending
+              return (
+                <div key={w.id} style={{ display: 'flex', gap: '16px', padding: '18px 20px', borderBottom: i < visibleWaivers.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none', alignItems: 'flex-start', background: w.accepted ? 'transparent' : 'rgba(220,38,38,0.01)' }}>
+                  <div style={{ width: '36px', height: '36px', borderRadius: '9px', background: statusCfg.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <Icon name={statusCfg.icon} size={18} style={{ color: statusCfg.color }} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text)', marginBottom: '4px' }}>
+                      Registration waiver — {w.swimmerLabel}
+                    </div>
+                    <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                      {w.accepted
+                        ? `${w.count} accepted waiver${w.count === 1 ? '' : 's'}${w.lastAcceptedAt ? ` • last accepted ${fmtDate(w.lastAcceptedAt)}` : ''} (${w.season})`
+                        : `No registration waiver acceptance is recorded yet (${w.season}).`}
+                    </div>
+                  </div>
+                  <span style={{ padding: '3px 9px', borderRadius: '999px', fontSize: '11.5px', fontWeight: 600, background: statusCfg.bg, color: statusCfg.color, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                    {statusCfg.label}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </section>
       )}
 
       {/* Documents by category */}

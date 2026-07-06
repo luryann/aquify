@@ -72,7 +72,7 @@ func (h *TrainingHandlers) listPractices(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "swimmer", "read-only") {
+	if !hasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role.", nil)
 		return
 	}
@@ -110,8 +110,8 @@ func (h *TrainingHandlers) createPractice(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only owner/admin/coach may create practices.", nil)
+	if !hasAnyRole(principal, "admin", "coach") {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only admin/coach may create practices.", nil)
 		return
 	}
 
@@ -167,7 +167,7 @@ func (h *TrainingHandlers) getPractice(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "swimmer", "read-only") {
+	if !hasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role.", nil)
 		return
 	}
@@ -202,8 +202,8 @@ func (h *TrainingHandlers) updatePractice(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only owner/admin/coach may update practices.", nil)
+	if !hasAnyRole(principal, "admin", "coach") {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only admin/coach may update practices.", nil)
 		return
 	}
 	id := chi.URLParam(r, "id")
@@ -269,8 +269,8 @@ func (h *TrainingHandlers) deletePractice(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only owner/admin/coach may delete practices.", nil)
+	if !hasAnyRole(principal, "admin", "coach") {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only admin/coach may delete practices.", nil)
 		return
 	}
 	id := chi.URLParam(r, "id")
@@ -314,8 +314,8 @@ func (h *TrainingHandlers) getAttendance(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only owner/admin/coach may view attendance.", nil)
+	if !hasAnyRole(principal, "admin", "coach") {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only admin/coach may view attendance.", nil)
 		return
 	}
 	id := chi.URLParam(r, "id")
@@ -399,8 +399,8 @@ func (h *TrainingHandlers) setAttendance(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only owner/admin/coach may mark attendance.", nil)
+	if !hasAnyRole(principal, "admin", "coach") {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only admin/coach may mark attendance.", nil)
 		return
 	}
 	practiceID := chi.URLParam(r, "id")

@@ -321,7 +321,7 @@ func (s *Service) SeedParentHousehold(parentUserID, householdID string) {
 
 // CreateGroup creates a new training group.
 func (s *Service) CreateGroup(principal *appmiddleware.Principal, orgID string, input CreateGroupInput) (Group, GroupAuditEvent, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		return Group{}, GroupAuditEvent{}, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -388,7 +388,7 @@ func (s *Service) CreateGroup(principal *appmiddleware.Principal, orgID string, 
 
 // UpdateGroup updates a group's mutable fields.
 func (s *Service) UpdateGroup(principal *appmiddleware.Principal, orgID, groupID string, input UpdateGroupInput) (Group, GroupAuditEvent, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		return Group{}, GroupAuditEvent{}, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -460,7 +460,7 @@ func (s *Service) UpdateGroup(principal *appmiddleware.Principal, orgID, groupID
 
 // GetGroup retrieves a single group by ID.
 func (s *Service) GetGroup(principal *appmiddleware.Principal, orgID, groupID string) (Group, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "billing", "read-only", "swimmer") {
+	if !hasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
 		return Group{}, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -479,7 +479,7 @@ func (s *Service) GetGroup(principal *appmiddleware.Principal, orgID, groupID st
 
 // ListGroups returns groups in an org. Coaches without admin access only see their own groups.
 func (s *Service) ListGroups(principal *appmiddleware.Principal, orgID string, activeOnly bool) ([]Group, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "billing", "read-only", "swimmer") {
+	if !hasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
 		return nil, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -498,8 +498,8 @@ func (s *Service) ListGroups(principal *appmiddleware.Principal, orgID string, a
 			continue
 		}
 		// Group-scoped coach visibility: coaches see only groups they coach,
-		// unless they're also owner/admin.
-		if hasAnyRole(principal, "coach") && !hasAnyRole(principal, "owner", "admin") {
+		// unless they're also admin.
+		if hasAnyRole(principal, "coach") && !hasAnyRole(principal, "admin") {
 			if g.CoachUserID != principal.UserID {
 				continue
 			}
@@ -513,7 +513,7 @@ func (s *Service) ListGroups(principal *appmiddleware.Principal, orgID string, a
 
 // AttachEligibilityRule attaches a new eligibility rule to a group.
 func (s *Service) AttachEligibilityRule(principal *appmiddleware.Principal, orgID, groupID string, input AttachEligibilityRuleInput) (EligibilityRule, GroupAuditEvent, error) {
-	if !hasAnyRole(principal, "owner", "admin") {
+	if !hasAnyRole(principal, "admin") {
 		return EligibilityRule{}, GroupAuditEvent{}, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -568,7 +568,7 @@ func (s *Service) AttachEligibilityRule(principal *appmiddleware.Principal, orgI
 
 // EvaluateSwimmerEligibility evaluates a swimmer against all active rules for a group.
 func (s *Service) EvaluateSwimmerEligibility(principal *appmiddleware.Principal, orgID, groupID, swimmerID string) (EligibilityResult, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent") {
+	if !hasAnyRole(principal, "admin", "coach", "parent") {
 		return EligibilityResult{}, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -589,7 +589,7 @@ func (s *Service) EvaluateSwimmerEligibility(principal *appmiddleware.Principal,
 	}
 
 	// Parent scope: can only evaluate own household swimmers.
-	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "owner", "admin", "coach") {
+	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "admin", "coach") {
 		if strings.TrimSpace(principal.HouseholdID) != swimmer.HouseholdID && !s.parentOwnsHouseholdLocked(principal.UserID, swimmer.HouseholdID) {
 			return EligibilityResult{}, ErrForbidden
 		}
@@ -619,7 +619,7 @@ func (s *Service) EvaluateSwimmerEligibility(principal *appmiddleware.Principal,
 }
 
 func (s *Service) ListEligibilityRules(principal *appmiddleware.Principal, orgID, groupID string) ([]EligibilityRule, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "billing", "read-only") {
+	if !hasAnyRole(principal, "admin", "coach", "parent") {
 		return nil, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -703,7 +703,7 @@ func (s *Service) evalRule(rule EligibilityRule, swimmer swimmerRef) RuleEvaluat
 
 // CreateRegistration creates a new registration for a swimmer in a group.
 func (s *Service) CreateRegistration(principal *appmiddleware.Principal, orgID string, input CreateRegistrationInput) (Registration, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent") {
+	if !hasAnyRole(principal, "admin", "coach", "parent") {
 		return Registration{}, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -742,7 +742,7 @@ func (s *Service) CreateRegistration(principal *appmiddleware.Principal, orgID s
 	}
 
 	// Parent scope: can only register swimmers from their own household.
-	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "owner", "admin", "coach") {
+	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "admin", "coach") {
 		if strings.TrimSpace(principal.HouseholdID) != householdID && !s.parentOwnsHouseholdLocked(principal.UserID, householdID) {
 			return Registration{}, ErrForbidden
 		}
@@ -787,7 +787,7 @@ func (s *Service) CreateRegistration(principal *appmiddleware.Principal, orgID s
 
 // TransitionRegistrationStatus moves a registration through its status state machine.
 func (s *Service) TransitionRegistrationStatus(principal *appmiddleware.Principal, orgID, registrationID, toStatus string) (Registration, GroupAuditEvent, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent") {
+	if !hasAnyRole(principal, "admin", "coach", "parent") {
 		return Registration{}, GroupAuditEvent{}, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -807,7 +807,7 @@ func (s *Service) TransitionRegistrationStatus(principal *appmiddleware.Principa
 	// Parents may only transition registrations belonging to their own
 	// household — otherwise a parent who learns another household's
 	// registration ID could withdraw it (cross-household IDOR).
-	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "owner", "admin", "coach") {
+	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "admin", "coach") {
 		if strings.TrimSpace(principal.HouseholdID) != reg.HouseholdID && !s.parentOwnsHouseholdLocked(principal.UserID, reg.HouseholdID) {
 			return Registration{}, GroupAuditEvent{}, ErrRegistrationNotFound
 		}
@@ -844,7 +844,7 @@ func (s *Service) TransitionRegistrationStatus(principal *appmiddleware.Principa
 
 // AcceptWaiver records a waiver acceptance for a registration.
 func (s *Service) AcceptWaiver(principal *appmiddleware.Principal, orgID, registrationID string, input AcceptWaiverInput) (WaiverAcceptance, error) {
-	if !hasAnyRole(principal, "owner", "admin", "parent") {
+	if !hasAnyRole(principal, "admin", "parent") {
 		return WaiverAcceptance{}, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -865,7 +865,7 @@ func (s *Service) AcceptWaiver(principal *appmiddleware.Principal, orgID, regist
 	}
 
 	// Parent scope: can only accept waivers for their own household registrations.
-	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "owner", "admin") {
+	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "admin") {
 		if strings.TrimSpace(principal.HouseholdID) != reg.HouseholdID && !s.parentOwnsHouseholdLocked(principal.UserID, reg.HouseholdID) {
 			return WaiverAcceptance{}, ErrForbidden
 		}
@@ -942,7 +942,7 @@ func validateTransition(from, to string, principal *appmiddleware.Principal) err
 		return fmt.Errorf("%w: %s -> %s is not allowed", ErrInvalidTransition, from, to)
 	}
 	// Parents can only withdraw; they cannot activate or deactivate.
-	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "owner", "admin", "coach") {
+	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "admin", "coach") {
 		if to != "withdrawn" {
 			return fmt.Errorf("%w: parent role can only transition to withdrawn", ErrForbidden)
 		}
@@ -1062,7 +1062,7 @@ func (s *Service) SnapshotRegistrations(orgID string) []Registration {
 // ListRegistrations returns registration rows visible to the principal. Parent
 // access is strictly limited to households linked to the parent principal.
 func (s *Service) ListRegistrations(principal *appmiddleware.Principal, orgID string) ([]Registration, error) {
-	if !hasAnyRole(principal, "owner", "admin", "coach", "parent", "read-only") {
+	if !hasAnyRole(principal, "admin", "coach", "parent") {
 		return nil, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -1072,7 +1072,7 @@ func (s *Service) ListRegistrations(principal *appmiddleware.Principal, orgID st
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	parentScoped := hasAnyRole(principal, "parent") && !hasAnyRole(principal, "owner", "admin", "coach", "read-only")
+	parentScoped := hasAnyRole(principal, "parent") && !hasAnyRole(principal, "admin", "coach")
 	allowedHouseholds := make(map[string]struct{})
 	if parentScoped {
 		if householdID := strings.TrimSpace(principal.HouseholdID); householdID != "" {

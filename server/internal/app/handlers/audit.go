@@ -23,7 +23,7 @@ func NewAuditHandlers(svc *audit.Service) *AuditHandlers {
 
 // RegisterRoutes mounts all audit routes on the given protected router.
 func (h *AuditHandlers) RegisterRoutes(router chi.Router) {
-	// Audit event query — owner/admin only.
+	// Audit event query — admin only.
 	router.Get("/audit-events", h.listAuditEvents)
 }
 
@@ -44,8 +44,8 @@ func (h *AuditHandlers) listAuditEvents(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin") {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Audit log access requires owner or admin role.", nil)
+	if !hasAnyRole(principal, "admin") {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Audit log access requires admin role.", nil)
 		return
 	}
 

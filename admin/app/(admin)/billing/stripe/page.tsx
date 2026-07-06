@@ -19,8 +19,8 @@ function fmtDt(d: string) {
 // ─── Config ────────────────────────────────────────────────────────────────────
 
 const TABS = [
-  { id: 'reconciliation', label: 'Reconciliation' },
-  { id: 'config',         label: 'Configuration' },
+  { id: 'reconciliation', label: 'Payment Checks' },
+  { id: 'config',         label: 'Technical Setup' },
 ]
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -81,7 +81,7 @@ export default function StripePage() {
         </p>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
           <h1 className="page-title">
-            Stripe Integration
+            Stripe
           </h1>
         </div>
       </div>
@@ -98,7 +98,7 @@ export default function StripePage() {
               <div style={{ padding: '14px 18px', marginBottom: '20px', borderRadius: '9px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
                 <Icon name="alert-circle" size={16} color="var(--error)" />
                 <div>
-                  <p style={{ fontSize: '13px', fontWeight: 600, color: 'var(--error)', marginBottom: '2px' }}>Failed to load reconciliation data</p>
+                  <p style={{ fontSize: '13px', fontWeight: 600, color: 'var(--error)', marginBottom: '2px' }}>Couldn&apos;t load payment check data</p>
                   <p style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>{error}</p>
                 </div>
               </div>
@@ -113,10 +113,10 @@ export default function StripePage() {
                 </svg>
                 <div>
                   <p style={{ fontSize: '13px', fontWeight: 600, color: 'var(--error)', marginBottom: '4px' }}>
-                    Reconciliation mismatch detected
+                    Your records and Stripe don&apos;t match
                   </p>
                   <p style={{ fontSize: '12px', color: 'var(--text-subtle)', lineHeight: 1.5 }}>
-                    Discrepancy of {fmtCents(Math.abs(mismatchCents))} between ledger and Stripe balance. Review recent payments and refunds.
+                    There&apos;s a difference of {fmtCents(Math.abs(mismatchCents))} between your records and your Stripe balance. Review recent payments and refunds.
                   </p>
                 </div>
               </div>
@@ -136,22 +136,22 @@ export default function StripePage() {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px' }}>
                 {[
                   {
-                    label: 'Ledger Net Collected',
+                    label: 'Total Collected',
                     value: report ? fmtCents(report.net_collected_cents) : '—',
-                    sub: `${report?.row_count ?? 0} payment records`,
+                    sub: `${report?.row_count ?? 0} payments recorded`,
                     color: 'var(--text)',
                   },
                   {
                     label: 'Total Refunded',
                     value: report ? fmtCents(report.refund_total_cents) : '—',
-                    sub: 'Net of all refunds issued',
+                    sub: 'All refunds issued',
                     color: 'var(--text)',
                   },
                   {
-                    label: 'Unreconciled Rows',
+                    label: 'Payments Needing Review',
                     value: report ? report.unreconciled_row_count.toString() : '—',
                     sub: hasStripeData
-                      ? (alertTriggered ? `${fmtCents(Math.abs(mismatchCents))} mismatch vs Stripe` : 'Matched with Stripe')
+                      ? (alertTriggered ? `${fmtCents(Math.abs(mismatchCents))} does not match Stripe` : 'Matches Stripe')
                       : 'Stripe balance not provided',
                     color: alertTriggered ? 'var(--error)' : (report?.unreconciled_row_count ?? 0) > 0 ? 'var(--warning)' : 'var(--success)',
                   },
@@ -169,9 +169,9 @@ export default function StripePage() {
             <div className="card" style={{ padding: '20px 24px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
                 <div>
-                  <h3 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', marginBottom: '4px' }}>Last Reconciliation Run</h3>
+                  <h3 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', marginBottom: '4px' }}>Last Payment Check</h3>
                   <p style={{ fontSize: '12px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>
-                    {report ? `${fmtDt(report.generated_at)} · on-demand` : lastRefreshed ? fmtDt(lastRefreshed.toISOString()) : '—'}
+                    {report ? `${fmtDt(report.generated_at)}, checked on demand` : lastRefreshed ? fmtDt(lastRefreshed.toISOString()) : '—'}
                   </p>
                 </div>
                 <button
@@ -192,11 +192,11 @@ export default function StripePage() {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {[
-                  { label: 'Method',      value: 'Payment reconciliation report (ledger vs Stripe)' },
+                  { label: 'Method',      value: 'Compares your records to Stripe' },
                   { label: 'Payments',    value: report ? fmtCents(report.payment_total_cents) : '—' },
                   { label: 'Refunds',     value: report ? fmtCents(report.refund_total_cents) : '—' },
-                  { label: 'Status',      value: loading ? 'Loading…' : error ? '✗ ERROR' : alertTriggered ? '⚠ MISMATCH' : '✓ RECONCILED' },
-                  { label: 'Schedule',    value: 'Every 24h (WORKER_RECONCILE_INTERVAL)' },
+                  { label: 'Status',      value: loading ? 'Checking…' : error ? 'Could not check' : alertTriggered ? 'Does not match Stripe' : 'All payments match Stripe' },
+                  { label: 'Schedule',    value: 'Checked automatically every day' },
                 ].map((r) => (
                   <div key={r.label} style={{ display: 'flex', gap: '16px' }}>
                     <span style={{ fontFamily: 'var(--font-body)', fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', minWidth: '100px', flexShrink: 0 }}>{r.label}</span>
@@ -216,12 +216,12 @@ export default function StripePage() {
             {!loading && !error && report && report.unreconciled_row_count > 0 && (
               <div className="card" style={{ padding: '16px 20px', marginTop: '16px', borderLeft: '3px solid var(--warning)' }}>
                 <h3 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', marginBottom: '8px' }}>
-                  {report.unreconciled_row_count} Unreconciled Payment{report.unreconciled_row_count !== 1 ? 's' : ''}
+                  {report.unreconciled_row_count} Payment{report.unreconciled_row_count !== 1 ? 's' : ''} Need{report.unreconciled_row_count === 1 ? 's' : ''} Review
                 </h3>
                 <p style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.6 }}>
-                  These payments have discrepancies between the internal ledger and payment processor records. Review them in the{' '}
+                  These payments don&apos;t match up between your records and Stripe. Review them in the{' '}
                   <a href="/billing" style={{ color: 'var(--accent)', textDecoration: 'none' }}>Billing overview</a>{' '}
-                  or run a full reconciliation report for details.
+                  or refresh the payment check above for details.
                 </p>
               </div>
             )}

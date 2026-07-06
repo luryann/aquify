@@ -22,10 +22,95 @@ function formatSwimTime(milliseconds?: number | null) {
   return `${minutes}:${seconds}`
 }
 
+function eventKeyFor(record: ProgressionResultRecord): string {
+  return `${record.distance} ${record.stroke} ${record.course}`
+}
+
+function eventLabelFor(record: ProgressionResultRecord): string {
+  const stroke = record.stroke.charAt(0).toUpperCase() + record.stroke.slice(1)
+  return `${record.distance} ${stroke} (${record.course})`
+}
+
 type SwimmerSnapshot = {
   swimmer: SwimmerRecord
   bestTimes: BestTimeRecord[]
   progression: ProgressionResultRecord[]
+}
+
+// A hand-built line chart (no charting dependency) plotting finish time over
+// date for a single swimmer/event/course combo. Faster times plot higher —
+// an upward line reads as "getting faster" the way a coach would expect.
+function ProgressionChart({ results }: { results: ProgressionResultRecord[] }) {
+  const points = results
+    .filter((r) => r.fin_time_ms != null)
+    .map((r) => ({ date: new Date(r.created_at), ms: r.fin_time_ms as number }))
+    .sort((a, b) => a.date.getTime() - b.date.getTime())
+
+  if (points.length === 0) {
+    return (
+      <div style={{ padding: '32px 18px', textAlign: 'center' }}>
+        <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>No timed results recorded for this event yet.</p>
+      </div>
+    )
+  }
+
+  const width = 640
+  const height = 240
+  const padL = 64
+  const padR = 20
+  const padT = 20
+  const padB = 34
+  const plotW = width - padL - padR
+  const plotH = height - padT - padB
+
+  const minMs = Math.min(...points.map((p) => p.ms))
+  const maxMs = Math.max(...points.map((p) => p.ms))
+  const msRange = maxMs - minMs || 1
+  const minDate = points[0].date.getTime()
+  const maxDate = points[points.length - 1].date.getTime()
+  const dateRange = maxDate - minDate || 1
+
+  // Faster (lower ms) plots higher on the y-axis.
+  const xFor = (t: number) => padL + (points.length === 1 ? plotW / 2 : ((t - minDate) / dateRange) * plotW)
+  const yFor = (ms: number) => padT + ((ms - minMs) / msRange) * plotH
+
+  const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xFor(p.date.getTime())} ${yFor(p.ms)}`).join(' ')
+
+  const yTicks = [minMs, minMs + msRange / 2, maxMs]
+
+  return (
+    <div style={{ padding: '16px 18px' }}>
+      <svg viewBox={`0 0 ${width} ${height}`} style={{ width: '100%', height: 'auto', display: 'block' }} role="img" aria-label="Finish time over time, faster times plotted higher">
+        {yTicks.map((ms, i) => (
+          <g key={i}>
+            <line x1={padL} x2={width - padR} y1={yFor(ms)} y2={yFor(ms)} stroke="var(--border)" strokeWidth={1} />
+            <text x={padL - 8} y={yFor(ms)} textAnchor="end" dominantBaseline="middle" fontSize="10.5" fill="var(--text-muted)" fontFamily="var(--font-body)">
+              {formatSwimTime(ms)}
+            </text>
+          </g>
+        ))}
+
+        <path d={linePath} fill="none" stroke="var(--accent)" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+
+        {points.map((p, i) => (
+          <g key={i}>
+            <circle cx={xFor(p.date.getTime())} cy={yFor(p.ms)} r={4} fill="var(--accent)" stroke="var(--bg-surface)" strokeWidth={1.5} />
+            <title>{`${p.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}: ${formatSwimTime(p.ms)}`}</title>
+          </g>
+        ))}
+
+        <text x={padL} y={height - 8} fontSize="10.5" fill="var(--text-muted)" fontFamily="var(--font-body)">
+          {points[0].date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+        </text>
+        <text x={width - padR} y={height - 8} textAnchor="end" fontSize="10.5" fill="var(--text-muted)" fontFamily="var(--font-body)">
+          {points[points.length - 1].date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+        </text>
+      </svg>
+      <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '8px' }}>
+        {points.length} timed result{points.length !== 1 ? 's' : ''}. Faster times plot higher.
+      </p>
+    </div>
+  )
 }
 
 export default function PerformanceVisualizationPage() {
@@ -34,6 +119,8 @@ export default function PerformanceVisualizationPage() {
   const [snapshots, setSnapshots] = useState<SwimmerSnapshot[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [chartSwimmerId, setChartSwimmerId] = useState<string>('')
+  const [chartEventKey, setChartEventKey] = useState<string>('')
 
   useEffect(() => {
     let cancelled = false
@@ -128,8 +215,33 @@ export default function PerformanceVisualizationPage() {
     }
   }, [snapshots])
 
+  const chartableSwimmers = useMemo(
+    () => snapshots.filter((s) => s.progression.some((r) => r.fin_time_ms != null)),
+    [snapshots],
+  )
+
+  const chartSwimmer = chartableSwimmers.find((s) => s.swimmer.id === chartSwimmerId) ?? chartableSwimmers[0]
+
+  const chartEventOptions = useMemo(() => {
+    if (!chartSwimmer) return []
+    const byKey = new Map<string, string>()
+    for (const r of chartSwimmer.progression) {
+      if (r.fin_time_ms == null) continue
+      byKey.set(eventKeyFor(r), eventLabelFor(r))
+    }
+    return [...byKey.entries()].map(([key, label]) => ({ key, label }))
+  }, [chartSwimmer])
+
+  const activeEventKey = chartEventOptions.some((o) => o.key === chartEventKey)
+    ? chartEventKey
+    : (chartEventOptions[0]?.key ?? '')
+
+  const chartResults = chartSwimmer
+    ? chartSwimmer.progression.filter((r) => eventKeyFor(r) === activeEventKey)
+    : []
+
   if (!session) {
-    return <div style={{ padding: '32px' }}><EmptyState icon="bar-chart-2" title="Sign in required" description="Authenticate to view live performance analytics." /></div>
+    return <div style={{ padding: '32px' }}><EmptyState icon="bar-chart-2" title="Sign in required" description="Sign in to view performance analytics." /></div>
   }
 
   return (
@@ -139,10 +251,10 @@ export default function PerformanceVisualizationPage() {
           Performance
         </p>
         <h1 className="page-title">
-          Live Visualization
+          Team Coverage
         </h1>
         <p className="page-subtitle">
-          Snapshot view composed from live swimmers, best times, and progression history.
+          Which swimmers compete in the most events, and which events have the most swimmers.
         </p>
       </div>
 
@@ -153,61 +265,94 @@ export default function PerformanceVisualizationPage() {
       ) : null}
 
       {loading ? (
-        <EmptyState icon="bar-chart-2" title="Loading analytics" description="Aggregating live performance data across swimmers." />
+        <EmptyState icon="bar-chart-2" title="Loading analytics" description="Aggregating performance data across swimmers." />
       ) : snapshots.length === 0 ? (
         <EmptyState icon="bar-chart-2" title="No performance data yet" description="Add swimmers and results to populate this visualization." />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
-            {[
-              { label: 'Swimmers', value: String(summary.swimmerCount) },
-              { label: 'Best Times', value: String(summary.bestTimeCount) },
-              { label: 'Results', value: String(summary.progressionCount) },
-              { label: 'Manual Overrides', value: String(summary.manualOverrides) },
-            ].map((stat) => (
-              <div key={stat.label} className="card-elevated" style={{ padding: '14px 16px' }}>
-                <div style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>{stat.label}</div>
-                <div style={{ fontSize: '22px', fontFamily: 'var(--font-body)', color: 'var(--text)' }}>{stat.value}</div>
-              </div>
-            ))}
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <span className="badge badge-default">{summary.swimmerCount} swimmers</span>
+            <span className="badge badge-default">{summary.bestTimeCount} best times</span>
+            <span className="badge badge-default">{summary.progressionCount} results</span>
+            <span className="badge badge-warning">{summary.manualOverrides} times entered by hand</span>
           </div>
+
+          {chartableSwimmers.length > 0 && (
+            <section className="card" style={{ overflow: 'hidden' }}>
+              <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                <div>
+                  <h2 style={{ fontSize: '14px', color: 'var(--text)' }}>Time Progression</h2>
+                  <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>Finish time over time for one swimmer and event</p>
+                </div>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <select
+                    value={chartSwimmer?.swimmer.id ?? ''}
+                    onChange={(e) => { setChartSwimmerId(e.target.value); setChartEventKey('') }}
+                    style={{ fontSize: '12px', padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg-surface)', color: 'var(--text)' }}
+                  >
+                    {chartableSwimmers.map((s) => (
+                      <option key={s.swimmer.id} value={s.swimmer.id}>{s.swimmer.first_name} {s.swimmer.last_name}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={activeEventKey}
+                    onChange={(e) => setChartEventKey(e.target.value)}
+                    style={{ fontSize: '12px', padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg-surface)', color: 'var(--text)' }}
+                  >
+                    {chartEventOptions.map((o) => (
+                      <option key={o.key} value={o.key}>{o.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <ProgressionChart results={chartResults} />
+            </section>
+          )}
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
             <section className="card" style={{ overflow: 'hidden' }}>
               <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
                 <h2 style={{ fontSize: '14px', color: 'var(--text)' }}>Swimmers with the Broadest Coverage</h2>
+                <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>By number of events with a recorded best time</p>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                {summary.topSwimmers.map((entry, index) => (
-                  <div key={entry.swimmer.id} style={{ padding: '14px 18px', borderBottom: index < summary.topSwimmers.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '4px' }}>
-                      <span style={{ fontSize: '13px', color: 'var(--text)' }}>{entry.swimmer.first_name} {entry.swimmer.last_name}</span>
-                      <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--accent)' }}>{entry.bestTimeCount} best times</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px 18px' }}>
+                {(() => {
+                  const max = Math.max(1, ...summary.topSwimmers.map((e) => e.bestTimeCount))
+                  return summary.topSwimmers.map((entry) => (
+                    <div key={entry.swimmer.id} title={`${entry.swimmer.first_name} ${entry.swimmer.last_name}: ${entry.bestTimeCount} best times`}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '5px' }}>
+                        <span style={{ fontSize: '13px', color: 'var(--text)' }}>{entry.swimmer.first_name} {entry.swimmer.last_name}</span>
+                        <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--accent)', flexShrink: 0 }}>{entry.bestTimeCount}</span>
+                      </div>
+                      <div style={{ height: '7px', borderRadius: '4px', background: 'var(--bg-elevated)', overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${(entry.bestTimeCount / max) * 100}%`, background: 'var(--accent)', borderRadius: '4px' }} />
+                      </div>
                     </div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                      Latest result: {entry.lastResultAt ? new Date(entry.lastResultAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'No official progression rows yet'}
-                    </div>
-                  </div>
-                ))}
+                  ))
+                })()}
               </div>
             </section>
 
             <section className="card" style={{ overflow: 'hidden' }}>
               <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
                 <h2 style={{ fontSize: '14px', color: 'var(--text)' }}>Most Populated Events</h2>
+                <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>By number of swimmers with a recorded time</p>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                {summary.topEvents.map((entry, index) => (
-                  <div key={entry.event} style={{ padding: '14px 18px', borderBottom: index < summary.topEvents.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '4px' }}>
-                      <span style={{ fontSize: '13px', color: 'var(--text)' }}>{entry.event}</span>
-                      <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--accent)' }}>{entry.count} swimmers</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px 18px' }}>
+                {(() => {
+                  const max = Math.max(1, ...summary.topEvents.map((e) => e.count))
+                  return summary.topEvents.map((entry) => (
+                    <div key={entry.event} title={`${entry.event}: ${entry.count} swimmers, fastest ${formatSwimTime(entry.fastest)}`}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '5px' }}>
+                        <span style={{ fontSize: '13px', color: 'var(--text)' }}>{entry.event}</span>
+                        <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--accent)', flexShrink: 0 }}>{entry.count}</span>
+                      </div>
+                      <div style={{ height: '7px', borderRadius: '4px', background: 'var(--bg-elevated)', overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${(entry.count / max) * 100}%`, background: 'var(--accent)', borderRadius: '4px' }} />
+                      </div>
                     </div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                      Fastest recorded time: {formatSwimTime(entry.fastest)}
-                    </div>
-                  </div>
-                ))}
+                  ))
+                })()}
               </div>
             </section>
           </div>

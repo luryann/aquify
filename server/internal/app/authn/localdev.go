@@ -7,16 +7,13 @@ import (
 )
 
 const (
-	LocalDevOrgID          = "00000000-0000-0000-0000-00000000a001"
-	LocalDevHouseholdID    = "00000000-0000-0000-0000-0000000b0001"
-	legacyLocalDevOrgID    = "org-demo"
-	LocalDevOwnerUserID    = "00000000-0000-0000-0000-00000000a101"
-	LocalDevAdminUserID    = "00000000-0000-0000-0000-00000000a102"
-	LocalDevCoachUserID    = "00000000-0000-0000-0000-00000000a103"
-	LocalDevParentUserID   = "00000000-0000-0000-0000-00000000a104"
-	LocalDevBillingUserID  = "00000000-0000-0000-0000-00000000a105"
-	LocalDevReadOnlyUserID = "00000000-0000-0000-0000-00000000a106"
-	LocalDevSwimmerUserID  = "00000000-0000-0000-0000-00000000a107"
+	LocalDevOrgID        = "00000000-0000-0000-0000-00000000a001"
+	LocalDevHouseholdID  = "00000000-0000-0000-0000-0000000b0001"
+	legacyLocalDevOrgID  = "org-demo"
+	LocalDevAdminUserID  = "00000000-0000-0000-0000-00000000a102"
+	LocalDevCoachUserID  = "00000000-0000-0000-0000-00000000a103"
+	LocalDevParentUserID = "00000000-0000-0000-0000-00000000a104"
+	LocalDevSwimmerUserID = "00000000-0000-0000-0000-00000000a107"
 )
 
 type LocalDevUser struct {
@@ -28,23 +25,17 @@ type LocalDevUser struct {
 }
 
 var localDevUsers = []LocalDevUser{
-	{Token: "stub-owner", UserID: LocalDevOwnerUserID, Email: "owner@dare.local", Name: "Dev Owner", Roles: []string{"owner"}},
 	{Token: "stub-admin", UserID: LocalDevAdminUserID, Email: "admin@dare.local", Name: "Dev Admin", Roles: []string{"admin"}},
 	{Token: "stub-coach", UserID: LocalDevCoachUserID, Email: "coach@dare.local", Name: "Dev Coach", Roles: []string{"coach"}},
 	{Token: "stub-parent", UserID: LocalDevParentUserID, Email: "parent@dare.local", Name: "Dev Parent", Roles: []string{"parent"}},
-	{Token: "stub-billing", UserID: LocalDevBillingUserID, Email: "billing@dare.local", Name: "Dev Billing", Roles: []string{"billing"}},
-	{Token: "stub-readonly", UserID: LocalDevReadOnlyUserID, Email: "readonly@dare.local", Name: "Dev Read-Only", Roles: []string{"read-only"}},
 	{Token: "stub-swimmer", UserID: LocalDevSwimmerUserID, Email: "swimmer@dare.local", Name: "Dev Swimmer", Roles: []string{"swimmer"}},
 }
 
 var localDevUserIDs = map[string]struct{}{
-	LocalDevOwnerUserID:    {},
-	LocalDevAdminUserID:    {},
-	LocalDevCoachUserID:    {},
-	LocalDevParentUserID:   {},
-	LocalDevBillingUserID:  {},
-	LocalDevReadOnlyUserID: {},
-	LocalDevSwimmerUserID:  {},
+	LocalDevAdminUserID:   {},
+	LocalDevCoachUserID:   {},
+	LocalDevParentUserID:  {},
+	LocalDevSwimmerUserID: {},
 }
 
 func LocalDevUsers() []LocalDevUser {
@@ -77,7 +68,7 @@ func localDevStaticPrincipals() map[string]*appmiddleware.Principal {
 	// OIDC login (which is what normally attaches HouseholdID to the principal).
 	principals["stub-parent"].HouseholdID = LocalDevHouseholdID
 	principals["stub-swimmer"].HouseholdID = LocalDevHouseholdID
-	principals["stub-owner"].MFAAuthenticated = true
+	principals["stub-admin"].MFAAuthenticated = true
 	principals["stub-admin-mfa"] = &appmiddleware.Principal{
 		UserID:           LocalDevAdminUserID,
 		Email:            "admin@dare.local",

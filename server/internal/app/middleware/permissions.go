@@ -19,32 +19,15 @@ const (
 var ErrPermissionDenied = errors.New("permission denied")
 var ErrMFARequired = errors.New("mfa required")
 
-type actionRule struct {
-	AllowedRoles []string
-	RequireMFA   bool
-}
-
-var actionRules = map[Action]actionRule{
-	ActionAssignRole: {
-		AllowedRoles: []string{"owner", "admin"},
-		RequireMFA:   true,
-	},
-	ActionBillingRefund: {
-		AllowedRoles: []string{"owner", "admin", "billing"},
-		RequireMFA:   true,
-	},
-	ActionBillingVoid: {
-		AllowedRoles: []string{"owner", "admin"},
-		RequireMFA:   true,
-	},
-	ActionBillingWriteOff: {
-		AllowedRoles: []string{"owner", "admin"},
-		RequireMFA:   true,
-	},
-	ActionBillingPaymentRecord: {
-		AllowedRoles: []string{"owner", "admin", "billing"},
-		RequireMFA:   true,
-	},
+// adminActionsRequireMFA is the set of privileged actions gated to the admin
+// role; every action in this framework is admin-only, so the map's value is
+// just whether MFA step-up is additionally required for that action.
+var adminActionsRequireMFA = map[Action]bool{
+	ActionAssignRole:           true,
+	ActionBillingRefund:        true,
+	ActionBillingVoid:          true,
+	ActionBillingWriteOff:      true,
+	ActionBillingPaymentRecord: true,
 }
 
 func CheckPermission(principal *Principal, action Action) error {
@@ -52,19 +35,16 @@ func CheckPermission(principal *Principal, action Action) error {
 		return ErrPermissionDenied
 	}
 
-	rule, ok := actionRules[action]
+	requireMFA, ok := adminActionsRequireMFA[action]
 	if !ok {
 		return fmt.Errorf("%w: unknown action %q", ErrPermissionDenied, action)
 	}
 
-	for _, role := range principal.Roles {
-		if slices.Contains(rule.AllowedRoles, role) {
-			if rule.RequireMFA && !principal.MFAAuthenticated {
-				return ErrMFARequired
-			}
-			return nil
-		}
+	if !slices.Contains(principal.Roles, "admin") {
+		return ErrPermissionDenied
 	}
-
-	return ErrPermissionDenied
+	if requireMFA && !principal.MFAAuthenticated {
+		return ErrMFARequired
+	}
+	return nil
 }

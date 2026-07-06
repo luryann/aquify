@@ -232,7 +232,7 @@ func (h *GroupsHandlers) attachEligibilityRule(w http.ResponseWriter, r *http.Re
 		case errors.Is(err, groups.ErrGroupNotFound):
 			httpx.WriteError(w, r, http.StatusNotFound, "group_not_found", "Group was not found.", nil)
 		case errors.Is(err, groups.ErrForbidden):
-			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only owner/admin can attach eligibility rules.", nil)
+			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only admin can attach eligibility rules.", nil)
 		default:
 			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_rule_request", err.Error(), nil)
 		}
@@ -491,7 +491,7 @@ func hasRegistrationListAccess(principal *appmiddleware.Principal) bool {
 	}
 	for _, role := range principal.Roles {
 		switch strings.TrimSpace(strings.ToLower(role)) {
-		case "owner", "admin", "coach", "parent", "read-only":
+		case "admin", "coach", "parent":
 			return true
 		}
 	}

@@ -68,12 +68,7 @@ func allowsKeycloakAdminStubFallback(cfg Config) bool {
 }
 
 func canonicalUserManagementRole(role string) string {
-	switch strings.TrimSpace(strings.ToLower(role)) {
-	case "read-only", "read_only_staff":
-		return "read_only_staff"
-	default:
-		return strings.TrimSpace(strings.ToLower(role))
-	}
+	return strings.TrimSpace(strings.ToLower(role))
 }
 
 func normalizedImportGender(raw string) string {
@@ -607,6 +602,15 @@ func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.M
 		cfg.Postmark.WebhookBasicPass,
 		appEnv,
 	)
+	commsHandlers.SetStorage(objectStore)
+	commsService.SetStorage(objectStore)
+	if strings.TrimSpace(cfg.Worker.RedisURL) != "" {
+		if broadcaster, err := comms.NewMessageBroadcaster(cfg.Worker.RedisURL, logger); err == nil {
+			commsService.SetBroadcaster(broadcaster)
+		} else {
+			logger.Warn("comms: realtime broadcaster unavailable, message streaming disabled", "err", err)
+		}
+	}
 	auditHandlers := handlers.NewAuditHandlers(auditService)
 	if complianceService == nil {
 		if dbPool != nil {
@@ -847,7 +851,7 @@ func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.M
 			protected.Use(appmiddleware.Auth(authService))
 			protected.Use(appmiddleware.RequireOrgScope)
 			protected.Use(appmiddleware.RejectImpersonationHeaders(cfg.Security.Impersonation.Enabled))
-			protected.With(appmiddleware.RBACStub("owner", "admin", "coach")).Get("/authz/ping", handlers.AuthzPing)
+			protected.With(appmiddleware.RBACStub("admin", "coach")).Get("/authz/ping", handlers.AuthzPing)
 
 			protected.Route("/members", func(membersRouter chi.Router) {
 				membershipHandlers.RegisterProtectedRoutes(membersRouter)

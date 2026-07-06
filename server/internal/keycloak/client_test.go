@@ -659,7 +659,7 @@ func TestAdminClient_EnsureRealmRolesExist(t *testing.T) {
 	ctx := context.Background()
 
 	// Seed one existing role.
-	mk.roles["owner"] = &keycloak.Role{ID: "role-owner", Name: "owner"}
+	mk.roles["admin"] = &keycloak.Role{ID: "role-admin", Name: "admin"}
 
 	if err := c.EnsureRealmRolesExist(ctx, keycloak.DefaultRealmRoles); err != nil {
 		t.Fatalf("EnsureRealmRolesExist: %v", err)

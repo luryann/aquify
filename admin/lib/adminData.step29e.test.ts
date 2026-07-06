@@ -126,34 +126,34 @@ test('Step 29E reports helpers hit live report endpoints with org-scoped headers
 test('Step 29E users helper preserves source metadata for stubbed development user lists', async () => {
   const mock = createMockApi()
   const orgId = 'org_users'
-  mock.respond('GET', '/api/v1/users?role=read_only_staff&limit=25', {
+  mock.respond('GET', '/api/v1/users?role=coach&limit=25', {
     status: 'ok',
     count: 1,
     source: 'stub',
     is_stubbed: true,
     users: [
       {
-        id: 'user_readonly',
-        username: 'readonly@example.com',
-        email: 'readonly@example.com',
-        firstName: 'Read',
-        lastName: 'Only',
+        id: 'user_coach',
+        username: 'coach@example.com',
+        email: 'coach@example.com',
+        firstName: 'Coach',
+        lastName: 'Person',
         enabled: true,
         emailVerified: true,
-        roles: ['read_only_staff'],
+        roles: ['coach'],
       },
     ],
   })
 
   const api = mock as unknown as ApiClient
-  const result = await fetchUsers(api, orgId, { role: 'read_only_staff', limit: 25 })
+  const result = await fetchUsers(api, orgId, { role: 'coach', limit: 25 })
 
   assert.equal(result.count, 1)
   assert.equal(result.source, 'stub')
   assert.equal(result.isStubbed, true)
-  assert.equal(result.users[0]?.roles?.[0], 'read_only_staff')
+  assert.equal(result.users[0]?.roles?.[0], 'coach')
   assert.deepEqual(mock.calls, [
-    { method: 'GET', path: '/api/v1/users?role=read_only_staff&limit=25', headers: { 'X-Org-Id': orgId } },
+    { method: 'GET', path: '/api/v1/users?role=coach&limit=25', headers: { 'X-Org-Id': orgId } },
   ])
 })
 

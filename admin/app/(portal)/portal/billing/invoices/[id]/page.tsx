@@ -396,7 +396,7 @@ function InvoiceDetailPageContent() {
             ) : (
               <>
                 <Icon name="credit-card" size={18} />
-                Pay ${amountDue.toFixed(2)} via Stripe
+                Pay ${amountDue.toFixed(2)} now
               </>
             )}
           </button>

@@ -21,11 +21,11 @@ const SECTION_ORDER = [
   'Competition',
   'Training',
   'Performance',
-  'Files',
   'Billing',
   'Communications',
   'Compliance',
   'System',
+  'Advanced',
 ]
 
 const MIN_WIDTH = 160
@@ -71,7 +71,7 @@ export function Sidebar({ role, roles, userName, onSignOut, orgId }: SidebarProp
   }, [sidebarWidth, collapsed])
 
   // Fetch pending approvals count, plus pending swimmer-link requests
-  // (owner/admin only) — both surface on the same "Approvals" nav badge.
+  // (admin only) — both surface on the same "Approvals" nav badge.
   useEffect(() => {
     if (!shouldFetchPendingApprovals(roles, orgId)) return
     const controller = new AbortController()
@@ -169,16 +169,6 @@ export function Sidebar({ role, roles, userName, onSignOut, orgId }: SidebarProp
       >
         {!collapsed && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, overflow: 'hidden' }}>
-            <div
-              style={{
-                width: '7px',
-                height: '7px',
-                borderRadius: '50%',
-                background: 'var(--accent)',
-                boxShadow: '0 0 8px var(--accent)',
-                flexShrink: 0,
-              }}
-            />
             <span
               style={{
                 fontFamily: 'var(--font-display)',

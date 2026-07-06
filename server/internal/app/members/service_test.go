@@ -250,7 +250,7 @@ func TestUpdateSwimmerSwimmerBioRejectsOverlongInput(t *testing.T) {
 	testutil.RequireErrorIs(t, err, ErrSwimmerBioTooLong)
 }
 
-func TestListSwimmersRedactsMedicalFlagsForBillingRole(t *testing.T) {
+func TestListSwimmersRedactsMedicalFlagsForSwimmerRole(t *testing.T) {
 	t.Parallel()
 
 	svc := NewService()
@@ -275,7 +275,8 @@ func TestListSwimmersRedactsMedicalFlagsForBillingRole(t *testing.T) {
 		t.Fatalf("CreateSwimmer returned error: %v", err)
 	}
 
-	results, err := svc.ListSwimmers(testutil.BillingPrincipal(), testutil.DefaultOrgID, ListSwimmersInput{
+	swimmerPrincipal := testutil.SwimmerPrincipal("swimmer-river", household.ID)
+	results, err := svc.ListSwimmers(swimmerPrincipal, testutil.DefaultOrgID, ListSwimmersInput{
 		IncludeMedical: true,
 	})
 	if err != nil {
@@ -288,9 +289,10 @@ func TestListSwimmersRedactsMedicalFlagsForBillingRole(t *testing.T) {
 		t.Fatalf("expected swimmer %q, got %q", swimmer.ID, results[0].ID)
 	}
 	if !results[0].MedicalFlagsRedacted {
-		t.Fatal("expected billing role medical flags to be redacted")
+		t.Fatal("expected swimmer role medical flags to be redacted")
 	}
 	if len(results[0].MedicalFlags) != 0 {
 		t.Fatalf("expected medical flags to be hidden, got %#v", results[0].MedicalFlags)
 	}
 }
+

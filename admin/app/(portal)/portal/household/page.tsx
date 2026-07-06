@@ -296,7 +296,7 @@ function SwimmerProfileCard({
 
       <dl style={{ padding: '4px 22px 12px' }}>
         <InfoRow label="Date of Birth" value={fmtDOB(swimmer.date_of_birth)} />
-        <InfoRow label="USS Number"    value={swimmer.swimmer_external_id ?? '—'} />
+        <InfoRow label="External ID"    value={swimmer.swimmer_external_id ?? '—'} />
       </dl>
 
       <div
@@ -426,7 +426,7 @@ export default function HouseholdProfilePage() {
 
   const tabs: { id: Tab; label: string; count?: number }[] = [
     { id: 'overview', label: 'Overview' },
-    { id: 'contacts', label: 'Contacts', count: contacts.length },
+    { id: 'contacts', label: 'Additional Contacts', count: contacts.length },
     { id: 'swimmers', label: 'Swimmers', count: swimmers.length },
   ]
 
@@ -499,6 +499,8 @@ export default function HouseholdProfilePage() {
         </div>
 
         <button
+          disabled
+          title="Editing household profile details isn't available yet"
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -509,19 +511,10 @@ export default function HouseholdProfilePage() {
             borderRadius: '9px',
             fontSize: '13px',
             fontWeight: 600,
-            color: 'var(--text)',
-            cursor: 'pointer',
+            color: 'var(--text-muted)',
+            cursor: 'not-allowed',
             flexShrink: 0,
-            boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
-            transition: 'box-shadow 120ms ease, border-color 120ms ease',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.boxShadow = '0 3px 10px rgba(0,0,0,0.10)'
-            e.currentTarget.style.borderColor = 'rgba(0,0,0,0.20)'
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,0.06)'
-            e.currentTarget.style.borderColor = 'rgba(0,0,0,0.12)'
+            opacity: 0.55,
           }}
         >
           <Icon name="edit-2" size={14} />
@@ -723,7 +716,7 @@ export default function HouseholdProfilePage() {
           ) : loadError ? (
             <div style={{ color: 'var(--text-muted)', fontSize: '14px', padding: '20px 0' }}>Contact data is unavailable right now.</div>
           ) : shouldShowCollectionEmptyState(loading, loadError, contacts.length) ? (
-            <div style={{ color: 'var(--text-muted)', fontSize: '14px', padding: '20px 0' }}>No contacts on file.</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: '14px', padding: '20px 0' }}>No additional contacts on file. Your primary email and phone are shown under Overview.</div>
           ) : (
             contacts.map((contact) => (
               <ContactCard key={contact.id} contact={contact} />
@@ -731,6 +724,8 @@ export default function HouseholdProfilePage() {
           )}
 
           <button
+            disabled
+            title="Adding a new contact isn't available yet"
             style={{
               background: 'transparent',
               border: '1.5px dashed rgba(0,0,0,0.15)',
@@ -741,20 +736,10 @@ export default function HouseholdProfilePage() {
               alignItems: 'center',
               justifyContent: 'center',
               gap: '8px',
-              cursor: 'pointer',
+              cursor: 'not-allowed',
               color: 'var(--text-muted)',
-              transition: 'border-color 120ms ease, color 120ms ease, background 120ms ease',
+              opacity: 0.55,
               minHeight: '120px',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = 'var(--accent)'
-              e.currentTarget.style.color = 'var(--accent)'
-              e.currentTarget.style.background = 'rgba(235,93,30,0.03)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = 'rgba(0,0,0,0.15)'
-              e.currentTarget.style.color = 'var(--text-muted)'
-              e.currentTarget.style.background = 'transparent'
             }}
           >
             <Icon name="plus" size={22} />

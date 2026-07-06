@@ -103,13 +103,10 @@ func TestSensitiveRouteRBACMatrix(t *testing.T) {
 	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, nil, nil, billing.NewService(), nil, nil, nil, nil, nil, nil, nil, nil)
 
 	tokens := map[string]string{
-		"owner":     issueSessionTokenForUser(t, router, "owner-user", "org-rbac", []string{"owner"}, true),
-		"admin":     issueSessionTokenForUser(t, router, "admin-user", "org-rbac", []string{"admin"}, true),
-		"coach":     issueSessionTokenForUser(t, router, "coach-user", "org-rbac", []string{"coach"}, false),
-		"billing":   issueSessionTokenForUser(t, router, "billing-user", "org-rbac", []string{"billing"}, true),
-		"parent":    issueSessionTokenForUser(t, router, "parent-user", "org-rbac", []string{"parent"}, false),
-		"swimmer":   issueSessionTokenForUser(t, router, "swimmer-user", "org-rbac", []string{"swimmer"}, false),
-		"read-only": issueSessionTokenForUser(t, router, "readonly-user", "org-rbac", []string{"read-only"}, false),
+		"admin":   issueSessionTokenForUser(t, router, "admin-user", "org-rbac", []string{"admin"}, true),
+		"coach":   issueSessionTokenForUser(t, router, "coach-user", "org-rbac", []string{"coach"}, false),
+		"parent":  issueSessionTokenForUser(t, router, "parent-user", "org-rbac", []string{"parent"}, false),
+		"swimmer": issueSessionTokenForUser(t, router, "swimmer-user", "org-rbac", []string{"swimmer"}, false),
 	}
 
 	type routeCase struct {
@@ -127,7 +124,7 @@ func TestSensitiveRouteRBACMatrix(t *testing.T) {
 			path:   "/api/v1/imports/upload-url",
 			body:   `{"filename":"rbac.sd3","file_type":"sd3","size_bytes":1024,"mime_type":"application/octet-stream"}`,
 			allowedRoles: map[string]bool{
-				"owner": true, "admin": true, "coach": true,
+				"admin": true, "coach": true,
 			},
 		},
 		{
@@ -136,7 +133,7 @@ func TestSensitiveRouteRBACMatrix(t *testing.T) {
 			path:   "/api/v1/invoices",
 			body:   `{"household_id":"hh-rbac","invoice_number":"INV-RBAC-1"}`,
 			allowedRoles: map[string]bool{
-				"owner": true, "admin": true, "billing": true,
+				"admin": true,
 			},
 		},
 		{
@@ -144,7 +141,7 @@ func TestSensitiveRouteRBACMatrix(t *testing.T) {
 			method: http.MethodGet,
 			path:   "/api/v1/ledger-events",
 			allowedRoles: map[string]bool{
-				"owner": true, "admin": true, "billing": true,
+				"admin": true,
 			},
 		},
 	}
@@ -377,7 +374,6 @@ func TestP0RegistrationToPaymentFlow(t *testing.T) {
 
 	adminToken := issueSessionTokenForUser(t, router, "admin-user", "org-p0-reg", []string{"admin"}, true)
 	parentToken := issueSessionTokenForUser(t, router, "parent-user", "org-p0-reg", []string{"parent"}, false)
-	billingToken := issueSessionTokenForUser(t, router, "billing-user", "org-p0-reg", []string{"billing"}, true)
 
 	createGroupReq := httptest.NewRequest(http.MethodPost, "/api/v1/groups", encodeJSONBody(t, map[string]any{
 		"code": "gold",
@@ -468,10 +464,10 @@ func TestP0RegistrationToPaymentFlow(t *testing.T) {
 		t.Fatalf("activate registration: expected 200, got %d body=%s", activateRes.Code, activateRes.Body.String())
 	}
 
-	invoice := createInvoiceForHousehold(t, router, billingToken, "org-p0-reg", household.Household.ID, "INV-P0-REG")
-	addItem(t, router, billingToken, "org-p0-reg", invoice.Invoice.ID, 9000)
-	issueInvoiceReq(t, router, billingToken, "org-p0-reg", invoice.Invoice.ID)
-	recordPaymentReq(t, router, billingToken, "org-p0-reg", invoice.Invoice.ID, 9000)
+	invoice := createInvoiceForHousehold(t, router, adminToken, "org-p0-reg", household.Household.ID, "INV-P0-REG")
+	addItem(t, router, adminToken, "org-p0-reg", invoice.Invoice.ID, 9000)
+	issueInvoiceReq(t, router, adminToken, "org-p0-reg", invoice.Invoice.ID)
+	recordPaymentReq(t, router, adminToken, "org-p0-reg", invoice.Invoice.ID, 9000)
 
 	principal := billingAdminPrincipalForFlow("org-p0-reg")
 	stored, err := billingSvc.GetInvoice("org-p0-reg", &principal, invoice.Invoice.ID)

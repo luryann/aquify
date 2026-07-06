@@ -47,6 +47,7 @@ const (
 	ActionAuthUserPasswordReset              = "auth.user.password_reset"
 	ActionCommsNotificationPreferencesUpdate = "comms.notification_preferences.update"
 	ActionCommsMessageSend                   = "comms.message.send"
+	ActionCommsMessageEdit                   = "comms.message.edit"
 	ActionBillingInvoiceIssue                = "billing.invoice.issue"
 	ActionBillingInvoiceVoid                 = "billing.invoice.void"
 	ActionBillingInvoiceWriteOff             = "billing.invoice.write_off"

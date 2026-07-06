@@ -3,9 +3,11 @@
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { Table, col } from '@/components/ui/Table'
+import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
 import { ApiError, useApiClient } from '@/lib/api'
-import { fetchSwimmerBestTimes, fetchSwimmers, type BestTimeRecord, type SwimmerRecord } from '@/lib/adminData'
+import { fetchPerformanceBestTimes, fetchSwimmers, type BestTimeRecord, type SwimmerRecord } from '@/lib/adminData'
 
 function formatSwimTime(milliseconds?: number | null) {
   if (milliseconds == null) return 'NT'
@@ -16,14 +18,29 @@ function formatSwimTime(milliseconds?: number | null) {
   return `${minutes}:${seconds}`
 }
 
+const COURSE_OPTIONS = ['SCY', 'SCM', 'LCM']
+const STROKE_OPTIONS = ['free', 'back', 'breast', 'fly', 'im']
+const DISTANCE_OPTIONS = [25, 50, 100, 200, 400, 500, 800, 1000, 1500, 1650]
+
+const FIELD_INPUT_STYLE: React.CSSProperties = {
+  padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)',
+  background: 'var(--bg-elevated)', color: 'var(--text)', boxSizing: 'border-box',
+}
+
+type LeaderboardRow = BestTimeRecord & { swimmerName: string }
+
 export default function BestTimesPage() {
   const { session } = useSession()
   const api = useApiClient(session?.token)
   const [swimmers, setSwimmers] = useState<SwimmerRecord[]>([])
-  const [selectedSwimmerId, setSelectedSwimmerId] = useState('')
   const [bestTimes, setBestTimes] = useState<BestTimeRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  const [courseFilter, setCourseFilter] = useState('SCY')
+  const [strokeFilter, setStrokeFilter] = useState('')
+  const [distanceFilter, setDistanceFilter] = useState('')
+  const [swimmerSearch, setSwimmerSearch] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -36,17 +53,16 @@ export default function BestTimesPage() {
       try {
         setLoading(true)
         setError(null)
-        const nextSwimmers = await fetchSwimmers(api, session.user.orgId)
+        const [nextSwimmers, nextBestTimes] = await Promise.all([
+          fetchSwimmers(api, session.user.orgId),
+          fetchPerformanceBestTimes(api, session.user.orgId, {
+            ...(courseFilter ? { course: courseFilter } : {}),
+            ...(strokeFilter ? { stroke: strokeFilter } : {}),
+          }),
+        ])
         if (cancelled) return
         setSwimmers(nextSwimmers)
-        const initialId = selectedSwimmerId || nextSwimmers[0]?.id || ''
-        setSelectedSwimmerId(initialId)
-        if (initialId) {
-          const nextBestTimes = await fetchSwimmerBestTimes(api, session.user.orgId, initialId)
-          if (!cancelled) setBestTimes(nextBestTimes)
-        } else {
-          setBestTimes([])
-        }
+        setBestTimes(nextBestTimes)
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof ApiError ? err.message : 'Unable to load live best times.')
@@ -62,46 +78,89 @@ export default function BestTimesPage() {
     return () => {
       cancelled = true
     }
-  }, [api, selectedSwimmerId, session?.user.orgId])
+  }, [api, session?.user.orgId, courseFilter, strokeFilter])
 
-  useEffect(() => {
-    let cancelled = false
+  const swimmerNameById = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const s of swimmers) map.set(s.id, `${s.first_name} ${s.last_name}`)
+    return map
+  }, [swimmers])
 
-    async function run() {
-      if (!session?.user.orgId || !selectedSwimmerId) return
-      try {
-        const nextBestTimes = await fetchSwimmerBestTimes(api, session.user.orgId, selectedSwimmerId)
-        if (!cancelled) setBestTimes(nextBestTimes)
-      } catch {
-        if (!cancelled) setBestTimes([])
-      }
-    }
+  const rows: LeaderboardRow[] = useMemo(() => {
+    const q = swimmerSearch.trim().toLowerCase()
+    return bestTimes
+      .filter((record) => (distanceFilter ? String(record.event_distance) === distanceFilter : true))
+      .map((record) => ({ ...record, swimmerName: swimmerNameById.get(record.swimmer_id) ?? 'Unknown swimmer' }))
+      .filter((record) => (q ? record.swimmerName.toLowerCase().includes(q) : true))
+      .sort((a, b) => (a.best_time_ms ?? Infinity) - (b.best_time_ms ?? Infinity))
+  }, [bestTimes, distanceFilter, swimmerSearch, swimmerNameById])
 
-    void run()
-    return () => {
-      cancelled = true
-    }
-  }, [api, selectedSwimmerId, session?.user.orgId])
-
-  const selectedSwimmer = swimmers.find((swimmer) => swimmer.id === selectedSwimmerId) ?? null
   const manualOverrides = useMemo(() => bestTimes.filter((record) => record.is_manual_override).length, [bestTimes])
 
   if (!session) {
     return <div style={{ padding: '32px' }}><EmptyState icon="bar-chart-2" title="Sign in required" description="Authenticate to inspect live best times." /></div>
   }
 
+  const columns = [
+    col<LeaderboardRow>({
+      key: 'rank',
+      label: '#',
+      sortable: false,
+      width: '48px',
+      render: (_row, index) => <span style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>{index + 1}</span>,
+    }),
+    col<LeaderboardRow>({
+      key: 'swimmerName',
+      label: 'Swimmer',
+      sortable: true,
+      render: (row) => (
+        <Link href={`/members/swimmers/${row.swimmer_id}`} style={{ color: 'var(--text)', textDecoration: 'none' }}>
+          {row.swimmerName}
+        </Link>
+      ),
+    }),
+    col<LeaderboardRow>({
+      key: 'event_distance',
+      label: 'Event',
+      sortable: true,
+      render: (row) => <span style={{ color: 'var(--text-subtle)' }}>{row.event_distance} {row.stroke} · {row.course}</span>,
+    }),
+    col<LeaderboardRow>({
+      key: 'best_time_ms',
+      label: 'Time',
+      sortable: true,
+      render: (row) => <span style={{ fontFamily: 'var(--font-body)', color: 'var(--accent)' }}>{formatSwimTime(row.best_time_ms)}</span>,
+    }),
+    col<LeaderboardRow>({
+      key: 'recorded_at',
+      label: 'Recorded',
+      sortable: true,
+      render: (row) => (
+        <span style={{ color: 'var(--text-subtle)' }}>
+          {row.recorded_at ? new Date(row.recorded_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
+        </span>
+      ),
+    }),
+    col<LeaderboardRow>({
+      key: 'is_manual_override',
+      label: 'Source',
+      sortable: true,
+      render: (row) => (
+        <span style={{ color: row.is_manual_override ? 'var(--warning)' : 'var(--text-muted)' }}>
+          {row.is_manual_override ? `Manual override${row.override_reason ? ` · ${row.override_reason}` : ''}` : 'Imported result'}
+        </span>
+      ),
+    }),
+  ]
+
   return (
-    <div style={{ padding: '32px 36px 80px', maxWidth: 1080, margin: '0 auto' }}>
-      <div style={{ marginBottom: '28px' }}>
+    <div style={{ padding: '32px 36px 80px', maxWidth: 1240, margin: '0 auto' }}>
+      <div style={{ marginBottom: '24px' }}>
         <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
           Performance
         </p>
-        <h1 className="page-title">
-          Best Times Explorer
-        </h1>
-        <p className="page-subtitle">
-          Live best-time records from the performance service for each swimmer.
-        </p>
+        <h1 className="page-title">Best Times</h1>
+        <p className="page-subtitle">Team leaderboard of every swimmer&apos;s best recorded time, event by event.</p>
       </div>
 
       {error ? (
@@ -110,65 +169,60 @@ export default function BestTimesPage() {
         </div>
       ) : null}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: '20px', alignItems: 'start' }}>
-        <div className="card" style={{ padding: '18px' }}>
-          <h2 style={{ fontSize: '14px', color: 'var(--text)', marginBottom: '12px' }}>Swimmer</h2>
-          <select value={selectedSwimmerId} onChange={(event) => setSelectedSwimmerId(event.target.value)} style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: '13px', marginBottom: '14px' }}>
-            {swimmers.map((swimmer) => (
-              <option key={swimmer.id} value={swimmer.id}>
-                {swimmer.first_name} {swimmer.last_name}
-              </option>
-            ))}
-          </select>
-          {selectedSwimmer ? (
-            <div style={{ fontSize: '12px', color: 'var(--text-subtle)', lineHeight: 1.6 }}>
-              <div>Status: {selectedSwimmer.registration_status}</div>
-              <div>Birth date: {selectedSwimmer.date_of_birth}</div>
-              <div>Medical flags: {selectedSwimmer.medical_flags_redacted ? 'Redacted' : (selectedSwimmer.medical_flags?.join(', ') || 'None')}</div>
-              <div style={{ marginTop: '10px' }}>
-                <Link href={`/members/swimmers/${selectedSwimmer.id}`} style={{ color: 'var(--accent)', textDecoration: 'none' }}>
-                  Open swimmer detail
-                </Link>
-              </div>
-            </div>
-          ) : null}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
+        <div style={{ position: 'relative', flex: '1 1 200px', maxWidth: '280px' }}>
+          <span style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}>
+            <Icon name="search" size={14} />
+          </span>
+          <input
+            value={swimmerSearch}
+            onChange={(e) => setSwimmerSearch(e.target.value)}
+            placeholder="Find a swimmer…"
+            style={{ ...FIELD_INPUT_STYLE, width: '100%', paddingLeft: '32px' }}
+          />
         </div>
-
-        <div className="card" style={{ overflow: 'hidden' }}>
-          <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
-            <h2 style={{ fontSize: '14px', color: 'var(--text)' }}>Live Best Times</h2>
-            <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>{bestTimes.length} records · {manualOverrides} manual overrides</span>
-          </div>
-          {loading ? (
-            <div style={{ padding: '20px' }}><EmptyState icon="bar-chart-2" title="Loading best times" description="Fetching live best-time records." /></div>
-          ) : bestTimes.length === 0 ? (
-            <div style={{ padding: '20px' }}><EmptyState icon="bar-chart-2" title="No best times recorded" description="Upload meet results or add a manual override to populate this view." /></div>
-          ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                  {['Event', 'Course', 'Time', 'Recorded', 'Source'].map((header) => (
-                    <th key={header} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{header}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {bestTimes.map((record) => (
-                  <tr key={record.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                    <td style={{ padding: '11px 14px', fontSize: '13px', color: 'var(--text)' }}>{record.event_distance} {record.stroke}</td>
-                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-body)', fontSize: '11px', color: 'var(--text-subtle)' }}>{record.course}</td>
-                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-body)', fontSize: '13px', color: 'var(--accent)' }}>{formatSwimTime(record.best_time_ms)}</td>
-                    <td style={{ padding: '11px 14px', fontSize: '12px', color: 'var(--text-subtle)' }}>{record.recorded_at ? new Date(record.recorded_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</td>
-                    <td style={{ padding: '11px 14px', fontSize: '12px', color: record.is_manual_override ? 'var(--warning)' : 'var(--text-muted)' }}>
-                      {record.is_manual_override ? `Manual override${record.override_reason ? ` · ${record.override_reason}` : ''}` : 'Imported result'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+        <select value={distanceFilter} onChange={(e) => setDistanceFilter(e.target.value)} style={{ ...FIELD_INPUT_STYLE }}>
+          <option value="">All distances</option>
+          {DISTANCE_OPTIONS.map((d) => <option key={d} value={d}>{d}</option>)}
+        </select>
+        <select value={strokeFilter} onChange={(e) => setStrokeFilter(e.target.value)} style={{ ...FIELD_INPUT_STYLE }}>
+          <option value="">All strokes</option>
+          {STROKE_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }} title="Course: Short Course Yards / Short Course Meters / Long Course Meters">
+          {COURSE_OPTIONS.map((c) => (
+            <button
+              key={c}
+              onClick={() => setCourseFilter(c)}
+              style={{
+                padding: '9px 12px',
+                border: 'none',
+                background: courseFilter === c ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
+                color: courseFilter === c ? 'var(--accent)' : 'var(--text-subtle)',
+                fontSize: '12px',
+                fontWeight: courseFilter === c ? 600 : 400,
+                cursor: 'pointer',
+              }}
+            >
+              {c}
+            </button>
+          ))}
         </div>
+        <span style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap' }}>
+          {rows.length} records · {manualOverrides} manual overrides
+        </span>
       </div>
+
+      <Table
+        columns={columns}
+        data={rows}
+        keyField="id"
+        loading={loading}
+        paginated
+        pageSize={25}
+        emptyTitle={bestTimes.length === 0 ? 'No best times recorded' : 'No matches'}
+        emptyDescription={bestTimes.length === 0 ? 'Upload meet results or add a manual override to populate this view.' : 'Try a different filter or search.'}
+      />
     </div>
   )
 }

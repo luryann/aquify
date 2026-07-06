@@ -19,7 +19,7 @@ export function buildSidebarSessionProps(session: Session): SidebarSessionProps 
 
 export function shouldFetchPendingApprovals(roles: Role | Role[], orgId?: string): orgId is string {
   const allRoles = Array.isArray(roles) ? roles : [roles]
-  return Boolean(orgId) && (allRoles.includes('owner') || allRoles.includes('admin'))
+  return Boolean(orgId) && (allRoles.includes('admin'))
 }
 
 export function pendingApprovalsRequestInit(orgId: string): RequestInit {

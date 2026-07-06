@@ -375,7 +375,7 @@ func newID() string {
 func (s *Service) requireAdminOrCoach(principal *appmiddleware.Principal) error {
 	for _, r := range principal.Roles {
 		switch strings.ToLower(r) {
-		case "admin", "owner", "coach":
+		case "admin", "coach":
 			return nil
 		}
 	}
@@ -385,21 +385,21 @@ func (s *Service) requireAdminOrCoach(principal *appmiddleware.Principal) error 
 func (s *Service) requireAdmin(principal *appmiddleware.Principal) error {
 	for _, r := range principal.Roles {
 		switch strings.ToLower(r) {
-		case "admin", "owner":
+		case "admin":
 			return nil
 		}
 	}
 	return ErrForbidden
 }
 
-// requireReadAccess allows owner, admin, coach, parent, and swimmer roles to read
+// requireReadAccess allows admin, coach, parent, and swimmer roles to read
 // swimmer performance data. For per-swimmer endpoints, call
 // checkParentHouseholdForSwimmer after this check to enforce household
 // isolation for the parent and swimmer roles.
 func (s *Service) requireReadAccess(principal *appmiddleware.Principal) error {
 	for _, r := range principal.Roles {
 		switch strings.ToLower(r) {
-		case "admin", "owner", "coach", "parent", "swimmer":
+		case "admin", "coach", "parent", "swimmer":
 			return nil
 		}
 	}
@@ -691,7 +691,7 @@ func (s *Service) RecomputeBestTime(orgID, actorID string, principal *appmiddlew
 // ─── Best Times ───────────────────────────────────────────────────────────────
 
 // ListBestTimes returns all best-time records for the given swimmer.
-// Allowed roles: owner, admin, coach, parent.
+// Allowed roles: admin, coach, parent.
 // For the parent role, household ownership is enforced via checkParentHouseholdForSwimmer.
 func (s *Service) ListBestTimes(orgID string, principal *appmiddleware.Principal, swimmerID string, filters ListBestTimesFilters) ([]*BestTime, error) {
 	if err := s.requireReadAccess(principal); err != nil {
@@ -867,7 +867,7 @@ func (s *Service) OverrideBestTime(orgID, actorID string, principal *appmiddlewa
 
 // ListProgression returns all official results for a swimmer, optionally
 // filtered by event/stroke/course, sorted chronologically (oldest first).
-// Allowed roles: owner, admin, coach, parent.
+// Allowed roles: admin, coach, parent.
 // For the parent role, household ownership is enforced via checkParentHouseholdForSwimmer.
 func (s *Service) ListProgression(orgID string, principal *appmiddleware.Principal, swimmerID string, filters ListResultsFilters) ([]*Result, error) {
 	if err := s.requireReadAccess(principal); err != nil {
@@ -1112,7 +1112,7 @@ func (s *Service) DeleteTimeStandard(orgID, actorID, standardID string, principa
 
 // EvaluateCutQualification evaluates whether a swimmer's best time qualifies
 // for a given time standard.
-// Allowed roles: owner, admin, coach, parent, swimmer.
+// Allowed roles: admin, coach, parent, swimmer.
 // Household-scoped roles must match the swimmer's household via the injected checker.
 func (s *Service) EvaluateCutQualification(orgID string, principal *appmiddleware.Principal, swimmerID, standardID string) (*CutQualification, error) {
 	if err := s.requireReadAccess(principal); err != nil {

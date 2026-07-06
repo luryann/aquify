@@ -1,9 +1,13 @@
 package handlers
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,6 +17,7 @@ import (
 	"github.com/dareaquatics/aquify/server/internal/app/httpx"
 	"github.com/dareaquatics/aquify/server/internal/app/members"
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	"github.com/dareaquatics/aquify/server/internal/storage"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
 )
@@ -29,6 +34,12 @@ type CommsHandlers struct {
 	postmarkBasicUser    string
 	postmarkBasicPass    string
 	allowInsecureWebhook bool
+	store                storage.ObjectStorage
+}
+
+// SetStorage attaches object storage used for message attachment upload URLs.
+func (h *CommsHandlers) SetStorage(store storage.ObjectStorage) {
+	h.store = store
 }
 
 // NewCommsHandlers returns a new CommsHandlers.
@@ -72,21 +83,21 @@ func (h *CommsHandlers) RegisterPublicRoutes(router chi.Router) {
 
 // RegisterRoutes mounts all comms routes on the given protected router.
 func (h *CommsHandlers) RegisterRoutes(router chi.Router) {
-	// Announcements — writable by owner/admin/coach; readable by all auth users.
+	// Announcements — writable by admin/coach; readable by all auth users.
 	router.Post("/announcements", h.createAnnouncement)
 	router.Get("/announcements", h.listAnnouncements)
 	router.Get("/announcements/{announcementID}", h.getAnnouncement)
 	router.Post("/announcements/{announcementID}/publish", h.publishAnnouncement)
 	router.Post("/announcements/{announcementID}/archive", h.archiveAnnouncement)
 
-	// Email campaigns — owner/admin/coach only.
+	// Email campaigns — admin/coach only.
 	router.Post("/email-campaigns", h.createCampaign)
 	router.Get("/email-campaigns", h.listCampaigns)
 	router.Get("/email-campaigns/{campaignID}", h.getCampaign)
 	router.Post("/email-campaigns/{campaignID}/send", h.sendCampaign)
 	router.Get("/email-campaigns/{campaignID}/deliveries", h.listDeliveries)
 
-	// Suppression list — owner/admin only.
+	// Suppression list — admin only.
 	router.Post("/suppression", h.addSuppression)
 	router.Get("/suppression", h.listSuppression)
 	router.Delete("/suppression/{suppressionID}", h.removeSuppression)
@@ -97,6 +108,12 @@ func (h *CommsHandlers) RegisterRoutes(router chi.Router) {
 	router.Post("/messages", h.sendMessage)
 	router.Get("/messages", h.listMessages)
 	router.Get("/message-threads", h.listMessageThreads)
+	router.Patch("/messages/{messageID}", h.editMessage)
+	router.Post("/messages/{messageID}/reactions", h.addReaction)
+	router.Delete("/messages/{messageID}/reactions/{emoji}", h.removeReaction)
+	router.Post("/messages/read", h.markThreadRead)
+	router.Post("/messages/upload-url", h.requestMessageUploadURL)
+	router.Get("/messages/stream", h.streamMessages)
 }
 
 // ─── Scope helper ─────────────────────────────────────────────────────────────
@@ -117,7 +134,7 @@ func hasAnyRole(principal *appmiddleware.Principal, roles ...string) bool {
 	return false
 }
 
-func (h *CommsHandlers) emitAudit(principal *appmiddleware.Principal, action, resourceID string, metadata map[string]string, after any) {
+func (h *CommsHandlers) emitAudit(principal *appmiddleware.Principal, action, resourceType, resourceID string, metadata map[string]string, after any) {
 	if h.auditService == nil || principal == nil {
 		return
 	}
@@ -126,7 +143,7 @@ func (h *CommsHandlers) emitAudit(principal *appmiddleware.Principal, action, re
 		ActorUserID:  principal.UserID,
 		ActorRoles:   append([]string{}, principal.Roles...),
 		Action:       action,
-		ResourceType: "communication_preferences",
+		ResourceType: resourceType,
 		ResourceID:   resourceID,
 		After:        after,
 		Metadata:     metadata,
@@ -328,7 +345,7 @@ func (h *CommsHandlers) updateNotificationPreferences(w http.ResponseWriter, r *
 		return
 	}
 
-	h.emitAudit(principal, audit.ActionCommsNotificationPreferencesUpdate, principal.UserID, map[string]string{
+	h.emitAudit(principal, audit.ActionCommsNotificationPreferencesUpdate, "communication_preferences", principal.UserID, map[string]string{
 		"household_id": principal.HouseholdID,
 	}, preferences)
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"preferences": preferences})
@@ -358,10 +375,10 @@ func (h *CommsHandlers) swimmerHouseholdID(orgID, swimmerID string) string {
 }
 
 // authorizeMessageThread checks that the principal may read/write the given
-// household+swimmer thread. Staff (owner/admin/coach) may access any thread in
+// household+swimmer thread. Staff (admin/coach) may access any thread in
 // the org; parent/swimmer may only access their own household's threads.
 func (h *CommsHandlers) authorizeMessageThread(principal *appmiddleware.Principal, orgID, householdID, swimmerID string) bool {
-	if hasAnyRole(principal, "owner", "admin", "coach") {
+	if hasAnyRole(principal, "admin", "coach") {
 		return true
 	}
 	if !hasAnyRole(principal, "parent", "swimmer") {
@@ -373,6 +390,37 @@ func (h *CommsHandlers) authorizeMessageThread(principal *appmiddleware.Principa
 	return h.swimmerHouseholdID(orgID, swimmerID) == householdID
 }
 
+// Chat attachments are images shared inline in a conversation, not legal
+// documents — a smaller cap and an image-only allowlist versus the document
+// upload path in handlers/documents.go.
+const maxMessageAttachmentBytes int64 = 10 << 20 // 10 MiB
+
+var allowedMessageAttachmentMIMETypes = map[string]bool{
+	"image/jpeg": true,
+	"image/png":  true,
+	"image/heic": true,
+	"image/webp": true,
+}
+
+func messageAttachmentObjectKey(orgID, householdID, swimmerID, fileName string) string {
+	stamp := strconv.FormatInt(time.Now().UTC().UnixNano(), 10)
+	return fmt.Sprintf("messages/%s/%s/%s/%s-%s", orgID, householdID, swimmerID, stamp, fileName)
+}
+
+func validateMessageAttachmentObjectKey(orgID, householdID, swimmerID, objectKey string) error {
+	prefix := fmt.Sprintf("messages/%s/%s/%s/", strings.TrimSpace(orgID), strings.TrimSpace(householdID), strings.TrimSpace(swimmerID))
+	if !strings.HasPrefix(strings.TrimSpace(objectKey), prefix) {
+		return fmt.Errorf("object key %q does not belong to this thread", objectKey)
+	}
+	return nil
+}
+
+type sendMessageAttachmentBody struct {
+	ObjectKey string `json:"object_key" validate:"required"`
+	FileName  string `json:"file_name"  validate:"required"`
+	FileMIME  string `json:"file_mime"  validate:"required"`
+}
+
 func (h *CommsHandlers) sendMessage(w http.ResponseWriter, r *http.Request) {
 	principal, orgID, ok := commsScopeFromRequest(w, r)
 	if !ok {
@@ -380,9 +428,10 @@ func (h *CommsHandlers) sendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		HouseholdID string `json:"household_id" validate:"required"`
-		SwimmerID   string `json:"swimmer_id"   validate:"required"`
-		Body        string `json:"body"         validate:"required,max=4000"`
+		HouseholdID string                      `json:"household_id" validate:"required"`
+		SwimmerID   string                      `json:"swimmer_id"   validate:"required"`
+		Body        string                      `json:"body"         validate:"required,max=4000"`
+		Attachments []sendMessageAttachmentBody `json:"attachments"`
 	}
 	if err := decodeJSONBody(w, r, &body); err != nil {
 		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Could not parse request body.", nil)
@@ -398,6 +447,52 @@ func (h *CommsHandlers) sendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	attachments := make([]comms.AttachmentInput, 0, len(body.Attachments))
+	for _, in := range body.Attachments {
+		fileName, err := sanitizeDocumentFilename(in.FileName)
+		if err != nil {
+			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_filename", err.Error(), nil)
+			return
+		}
+		if err := validateMessageAttachmentObjectKey(orgID, body.HouseholdID, body.SwimmerID, in.ObjectKey); err != nil {
+			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_object_key", "Attachment object key is not valid for this thread.", nil)
+			return
+		}
+		declaredMIME := strings.ToLower(strings.TrimSpace(in.FileMIME))
+		if !allowedMessageAttachmentMIMETypes[declaredMIME] {
+			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "invalid_mime_type", "Attachment type is not permitted.", nil)
+			return
+		}
+		if h.store == nil {
+			httpx.WriteError(w, r, http.StatusServiceUnavailable, "storage_unavailable", "Object storage is not configured.", nil)
+			return
+		}
+		exists, err := h.store.Exists(context.Background(), in.ObjectKey)
+		if err != nil {
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to validate uploaded attachment.", err)
+			return
+		}
+		if !exists {
+			httpx.WriteError(w, r, http.StatusConflict, "missing_uploaded_file", "Uploaded attachment was not found in object storage.", nil)
+			return
+		}
+		actualSize, err := h.store.ObjectSize(context.Background(), in.ObjectKey)
+		if err != nil {
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to validate uploaded attachment.", err)
+			return
+		}
+		if actualSize > maxMessageAttachmentBytes {
+			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "file_too_large", "Attachment exceeds the maximum allowed size.", nil)
+			return
+		}
+		attachments = append(attachments, comms.AttachmentInput{
+			ObjectKey: in.ObjectKey,
+			Filename:  fileName,
+			MimeType:  declaredMIME,
+			SizeBytes: actualSize,
+		})
+	}
+
 	message, err := h.service.SendMessage(comms.CreateMessageInput{
 		OrgID:        orgID,
 		HouseholdID:  body.HouseholdID,
@@ -405,17 +500,79 @@ func (h *CommsHandlers) sendMessage(w http.ResponseWriter, r *http.Request) {
 		Body:         body.Body,
 		SenderUserID: principal.UserID,
 		SenderRole:   primaryRole(principal),
+		Attachments:  attachments,
 	})
 	if err != nil {
 		httpx.WriteError(w, r, http.StatusInternalServerError, "send_failed", err.Error(), nil)
 		return
 	}
 
-	h.emitAudit(principal, audit.ActionCommsMessageSend, message.ID, map[string]string{
+	h.emitAudit(principal, audit.ActionCommsMessageSend, "message", message.ID, map[string]string{
 		"household_id": body.HouseholdID,
 		"swimmer_id":   body.SwimmerID,
 	}, message)
 	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"message": message})
+}
+
+// requestMessageUploadURL handles POST /api/v1/messages/upload-url
+func (h *CommsHandlers) requestMessageUploadURL(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := commsScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+	if h.store == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, "storage_unavailable", "Object storage is not configured.", nil)
+		return
+	}
+
+	var body struct {
+		HouseholdID   string `json:"household_id"     validate:"required"`
+		SwimmerID     string `json:"swimmer_id"       validate:"required"`
+		FileName      string `json:"file_name"        validate:"required"`
+		FileMIME      string `json:"file_mime"        validate:"required"`
+		FileSizeBytes int64  `json:"file_size_bytes"  validate:"required,gt=0"`
+	}
+	if err := decodeJSONBody(w, r, &body); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", nil)
+		return
+	}
+	if err := h.validate.Struct(body); err != nil {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "validation_error", "Validation failed.", httpx.FormatValidationErrors(err))
+		return
+	}
+	if !h.authorizeMessageThread(principal, orgID, body.HouseholdID, body.SwimmerID) {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to message this thread.", nil)
+		return
+	}
+	fileName, err := sanitizeDocumentFilename(body.FileName)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_filename", err.Error(), nil)
+		return
+	}
+	declaredMIME := strings.ToLower(strings.TrimSpace(body.FileMIME))
+	if !allowedMessageAttachmentMIMETypes[declaredMIME] {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "invalid_mime_type", "Attachment type is not permitted.", nil)
+		return
+	}
+	if body.FileSizeBytes > maxMessageAttachmentBytes {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "file_too_large", "Declared file size exceeds the maximum allowed size.", nil)
+		return
+	}
+
+	objectKey := messageAttachmentObjectKey(orgID, body.HouseholdID, body.SwimmerID, fileName)
+	expiresIn := 15 * time.Minute
+	uploadURL, err := h.store.PresignedPutURL(objectKey, expiresIn)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to create upload URL.", err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{
+		"upload_url":         uploadURL,
+		"object_key":         objectKey,
+		"upload_expires_at":  time.Now().UTC().Add(expiresIn),
+		"expected_file_name": fileName,
+	})
 }
 
 func (h *CommsHandlers) listMessages(w http.ResponseWriter, r *http.Request) {
@@ -434,7 +591,7 @@ func (h *CommsHandlers) listMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	messages := h.service.ListMessages(orgID, householdID, swimmerID)
+	messages := h.service.ListMessages(orgID, householdID, swimmerID, principal.UserID)
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"messages": messages, "count": len(messages)})
 }
 
@@ -443,13 +600,197 @@ func (h *CommsHandlers) listMessageThreads(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role to view the message inbox.", nil)
 		return
 	}
 
-	threads := h.service.ListMessageThreads(orgID)
+	threads := h.service.ListMessageThreads(orgID, principal.UserID)
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"threads": threads, "count": len(threads)})
+}
+
+// editMessage handles PATCH /api/v1/messages/{messageID} — sender-only, unrestricted.
+func (h *CommsHandlers) editMessage(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := commsScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+	messageID := chi.URLParam(r, "messageID")
+
+	var body struct {
+		Body string `json:"body" validate:"required,max=4000"`
+	}
+	if err := decodeJSONBody(w, r, &body); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Could not parse request body.", nil)
+		return
+	}
+	if err := h.validate.Struct(body); err != nil {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "validation_error", "Request validation failed.", httpx.FormatValidationErrors(err))
+		return
+	}
+
+	message, err := h.service.EditMessage(orgID, messageID, principal.UserID, body.Body)
+	if err != nil {
+		switch {
+		case errors.Is(err, comms.ErrMessageNotFound):
+			httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Message not found.", nil)
+		case errors.Is(err, comms.ErrForbidden):
+			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You may only edit your own messages.", nil)
+		default:
+			httpx.WriteError(w, r, http.StatusInternalServerError, "edit_failed", err.Error(), nil)
+		}
+		return
+	}
+
+	h.emitAudit(principal, audit.ActionCommsMessageEdit, "message", message.ID, map[string]string{
+		"household_id": message.HouseholdID,
+		"swimmer_id":   message.SwimmerID,
+	}, message)
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"message": message})
+}
+
+// messageThreadForID looks up which household+swimmer thread a message belongs
+// to, so reaction/read endpoints (addressed by message ID, not thread) can run
+// the same thread-scoped authorization as the rest of the messages API.
+func (h *CommsHandlers) messageThreadForID(orgID, messageID string) (householdID, swimmerID string, ok bool) {
+	return h.service.MessageThread(orgID, messageID)
+}
+
+func (h *CommsHandlers) addReaction(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := commsScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+	messageID := chi.URLParam(r, "messageID")
+	householdID, swimmerID, found := h.messageThreadForID(orgID, messageID)
+	if !found || !h.authorizeMessageThread(principal, orgID, householdID, swimmerID) {
+		httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Message not found.", nil)
+		return
+	}
+
+	var body struct {
+		Emoji string `json:"emoji" validate:"required"`
+	}
+	if err := decodeJSONBody(w, r, &body); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Could not parse request body.", nil)
+		return
+	}
+	if err := h.service.AddReaction(orgID, messageID, principal.UserID, body.Emoji); err != nil {
+		if errors.Is(err, comms.ErrInvalidReaction) {
+			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "invalid_reaction", "That emoji is not supported.", nil)
+			return
+		}
+		httpx.WriteError(w, r, http.StatusInternalServerError, "reaction_failed", err.Error(), nil)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"ok": true})
+}
+
+func (h *CommsHandlers) removeReaction(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := commsScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+	messageID := chi.URLParam(r, "messageID")
+	emoji := chi.URLParam(r, "emoji")
+	householdID, swimmerID, found := h.messageThreadForID(orgID, messageID)
+	if !found || !h.authorizeMessageThread(principal, orgID, householdID, swimmerID) {
+		httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Message not found.", nil)
+		return
+	}
+	if err := h.service.RemoveReaction(orgID, messageID, principal.UserID, emoji); err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "reaction_failed", err.Error(), nil)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// markThreadRead handles POST /api/v1/messages/read?household_id=&swimmer_id=
+func (h *CommsHandlers) markThreadRead(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := commsScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+	householdID := strings.TrimSpace(r.URL.Query().Get("household_id"))
+	swimmerID := strings.TrimSpace(r.URL.Query().Get("swimmer_id"))
+	if householdID == "" || swimmerID == "" {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "household_id and swimmer_id are required.", nil)
+		return
+	}
+	if !h.authorizeMessageThread(principal, orgID, householdID, swimmerID) {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to view this thread.", nil)
+		return
+	}
+	if err := h.service.MarkThreadRead(orgID, householdID, swimmerID, principal.UserID); err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "mark_read_failed", err.Error(), nil)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// streamMessages handles GET /api/v1/messages/stream — a server-sent-events feed
+// of message create/edit/reaction events for the caller's org, filtered to
+// threads the caller is authorized to see. Returns 503 if no realtime
+// broadcaster is configured (e.g. REDIS_URL unset), so environments without
+// Redis keep working exactly as before, just without live push.
+func (h *CommsHandlers) streamMessages(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := commsScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+	broadcaster := h.service.Broadcaster()
+	if broadcaster == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, "realtime_unavailable", "Realtime updates are not available.", nil)
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "streaming_unsupported", "Streaming is not supported.", nil)
+		return
+	}
+
+	isStaff := hasAnyRole(principal, "admin", "coach")
+
+	ctx := r.Context()
+	sub := broadcaster.Subscribe(ctx, orgID)
+	defer sub.Close()
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	heartbeat := time.NewTicker(25 * time.Second)
+	defer heartbeat.Stop()
+
+	ch := sub.Channel()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-heartbeat.C:
+			if _, err := w.Write([]byte(": heartbeat\n\n")); err != nil {
+				return
+			}
+			flusher.Flush()
+		case msg, chOk := <-ch:
+			if !chOk {
+				return
+			}
+			var event comms.MessageEvent
+			if err := json.Unmarshal([]byte(msg.Payload), &event); err != nil {
+				continue
+			}
+			if !isStaff && !h.authorizeMessageThread(principal, orgID, event.HouseholdID, event.SwimmerID) {
+				continue
+			}
+			if _, err := fmt.Fprintf(w, "data: %s\n\n", msg.Payload); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+	}
 }
 
 func (h *CommsHandlers) createAnnouncement(w http.ResponseWriter, r *http.Request) {
@@ -457,7 +798,7 @@ func (h *CommsHandlers) createAnnouncement(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role to create announcements.", nil)
 		return
 	}
@@ -529,7 +870,7 @@ func (h *CommsHandlers) publishAnnouncement(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role to publish announcements.", nil)
 		return
 	}
@@ -555,7 +896,7 @@ func (h *CommsHandlers) archiveAnnouncement(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin") {
+	if !hasAnyRole(principal, "admin") {
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role to archive announcements.", nil)
 		return
 	}
@@ -583,7 +924,7 @@ func (h *CommsHandlers) createCampaign(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role to create campaigns.", nil)
 		return
 	}
@@ -631,7 +972,7 @@ func (h *CommsHandlers) listCampaigns(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role.", nil)
 		return
 	}
@@ -648,7 +989,7 @@ func (h *CommsHandlers) getCampaign(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role.", nil)
 		return
 	}
@@ -670,7 +1011,7 @@ func (h *CommsHandlers) sendCampaign(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role to send campaigns.", nil)
 		return
 	}
@@ -727,7 +1068,7 @@ func (h *CommsHandlers) listDeliveries(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin", "coach") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role.", nil)
 		return
 	}
@@ -751,7 +1092,7 @@ func (h *CommsHandlers) addSuppression(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin") {
+	if !hasAnyRole(principal, "admin") {
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role to manage suppression list.", nil)
 		return
 	}
@@ -791,7 +1132,7 @@ func (h *CommsHandlers) listSuppression(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin") {
+	if !hasAnyRole(principal, "admin") {
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role.", nil)
 		return
 	}
@@ -808,7 +1149,7 @@ func (h *CommsHandlers) removeSuppression(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin") {
+	if !hasAnyRole(principal, "admin") {
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role.", nil)
 		return
 	}

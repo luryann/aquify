@@ -34,7 +34,7 @@ func Principal(opts PrincipalOptions) *appmiddleware.Principal {
 
 	roles := append([]string{}, opts.Roles...)
 	if len(roles) == 0 {
-		roles = []string{"read-only"}
+		roles = []string{"swimmer"}
 	}
 
 	return &appmiddleware.Principal{
@@ -44,13 +44,6 @@ func Principal(opts PrincipalOptions) *appmiddleware.Principal {
 		Roles:            roles,
 		MFAAuthenticated: opts.MFAAuthenticated,
 	}
-}
-
-func OwnerPrincipal() *appmiddleware.Principal {
-	return Principal(PrincipalOptions{
-		UserID: "owner-user",
-		Roles:  []string{"owner"},
-	})
 }
 
 func AdminPrincipal() *appmiddleware.Principal {
@@ -80,20 +73,6 @@ func SwimmerPrincipal(userID, householdID string) *appmiddleware.Principal {
 		UserID:      userID,
 		HouseholdID: householdID,
 		Roles:       []string{"swimmer"},
-	})
-}
-
-func BillingPrincipal() *appmiddleware.Principal {
-	return Principal(PrincipalOptions{
-		UserID: "billing-user",
-		Roles:  []string{"billing"},
-	})
-}
-
-func ReadOnlyPrincipal() *appmiddleware.Principal {
-	return Principal(PrincipalOptions{
-		UserID: "readonly-user",
-		Roles:  []string{"read-only"},
 	})
 }
 

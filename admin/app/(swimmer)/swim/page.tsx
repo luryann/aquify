@@ -78,7 +78,7 @@ const COMMIT_STATUS = {
   pending:   { label: 'Response Needed', color: 'var(--warning)', bg: 'var(--warning-bg)', border: 'var(--warning-border)' },
   no:        { label: 'Not Going',       color: 'var(--error)', bg: 'var(--error-bg)',  border: 'var(--error-border)' },
   closed:    { label: 'Closed',          color: 'var(--text-muted)', bg: 'var(--border)', border: 'var(--border-strong)' },
-  open:      { label: 'Not Yet Open',    color: 'var(--text-muted)', bg: 'var(--border)', border: 'var(--border-strong)' },
+  open:      { label: 'Sign-ups Not Started',    color: 'var(--text-muted)', bg: 'var(--border)', border: 'var(--border-strong)' },
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -458,14 +458,14 @@ export default function SwimmerDashboardPage() {
           <>
             <StatCard
               label="Upcoming Meets"
-              value={String(meets.length)}
-              sub="Scheduled this season"
+              value={noLinkedSwimmer ? '—' : String(meets.length)}
+              sub={noLinkedSwimmer ? 'Link your account to see this' : 'Scheduled this season'}
               accent
             />
             <StatCard
               label="Next Meet"
-              value={nextMeet ? (meets[0]?.date ?? '—') : '—'}
-              sub={nextMeet?.name ?? 'No meets scheduled'}
+              value={noLinkedSwimmer ? '—' : nextMeet ? (meets[0]?.date ?? '—') : '—'}
+              sub={noLinkedSwimmer ? 'Link your account to see this' : (nextMeet?.name ?? 'No meets scheduled')}
             />
             <StatCard
               label={topBT ? `Best (${topBT.event})` : 'Best Time'}
@@ -792,7 +792,7 @@ export default function SwimmerDashboardPage() {
           >
             <Icon name="megaphone" size={12} style={{ color: C.muted }} />
             <span style={{ fontSize: '11.5px', color: C.muted }}>
-              Full inbox available via your parent account
+              Ask your parent to check the full inbox for more
             </span>
           </div>
         </div>

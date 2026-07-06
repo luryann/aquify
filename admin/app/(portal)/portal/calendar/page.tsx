@@ -29,6 +29,13 @@ function dateOnly(iso?: string): string {
   return iso.split('T')[0]
 }
 
+function deadlineCountdownText(iso: string): string {
+  const days = Math.ceil((new Date(iso).getTime() - Date.now()) / 86400000)
+  if (days <= 0) return 'Respond yes/no for each swimmer by tonight.'
+  if (days === 1) return 'Respond yes/no for each swimmer — 1 day left.'
+  return `Respond yes/no for each swimmer — ${days} days left.`
+}
+
 function meetsToCalEvents(meets: MeetRecord[]): CalEvent[] {
   const events: CalEvent[] = []
   for (const meet of meets) {
@@ -59,7 +66,7 @@ function meetsToCalEvents(meets: MeetRecord[]): CalEvent[] {
         title: `Commitment Deadline — ${meet.name}`,
         type: 'deadline',
         date: dateOnly(meet.commitment_deadline),
-        detail: 'Respond yes/no for each swimmer by tonight.',
+        detail: deadlineCountdownText(meet.commitment_deadline),
         linkPath: `/portal/meets/${meet.id}`,
       })
     }
@@ -587,7 +594,74 @@ export default function CalendarPage() {
             </button>
           </div>
 
-          {view === 'month' ? (
+          {isMobile ? (
+            /* ── MOBILE AGENDA VIEW ─────────────────────────────────── */
+            /* The 7-column grid can't reflow to a narrow screen without
+               either truncating every cell or forcing horizontal scroll —
+               a stacked day-by-day list is the usable mobile equivalent. */
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {(view === 'month'
+                ? Array.from({ length: daysInMonth }, (_, i) => toDateStr(viewYear, viewMonth, i + 1))
+                : weekDays.map((wd) => wd.date)
+              ).map((dateStr) => {
+                const dayEvents = (eventsByDate[dateStr] ?? []).filter(
+                  (ev) => typeFilter === 'all' || ev.type === typeFilter
+                )
+                if (view === 'month' && dayEvents.length === 0) return null
+                const isToday = dateStr === todayStr
+                const isSelected = dateStr === selectedDate
+                const d = new Date(dateStr + 'T12:00:00')
+
+                return (
+                  <div
+                    key={dateStr}
+                    onClick={() => setSelectedDate(dateStr === selectedDate ? null : dateStr)}
+                    style={{
+                      padding: '12px 16px',
+                      borderBottom: '1px solid rgba(0,0,0,0.06)',
+                      cursor: 'pointer',
+                      background: isSelected ? 'rgba(235,93,30,0.04)' : 'transparent',
+                      display: 'flex',
+                      gap: '12px',
+                      alignItems: 'flex-start',
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: '34px',
+                        height: '34px',
+                        borderRadius: '50%',
+                        flexShrink: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '13px',
+                        fontWeight: isToday ? 700 : 400,
+                        color: isToday ? 'var(--bg-elevated)' : isSelected ? 'var(--accent)' : 'var(--text)',
+                        background: isToday ? 'var(--accent)' : 'transparent',
+                      }}
+                    >
+                      {d.getDate()}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px' }}>
+                        {d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+                      </p>
+                      {dayEvents.length === 0 ? (
+                        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No events</span>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          {dayEvents.map((ev) => (
+                            <EventChip key={ev.id} ev={ev} />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          ) : view === 'month' ? (
             <>
               {/* Day-of-week headers */}
               <div
@@ -595,7 +669,7 @@ export default function CalendarPage() {
                   display: 'grid',
                   gridTemplateColumns: 'repeat(7, minmax(110px, 1fr))',
                   borderBottom: '1px solid rgba(0,0,0,0.06)',
-                  minWidth: isMobile ? '100%' : '770px',
+                  minWidth: '770px',
                 }}
               >
                 {DAY_LABELS.map((d) => (
@@ -622,7 +696,7 @@ export default function CalendarPage() {
                 style={{
                   display: 'grid',
                   gridTemplateColumns: 'repeat(7, minmax(110px, 1fr))',
-                  minWidth: isMobile ? '100%' : '770px',
+                  minWidth: '770px',
                 }}
               >
                 {/* Empty cells before first day */}
@@ -720,7 +794,7 @@ export default function CalendarPage() {
                   display: 'grid',
                   gridTemplateColumns: 'repeat(7, minmax(110px, 1fr))',
                   borderBottom: '1px solid rgba(0,0,0,0.06)',
-                  minWidth: isMobile ? '100%' : '770px',
+                  minWidth: '770px',
                 }}
               >
                 {weekDays.map((wd) => (
@@ -770,7 +844,7 @@ export default function CalendarPage() {
                   display: 'grid',
                   gridTemplateColumns: 'repeat(7, minmax(110px, 1fr))',
                   minHeight: '340px',
-                  minWidth: isMobile ? '100%' : '770px',
+                  minWidth: '770px',
                 }}
               >
                 {weekDays.map((wd, idx) => {

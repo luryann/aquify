@@ -13,6 +13,7 @@ type PortalNavProps = {
 
 const NAV_LINKS = [
   { label: 'Home',           path: '/portal/dashboard' },
+  { label: 'Registrations',  path: '/portal/registrations' },
   { label: 'Meets',          path: '/portal/meets' },
   { label: 'Billing',        path: '/portal/billing' },
   { label: 'Documents',      path: '/portal/documents' },
@@ -24,10 +25,12 @@ const NAV_LINKS = [
 export function PortalNav({ userName, avatarInitials, onSignOut }: PortalNavProps) {
   const pathname = usePathname()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
   const isActive = (path: string) => pathname === path || pathname.startsWith(path + '/')
 
   return (
+    <>
     <header
       data-theme="light"
       style={{
@@ -64,15 +67,6 @@ export function PortalNav({ userName, avatarInitials, onSignOut }: PortalNavProp
             flexShrink: 0,
           }}
         >
-          <div
-            style={{
-              width: '8px',
-              height: '8px',
-              borderRadius: '50%',
-              background: 'var(--accent)',
-              boxShadow: '0 0 8px rgba(235,93,30,0.45)',
-            }}
-          />
           <span
             style={{
               fontFamily: 'var(--font-display)',
@@ -99,8 +93,9 @@ export function PortalNav({ userName, avatarInitials, onSignOut }: PortalNavProp
           </span>
         </Link>
 
-        {/* Nav links */}
+        {/* Nav links (desktop) */}
         <nav
+          className="desktop-nav-links"
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -145,8 +140,17 @@ export function PortalNav({ userName, avatarInitials, onSignOut }: PortalNavProp
           })}
         </nav>
 
+        <button
+          className="mobile-nav-toggle"
+          onClick={() => setMobileNavOpen(true)}
+          aria-label="Open navigation menu"
+          style={{ marginLeft: 'auto' }}
+        >
+          <Icon name="menu" size={16} />
+        </button>
+
         {/* User area */}
-        <div style={{ position: 'relative', flexShrink: 0 }}>
+        <div style={{ position: 'relative', flexShrink: 0, marginLeft: '8px' }}>
           <button
             onClick={() => setUserMenuOpen((v) => !v)}
             aria-label="User menu"
@@ -284,5 +288,57 @@ export function PortalNav({ userName, avatarInitials, onSignOut }: PortalNavProp
         </div>
       </div>
     </header>
+
+    {mobileNavOpen && (
+      <>
+        <div className="mobile-nav-overlay" onClick={() => setMobileNavOpen(false)} />
+        <div
+          className="mobile-nav-drawer"
+          data-theme="light"
+          style={{
+            width: 'min(280px, 84vw)',
+            background: 'var(--bg-elevated)',
+            borderRight: '1px solid rgba(0,0,0,0.08)',
+            flexDirection: 'column',
+            padding: '18px 10px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 8px 16px' }}>
+            <span style={{ fontFamily: 'var(--font-display)', fontSize: '18px', color: 'var(--text)' }}>aquify</span>
+            <button
+              className="btn-icon"
+              onClick={() => setMobileNavOpen(false)}
+              aria-label="Close navigation menu"
+            >
+              <Icon name="x" size={16} />
+            </button>
+          </div>
+          <nav style={{ display: 'flex', flexDirection: 'column', gap: '2px' }} aria-label="Portal navigation">
+            {NAV_LINKS.map((link) => {
+              const active = isActive(link.path)
+              return (
+                <Link
+                  key={link.path}
+                  href={link.path}
+                  onClick={() => setMobileNavOpen(false)}
+                  style={{
+                    padding: '11px 12px',
+                    borderRadius: '9px',
+                    fontSize: '14.5px',
+                    fontWeight: active ? 600 : 450,
+                    color: active ? 'var(--text)' : 'var(--text-subtle)',
+                    background: active ? 'rgba(235,93,30,0.08)' : 'transparent',
+                    textDecoration: 'none',
+                  }}
+                >
+                  {link.label}
+                </Link>
+              )
+            })}
+          </nav>
+        </div>
+      </>
+    )}
+    </>
   )
 }

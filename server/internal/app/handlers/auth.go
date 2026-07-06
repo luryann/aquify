@@ -232,8 +232,8 @@ func (h *AuthHandlers) listRoleAssignments(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	if !hasAnyRole(principal, "owner", "admin") {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Role assignment visibility requires owner or admin role.", nil)
+	if !hasAnyRole(principal, "admin") {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Role assignment visibility requires admin role.", nil)
 		return
 	}
 

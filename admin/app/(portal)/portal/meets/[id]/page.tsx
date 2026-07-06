@@ -648,7 +648,7 @@ export default function MeetDetailPage() {
               }}
             >
               <Icon name="file-text" size={22} style={{ color: '#E0DEDC', marginBottom: '8px', display: 'block', margin: '0 auto 8px' }} />
-              No meet files available yet
+              No meet files yet. Heat sheets and results will appear here once your coach posts them.
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -835,7 +835,7 @@ export default function MeetDetailPage() {
                 marginBottom: '12px',
               }}
             >
-              Step 1 — Commitment
+              Step 1 - Are you coming?
             </div>
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
               <button
@@ -1018,7 +1018,7 @@ export default function MeetDetailPage() {
                   marginBottom: '6px',
                 }}
               >
-                Step 2 — Select Events
+                Step 2 - Select Events
               </div>
               <p style={{ margin: '0 0 16px', fontSize: '13px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
                 Select the events {swimmer.preferred_name ?? swimmer.first_name} would like to enter. Coach may adjust selections before the deadline.
@@ -1027,7 +1027,7 @@ export default function MeetDetailPage() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {eligibleSessionGroups.length === 0 ? (
                   <div style={{ padding: '24px', textAlign: 'center', fontSize: '13.5px', color: 'var(--text-muted)' }}>
-                    No eligible events found for this swimmer.
+                    Your coach hasn&apos;t opened event sign-ups for {swimmer.preferred_name ?? swimmer.first_name} yet. Check back before the deadline.
                   </div>
                 ) : (
                   eligibleSessionGroups.map((group) => (

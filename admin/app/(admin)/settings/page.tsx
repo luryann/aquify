@@ -20,9 +20,14 @@ export default function SettingsPage() {
   const [teamMsg, setTeamMsg] = useState<string | null>(null)
   const [teamErr, setTeamErr] = useState<string | null>(null)
 
+  const [emailForm, setEmailForm] = useState<{ email_sender_name: string; email_sender_address: string }>({ email_sender_name: '', email_sender_address: '' })
+  const [emailSaving, setEmailSaving] = useState(false)
+  const [emailMsg, setEmailMsg] = useState<string | null>(null)
+  const [emailErr, setEmailErr] = useState<string | null>(null)
+
   const canEditTeam = useMemo(() => {
     const roles = session?.user.roles ?? (session?.user.role ? [session.user.role] : [])
-    return roles.includes('owner') || roles.includes('admin')
+    return roles.includes('admin')
   }, [session])
 
   useEffect(() => {
@@ -32,6 +37,7 @@ export default function SettingsPage() {
       .then((s: OrgSettingsRecord) => {
         if (cancelled) return
         setTeamForm({ team_code: s.team_code ?? '', team_name: s.team_name ?? '', lsc_code: s.lsc_code ?? '' })
+        setEmailForm({ email_sender_name: s.email_sender_name ?? '', email_sender_address: s.email_sender_address ?? '' })
         setTeamLoaded(true)
       })
       .catch(() => { if (!cancelled) setTeamLoaded(true) })
@@ -55,6 +61,23 @@ export default function SettingsPage() {
     }
   }
 
+  async function handleSaveEmail(e: React.FormEvent) {
+    e.preventDefault()
+    if (!session) return
+    setEmailSaving(true)
+    setEmailMsg(null)
+    setEmailErr(null)
+    try {
+      const saved = await updateOrgSettings(api, session.user.orgId, emailForm)
+      setEmailForm({ email_sender_name: saved.email_sender_name ?? '', email_sender_address: saved.email_sender_address ?? '' })
+      setEmailMsg('Saved.')
+    } catch (err) {
+      setEmailErr(err instanceof ApiError ? err.message : 'Failed to save email sender identity.')
+    } finally {
+      setEmailSaving(false)
+    }
+  }
+
   return (
     <div style={{ padding: '32px 32px 80px', maxWidth: '1000px' }}>
       <div style={{ marginBottom: '28px' }}>
@@ -62,7 +85,7 @@ export default function SettingsPage() {
           Settings
         </p>
         <h1 className="page-title">
-          Team Settings
+          Settings
         </h1>
         <p className="page-subtitle">
           Your club&rsquo;s identity, used across meet reports and exports.
@@ -96,7 +119,35 @@ export default function SettingsPage() {
               <button type="submit" className="btn btn-primary" disabled={teamSaving || !teamLoaded}>{teamSaving ? 'Saving…' : 'Save identity'}</button>
             </div>
           ) : (
-            <p style={{ gridColumn: '1 / -1', fontSize: '11px', color: 'var(--text-muted)', margin: 0 }}>Only owners and admins can edit team identity.</p>
+            <p style={{ gridColumn: '1 / -1', fontSize: '11px', color: 'var(--text-muted)', margin: 0 }}>Only admins can edit team identity.</p>
+          )}
+        </form>
+      </div>
+
+      <div className="card" style={{ padding: '20px', marginBottom: '20px' }}>
+        <div style={{ marginBottom: '4px' }}>
+          <h2 style={{ fontSize: '15px', fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)' }}>Email Sender Identity</h2>
+          <p style={{ fontSize: '12px', color: 'var(--text-subtle)', marginTop: '4px' }}>
+            The name and address new email campaigns send from by default — still editable per campaign.
+          </p>
+        </div>
+        {emailMsg ? <div style={{ marginTop: '12px', padding: '8px 12px', background: 'var(--success-bg)', border: '1px solid var(--success-border)', borderRadius: '8px', color: 'var(--success)', fontSize: '12px' }}>{emailMsg}</div> : null}
+        {emailErr ? <div style={{ marginTop: '12px', padding: '8px 12px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', borderRadius: '8px', color: 'var(--error)', fontSize: '12px' }}>{emailErr}</div> : null}
+        <form onSubmit={handleSaveEmail} style={{ marginTop: '16px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', alignItems: 'end' }}>
+          <div>
+            <label style={TEAM_LABEL_STYLE}>Sender Name</label>
+            <input style={TEAM_INPUT_STYLE} value={emailForm.email_sender_name} disabled={!canEditTeam || !teamLoaded} onChange={(e) => setEmailForm((f) => ({ ...f, email_sender_name: e.target.value }))} placeholder="Your club's name" />
+          </div>
+          <div>
+            <label style={TEAM_LABEL_STYLE}>Sender Address</label>
+            <input style={TEAM_INPUT_STYLE} value={emailForm.email_sender_address} disabled={!canEditTeam || !teamLoaded} type="email" onChange={(e) => setEmailForm((f) => ({ ...f, email_sender_address: e.target.value }))} placeholder="noreply@yourclub.org" />
+          </div>
+          {canEditTeam ? (
+            <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end' }}>
+              <button type="submit" className="btn btn-primary" disabled={emailSaving || !teamLoaded}>{emailSaving ? 'Saving…' : 'Save sender identity'}</button>
+            </div>
+          ) : (
+            <p style={{ gridColumn: '1 / -1', fontSize: '11px', color: 'var(--text-muted)', margin: 0 }}>Only admins can edit email sender identity.</p>
           )}
         </form>
       </div>

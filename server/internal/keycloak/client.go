@@ -24,7 +24,7 @@ var (
 	ErrRoleNotFound  = errors.New("keycloak: role not found")
 	ErrUnauthorized  = errors.New("keycloak: unauthorized — check admin credentials")
 	ErrConflict      = errors.New("keycloak: user or role already exists")
-	ErrLastOwner     = errors.New("keycloak: cannot remove last owner role assignment")
+	ErrLastAdmin     = errors.New("keycloak: cannot remove last admin role assignment")
 )
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -153,13 +153,10 @@ type Client interface {
 // must exist in the Keycloak realm. Pass this to EnsureRealmRolesExist on
 // startup.
 var DefaultRealmRoles = []string{
-	"owner",
 	"admin",
 	"coach",
-	"billing",
 	"parent",
 	"swimmer",
-	"read_only_staff",
 }
 
 // ─── Production Admin client ──────────────────────────────────────────────────

@@ -2,6 +2,9 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { Modal } from '@/components/ui/Modal'
+import { Table, col } from '@/components/ui/Table'
+import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
 import { ApiError, useApiClient } from '@/lib/api'
 import { createDataDeletionRequest, fetchDataDeletionRequests, fetchHouseholds, type DataDeletionRequestRecord, type HouseholdRecord } from '@/lib/adminData'
@@ -17,6 +20,13 @@ function formatDateTime(value?: string) {
   })
 }
 
+const FIELD_INPUT_STYLE: React.CSSProperties = {
+  width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)',
+  background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: '13px', boxSizing: 'border-box',
+}
+
+type DeletionRow = DataDeletionRequestRecord & { householdName: string }
+
 export default function DataDeletionsPage() {
   const { session } = useSession()
   const api = useApiClient(session?.token)
@@ -27,6 +37,7 @@ export default function DataDeletionsPage() {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [modalOpen, setModalOpen] = useState(false)
 
   async function loadData() {
     if (!session?.user.orgId) return
@@ -79,6 +90,11 @@ export default function DataDeletionsPage() {
 
   const householdNameById = useMemo(() => new Map(households.map((household) => [household.id, household.household_name])), [households])
 
+  const rows: DeletionRow[] = useMemo(
+    () => requests.map((r) => ({ ...r, householdName: householdNameById.get(r.household_id) ?? r.household_id })),
+    [requests, householdNameById],
+  )
+
   async function handleCreate() {
     if (!session?.user.orgId || !selectedHouseholdId) return
     setSubmitting(true)
@@ -90,6 +106,7 @@ export default function DataDeletionsPage() {
       })
       setReason('')
       await loadData()
+      setModalOpen(false)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Unable to create data deletion request.')
     } finally {
@@ -98,21 +115,40 @@ export default function DataDeletionsPage() {
   }
 
   if (!session) {
-    return <div style={{ padding: '32px' }}><EmptyState icon="trash-2" title="Sign in required" description="Authenticate to manage live deletion requests." /></div>
+    return <div style={{ padding: '32px' }}><EmptyState icon="trash-2" title="Sign in required" description="Authenticate to manage deletion requests." /></div>
   }
 
+  const columns = [
+    col<DeletionRow>({ key: 'householdName', label: 'Household', sortable: true }),
+    col<DeletionRow>({
+      key: 'status',
+      label: 'Status',
+      sortable: true,
+      render: (row) => (
+        <span className={`badge ${row.status === 'completed' ? 'badge-success' : row.status === 'rejected' ? 'badge-error' : 'badge-default'}`}>
+          {row.status}
+        </span>
+      ),
+    }),
+    col<DeletionRow>({ key: 'requested_at', label: 'Requested', sortable: true, render: (row) => formatDateTime(row.requested_at) }),
+    col<DeletionRow>({ key: 'expires_at', label: 'Review deadline', sortable: true, render: (row) => formatDateTime(row.expires_at) }),
+    col<DeletionRow>({ key: 'reason', label: 'Reason', sortable: false, cellStyle: { color: 'var(--text-subtle)' }, render: (row) => row.reason || '—' }),
+  ]
+
   return (
-    <div style={{ padding: '32px 36px 80px', maxWidth: 1120, margin: '0 auto' }}>
-      <div style={{ marginBottom: '28px' }}>
-        <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
-          Compliance
-        </p>
-        <h1 className="page-title">
-          Data Deletion Requests
-        </h1>
-        <p className="page-subtitle">
-          Live right-to-erasure requests with backend status and review deadlines.
-        </p>
+    <div style={{ padding: '32px 36px 80px', maxWidth: 1240, margin: '0 auto' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px', marginBottom: '24px', flexWrap: 'wrap' }}>
+        <div>
+          <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
+            Compliance
+          </p>
+          <h1 className="page-title">Data Deletion Requests</h1>
+          <p className="page-subtitle">A parent asked you to delete their family&rsquo;s data — start here.</p>
+        </div>
+        <button onClick={() => setModalOpen(true)} className="btn btn-primary">
+          <Icon name="plus" size={14} />
+          New Request
+        </button>
       </div>
 
       {error ? (
@@ -121,50 +157,44 @@ export default function DataDeletionsPage() {
         </div>
       ) : null}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '20px', alignItems: 'start' }}>
-        <div className="card" style={{ padding: '18px' }}>
-          <h2 style={{ fontSize: '14px', color: 'var(--text)', marginBottom: '12px' }}>Open Request</h2>
-          <select value={selectedHouseholdId} onChange={(event) => setSelectedHouseholdId(event.target.value)} style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: '13px', marginBottom: '12px' }}>
-            {households.map((household) => <option key={household.id} value={household.id}>{household.household_name}</option>)}
-          </select>
-          <textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={5} placeholder="Reason for deletion request" style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: '13px', resize: 'vertical', marginBottom: '12px' }} />
-          <button onClick={() => void handleCreate()} disabled={submitting || !selectedHouseholdId} className="btn btn-primary">
-            {submitting ? 'Creating…' : 'Create Deletion Request'}
-          </button>
-        </div>
+      <Table
+        columns={columns}
+        data={rows}
+        keyField="id"
+        loading={loading}
+        paginated
+        pageSize={20}
+        emptyTitle="No deletion requests yet"
+        emptyDescription="Create a request when a family asks you to erase their data."
+      />
 
-        <div className="card" style={{ overflow: 'hidden' }}>
-          <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
-            <h2 style={{ fontSize: '14px', color: 'var(--text)' }}>Live Requests</h2>
+      <Modal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title="New Deletion Request"
+        description="Starts a review — this does not delete anything immediately."
+        footer={
+          <>
+            <button onClick={() => setModalOpen(false)} className="btn btn-secondary">Cancel</button>
+            <button onClick={() => void handleCreate()} disabled={submitting || !selectedHouseholdId} className="btn btn-primary">
+              {submitting ? 'Creating…' : 'Create Request'}
+            </button>
+          </>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '10.5px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '5px' }}>Household</label>
+            <select value={selectedHouseholdId} onChange={(event) => setSelectedHouseholdId(event.target.value)} style={FIELD_INPUT_STYLE}>
+              {households.map((household) => <option key={household.id} value={household.id}>{household.household_name}</option>)}
+            </select>
           </div>
-          {loading ? (
-            <div style={{ padding: '20px' }}><EmptyState icon="trash-2" title="Loading requests" description="Fetching live compliance deletion requests." /></div>
-          ) : requests.length === 0 ? (
-            <div style={{ padding: '20px' }}><EmptyState icon="trash-2" title="No deletion requests yet" description="Create a request to populate the review queue." /></div>
-          ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                  {['Household', 'Status', 'Requested', 'Review Deadline', 'Reason'].map((header) => (
-                    <th key={header} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{header}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {requests.map((request) => (
-                  <tr key={request.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                    <td style={{ padding: '11px 14px', fontSize: '13px', color: 'var(--text)' }}>{householdNameById.get(request.household_id) ?? request.household_id}</td>
-                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-body)', fontSize: '11px', color: request.status === 'completed' ? 'var(--success)' : request.status === 'rejected' ? 'var(--error)' : 'var(--text-subtle)' }}>{request.status}</td>
-                    <td style={{ padding: '11px 14px', fontSize: '12px', color: 'var(--text-subtle)' }}>{formatDateTime(request.requested_at)}</td>
-                    <td style={{ padding: '11px 14px', fontSize: '12px', color: 'var(--text-subtle)' }}>{formatDateTime(request.expires_at)}</td>
-                    <td style={{ padding: '11px 14px', fontSize: '12px', color: 'var(--text-subtle)' }}>{request.reason || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+          <div>
+            <label style={{ display: 'block', fontSize: '10.5px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '5px' }}>Reason</label>
+            <textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={4} placeholder="Why this family asked for deletion" style={{ ...FIELD_INPUT_STYLE, resize: 'vertical' }} />
+          </div>
         </div>
-      </div>
+      </Modal>
     </div>
   )
 }

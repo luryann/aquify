@@ -15,21 +15,25 @@ import (
 
 // OrgSettings holds the export identity fields for a single org.
 type OrgSettings struct {
-	OrgID     string    `json:"org_id"`
-	TeamCode  string    `json:"team_code"`
-	TeamName  string    `json:"team_name"`
-	LSCCode   string    `json:"lsc_code"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	UpdatedBy string    `json:"updated_by"`
+	OrgID              string    `json:"org_id"`
+	TeamCode           string    `json:"team_code"`
+	TeamName           string    `json:"team_name"`
+	LSCCode            string    `json:"lsc_code"`
+	EmailSenderName    string    `json:"email_sender_name"`
+	EmailSenderAddress string    `json:"email_sender_address"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
+	UpdatedBy          string    `json:"updated_by"`
 }
 
 // Updates carries the mutable fields that may be patched. A nil pointer leaves
 // the existing value unchanged.
 type Updates struct {
-	TeamCode *string `json:"team_code,omitempty"`
-	TeamName *string `json:"team_name,omitempty"`
-	LSCCode  *string `json:"lsc_code,omitempty"`
+	TeamCode           *string `json:"team_code,omitempty"`
+	TeamName           *string `json:"team_name,omitempty"`
+	LSCCode            *string `json:"lsc_code,omitempty"`
+	EmailSenderName    *string `json:"email_sender_name,omitempty"`
+	EmailSenderAddress *string `json:"email_sender_address,omitempty"`
 }
 
 // Service manages org settings with an in-memory write-through cache.
@@ -107,6 +111,12 @@ func (s *Service) Update(orgID string, updates Updates, updatedBy string) (*OrgS
 	}
 	if updates.LSCCode != nil {
 		current.LSCCode = strings.ToUpper(strings.TrimSpace(*updates.LSCCode))
+	}
+	if updates.EmailSenderName != nil {
+		current.EmailSenderName = strings.TrimSpace(*updates.EmailSenderName)
+	}
+	if updates.EmailSenderAddress != nil {
+		current.EmailSenderAddress = strings.TrimSpace(*updates.EmailSenderAddress)
 	}
 	current.UpdatedAt = now
 	current.UpdatedBy = updatedBy

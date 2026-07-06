@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Icon } from '@/components/ui/icons'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { AuthGuard } from '@/components/auth/AuthGuard'
 import { useSession } from '@/lib/session'
 import { useApiClient, ApiError } from '@/lib/api'
 import { fetchRuntimeSettings, type RuntimeSettingsRecord } from '@/lib/adminData'
@@ -20,6 +21,14 @@ function formatValue(value: unknown) {
 }
 
 export default function SystemDiagnosticsPage() {
+  return (
+    <AuthGuard requiredRoles={['admin']}>
+      <SystemDiagnosticsPageContent />
+    </AuthGuard>
+  )
+}
+
+function SystemDiagnosticsPageContent() {
   const { session } = useSession()
   const api = useApiClient(session?.token)
   const [settings, setSettings] = useState<RuntimeSettingsRecord | null>(null)
@@ -82,7 +91,7 @@ export default function SystemDiagnosticsPage() {
           System Diagnostics
         </h1>
         <p className="page-subtitle">
-          Sanitized backend configuration for this environment — for engineering and deployment troubleshooting, not club administration.
+          Backend configuration for this environment, for engineering and deployment troubleshooting only. Not club administration.
         </p>
       </div>
 

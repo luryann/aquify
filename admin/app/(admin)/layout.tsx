@@ -5,7 +5,7 @@ import { DevRoleSwitcher } from '@/components/dev/DevRoleSwitcher'
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   return (
-    <AuthGuard requiredRoles={['owner', 'admin', 'coach', 'billing', 'read-only']}>
+    <AuthGuard requiredRoles={['admin', 'coach']}>
       <AdminShell>{children}</AdminShell>
       <DevRoleSwitcher />
     </AuthGuard>
