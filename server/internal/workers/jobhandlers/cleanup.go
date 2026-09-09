@@ -166,8 +166,8 @@ func ProcessDataExportHandler(logger *slog.Logger, complianceService *compliance
 // performing every erasure step — a request must never be marked complete
 // without the real erasure steps having succeeded first.
 //
-// Scope (per owner decision recorded in AUDIT_FINDINGS_2026-07-05.md,
-// SEC-012): billing/financial ledger records (invoices, payments, refunds,
+// Scope (per owner decision, SEC-012): billing/financial ledger records
+// (invoices, payments, refunds,
 // Stripe references) are RETAINED for tax/audit purposes — only the
 // household's link to them is anonymized (handled by
 // membersService.AnonymizeHousehold, which scrubs the household record
