@@ -114,6 +114,7 @@ export default function SwimmerProfilePage() {
       return
     }
 
+    let active = true
     setLoading(true)
     setLoadError(null)
 
@@ -122,6 +123,7 @@ export default function SwimmerProfilePage() {
       fetchSwimmerGroups(api, orgId),
       fetchGroups(api, orgId),
     ]).then(([swimmers, swimmerGroupLinks, groups]) => {
+      if (!active) return
       // Resolve "which swimmer is me" by the stable swimmer_id on the
       // session, not by guessing a household roster entry.
       const mySwimmer = swimmerId
@@ -141,6 +143,7 @@ export default function SwimmerProfilePage() {
         }
       }
     }).catch((error) => {
+      if (!active) return
       setSwimmer(null)
       setGroup(null)
       setBio('')
@@ -150,11 +153,13 @@ export default function SwimmerProfilePage() {
         'We could not load this page. Check your connection and try again.',
         { orgId, householdId },
       ))
-    }).finally(() => setLoading(false))
+    }).finally(() => { if (active) setLoading(false) })
+
+    return () => { active = false }
   }, [api, orgId, householdId, swimmerId, reloadKey])
 
   const saveBio = async () => {
-    if (!swimmer || !orgId || bioSaving) return
+    if (!swimmer || !orgId || loading || bioSaving) return
 
     const validationError = validateSwimmerBio(bio)
     if (validationError) {
@@ -400,6 +405,7 @@ export default function SwimmerProfilePage() {
               </p>
 
               <textarea aria-label="Bio"
+                disabled={loading || !swimmer || bioSaving}
                 value={bio}
                 onChange={(e) => {
                   setBio(e.target.value)

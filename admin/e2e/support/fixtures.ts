@@ -9,7 +9,11 @@ function slugify(value: string) {
 }
 
 export function scenarioFixture(testInfo: TestInfo) {
-  const slug = slugify(testInfo.titlePath.slice(1).join('-'))
+  const slug = slugify([
+    ...testInfo.titlePath.slice(1),
+    `repeat-${testInfo.repeatEachIndex}`,
+    `retry-${testInfo.retry}`,
+  ].join('-'))
   const uuidFor = (value: string) => {
     const hex = createHash('sha256').update(value).digest('hex')
     return [

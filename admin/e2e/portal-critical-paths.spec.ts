@@ -122,13 +122,23 @@ test('swimmer portal bio edits persist after refresh', async ({ browser }) => {
 
   const nextBio = fixture.text('Updated bio')
   const bioField = swimmerPage.getByPlaceholder("Tell your team about yourself. Your goals, favorite events, or anything you'd like to share...")
+  await expect(bioField).toHaveValue('Original bio')
   await bioField.fill(nextBio)
+  const saveResponsePromise = swimmerPage.waitForResponse((response) =>
+    response.url().endsWith(`/api/v1/members/swimmers/${swimmer.id}`) && response.request().method() === 'PATCH',
+  )
   await swimmerPage.getByRole('button', { name: 'Save Bio' }).click()
+  const saveResponse = await saveResponsePromise
+  expect(saveResponse.ok()).toBe(true)
+  expect(saveResponse.request().postDataJSON()).toEqual({ notes: nextBio })
+  expect((await saveResponse.json()).swimmer.notes).toBe(nextBio)
   await expect(swimmerPage.getByText('Saved', { exact: true })).toBeVisible()
 
   await swimmerPage.reload()
   await expect(bioField).toHaveValue(nextBio)
-  await expect(swimmerPage.getByText(nextBio)).toBeVisible()
+  const savedBio = swimmerPage.getByRole('paragraph').filter({ hasText: nextBio })
+  await expect(savedBio).toHaveText(nextBio)
+  await expect(savedBio).toBeVisible()
 
   await swimmerContext.close()
   await adminContext.close()
