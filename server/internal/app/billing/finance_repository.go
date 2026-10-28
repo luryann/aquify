@@ -13,6 +13,9 @@ import (
 // ─── Transactions & locking ──────────────────────────────────────────────────
 
 func (r *Repository) inTx(ctx context.Context, fn func(tx pgx.Tx) error) error {
+	if r.tx != nil {
+		return fn(r.tx)
+	}
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("billing: begin tx: %w", err)
@@ -63,7 +66,7 @@ func nullableDate(value string) any {
 func (r *Repository) loadFinanceState(ctx context.Context) (*financeState, error) {
 	f := newFinanceState()
 
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.db().Query(ctx, `
 		SELECT id::text, org_id::text, name, kind, group_code, season, frequency, amount_cents,
 		       start_date::text, COALESCE(end_date::text, ''), proration, auto_bill, active, description,
 		       created_at, updated_at, created_by, updated_by
@@ -86,7 +89,7 @@ func (r *Repository) loadFinanceState(ctx context.Context) (*financeState, error
 		return nil, err
 	}
 
-	rows, err = r.pool.Query(ctx, `
+	rows, err = r.db().Query(ctx, `
 		SELECT id::text, org_id::text, name, applies_to, min_position, max_position, discount_type,
 		       percent_bps, amount_cents, active, created_at, updated_at, created_by, updated_by
 		FROM billing_discount_rules`)
@@ -108,7 +111,7 @@ func (r *Repository) loadFinanceState(ctx context.Context) (*financeState, error
 		return nil, err
 	}
 
-	rows, err = r.pool.Query(ctx, `
+	rows, err = r.db().Query(ctx, `
 		SELECT id::text, org_id::text, household_id, swimmer_id, amount_cents, reason, status,
 		       COALESCE(applied_invoice_id::text, ''), COALESCE(applied_run_id::text, ''),
 		       created_at, updated_at, created_by, updated_by
@@ -130,7 +133,7 @@ func (r *Repository) loadFinanceState(ctx context.Context) (*financeState, error
 		return nil, err
 	}
 
-	rows, err = r.pool.Query(ctx, `
+	rows, err = r.db().Query(ctx, `
 		SELECT id::text, org_id::text, as_of::text, invoice_status, COALESCE(due_date::text, ''), schedule_ids,
 		       trigger, fingerprint, household_count, invoice_count, charge_count, skipped_count,
 		       gross_cents, discount_cents, adjustment_cents, credit_applied_cents, net_cents, created_at, created_by
@@ -154,7 +157,7 @@ func (r *Repository) loadFinanceState(ctx context.Context) (*financeState, error
 		return nil, err
 	}
 
-	rows, err = r.pool.Query(ctx, `
+	rows, err = r.db().Query(ctx, `
 		SELECT id::text, org_id::text, run_id::text, invoice_id::text, household_id, swimmer_id, schedule_id::text,
 		       period_key, period_start::text, period_end::text, gross_cents, discount_cents, net_cents,
 		       sibling_position, released_at, created_at
@@ -177,9 +180,9 @@ func (r *Repository) loadFinanceState(ctx context.Context) (*financeState, error
 		return nil, err
 	}
 
-	rows, err = r.pool.Query(ctx, `
+	rows, err = r.db().Query(ctx, `
 		SELECT id::text, org_id::text, household_id, amount_cents, kind, COALESCE(invoice_id::text, ''),
-		       COALESCE(payment_id::text, ''), COALESCE(refund_id::text, ''), reason, balance_after_cents,
+		       COALESCE(payment_id::text, ''), COALESCE(refund_id::text, ''), reason, stripe_ref, balance_after_cents,
 		       created_at, created_by
 		FROM household_credit_entries ORDER BY created_at, id`)
 	if err != nil {
@@ -188,7 +191,7 @@ func (r *Repository) loadFinanceState(ctx context.Context) (*financeState, error
 	for rows.Next() {
 		e := &CreditEntry{}
 		if err := rows.Scan(&e.ID, &e.OrgID, &e.HouseholdID, &e.AmountCents, &e.Kind, &e.InvoiceID, &e.PaymentID,
-			&e.RefundID, &e.Reason, &e.BalanceAfterCents, &e.CreatedAt, &e.CreatedBy); err != nil {
+			&e.RefundID, &e.Reason, &e.StripeRef, &e.BalanceAfterCents, &e.CreatedAt, &e.CreatedBy); err != nil {
 			rows.Close()
 			return nil, fmt.Errorf("billing: scan credit entry: %w", err)
 		}
@@ -199,7 +202,7 @@ func (r *Repository) loadFinanceState(ctx context.Context) (*financeState, error
 		return nil, err
 	}
 
-	rows, err = r.pool.Query(ctx, `SELECT org_id::text, household_id, balance_cents FROM household_credit_balances`)
+	rows, err = r.db().Query(ctx, `SELECT org_id::text, household_id, balance_cents FROM household_credit_balances`)
 	if err != nil {
 		return nil, fmt.Errorf("billing: load credit balances: %w", err)
 	}
@@ -217,7 +220,7 @@ func (r *Repository) loadFinanceState(ctx context.Context) (*financeState, error
 		return nil, err
 	}
 
-	rows, err = r.pool.Query(ctx, `
+	rows, err = r.db().Query(ctx, `
 		SELECT org_id::text, late_fee_enabled, late_fee_grace_days, late_fee_type, late_fee_flat_cents,
 		       late_fee_percent_bps, late_fee_max_cents, auto_run_enabled, auto_run_day,
 		       auto_run_invoice_status, auto_run_due_days, updated_at, updated_by
@@ -240,7 +243,7 @@ func (r *Repository) loadFinanceState(ctx context.Context) (*financeState, error
 		return nil, err
 	}
 
-	rows, err = r.pool.Query(ctx, `
+	rows, err = r.db().Query(ctx, `
 		SELECT id::text, org_id::text, invoice_id::text, item_id::text, amount_cents, applied_at
 		FROM billing_late_fee_applications`)
 	if err != nil {
@@ -261,7 +264,7 @@ func (r *Repository) loadFinanceState(ctx context.Context) (*financeState, error
 // ─── Configuration writes ────────────────────────────────────────────────────
 
 func (r *Repository) upsertFeeSchedule(ctx context.Context, sc *FeeSchedule) error {
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.db().Exec(ctx, `
 		INSERT INTO billing_fee_schedules (id, org_id, name, kind, group_code, season, frequency, amount_cents,
 		       start_date, end_date, proration, auto_bill, active, description, created_at, updated_at, created_by, updated_by)
 		VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9::date, $10::date, $11, $12, $13, $14, $15, $16, $17, $18)
@@ -278,7 +281,7 @@ func (r *Repository) upsertFeeSchedule(ctx context.Context, sc *FeeSchedule) err
 }
 
 func (r *Repository) upsertDiscountRule(ctx context.Context, rule *DiscountRule) error {
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.db().Exec(ctx, `
 		INSERT INTO billing_discount_rules (id, org_id, name, applies_to, min_position, max_position, discount_type,
 		       percent_bps, amount_cents, active, created_at, updated_at, created_by, updated_by)
 		VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
@@ -321,7 +324,7 @@ func claimAdjustment(ctx context.Context, q dbExec, a *Adjustment) (bool, error)
 }
 
 func (r *Repository) upsertSettings(ctx context.Context, st *BillingSettings) error {
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.db().Exec(ctx, `
 		INSERT INTO billing_settings (org_id, late_fee_enabled, late_fee_grace_days, late_fee_type, late_fee_flat_cents,
 		       late_fee_percent_bps, late_fee_max_cents, auto_run_enabled, auto_run_day, auto_run_invoice_status,
 		       auto_run_due_days, updated_at, updated_by)
@@ -430,10 +433,10 @@ func adjustCreditBalance(ctx context.Context, q dbExec, orgID, householdID strin
 func insertCreditEntry(ctx context.Context, q dbExec, e *CreditEntry) error {
 	_, err := q.Exec(ctx, `
 		INSERT INTO household_credit_entries (id, org_id, household_id, amount_cents, kind, invoice_id, payment_id,
-		       refund_id, reason, balance_after_cents, created_at, created_by)
-		VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6::uuid, $7::uuid, $8::uuid, $9, $10, $11, $12)`,
+		       refund_id, reason, stripe_ref, balance_after_cents, created_at, created_by)
+		VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6::uuid, $7::uuid, $8::uuid, $9, $10, $11, $12, $13)`,
 		e.ID, e.OrgID, e.HouseholdID, e.AmountCents, e.Kind, nullableString(e.InvoiceID), nullableString(e.PaymentID),
-		nullableString(e.RefundID), e.Reason, e.BalanceAfterCents, e.CreatedAt, e.CreatedBy)
+		nullableString(e.RefundID), e.Reason, e.StripeRef, e.BalanceAfterCents, e.CreatedAt, e.CreatedBy)
 	return err
 }
 

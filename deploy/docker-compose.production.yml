@@ -22,7 +22,7 @@ services:
   # ---------------------------------------------------------------------------
 
   dare-api:
-    image: ghcr.io/dareaquatics/dare-api:${IMAGE_TAG:-latest}
+    image: ghcr.io/${GHCR_NAMESPACE:?set GHCR_NAMESPACE to the registry owner}/dare-api:${IMAGE_TAG:-latest}
     <<: *always-restart
     depends_on:
       postgres:
@@ -35,13 +35,13 @@ services:
       - .env.production
     environment:
       APP_ENV: production
-      SERVER_ADDR: ":8080"
+      API_ADDR: ":8080"
       AUTH_ENABLE_DEV_STUB_TOKENS: "false"
       AUTH_ALLOW_DEV_SESSION_ISSUE: "false"
     ports:
       - "127.0.0.1:8080:8080"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health/live || exit 1"]
+      test: ["CMD", "/dare-api", "healthcheck", "http://localhost:8080/api/v1/health/live"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -56,7 +56,7 @@ services:
     <<: *default-logging
 
   dare-admin:
-    image: ghcr.io/dareaquatics/dare-admin:${IMAGE_TAG:-latest}
+    image: ghcr.io/${GHCR_NAMESPACE:?set GHCR_NAMESPACE to the registry owner}/dare-admin:${IMAGE_TAG:-latest}
     <<: *always-restart
     depends_on:
       dare-api:
@@ -65,6 +65,7 @@ services:
       - .env.production
     environment:
       NODE_ENV: production
+      API_INTERNAL_URL: http://dare-api:8080
       NEXT_PUBLIC_APP_ENV: production
       NEXT_PUBLIC_AUTH_ENABLE_DEV_STUB_TOKENS: "false"
       PORT: "3000"
@@ -86,7 +87,7 @@ services:
     <<: *default-logging
 
   dare-worker:
-    image: ghcr.io/dareaquatics/dare-api:${IMAGE_TAG:-latest}
+    image: ghcr.io/${GHCR_NAMESPACE:?set GHCR_NAMESPACE to the registry owner}/dare-api:${IMAGE_TAG:-latest}
     command: ["worker"]
     <<: *always-restart
     depends_on:

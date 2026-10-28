@@ -6,7 +6,7 @@
 
 # Go version must satisfy server/go.mod's `go` directive; official images run
 # with GOTOOLCHAIN=local, so an older base image fails the build outright.
-FROM golang:1.26-alpine AS builder
+FROM golang:1.26.10-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates tzdata

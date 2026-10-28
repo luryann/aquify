@@ -41,6 +41,7 @@ type creditEntryParams struct {
 	RefundID    string
 	Reason      string
 	ActorID     string
+	StripeRef   string
 }
 
 func creditDelta(kind string, magnitude int) int {
@@ -95,6 +96,7 @@ func (s *Service) addCreditEntryLocked(ctx context.Context, p creditEntryParams)
 		PaymentID:   p.PaymentID,
 		RefundID:    p.RefundID,
 		Reason:      strings.TrimSpace(p.Reason),
+		StripeRef:   p.StripeRef,
 		CreatedAt:   now,
 		CreatedBy:   p.ActorID,
 	}

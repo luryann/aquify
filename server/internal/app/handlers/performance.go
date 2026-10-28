@@ -231,7 +231,7 @@ func (h *PerformanceHandlers) upsertResult(w http.ResponseWriter, r *http.Reques
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role to upsert results.", nil)
 			return
 		}
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
 		return
 	}
 
@@ -258,7 +258,7 @@ func (h *PerformanceHandlers) listBestTimes(w http.ResponseWriter, r *http.Reque
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role to read best times.", nil)
 			return
 		}
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
 		return
 	}
 
@@ -286,7 +286,7 @@ func (h *PerformanceHandlers) listOrgBestTimes(w http.ResponseWriter, r *http.Re
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role to read best times.", nil)
 			return
 		}
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
 		return
 	}
 
@@ -328,7 +328,7 @@ func (h *PerformanceHandlers) overrideBestTime(w http.ResponseWriter, r *http.Re
 			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "override_requires_reason", err.Error(), nil)
 			return
 		}
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
 		return
 	}
 
@@ -384,7 +384,7 @@ func (h *PerformanceHandlers) listProgression(w http.ResponseWriter, r *http.Req
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role to read progression data.", nil)
 			return
 		}
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
 		return
 	}
 
@@ -413,7 +413,7 @@ func (h *PerformanceHandlers) listActivity(w http.ResponseWriter, r *http.Reques
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role to read swimmer activity.", nil)
 			return
 		}
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
 		return
 	}
 	visible := false
@@ -434,7 +434,7 @@ func (h *PerformanceHandlers) listActivity(w http.ResponseWriter, r *http.Reques
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role to read swimmer activity.", nil)
 			return
 		}
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
 		return
 	}
 
@@ -473,7 +473,7 @@ func (h *PerformanceHandlers) listOrgProgression(w http.ResponseWriter, r *http.
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role to read progression data.", nil)
 			return
 		}
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
 		return
 	}
 
@@ -669,7 +669,7 @@ func (h *PerformanceHandlers) evaluateCutQualification(w http.ResponseWriter, r 
 			httpx.WriteError(w, r, http.StatusNotFound, "standard_not_found", "Time standard not found.", nil)
 			return
 		}
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
 		return
 	}
 
@@ -708,7 +708,7 @@ func (h *PerformanceHandlers) listTimeStandards(w http.ResponseWriter, r *http.R
 		ActiveOnly:    activeOnly,
 	})
 	if err != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
 		return
 	}
 
@@ -748,7 +748,7 @@ func (h *PerformanceHandlers) createTimeStandard(w http.ResponseWriter, r *http.
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only admins may manage time standards.", nil)
 			return
 		}
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
 		return
 	}
 
@@ -769,7 +769,7 @@ func (h *PerformanceHandlers) getTimeStandard(w http.ResponseWriter, r *http.Req
 			httpx.WriteError(w, r, http.StatusNotFound, "standard_not_found", "Time standard not found.", nil)
 			return
 		}
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
 		return
 	}
 
@@ -805,7 +805,7 @@ func (h *PerformanceHandlers) updateTimeStandard(w http.ResponseWriter, r *http.
 			httpx.WriteError(w, r, http.StatusNotFound, "standard_not_found", "Time standard not found.", nil)
 			return
 		}
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
 		return
 	}
 
@@ -829,7 +829,7 @@ func (h *PerformanceHandlers) deleteTimeStandard(w http.ResponseWriter, r *http.
 			httpx.WriteError(w, r, http.StatusNotFound, "standard_not_found", "Time standard not found.", nil)
 			return
 		}
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
 		return
 	}
 

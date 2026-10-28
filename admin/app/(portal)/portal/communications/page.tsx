@@ -406,6 +406,9 @@ export default function CommunicationsPage() {
                 {(['email', 'push'] as NotifChannel[]).map((ch) => (
                   <div key={ch} style={{ display: 'flex', justifyContent: 'center' }}>
                     <button type="button"
+                      role="switch"
+                      aria-label={`${pref.label} ${ch}`}
+                      aria-checked={pref[ch]}
                       onClick={() => togglePref(pref.id, ch)}
                       disabled={prefsLoading || prefsSaving}
                       style={{

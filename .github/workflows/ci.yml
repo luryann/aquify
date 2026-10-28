@@ -146,6 +146,14 @@ jobs:
         working-directory: admin
         run: npm run test:e2e:install
 
+      - name: Download server dependencies
+        working-directory: server
+        run: go mod download
+
+      - name: Warm API build cache
+        working-directory: server
+        run: go build -o /tmp/aquify-e2e-api ./cmd/api
+
       - name: Run admin E2E suite
         working-directory: admin
         run: npm run test:e2e

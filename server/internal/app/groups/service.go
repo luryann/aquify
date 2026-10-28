@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -515,6 +516,12 @@ func (s *Service) ListGroups(principal *appmiddleware.Principal, orgID string, a
 		}
 		result = append(result, g)
 	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Code != result[j].Code {
+			return result[i].Code < result[j].Code
+		}
+		return result[i].ID < result[j].ID
+	})
 	return result, nil
 }
 

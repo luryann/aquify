@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 
 import {
   createGroup,
+  createLinkedSwimmerUser,
   createHousehold,
   createMeet,
   createPerformanceResult,
@@ -76,7 +77,7 @@ test('parent portal registration wizard creates live registrations for multiple 
   await expectLoaded(parentPage, 'Registration Center')
   await expect(parentPage.getByText(`${swimmerOne.first_name} ${swimmerOne.last_name}`)).toBeVisible()
   await expect(parentPage.getByText(`${swimmerTwo.first_name} ${swimmerTwo.last_name}`)).toBeVisible()
-  await expect(parentPage.getByText(group.name)).toBeVisible()
+  await expect(parentPage.getByText(group.name, { exact: true })).toBeVisible()
 
   const registrationPayload = await listRegistrations(parentContext, orgId)
   const registrations = registrationPayload.registrations ?? []
@@ -99,15 +100,16 @@ test('swimmer portal bio edits persist after refresh', async ({ browser }) => {
   })
 
   const household = await createHousehold(adminContext, orgId, fixture.text('Household Swim'))
-  await createSwimmer(adminContext, orgId, household.id, {
+  const swimmer = await createSwimmer(adminContext, orgId, household.id, {
     firstName: 'Sky',
     lastName: 'Lane',
     dateOfBirth: '2011-01-11',
     notes: 'Original bio',
   })
 
+  const swimmerUserId = await createLinkedSwimmerUser(adminContext, orgId, swimmer.id, fixture.email('swimmer'), 'Sky', 'Lane')
   const swimmerContext = await newAuthedContext(browser, {
-    userId: fixture.userId('swimmer-user'),
+    userId: swimmerUserId,
     orgId,
     householdId: household.id,
     roles: ['swimmer'],
@@ -122,7 +124,7 @@ test('swimmer portal bio edits persist after refresh', async ({ browser }) => {
   const bioField = swimmerPage.getByPlaceholder("Tell your team about yourself. Your goals, favorite events, or anything you'd like to share...")
   await bioField.fill(nextBio)
   await swimmerPage.getByRole('button', { name: 'Save Bio' }).click()
-  await expect(swimmerPage.getByText('Saved')).toBeVisible()
+  await expect(swimmerPage.getByText('Saved', { exact: true })).toBeVisible()
 
   await swimmerPage.reload()
   await expect(bioField).toHaveValue(nextBio)
@@ -157,11 +159,10 @@ test('parent portal communication preferences persist after refresh', async ({ b
   await expectLoaded(parentPage, 'Communications')
   await parentPage.getByRole('button', { name: 'Preferences' }).click()
 
-  const announcementsRow = parentPage.locator('div').filter({ hasText: 'Club Announcements' }).first()
-  const pushToggle = announcementsRow.locator('button').nth(1)
+  const pushToggle = parentPage.getByRole('switch', { name: 'Club Announcements push' })
   await pushToggle.click()
   await parentPage.getByRole('button', { name: 'Save Preferences' }).click()
-  await expect(parentPage.getByText('Saved')).toBeVisible()
+  await expect(parentPage.getByText('Saved', { exact: true })).toBeVisible()
 
   const prefsPayload = await getCommunicationPreferences(parentContext, orgId)
   const announcementPreference = prefsPayload.preferences?.find((preference) => preference.event_id === 'announcement')
@@ -170,9 +171,7 @@ test('parent portal communication preferences persist after refresh', async ({ b
   await parentPage.reload()
   await expectLoaded(parentPage, 'Communications')
   await parentPage.getByRole('button', { name: 'Preferences' }).click()
-  await expect
-    .poll(async () => pushToggle.evaluate((element) => (element as HTMLElement).style.background))
-    .toBe('rgb(235, 93, 30)')
+  await expect(pushToggle).toBeChecked()
 
   await parentContext.close()
   await adminContext.close()
@@ -269,8 +268,9 @@ test('swimmer portal cut qualifications render live time standard results', asyn
     reason: 'E2E seeded performance result',
   })
 
+  const swimmerUserId = await createLinkedSwimmerUser(adminContext, orgId, swimmer.id, fixture.email('swimmer'), 'Taylor', 'Fast')
   const swimmerContext = await newAuthedContext(browser, {
-    userId: fixture.userId('swimmer-performance'),
+    userId: swimmerUserId,
     orgId,
     householdId: household.id,
     roles: ['swimmer'],
@@ -280,7 +280,7 @@ test('swimmer portal cut qualifications render live time standard results', asyn
   const swimmerPage = await swimmerContext.newPage()
   await swimmerPage.goto('/swim/performance')
   await expectLoaded(swimmerPage, 'Performance')
-  await swimmerPage.getByRole('button', { name: 'Cut Qualification' }).click()
+  await swimmerPage.getByRole('button', { name: 'Cut qualification' }).click()
 
   await expect(swimmerPage.getByText('Qualified standards')).toBeVisible()
   await expect(swimmerPage.getByText(standard.standard_code)).toBeVisible()
@@ -335,15 +335,15 @@ test('parent portal meet event selections reload from live commitments', async (
   const parentPage = await parentContext.newPage()
   await parentPage.goto(`/portal/meets/${meet.id}`)
   await expectLoaded(parentPage, meet.name)
-  await expect(parentPage.getByText('Going')).toBeVisible()
-  await expect(parentPage.getByText('Step 2')).toBeVisible()
-  const eventRow = parentPage.locator('div').filter({ hasText: new RegExp(`Event ${events[0].event_number}`) }).first()
+  await expect(parentPage.getByText('Going', { exact: true })).toBeVisible()
+  await expect(parentPage.getByText('Pick events', { exact: true })).toBeVisible()
+  const eventRow = parentPage.getByText(`#${events[0].event_number}`, { exact: true }).locator('..')
   await expect(eventRow).toBeVisible()
   await expect(eventRow.locator('svg')).toBeVisible()
 
   await parentPage.reload()
   await expectLoaded(parentPage, meet.name)
-  await expect(parentPage.getByText('Going')).toBeVisible()
+  await expect(parentPage.getByText('Going', { exact: true })).toBeVisible()
   await expect(eventRow).toBeVisible()
   await expect(eventRow.locator('svg')).toBeVisible()
 

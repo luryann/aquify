@@ -163,7 +163,7 @@ func (h *GroupsHandlers) getGroup(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, groups.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to view groups.", nil)
 		default:
-			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
 		}
 		return
 	}
@@ -187,7 +187,7 @@ func (h *GroupsHandlers) listGroups(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, groups.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to list groups.", nil)
 		default:
-			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
 		}
 		return
 	}
@@ -261,7 +261,7 @@ func (h *GroupsHandlers) listEligibilityRules(w http.ResponseWriter, r *http.Req
 		case errors.Is(err, groups.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to view eligibility rules.", nil)
 		default:
-			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
 		}
 		return
 	}
@@ -296,7 +296,7 @@ func (h *GroupsHandlers) evaluateEligibility(w http.ResponseWriter, r *http.Requ
 		case errors.Is(err, groups.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to evaluate eligibility.", nil)
 		default:
-			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
 		}
 		return
 	}

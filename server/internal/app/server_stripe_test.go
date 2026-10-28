@@ -74,14 +74,26 @@ func postWebhook(router http.Handler, payload []byte, sigHeader string) *httptes
 func TestStripeWebhookDuplicateReplay(t *testing.T) {
 	t.Parallel()
 	stub := stripelib.NewStubClient()
-	router := newStripeRouter(t, nil, stub)
+	svc := billing.NewService()
+	p := adminPrincipal()
+	inv, err := svc.CreateInvoice("org-demo", "actor-1", p, billing.CreateInvoiceInput{HouseholdID: "hh-001", InvoiceNumber: "INV-DUP"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.AddInvoiceItem("org-demo", "actor-1", p, inv.ID, billing.AddInvoiceItemInput{Description: "Dues", Quantity: 1, UnitAmountCents: 1000, Category: "program_fee"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := svc.IssueInvoice("org-demo", "actor-1", p, inv.ID); err != nil {
+		t.Fatal(err)
+	}
+	router := newStripeRouter(t, svc, stub)
 
 	payload := buildWebhookPayload("evt_dup001", "payment_intent.succeeded", map[string]any{
 		"id":     "pi_xxx",
 		"amount": float64(1000),
 		"metadata": map[string]any{
 			"org_id":     "org-demo",
-			"invoice_id": "inv-xxx",
+			"invoice_id": inv.ID,
 		},
 	})
 
@@ -542,11 +554,21 @@ func TestCreatePaymentIntentRequiresAuth(t *testing.T) {
 func TestCreateCheckoutSessionSuccess(t *testing.T) {
 	t.Parallel()
 	stub := stripelib.NewStubClient()
-	router := newStripeRouter(t, nil, stub)
+	billingSvc := billing.NewService()
+	router := newStripeRouter(t, billingSvc, stub)
+	adminP := adminPrincipal()
+	seeded, _ := billingSvc.CreateInvoice("org-demo", "actor-1", adminP, billing.CreateInvoiceInput{
+		HouseholdID:   "hh-cs",
+		InvoiceNumber: "INV-CS-001",
+	})
+	billingSvc.AddInvoiceItem("org-demo", "actor-1", adminP, seeded.ID, billing.AddInvoiceItemInput{
+		Description: "Dues", Quantity: 1, UnitAmountCents: 20000, Category: "program_fee",
+	})
+	billingSvc.IssueInvoice("org-demo", "actor-1", adminP, seeded.ID)
 	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
 
 	body, _ := json.Marshal(map[string]any{
-		"invoice_id":   "inv-cs-001",
+		"invoice_id":   seeded.ID,
 		"amount_cents": 20000,
 		"success_url":  "https://example.com/success",
 		"cancel_url":   "https://example.com/cancel",
@@ -672,11 +694,21 @@ func TestParentCannotCreateCheckoutSessionForForeignInvoice(t *testing.T) {
 func TestCreateCheckoutSessionDuplicateIdempotencyKeyReturnsSameSession(t *testing.T) {
 	t.Parallel()
 	stub := stripelib.NewStubClient()
-	router := newStripeRouter(t, nil, stub)
+	billingSvc := billing.NewService()
+	router := newStripeRouter(t, billingSvc, stub)
+	adminP := adminPrincipal()
+	seeded, _ := billingSvc.CreateInvoice("org-demo", "actor-1", adminP, billing.CreateInvoiceInput{
+		HouseholdID:   "hh-cs",
+		InvoiceNumber: "INV-CS-001",
+	})
+	billingSvc.AddInvoiceItem("org-demo", "actor-1", adminP, seeded.ID, billing.AddInvoiceItemInput{
+		Description: "Dues", Quantity: 1, UnitAmountCents: 20000, Category: "program_fee",
+	})
+	billingSvc.IssueInvoice("org-demo", "actor-1", adminP, seeded.ID)
 	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
 
 	body, _ := json.Marshal(map[string]any{
-		"invoice_id":   "inv-cs-001",
+		"invoice_id":   seeded.ID,
 		"amount_cents": 20000,
 		"success_url":  "https://example.com/success",
 		"cancel_url":   "https://example.com/cancel",
@@ -902,5 +934,57 @@ func adminPrincipal() *appmiddleware.Principal {
 		UserID: "actor-1",
 		OrgID:  "org-demo",
 		Roles:  []string{"admin"},
+	}
+}
+
+func TestAdminCheckoutSessionRejectsUnknownInvoiceAndExcessAmount(t *testing.T) {
+	t.Parallel()
+	stub := stripelib.NewStubClient()
+	billingSvc := billing.NewService()
+	router := newStripeRouter(t, billingSvc, stub)
+	adminP := adminPrincipal()
+	inv, _ := billingSvc.CreateInvoice("org-demo", "actor-1", adminP, billing.CreateInvoiceInput{HouseholdID: "hh-x", InvoiceNumber: "INV-X"})
+	billingSvc.AddInvoiceItem("org-demo", "actor-1", adminP, inv.ID, billing.AddInvoiceItemInput{
+		Description: "Dues", Quantity: 1, UnitAmountCents: 5000, Category: "program_fee",
+	})
+	billingSvc.IssueInvoice("org-demo", "actor-1", adminP, inv.ID)
+	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
+
+	for name, payload := range map[string]map[string]any{
+		"unknown invoice": {"invoice_id": "missing", "amount_cents": 5000},
+		"excess amount":   {"invoice_id": inv.ID, "amount_cents": 5001},
+	} {
+		wantCode := http.StatusForbidden
+		if name == "unknown invoice" {
+			wantCode = http.StatusNotFound
+		}
+		payload["success_url"] = "https://example.com/success"
+		payload["cancel_url"] = "https://example.com/cancel"
+		body, _ := json.Marshal(payload)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/stripe/checkout-sessions", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Idempotency-Key", "reject-"+strings.ReplaceAll(name, " ", "-"))
+		req.Header.Set("X-Org-Id", "org-demo")
+		req.Header.Set("Authorization", "Bearer "+token)
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		if rr.Code != wantCode {
+			t.Fatalf("%s: expected %d, got %d: %s", name, wantCode, rr.Code, rr.Body.String())
+		}
+	}
+	if len(stub.CreatedSessions()) != 0 {
+		t.Fatalf("expected no sessions created, got %d", len(stub.CreatedSessions()))
+	}
+}
+
+func TestStripeWebhookInFlightRequestsRetry(t *testing.T) {
+	svc := billing.NewService()
+	if _, err := svc.RecordWebhookEvent("stripe", "org-demo", "evt_inflight", "payment_intent.succeeded", nil); err != nil {
+		t.Fatal(err)
+	}
+	router := newStripeRouter(t, svc, stripelib.NewStubClient())
+	payload := buildWebhookPayload("evt_inflight", "payment_intent.succeeded", map[string]any{"id": "pi_busy"})
+	if response := postWebhook(router, payload, ""); response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("in-flight delivery: got %d, want 503", response.Code)
 	}
 }

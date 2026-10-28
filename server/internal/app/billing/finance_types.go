@@ -284,6 +284,7 @@ type CreditEntry struct {
 	PaymentID         string    `json:"payment_id,omitempty"`
 	RefundID          string    `json:"refund_id,omitempty"`
 	Reason            string    `json:"reason,omitempty"`
+	StripeRef         string    `json:"-"` // idempotency key for Stripe-sourced movements
 	BalanceAfterCents int       `json:"balance_after_cents"`
 	CreatedAt         time.Time `json:"created_at"`
 	CreatedBy         string    `json:"created_by,omitempty"`

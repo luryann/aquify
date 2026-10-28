@@ -1,6 +1,7 @@
 import { expect, type APIRequestContext, type Browser, type BrowserContext, type Page } from '@playwright/test'
 
-const API_ORIGIN = 'http://localhost:8080'
+const API_ORIGIN = `http://localhost:${process.env.PLAYWRIGHT_API_PORT ?? '8080'}`
+const ADMIN_ORIGIN = `http://localhost:${process.env.PLAYWRIGHT_ADMIN_PORT ?? '3000'}`
 
 type SessionInput = {
   userId: string
@@ -82,7 +83,7 @@ function buildEmail(userId: string, orgId: string) {
 }
 
 export async function newAuthedContext(browser: Browser, input: SessionInput): Promise<BrowserContext> {
-  const context = await browser.newContext({ baseURL: 'http://localhost:3000' })
+  const context = await browser.newContext({ baseURL: ADMIN_ORIGIN })
   await issueSession(context, input)
   return context
 }
@@ -287,6 +288,25 @@ export async function listCommitmentEventSelections(
     orgId,
   )
   return response.selections ?? []
+}
+
+export async function createLinkedSwimmerUser(
+  context: BrowserContext,
+  orgId: string,
+  swimmerId: string,
+  email: string,
+  firstName: string,
+  lastName: string,
+) {
+  const { user_id: userId } = await requestWithOrg<{ user_id: string }>(context, 'POST', '/api/v1/users', orgId, {
+    email,
+    first_name: firstName,
+    last_name: lastName,
+    password: 'E2E-test-password-123!',
+    role: 'swimmer',
+  })
+  await requestWithOrg(context, 'POST', `/api/v1/users/${userId}/swimmer/link`, orgId, { swimmer_id: swimmerId })
+  return userId
 }
 
 export async function getUser(context: BrowserContext, orgId: string, userId: string) {

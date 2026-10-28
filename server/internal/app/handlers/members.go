@@ -112,7 +112,7 @@ func (h *MembershipHandlers) listHouseholds(w http.ResponseWriter, r *http.Reque
 		case errors.Is(err, members.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to list households.", nil)
 		default:
-			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
 		}
 		return
 	}
@@ -146,7 +146,7 @@ func (h *MembershipHandlers) getHousehold(w http.ResponseWriter, r *http.Request
 		case errors.Is(err, members.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to view households.", nil)
 		default:
-			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
 		}
 		return
 	}
@@ -234,7 +234,7 @@ func (h *MembershipHandlers) deleteHousehold(w http.ResponseWriter, r *http.Requ
 		case errors.Is(err, members.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only admin can delete households.", nil)
 		default:
-			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
 		}
 		return
 	}
@@ -318,7 +318,7 @@ func (h *MembershipHandlers) listContacts(w http.ResponseWriter, r *http.Request
 		case errors.Is(err, members.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to list contacts.", nil)
 		default:
-			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
 		}
 		return
 	}
@@ -419,7 +419,7 @@ func (h *MembershipHandlers) getSwimmer(w http.ResponseWriter, r *http.Request) 
 		case errors.Is(err, members.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to view swimmers.", nil)
 		default:
-			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
 		}
 		return
 	}
@@ -532,7 +532,7 @@ func (h *MembershipHandlers) deleteSwimmer(w http.ResponseWriter, r *http.Reques
 		case errors.Is(err, members.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only admin can delete swimmers.", nil)
 		default:
-			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
 		}
 		return
 	}

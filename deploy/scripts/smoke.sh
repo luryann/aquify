@@ -100,9 +100,9 @@ fi
 log "====== SMOKE TESTS: ${API_BASE_URL} ======"
 
 # Public health endpoints
-check "liveness"          "200" "${API_BASE_URL}/health/live"
-check "readiness"         "200" "${API_BASE_URL}/health/ready"
-check_body "liveness-ok"  "${API_BASE_URL}/health/live" '"status"'
+check "liveness"          "200" "${API_BASE_URL}/api/v1/health/live"
+check "readiness"         "200" "${API_BASE_URL}/api/v1/health/ready"
+check_body "liveness-ok"  "${API_BASE_URL}/api/v1/health/live" '"status"'
 
 # Metrics endpoint (may be 200 or 404 depending on firewall; accept either)
 METRICS_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "${API_BASE_URL}/metrics" || echo "000")
@@ -115,8 +115,8 @@ else
 fi
 
 # Unauthenticated endpoints return 401
-check "unauth-households" "401" "${API_BASE_URL}/api/v1/orgs/${SMOKE_ORG_ID}/households"
-check "unauth-swimmers"   "401" "${API_BASE_URL}/api/v1/orgs/${SMOKE_ORG_ID}/swimmers"
+check "unauth-households" "401" "${API_BASE_URL}/api/v1/members/households"
+check "unauth-swimmers"   "401" "${API_BASE_URL}/api/v1/members/swimmers"
 
 if [ -n "${SMOKE_AUTH_TOKEN}" ] && [ -n "${SMOKE_ORG_ID}" ]; then
   # Auth session check
@@ -124,26 +124,26 @@ if [ -n "${SMOKE_AUTH_TOKEN}" ] && [ -n "${SMOKE_ORG_ID}" ]; then
     "${AUTH_HEADER[@]}" "${ORG_HEADER[@]}"
 
   # Core member data
-  check "households"      "200" "${API_BASE_URL}/api/v1/orgs/${SMOKE_ORG_ID}/households" \
+  check "households"      "200" "${API_BASE_URL}/api/v1/members/households" \
     "${AUTH_HEADER[@]}" "${ORG_HEADER[@]}"
 
-  check "swimmers"        "200" "${API_BASE_URL}/api/v1/orgs/${SMOKE_ORG_ID}/swimmers" \
+  check "swimmers"        "200" "${API_BASE_URL}/api/v1/members/swimmers" \
     "${AUTH_HEADER[@]}" "${ORG_HEADER[@]}"
 
-  check "groups"          "200" "${API_BASE_URL}/api/v1/orgs/${SMOKE_ORG_ID}/groups" \
+  check "groups"          "200" "${API_BASE_URL}/api/v1/groups" \
     "${AUTH_HEADER[@]}" "${ORG_HEADER[@]}"
 
   # Meet management
-  check "meets"           "200" "${API_BASE_URL}/api/v1/orgs/${SMOKE_ORG_ID}/meets" \
+  check "meets"           "200" "${API_BASE_URL}/api/v1/meets" \
     "${AUTH_HEADER[@]}" "${ORG_HEADER[@]}"
 
   # Billing
-  check "invoices"        "200" "${API_BASE_URL}/api/v1/orgs/${SMOKE_ORG_ID}/invoices" \
+  check "invoices"        "200" "${API_BASE_URL}/api/v1/invoices" \
     "${AUTH_HEADER[@]}" "${ORG_HEADER[@]}"
 
   # Reporting
   check "report-membership" "200" \
-    "${API_BASE_URL}/api/v1/orgs/${SMOKE_ORG_ID}/reports/membership-status" \
+    "${API_BASE_URL}/api/v1/reports/membership-status" \
     "${AUTH_HEADER[@]}" "${ORG_HEADER[@]}"
 else
   log "SKIP authenticated checks (SMOKE_AUTH_TOKEN or SMOKE_ORG_ID not set)"

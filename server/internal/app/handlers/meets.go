@@ -260,7 +260,7 @@ func (h *MeetsHandlers) listMeets(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, meets.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to list meets.", nil)
 		default:
-			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
 		}
 		return
 	}
@@ -296,7 +296,7 @@ func (h *MeetsHandlers) getMeet(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, meets.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to view this meet.", nil)
 		default:
-			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
 		}
 		return
 	}
@@ -423,7 +423,7 @@ func (h *MeetsHandlers) listMeetSessions(w http.ResponseWriter, r *http.Request)
 		case errors.Is(err, meets.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to list sessions.", nil)
 		default:
-			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
 		}
 		return
 	}
@@ -525,7 +525,7 @@ func (h *MeetsHandlers) listMeetEvents(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, meets.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to list events.", nil)
 		default:
-			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
 		}
 		return
 	}
@@ -599,7 +599,7 @@ func (h *MeetsHandlers) listCommitments(w http.ResponseWriter, r *http.Request) 
 		case errors.Is(err, meets.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to list commitments.", nil)
 		default:
-			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
 		}
 		return
 	}
@@ -743,7 +743,7 @@ func (h *MeetsHandlers) listCommitmentEventSelections(w http.ResponseWriter, r *
 		case errors.Is(err, meets.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", err.Error(), nil)
 		default:
-			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
 		}
 		return
 	}
@@ -866,7 +866,7 @@ func (h *MeetsHandlers) listEntries(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, meets.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to list entries.", nil)
 		default:
-			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
 		}
 		return
 	}

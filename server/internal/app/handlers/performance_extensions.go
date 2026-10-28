@@ -73,7 +73,7 @@ func writePerfExtError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, performance.ErrRecordInvalid), errors.Is(err, performance.ErrGoalInvalid), errors.Is(err, performance.ErrRelayInvalid):
 		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "validation_error", err.Error(), nil)
 	default:
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
 	}
 }
 

@@ -157,6 +157,18 @@ func stripeScopeFromRequest(w http.ResponseWriter, r *http.Request) (*appmiddlew
 	return scopedRequestFromContext(w, r)
 }
 
+// stripeMetadata merges caller metadata under the trusted routing keys, which
+// always win so a caller cannot redirect a payment to another invoice or org.
+func stripeMetadata(extra map[string]string, invoiceID, orgID string) map[string]string {
+	meta := make(map[string]string, len(extra)+2)
+	for k, v := range extra {
+		meta[k] = v
+	}
+	meta["invoice_id"] = invoiceID
+	meta["org_id"] = orgID
+	return meta
+}
+
 func stripeIdempotencyKeyFromRequest(w http.ResponseWriter, r *http.Request) (string, bool) {
 	key := strings.TrimSpace(r.Header.Get(stripeIdempotencyHeader))
 	if key == "" {
@@ -167,13 +179,15 @@ func stripeIdempotencyKeyFromRequest(w http.ResponseWriter, r *http.Request) (st
 }
 
 func (h *StripeHandlers) authorizeCheckoutSessionPrincipal(principal *appmiddleware.Principal, orgID string, req *createCheckoutSessionRequest) (*billing.Invoice, bool) {
-	if err := h.billing.RequireBillingWriteAccess(principal); err == nil {
-		return nil, true
-	}
-
 	invoice, err := h.billing.GetInvoice(orgID, principal, req.InvoiceID)
 	if err != nil {
 		return nil, false
+	}
+	if err := h.billing.RequireBillingWriteAccess(principal); err == nil {
+		// Staff may pay down part of a balance, but never more than is due. This
+		// is a precheck only: invoice state can change before the session pays, and
+		// the webhook routes any resulting overpayment to household account credit.
+		return invoice, invoice.AmountDueCents > 0 && req.AmountCents <= invoice.AmountDueCents
 	}
 	if invoice.AmountDueCents <= 0 {
 		return nil, false
@@ -217,13 +231,7 @@ func (h *StripeHandlers) createPaymentIntent(w http.ResponseWriter, r *http.Requ
 	}
 
 	// Build metadata for Stripe so webhook handlers can route the event back.
-	meta := map[string]string{
-		"invoice_id": req.InvoiceID,
-		"org_id":     orgID,
-	}
-	for k, v := range req.Metadata {
-		meta[k] = v
-	}
+	meta := stripeMetadata(req.Metadata, req.InvoiceID, orgID)
 
 	result, err := h.client.CreatePaymentIntent(r.Context(), stripelib.PaymentIntentParams{
 		AmountCents:    req.AmountCents,
@@ -260,6 +268,14 @@ func (h *StripeHandlers) createCheckoutSession(w http.ResponseWriter, r *http.Re
 	}
 	invoice, ok := h.authorizeCheckoutSessionPrincipal(principal, orgID, &req)
 	if !ok {
+		// Staff may learn that an invoice doesn't exist; other roles get a
+		// uniform 403 so invoice IDs can't be probed.
+		if h.billing.RequireBillingWriteAccess(principal) == nil {
+			if _, err := h.billing.GetInvoice(orgID, principal, req.InvoiceID); errors.Is(err, billing.ErrInvoiceNotFound) {
+				httpx.WriteError(w, r, http.StatusNotFound, "invoice_not_found", "Invoice not found.", nil)
+				return
+			}
+		}
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient permissions.", nil)
 		return
 	}
@@ -268,13 +284,7 @@ func (h *StripeHandlers) createCheckoutSession(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	meta := map[string]string{
-		"invoice_id": req.InvoiceID,
-		"org_id":     orgID,
-	}
-	for k, v := range req.Metadata {
-		meta[k] = v
-	}
+	meta := stripeMetadata(req.Metadata, req.InvoiceID, orgID)
 
 	description := req.Description
 	if invoice != nil {
@@ -403,6 +413,10 @@ func (h *StripeHandlers) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	// orgID may be empty for events without metadata; RecordWebhookEvent accepts this.
 	eventOrgID := event.Metadata["org_id"]
 	isNew, err := h.billing.RecordWebhookEvent("stripe", eventOrgID, event.ID, event.Type, event.RawPayload)
+	if errors.Is(err, billing.ErrWebhookInFlight) {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, "webhook_in_flight", "Webhook processing is in progress; retry later.", nil)
+		return
+	}
 	if err != nil {
 		h.logger.Error("stripe webhook: failed to record event", "event_id", event.ID, "error", err)
 		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to persist webhook event.", nil)
@@ -417,15 +431,22 @@ func (h *StripeHandlers) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	// Dispatch to the appropriate domain handler.
 	processErr := h.dispatchWebhookEvent(r.Context(), event)
 
-	// Mark the event as processed (or failed) in the store.
-	h.billing.MarkWebhookProcessed("stripe", event.ID, processErr)
+	// Permanent failures (bad metadata, unknown/unpayable invoice) are stored
+	// and acknowledged: a retry could never succeed. Anything else is treated
+	// as transient so Stripe redelivers and the event is processed again.
+	retryable := processErr != nil && !isPermanentWebhookError(processErr)
+	if err := h.billing.MarkWebhookProcessed("stripe", event.ID, processErr, retryable); err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "webhook_outcome_failed", "Failed to persist webhook outcome; retry later.", err)
+		return
+	}
 
 	if processErr != nil {
 		h.logger.Error("stripe webhook: processing failed",
-			"event_id", event.ID, "event_type", event.Type, "error", processErr)
-		// Still return 200 to prevent Stripe from retrying events we already
-		// persisted (avoid flooding the webhook queue). The error is stored
-		// server-side only; Stripe does not use the response body.
+			"event_id", event.ID, "event_type", event.Type, "retryable", retryable, "error", processErr)
+		if retryable {
+			httpx.WriteError(w, r, http.StatusInternalServerError, "webhook_processing_failed", "Webhook processing failed; retry later.", processErr)
+			return
+		}
 		httpx.WriteJSON(w, http.StatusOK, map[string]any{
 			"status": "persisted_with_error",
 		})
@@ -433,6 +454,41 @@ func (h *StripeHandlers) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": "processed"})
+}
+
+var errWebhookUnattributable = errors.New("webhook event cannot be attributed")
+
+// permanentWebhookErrors are domain outcomes a redelivery can never change.
+// Anything outside this set (database, storage, context errors) is treated as
+// transient so Stripe redelivers it. ErrInvoiceNotFound and ErrPaymentNotFound
+// are deliberately absent: in a multi-instance deployment the instance that
+// received the webhook may not have seen the invoice or payment yet, and
+// dropping the event would lose a captured payment.
+var permanentWebhookErrors = []error{
+	errWebhookUnattributable,
+	billing.ErrInvoiceItemNotFound,
+	billing.ErrRefundNotFound,
+	billing.ErrInvalidTransition,
+	billing.ErrInvoiceNotDraft,
+	billing.ErrInvoiceNotIssuable,
+	billing.ErrInvoiceNotVoidable,
+	billing.ErrInvoiceNotWriteOffable,
+	billing.ErrPaymentExceedsBalance,
+	billing.ErrRefundExceedsPayment,
+	billing.ErrRefundRequiresReason,
+	billing.ErrHouseholdRequired,
+	billing.ErrCreditPaymentRefundToCredit,
+	billing.ErrInsufficientCredit,
+}
+
+func isPermanentWebhookError(err error) bool {
+	for _, permanent := range permanentWebhookErrors {
+		if errors.Is(err, permanent) {
+			return true
+		}
+	}
+	var validation *billing.FinanceValidationError
+	return errors.As(err, &validation)
 }
 
 // dispatchWebhookEvent routes a parsed Stripe event to the correct handler.
@@ -465,7 +521,7 @@ func (h *StripeHandlers) onPaymentIntentSucceeded(_ context.Context, event *stri
 	if orgID == "" || invoiceID == "" {
 		h.logger.Error("stripe webhook: payment_intent.succeeded missing metadata; payment cannot be attributed",
 			"payment_intent_id", paymentIntentID)
-		return fmt.Errorf("payment_intent.succeeded event %s missing org_id or invoice_id metadata — manual attribution required", paymentIntentID)
+		return fmt.Errorf("%w: payment_intent.succeeded event %s missing org_id or invoice_id metadata — manual attribution required", errWebhookUnattributable, paymentIntentID)
 	}
 
 	_, _, err := h.billing.HandleStripePaymentIntentSucceeded(
@@ -498,7 +554,7 @@ func (h *StripeHandlers) onChargeRefunded(_ context.Context, event *stripelib.We
 	if orgID == "" || invoiceID == "" {
 		h.logger.Error("stripe webhook: charge.refunded missing metadata; refund cannot be attributed",
 			"payment_intent_id", paymentIntentID)
-		return fmt.Errorf("charge.refunded event (payment_intent %s) missing org_id or invoice_id metadata — manual attribution required", paymentIntentID)
+		return fmt.Errorf("%w: charge.refunded event (payment_intent %s) missing org_id or invoice_id metadata — manual attribution required", errWebhookUnattributable, paymentIntentID)
 	}
 
 	// Extract the latest refund ID from the refunds list (if present).

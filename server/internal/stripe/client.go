@@ -493,6 +493,11 @@ func (c *SDKClient) CreateCheckoutSession(ctx context.Context, params CheckoutSe
 		SuccessURL: stripeapi.String(params.SuccessURL),
 		CancelURL:  stripeapi.String(params.CancelURL),
 		Metadata:   params.Metadata,
+		// Webhooks arrive as payment_intent.* events, so the PaymentIntent
+		// itself must carry the invoice/org metadata.
+		PaymentIntentData: &stripeapi.CheckoutSessionPaymentIntentDataParams{
+			Metadata: params.Metadata,
+		},
 		LineItems: []*stripeapi.CheckoutSessionLineItemParams{
 			{
 				Quantity: stripeapi.Int64(1),

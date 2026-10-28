@@ -34,8 +34,7 @@ COPY . .
 ARG BUILD_SHA=unknown
 ARG NEXT_PUBLIC_APP_ENV=production
 ARG NEXT_PUBLIC_AUTH_ENABLE_DEV_STUB_TOKENS=false
-# API URL is proxied via Next.js rewrites at runtime — do not bake in a hard URL.
-# Set NEXT_PUBLIC_API_URL only if you need to override the rewrite target.
+# API_INTERNAL_URL is read at request time by the API route proxy.
 
 ENV NEXT_PUBLIC_APP_ENV=${NEXT_PUBLIC_APP_ENV}
 ENV NEXT_PUBLIC_AUTH_ENABLE_DEV_STUB_TOKENS=${NEXT_PUBLIC_AUTH_ENABLE_DEV_STUB_TOKENS}

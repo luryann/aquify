@@ -123,6 +123,17 @@ func loadLocalEnvFiles(appEnv string) {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		if len(os.Args) != 3 {
+			os.Exit(1)
+		}
+		if err := checkHealth(os.Args[2]); err != nil {
+			slog.Error("healthcheck failed", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	loadLocalEnvFiles(os.Getenv("APP_ENV"))
 
 	cfg := app.LoadConfig()

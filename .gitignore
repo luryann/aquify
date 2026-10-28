@@ -4,6 +4,7 @@
 # Compiled Go binaries
 server/api
 server/worker
+server/.e2e/
 /bin/
 
 # Next.js build output

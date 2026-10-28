@@ -141,11 +141,23 @@ docker exec dare-production-dare-api-1 /dare-api migrate up
 ### Automatic staging deploys (on every push to `main`)
 
 1. GitHub Actions (`.github/workflows/deploy-staging.yml`) builds and pushes
-   `ghcr.io/dareaquatics/dare-api:sha-<short>` and `dare-admin:sha-<short>`.
+   `ghcr.io/luryann/dare-api:sha-<short>` and `dare-admin:sha-<short>`.
 2. SSH into the staging VPS and run `docker compose pull + up -d`.
-3. Wait up to 180s for `/health/live` to return 200.
+3. Wait up to 180s for `/api/v1/health/live` to return 200.
 4. Run `/opt/dare/scripts/smoke.sh`.
-5. Notify Slack on success or failure.
+5. Notify Slack on success or failure when `SLACK_WEBHOOK` is configured.
+
+Images default to the repository owner namespace so `GITHUB_TOKEN` can publish
+them. Both workflows accept the Actions variable `GHCR_NAMESPACE` to override
+that namespace (use lowercase). For a different owner, also configure the
+`GHCR_TOKEN` secret with package access to that owner; its account must match
+the workflow actor used for registry login. Private images require a registry
+login on each VPS with a token that can read those packages.
+
+Before the first deploy with this change, sync the updated Compose files to
+`/opt/dare` on both hosts. They use `${GHCR_NAMESPACE}` (required; compose fails if unset) for API, admin,
+and worker images. Workflows pass the selected namespace over SSH; manual
+deploys and rollbacks must export the same `GHCR_NAMESPACE`. To make manual `docker compose` and `scripts/rollback.sh` runs work, put `GHCR_NAMESPACE=<owner>` in `/opt/dare/.env` (compose reads it automatically).
 
 ### Manual production deploys
 
@@ -199,8 +211,8 @@ known-good image tag.
 
 | Service | URL | Notes |
 |---|---|---|
-| API liveness | `https://api.dare.club/health/live` | Public |
-| API readiness | `https://api.dare.club/health/ready` | Public |
+| API liveness | `https://api.dare.club/api/v1/health/live` | Public |
+| API readiness | `https://api.dare.club/api/v1/health/ready` | Public |
 | Prometheus | `http://vps-ip:9090` | Firewalled, VPN/SSH tunnel required |
 | Grafana | `https://grafana.dare.club` | Admin login required |
 | Keycloak Admin | `https://auth.dare.club/admin` | Admin login required |
@@ -251,3 +263,13 @@ journalctl -u dare-backup -n 100
 # Check container status
 cd /opt/dare && docker compose -f docker-compose.production.yml ps
 ```
+
+### Application health and internal API routing
+
+API containers use `/dare-api healthcheck http://localhost:8080/api/v1/health/live`;
+this works in the distroless image without a shell or wget. Admin containers
+serve `/api/health`. Public API health paths include the `/api/v1` prefix.
+
+The admin server proxies `/api/v1/*` using `API_INTERNAL_URL` at request time.
+Compose sets it to `http://dare-api:8080`; set it explicitly for other hosting
+layouts. It is a server-only setting and can change when promoting an image.

@@ -20,10 +20,19 @@ type dbExec interface {
 // Repository handles DB persistence for the billing domain.
 type Repository struct {
 	pool *pgxpool.Pool
+	tx   pgx.Tx
 }
 
 func newRepository(pool *pgxpool.Pool) *Repository {
 	return &Repository{pool: pool}
+}
+
+// db routes all reads and writes through the active transaction, when present.
+func (r *Repository) db() dbExec {
+	if r.tx != nil {
+		return r.tx
+	}
+	return r.pool
 }
 
 func nullableString(s string) interface{} {
@@ -36,7 +45,7 @@ func nullableString(s string) interface{} {
 // ─── Invoices ─────────────────────────────────────────────────────────────────
 
 func (r *Repository) UpsertInvoice(ctx context.Context, inv *Invoice) error {
-	return upsertInvoice(ctx, r.pool, inv)
+	return upsertInvoice(ctx, r.db(), inv)
 }
 
 func upsertInvoice(ctx context.Context, q dbExec, inv *Invoice) error {
@@ -72,7 +81,7 @@ func upsertInvoice(ctx context.Context, q dbExec, inv *Invoice) error {
 }
 
 func (r *Repository) LoadInvoices(ctx context.Context) ([]*Invoice, error) {
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.db().Query(ctx, `
 		SELECT id::text, org_id::text, COALESCE(household_id::text, ''),
 		       invoice_number, status, subtotal_cents, tax_cents, total_cents,
 		       amount_paid_cents, amount_due_cents,
@@ -105,7 +114,7 @@ func (r *Repository) LoadInvoices(ctx context.Context) ([]*Invoice, error) {
 // ─── Invoice Items ────────────────────────────────────────────────────────────
 
 func (r *Repository) UpsertInvoiceItem(ctx context.Context, item *InvoiceItem) error {
-	return upsertInvoiceItem(ctx, r.pool, item)
+	return upsertInvoiceItem(ctx, r.db(), item)
 }
 
 func upsertInvoiceItem(ctx context.Context, q dbExec, item *InvoiceItem) error {
@@ -130,12 +139,12 @@ func upsertInvoiceItem(ctx context.Context, q dbExec, item *InvoiceItem) error {
 }
 
 func (r *Repository) DeleteInvoiceItem(ctx context.Context, itemID string) error {
-	_, err := r.pool.Exec(ctx, `DELETE FROM invoice_items WHERE id = $1::uuid`, itemID)
+	_, err := r.db().Exec(ctx, `DELETE FROM invoice_items WHERE id = $1::uuid`, itemID)
 	return err
 }
 
 func (r *Repository) LoadInvoiceItems(ctx context.Context) ([]*InvoiceItem, error) {
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.db().Query(ctx, `
 		SELECT id::text, org_id::text, invoice_id::text,
 		       description, quantity, unit_amount_cents, COALESCE(category, ''),
 		       COALESCE(swimmer_id::text, ''), COALESCE(meet_id::text, ''),
@@ -165,7 +174,7 @@ func (r *Repository) LoadInvoiceItems(ctx context.Context) ([]*InvoiceItem, erro
 // ─── Payments ────────────────────────────────────────────────────────────────
 
 func (r *Repository) UpsertPayment(ctx context.Context, p *Payment) error {
-	return upsertPayment(ctx, r.pool, p)
+	return upsertPayment(ctx, r.db(), p)
 }
 
 func upsertPayment(ctx context.Context, q dbExec, p *Payment) error {
@@ -192,7 +201,7 @@ func upsertPayment(ctx context.Context, q dbExec, p *Payment) error {
 }
 
 func (r *Repository) LoadPayments(ctx context.Context) ([]*Payment, error) {
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.db().Query(ctx, `
 		SELECT id::text, org_id::text, invoice_id::text,
 		       amount_cents, payment_method, status,
 		       COALESCE(stripe_payment_intent_id, ''), COALESCE(external_ref, ''), COALESCE(notes, ''),
@@ -221,7 +230,7 @@ func (r *Repository) LoadPayments(ctx context.Context) ([]*Payment, error) {
 // ─── Refunds ──────────────────────────────────────────────────────────────────
 
 func (r *Repository) UpsertRefund(ctx context.Context, ref *Refund) error {
-	return upsertRefund(ctx, r.pool, ref)
+	return upsertRefund(ctx, r.db(), ref)
 }
 
 func upsertRefund(ctx context.Context, q dbExec, ref *Refund) error {
@@ -244,7 +253,7 @@ func upsertRefund(ctx context.Context, q dbExec, ref *Refund) error {
 }
 
 func (r *Repository) LoadRefunds(ctx context.Context) ([]*Refund, error) {
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.db().Query(ctx, `
 		SELECT id::text, org_id::text, invoice_id::text, payment_id::text,
 		       amount_cents, reason, status, COALESCE(stripe_refund_id, ''),
 		       processed_at, rejected_at, created_at, updated_at
@@ -271,7 +280,7 @@ func (r *Repository) LoadRefunds(ctx context.Context) ([]*Refund, error) {
 // ─── Ledger Events (append-only INSERT) ──────────────────────────────────────
 
 func (r *Repository) InsertLedgerEvent(ctx context.Context, ev *LedgerEvent) error {
-	return insertLedgerEvent(ctx, r.pool, ev)
+	return insertLedgerEvent(ctx, r.db(), ev)
 }
 
 func insertLedgerEvent(ctx context.Context, q dbExec, ev *LedgerEvent) error {
@@ -290,7 +299,7 @@ func insertLedgerEvent(ctx context.Context, q dbExec, ev *LedgerEvent) error {
 }
 
 func (r *Repository) LoadLedgerEvents(ctx context.Context) ([]*LedgerEvent, error) {
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.db().Query(ctx, `
 		SELECT id::text, org_id::text, event_type,
 		       COALESCE(invoice_id::text, ''), COALESCE(payment_id::text, ''), COALESCE(refund_id::text, ''),
 		       COALESCE(household_id, ''), amount_cents, COALESCE(description, ''),
@@ -317,7 +326,7 @@ func (r *Repository) LoadLedgerEvents(ctx context.Context) ([]*LedgerEvent, erro
 }
 
 func (r *Repository) UpsertHouseholdAutopayProfile(ctx context.Context, profile *HouseholdAutopayProfile) error {
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.db().Exec(ctx, `
 		INSERT INTO household_autopay_profiles (
 			id, org_id, household_id, enabled, payment_method_type, payment_method_brand,
 			payment_method_last4, payment_method_label, payment_method_external_ref,
@@ -357,7 +366,7 @@ func (r *Repository) UpsertHouseholdAutopayProfile(ctx context.Context, profile 
 }
 
 func (r *Repository) LoadHouseholdAutopayProfiles(ctx context.Context) ([]*HouseholdAutopayProfile, error) {
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.db().Query(ctx, `
 		SELECT id::text, org_id::text, household_id, enabled, payment_method_type,
 		       COALESCE(payment_method_brand, ''), COALESCE(payment_method_last4, ''),
 		       payment_method_label, COALESCE(payment_method_external_ref, ''),

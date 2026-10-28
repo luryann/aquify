@@ -64,6 +64,7 @@ var (
 	ErrRefundExceedsPayment         = errors.New("refund amount exceeds original payment amount")
 	ErrRefundRequiresReason         = errors.New("a reason is required for refund requests")
 	ErrDuplicateInvoiceNumber       = errors.New("invoice number already exists for this organisation")
+	ErrWebhookInFlight              = errors.New("webhook is being processed")
 	ErrWebhookNotFound              = errors.New("webhook event not found")
 	ErrAutopayPaymentMethodRequired = errors.New("autopay payment method metadata is required")
 )
@@ -179,7 +180,11 @@ type WebhookEventRecord struct {
 	Processed    bool            `json:"processed"`
 	ProcessedAt  *time.Time      `json:"processed_at,omitempty"`
 	ErrorMessage string          `json:"error_message,omitempty"`
+	Retryable    bool            `json:"retryable,omitempty"` // failed transiently; a redelivery is reprocessed
 	CreatedAt    time.Time       `json:"created_at"`
+
+	// ProcessingUntil is the lease of the delivery currently handling the event.
+	ProcessingUntil *time.Time `json:"processing_until,omitempty"`
 }
 
 // ReconciliationReport compares the internal billing ledger (Stripe payments)
@@ -322,6 +327,7 @@ type Service struct {
 	payments          map[string][]*Payment     // invoiceID → []Payment
 	paymentsByID      map[string]*Payment       // paymentID → Payment
 	stripeIntentIndex map[string]*Payment       // stripePaymentIntentID → Payment
+	stripeCreditIndex map[string]bool           // orgID|paymentIntentID → credited
 	refunds           map[string][]*Refund      // invoiceID → []Refund
 	refundsByID       map[string]*Refund        // refundID → Refund
 	ledger            []*LedgerEvent
@@ -425,10 +431,10 @@ func (s *Service) reloadLocked(ctx context.Context) error {
 	// hides core invoice data.
 	finance, err := s.repo.loadFinanceState(ctx)
 	if err != nil {
-		slog.Error("billing: failed to load finance state from DB", "err", err)
-		return nil
+		return fmt.Errorf("billing: load finance state: %w", err)
 	}
 	s.finance = finance
+	s.rebuildStripeCreditIndexLocked()
 	return nil
 }
 
@@ -1739,58 +1745,99 @@ func (s *Service) SnapshotLedgerEvents(orgID string) []LedgerEvent {
 // webhookKey returns the deduplication key for a webhook event.
 func webhookKey(provider, eventID string) string { return provider + "|" + eventID }
 
-// RecordWebhookEvent persists a new webhook event and returns true when the
-// event is new (not a duplicate). If the event ID has already been seen for
-// this provider, it returns (false, nil) — the caller should skip processing
-// and respond 200 OK to Stripe to acknowledge safe receipt.
+// RecordWebhookEvent claims a webhook event for processing and returns true
+// when the caller should process it. It returns (false, nil) when the event is
+// already processed or failed permanently. An active lease returns
+// ErrWebhookInFlight so the caller requests a retry. A transient failure or
+// an expired lease (crash mid-flight) is re-claimed on redelivery; the domain
+// handlers are idempotent. With a database the claim is atomic across instances.
 func (s *Service) RecordWebhookEvent(provider, orgID, eventID, eventType string, payload json.RawMessage) (isNew bool, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	key := webhookKey(provider, eventID)
-	if _, exists := s.webhookEvents[key]; exists {
-		return false, nil
-	}
+	now := time.Now().UTC()
+	lease := now.Add(webhookLease)
 
 	cp := make(json.RawMessage, len(payload))
 	copy(cp, payload)
-
-	s.webhookEvents[key] = &WebhookEventRecord{
-		ID:        newID(),
+	rec := &WebhookEventRecord{
+		ID:        s.newID(),
 		OrgID:     orgID,
 		Provider:  provider,
 		EventID:   eventID,
 		EventType: eventType,
 		Payload:   cp,
-		Processed: false,
-		CreatedAt: time.Now().UTC(),
+		CreatedAt: now,
 	}
+
+	if s.repo != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		claimed, err := s.repo.claimWebhookEvent(ctx, rec)
+		if err != nil {
+			return false, err
+		}
+		if !claimed {
+			return false, nil
+		}
+		rec.ProcessingUntil = &lease
+		s.webhookEvents[key] = rec
+		return true, nil
+	}
+
+	if existing, exists := s.webhookEvents[key]; exists {
+		if existing.Processed || (existing.ErrorMessage != "" && !existing.Retryable) {
+			return false, nil
+		}
+		if existing.ProcessingUntil != nil && existing.ProcessingUntil.After(now) {
+			return false, ErrWebhookInFlight
+		}
+		existing.ProcessingUntil = &lease
+		return true, nil
+	}
+	rec.ProcessingUntil = &lease
+	s.webhookEvents[key] = rec
 	return true, nil
 }
 
-// MarkWebhookProcessed updates the processed state of a webhook event.
-// If processErr is non-nil, the error message is stored and processed=false.
-func (s *Service) MarkWebhookProcessed(provider, eventID string, processErr error) {
+// MarkWebhookProcessed records the outcome of a claimed webhook delivery and
+// releases its lease. A non-nil processErr stores the message with
+// processed=false; retryable says whether a redelivery should be reprocessed.
+func (s *Service) MarkWebhookProcessed(provider, eventID string, processErr error, retryable bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	key := webhookKey(provider, eventID)
 	rec, ok := s.webhookEvents[key]
 	if !ok {
-		return
+		rec = &WebhookEventRecord{ID: s.newID(), Provider: provider, EventID: eventID, CreatedAt: time.Now().UTC()}
+		s.webhookEvents[key] = rec
 	}
 	now := time.Now().UTC()
+	rec.ProcessingUntil = nil
 	if processErr != nil {
 		rec.Processed = false
+		rec.ProcessedAt = nil
 		rec.ErrorMessage = processErr.Error()
+		rec.Retryable = retryable
 	} else {
 		rec.Processed = true
 		rec.ProcessedAt = &now
 		rec.ErrorMessage = ""
+		rec.Retryable = false
 	}
+	if s.repo != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := s.repo.finishWebhookEvent(ctx, rec); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-// ListWebhookEvents returns all webhook event records visible to the admin role.
+// ListWebhookEvents returns webhook event records visible to the admin role.
 func (s *Service) ListWebhookEvents(orgID string, principal *appmiddleware.Principal) ([]*WebhookEventRecord, error) {
 	if err := s.requireLedgerReadAccess(principal); err != nil {
 		return nil, err
@@ -1798,6 +1845,15 @@ func (s *Service) ListWebhookEvents(orgID string, principal *appmiddleware.Princ
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
+	if s.repo != nil {
+		if orgID != "" && !isUUIDString(orgID) {
+			return nil, nil
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return s.repo.loadWebhookEvents(ctx, orgID, 500)
+	}
 
 	var out []*WebhookEventRecord
 	for _, rec := range s.webhookEvents {
@@ -1825,21 +1881,65 @@ func (s *Service) HandleStripePaymentIntentSucceeded(
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if s.repo != nil && s.repo.tx == nil {
+		var result *Payment
+		var event *LedgerEvent
+		err := s.stripeTransactionLocked(orgID, invoiceID, func(staged *Service) error {
+			var err error
+			result, event, err = staged.HandleStripePaymentIntentSucceeded(orgID, paymentIntentID, invoiceID, amountCents, actorID)
+			return err
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		return result, event, nil
+	}
+
 	// Idempotency: skip if a payment with this intent ID already exists.
 	if existing, ok := s.stripeIntentIndex[paymentIntentID]; ok {
+		// A retry after a failed overpayment-credit write must still create the
+		// credit, otherwise the household never receives the excess.
+		if excess := amountCents - existing.AmountCents; excess > 0 {
+			if inv, found := s.invoices[existing.InvoiceID]; found && strings.TrimSpace(inv.HouseholdID) != "" {
+				if err := s.ensureStripeCreditLocked(inv, paymentIntentID, existing.ID, excess, actorID,
+					fmt.Sprintf("Overpayment on invoice %s", inv.InvoiceNumber)); err != nil {
+					return nil, nil, err
+				}
+			}
+		}
 		return existing, nil, nil
+	}
+
+	// A payment that was routed wholly to account credit leaves no Payment row;
+	// a redelivery must not re-evaluate the invoice (it may be payable again).
+	if s.stripeCreditIndex[orgID+"|"+paymentIntentID] {
+		return nil, nil, nil
 	}
 
 	inv, ok := s.invoices[invoiceID]
 	if !ok || inv.OrgID != orgID {
 		return nil, nil, ErrInvoiceNotFound
 	}
-	if inv.Status != "issued" && inv.Status != "partially_paid" {
-		return nil, nil, ErrInvalidTransition
+	// The money has already been captured by Stripe, so a payment that can no
+	// longer be applied to the invoice (settled, voided, or larger than the
+	// balance) goes to the household's account credit instead of being dropped.
+	payable := inv.Status == "issued" || inv.Status == "partially_paid"
+	applyCents, excessCents := amountCents, 0
+	if !payable {
+		applyCents, excessCents = 0, amountCents
+	} else if amountCents > inv.AmountDueCents {
+		applyCents, excessCents = inv.AmountDueCents, amountCents-inv.AmountDueCents
 	}
-	if amountCents > inv.AmountDueCents {
+	if excessCents > 0 && strings.TrimSpace(inv.HouseholdID) == "" {
+		if !payable {
+			return nil, nil, ErrInvalidTransition
+		}
 		return nil, nil, ErrPaymentExceedsBalance
 	}
+	if applyCents == 0 {
+		return s.creditStripeExcessLocked(inv, paymentIntentID, excessCents, actorID)
+	}
+	amountCents = applyCents
 
 	now := time.Now().UTC()
 	payment := &Payment{
@@ -1882,8 +1982,112 @@ func (s *Service) HandleStripePaymentIntentSucceeded(
 	if err != nil {
 		return nil, nil, err
 	}
+	if excessCents > 0 {
+		if err := s.ensureStripeCreditLocked(inv, paymentIntentID, payment.ID, excessCents, actorID,
+			fmt.Sprintf("Overpayment on invoice %s", inv.InvoiceNumber)); err != nil {
+			return nil, nil, err
+		}
+	}
 
 	return payment, ev, nil
+}
+
+// creditStripeExcessLocked credits a captured Stripe payment that cannot be
+// applied to its invoice to the household's account credit. It is idempotent
+// per PaymentIntent. Must be called with s.mu held (write).
+func (s *Service) creditStripeExcessLocked(inv *Invoice, paymentIntentID string, cents int, actorID string) (*Payment, *LedgerEvent, error) {
+	if err := s.ensureStripeCreditLocked(inv, paymentIntentID, "", cents, actorID,
+		fmt.Sprintf("Payment on %s invoice %s", inv.Status, inv.InvoiceNumber)); err != nil {
+		return nil, nil, err
+	}
+	return nil, nil, nil
+}
+
+// ensureStripeCreditLocked credits cents to the invoice's household at most
+// once per PaymentIntent. Idempotency is keyed on stripeCreditIndex (rebuilt
+// from the credit entries' StripeRef on load) and backed by a unique index.
+// Must be called with s.mu held (write).
+func (s *Service) ensureStripeCreditLocked(inv *Invoice, paymentIntentID, paymentID string, cents int, actorID, reason string) error {
+	if s.stripeCreditIndex == nil {
+		s.stripeCreditIndex = make(map[string]bool)
+	}
+	key := inv.OrgID + "|" + paymentIntentID
+	if s.stripeCreditIndex[key] {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if _, err := s.addCreditEntryLocked(ctx, creditEntryParams{
+		OrgID: inv.OrgID, HouseholdID: inv.HouseholdID, AmountCents: cents, Kind: CreditKindOverpayment,
+		InvoiceID: inv.ID, PaymentID: paymentID, ActorID: actorID,
+		Reason: reason, StripeRef: paymentIntentID,
+	}); err != nil {
+		return fmt.Errorf("record stripe credit: %w", err)
+	}
+	s.stripeCreditIndex[key] = true
+	return nil
+}
+
+// stripeRefundRef is the StripeRef of a credit reversal for one Stripe refund.
+func stripeRefundRef(paymentIntentID, stripeRefundID string) string {
+	return "refund|" + paymentIntentID + "|" + stripeRefundID
+}
+
+// reverseStripeCreditLocked takes back account credit created from a Stripe
+// payment (one with no Payment row) after Stripe refunds the charge. It is
+// idempotent per refund and never drives the balance negative. Must be called
+// with s.mu held (write).
+func (s *Service) reverseStripeCreditLocked(inv *Invoice, paymentIntentID, stripeRefundID string, refundedCents int, actorID string) error {
+	var credited, reversed int
+	refRef := stripeRefundRef(paymentIntentID, stripeRefundID)
+	prefix := stripeRefundRef(paymentIntentID, "")
+	for _, c := range s.finance.credits {
+		if c.OrgID != inv.OrgID || c.StripeRef == "" {
+			continue
+		}
+		switch {
+		case c.StripeRef == paymentIntentID:
+			credited += c.AmountCents
+		case c.StripeRef == refRef:
+			return nil // this refund was already reversed
+		case strings.HasPrefix(c.StripeRef, prefix):
+			reversed += -c.AmountCents
+		}
+	}
+	if credited == 0 {
+		return ErrPaymentNotFound
+	}
+	cents := refundedCents
+	if cents > credited {
+		cents = credited
+	}
+	cents -= reversed
+	if bal := s.finance.balances[balanceKey(inv.OrgID, inv.HouseholdID)]; cents > bal {
+		cents = bal
+	}
+	if cents <= 0 {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if _, err := s.addCreditEntryLocked(ctx, creditEntryParams{
+		OrgID: inv.OrgID, HouseholdID: inv.HouseholdID, AmountCents: cents, Kind: CreditKindManualDebit,
+		InvoiceID: inv.ID, ActorID: actorID, StripeRef: refRef,
+		Reason: fmt.Sprintf("Stripe refunded payment %s", paymentIntentID),
+	}); err != nil {
+		return fmt.Errorf("reverse stripe credit: %w", err)
+	}
+	return nil
+}
+
+// rebuildStripeCreditIndexLocked repopulates stripeCreditIndex from the credit trail.
+func (s *Service) rebuildStripeCreditIndexLocked() {
+	s.stripeCreditIndex = make(map[string]bool)
+	for _, c := range s.finance.credits {
+		if c.Kind == CreditKindOverpayment && c.StripeRef != "" {
+			s.stripeCreditIndex[c.OrgID+"|"+c.StripeRef] = true
+		}
+	}
 }
 
 // HandleStripePaymentIntentFailed marks a previously-recorded pending payment
@@ -1914,11 +2118,8 @@ func (s *Service) HandleStripePaymentIntentFailed(paymentIntentID string) error 
 
 // HandleStripeChargeRefunded processes a charge.refunded webhook: it creates a
 // refund on the billing invoice associated with the given paymentIntentID.
-// NOTE: This method acquires s.mu.Lock() for the entire operation and therefore
-// CANNOT delegate to CreateRefund (which also acquires s.mu.Lock()). The refund
-// creation logic is intentionally duplicated here. When migrating to a real DB
-// layer, use a shared internal helper that does NOT acquire the lock (lock at
-// the service boundary only).
+// amountRefundedCents is the cumulative charge refund total. Database-backed
+// processing runs against fresh state in one transaction.
 func (s *Service) HandleStripeChargeRefunded(
 	orgID, paymentIntentID, invoiceID string,
 	amountRefundedCents int,
@@ -1927,40 +2128,74 @@ func (s *Service) HandleStripeChargeRefunded(
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if s.repo != nil && s.repo.tx == nil {
+		var result *Refund
+		var event *LedgerEvent
+		err := s.stripeTransactionLocked(orgID, invoiceID, func(staged *Service) error {
+			var err error
+			result, event, err = staged.HandleStripeChargeRefunded(orgID, paymentIntentID, invoiceID, amountRefundedCents, stripeRefundID, reason, actorID)
+			return err
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		return result, event, nil
+	}
+
 	inv, ok := s.invoices[invoiceID]
 	if !ok || inv.OrgID != orgID {
 		return nil, nil, ErrInvoiceNotFound
 	}
 
 	payment, ok := s.stripeIntentIndex[paymentIntentID]
-	if !ok {
+	credited := 0
+	for _, credit := range s.finance.credits {
+		if credit.OrgID == orgID && credit.StripeRef == paymentIntentID {
+			credited += credit.AmountCents
+		}
+	}
+	if !ok && credited == 0 {
 		return nil, nil, ErrPaymentNotFound
 	}
-
-	// Check retries before invoice status: a full refund makes the invoice
-	// terminal, but redelivery must still succeed without another ledger entry.
-	for _, r := range s.refunds[invoiceID] {
-		if r.StripeRefundID == stripeRefundID {
-			return r, nil, nil
-		}
+	if ok && (payment.OrgID != orgID || payment.InvoiceID != invoiceID) {
+		return nil, nil, ErrPaymentNotFound
 	}
-
-	validRefundStatuses := map[string]bool{
-		"paid": true, "partially_paid": true, "refunded_partial": true,
+	captured := credited
+	if ok {
+		captured += payment.AmountCents
 	}
-	if !validRefundStatuses[inv.Status] {
-		return nil, nil, ErrInvalidTransition
-	}
-
-	// Sum existing refunds for this payment.
-	alreadyRefunded := 0
-	for _, r := range s.refunds[invoiceID] {
-		if r.PaymentID == payment.ID && (r.Status == "pending" || r.Status == "approved" || r.Status == "processed") {
-			alreadyRefunded += r.AmountCents
-		}
-	}
-	if alreadyRefunded+amountRefundedCents > payment.AmountCents {
+	if amountRefundedCents <= 0 || amountRefundedCents > captured {
 		return nil, nil, ErrRefundExceedsPayment
+	}
+	// charge.amount_refunded is cumulative. Allocate refunds to the invoice
+	// first, then reverse any overpayment credit. Each path records only its delta.
+	paymentTarget := 0
+	if ok {
+		paymentTarget = min(amountRefundedCents, payment.AmountCents)
+	}
+	creditTarget := amountRefundedCents - paymentTarget
+	if creditTarget > 0 {
+		if err := s.reverseStripeCreditLocked(inv, paymentIntentID, fmt.Sprintf("cumulative-%d", amountRefundedCents), creditTarget, actorID); err != nil {
+			return nil, nil, err
+		}
+	}
+	if !ok {
+		return nil, nil, nil
+	}
+	alreadyRefunded := 0
+	var existing *Refund
+	for _, refund := range s.refunds[invoiceID] {
+		if refund.PaymentID == payment.ID && refund.Status == "processed" {
+			alreadyRefunded += refund.AmountCents
+			existing = refund
+		}
+	}
+	if paymentTarget <= alreadyRefunded {
+		return existing, nil, nil
+	}
+	amountRefundedCents = paymentTarget - alreadyRefunded
+	if stripeRefundID == "" {
+		stripeRefundID = fmt.Sprintf("%s-cumulative-%d", paymentIntentID, paymentTarget)
 	}
 
 	if reason == "" {

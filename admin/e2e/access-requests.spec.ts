@@ -28,6 +28,7 @@ test('public registration requests can be approved from the admin approvals queu
     userId: fixture.userId('admin-approve'),
     orgId,
     roles: ['admin'],
+    mfaAuthenticated: true,
     name: 'Approval Admin',
   })
 
@@ -56,7 +57,7 @@ test('public registration requests can be rejected from the admin approvals queu
   await page.getByLabel('First name').fill('Riley')
   await page.getByLabel('Last name').fill('Reject')
   await page.getByLabel('Email address').fill(email)
-  await page.getByRole('button', { name: /Admin Staff/ }).click()
+  await page.getByRole('button', { name: /Coach/ }).click()
 
   const registerResponsePromise = page.waitForResponse((response) =>
     response.url().endsWith('/api/v1/register') && response.request().method() === 'POST',
@@ -70,6 +71,7 @@ test('public registration requests can be rejected from the admin approvals queu
     userId: fixture.userId('admin-reject'),
     orgId,
     roles: ['admin'],
+    mfaAuthenticated: true,
     name: 'Reject Admin',
   })
 

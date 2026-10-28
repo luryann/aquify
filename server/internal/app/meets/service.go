@@ -732,14 +732,46 @@ func deriveMeetEventsFromParseResult(result *meetfiles.ParseResult) []meetfiles.
 	}
 
 	sort.Slice(out, func(i, j int) bool {
-		ni, erri := strconv.Atoi(out[i].EventNumber)
-		nj, errj := strconv.Atoi(out[j].EventNumber)
-		if erri == nil && errj == nil && ni != nj {
-			return ni < nj
-		}
-		return out[i].EventNumber < out[j].EventNumber
+		return eventNumberLess(out[i].EventNumber, out[j].EventNumber)
 	})
 	return out
+}
+
+// sortByID orders a map-derived slice by ID so paginated lists are stable
+// across requests (map iteration order is random).
+func sortByID[T any](items []T, id func(T) string) {
+	sort.Slice(items, func(i, j int) bool { return id(items[i]) < id(items[j]) })
+}
+
+// eventNumberLess orders event numbers by leading integer, then by suffix
+// ("9" < "10" < "10A"); numberless values sort last. It is a strict weak
+// ordering, unlike mixing numeric and string comparison.
+func eventNumberLess(a, b string) bool {
+	na, sa, oka := splitEventNumber(a)
+	nb, sb, okb := splitEventNumber(b)
+	if oka != okb {
+		return oka
+	}
+	if oka && na != nb {
+		return na < nb
+	}
+	return sa < sb
+}
+
+func splitEventNumber(v string) (int, string, bool) {
+	v = strings.TrimSpace(v)
+	end := 0
+	for end < len(v) && v[end] >= '0' && v[end] <= '9' {
+		end++
+	}
+	if end == 0 {
+		return 0, v, false
+	}
+	n, err := strconv.Atoi(v[:end])
+	if err != nil {
+		return 0, v, false
+	}
+	return n, v[end:], true
 }
 
 // sdifAgeGroupBounds parses an SDIF-style 4-digit age group field (e.g.
@@ -1175,6 +1207,13 @@ func (s *Service) ListMeets(principal *appmiddleware.Principal, orgID string) ([
 			result = append(result, m)
 		}
 	}
+	// Map iteration order is random; pagination needs a stable order.
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].StartDate != result[j].StartDate {
+			return result[i].StartDate > result[j].StartDate
+		}
+		return result[i].ID < result[j].ID
+	})
 	return result, nil
 }
 
@@ -1336,6 +1375,7 @@ func (s *Service) ListMeetSessions(principal *appmiddleware.Principal, orgID, me
 			result = append(result, sess)
 		}
 	}
+	sortByID(result, func(v MeetSession) string { return v.ID })
 	return result, nil
 }
 
@@ -1453,6 +1493,7 @@ func (s *Service) ListMeetEvents(principal *appmiddleware.Principal, orgID, meet
 			result = append(result, ev)
 		}
 	}
+	sortByID(result, func(v MeetEvent) string { return v.ID })
 	return result, nil
 }
 
@@ -1647,6 +1688,7 @@ func (s *Service) ListCommitments(principal *appmiddleware.Principal, orgID, mee
 		}
 		result = append(result, c)
 	}
+	sortByID(result, func(v Commitment) string { return v.ID })
 	return result, nil
 }
 
@@ -1893,6 +1935,7 @@ func (s *Service) ListCommitmentEventSelections(principal *appmiddleware.Princip
 			result = append(result, sel)
 		}
 	}
+	sortByID(result, func(v EventSelection) string { return v.ID })
 	return result, nil
 }
 
@@ -2042,6 +2085,7 @@ func (s *Service) ListEntries(principal *appmiddleware.Principal, orgID, meetID 
 		result = filtered
 	}
 
+	sortByID(result, func(v Entry) string { return v.ID })
 	return result, nil
 }
 

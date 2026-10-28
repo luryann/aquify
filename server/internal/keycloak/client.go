@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // ─── Errors ───────────────────────────────────────────────────────────────────
@@ -995,7 +997,8 @@ func (s *StubClient) CreateUser(_ context.Context, email, firstName, lastName, o
 			return "", ErrConflict
 		}
 	}
-	id := fmt.Sprintf("stub-user-%d", len(s.users)+1)
+	// Match real Keycloak IDs so development users work with UUID-backed sessions.
+	id := uuid.NewString()
 	u := &User{
 		ID:            id,
 		Username:      strings.ToLower(email),

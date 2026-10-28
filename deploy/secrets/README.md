@@ -144,7 +144,7 @@ distinct credentials.
 
 4. **Verify health**
    ```bash
-   curl -sf https://api.dare.club/health/live && echo OK
+   curl -sf https://api.dare.club/api/v1/health/live && echo OK
    ```
 
 5. **Revoke the old secret** at the provider (Stripe dashboard, Postmark, etc.)
@@ -177,14 +177,14 @@ Secrets needed during the GitHub Actions deploy pipeline are stored as
 | `PRODUCTION_SSH_HOST` | Production VPS hostname |
 | `PRODUCTION_SSH_USER` | SSH username on production VPS |
 | `PRODUCTION_SSH_KEY` | Private SSH key for production deploy user |
-| `GHCR_TOKEN` | GitHub Container Registry push token (use `GITHUB_TOKEN` in Actions) |
-| `SLACK_WEBHOOK` | Slack incoming webhook for deploy notifications |
+| `GHCR_TOKEN` | Optional registry token for a different package owner; defaults to `GITHUB_TOKEN` |
+| `SLACK_WEBHOOK` | Optional Slack incoming webhook; notifications are skipped when unset |
 | `SMOKE_TEST_AUTH_TOKEN` | Bearer token for post-deploy smoke tests |
 | `SMOKE_TEST_ORG_ID` | Org ID for smoke test requests |
 
 The deploy workflow does **not** copy `.env.production` during deploys. That file
 is provisioned once during server setup and owned by the ops team. Image tags are
-the only parameter passed at deploy time.
+passed with the registry namespace (`GHCR_NAMESPACE`) at deploy time.
 
 ---
 

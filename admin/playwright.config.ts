@@ -1,5 +1,10 @@
 import { defineConfig, devices } from '@playwright/test'
 
+const apiPort = process.env.PLAYWRIGHT_API_PORT ?? '8080'
+const adminPort = process.env.PLAYWRIGHT_ADMIN_PORT ?? '3000'
+const apiOrigin = `http://localhost:${apiPort}`
+const adminOrigin = `http://localhost:${adminPort}`
+
 const databaseUrl = process.env.DATABASE_URL ?? 'postgres://postgres:postgres@127.0.0.1:5432/aquify_e2e?sslmode=disable'
 
 export default defineConfig({
@@ -11,7 +16,7 @@ export default defineConfig({
   },
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
   use: {
-    baseURL: 'http://localhost:3000',
+    baseURL: adminOrigin,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
@@ -20,15 +25,20 @@ export default defineConfig({
   webServer: [
     {
       command: 'node ./scripts/e2e/start-api.mjs',
+      // Database setup and Go compilation can be slow on a cold CI runner.
+      timeout: 300_000,
       cwd: '.',
-      url: 'http://localhost:8080/api/v1/health/live',
+      url: `${apiOrigin}/api/v1/health/live`,
       reuseExistingServer: !process.env.CI,
       stdout: 'pipe',
       stderr: 'pipe',
       env: {
         ...process.env,
         APP_ENV: 'development',
-        ADDR: ':8080',
+        API_ADDR: `:${apiPort}`,
+        // Empty values select the default; whitespace disables this listener.
+        METRICS_ADDR: ' ',
+        API_ALLOWED_ORIGINS: adminOrigin,
         AUTH_ENABLE_DEV_STUB_TOKENS: 'true',
         AUTH_ALLOW_DEV_SESSION_ISSUE: 'true',
         SECURITY_RATE_LIMIT_AUTH_REQUESTS: '1000',
@@ -45,14 +55,16 @@ export default defineConfig({
     },
     {
       command: 'npm run dev',
+      timeout: 180_000,
       cwd: '.',
-      url: 'http://localhost:3000/login',
+      url: `${adminOrigin}/login`,
       reuseExistingServer: !process.env.CI,
       stdout: 'pipe',
       stderr: 'pipe',
       env: {
         ...process.env,
-        NEXT_PUBLIC_API_URL: 'http://localhost:8080',
+        PORT: adminPort,
+        NEXT_PUBLIC_API_URL: apiOrigin,
         NEXT_PUBLIC_APP_ENV: 'development',
         NEXT_PUBLIC_AUTH_ENABLE_DEV_STUB_TOKENS: 'false',
       },

@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/dareaquatics/aquify/server/internal/keycloak"
 )
 
@@ -18,12 +20,12 @@ import (
 // mockKeycloak simulates the Keycloak Admin REST API for testing AdminClient.
 // It uses a single catch-all handler and dispatches by method + path.
 type mockKeycloak struct {
-	users                map[string]*keycloak.User
-	roles                map[string]*keycloak.Role
-	userRoles            map[string][]string // userID → []roleName
+	users                 map[string]*keycloak.User
+	roles                 map[string]*keycloak.Role
+	userRoles             map[string][]string // userID → []roleName
 	disableOrgQueryFilter bool
-	emptyOrgQueryResults bool
-	alwaysOmitAttributes bool
+	emptyOrgQueryResults  bool
+	alwaysOmitAttributes  bool
 
 	tokenCalls int
 }
@@ -700,6 +702,10 @@ func TestStubClient_CreateAndGet(t *testing.T) {
 	id, err := s.CreateUser(ctx, "alice@example.com", "Alice", "Smith", "org-1")
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
+	}
+
+	if _, err := uuid.Parse(id); err != nil {
+		t.Fatalf("CreateUser must return a UUID for persistent sessions: %q: %v", id, err)
 	}
 
 	u, err := s.GetUser(ctx, id)

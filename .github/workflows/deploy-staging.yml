@@ -12,11 +12,14 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  API_IMAGE: ghcr.io/dareaquatics/dare-api
-  ADMIN_IMAGE: ghcr.io/dareaquatics/dare-admin
+  GHCR_NAMESPACE: ${{ vars.GHCR_NAMESPACE || github.repository_owner }}
+  API_IMAGE: ghcr.io/${{ vars.GHCR_NAMESPACE || github.repository_owner }}/dare-api
+  ADMIN_IMAGE: ghcr.io/${{ vars.GHCR_NAMESPACE || github.repository_owner }}/dare-admin
 
 jobs:
   deploy:
+    env:
+      SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
     name: Build, Push, and Deploy to Staging
     runs-on: ubuntu-latest
     environment: staging
@@ -33,7 +36,7 @@ jobs:
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
 
       # -----------------------------------------------------------------------
       # Build metadata
@@ -103,8 +106,11 @@ jobs:
       # -----------------------------------------------------------------------
 
       - name: Deploy to staging via SSH
+        env:
+          GHCR_NAMESPACE: ${{ env.GHCR_NAMESPACE }}
         uses: appleboy/ssh-action@v1
         with:
+          envs: GHCR_NAMESPACE
           host: ${{ secrets.STAGING_SSH_HOST }}
           username: ${{ secrets.STAGING_SSH_USER }}
           key: ${{ secrets.STAGING_SSH_KEY }}
@@ -138,11 +144,11 @@ jobs:
 
       - name: Wait for API health
         run: |
-          echo "Waiting for API health at https://api-staging.dare.club/health/live ..."
+          echo "Waiting for API health at https://api-staging.dare.club/api/v1/health/live ..."
           for i in $(seq 1 18); do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
               --max-time 5 \
-              https://api-staging.dare.club/health/live || echo "000")
+              https://api-staging.dare.club/api/v1/health/live || echo "000")
             if [ "${STATUS}" = "200" ]; then
               echo "API healthy (attempt ${i})"
               exit 0
@@ -175,7 +181,7 @@ jobs:
       # -----------------------------------------------------------------------
 
       - name: Notify Slack on failure
-        if: failure()
+        if: failure() && env.SLACK_WEBHOOK != ''
         uses: slackapi/slack-github-action@v2
         with:
           webhook: ${{ secrets.SLACK_WEBHOOK }}
@@ -197,7 +203,7 @@ jobs:
             }
 
       - name: Notify Slack on success
-        if: success()
+        if: success() && env.SLACK_WEBHOOK != ''
         uses: slackapi/slack-github-action@v2
         with:
           webhook: ${{ secrets.SLACK_WEBHOOK }}

@@ -42,7 +42,7 @@ set -euo pipefail
 DEPLOY_DIR="/opt/dare"
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/dare}"
 RESTORE_LOG="/var/log/dare/restores.log"
-HEALTH_URL="${HEALTH_URL:-http://localhost:8080/health/live}"
+HEALTH_URL="${HEALTH_URL:-http://localhost:8080/api/v1/health/live}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-120}"
 HEALTH_RETRY_INTERVAL=5
 COMPOSE_FILE="${DEPLOY_DIR}/docker-compose.production.yml"
