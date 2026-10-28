@@ -479,18 +479,27 @@ func TestP0MeetCommitToSD3ExportFlow(t *testing.T) {
 		t.Fatalf("lock commitments: expected 200, got %d body=%s", lockRes.Code, lockRes.Body.String())
 	}
 
-	proposeReq := httptest.NewRequest(http.MethodPost, "/api/v1/meets/"+meetID+"/entries", encodeJSONBody(t, map[string]any{
-		"swimmer_id":    "swimmer-p0",
-		"meet_event_id": eventID,
-		"commitment_id": commitments.Commitments[0].ID,
-	}))
-	proposeReq.Header.Set("Content-Type", "application/json")
-	proposeReq.Header.Set("X-Org-Id", "org-p0-meet")
-	proposeReq.Header.Set("Authorization", "Bearer "+adminToken)
-	proposeRes := httptest.NewRecorder()
-	router.ServeHTTP(proposeRes, proposeReq)
-	if proposeRes.Code != http.StatusCreated {
-		t.Fatalf("propose entry: expected 201, got %d body=%s", proposeRes.Code, proposeRes.Body.String())
+	// Locking converts the parent's event selection into a submitted entry.
+	entriesReq := httptest.NewRequest(http.MethodGet, "/api/v1/meets/"+meetID+"/entries", nil)
+	entriesReq.Header.Set("X-Org-Id", "org-p0-meet")
+	entriesReq.Header.Set("Authorization", "Bearer "+adminToken)
+	entriesRes := httptest.NewRecorder()
+	router.ServeHTTP(entriesRes, entriesReq)
+	var entriesEnv struct {
+		Entries []struct {
+			SwimmerID    string `json:"swimmer_id"`
+			MeetEventID  string `json:"meet_event_id"`
+			CommitmentID string `json:"commitment_id"`
+			Status       string `json:"status"`
+		} `json:"entries"`
+	}
+	if err := json.Unmarshal(entriesRes.Body.Bytes(), &entriesEnv); err != nil {
+		t.Fatalf("decode entries: %v", err)
+	}
+	if len(entriesEnv.Entries) != 1 || entriesEnv.Entries[0].SwimmerID != "swimmer-p0" ||
+		entriesEnv.Entries[0].MeetEventID != eventID || entriesEnv.Entries[0].CommitmentID != commitments.Commitments[0].ID ||
+		entriesEnv.Entries[0].Status != "submitted" {
+		t.Fatalf("expected lock to create one submitted entry from the selection, got %s", entriesRes.Body.String())
 	}
 
 	exportRes := doGenerateExport(t, router, "org-p0-meet", adminToken, meetID, "event_report")

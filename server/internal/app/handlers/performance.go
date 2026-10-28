@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/dareaquatics/aquify/server/internal/app/audit"
+	"github.com/dareaquatics/aquify/server/internal/app/comms"
 	"github.com/dareaquatics/aquify/server/internal/app/documents"
 	"github.com/dareaquatics/aquify/server/internal/app/groups"
 	"github.com/dareaquatics/aquify/server/internal/app/httpx"
@@ -28,6 +29,7 @@ type PerformanceHandlers struct {
 	meetsService     *meets.Service
 	documentsService *documents.Service
 	auditService     *audit.Service
+	commsService     *comms.Service
 	validate         *validator.Validate
 }
 
@@ -69,6 +71,7 @@ func NewPerformanceHandlersWithAuditAndContext(
 func (h *PerformanceHandlers) RegisterRoutes(router chi.Router) {
 	// Results
 	router.Post("/results", h.upsertResult)
+	router.Post("/meets/{meetID}/results/import", h.importMeetResults)
 	router.Get("/performance/best-times", h.listOrgBestTimes)
 	router.Get("/performance/progression", h.listOrgProgression)
 
@@ -85,6 +88,9 @@ func (h *PerformanceHandlers) RegisterRoutes(router chi.Router) {
 	router.Get("/time-standards/{standardID}", h.getTimeStandard)
 	router.Put("/time-standards/{standardID}", h.updateTimeStandard)
 	router.Delete("/time-standards/{standardID}", h.deleteTimeStandard)
+
+	// Team records, top times, goals, relays, progress reports
+	h.registerExtensionRoutes(router)
 }
 
 // ─── Scope helper ─────────────────────────────────────────────────────────────
@@ -199,7 +205,7 @@ func (h *PerformanceHandlers) upsertResult(w http.ResponseWriter, r *http.Reques
 		})
 	}
 
-	result, err := h.service.UpsertResult(orgID, principal.UserID, principal, performance.UpsertResultInput{
+	result, breaks, err := h.service.UpsertResultWithRecords(orgID, principal.UserID, principal, performance.UpsertResultInput{
 		SwimmerID:   body.SwimmerID,
 		MeetID:      body.MeetID,
 		MeetEventID: body.MeetEventID,
@@ -229,7 +235,7 @@ func (h *PerformanceHandlers) upsertResult(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"result": result})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"result": result, "new_team_records": recordBreaksOrEmpty(breaks)})
 }
 
 // listBestTimes GET /swimmers/{swimmerID}/best-times

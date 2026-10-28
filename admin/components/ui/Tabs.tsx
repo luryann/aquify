@@ -15,11 +15,15 @@ type TabsProps = {
 export function Tabs({ tabs, active, onChange }: TabsProps) {
   return (
     <div
+      className="tab-strip"
       style={{
         display: 'flex',
         gap: '2px',
-        borderBottom: '1px solid var(--border)',
+        // Inset rule instead of a border so the strip can scroll sideways on
+        // narrow screens without clipping the active tab's underline.
+        boxShadow: 'inset 0 -1px 0 var(--border)',
         marginBottom: '24px',
+        overflowX: 'auto',
       }}
     >
       {tabs.map((tab) => {
@@ -29,13 +33,13 @@ export function Tabs({ tabs, active, onChange }: TabsProps) {
             key={tab.id}
             onClick={() => onChange(tab.id)}
             style={{
-              padding: '8px 14px',
+              padding: '8px 16px',
               background: 'none',
               border: 'none',
               borderBottom: isActive ? '2px solid var(--accent)' : '2px solid transparent',
-              marginBottom: '-1px',
+              flexShrink: 0,
               cursor: 'pointer',
-              fontSize: '13px',
+              fontSize: 'var(--fs-base)',
               fontWeight: isActive ? 600 : 400,
               color: isActive ? 'var(--text)' : 'var(--text-subtle)',
               display: 'flex',
@@ -55,10 +59,10 @@ export function Tabs({ tabs, active, onChange }: TabsProps) {
             {tab.count !== undefined && (
               <span
                 style={{
-                  fontSize: '11px',
+                  fontSize: 'var(--fs-xs)',
                   fontFamily: 'var(--font-body)',
                   padding: '1px 6px',
-                  borderRadius: '10px',
+                  borderRadius: '12px',
                   background: isActive ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
                   color: isActive ? 'var(--accent)' : 'var(--text-muted)',
                   fontWeight: 500,

@@ -10,11 +10,13 @@ import { shouldShowCollectionEmptyState } from '@/lib/collection-load-state'
 import { reportUIError } from '@/lib/frontend-telemetry'
 import {
   fetchMeets,
-  fetchPractices,
   fetchMeetCommitments,
   type MeetRecord,
-  type PracticeRecord,
 } from '@/lib/adminData'
+import { fetchTrainingSchedule, type ScheduleItem, type Workout } from '@/lib/trainingData'
+import { formatDistance, formatDuration } from '@/lib/workout-format'
+import { WorkoutSheet } from '@/components/training/WorkoutSheet'
+import { SwimmerClubEvents } from '@/components/engagement/SwimmerClubEvents'
 
 // Convert raw commitment status to a plain-language answer, mirroring the
 // dashboard's own commitment badge so the swimmer sees the same wording
@@ -59,6 +61,7 @@ type ScheduleEvent = {
   detail?: string
   meetPath?: string
   commitmentAnswer?: 'yes' | 'no' | 'waiting'
+  workout?: Workout
 }
 
 const EVENT_STYLE: Record<EventType, { dot: string; bg: string; border: string; color: string; label: string; leftBorder: string }> = {
@@ -103,7 +106,7 @@ function buildScheduleFromMeets(meets: MeetRecord[], commitmentAnswers: Record<s
 
     // Commitment deadline event
     if (m.commitment_deadline) {
-      const deadlineDate = new Date(m.commitment_deadline)
+      const deadlineDate = parseBackendDate(m.commitment_deadline)
       if (deadlineDate >= now) {
         events.push({
           id: `deadline-${m.id}`,
@@ -120,18 +123,21 @@ function buildScheduleFromMeets(meets: MeetRecord[], commitmentAnswers: Record<s
   return events.sort((a, b) => a.date.getTime() - b.date.getTime())
 }
 
-function buildScheduleFromPractices(practices: PracticeRecord[], now: Date): ScheduleEvent[] {
-  return practices
-    .filter((p) => new Date(p.date + 'T23:59:59') >= now)
-    .map((p) => {
-      const practiceDate = new Date(p.date + 'T00:00:00')
+function buildScheduleFromPractices(items: ScheduleItem[], now: Date): ScheduleEvent[] {
+  return items
+    .filter(({ practice: p }) => new Date(p.date + 'T23:59:59') >= now)
+    .map(({ practice: p, workout }) => {
+      const practiceDate = parseBackendDate(p.date)
       return {
         id: `practice-${p.id}`,
         title: p.description ? `Practice — ${p.description.slice(0, 60)}` : 'Practice',
         type: 'practice' as EventType,
         date: practiceDate,
         dateLabel: fmtDayLabel(practiceDate),
-        detail: p.yardage_target > 0 ? `${p.yardage_target.toLocaleString()} yds target` : undefined,
+        detail: workout
+          ? `${formatDistance(workout.totals.distance, workout.totals.unit)} ${workout.course}, about ${formatDuration(workout.totals.estimated_seconds)}.`
+          : p.yardage_target > 0 ? `${p.yardage_target.toLocaleString()} yds target` : undefined,
+        workout: workout ?? undefined,
       }
     })
 }
@@ -175,39 +181,36 @@ function EventCard({ ev }: { ev: ScheduleEvent }) {
       style={{
         background: C.card,
         border: `1px solid ${s.border}`,
-        borderLeft: `3px solid ${s.leftBorder}`,
-        borderRadius: '0 10px 10px 0',
-        padding: '14px 16px',
+        borderRadius: '12px',
+        padding: '16px 16px',
         display: 'flex',
-        gap: '14px',
+        gap: '16px',
         transition: 'border-color 120ms ease',
       }}
       onMouseEnter={(e) => {
         const el = e.currentTarget as HTMLDivElement
         el.style.borderColor = s.dot
-        el.style.borderLeftColor = s.dot
       }}
       onMouseLeave={(e) => {
         const el = e.currentTarget as HTMLDivElement
         el.style.borderColor = s.border
-        el.style.borderLeftColor = s.leftBorder
       }}
     >
       <div style={{ flex: 1, minWidth: 0 }}>
         {/* Title row */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px' }}>
-          <p style={{ fontSize: '14px', fontWeight: 600, color: C.text, lineHeight: 1.3, marginBottom: '6px' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
+          <p style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: C.text, lineHeight: 1.3, marginBottom: '6px' }}>
             {ev.title}
           </p>
           <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexShrink: 0 }}>
             {ev.course && (
-              <span style={{ fontSize: '10px', fontFamily: 'var(--font-body)', fontWeight: 600, color: 'var(--bg-surface)', background: C.accent, padding: '2px 6px', borderRadius: '4px', letterSpacing: '0.04em' }}>
+              <span style={{ fontSize: 'var(--fs-2xs)', fontFamily: 'var(--font-body)', fontWeight: 600, color: 'var(--bg-surface)', background: C.accent, padding: '2px 6px', borderRadius: '4px', letterSpacing: '0.04em' }}>
                 {ev.course}
               </span>
             )}
             <span
               style={{
-                fontSize: '10px',
+                fontSize: 'var(--fs-2xs)',
                 fontFamily: 'var(--font-body)',
                 fontWeight: 600,
                 letterSpacing: '0.04em',
@@ -215,7 +218,7 @@ function EventCard({ ev }: { ev: ScheduleEvent }) {
                 color: s.color,
                 background: s.bg,
                 border: `1px solid ${s.border}`,
-                padding: '2px 7px',
+                padding: '2px 8px',
                 borderRadius: '999px',
               }}
             >
@@ -227,14 +230,14 @@ function EventCard({ ev }: { ev: ScheduleEvent }) {
         {/* Meta row */}
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
           {ev.location && (
-            <span style={{ fontSize: '12px', color: C.subtle, display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <span style={{ fontSize: 'var(--fs-sm)', color: C.subtle, display: 'flex', alignItems: 'center', gap: '4px' }}>
               <Icon name="map-pin" size={11} />
               {ev.location}
             </span>
           )}
           {ev.commitmentAnswer && (
             <span style={{
-              fontSize: '10.5px', fontWeight: 600, padding: '2px 8px', borderRadius: '999px',
+              fontSize: 'var(--fs-2xs)', fontWeight: 600, padding: '2px 8px', borderRadius: '999px',
               color: COMMITMENT_ANSWER_STYLE[ev.commitmentAnswer].color,
               background: COMMITMENT_ANSWER_STYLE[ev.commitmentAnswer].bg,
               border: `1px solid ${COMMITMENT_ANSWER_STYLE[ev.commitmentAnswer].border}`,
@@ -253,7 +256,7 @@ function EventCard({ ev }: { ev: ScheduleEvent }) {
                 background: 'transparent',
                 border: 'none',
                 color: s.color,
-                fontSize: '12px',
+                fontSize: 'var(--fs-sm)',
                 fontWeight: 500,
                 cursor: 'pointer',
                 padding: '6px 0 0',
@@ -262,17 +265,18 @@ function EventCard({ ev }: { ev: ScheduleEvent }) {
                 gap: '4px',
               }}
             >
-              {expanded ? 'Less' : 'More'}
+              {expanded ? 'Less' : ev.workout ? 'Show sets' : 'More'}
               <Icon name={expanded ? 'chevron-up' : 'chevron-down'} size={12} />
             </button>
 
             {expanded && (
-              <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {ev.detail && (
-                  <p style={{ fontSize: '12.5px', color: C.muted, lineHeight: 1.55 }}>
+                  <p style={{ fontSize: 'var(--fs-sm)', color: C.muted, lineHeight: 1.55 }}>
                     {ev.detail}
                   </p>
                 )}
+                {ev.workout && <WorkoutSheet workout={ev.workout} />}
                 {ev.meetPath && (
                   <div>
                     <Link
@@ -280,8 +284,8 @@ function EventCard({ ev }: { ev: ScheduleEvent }) {
                       style={{
                         display: 'inline-flex',
                         alignItems: 'center',
-                        gap: '5px',
-                        fontSize: '12px',
+                        gap: '4px',
+                        fontSize: 'var(--fs-sm)',
                         fontWeight: 600,
                         color: C.accent,
                         textDecoration: 'none',
@@ -325,12 +329,12 @@ export default function SwimmerSchedulePage() {
     setLoadError(null)
     Promise.all([
       fetchMeets(api, orgId),
-      fetchPractices(api, orgId),
+      fetchTrainingSchedule(api, orgId, now.toISOString().slice(0, 10), new Date(now.getTime() + 56 * 86400000).toISOString().slice(0, 10)),
     ])
       .then(async ([meets, practices]) => {
         const futureMeets = meets.filter(m => {
-          if (m.end_date) return new Date(m.end_date) >= now
-          if (m.start_date) return new Date(m.start_date) >= now
+          if (m.end_date) return parseBackendDate(m.end_date) >= now
+          if (m.start_date) return parseBackendDate(m.start_date) >= now
           return false
         })
 
@@ -380,22 +384,11 @@ export default function SwimmerSchedulePage() {
       `}</style>
 
       {/* Header */}
-      <div style={{ marginBottom: '28px', animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both' }}>
-        <h1
-          style={{
-            fontFamily: 'var(--font-display)',
-            fontSize: 'clamp(26px, 4vw, 34px)',
-            color: C.text,
-            letterSpacing: '-0.02em',
-            lineHeight: 1.1,
-            marginBottom: '6px',
-          }}
+      <div style={{ marginBottom: '24px', animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both' }}>
+        <h1 className="page-title"
         >
           Schedule
         </h1>
-        <p style={{ fontSize: '14px', color: C.subtle }}>
-          Upcoming meets and commitment deadlines.
-        </p>
       </div>
 
       {loadError && (
@@ -404,7 +397,7 @@ export default function SwimmerSchedulePage() {
             marginBottom: '24px',
             background: 'var(--warning-bg)',
             border: '1px solid rgba(245,158,11,0.25)',
-            borderRadius: '10px',
+            borderRadius: '12px',
             padding: '12px 16px',
             display: 'flex',
             justifyContent: 'space-between',
@@ -412,14 +405,14 @@ export default function SwimmerSchedulePage() {
             gap: '12px',
           }}
         >
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
             <Icon name="alert-circle" size={15} style={{ color: 'var(--warning)', marginTop: '1px', flexShrink: 0 }} />
-            <p style={{ margin: 0, fontSize: '12.5px', color: C.text, lineHeight: 1.5 }}>{loadError}</p>
+            <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: C.text, lineHeight: 1.5 }}>{loadError}</p>
           </div>
           <button
             type="button"
             onClick={() => setReloadKey((key) => key + 1)}
-            style={{ background: 'transparent', border: '1px solid rgba(245,158,11,0.25)', borderRadius: '8px', cursor: 'pointer', color: C.text, fontSize: '12px', fontWeight: 600, padding: '8px 14px', whiteSpace: 'nowrap' }}
+            style={{ background: 'transparent', border: '1px solid rgba(245,158,11,0.25)', borderRadius: '8px', cursor: 'pointer', color: C.text, fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '8px 16px', whiteSpace: 'nowrap' }}
           >
             Retry
           </button>
@@ -431,7 +424,7 @@ export default function SwimmerSchedulePage() {
         style={{
           display: 'flex',
           gap: '8px',
-          marginBottom: '28px',
+          marginBottom: '24px',
           flexWrap: 'wrap',
           animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) 0.05s both',
         }}
@@ -447,12 +440,12 @@ export default function SwimmerSchedulePage() {
                 display: 'flex',
                 alignItems: 'center',
                 gap: '6px',
-                padding: '5px 14px',
+                padding: '4px 16px',
                 borderRadius: '999px',
                 border: `1px solid ${active ? (s ? s.border : C.accentBorder) : C.border}`,
                 background: active ? (s ? s.bg : C.accentDim) : 'transparent',
                 color: active ? (s ? s.color : C.accent) : C.subtle,
-                fontSize: '12.5px',
+                fontSize: 'var(--fs-sm)',
                 fontWeight: 500,
                 cursor: 'pointer',
                 transition: 'all 120ms ease',
@@ -469,13 +462,15 @@ export default function SwimmerSchedulePage() {
         })}
       </div>
 
+      <SwimmerClubEvents api={api} orgId={orgId} swimmerId={mySwimmerId} />
+
       {/* Schedule sections */}
       {loading ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           {[1, 2].map(i => (
             <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div style={{ height: '18px', width: '140px', background: 'var(--border)', borderRadius: '6px', animation: 'pulse 1.5s ease-in-out infinite' }} />
-              <div className="card" style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div className="card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <SkeletonLine width="60%" />
                 <SkeletonLine width="40%" height="12px" />
               </div>
@@ -483,27 +478,20 @@ export default function SwimmerSchedulePage() {
           ))}
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '36px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '40px' }}>
           {sections.map((section, si) => (
             <section
               key={section.heading}
               style={{ animation: `slideUp 0.35s cubic-bezier(0.16,1,0.3,1) ${si * 60}ms both` }}
             >
               {/* Section heading */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
-                <h2
-                  style={{
-                    fontFamily: 'var(--font-display)',
-                    fontSize: '17px',
-                    color: C.text,
-                    letterSpacing: '-0.01em',
-                    whiteSpace: 'nowrap',
-                  }}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+                <h2 className="section-title" style={{ whiteSpace: 'nowrap' }}
                 >
                   {section.heading}
                 </h2>
                 <div style={{ flex: 1, height: '1px', background: C.border }} />
-                <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: C.muted, whiteSpace: 'nowrap' }}>
+                <span style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', color: C.muted, whiteSpace: 'nowrap' }}>
                   {section.events.length} {section.events.length === 1 ? 'event' : 'events'}
                 </span>
               </div>
@@ -515,19 +503,18 @@ export default function SwimmerSchedulePage() {
                     key={ev.id}
                     style={{
                       display: 'grid',
-                      gridTemplateColumns: '100px 1fr',
+                      gridTemplateColumns: 'clamp(52px, 16vw, 100px) minmax(0, 1fr)',
                       gap: '12px',
                       alignItems: 'flex-start',
-                      animationDelay: `${si * 60 + i * 40}ms`,
-                      animation: 'slideUp 0.3s cubic-bezier(0.16,1,0.3,1) both',
+                      animation: `slideUp 0.3s cubic-bezier(0.16,1,0.3,1) ${si * 60 + i * 40}ms both`,
                     }}
                   >
                     {/* Date column */}
-                    <div style={{ paddingTop: '14px' }}>
-                      <p style={{ fontSize: '13px', fontWeight: 600, color: C.text, lineHeight: 1.3 }}>
+                    <div style={{ paddingTop: '16px' }}>
+                      <p style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: C.text, lineHeight: 1.3 }}>
                         {ev.dateLabel.split(', ')[0]}
                       </p>
-                      <p style={{ fontSize: '12px', color: C.subtle }}>
+                      <p style={{ fontSize: 'var(--fs-sm)', color: C.subtle }}>
                         {ev.dateLabel.split(', ')[1]}
                       </p>
                     </div>
@@ -543,26 +530,26 @@ export default function SwimmerSchedulePage() {
           {loadError ? (
             <div className="card"
               style={{
-                padding: '60px 20px',
+                padding: '64px 20px',
                 textAlign: 'center',
               }}
             >
               <Icon name="calendar" size={32} style={{ color: C.muted, marginBottom: '16px' }} />
-              <p style={{ fontSize: '15px', color: C.subtle, fontWeight: 500 }}>Schedule data is unavailable right now.</p>
-              <p style={{ fontSize: '13px', color: C.muted, marginTop: '4px' }}>
+              <p style={{ fontSize: 'var(--fs-md)', color: C.subtle, fontWeight: 500 }}>Schedule data is unavailable right now.</p>
+              <p style={{ fontSize: 'var(--fs-base)', color: C.muted, marginTop: '4px' }}>
                 Reload to see upcoming meets, practices, and deadlines.
               </p>
             </div>
           ) : shouldShowCollectionEmptyState(loading, loadError, sections.length) && (
             <div className="card"
               style={{
-                padding: '60px 20px',
+                padding: '64px 20px',
                 textAlign: 'center',
               }}
             >
               <Icon name="calendar" size={32} style={{ color: C.muted, marginBottom: '16px' }} />
-              <p style={{ fontSize: '15px', color: C.subtle, fontWeight: 500 }}>No upcoming events</p>
-              <p style={{ fontSize: '13px', color: C.muted, marginTop: '4px' }}>
+              <p style={{ fontSize: 'var(--fs-md)', color: C.subtle, fontWeight: 500 }}>No upcoming events</p>
+              <p style={{ fontSize: 'var(--fs-base)', color: C.muted, marginTop: '4px' }}>
                 {typeFilter !== 'all' ? 'No events match this filter.' : 'No meets or deadlines scheduled yet.'}
               </p>
             </div>

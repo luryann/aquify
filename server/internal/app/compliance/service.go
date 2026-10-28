@@ -101,6 +101,25 @@ type Service struct {
 	exportTTLDays int
 	// deletionReviewDays is how many days an admin has to review a deletion request.
 	deletionReviewDays int
+
+	// householdData gathers a household's records from the other domains for
+	// a data export (right of access). Wired at startup; nil in isolated tests.
+	householdData func(orgID, householdID string) (map[string]any, error)
+}
+
+// SetHouseholdDataCollector wires the function that assembles a household's
+// records for data export archives.
+func (s *Service) SetHouseholdDataCollector(fn func(orgID, householdID string) (map[string]any, error)) {
+	s.householdData = fn
+}
+
+// CollectHouseholdData returns the household's records for an export archive,
+// or nil when no collector is configured.
+func (s *Service) CollectHouseholdData(orgID, householdID string) (map[string]any, error) {
+	if s.householdData == nil {
+		return nil, nil
+	}
+	return s.householdData(orgID, householdID)
 }
 
 // NewService returns an empty Service with default settings.
@@ -366,6 +385,46 @@ func (s *Service) ListDataDeletionRequests(orgID, householdID string) ([]DataDel
 		out = []DataDeletionRequest{}
 	}
 	return out, nil
+}
+
+// ApproveDataDeletion records an admin's approval of an erasure request; the
+// erasure itself runs in the compliance:data_deletion worker job.
+func (s *Service) ApproveDataDeletion(orgID, requestID, reviewNotes string) (*DataDeletionRequest, error) {
+	return s.reviewDataDeletion(orgID, requestID, "approved", reviewNotes)
+}
+
+// RejectDataDeletion closes an erasure request without deleting anything.
+func (s *Service) RejectDataDeletion(orgID, requestID, reviewNotes string) (*DataDeletionRequest, error) {
+	if strings.TrimSpace(reviewNotes) == "" {
+		return nil, errors.New("review notes are required to reject a deletion request")
+	}
+	return s.reviewDataDeletion(orgID, requestID, "rejected", reviewNotes)
+}
+
+func (s *Service) reviewDataDeletion(orgID, requestID, toStatus, reviewNotes string) (*DataDeletionRequest, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	req, ok := s.deletions[requestID]
+	if !ok || req.OrgID != orgID {
+		return nil, ErrDeletionNotFound
+	}
+	if req.Status != "pending" && req.Status != "reviewing" && !(toStatus == "approved" && req.Status == "failed") {
+		return nil, ErrInvalidTransition
+	}
+	cp := *req
+	cp.Status = toStatus
+	if notes := strings.TrimSpace(reviewNotes); notes != "" {
+		cp.ReviewNotes = notes
+	}
+	cp.UpdatedAt = time.Now().UTC()
+	if s.repo != nil {
+		if err := s.repo.UpsertDataDeletionRequest(context.Background(), &cp); err != nil {
+			return nil, err
+		}
+	}
+	s.deletions[requestID] = &cp
+	return &cp, nil
 }
 
 func (s *Service) MarkDataDeletionProcessing(orgID, requestID string) (*DataDeletionRequest, error) {

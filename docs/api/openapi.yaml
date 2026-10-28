@@ -19,6 +19,7 @@ security:
 
 tags:
   - name: Health
+  - name: Engagement
   - name: Auth
   - name: Users
   - name: Members
@@ -36,6 +37,8 @@ tags:
   - name: Audit
   - name: Compliance
   - name: Jobs
+  - name: Training
+  - name: Volunteer
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PATHS
@@ -499,6 +502,41 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "409":
           $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /users/staff:
+    get:
+      tags: [Users]
+      summary: List staff directory
+      description: Returns enabled admin and coach accounts in the caller's org with display names and roles only (no email or attributes). Used for coach pickers and resolving `coach_user_id` labels. Admin or coach.
+      operationId: listStaff
+      responses:
+        "200":
+          description: Staff directory
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, count, staff]
+                properties:
+                  status: { type: string, example: ok }
+                  count: { type: integer }
+                  staff:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, name, roles]
+                      properties:
+                        id: { type: string }
+                        name: { type: string }
+                        roles:
+                          type: array
+                          items: { type: string }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
 
@@ -1754,7 +1792,12 @@ paths:
   /meets/{meetID}/lock-commitments:
     post:
       tags: [Commitments]
-      summary: Lock all commitments for meet (coach/admin)
+      summary: Close commitments for meet (coach/admin)
+      description: >-
+        Moves the meet to commitment_closed. Commitments answered `committed_yes`
+        (or `coach_reviewed`) become `locked`, and each of their event selections
+        becomes a `submitted` entry for coach review. Declined and unanswered
+        commitments keep their status.
       operationId: lockCommitments
       parameters:
         - $ref: "#/components/parameters/MeetID"
@@ -1828,6 +1871,43 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+
+  /meets/{meetID}/entries/sd3:
+    post:
+      tags: [Entries]
+      summary: Export SD3 entry file (coach/admin)
+      description: >-
+        Generates an SDIF (.sd3) entry file for the host meet from approved and
+        previously exported individual entries, then marks approved entries as
+        `exported`. Requires meet status `entry_finalized` or `completed` and a
+        club team code in org settings (422 `team_code_required` otherwise).
+        Relay entries are not included (count returned in `X-Skipped-Relays`).
+      operationId: exportEntriesSD3
+      parameters:
+        - $ref: "#/components/parameters/MeetID"
+        - name: variant
+          in: query
+          required: false
+          schema: { type: string, enum: [extended, standard], default: extended }
+          description: "`extended` includes seed times; `standard` writes NT seeds."
+      responses:
+        "200":
+          description: SD3 entry file
+          headers:
+            Content-Disposition: { schema: { type: string } }
+            X-Entry-Count: { schema: { type: integer } }
+            X-Skipped-Relays: { schema: { type: integer } }
+          content:
+            text/plain:
+              schema: { type: string }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
 
   /meets/{meetID}/entries/{entryID}/override:
     post:
@@ -1929,6 +2009,62 @@ paths:
           $ref: "#/components/responses/UnprocessableEntity"
 
   # ── Exports (meet-scoped) ─────────────────────────────────────────────────
+
+  /meets/{meetID}/results/import:
+    post:
+      tags: [Performance]
+      summary: Import meet results file (coach/admin)
+      description: >-
+        Uploads an SD3/CL2 results file (or an HY3/ZIP archive containing one).
+        Individual swims are matched to club swimmers by USA Swimming ID, then
+        first + last name and date of birth (gender breaks ties), and recorded
+        as official results, which recomputes best times. Swims already
+        recorded for the swimmer/event at this meet are counted as duplicates,
+        so re-importing is safe. Unmatched swims are returned for follow-up.
+      operationId: importMeetResults
+      parameters:
+        - $ref: "#/components/parameters/MeetID"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        "200":
+          description: Import summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  imported: { type: integer }
+                  duplicates: { type: integer }
+                  skipped: { type: integer, description: "Relays and swims with no time (NT/NS/SCR/DNF)." }
+                  unmatched:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name: { type: string }
+                        uss_number: { type: string }
+                        event: { type: string }
+                        reason: { type: string }
+                  warnings: { type: array, items: { type: string } }
+                  new_team_records:
+                    type: array
+                    description: Team records broken by this import (age group and Open); status pending means the standing record is locked.
+                    items: { $ref: "#/components/schemas/RecordBreak" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /meets/{meetID}/exports:
     get:
@@ -2409,6 +2545,9 @@ paths:
                 type: object
                 properties:
                   result: { $ref: "#/components/schemas/Result" }
+                  new_team_records:
+                    type: array
+                    items: { $ref: "#/components/schemas/RecordBreak" }
         "403":
           $ref: "#/components/responses/Forbidden"
 
@@ -2548,6 +2687,597 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+
+  # ── Team records, top times, goals, relays, progress (performance) ───────
+
+  /performance/records:
+    get:
+      tags: [Performance]
+      summary: Team record board (current record per course × gender × age group × event)
+      description: >-
+        Readable by every club role. The current record is the fastest accepted
+        entry; `previous` is the record it replaced. Staff also see
+        `pending_count` (swims awaiting approval because the record is locked).
+      operationId: listTeamRecords
+      parameters:
+        - { name: course, in: query, schema: { type: string, enum: [SCY, SCM, LCM] } }
+        - { name: gender, in: query, schema: { type: string, enum: [M, F] } }
+        - { name: age_group, in: query, schema: { $ref: "#/components/schemas/RecordAgeGroup" } }
+        - { name: distance, in: query, schema: { type: integer } }
+        - { name: stroke, in: query, schema: { type: string, enum: [free, back, breast, fly, im] } }
+      responses:
+        "200":
+          description: Record board
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: { type: integer }
+                  records: { type: array, items: { $ref: "#/components/schemas/TeamRecord" } }
+                  age_groups: { type: array, items: { type: string } }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [Performance]
+      summary: Add a historical (pre-platform) team record entry (admin, audited)
+      operationId: createManualTeamRecord
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateManualRecordRequest" }
+      responses:
+        "201":
+          description: Entry created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entry: { $ref: "#/components/schemas/RecordEntry" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /performance/records/history:
+    get:
+      tags: [Performance]
+      summary: Record history (progression) for one record slot
+      description: Staff also receive pending and rejected entries.
+      operationId: getTeamRecordHistory
+      parameters:
+        - { name: course, in: query, required: true, schema: { type: string, enum: [SCY, SCM, LCM] } }
+        - { name: gender, in: query, required: true, schema: { type: string, enum: [M, F] } }
+        - { name: age_group, in: query, required: true, schema: { $ref: "#/components/schemas/RecordAgeGroup" } }
+        - { name: distance, in: query, required: true, schema: { type: integer } }
+        - { name: stroke, in: query, required: true, schema: { type: string, enum: [free, back, breast, fly, im] } }
+      responses:
+        "200":
+          description: Record history
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  history: { $ref: "#/components/schemas/RecordHistory" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /performance/records/pending:
+    get:
+      tags: [Performance]
+      summary: Record entries awaiting approval (admin/coach)
+      operationId: listPendingTeamRecords
+      responses:
+        "200":
+          description: Pending entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: { type: integer }
+                  entries: { type: array, items: { $ref: "#/components/schemas/RecordEntry" } }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /performance/records/rebuild:
+    post:
+      tags: [Performance]
+      summary: Recompute result-based record entries from all official results (admin, audited)
+      description: >-
+        Slots whose current record is locked are skipped. Manual, verified and
+        rejected entries are preserved; rejected swims are never re-added.
+      operationId: rebuildTeamRecords
+      responses:
+        "200":
+          description: Rebuild summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  summary:
+                    type: object
+                    properties:
+                      slots_evaluated: { type: integer }
+                      slots_skipped_locked: { type: integer }
+                      entries_removed: { type: integer }
+                      entries_created: { type: integer }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /performance/records/{entryID}:
+    parameters:
+      - { name: entryID, in: path, required: true, schema: { type: string } }
+    patch:
+      tags: [Performance]
+      summary: Lock/verify/annotate a record entry; edit swim facts of manual entries (admin, audited)
+      operationId: updateTeamRecordEntry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                locked: { type: boolean }
+                verified: { type: boolean }
+                notes: { type: string, maxLength: 1000 }
+                swimmer_name: { type: string, maxLength: 120 }
+                swim_date: { type: string, format: date }
+                meet_name: { type: string, maxLength: 200 }
+                time_ms: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: Updated entry
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entry: { $ref: "#/components/schemas/RecordEntry" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+    delete:
+      tags: [Performance]
+      summary: Delete a manual record entry (admin, audited); result entries must be rejected instead
+      operationId: deleteTeamRecordEntry
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted: { type: boolean }
+                  id: { type: string }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /performance/records/{entryID}/approve:
+    parameters:
+      - { name: entryID, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Performance]
+      summary: Approve a pending record entry (admin, audited)
+      operationId: approveTeamRecordEntry
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                notes: { type: string, maxLength: 1000 }
+      responses:
+        "200":
+          description: Approved entry (now accepted and verified)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entry: { $ref: "#/components/schemas/RecordEntry" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /performance/records/{entryID}/reject:
+    parameters:
+      - { name: entryID, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Performance]
+      summary: Reject a pending or accepted result-based record entry (admin, audited)
+      operationId: rejectTeamRecordEntry
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                notes: { type: string, maxLength: 1000 }
+      responses:
+        "200":
+          description: Rejected entry
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entry: { $ref: "#/components/schemas/RecordEntry" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /performance/records/{entryID}/announcement:
+    parameters:
+      - { name: entryID, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Performance]
+      summary: Create a draft "new team record" announcement (admin/coach, audited)
+      operationId: draftTeamRecordAnnouncement
+      responses:
+        "201":
+          description: Draft announcement (audience all); publish it from /announcements
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  announcement: { type: object }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /performance/top-times:
+    get:
+      tags: [Performance]
+      summary: Top-N lists (one best swim per swimmer) per event
+      description: >-
+        Readable by every club role. Age group is evaluated per swim (age on
+        the swim date, which is the meet start date when the result belongs to
+        a meet). Omit distance/stroke for every event; omit gender for both.
+        Ties share a rank.
+      operationId: listTopTimes
+      parameters:
+        - { name: course, in: query, schema: { type: string, enum: [SCY, SCM, LCM], default: SCY } }
+        - { name: gender, in: query, schema: { type: string, enum: [M, F] } }
+        - { name: age_group, in: query, schema: { $ref: "#/components/schemas/RecordAgeGroup" } }
+        - { name: distance, in: query, schema: { type: integer } }
+        - { name: stroke, in: query, schema: { type: string, enum: [free, back, breast, fly, im] } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: limit, in: query, schema: { type: integer, default: 10, maximum: 100 } }
+      responses:
+        "200":
+          description: Ranked lists
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: { type: integer }
+                  lists: { type: array, items: { $ref: "#/components/schemas/TopTimesList" } }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /performance/goals:
+    get:
+      tags: [Performance]
+      summary: Active goals with progress (staff all swimmers; families own household)
+      operationId: listOrgGoals
+      parameters:
+        - { name: swimmer_id, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, default: 100, maximum: 200 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+      responses:
+        "200":
+          description: Goals
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: { type: integer }
+                  total: { type: integer }
+                  goals: { type: array, items: { $ref: "#/components/schemas/GoalProgress" } }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /swimmers/{swimmerID}/goals:
+    parameters:
+      - $ref: "#/components/parameters/SwimmerID"
+    get:
+      tags: [Performance]
+      summary: Swimmer goals with progress (household-scoped for parent/swimmer)
+      operationId: listSwimmerGoals
+      parameters:
+        - { name: include_archived, in: query, schema: { type: boolean } }
+      responses:
+        "200":
+          description: Goals
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  swimmer_id: { type: string }
+                  count: { type: integer }
+                  goals: { type: array, items: { $ref: "#/components/schemas/GoalProgress" } }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [Performance]
+      summary: Create a goal (admin/coach any swimmer; parent/swimmer own household; audited)
+      operationId: createSwimmerGoal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateGoalRequest" }
+      responses:
+        "201":
+          description: Goal created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  goal: { $ref: "#/components/schemas/GoalProgress" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /swimmers/{swimmerID}/goals/{goalID}:
+    parameters:
+      - $ref: "#/components/parameters/SwimmerID"
+      - { name: goalID, in: path, required: true, schema: { type: string } }
+    patch:
+      tags: [Performance]
+      summary: Update or archive a goal (same access rules as create; audited)
+      operationId: updateSwimmerGoal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                target_time_ms: { type: integer, minimum: 1 }
+                deadline: { type: string, description: "YYYY-MM-DD; empty string clears" }
+                notes: { type: string, maxLength: 500 }
+                status: { type: string, enum: [active, archived] }
+      responses:
+        "200":
+          description: Goal updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  goal: { $ref: "#/components/schemas/GoalProgress" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+    delete:
+      tags: [Performance]
+      summary: Delete a goal (same access rules as create; audited)
+      operationId: deleteSwimmerGoal
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted: { type: boolean }
+                  id: { type: string }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /performance/relays/optimize:
+    post:
+      tags: [Performance]
+      summary: Propose optimal A/B/C relays from flat-start best times (admin/coach)
+      description: >-
+        Relay A is the fastest possible relay, B the fastest from the rest, and
+        so on. Medley relays are solved as an exact assignment problem.
+        Mixed (X) relays use exactly two men and two women. Age group is
+        evaluated on the meet start date (or `as_of`). Locked legs are honored
+        and excluded swimmers are never used.
+      operationId: optimizeRelays
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RelayOptimizeRequest" }
+      responses:
+        "200":
+          description: Relay proposal
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  proposal: { $ref: "#/components/schemas/RelayProposal" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /performance/relay-lineups:
+    get:
+      tags: [Performance]
+      summary: Saved relay lineups (admin/coach)
+      operationId: listRelayLineups
+      parameters:
+        - { name: meet_id, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, default: 100, maximum: 200 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+      responses:
+        "200":
+          description: Lineups
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: { type: integer }
+                  total: { type: integer }
+                  lineups: { type: array, items: { $ref: "#/components/schemas/RelayLineup" } }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [Performance]
+      summary: Save a relay lineup for a meet (admin/coach, audited)
+      operationId: createRelayLineup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RelayLineupRequest" }
+      responses:
+        "201":
+          description: Lineup saved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  lineup: { $ref: "#/components/schemas/RelayLineup" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /performance/relay-lineups/{lineupID}:
+    parameters:
+      - { name: lineupID, in: path, required: true, schema: { type: string } }
+    put:
+      tags: [Performance]
+      summary: Replace a saved relay lineup (admin/coach, audited)
+      operationId: replaceRelayLineup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RelayLineupRequest" }
+      responses:
+        "200":
+          description: Lineup saved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  lineup: { $ref: "#/components/schemas/RelayLineup" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+    delete:
+      tags: [Performance]
+      summary: Delete a saved relay lineup (admin/coach, audited)
+      operationId: deleteRelayLineup
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted: { type: boolean }
+                  id: { type: string }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /performance/progress-report:
+    get:
+      tags: [Performance]
+      summary: Time drops between a baseline and a comparison period, with a most-improved list
+      description: >-
+        Compares each swimmer's best time per event in period A against period
+        B (two date ranges or two seasons). Staff see every swimmer;
+        parent/swimmer callers see only their household.
+      operationId: getProgressReport
+      parameters:
+        - { name: from_a, in: query, required: true, schema: { type: string, format: date } }
+        - { name: to_a, in: query, required: true, schema: { type: string, format: date } }
+        - { name: from_b, in: query, required: true, schema: { type: string, format: date } }
+        - { name: to_b, in: query, required: true, schema: { type: string, format: date } }
+        - { name: group_code, in: query, schema: { type: string } }
+        - { name: swimmer_id, in: query, schema: { type: string } }
+        - { name: course, in: query, schema: { type: string, enum: [SCY, SCM, LCM] } }
+        - { name: limit, in: query, schema: { type: integer, default: 10, maximum: 50 } }
+      responses:
+        "200":
+          description: Progress report
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  report: { $ref: "#/components/schemas/ProgressReport" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
 
   /time-standards:
     get:
@@ -3059,6 +3789,717 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  # ── Club finance (fee schedules, runs, credits, late fees, reports) ──────────
+  /billing/fee-schedules:
+    get:
+      tags: [Billing]
+      summary: List fee schedules (admin)
+      operationId: listFeeSchedules
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [Billing]
+      summary: Create fee schedule (admin; audited)
+      operationId: createFeeSchedule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, kind, frequency, amount_cents, start_date]
+              properties:
+                name: { type: string }
+                kind: { type: string }
+                group_code: { type: string }
+                season: { type: string }
+                frequency: { type: string }
+                amount_cents: { type: integer }
+                start_date: { type: string }
+                end_date: { type: string }
+                proration: { type: string }
+                auto_bill: { type: boolean }
+                active: { type: boolean }
+                description: { type: string }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /billing/fee-schedules/{scheduleID}:
+    get:
+      tags: [Billing]
+      summary: Get fee schedule (admin)
+      operationId: getFeeSchedule
+      parameters:
+        - $ref: "#/components/parameters/FinanceScheduleID"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [Billing]
+      summary: Replace fee schedule (admin; audited; period fields frozen once billed)
+      operationId: updateFeeSchedule
+      parameters:
+        - $ref: "#/components/parameters/FinanceScheduleID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, kind, frequency, amount_cents, start_date]
+              properties:
+                name: { type: string }
+                kind: { type: string }
+                group_code: { type: string }
+                season: { type: string }
+                frequency: { type: string }
+                amount_cents: { type: integer }
+                start_date: { type: string }
+                end_date: { type: string }
+                proration: { type: string }
+                auto_bill: { type: boolean }
+                active: { type: boolean }
+                description: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+    delete:
+      tags: [Billing]
+      summary: Archive fee schedule (admin; audited)
+      operationId: archiveFeeSchedule
+      parameters:
+        - $ref: "#/components/parameters/FinanceScheduleID"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /billing/discount-rules:
+    get:
+      tags: [Billing]
+      summary: List sibling discount rules (admin)
+      operationId: listDiscountRules
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [Billing]
+      summary: Create discount rule (admin; audited)
+      operationId: createDiscountRule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, applies_to, min_position, discount_type]
+              properties:
+                name: { type: string }
+                applies_to: { type: string }
+                min_position: { type: integer }
+                max_position: { type: integer }
+                discount_type: { type: string }
+                percent_bps: { type: integer }
+                amount_cents: { type: integer }
+                active: { type: boolean }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /billing/discount-rules/{ruleID}:
+    put:
+      tags: [Billing]
+      summary: Replace discount rule (admin; audited)
+      operationId: updateDiscountRule
+      parameters:
+        - $ref: "#/components/parameters/FinanceRuleID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, applies_to, min_position, discount_type]
+              properties:
+                name: { type: string }
+                applies_to: { type: string }
+                min_position: { type: integer }
+                max_position: { type: integer }
+                discount_type: { type: string }
+                percent_bps: { type: integer }
+                amount_cents: { type: integer }
+                active: { type: boolean }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Billing]
+      summary: Archive discount rule (admin; audited)
+      operationId: archiveDiscountRule
+      parameters:
+        - $ref: "#/components/parameters/FinanceRuleID"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /billing/adjustments:
+    get:
+      tags: [Billing]
+      summary: List manual adjustments (admin; paginated)
+      operationId: listBillingAdjustments
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { type: string }
+        - name: household_id
+          in: query
+          required: false
+          schema: { type: string }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer }
+        - name: offset
+          in: query
+          required: false
+          schema: { type: integer }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [Billing]
+      summary: Create manual adjustment with reason (admin; audited)
+      operationId: createBillingAdjustment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [household_id, amount_cents, reason]
+              properties:
+                household_id: { type: string }
+                swimmer_id: { type: string }
+                amount_cents: { type: integer }
+                reason: { type: string }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /billing/adjustments/{adjustmentID}/void:
+    post:
+      tags: [Billing]
+      summary: Void a pending adjustment (admin; audited)
+      operationId: voidBillingAdjustment
+      parameters:
+        - $ref: "#/components/parameters/FinanceAdjustmentID"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /billing/settings:
+    get:
+      tags: [Billing]
+      summary: Get late-fee and billing automation settings (admin)
+      operationId: getBillingSettings
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    put:
+      tags: [Billing]
+      summary: Replace billing settings (admin; audited)
+      operationId: updateBillingSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [late_fee_type, auto_run_invoice_status]
+              properties:
+                late_fee_enabled: { type: boolean }
+                late_fee_grace_days: { type: integer }
+                late_fee_type: { type: string }
+                late_fee_flat_cents: { type: integer }
+                late_fee_percent_bps: { type: integer }
+                late_fee_max_cents: { type: integer }
+                auto_run_enabled: { type: boolean }
+                auto_run_day: { type: integer }
+                auto_run_invoice_status: { type: string }
+                auto_run_due_days: { type: integer }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /billing/runs/preview:
+    post:
+      tags: [Billing]
+      summary: Preview a billing run (admin; no writes)
+      operationId: previewBillingRun
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [as_of]
+              properties:
+                as_of: { type: string }
+                schedule_ids: { type: array, items: { type: string } }
+                invoice_status: { type: string }
+                due_date: { type: string }
+                due_days: { type: integer }
+                include_adjustments: { type: boolean }
+                expected_fingerprint: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /billing/runs:
+    get:
+      tags: [Billing]
+      summary: List committed billing runs (admin; paginated)
+      operationId: listBillingRuns
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer }
+        - name: offset
+          in: query
+          required: false
+          schema: { type: integer }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [Billing]
+      summary: Commit a billing run (admin; audited; idempotent per schedule/period/household/swimmer)
+      operationId: commitBillingRun
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [as_of]
+              properties:
+                as_of: { type: string }
+                schedule_ids: { type: array, items: { type: string } }
+                invoice_status: { type: string }
+                due_date: { type: string }
+                due_days: { type: integer }
+                include_adjustments: { type: boolean }
+                expected_fingerprint: { type: string }
+      responses:
+        "201":
+          description: Committed
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /billing/runs/{runID}:
+    get:
+      tags: [Billing]
+      summary: Get billing run detail (admin)
+      operationId: getBillingRun
+      parameters:
+        - $ref: "#/components/parameters/FinanceRunID"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /billing/late-fees/apply:
+    post:
+      tags: [Billing]
+      summary: Run the late-fee sweep now (admin; one fee per invoice)
+      operationId: applyLateFees
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /households/{householdID}/credits:
+    get:
+      tags: [Billing]
+      summary: Household account credit balance and trail (admin or own parent)
+      operationId: getHouseholdCredit
+      parameters:
+        - $ref: "#/components/parameters/HouseholdID"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [Billing]
+      summary: Add or remove household account credit (admin + MFA; audited)
+      operationId: addHouseholdCredit
+      parameters:
+        - $ref: "#/components/parameters/HouseholdID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [direction, amount_cents, reason]
+              properties:
+                direction: { type: string }
+                amount_cents: { type: integer }
+                reason: { type: string }
+                apply_to_open_invoices: { type: boolean }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /invoices/{invoiceID}/refunds-to-credit:
+    post:
+      tags: [Billing]
+      summary: Refund a payment into household account credit (admin + MFA; audited)
+      operationId: refundInvoiceToCredit
+      parameters:
+        - $ref: "#/components/parameters/InvoiceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [payment_id, amount_cents, reason]
+              properties:
+                payment_id: { type: string }
+                amount_cents: { type: integer }
+                reason: { type: string }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /households/{householdID}/statement:
+    get:
+      tags: [Billing]
+      summary: Household statement with running balance (admin or own parent)
+      operationId: getHouseholdStatement
+      parameters:
+        - $ref: "#/components/parameters/HouseholdID"
+        - name: from
+          in: query
+          required: false
+          schema: { type: string }
+        - name: to
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /households/{householdID}/upcoming-charges:
+    get:
+      tags: [Billing]
+      summary: Projected recurring charges (admin or own parent)
+      operationId: getHouseholdUpcomingCharges
+      parameters:
+        - $ref: "#/components/parameters/HouseholdID"
+        - name: days
+          in: query
+          required: false
+          schema: { type: integer }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /billing/reports/aging:
+    get:
+      tags: [Billing]
+      summary: A/R aging report (admin; format=csv exports, audited)
+      operationId: getBillingAgingReport
+      parameters:
+        - name: as_of
+          in: query
+          required: false
+          schema: { type: string }
+        - name: format
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+            text/csv:
+              schema: { type: string }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /billing/reports/revenue:
+    get:
+      tags: [Billing]
+      summary: Revenue by month/category/group (admin; format=csv)
+      operationId: getBillingRevenueReport
+      parameters:
+        - name: from
+          in: query
+          required: false
+          schema: { type: string }
+        - name: to
+          in: query
+          required: false
+          schema: { type: string }
+        - name: format
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+            text/csv:
+              schema: { type: string }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /billing/reports/outstanding:
+    get:
+      tags: [Billing]
+      summary: Outstanding balances per household (admin; format=csv)
+      operationId: getBillingOutstandingReport
+      parameters:
+        - name: format
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+            text/csv:
+              schema: { type: string }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /billing/reports/deposits:
+    get:
+      tags: [Billing]
+      summary: Deposits by payout period (admin; format=csv)
+      operationId: getBillingDepositsReport
+      parameters:
+        - name: from
+          in: query
+          required: false
+          schema: { type: string }
+        - name: to
+          in: query
+          required: false
+          schema: { type: string }
+        - name: period
+          in: query
+          required: false
+          schema: { type: string }
+        - name: format
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+            text/csv:
+              schema: { type: string }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /billing/reports/quickbooks:
+    get:
+      tags: [Billing]
+      summary: QuickBooks Online CSV export of invoices or payments (admin; audited)
+      operationId: exportBillingQuickBooks
+      parameters:
+        - name: kind
+          in: query
+          required: false
+          schema: { type: string }
+        - name: from
+          in: query
+          required: false
+          schema: { type: string }
+        - name: to
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+            text/csv:
+              schema: { type: string }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /autopay/households:
     get:
       tags: [Billing]
@@ -3318,6 +4759,34 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Announcement" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [Communications]
+      summary: Set announcement public visibility
+      description: Admin/coach. Controls whether a published all-club announcement appears on the public team website. Group-scoped announcements cannot be public. Audit-logged.
+      operationId: setAnnouncementPublic
+      parameters:
+        - $ref: "#/components/parameters/AnnouncementID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [public]
+              properties:
+                public: { type: boolean }
+      responses:
+        "200":
+          description: Updated announcement
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Announcement" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
 
@@ -3735,6 +5204,73 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /compliance/data-deletion-requests/{requestID}/approve:
+    post:
+      tags: [Compliance]
+      summary: Approve data deletion (admin, MFA required)
+      description: >-
+        Approves a pending (or failed) erasure request and queues the
+        compliance:data_deletion job, which erases the household's swimmers,
+        contacts, documents, messages, and login accounts and anonymizes the
+        household while retaining financial records.
+      operationId: approveDataDeletionRequest
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                review_notes: { type: string }
+      responses:
+        "200":
+          description: Request approved and queued
+          content:
+            application/json:
+              schema: { type: object }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /compliance/data-deletion-requests/{requestID}/reject:
+    post:
+      tags: [Compliance]
+      summary: Reject data deletion (admin)
+      description: Closes a pending erasure request without deleting anything. Review notes are required so the decision is on record.
+      operationId: rejectDataDeletionRequest
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [review_notes]
+              properties:
+                review_notes: { type: string }
+      responses:
+        "200":
+          description: Request rejected
+          content:
+            application/json:
+              schema: { type: object }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
   # ── Jobs Admin ───────────────────────────────────────────────────────────────
 
   /jobs:
@@ -3854,9 +5390,1530 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  # ── Volunteer jobs & service hours ──────────────────────────────────────────
+  /volunteer/settings:
+    get:
+      tags: [Volunteer]
+      summary: Get org volunteer defaults (admin, coach)
+      operationId: getVolunteerSettings
+      responses:
+        "200":
+          description: Settings (defaults when never configured)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  settings: { $ref: "#/components/schemas/VolunteerSettings" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    put:
+      tags: [Volunteer]
+      summary: Update org volunteer defaults (admin; audit-logged)
+      operationId: updateVolunteerSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                default_required_hours: { type: number, minimum: 0, maximum: 1000 }
+                default_buyout_cents_per_hour: { type: integer, minimum: 0, maximum: 100000 }
+                cancellation_cutoff_hours: { type: integer, minimum: 0, maximum: 720 }
+                reminders_enabled: { type: boolean }
+                timezone: { type: string, description: IANA zone used to render reminder emails }
+      responses:
+        "200":
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  settings: { $ref: "#/components/schemas/VolunteerSettings" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /volunteer/templates:
+    get:
+      tags: [Volunteer]
+      summary: List built-in job templates (admin, coach)
+      operationId: listVolunteerTemplates
+      responses:
+        "200":
+          description: Templates and the role vocabulary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  templates: { type: array, items: { $ref: "#/components/schemas/VolunteerTemplate" } }
+                  roles: { type: array, items: { type: string } }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /volunteer/jobs:
+    get:
+      tags: [Volunteer]
+      summary: List volunteer jobs with fill state (all roles; roster omitted)
+      operationId: listVolunteerJobs
+      parameters:
+        - { name: meet_id, in: query, schema: { type: string } }
+        - { name: season_id, in: query, schema: { type: string }, description: Effective season (explicit or by shift date) }
+        - { name: from, in: query, schema: { type: string }, description: RFC3339 or YYYY-MM-DD lower bound on starts_at }
+        - { name: to, in: query, schema: { type: string }, description: RFC3339 or YYYY-MM-DD exclusive upper bound on starts_at }
+        - { name: upcoming, in: query, schema: { type: boolean }, description: Only jobs that have not ended }
+        - { name: limit, in: query, schema: { type: integer, default: 100, maximum: 200 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+      responses:
+        "200":
+          description: Paginated jobs plus an unpaginated fill summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobs: { type: array, items: { $ref: "#/components/schemas/VolunteerJobView" } }
+                  count: { type: integer }
+                  total: { type: integer }
+                  limit: { type: integer }
+                  offset: { type: integer }
+                  summary:
+                    type: object
+                    properties:
+                      job_count: { type: integer }
+                      total_capacity: { type: integer }
+                      filled_spots: { type: integer }
+                      open_spots: { type: integer }
+                      fill_rate: { type: number }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [Volunteer]
+      summary: Create a volunteer job (admin, coach; audit-logged)
+      operationId: createVolunteerJob
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VolunteerJobInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job: { $ref: "#/components/schemas/VolunteerJob" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /volunteer/jobs/bulk:
+    post:
+      tags: [Volunteer]
+      summary: Stamp a template's roles onto one or more shifts (admin, coach; atomic, audit-logged)
+      operationId: bulkCreateVolunteerJobs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [shifts]
+              properties:
+                meet_id: { type: string }
+                event_name: { type: string }
+                season_id: { type: string }
+                location: { type: string }
+                template_id: { type: string, default: standard_meet }
+                roles:
+                  type: array
+                  description: Overrides the template roles when non-empty
+                  items: { $ref: "#/components/schemas/VolunteerTemplateRole" }
+                shifts:
+                  type: array
+                  minItems: 1
+                  maxItems: 40
+                  items:
+                    type: object
+                    required: [starts_at, ends_at]
+                    properties:
+                      starts_at: { type: string, format: date-time }
+                      ends_at: { type: string, format: date-time }
+                      label: { type: string }
+      responses:
+        "201":
+          description: Jobs created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobs: { type: array, items: { $ref: "#/components/schemas/VolunteerJob" } }
+                  count: { type: integer }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /volunteer/jobs/{jobID}:
+    parameters:
+      - { name: jobID, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Volunteer]
+      summary: Get a job (staff also receive the signup roster)
+      operationId: getVolunteerJob
+      responses:
+        "200":
+          description: Job
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job: { $ref: "#/components/schemas/VolunteerJobView" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [Volunteer]
+      summary: Update a job (admin, coach; audit-logged). Capacity cannot drop below filled spots.
+      operationId: updateVolunteerJob
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                event_name: { type: string }
+                season_id: { type: string }
+                role: { type: string }
+                title: { type: string }
+                description: { type: string }
+                location: { type: string }
+                starts_at: { type: string, format: date-time }
+                ends_at: { type: string, format: date-time }
+                capacity: { type: integer }
+                hour_credit: { type: number }
+                min_age: { type: integer }
+                requires_certification: { type: boolean }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job: { $ref: "#/components/schemas/VolunteerJob" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+    delete:
+      tags: [Volunteer]
+      summary: Delete a job and its signups (admin, coach; refused once hours are credited)
+      operationId: deleteVolunteerJob
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted: { type: boolean }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /volunteer/jobs/{jobID}/signups:
+    post:
+      tags: [Volunteer]
+      summary: Take a spot (parent for own household; staff for any household with household_id)
+      description: Capacity is enforced atomically (row lock on the job); returns 409 job_full when no spots remain.
+      operationId: createVolunteerSignup
+      parameters:
+        - { name: jobID, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [volunteer_name]
+              properties:
+                household_id: { type: string, description: Required for staff; must match the session household for parents }
+                volunteer_name: { type: string, maxLength: 120 }
+                swimmer_id: { type: string, description: Optional teen swimmer volunteer (checked against min_age) }
+                certified: { type: boolean, description: Required true for jobs that require certification }
+                notes: { type: string, maxLength: 500 }
+      responses:
+        "201":
+          description: Signed up
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  signup: { $ref: "#/components/schemas/VolunteerSignupView" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /volunteer/signups:
+    get:
+      tags: [Volunteer]
+      summary: List signups with their jobs (parent/swimmer pinned to own household)
+      operationId: listVolunteerSignups
+      parameters:
+        - { name: job_id, in: query, schema: { type: string } }
+        - { name: household_id, in: query, schema: { type: string } }
+        - { name: meet_id, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string, enum: [confirmed, cancelled, worked, no_show] } }
+        - { name: limit, in: query, schema: { type: integer, default: 100, maximum: 200 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+      responses:
+        "200":
+          description: Paginated signups
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  signups: { type: array, items: { $ref: "#/components/schemas/VolunteerSignupView" } }
+                  count: { type: integer }
+                  total: { type: integer }
+                  limit: { type: integer }
+                  offset: { type: integer }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /volunteer/signups/{signupID}/cancel:
+    post:
+      tags: [Volunteer]
+      summary: Cancel a spot (parent own household before the cutoff; staff any time; audit-logged)
+      operationId: cancelVolunteerSignup
+      parameters:
+        - { name: signupID, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                reason: { type: string, maxLength: 500 }
+      responses:
+        "200":
+          description: Cancelled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  signup: { $ref: "#/components/schemas/VolunteerSignup" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /volunteer/signups/{signupID}/check-in:
+    post:
+      tags: [Volunteer]
+      summary: Record attendance (admin, coach; audit-logged)
+      operationId: checkInVolunteerSignup
+      parameters:
+        - { name: signupID, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [status]
+              properties:
+                status: { type: string, enum: [worked, no_show, confirmed] }
+                hours: { type: number, minimum: 0, maximum: 24, description: Overrides the job hour credit when marking worked }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  signup: { $ref: "#/components/schemas/VolunteerSignup" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /volunteer/requirements:
+    get:
+      tags: [Volunteer]
+      summary: List season requirements and household overrides (admin, coach)
+      operationId: listVolunteerRequirements
+      parameters:
+        - { name: season_id, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Requirements
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  requirements: { type: array, items: { $ref: "#/components/schemas/VolunteerRequirement" } }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    put:
+      tags: [Volunteer]
+      summary: Upsert a season requirement (no household_id) or household override (admin; audit-logged)
+      operationId: upsertVolunteerRequirement
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [season_id]
+              properties:
+                season_id: { type: string }
+                household_id: { type: string }
+                required_hours: { type: number, minimum: 0 }
+                buyout_cents_per_hour: { type: integer, minimum: 0 }
+                notes: { type: string }
+      responses:
+        "200":
+          description: Stored requirement
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  requirement: { $ref: "#/components/schemas/VolunteerRequirement" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /volunteer/requirements/{requirementID}:
+    delete:
+      tags: [Volunteer]
+      summary: Delete a requirement (admin; audit-logged)
+      operationId: deleteVolunteerRequirement
+      parameters:
+        - { name: requirementID, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted: { type: boolean }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /volunteer/credits:
+    get:
+      tags: [Volunteer]
+      summary: List manual hour credits (parent/swimmer pinned to own household)
+      operationId: listVolunteerCredits
+      parameters:
+        - { name: season_id, in: query, schema: { type: string } }
+        - { name: household_id, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Credits
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  credits: { type: array, items: { $ref: "#/components/schemas/VolunteerCredit" } }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [Volunteer]
+      summary: Manually credit (or debit) household hours (admin, coach; audit-logged)
+      operationId: createVolunteerCredit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [season_id, household_id, hours, reason]
+              properties:
+                season_id: { type: string }
+                household_id: { type: string }
+                hours: { type: number, description: Non-zero, between -200 and 200 }
+                reason: { type: string, maxLength: 500 }
+      responses:
+        "201":
+          description: Credit recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  credit: { $ref: "#/components/schemas/VolunteerCredit" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /volunteer/ledger:
+    get:
+      tags: [Volunteer]
+      summary: Season compliance ledger for every active household (admin, coach)
+      operationId: getVolunteerSeasonLedger
+      parameters:
+        - { name: season_id, in: query, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Ledger rows sorted by remaining hours
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ledger: { type: array, items: { $ref: "#/components/schemas/VolunteerLedgerRow" } }
+                  summary:
+                    type: object
+                    properties:
+                      households: { type: integer }
+                      by_status: { type: object, additionalProperties: { type: integer } }
+                      buyout_due_cents: { type: integer }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /volunteer/households/{householdID}/ledger:
+    get:
+      tags: [Volunteer]
+      summary: One household's hours per season (parent/swimmer own household; staff any)
+      operationId: getVolunteerHouseholdLedger
+      parameters:
+        - $ref: "#/components/parameters/HouseholdID"
+      responses:
+        "200":
+          description: Ledger rows, newest season first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ledger: { type: array, items: { $ref: "#/components/schemas/VolunteerLedgerRow" } }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /volunteer/buyouts:
+    get:
+      tags: [Volunteer]
+      summary: List billed buyouts (admin)
+      operationId: listVolunteerBuyouts
+      parameters:
+        - { name: season_id, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Buyouts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  buyouts: { type: array, items: { $ref: "#/components/schemas/VolunteerBuyout" } }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [Volunteer]
+      summary: Bill a household's missing hours as an invoice via the billing service (admin; audit-logged)
+      description: |
+        Creates a draft invoice with one `manual` line item (remaining hours × buyout rate) through the
+        billing service, optionally issuing it. One buyout per household per season; concurrent requests
+        are serialised by a reservation row, and a billing failure releases the reservation.
+      operationId: billVolunteerBuyout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [season_id, household_id]
+              properties:
+                season_id: { type: string }
+                household_id: { type: string }
+                due_date: { type: string, format: date, description: Defaults to 30 days from today }
+                issue: { type: boolean, default: false }
+      responses:
+        "201":
+          description: Buyout billed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  buyout: { $ref: "#/components/schemas/VolunteerBuyout" }
+                  invoice:
+                    type: object
+                    properties:
+                      invoice_id: { type: string }
+                      invoice_item_id: { type: string }
+                      invoice_number: { type: string }
+                      invoice_status: { type: string }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  # ── Training: structured workouts, periodization, analytics ────────────────
+
+  /workouts:
+    get:
+      tags: [Training]
+      summary: List workout library
+      description: Lists workouts newest-first. Defaults to templates only; `scope=all` includes practice-owned instances. `q` matches title/description/tags, `tag` filters exactly. Admin or coach.
+      operationId: listWorkouts
+      parameters:
+        - { name: scope, in: query, schema: { type: string, enum: [templates, all] } }
+        - { name: q, in: query, schema: { type: string } }
+        - { name: tag, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 100 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+      responses:
+        "200":
+          description: Workout page
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [workouts, count, total, limit, offset]
+                properties:
+                  workouts: { type: array, items: { $ref: "#/components/schemas/Workout" } }
+                  count: { type: integer }
+                  total: { type: integer }
+                  limit: { type: integer }
+                  offset: { type: integer }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [Training]
+      summary: Create workout
+      description: Creates a structured workout. `is_template` defaults to true (library). Totals are computed server-side. Admin or coach; audit-logged (`workout.create`).
+      operationId: createWorkout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WorkoutInput" }
+      responses:
+        "201":
+          description: Workout created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkoutResponse" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /workouts/parse:
+    post:
+      tags: [Training]
+      summary: Parse quick-entry workout text
+      description: |
+        Converts shorthand such as `8x100 free @1:30 EN2`, section headers (`Warmup:`), and rounds
+        (`3 x {4x100 @1:30, 100 easy} rest 1:00` or `3 rounds:` + indented lines) into structured
+        sections plus totals. Unparseable lines are returned in `errors` with their line number. Nothing is stored. Admin or coach.
+      operationId: parseWorkoutText
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string, maxLength: 20000 }
+                course: { type: string, enum: [SCY, SCM, LCM] }
+      responses:
+        "200":
+          description: Parsed workout
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [course, sections, errors, totals]
+                properties:
+                  course: { type: string }
+                  sections: { type: array, items: { $ref: "#/components/schemas/WorkoutSection" } }
+                  totals: { $ref: "#/components/schemas/WorkoutTotals" }
+                  errors:
+                    type: array
+                    items:
+                      type: object
+                      required: [line, text, message]
+                      properties:
+                        line: { type: integer }
+                        text: { type: string }
+                        message: { type: string }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /workouts/preview:
+    post:
+      tags: [Training]
+      summary: Compute workout totals without saving
+      description: Validates and normalises sections and returns totals plus a quick-entry text rendering. Admin or coach.
+      operationId: previewWorkout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                course: { type: string, enum: [SCY, SCM, LCM] }
+                sections: { type: array, items: { $ref: "#/components/schemas/WorkoutSection" } }
+      responses:
+        "200":
+          description: Workout preview
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [course, sections, totals, text]
+                properties:
+                  course: { type: string }
+                  sections: { type: array, items: { $ref: "#/components/schemas/WorkoutSection" } }
+                  totals: { $ref: "#/components/schemas/WorkoutTotals" }
+                  text: { type: string }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /workouts/{workoutID}:
+    parameters:
+      - $ref: "#/components/parameters/WorkoutID"
+    get:
+      tags: [Training]
+      summary: Get workout
+      description: Returns a workout with computed totals and its quick-entry text. Admin or coach.
+      operationId: getWorkout
+      responses:
+        "200":
+          description: Workout
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/WorkoutResponse"
+                  - type: object
+                    properties:
+                      text: { type: string }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [Training]
+      summary: Replace workout content
+      description: Replaces title, course, tags and sections. `is_template` is fixed at creation. A practice carrying this workout has its yardage re-derived. Admin or coach; audit-logged (`workout.update`).
+      operationId: updateWorkout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WorkoutInput" }
+      responses:
+        "200":
+          description: Workout updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkoutResponse" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+    delete:
+      tags: [Training]
+      summary: Delete workout
+      description: Deletes a workout. A practice that carried it keeps its last yardage but loses the link. Admin or coach; audit-logged (`workout.delete`).
+      operationId: deleteWorkout
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeletedResponse" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /workouts/{workoutID}/duplicate:
+    parameters:
+      - $ref: "#/components/parameters/WorkoutID"
+    post:
+      tags: [Training]
+      summary: Duplicate workout / save as template
+      description: Copies a workout (default title "<title> (copy)", same template flag). Pass `is_template=true` to save a practice's workout into the library. Admin or coach; audit-logged (`workout.duplicate`).
+      operationId: duplicateWorkout
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string, maxLength: 160 }
+                is_template: { type: boolean }
+      responses:
+        "201":
+          description: Copy created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkoutResponse" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /workouts/{workoutID}/assign:
+    parameters:
+      - $ref: "#/components/parameters/WorkoutID"
+    post:
+      tags: [Training]
+      summary: Assign workout to a practice
+      description: Copies the workout into a practice-owned instance and links it — to `practice_id` (replacing any previous instance) or to a new practice on `date` for `group_id` (type defaults to water). The practice's yardage_target and strokes derive from the workout. Admin or coach; audit-logged (`workout.assign`).
+      operationId: assignWorkout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                practice_id: { type: string }
+                date: { type: string, format: date }
+                group_id: { type: string }
+                type: { type: string, enum: [water, dryland, video, rest] }
+      responses:
+        "201":
+          description: Workout assigned
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PracticeWorkoutResponse" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /practices/{practiceID}/workout:
+    parameters:
+      - $ref: "#/components/parameters/PracticeID"
+    get:
+      tags: [Training]
+      summary: Get a practice's workout
+      description: Returns the practice and its structured workout. Parents and swimmers can read practices of their household swimmers' groups (and team-wide practices); others return 404. `no_workout` 404 when the practice has none.
+      operationId: getPracticeWorkout
+      responses:
+        "200":
+          description: Practice workout
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PracticeWorkoutResponse" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [Training]
+      summary: Create or replace a practice's workout
+      description: Creates or replaces the practice-owned workout instance (never a template). Title defaults to the practice description. Admin or coach; audit-logged (`practice.workout.set`).
+      operationId: setPracticeWorkout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WorkoutInput" }
+      responses:
+        "200":
+          description: Workout saved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PracticeWorkoutResponse" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+    delete:
+      tags: [Training]
+      summary: Remove a practice's workout
+      description: Unlinks and deletes the practice-owned instance; the practice keeps its last derived yardage. Admin or coach; audit-logged (`practice.workout.clear`).
+      operationId: clearPracticeWorkout
+      responses:
+        "200":
+          description: Workout removed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  practice: { $ref: "#/components/schemas/TrainingPractice" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /training/schedule:
+    get:
+      tags: [Training]
+      summary: Practice schedule with workouts
+      description: Practices dated within [from, to] (default today..+27 days, max 366 days) oldest-first, each with its structured workout or null. Parents and swimmers only see team-wide practices and their household swimmers' groups; coach notes are redacted for them.
+      operationId: getTrainingSchedule
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: group_id, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Schedule
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [from, to, items]
+                properties:
+                  from: { type: string, format: date }
+                  to: { type: string, format: date }
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [practice, workout]
+                      properties:
+                        practice: { $ref: "#/components/schemas/TrainingPractice" }
+                        workout:
+                          oneOf:
+                            - $ref: "#/components/schemas/Workout"
+                            - type: "null"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /training/analytics:
+    get:
+      tags: [Training]
+      summary: Group training analytics
+      description: |
+        Weekly (ISO, Monday) planned volume, swimmer volume (planned × present), attendance % (present / (present + absent))
+        per group, plus zone and stroke distribution from structured workouts, over [from, to] (default last 8 weeks, max 366 days).
+        Volumes are yards (metres converted). Admin or coach.
+      operationId: getTrainingAnalytics
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: group_id, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Analytics
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TrainingAnalytics" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /training/analytics/swimmers/{swimmerID}:
+    parameters:
+      - $ref: "#/components/parameters/SwimmerID"
+    get:
+      tags: [Training]
+      summary: Swimmer training analytics
+      description: A swimmer's attended volume per week, attendance counts/percentage and zone distribution. Admin/coach for any swimmer; parents and swimmers for their own household only (others return 404).
+      operationId: getSwimmerTrainingAnalytics
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+      responses:
+        "200":
+          description: Swimmer analytics
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SwimmerTrainingAnalytics" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /seasons/{seasonID}/training-phases:
+    parameters:
+      - $ref: "#/components/parameters/SeasonID"
+    get:
+      tags: [Training]
+      summary: List a season's training phases
+      description: Periodization phases for the season, ordered by group then start date. Admin or coach.
+      operationId: listTrainingPhases
+      responses:
+        "200":
+          description: Phases
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [phases]
+                properties:
+                  phases: { type: array, items: { $ref: "#/components/schemas/TrainingPhase" } }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [Training]
+      summary: Add a training phase
+      description: Adds a base/build/peak/taper/recovery phase for a group. Dates must sit inside the season and must not overlap another phase of the same group (409 `phase_overlap`). Admin or coach; audit-logged (`training_phase.create`).
+      operationId: createTrainingPhase
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TrainingPhaseInput" }
+      responses:
+        "201":
+          description: Phase created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  phase: { $ref: "#/components/schemas/TrainingPhase" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /seasons/{seasonID}/training-plan:
+    parameters:
+      - $ref: "#/components/parameters/SeasonID"
+    get:
+      tags: [Training]
+      summary: Season plan vs planned yardage
+      description: Per group and ISO week, the covering phase's weekly target against the yardage actually planned on practices (structured workouts converted to yards). Admin or coach.
+      operationId: getSeasonTrainingPlan
+      parameters:
+        - { name: group_id, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Season plan
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [plan]
+                properties:
+                  plan:
+                    type: object
+                    required: [season_id, phases, weeks]
+                    properties:
+                      season_id: { type: string }
+                      start_date: { type: string }
+                      end_date: { type: string }
+                      phases: { type: array, items: { $ref: "#/components/schemas/TrainingPhase" } }
+                      weeks:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            week_start: { type: string, format: date }
+                            week_end: { type: string, format: date }
+                            group_id: { type: string }
+                            phase_id: { type: string }
+                            phase: { type: string }
+                            target_yards: { type: integer }
+                            planned_yards: { type: integer }
+                            practices: { type: integer }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /training-phases/{phaseID}:
+    parameters:
+      - $ref: "#/components/parameters/TrainingPhaseID"
+    put:
+      tags: [Training]
+      summary: Update a training phase
+      description: Replaces a phase's fields (same validation as create). Admin or coach; audit-logged (`training_phase.update`).
+      operationId: updateTrainingPhase
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TrainingPhaseInput" }
+      responses:
+        "200":
+          description: Phase updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  phase: { $ref: "#/components/schemas/TrainingPhase" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+    delete:
+      tags: [Training]
+      summary: Delete a training phase
+      description: Admin or coach; audit-logged (`training_phase.delete`).
+      operationId: deleteTrainingPhase
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeletedResponse" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
 # ─────────────────────────────────────────────────────────────────────────────
 # COMPONENTS
 # ─────────────────────────────────────────────────────────────────────────────
+  /club-events:
+    get:
+      tags: [Engagement]
+      summary: List club events
+      description: Non-meet club events (social, fundraiser, team_meeting, clinic, banquet, dryland, other). Staff see all; parents/swimmers see only events whose audience includes a swimmer in their household (or themselves), with `my_rsvps`, `eligible_swimmers` and `rsvp_open`. Shared `limit`/`offset` pagination.
+      operationId: listClubEvents
+      parameters:
+        - { name: from, in: query, schema: { type: string }, description: YYYY-MM-DD or RFC3339; events ending on/after }
+        - { name: to, in: query, schema: { type: string }, description: YYYY-MM-DD (inclusive) or RFC3339 }
+        - { name: limit, in: query, schema: { type: integer, maximum: 200 } }
+        - { name: offset, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: Events
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events: { type: array, items: { $ref: "#/components/schemas/ClubEvent" } }
+                  count: { type: integer }
+                  total: { type: integer }
+                  limit: { type: integer }
+                  offset: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Engagement]
+      summary: Create a club event
+      description: Admin or coach; audit-logged (`club_event.create`). A fee requires RSVP enabled; group audience requires `group_codes`. All-day events carry UTC-midnight timestamps whose date part is the calendar date.
+      operationId: createClubEvent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClubEventInput" }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { type: object, properties: { event: { $ref: "#/components/schemas/ClubEvent" } } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+  /club-events/{eventID}:
+    parameters:
+      - { name: eventID, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Engagement]
+      summary: Get a club event
+      description: Families get 404 for events outside their audience.
+      operationId: getClubEvent
+      responses:
+        "200": { description: Event, content: { application/json: { schema: { type: object, properties: { event: { $ref: "#/components/schemas/ClubEvent" } } } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Engagement]
+      summary: Replace a club event
+      description: Admin or coach; audit-logged (`club_event.update` / `club_event.cancel`). Cancelling voids unpaid RSVP fee invoices. RSVP mode is locked once responses exist (409 `rsvp_mode_locked`).
+      operationId: updateClubEvent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClubEventInput" }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { type: object, properties: { event: { $ref: "#/components/schemas/ClubEvent" } } } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+    delete:
+      tags: [Engagement]
+      summary: Delete a club event
+      description: Admin or coach; audit-logged. RSVPs are removed and unpaid fee invoices voided.
+      operationId: deleteClubEvent
+      responses:
+        "200": { description: Deleted, content: { application/json: { schema: { type: object, properties: { deleted: { type: boolean } } } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /club-events/{eventID}/rsvps:
+    parameters:
+      - { name: eventID, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Engagement]
+      summary: List RSVPs
+      description: Staff see the full roster with household/swimmer names; parents see their households' rows; swimmers see their own (plus their household's household-mode row).
+      operationId: listClubEventRSVPs
+      responses:
+        "200":
+          description: RSVPs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rsvps: { type: array, items: { $ref: "#/components/schemas/ClubEventRSVP" } }
+                  summary: { $ref: "#/components/schemas/ClubEventRSVPSummary" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Engagement]
+      summary: Upsert an RSVP
+      description: Household-mode events take one RSVP per household (parent only); swimmer-mode events one per eligible swimmer (parent for household swimmers, swimmer for self). Staff may respond on behalf (bypasses deadline, audit-logged). Headcount = 1 + guest_count; capacity counts `yes` headcount (409 `event_full`). A fee creates an issued invoice per RSVP via billing (quantity = headcount); switching away from yes voids it if unpaid. Errors 409 `rsvp_closed`, `rsvp_disabled`, `event_cancelled`.
+      operationId: respondClubEventRSVP
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [response]
+              properties:
+                household_id: { type: string }
+                swimmer_id: { type: string }
+                response: { type: string, enum: [yes, no, maybe] }
+                guest_count: { type: integer, minimum: 0, maximum: 50 }
+                note: { type: string, maxLength: 500 }
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rsvp: { $ref: "#/components/schemas/ClubEventRSVP" }
+                  billing: { type: string, enum: [none, charged, unchanged, released, retained_paid, failed] }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+  /club-events/{eventID}/rsvps/export:
+    parameters:
+      - { name: eventID, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Engagement]
+      summary: Export the RSVP roster as CSV
+      description: Admin or coach; audit-logged (`club_event.rsvp.export`). Formula-leading cells are neutralised.
+      operationId: exportClubEventRSVPs
+      responses:
+        "200": { description: CSV, content: { text/csv: { schema: { type: string } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /calendar/feed-token:
+    get:
+      tags: [Engagement]
+      summary: Calendar feed status
+      description: Parent (own household; `household_id` query selects among linked households) or admin (`household_id` required). Never returns the secret.
+      operationId: getCalendarFeedToken
+      parameters:
+        - { name: household_id, in: query, schema: { type: string } }
+      responses:
+        "200": { description: Status, content: { application/json: { schema: { $ref: "#/components/schemas/CalendarFeedStatus" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Engagement]
+      summary: Create or rotate the household calendar feed
+      description: Revokes any live token and returns a new secret once (`token`, `feed_path`). Only the SHA-256 hash is stored. Audit-logged (`calendar_feed.rotate`).
+      operationId: rotateCalendarFeedToken
+      parameters:
+        - { name: household_id, in: query, schema: { type: string } }
+      responses:
+        "201":
+          description: New feed
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: "#/components/schemas/CalendarFeedStatus" }
+                  - type: object
+                    properties:
+                      token: { type: string }
+                      feed_path: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    delete:
+      tags: [Engagement]
+      summary: Revoke the household calendar feed
+      operationId: revokeCalendarFeedToken
+      parameters:
+        - { name: household_id, in: query, schema: { type: string } }
+      responses:
+        "200": { description: Revoked, content: { application/json: { schema: { $ref: "#/components/schemas/CalendarFeedStatus" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /calendar/feed/{token}:
+    get:
+      tags: [Engagement]
+      summary: Household iCalendar feed
+      description: Public, read-only; the unguessable token (optionally suffixed `.ics`) is the credential. Contains the household's meets (published+), commitment deadlines, group practices and audience-matching club events from 60 days back to a year ahead. Unknown/revoked tokens return 404.
+      operationId: getCalendarFeed
+      security: []
+      parameters:
+        - { name: token, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: iCalendar, content: { text/calendar: { schema: { type: string } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /public/orgs/{slug}/site:
+    get:
+      tags: [Engagement]
+      summary: Public team website feed
+      description: Unauthenticated, read-only and rate limited. Returns only club identity and contact, announcements marked public, upcoming published meets, upcoming club events marked public, current team records (swimmer names only) and, when enabled in org settings, coach names. Sites that are disabled or unknown return 404.
+      operationId: getPublicTeamSite
+      security: []
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Public site content
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicTeamSite" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /wellness/checkins:
+    put:
+      tags: [Engagement]
+      summary: Submit today's wellness check-in
+      description: Swimmer (self) or parent (household swimmer); one per swimmer per day (upsert, 201 on insert, 200 on replace). Scales 1–5 where 5 = more; readiness = mean(sleep_quality, energy, mood, 6−soreness, 6−stress). `date` defaults to today (UTC), may be up to 1 day ahead or 7 days back.
+      operationId: upsertWellnessCheckIn
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sleep_hours, sleep_quality, soreness, energy, stress, mood]
+              properties:
+                swimmer_id: { type: string }
+                date: { type: string, format: date }
+                sleep_hours: { type: number, minimum: 0, maximum: 24 }
+                sleep_quality: { type: integer, minimum: 1, maximum: 5 }
+                soreness: { type: integer, minimum: 1, maximum: 5 }
+                energy: { type: integer, minimum: 1, maximum: 5 }
+                stress: { type: integer, minimum: 1, maximum: 5 }
+                mood: { type: integer, minimum: 1, maximum: 5 }
+                note: { type: string, maxLength: 500 }
+      responses:
+        "200": { description: Replaced, content: { application/json: { schema: { type: object, properties: { checkin: { $ref: "#/components/schemas/WellnessCheckIn" }, created: { type: boolean } } } } } }
+        "201": { description: Created, content: { application/json: { schema: { type: object, properties: { checkin: { $ref: "#/components/schemas/WellnessCheckIn" }, created: { type: boolean } } } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+  /wellness/swimmers/{swimmerID}:
+    get:
+      tags: [Engagement]
+      summary: Swimmer wellness trend
+      description: Admin/coach or the swimmer's household. Notes are only ever returned to these readers. Returns check-ins, flags, averages and today's check-in.
+      operationId: getSwimmerWellness
+      parameters:
+        - { name: swimmerID, in: path, required: true, schema: { type: string } }
+        - { name: days, in: query, schema: { type: integer, maximum: 90, default: 30 } }
+      responses:
+        "200": { description: Trend, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /wellness/heatmap:
+    get:
+      tags: [Engagement]
+      summary: Group wellness heat-map
+      description: Admin or coach. Per-swimmer daily readiness cells for the window, flags (low_readiness_streak, short_sleep_streak, soreness_streak, sharp_drop, check_in_with_athlete), daily team averages. Flagged swimmers sort first.
+      operationId: getWellnessHeatmap
+      parameters:
+        - { name: group, in: query, schema: { type: string }, description: Group code; omit for all swimmers }
+        - { name: days, in: query, schema: { type: integer, maximum: 28, default: 14 } }
+      responses:
+        "200": { description: Heat-map, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /swimmers/{swimmerID}/attendance-summary:
+    get:
+      tags: [Engagement]
+      summary: Swimmer practice attendance rate
+      description: Admin/coach or the swimmer's household. Eligible practices are non-rest practices for the swimmer's groups (or all-group practices); `attendance_pct` = present / (present + absent), excused and unmarked excluded.
+      operationId: getSwimmerAttendanceSummary
+      parameters:
+        - { name: swimmerID, in: path, required: true, schema: { type: string } }
+        - { name: days, in: query, schema: { type: integer, maximum: 365, default: 90 } }
+      responses:
+        "200": { description: Summary, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
 components:
 
   # ── Security Schemes ────────────────────────────────────────────────────────
@@ -3878,6 +6935,26 @@ components:
 
   # ── Reusable Parameters ─────────────────────────────────────────────────────
   parameters:
+    WorkoutID:
+      name: workoutID
+      in: path
+      required: true
+      schema: { type: string }
+    PracticeID:
+      name: practiceID
+      in: path
+      required: true
+      schema: { type: string }
+    SeasonID:
+      name: seasonID
+      in: path
+      required: true
+      schema: { type: string }
+    TrainingPhaseID:
+      name: phaseID
+      in: path
+      required: true
+      schema: { type: string }
     HouseholdID:
       name: householdID
       in: path
@@ -3932,6 +7009,26 @@ components:
       schema: { type: string }
     ExportID:
       name: exportID
+      in: path
+      required: true
+      schema: { type: string }
+    FinanceScheduleID:
+      name: scheduleID
+      in: path
+      required: true
+      schema: { type: string }
+    FinanceRuleID:
+      name: ruleID
+      in: path
+      required: true
+      schema: { type: string }
+    FinanceAdjustmentID:
+      name: adjustmentID
+      in: path
+      required: true
+      schema: { type: string }
+    FinanceRunID:
+      name: runID
       in: path
       required: true
       schema: { type: string }
@@ -4022,6 +7119,741 @@ components:
 
   # ── Schemas ─────────────────────────────────────────────────────────────────
   schemas:
+    ClubEventInput:
+      type: object
+      required: [title, category, starts_at]
+      properties:
+        title: { type: string, maxLength: 200 }
+        category: { type: string, enum: [social, fundraiser, team_meeting, clinic, banquet, dryland, other] }
+        description: { type: string }
+        location: { type: string }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time, nullable: true }
+        all_day: { type: boolean }
+        audience: { type: string, enum: [all, groups] }
+        group_codes: { type: array, items: { type: string } }
+        rsvp_enabled: { type: boolean }
+        rsvp_mode: { type: string, enum: [household, swimmer] }
+        rsvp_deadline: { type: string, format: date-time, nullable: true }
+        capacity: { type: integer, minimum: 1, nullable: true }
+        fee_cents: { type: integer, minimum: 0 }
+        status: { type: string, enum: [scheduled, cancelled] }
+        public: { type: boolean, description: Show on the public team website (audience must be all). }
+    ClubEvent:
+      allOf:
+        - { $ref: "#/components/schemas/ClubEventInput" }
+        - type: object
+          properties:
+            id: { type: string }
+            org_id: { type: string }
+            rsvp_open: { type: boolean }
+            rsvp_summary: { $ref: "#/components/schemas/ClubEventRSVPSummary" }
+            my_rsvps: { type: array, items: { $ref: "#/components/schemas/ClubEventRSVP" } }
+            eligible_swimmer_ids: { type: array, items: { type: string } }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+    ClubEventRSVP:
+      type: object
+      properties:
+        id: { type: string }
+        event_id: { type: string }
+        household_id: { type: string }
+        household_name: { type: string }
+        swimmer_id: { type: string }
+        swimmer_name: { type: string }
+        response: { type: string, enum: [yes, no, maybe] }
+        guest_count: { type: integer }
+        note: { type: string }
+        invoice_id: { type: string }
+        billed_quantity: { type: integer }
+        updated_at: { type: string, format: date-time }
+    ClubEventRSVPSummary:
+      type: object
+      properties:
+        yes: { type: integer }
+        no: { type: integer }
+        maybe: { type: integer }
+        yes_headcount: { type: integer }
+        spots_left: { type: integer, nullable: true }
+    CalendarFeedStatus:
+      type: object
+      properties:
+        household_id: { type: string }
+        active: { type: boolean }
+        feed:
+          type: object
+          nullable: true
+          properties:
+            id: { type: string }
+            created_at: { type: string, format: date-time }
+            last_used_at: { type: string, format: date-time, nullable: true }
+    WellnessCheckIn:
+      type: object
+      properties:
+        id: { type: string }
+        swimmer_id: { type: string }
+        date: { type: string, format: date }
+        sleep_hours: { type: number }
+        sleep_quality: { type: integer }
+        soreness: { type: integer }
+        energy: { type: integer }
+        stress: { type: integer }
+        mood: { type: integer }
+        note: { type: string }
+        readiness: { type: number }
+        submitted_role: { type: string }
+
+    # Team records / top times / goals / relays / progress ────────────────────
+    RecordAgeGroup:
+      type: string
+      enum: ["8U", "9-10", "11-12", "13-14", "15-16", "17-18", OPEN]
+    RecordEntry:
+      type: object
+      properties:
+        id: { type: string }
+        course: { type: string, enum: [SCY, SCM, LCM] }
+        gender: { type: string, enum: [M, F] }
+        age_group: { $ref: "#/components/schemas/RecordAgeGroup" }
+        distance: { type: integer }
+        stroke: { type: string, enum: [free, back, breast, fly, im] }
+        time_ms: { type: integer }
+        swimmer_id: { type: string }
+        swimmer_name: { type: string }
+        swimmer_age: { type: integer }
+        swim_date: { type: string, format: date }
+        meet_id: { type: string }
+        meet_name: { type: string }
+        result_id: { type: string }
+        source: { type: string, enum: [result, manual] }
+        status: { type: string, enum: [accepted, pending, rejected] }
+        locked: { type: boolean }
+        verified: { type: boolean }
+        verified_by: { type: string }
+        verified_at: { type: string, format: date-time }
+        notes: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    TeamRecord:
+      type: object
+      properties:
+        course: { type: string }
+        gender: { type: string }
+        age_group: { $ref: "#/components/schemas/RecordAgeGroup" }
+        distance: { type: integer }
+        stroke: { type: string }
+        label: { type: string, example: "Girls 11-12 100 SCY Freestyle" }
+        record: { $ref: "#/components/schemas/RecordEntry" }
+        previous: { $ref: "#/components/schemas/RecordEntry" }
+        history_count: { type: integer }
+        pending_count: { type: integer }
+    RecordHistory:
+      type: object
+      properties:
+        label: { type: string }
+        current: { $ref: "#/components/schemas/RecordEntry" }
+        progression: { type: array, items: { $ref: "#/components/schemas/RecordEntry" }, description: Newest first }
+        pending: { type: array, items: { $ref: "#/components/schemas/RecordEntry" } }
+        rejected: { type: array, items: { $ref: "#/components/schemas/RecordEntry" } }
+    RecordBreak:
+      type: object
+      description: A team record broken by a newly recorded swim.
+      properties:
+        entry_id: { type: string }
+        course: { type: string }
+        gender: { type: string }
+        age_group: { $ref: "#/components/schemas/RecordAgeGroup" }
+        distance: { type: integer }
+        stroke: { type: string }
+        label: { type: string }
+        time_ms: { type: integer }
+        previous_time_ms: { type: integer }
+        previous_holder: { type: string }
+        swimmer_id: { type: string }
+        swimmer_name: { type: string }
+        swim_date: { type: string, format: date }
+        status: { type: string, enum: [accepted, pending], description: "pending = the standing record is locked and needs admin approval" }
+    CreateManualRecordRequest:
+      type: object
+      additionalProperties: false
+      required: [course, gender, age_group, distance, stroke, time_ms, swim_date]
+      properties:
+        course: { type: string, enum: [SCY, SCM, LCM] }
+        gender: { type: string, enum: [M, F] }
+        age_group: { $ref: "#/components/schemas/RecordAgeGroup" }
+        distance: { type: integer, minimum: 1 }
+        stroke: { type: string, enum: [free, back, breast, fly, im] }
+        time_ms: { type: integer, minimum: 1 }
+        swimmer_id: { type: string, description: Optional club swimmer; fills swimmer_name when omitted }
+        swimmer_name: { type: string, maxLength: 120 }
+        swimmer_age: { type: integer }
+        swim_date: { type: string, format: date }
+        meet_name: { type: string, maxLength: 200 }
+        notes: { type: string, maxLength: 1000 }
+        locked: { type: boolean }
+        verified: { type: boolean }
+    TopTimesList:
+      type: object
+      properties:
+        course: { type: string }
+        gender: { type: string }
+        age_group: { $ref: "#/components/schemas/RecordAgeGroup" }
+        distance: { type: integer }
+        stroke: { type: string }
+        label: { type: string }
+        entries:
+          type: array
+          items:
+            type: object
+            properties:
+              rank: { type: integer }
+              swimmer_id: { type: string }
+              swimmer_name: { type: string }
+              age: { type: integer }
+              time_ms: { type: integer }
+              swim_date: { type: string, format: date }
+              meet_id: { type: string }
+              meet_name: { type: string }
+              result_id: { type: string }
+    CreateGoalRequest:
+      type: object
+      additionalProperties: false
+      required: [distance, stroke, course, target_time_ms]
+      properties:
+        distance: { type: integer, minimum: 1 }
+        stroke: { type: string, enum: [free, back, breast, fly, im] }
+        course: { type: string, enum: [SCY, SCM, LCM] }
+        target_time_ms: { type: integer, minimum: 1 }
+        deadline: { type: string, format: date }
+        notes: { type: string, maxLength: 500 }
+    GoalProgress:
+      type: object
+      properties:
+        id: { type: string }
+        swimmer_id: { type: string }
+        distance: { type: integer }
+        stroke: { type: string }
+        course: { type: string }
+        target_time_ms: { type: integer }
+        baseline_time_ms: { type: integer, description: Best time when the goal was set }
+        deadline: { type: string, format: date }
+        notes: { type: string }
+        status: { type: string, enum: [active, archived] }
+        best_time_ms: { type: integer, nullable: true }
+        best_recorded_at: { type: string, format: date-time }
+        gap_ms: { type: integer, description: "best − target; ≤ 0 means achieved" }
+        progress_percent: { type: number, description: 0–100 from baseline toward target }
+        achieved: { type: boolean }
+        days_remaining: { type: integer }
+        overdue: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    RelayLeg:
+      type: object
+      properties:
+        leg: { type: integer, minimum: 1, maximum: 4 }
+        stroke: { type: string }
+        swimmer_id: { type: string }
+        swimmer_name: { type: string }
+        gender: { type: string }
+        time_ms: { type: integer }
+        locked: { type: boolean }
+    RelayTeam:
+      type: object
+      properties:
+        label: { type: string, example: A }
+        legs: { type: array, items: { $ref: "#/components/schemas/RelayLeg" } }
+        total_ms: { type: integer }
+    RelayOptimizeRequest:
+      type: object
+      additionalProperties: false
+      required: [gender, relay_type, distance]
+      properties:
+        meet_id: { type: string, description: Sets the age date (meet start) and default course }
+        course: { type: string, enum: [SCY, SCM, LCM] }
+        gender: { type: string, enum: [M, F, X] }
+        age_group: { $ref: "#/components/schemas/RecordAgeGroup" }
+        relay_type: { type: string, enum: [free, medley] }
+        distance: { type: integer, enum: [200, 400, 800] }
+        teams: { type: integer, minimum: 1, maximum: 6, default: 3 }
+        as_of: { type: string, format: date }
+        group_code: { type: string }
+        locks:
+          type: array
+          items:
+            type: object
+            required: [team, leg, swimmer_id]
+            properties:
+              team: { type: integer, minimum: 0, description: "0 = relay A" }
+              leg: { type: integer, minimum: 1, maximum: 4 }
+              swimmer_id: { type: string }
+        excluded_swimmer_ids: { type: array, items: { type: string } }
+        include_swimmer_ids: { type: array, items: { type: string } }
+    RelayProposal:
+      type: object
+      properties:
+        course: { type: string }
+        gender: { type: string }
+        age_group: { type: string }
+        relay_type: { type: string }
+        distance: { type: integer }
+        leg_distance: { type: integer }
+        as_of: { type: string, format: date }
+        meet_id: { type: string }
+        teams: { type: array, items: { $ref: "#/components/schemas/RelayTeam" } }
+        warnings: { type: array, items: { type: string } }
+        pool:
+          type: array
+          items:
+            type: object
+            properties:
+              swimmer_id: { type: string }
+              name: { type: string }
+              gender: { type: string }
+              age: { type: integer }
+              times: { type: object, additionalProperties: { type: integer } }
+    RelayLineupRequest:
+      type: object
+      additionalProperties: false
+      required: [meet_id, course, gender, age_group, relay_type, distance, teams]
+      properties:
+        meet_id: { type: string }
+        name: { type: string, maxLength: 120 }
+        course: { type: string, enum: [SCY, SCM, LCM] }
+        gender: { type: string, enum: [M, F, X] }
+        age_group: { $ref: "#/components/schemas/RecordAgeGroup" }
+        relay_type: { type: string, enum: [free, medley] }
+        distance: { type: integer, enum: [200, 400, 800] }
+        teams: { type: array, minItems: 1, maxItems: 6, items: { $ref: "#/components/schemas/RelayTeam" } }
+        notes: { type: string, maxLength: 1000 }
+    RelayLineup:
+      allOf:
+        - $ref: "#/components/schemas/RelayLineupRequest"
+        - type: object
+          properties:
+            id: { type: string }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+            created_by: { type: string }
+    ProgressReport:
+      type: object
+      properties:
+        period_a: { type: object, properties: { from: { type: string, format: date }, to: { type: string, format: date } } }
+        period_b: { type: object, properties: { from: { type: string, format: date }, to: { type: string, format: date } } }
+        group_code: { type: string }
+        course: { type: string }
+        swimmers: { type: array, items: { $ref: "#/components/schemas/SwimmerProgress" } }
+        most_improved: { type: array, items: { $ref: "#/components/schemas/SwimmerProgress" } }
+    SwimmerProgress:
+      type: object
+      properties:
+        swimmer_id: { type: string }
+        swimmer_name: { type: string }
+        group_codes: { type: array, items: { type: string } }
+        events:
+          type: array
+          items:
+            type: object
+            properties:
+              distance: { type: integer }
+              stroke: { type: string }
+              course: { type: string }
+              before_ms: { type: integer }
+              after_ms: { type: integer }
+              drop_ms: { type: integer, description: positive = faster }
+              percent: { type: number, description: positive = faster }
+        events_compared: { type: integer }
+        events_improved: { type: integer }
+        new_events: { type: integer }
+        avg_percent: { type: number }
+        total_drop_ms: { type: integer }
+
+    # Training ─────────────────────────────────────────────────────────────────
+    DeletedResponse:
+      type: object
+      required: [deleted]
+      properties:
+        deleted: { type: boolean }
+
+    WorkoutSet:
+      type: object
+      description: Leaf set (repeats × distance) or nested round (repeats × sets). Rounds pass stroke/zone/equipment down to children that leave them empty.
+      required: [repeats]
+      properties:
+        repeats: { type: integer, minimum: 1, maximum: 99 }
+        distance: { type: integer, minimum: 1, maximum: 10000, description: Per-repeat distance in course units; omitted on rounds }
+        stroke: { type: string, enum: [free, back, breast, fly, im, choice, kick, pull, drill] }
+        interval_seconds: { type: integer, minimum: 0, maximum: 3600, description: Send-off per repeat }
+        rest_seconds: { type: integer, minimum: 0, maximum: 3600 }
+        zone:
+          type: string
+          enum: [REC, EN1, EN2, EN3, SP1, SP2, SP3]
+          description: USA Swimming energy-system zone
+        equipment:
+          type: array
+          items: { type: string, enum: [fins, paddles, snorkel, pull_buoy, kickboard, band, parachute, drag_suit, tempo_trainer] }
+        notes: { type: string, maxLength: 500 }
+        sets:
+          type: array
+          items: { $ref: "#/components/schemas/WorkoutSet" }
+
+    WorkoutSection:
+      type: object
+      required: [kind, sets]
+      properties:
+        kind: { type: string, enum: [warmup, pre_set, main, kick, pull, drill, cooldown, custom] }
+        title: { type: string }
+        notes: { type: string }
+        sets: { type: array, items: { $ref: "#/components/schemas/WorkoutSet" } }
+
+    WorkoutTotals:
+      type: object
+      required: [distance, unit, distance_yards, lengths, by_stroke, by_zone, by_section, estimated_seconds, warnings]
+      properties:
+        distance: { type: integer }
+        unit: { type: string, enum: [yd, m] }
+        distance_yards: { type: integer }
+        lengths: { type: integer }
+        by_stroke: { type: object, additionalProperties: { type: integer } }
+        by_zone: { type: object, additionalProperties: { type: integer }, description: Includes `unassigned` for distance without a zone }
+        by_section:
+          type: array
+          items:
+            type: object
+            properties:
+              index: { type: integer }
+              kind: { type: string }
+              title: { type: string }
+              distance: { type: integer }
+              estimated_seconds: { type: integer }
+        estimated_seconds: { type: integer, description: Sum of send-offs, or estimated swim time plus rest when no send-off }
+        warnings: { type: array, items: { type: string } }
+
+    WorkoutInput:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string, maxLength: 160 }
+        description: { type: string }
+        course: { type: string, enum: [SCY, SCM, LCM], default: SCY }
+        is_template: { type: boolean }
+        tags: { type: array, maxItems: 12, items: { type: string, maxLength: 32 } }
+        sections: { type: array, maxItems: 20, items: { $ref: "#/components/schemas/WorkoutSection" } }
+
+    Workout:
+      type: object
+      required: [id, org_id, title, course, is_template, tags, sections, totals]
+      properties:
+        id: { type: string }
+        org_id: { type: string }
+        title: { type: string }
+        description: { type: string }
+        course: { type: string, enum: [SCY, SCM, LCM] }
+        is_template: { type: boolean }
+        tags: { type: array, items: { type: string } }
+        sections: { type: array, items: { $ref: "#/components/schemas/WorkoutSection" } }
+        source_workout_id: { type: string }
+        totals: { $ref: "#/components/schemas/WorkoutTotals" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        created_by: { type: string }
+        updated_by: { type: string }
+
+    WorkoutResponse:
+      type: object
+      required: [workout]
+      properties:
+        workout: { $ref: "#/components/schemas/Workout" }
+
+    TrainingPractice:
+      type: object
+      required: [id, date, type, yardage_target]
+      properties:
+        id: { type: string }
+        org_id: { type: string }
+        date: { type: string, format: date }
+        group_id: { type: string }
+        type: { type: string, enum: [water, dryland, video, rest] }
+        description: { type: string }
+        yardage_target: { type: integer, description: Derived from the workout total when workout_id is set }
+        attendance: { type: integer }
+        strokes:
+          type: object
+          properties:
+            free: { type: integer }
+            back: { type: integer }
+            breast: { type: integer }
+            fly: { type: integer }
+            im: { type: integer }
+        notes: { type: string, description: Coach-only; redacted for parent/swimmer }
+        workout_id: { type: string }
+
+    PracticeWorkoutResponse:
+      type: object
+      required: [practice, workout]
+      properties:
+        practice: { $ref: "#/components/schemas/TrainingPractice" }
+        workout: { $ref: "#/components/schemas/Workout" }
+
+    TrainingPhaseInput:
+      type: object
+      required: [group_id, phase, start_date, end_date]
+      properties:
+        group_id: { type: string }
+        phase: { type: string, enum: [base, build, peak, taper, recovery] }
+        name: { type: string, maxLength: 80 }
+        start_date: { type: string, format: date }
+        end_date: { type: string, format: date }
+        weekly_yardage_target: { type: integer, minimum: 0, maximum: 200000 }
+        focus: { type: string, maxLength: 500 }
+
+    TrainingPhase:
+      allOf:
+        - $ref: "#/components/schemas/TrainingPhaseInput"
+        - type: object
+          required: [id, season_id]
+          properties:
+            id: { type: string }
+            org_id: { type: string }
+            season_id: { type: string }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+
+    TrainingAnalytics:
+      type: object
+      required: [from, to, weeks, groups, zone_yards, stroke_yards, total_practices, structured_practices]
+      properties:
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        weeks:
+          type: array
+          items:
+            type: object
+            properties:
+              week_start: { type: string, format: date }
+              group_id: { type: string }
+              practices: { type: integer }
+              planned_yards: { type: integer }
+              swimmer_yards: { type: integer }
+              present: { type: integer }
+              absent: { type: integer }
+              excused: { type: integer }
+              attendance_pct: { type: [number, "null"] }
+        groups:
+          type: array
+          items:
+            type: object
+            properties:
+              group_id: { type: string }
+              practices: { type: integer }
+              planned_yards: { type: integer }
+              swimmer_yards: { type: integer }
+              present: { type: integer }
+              absent: { type: integer }
+              excused: { type: integer }
+              attendance_pct: { type: [number, "null"] }
+        zone_yards: { type: object, additionalProperties: { type: integer } }
+        stroke_yards: { type: object, additionalProperties: { type: integer } }
+        total_practices: { type: integer }
+        structured_practices: { type: integer }
+
+    SwimmerTrainingAnalytics:
+      type: object
+      required: [swimmer_id, from, to, yards, scheduled, weeks, zone_yards]
+      properties:
+        swimmer_id: { type: string }
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        yards: { type: integer }
+        scheduled: { type: integer }
+        present: { type: integer }
+        absent: { type: integer }
+        excused: { type: integer }
+        attendance_pct: { type: [number, "null"] }
+        zone_yards: { type: object, additionalProperties: { type: integer } }
+        weeks:
+          type: array
+          items:
+            type: object
+            properties:
+              week_start: { type: string, format: date }
+              yards: { type: integer }
+              scheduled: { type: integer }
+              present: { type: integer }
+              absent: { type: integer }
+              excused: { type: integer }
+              attendance_pct: { type: [number, "null"] }
+
+    # Volunteer ────────────────────────────────────────────────────────────────
+    VolunteerSettings:
+      type: object
+      properties:
+        org_id: { type: string }
+        default_required_hours: { type: number }
+        default_buyout_cents_per_hour: { type: integer }
+        cancellation_cutoff_hours: { type: integer }
+        reminders_enabled: { type: boolean }
+        timezone: { type: string }
+        updated_at: { type: string, format: date-time }
+        updated_by: { type: string }
+    VolunteerTemplateRole:
+      type: object
+      required: [role, title, capacity]
+      properties:
+        role: { type: string, enum: [timer, concessions, marshal, official, hospitality, setup, admin, other] }
+        title: { type: string }
+        description: { type: string }
+        capacity: { type: integer, minimum: 1, maximum: 500 }
+        hour_credit: { type: number, description: Defaults to the shift length rounded to 0.25h }
+        min_age: { type: integer }
+        requires_certification: { type: boolean }
+    VolunteerTemplate:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        roles: { type: array, items: { $ref: "#/components/schemas/VolunteerTemplateRole" } }
+    VolunteerJobInput:
+      type: object
+      additionalProperties: false
+      required: [role, title, starts_at, ends_at, capacity]
+      description: A job needs meet_id or event_name.
+      properties:
+        meet_id: { type: string }
+        event_name: { type: string }
+        season_id: { type: string, description: Explicit season; otherwise derived from the shift date }
+        role: { type: string, enum: [timer, concessions, marshal, official, hospitality, setup, admin, other] }
+        title: { type: string, maxLength: 120 }
+        description: { type: string }
+        location: { type: string }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        capacity: { type: integer, minimum: 1, maximum: 500 }
+        hour_credit: { type: number, minimum: 0, maximum: 24 }
+        min_age: { type: integer, minimum: 0, maximum: 99 }
+        requires_certification: { type: boolean }
+    VolunteerJob:
+      type: object
+      properties:
+        id: { type: string }
+        org_id: { type: string }
+        meet_id: { type: string }
+        event_name: { type: string }
+        season_id: { type: string }
+        role: { type: string }
+        title: { type: string }
+        description: { type: string }
+        location: { type: string }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        capacity: { type: integer }
+        hour_credit: { type: number }
+        min_age: { type: integer }
+        requires_certification: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        created_by: { type: string }
+        updated_by: { type: string }
+    VolunteerJobView:
+      allOf:
+        - $ref: "#/components/schemas/VolunteerJob"
+        - type: object
+          properties:
+            meet_name: { type: string }
+            effective_season_id: { type: string }
+            filled_count: { type: integer }
+            open_spots: { type: integer }
+            signups:
+              type: array
+              description: Staff only
+              items: { $ref: "#/components/schemas/VolunteerSignupView" }
+    VolunteerSignup:
+      type: object
+      properties:
+        id: { type: string }
+        org_id: { type: string }
+        job_id: { type: string }
+        household_id: { type: string }
+        volunteer_name: { type: string }
+        swimmer_id: { type: string }
+        status: { type: string, enum: [confirmed, cancelled, worked, no_show] }
+        hours_credited: { type: number }
+        notes: { type: string }
+        signed_up_by: { type: string }
+        cancelled_at: { type: string, format: date-time }
+        cancelled_by: { type: string }
+        checked_in_at: { type: string, format: date-time }
+        checked_in_by: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    VolunteerSignupView:
+      allOf:
+        - $ref: "#/components/schemas/VolunteerSignup"
+        - type: object
+          properties:
+            household_name: { type: string }
+            effective_hours: { type: number }
+            can_cancel: { type: boolean, description: Whether the caller may cancel now (cutoff applied for parents) }
+            job: { $ref: "#/components/schemas/VolunteerJob" }
+    VolunteerRequirement:
+      type: object
+      properties:
+        id: { type: string }
+        org_id: { type: string }
+        season_id: { type: string }
+        household_id: { type: string, description: Empty for the season-wide requirement }
+        required_hours: { type: number }
+        buyout_cents_per_hour: { type: integer }
+        notes: { type: string }
+        updated_at: { type: string, format: date-time }
+        updated_by: { type: string }
+    VolunteerCredit:
+      type: object
+      properties:
+        id: { type: string }
+        org_id: { type: string }
+        season_id: { type: string }
+        household_id: { type: string }
+        hours: { type: number }
+        reason: { type: string }
+        created_by: { type: string }
+        created_at: { type: string, format: date-time }
+    VolunteerBuyout:
+      type: object
+      properties:
+        id: { type: string }
+        org_id: { type: string }
+        season_id: { type: string }
+        household_id: { type: string }
+        status: { type: string, enum: [pending, billed] }
+        hours_short: { type: number }
+        rate_cents_per_hour: { type: integer }
+        amount_cents: { type: integer }
+        invoice_id: { type: string }
+        invoice_item_id: { type: string }
+        created_by: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    VolunteerLedgerRow:
+      type: object
+      properties:
+        season_id: { type: string }
+        season_name: { type: string }
+        season_status: { type: string }
+        season_start_date: { type: string, format: date }
+        season_end_date: { type: string, format: date }
+        household_id: { type: string }
+        household_name: { type: string }
+        required_hours: { type: number }
+        worked_hours: { type: number }
+        credited_hours: { type: number }
+        earned_hours: { type: number }
+        scheduled_hours: { type: number, description: Hours from confirmed signups not yet checked in }
+        remaining_hours: { type: number }
+        buyout_cents_per_hour: { type: integer }
+        buyout_due_cents: { type: integer }
+        requirement_source: { type: string, enum: [household, season, org_default] }
+        status: { type: string, enum: [exempt, met, on_track, short, bought_out] }
+        buyout: { $ref: "#/components/schemas/VolunteerBuyout" }
 
     # Common ───────────────────────────────────────────────────────────────────
     ErrorResponse:
@@ -4840,8 +8672,84 @@ components:
         team_code: { type: string }
         team_name: { type: string }
         lsc_code: { type: string }
+        email_sender_name: { type: string }
+        email_sender_address: { type: string }
+        public_slug: { type: string, description: "3-40 lowercase letters, digits or hyphens; unique across clubs." }
+        public_site_enabled: { type: boolean }
+        public_show_coaches: { type: boolean }
+        public_about: { type: string }
+        public_contact_email: { type: string }
+        public_contact_phone: { type: string }
         updated_at: { type: string, format: date-time }
         updated_by: { type: string }
+    PublicTeamSite:
+      type: object
+      properties:
+        club:
+          type: object
+          properties:
+            name: { type: string }
+            slug: { type: string }
+            about: { type: string }
+            contact_email: { type: string }
+            contact_phone: { type: string }
+            join_url: { type: string }
+        announcements:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              title: { type: string }
+              body: { type: string }
+              published_at: { type: string, format: date-time, nullable: true }
+        meets:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              name: { type: string }
+              start_date: { type: string }
+              end_date: { type: string }
+              location: { type: string }
+              host_org: { type: string }
+              course: { type: string }
+        events:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              title: { type: string }
+              category: { type: string }
+              description: { type: string }
+              location: { type: string }
+              starts_at: { type: string, format: date-time }
+              ends_at: { type: string, format: date-time, nullable: true }
+              all_day: { type: boolean }
+        records:
+          type: array
+          items:
+            type: object
+            properties:
+              label: { type: string }
+              course: { type: string }
+              gender: { type: string }
+              age_group: { type: string }
+              distance: { type: integer }
+              stroke: { type: string }
+              time_ms: { type: integer }
+              swimmer_name: { type: string }
+              swim_date: { type: string }
+              meet_name: { type: string }
+        coaches:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              role: { type: string }
 
     # Exports ──────────────────────────────────────────────────────────────────
     FileExport:
@@ -5247,6 +9155,7 @@ components:
               type: string
               enum: [all, group]
             group_id: { type: string }
+            public: { type: boolean }
             status:
               type: string
               enum: [draft, published, archived]
@@ -5262,6 +9171,7 @@ components:
           type: string
           enum: [all, group]
         group_id: { type: string }
+        public: { type: boolean }
 
     EmailCampaign:
       allOf:

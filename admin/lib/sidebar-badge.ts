@@ -6,6 +6,7 @@ export type SidebarSessionProps = {
   roles: Role[]
   userName?: string
   orgId: string
+  token?: string
 }
 
 export function buildSidebarSessionProps(session: Session): SidebarSessionProps {
@@ -14,6 +15,7 @@ export function buildSidebarSessionProps(session: Session): SidebarSessionProps 
     roles: session.user.roles,
     userName: session.user.avatarInitials ?? session.user.name?.slice(0, 2),
     orgId: session.user.orgId,
+    token: session.token || undefined,
   }
 }
 
@@ -22,12 +24,14 @@ export function shouldFetchPendingApprovals(roles: Role | Role[], orgId?: string
   return Boolean(orgId) && (allRoles.includes('admin'))
 }
 
-export function pendingApprovalsRequestInit(orgId: string): RequestInit {
+// Cookie-backed sessions authenticate via credentials; bearer sessions (dev
+// stub tokens) must also forward the token or the badge requests 401.
+export function pendingApprovalsRequestInit(orgId: string, token?: string): RequestInit {
+  const headers: Record<string, string> = { 'X-Org-Id': orgId }
+  if (token) headers['Authorization'] = `Bearer ${token}`
   return {
     cache: 'no-store',
     credentials: 'include',
-    headers: {
-      'X-Org-Id': orgId,
-    },
+    headers,
   }
 }

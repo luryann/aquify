@@ -10,6 +10,8 @@ export type PortalSwimmerCommitmentState = {
   selectedEvents: string[]
   selectedEventSelectionIds: Record<string, string>
   note: string
+  /** Last note persisted with a response; differs from `note` while editing. */
+  savedNote: string
 }
 
 export function mapPortalCommitmentStatus(status: string): 'pending' | 'yes' | 'no' | 'closed' {
@@ -40,6 +42,7 @@ export function buildPortalSwimmerStates(
       selectedEvents: persistedSelections.map((selection) => selection.meet_event_id),
       selectedEventSelectionIds,
       note: commitment?.note ?? '',
+      savedNote: commitment?.note ?? '',
     }
   }
 

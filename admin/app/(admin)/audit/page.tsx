@@ -4,8 +4,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
-import { ApiError, useApiClient } from '@/lib/api'
+import { useApiClient } from '@/lib/api'
 import { fetchAuditEvents, fetchUsers, type AuditEventRecord, type UserRecord } from '@/lib/adminData'
+import { uiErrorMessage } from '@/lib/frontend-telemetry'
 
 function displayNameForUser(user: UserRecord): string {
   const name = `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim()
@@ -110,7 +111,7 @@ export default function AuditLogPage() {
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof ApiError ? err.message : 'Unable to load audit events.')
+          setError(uiErrorMessage(err, 'Couldn’t load audit events. Try again.'))
           setEvents([])
         }
       } finally {
@@ -147,42 +148,36 @@ export default function AuditLogPage() {
   }
 
   return (
-    <div style={{ padding: '32px 36px 80px', maxWidth: 1260, margin: '0 auto' }}>
-      <div style={{ marginBottom: '28px' }}>
-        <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
-          Compliance
-        </p>
+    <div className="page">
+      <div className="page-heading">
         <h1 className="page-title">
           Audit Log
         </h1>
-        <p className="page-subtitle">
-          A permanent record of important actions taken in your club&apos;s account.
-        </p>
       </div>
 
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '18px', flexWrap: 'wrap', alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', flexWrap: 'wrap', alignItems: 'center' }}>
         <div style={{ position: 'relative', flex: 1, minWidth: '240px', maxWidth: '340px' }}>
           <Icon name="search" size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search actor, action, resource…"
-            style={{ width: '100%', padding: '8px 12px 8px 32px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)', fontSize: '13px', outline: 'none' }}
+            style={{ width: '100%', padding: '8px 12px 8px 32px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)', fontSize: 'var(--fs-base)', outline: 'none' }}
           />
         </div>
-        <select value={actionFilter} onChange={(event) => setActionFilter(event.target.value)} style={{ padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)', fontSize: '13px' }}>
+        <select value={actionFilter} onChange={(event) => setActionFilter(event.target.value)} style={{ padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)', fontSize: 'var(--fs-base)' }}>
           <option value="">All categories</option>
           {families.map((item) => <option key={item} value={item}>{familyLabel(item)}</option>)}
         </select>
-        <select value={resourceFilter} onChange={(event) => setResourceFilter(event.target.value)} style={{ padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)', fontSize: '13px' }}>
+        <select value={resourceFilter} onChange={(event) => setResourceFilter(event.target.value)} style={{ padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)', fontSize: 'var(--fs-base)' }}>
           <option value="">All types</option>
           {resources.map((item) => <option key={item} value={item}>{resourceLabel(item)}</option>)}
         </select>
-        <span style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>{filtered.length} events</span>
+        <span style={{ marginLeft: 'auto', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>{filtered.length} events</span>
       </div>
 
       {error ? (
-        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: '12px' }}>
+        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: 'var(--fs-sm)' }}>
           {error}
         </div>
       ) : null}
@@ -201,50 +196,50 @@ export default function AuditLogPage() {
               <div key={event.id} style={{ borderBottom: index < filtered.length - 1 ? '1px solid var(--border)' : 'none' }}>
                 <button
                   onClick={() => setExpanded(isExpanded ? null : event.id)}
-                  style={{ width: '100%', padding: '16px 18px', background: 'transparent', border: 'none', textAlign: 'left', cursor: 'pointer' }}
+                  style={{ width: '100%', padding: '16px 20px', background: 'transparent', border: 'none', textAlign: 'left', cursor: 'pointer' }}
                 >
-                  <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr 220px', gap: '16px', alignItems: 'start' }}>
+                  <div className="audit-row">
                     <div>
-                      <div style={{ fontSize: '12px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>{formatDateTime(event.occurred_at)}</div>
-                      <div style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>
+                      <div style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>{formatDateTime(event.occurred_at)}</div>
+                      <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>
                         {actorNames[event.actor_user_id] ?? `${event.actor_user_id.slice(0, 8)}…`}
                       </div>
                     </div>
-                    <div>
+                    <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
                       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '6px' }}>
                         <span className="badge" style={{ color: accent, background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
                           {event.action}
                         </span>
-                        <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>
+                        <span style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>
                           {resourceLabel(event.resource_type)}
                         </span>
                       </div>
-                      <div style={{ fontSize: '13px', color: 'var(--text)' }}>
+                      <div style={{ fontSize: 'var(--fs-base)', color: 'var(--text)' }}>
                         Resource <code style={{ fontFamily: 'var(--font-body)' }}>{event.resource_id}</code>
                       </div>
                     </div>
-                    <div style={{ textAlign: 'right', color: 'var(--text-muted)', fontSize: '12px' }}>
+                    <div style={{ textAlign: 'right', color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>
                       {isExpanded ? 'Hide details' : 'View metadata'}
                     </div>
                   </div>
                 </button>
 
                 {isExpanded ? (
-                  <div style={{ padding: '0 18px 16px 18px', background: 'var(--bg-surface)' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
-                      <div className="card-elevated" style={{ padding: '12px 14px' }}>
-                        <div style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>Roles</div>
-                        <div style={{ fontSize: '12px', color: 'var(--text)' }}>{event.actor_roles.join(', ') || '—'}</div>
+                  <div style={{ padding: '0 20px 16px 20px', background: 'var(--bg-surface)' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+                      <div className="card-elevated" style={{ padding: '12px 16px' }}>
+                        <div style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>Roles</div>
+                        <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text)' }}>{event.actor_roles.join(', ') || '—'}</div>
                       </div>
-                      <div className="card-elevated" style={{ padding: '12px 14px' }}>
-                        <div style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>Metadata</div>
-                        <pre style={{ margin: 0, fontSize: '11px', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                      <div className="card-elevated" style={{ padding: '12px 16px' }}>
+                        <div style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>Metadata</div>
+                        <pre style={{ margin: 0, fontSize: 'var(--fs-xs)', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                           {JSON.stringify(event.metadata ?? {}, null, 2)}
                         </pre>
                       </div>
-                      <div className="card-elevated" style={{ padding: '12px 14px' }}>
-                        <div style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>State Change</div>
-                        <pre style={{ margin: 0, fontSize: '11px', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                      <div className="card-elevated" style={{ padding: '12px 16px' }}>
+                        <div style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>State change</div>
+                        <pre style={{ margin: 0, fontSize: 'var(--fs-xs)', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                           {JSON.stringify({ before: event.before_state ?? null, after: event.after_state ?? null }, null, 2)}
                         </pre>
                       </div>

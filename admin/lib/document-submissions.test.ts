@@ -56,5 +56,5 @@ test('getPortalDocumentAction keeps waiver and medical rows on the real upload p
 test('getPortalDocumentAction only exposes a CTA for actionable document statuses', () => {
   assert.equal(getPortalDocumentAction({ effectiveStatus: 'submitted', typeCategory: 'waiver' }), 'none')
   assert.equal(getPortalDocumentAction({ effectiveStatus: 'verified', typeCategory: 'medical' }), 'none')
-  assert.equal(getPortalDocumentAction({ effectiveStatus: 'pending', typeCategory: 'insurance' }), 'none')
+  assert.equal(getPortalDocumentAction({ effectiveStatus: 'pending', typeCategory: 'insurance' }), 'upload')
 })

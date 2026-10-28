@@ -137,6 +137,6 @@ test('portal checkout helpers expose redirect-disabled and failure states', asyn
   )
   assert.equal(
     portalInvoiceCheckoutErrorMessage(new Error('unexpected')),
-    'Unable to start Stripe Checkout right now.',
+    'Couldn’t start Stripe Checkout. Try again.',
   )
 })

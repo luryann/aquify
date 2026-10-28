@@ -2,6 +2,7 @@ package httpx
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
@@ -25,6 +26,21 @@ func WriteJSON(w http.ResponseWriter, status int, payload any) error {
 }
 
 func WriteError(w http.ResponseWriter, r *http.Request, status int, code, message string, details any) {
+	if cause, ok := details.(error); ok {
+		// Handlers pass the underlying error for 5xx responses: log it for
+		// operators, but never serialise internal error text to clients.
+		details = nil
+		if status >= http.StatusInternalServerError {
+			slog.ErrorContext(r.Context(), "request failed",
+				"status", status,
+				"code", code,
+				"method", r.Method,
+				"path", r.URL.Path,
+				"request_id", chimiddleware.GetReqID(r.Context()),
+				"error", cause.Error(),
+			)
+		}
+	}
 	_ = WriteJSON(w, status, ErrorEnvelope{
 		Error: APIError{
 			Code:      code,

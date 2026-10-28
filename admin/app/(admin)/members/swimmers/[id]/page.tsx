@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { Icon } from '@/components/ui/icons'
 import { Tabs } from '@/components/ui/Tabs'
+import { SwimmerEngagementCard } from '@/components/engagement/SwimmerEngagementCard'
 import { Table, type Column } from '@/components/ui/Table'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
@@ -24,6 +25,8 @@ import {
   type SwimmerGroupLinkRecord,
   type SwimmerRecord,
 } from '@/lib/adminData'
+import { parseBackendDate } from '@/lib/dates'
+import { uiErrorMessage } from '@/lib/frontend-telemetry'
 
 type BestTimeRow = {
   event: string
@@ -43,7 +46,7 @@ type GroupMembershipRow = {
 
 function formatDate(value?: string | null) {
   if (!value) return '—'
-  const parsed = new Date(value)
+  const parsed = parseBackendDate(value)
   if (Number.isNaN(parsed.getTime())) return value
   return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
@@ -60,7 +63,7 @@ function formatMs(ms?: number | null) {
 
 function computeAge(dob?: string) {
   if (!dob) return '—'
-  const birth = new Date(dob)
+  const birth = parseBackendDate(dob)
   if (Number.isNaN(birth.getTime())) return '—'
   const now = new Date()
   let age = now.getFullYear() - birth.getFullYear()
@@ -81,17 +84,17 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 const BT_COLS: Column<BestTimeRow>[] = [
-  { key: 'event', label: 'Event', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>{row.event}</span> },
-  { key: 'course', label: 'Course', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-subtle)', padding: '2px 6px', background: 'var(--bg-elevated)', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)' }}>{row.course}</span> },
-  { key: 'time', label: 'Best Time', align: 'right', sortable: true, render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '14px', fontWeight: 700, color: 'var(--accent)' }}>{row.time}</span> },
-  { key: 'override', label: 'Source', render: (row) => <span style={{ fontSize: '12px', color: row.override ? 'var(--warning)' : 'var(--text-muted)' }}>{row.override ?? 'Imported result'}</span> },
-  { key: 'updatedAt', label: 'Updated', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-muted)' }}>{formatDate(row.updatedAt)}</span> },
+  { key: 'event', label: 'Event', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)' }}>{row.event}</span> },
+  { key: 'course', label: 'Course', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', padding: '2px 6px', background: 'var(--bg-elevated)', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)' }}>{row.course}</span> },
+  { key: 'time', label: 'Best time', align: 'right', sortable: true, render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-md)', fontWeight: 700, color: 'var(--accent)' }}>{row.time}</span> },
+  { key: 'override', label: 'Source', render: (row) => <span style={{ fontSize: 'var(--fs-sm)', color: row.override ? 'var(--warning)' : 'var(--text-muted)' }}>{row.override ?? 'Imported result'}</span> },
+  { key: 'updatedAt', label: 'Updated', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>{formatDate(row.updatedAt)}</span> },
 ]
 
 const GROUP_COLS: Column<GroupMembershipRow>[] = [
-  { key: 'groupName', label: 'Group', render: (row) => <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>{row.groupName}</span> },
-  { key: 'groupType', label: 'Type', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-subtle)' }}>{row.groupType}</span> },
-  { key: 'assignedAt', label: 'Assigned', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-subtle)' }}>{formatDate(row.assignedAt)}</span> },
+  { key: 'groupName', label: 'Group', render: (row) => <span style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)' }}>{row.groupName}</span> },
+  { key: 'groupType', label: 'Type', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{row.groupType}</span> },
+  { key: 'assignedAt', label: 'Assigned', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{formatDate(row.assignedAt)}</span> },
   { key: 'status', label: 'Status', render: (row) => <StatusBadge status={row.status} /> },
 ]
 
@@ -186,7 +189,7 @@ export default function SwimmerDetailPage() {
         setHistory(buildHistoryRows(progression))
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof ApiError ? err.message : 'Failed to load swimmer details.')
+          setError(uiErrorMessage(err, 'Couldn’t load swimmer details. Try again.'))
         }
       } finally {
         if (!cancelled) setLoading(false)
@@ -218,7 +221,7 @@ export default function SwimmerDetailPage() {
       await deleteSwimmer(api, session.user.orgId, swimmer.id)
       router.push('/members?tab=swimmers')
     } catch (err) {
-      setDeleteError(err instanceof ApiError ? err.message : 'Failed to delete swimmer.')
+      setDeleteError(uiErrorMessage(err, 'Couldn’t delete swimmer. Try again.'))
       setShowDeleteConfirm(false)
     } finally {
       setDeleting(false)
@@ -226,32 +229,32 @@ export default function SwimmerDetailPage() {
   }
 
   if (loading) {
-    return <div style={{ padding: '24px', maxWidth: '1100px' }}><EmptyState icon="users" title="Loading swimmer" description="Fetching live swimmer detail data from the API." /></div>
+    return <div className="page"><EmptyState icon="users" title="Loading swimmer" description="Fetching live swimmer detail data from the API." /></div>
   }
 
   if (error || !swimmer) {
-    return <div style={{ padding: '24px', maxWidth: '1100px' }}><EmptyState icon="alert-circle" title="Unable to load swimmer" description={error ?? 'Swimmer not found.'} /></div>
+    return <div className="page"><EmptyState icon="alert-circle" title="Unable to load swimmer" description={error ?? 'Swimmer not found.'} /></div>
   }
 
   const swimmerName = `${swimmer.preferred_name || swimmer.first_name} ${swimmer.last_name}`.trim()
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1100px' }}>
-      <Link href="/members?tab=swimmers" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '13px', color: 'var(--text-subtle)', textDecoration: 'none', marginBottom: '20px' }}>
+    <div className="page">
+      <Link href="/members?tab=swimmers" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', textDecoration: 'none', marginBottom: '20px' }}>
         <Icon name="chevron-left" size={14} /> Swimmers
       </Link>
 
       <div className="page-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-          <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'var(--accent-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', fontWeight: 700, color: 'var(--accent)', fontFamily: 'var(--font-display)', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'var(--accent-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--fs-xl)', fontWeight: 'var(--display-weight)', color: 'var(--accent)', fontFamily: 'var(--font-display)', flexShrink: 0 }}>
             {swimmerName.split(' ').map((part) => part[0]).join('').slice(0, 2)}
           </div>
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px 12px', marginBottom: '4px' }}>
               <h1 className="page-title">{swimmerName}</h1>
               <StatusBadge status={swimmer.registration_status} />
             </div>
-            <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
               <span>{swimmer.usa_swimming_id || swimmer.swimmer_external_id || 'No USA-S ID'}</span>
               <span>·</span>
               <span>Age {computeAge(swimmer.date_of_birth)}</span>
@@ -285,25 +288,25 @@ export default function SwimmerDetailPage() {
           style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.7)' }}
           onClick={(e) => { if (e.target === e.currentTarget) setShowDeleteConfirm(false) }}
         >
-          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--error-border)', borderRadius: '14px', padding: '28px', width: '100%', maxWidth: '460px', boxShadow: 'var(--shadow-lg)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--error-border)', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '460px', boxShadow: 'var(--shadow-lg)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
               <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'var(--error-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <Icon name="trash-2" size={16} style={{ color: 'var(--error)' }} />
               </div>
-              <h2 style={{ fontSize: '16px', fontFamily: 'var(--font-display)', color: 'var(--text)', margin: 0 }}>Delete Swimmer</h2>
+              <h2 className="section-title" style={{ margin: 0 }}>Delete swimmer</h2>
             </div>
-            <p style={{ fontSize: '13px', color: 'var(--text-subtle)', marginBottom: '8px', lineHeight: 1.5 }}>
+            <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', marginBottom: '8px', lineHeight: 1.5 }}>
               This permanently removes <strong style={{ color: 'var(--text)' }}>{swimmerName}</strong> from the roster. It only succeeds if no registrations, meet entries, results, best times, document submissions, or invoice items are still linked to this swimmer — otherwise the delete will be blocked and those dependencies will be listed. This action <strong style={{ color: 'var(--error)' }}>cannot be undone</strong>.
             </p>
-            <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '16px' }}>
+            <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginBottom: '16px' }}>
               Type the swimmer&apos;s name to confirm:
             </p>
             <input
               type="text"
               style={{
-                width: '100%', padding: '9px 12px', background: 'var(--bg-elevated)',
+                width: '100%', padding: '8px 12px', background: 'var(--bg-elevated)',
                 border: `1px solid ${deleteNameConfirm === swimmerName ? 'var(--error)' : 'var(--border)'}`,
-                borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none',
+                borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none',
                 boxSizing: 'border-box', marginBottom: '16px',
               }}
               placeholder={swimmerName}
@@ -311,10 +314,10 @@ export default function SwimmerDetailPage() {
               onChange={(e) => setDeleteNameConfirm(e.target.value)}
             />
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-              <button className="btn" style={{ fontSize: '13px' }} onClick={() => setShowDeleteConfirm(false)}>Cancel</button>
+              <button className="btn" style={{ fontSize: 'var(--fs-base)' }} onClick={() => setShowDeleteConfirm(false)}>Cancel</button>
               <button
                 className="btn"
-                style={{ fontSize: '13px', background: 'var(--error)', color: '#fff', border: 'none' }}
+                style={{ fontSize: 'var(--fs-base)', background: 'var(--error)', color: '#fff', border: 'none' }}
                 disabled={deleteNameConfirm !== swimmerName || deleting}
                 onClick={() => { void handleDeleteSwimmer() }}
               >
@@ -326,42 +329,44 @@ export default function SwimmerDetailPage() {
       )}
 
       {deleteError ? (
-        <div className="card" style={{ padding: '14px 16px', marginBottom: '20px', borderColor: 'var(--error-border)', background: 'var(--error-bg)' }}>
-          <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--error)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-body)', marginBottom: '4px' }}>Delete Blocked</div>
-          <div style={{ fontSize: '13px', color: 'var(--text)' }}>{deleteError}</div>
+        <div className="card" style={{ padding: '16px 16px', marginBottom: '20px', borderColor: 'var(--error-border)', background: 'var(--error-bg)' }}>
+          <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--error)', fontFamily: 'var(--font-body)', marginBottom: '4px' }}>Delete blocked</div>
+          <div style={{ fontSize: 'var(--fs-base)', color: 'var(--text)' }}>{deleteError}</div>
         </div>
       ) : null}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '28px' }}>
+      <div className="cols-4" style={{ gap: '12px', marginBottom: '24px' }}>
         {[
           { label: 'DOB', value: formatDate(swimmer.date_of_birth), color: 'var(--text)' },
-          { label: 'Best Event', value: bestEvent?.event || '—', color: 'var(--accent)' },
-          { label: 'Best Time', value: bestEvent?.time || 'No time yet', color: 'var(--accent)' },
-          { label: 'Current Group', value: groupMemberships[0]?.groupName || '—', color: 'var(--text)' },
+          { label: 'Best event', value: bestEvent?.event || '—', color: 'var(--accent)' },
+          { label: 'Best time', value: bestEvent?.time || 'No time yet', color: 'var(--accent)' },
+          { label: 'Current group', value: groupMemberships[0]?.groupName || '—', color: 'var(--text)' },
         ].map((stat) => (
-          <div key={stat.label} className="card" style={{ padding: '14px 16px' }}>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
-            <div style={{ fontSize: '16px', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
+          <div key={stat.label} className="card" style={{ padding: '16px 16px' }}>
+            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
+            <div style={{ fontSize: 'var(--fs-lg)', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
           </div>
         ))}
       </div>
 
+      <SwimmerEngagementCard api={api} orgId={session?.user.orgId ?? ''} swimmerId={swimmerId} />
+
       <Tabs tabs={tabs} active={activeTab} onChange={setActiveTab} />
 
       {activeTab === 'profile' ? (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+        <div className="cols-2" style={{ gap: '16px' }}>
           <div className="card" style={{ padding: '20px' }}>
-            <h3 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '16px', fontFamily: 'var(--font-body)' }}>Swimmer Info</h3>
+            <h3 className="card-title" style={{ marginBottom: '16px' }}>Profile</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {[
                 { label: 'USA Swimming ID', value: swimmer.usa_swimming_id || '—' },
                 { label: 'External ID', value: swimmer.swimmer_external_id || '—' },
-                { label: 'Date of Birth', value: formatDate(swimmer.date_of_birth) },
+                { label: 'Date of birth', value: formatDate(swimmer.date_of_birth) },
                 { label: 'Age', value: computeAge(swimmer.date_of_birth) },
                 { label: 'Gender', value: swimmer.gender },
-                { label: 'Medical Flags', value: swimmer.medical_flags_redacted ? 'Hidden from you (medical staff only)' : (swimmer.medical_flags?.join(', ') || 'None') },
+                { label: 'Medical flags', value: swimmer.medical_flags_redacted ? 'Hidden from you (medical staff only)' : (swimmer.medical_flags?.join(', ') || 'None') },
               ].map((row) => (
-                <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px', borderBottom: '1px solid var(--border)', paddingBottom: '10px' }}>
+                <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 'var(--fs-base)', borderBottom: '1px solid var(--border)', paddingBottom: '12px' }}>
                   <span style={{ color: 'var(--text-muted)' }}>{row.label}</span>
                   <span style={{ fontFamily: 'var(--font-body)', color: 'var(--text)', fontWeight: 600 }}>{row.value}</span>
                 </div>
@@ -369,8 +374,8 @@ export default function SwimmerDetailPage() {
             </div>
           </div>
           <div className="card" style={{ padding: '20px' }}>
-            <h3 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '16px', fontFamily: 'var(--font-body)' }}>Coach Notes</h3>
-            <p style={{ fontSize: '13px', color: 'var(--text-subtle)', lineHeight: 1.7 }}>
+            <h3 className="card-title" style={{ marginBottom: '16px' }}>Coach notes</h3>
+            <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', lineHeight: 1.7 }}>
               {swimmer.notes || 'No coach notes recorded yet.'}
             </p>
           </div>
@@ -379,9 +384,6 @@ export default function SwimmerDetailPage() {
 
       {activeTab === 'performance' ? (
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <p className="page-subtitle">This swimmer&rsquo;s recorded best times by event and course</p>
-          </div>
           <Table columns={BT_COLS} data={bestTimes} emptyTitle="No times recorded" emptyDescription="Times will appear here after results are imported." />
         </div>
       ) : null}
@@ -393,12 +395,12 @@ export default function SwimmerDetailPage() {
       {activeTab === 'history' ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0px' }}>
           {history.length ? history.map((entry, index) => (
-            <div key={entry.id} style={{ display: 'flex', gap: '16px', padding: '14px 0', borderBottom: index < history.length - 1 ? '1px solid var(--border)' : 'none', alignItems: 'flex-start' }}>
-              <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-muted)', flexShrink: 0, paddingTop: '2px', minWidth: '90px' }}>{formatDate(entry.date)}</span>
+            <div key={entry.id} style={{ display: 'flex', gap: '16px', padding: '16px 0', borderBottom: index < history.length - 1 ? '1px solid var(--border)' : 'none', alignItems: 'flex-start' }}>
+              <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', flexShrink: 0, paddingTop: '2px', minWidth: '90px' }}>{formatDate(entry.date)}</span>
               <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--border-strong)', flexShrink: 0, marginTop: '6px' }} />
               <div>
-                <div style={{ fontSize: '13px', color: 'var(--text)', lineHeight: 1.5, fontWeight: 600 }}>{entry.event}</div>
-                <div style={{ fontSize: '12px', color: 'var(--text-subtle)', lineHeight: 1.5 }}>{entry.detail}</div>
+                <div style={{ fontSize: 'var(--fs-base)', color: 'var(--text)', lineHeight: 1.5, fontWeight: 600 }}>{entry.event}</div>
+                <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', lineHeight: 1.5 }}>{entry.detail}</div>
               </div>
             </div>
           )) : <EmptyState icon="bar-chart-2" title="No progression history" description="Progression entries will appear after results or manual performance records are added." />}

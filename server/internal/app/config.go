@@ -74,6 +74,9 @@ type WorkerConfig struct {
 	// CleanupInterval is how often the expired-file purge job runs.
 	// Default: 6h. Set to 0 to disable.
 	CleanupInterval string
+	// BillingAutomationInterval is how often the recurring billing run and
+	// late-fee sweep jobs fire (each is idempotent). Default: 24h; 0 disables.
+	BillingAutomationInterval string
 	// ScheduledOrgIDs is the list of orgs that receive org-scoped scheduled
 	// jobs such as billing reconciliation and integrity checks.
 	ScheduledOrgIDs []string
@@ -265,17 +268,18 @@ func LoadConfig() Config {
 			DeletionReviewDays: getEnvInt("COMPLIANCE_DELETION_REVIEW_DAYS", 30),
 		},
 		Worker: WorkerConfig{
-			RedisURL:            strings.TrimSpace(getEnv("REDIS_URL", "")),
-			ConcurrencyPerQueue: getEnvInt("WORKER_CONCURRENCY_PER_QUEUE", 2),
-			ReconcileInterval:   getEnv("WORKER_RECONCILE_INTERVAL", "24h"),
-			IntegrityInterval:   getEnv("WORKER_INTEGRITY_INTERVAL", "24h"),
-			CleanupInterval:     getEnv("WORKER_CLEANUP_INTERVAL", "6h"),
-			ScheduledOrgIDs:     splitCSV(getEnv("WORKER_SCHEDULED_ORG_IDS", "")),
+			RedisURL:                  strings.TrimSpace(getEnv("REDIS_URL", "")),
+			ConcurrencyPerQueue:       getEnvInt("WORKER_CONCURRENCY_PER_QUEUE", 2),
+			ReconcileInterval:         getEnv("WORKER_RECONCILE_INTERVAL", "24h"),
+			IntegrityInterval:         getEnv("WORKER_INTEGRITY_INTERVAL", "24h"),
+			CleanupInterval:           getEnv("WORKER_CLEANUP_INTERVAL", "6h"),
+			BillingAutomationInterval: getEnv("WORKER_BILLING_AUTOMATION_INTERVAL", "24h"),
+			ScheduledOrgIDs:           splitCSV(getEnv("WORKER_SCHEDULED_ORG_IDS", "")),
 		},
 		Security: SecurityConfig{
 			CSRFHeaderName: strings.TrimSpace(getEnv("SECURITY_CSRF_HEADER_NAME", "X-CSRF-Token")),
 			RateLimit: RateLimitConfig{
-				GlobalRequests:    getEnvInt("SECURITY_RATE_LIMIT_GLOBAL_REQUESTS", 240),
+				GlobalRequests:    getEnvInt("SECURITY_RATE_LIMIT_GLOBAL_REQUESTS", 1200),
 				GlobalWindow:      getEnvDuration("SECURITY_RATE_LIMIT_GLOBAL_WINDOW", time.Minute),
 				AuthRequests:      getEnvInt("SECURITY_RATE_LIMIT_AUTH_REQUESTS", 20),
 				AuthWindow:        getEnvDuration("SECURITY_RATE_LIMIT_AUTH_WINDOW", time.Minute),

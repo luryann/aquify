@@ -68,6 +68,20 @@ function getCSRFToken(): string | null {
   return decodeURIComponent(value) || null
 }
 
+/**
+ * Auth headers for raw `fetch` calls that can't go through apiFetch (multipart
+ * uploads, file downloads): bearer token when present, otherwise the CSRF
+ * header that cookie-authenticated mutations require.
+ */
+export function rawRequestAuthHeaders(token: string | undefined, method: string): Record<string, string> {
+  if (token) return { Authorization: `Bearer ${token}` }
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method.toUpperCase())) {
+    const csrf = getCSRFToken()
+    if (csrf) return { 'X-CSRF-Token': csrf }
+  }
+  return {}
+}
+
 // Core fetch function
 export async function apiFetch<T = unknown>(
   path: string,

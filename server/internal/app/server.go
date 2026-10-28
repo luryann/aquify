@@ -69,6 +69,17 @@ func canonicalUserManagementRole(role string) string {
 	return strings.TrimSpace(strings.ToLower(role))
 }
 
+// seedsLocalDevFixtures reports whether local-dev fixtures (the stub parent's
+// household) should be seeded. The test env is excluded so suites keep
+// starting from empty state.
+func seedsLocalDevFixtures(appEnv string) bool {
+	switch strings.ToLower(strings.TrimSpace(appEnv)) {
+	case "development", "local":
+		return true
+	}
+	return false
+}
+
 func seedLocalDevKeycloakStub(stub *keycloak.StubClient) {
 	if stub == nil {
 		return
@@ -330,6 +341,14 @@ func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.M
 		logger.Error("object storage init failed; falling back to stub storage", "error", err)
 		objectStore = storage.NewStubStorage(cfg.Storage.BaseURL())
 	}
+	// With the stub in local dev (no or unreachable S3), serve presigned URLs
+	// from the API itself so uploads and downloads work without MinIO (see
+	// devstorage.go).
+	var devStorage *storage.StubStorage
+	if _, isStub := objectStore.(*storage.StubStorage); isStub && seedsLocalDevFixtures(cfg.AppEnv) {
+		devStorage = storage.NewStubStorage(devStoragePath)
+		objectStore = devStorage
+	}
 
 	// Open a pgxpool when DatabaseURL is configured. The pool is used to back
 	// all service repositories; a nil pool falls back to in-memory only.
@@ -364,6 +383,20 @@ func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.M
 			membershipService = members.NewServiceWithPool(dbPool)
 		} else {
 			membershipService = members.NewService()
+		}
+	}
+	if cfg.Auth.EnableDevStubTokens && seedsLocalDevFixtures(cfg.AppEnv) {
+		// Dev stub parent/swimmer principals are pinned to a fixed household;
+		// make sure it exists so household-scoped portal pages resolve.
+		if err := membershipService.EnsureSeedHousehold(members.Household{
+			ID:            authn.LocalDevHouseholdID,
+			OrgID:         authn.LocalDevOrgID,
+			HouseholdName: "Dev Household",
+			PrimaryEmail:  "parent@dare.local",
+			CreatedBy:     authn.LocalDevAdminUserID,
+			UpdatedBy:     authn.LocalDevAdminUserID,
+		}, authn.LocalDevParentUserID); err != nil {
+			logger.Warn("local dev household seed failed", "error", err)
 		}
 	}
 	membershipHandlers := handlers.NewMembershipHandlersWithAudit(membershipService, auditService)
@@ -417,6 +450,8 @@ func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.M
 	// Wire members service as the household checker so that per-swimmer
 	// performance reads enforce parent household scoping at the service layer.
 	performanceService.SetHouseholdChecker(membershipService)
+	// Swimmer/meet facts for team records, top times, relays and progress reports.
+	performanceService.SetDirectory(newPerformanceDirectory(membershipService, meetsService))
 	performanceHandlers := handlers.NewPerformanceHandlersWithAuditAndContext(
 		performanceService,
 		membershipService,
@@ -489,6 +524,7 @@ func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.M
 	} else {
 		postmarkClient = commsService.PostmarkClient()
 	}
+	performanceHandlers.SetCommsService(commsService) // "new team record" announcement drafts
 	commsHandlers := handlers.NewCommsHandlersWithAuditAndWebhookAuth(
 		commsService,
 		auditService,
@@ -517,6 +553,9 @@ func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.M
 			complianceService = compliance.NewServiceWithConfig(cfg.Compliance.ExportTTLDays, cfg.Compliance.DeletionReviewDays)
 		}
 	}
+	complianceService.SetHouseholdDataCollector(func(orgID, householdID string) (map[string]any, error) {
+		return collectHouseholdExportData(orgID, householdID, membershipService, groupsService, billingService)
+	})
 	complianceHandlers := handlers.NewComplianceHandlers(complianceService, auditService)
 	documentHandlers := handlers.NewDocumentHandlers(documentsService, auditService, objectStore)
 	if trainingService == nil {
@@ -534,7 +573,10 @@ func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.M
 		seasonsService = seasons.NewService()
 	}
 	seasonsHandlers := handlers.NewSeasonsHandlers(seasonsService, auditService)
+	engagement := buildEngagementHandlers(dbPool, logger, membershipService, groupsService, meetsService, trainingService, billingService, auditService)
+	trainingHandlers.SetSeasonsService(seasonsService)
 	orgSettingsHandlers := handlers.NewOrgSettingsHandlers(orgSettingsService, auditService)
+	publicSiteHandlers := buildPublicSiteHandlers(cfg, orgSettingsService, commsService, meetsService, engagement.eventsService, performanceService, kcClient)
 
 	// Keycloak client — prefer injected, then real from config, then stub fallback.
 	if kcClient == nil {
@@ -566,6 +608,33 @@ func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.M
 	// from the keycloak_user_id stored on the household record.
 	// Wire swimmer gender/DOB lookup so the meets domain can gate entry creation
 	// on event eligibility (gender + age) without importing the members package.
+	if groupsService != nil && membershipService != nil {
+		groupsService.SetRegistrationActivatedHook(func(reg groups.Registration, groupCode, actorUserID string) {
+			// Approval is staff-only, but the roster write runs as a system
+			// admin action on the approver's behalf.
+			actor := &appmiddleware.Principal{UserID: actorUserID, OrgID: reg.OrgID, Roles: []string{"admin"}}
+			if _, err := membershipService.AssignSwimmerToGroup(actor, reg.OrgID, reg.SwimmerID, members.AssignSwimmerGroupInput{
+				GroupCode: groupCode,
+				IsPrimary: !membershipService.HasPrimaryGroup(reg.OrgID, reg.SwimmerID),
+			}); err != nil {
+				logger.Warn("add registered swimmer to group roster failed", "registration_id", reg.ID, "error", err)
+			}
+		})
+	}
+	if membershipService != nil {
+		membershipService.SetSwimmerCreatedHook(func(swimmer members.Swimmer) {
+			// Keep the groups scope index current in in-memory mode (DB mode
+			// reloads it from the shared swimmers table on every sync).
+			if groupsService != nil {
+				groupsService.SeedSwimmer(swimmer.OrgID, swimmer.ID, swimmer.HouseholdID, swimmer.DateOfBirth, swimmer.Gender, swimmer.RegistrationStatus)
+			}
+			if meetsService != nil {
+				if _, err := meetsService.InviteSwimmerToOpenMeets(swimmer.OrgID, swimmer.ID, swimmer.HouseholdID, swimmer.CreatedBy); err != nil {
+					logger.Warn("invite new swimmer to open meets failed", "swimmer_id", swimmer.ID, "error", err)
+				}
+			}
+		})
+	}
 	if meetsService != nil && membershipService != nil {
 		meetsService.SetSwimmerEligibilityLookup(func(orgID, swimmerID string) (meets.SwimmerEligibilityView, bool) {
 			info, ok := membershipService.SwimmerEligibility(orgID, swimmerID)
@@ -598,6 +667,7 @@ func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.M
 		return sw.ID
 	})
 
+	billingService.SetRosterSource(newBillingRosterSource(membershipService, groupsService))
 	reportsService := reports.NewService(membershipService, groupsService, meetsService, billingService)
 	reportsService.SetStorage(objectStore)
 	reportsHandlers := handlers.NewReportsHandlers(reportsService, auditService)
@@ -681,7 +751,12 @@ func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.M
 	}
 	readinessChecker := buildReadinessChecker(cfg, dbPool, objectStore, stripeClient, postmarkClient, workerBackend, kcClient)
 	exportsService.SetQueue(workerBackend)
+	complianceHandlers.SetJobQueue(workerBackend)
 	jobsHandlers := handlers.NewJobsHandlers(workerBackend)
+	volunteerHandlers := wireVolunteer(volunteerDeps{
+		pool: dbPool, logger: logger, audit: auditService, members: membershipService, meets: meetsService,
+		seasons: seasonsService, billing: billingService, postmark: postmarkClient, workerBack: workerBackend,
+	})
 
 	if metrics == nil {
 		metrics = telemetry.NewMetrics()
@@ -694,7 +769,14 @@ func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.M
 	router.Use(appmiddleware.Recoverer(logger))
 	router.Use(appmiddleware.SecurityHeaders)
 	router.Use(appmiddleware.NewRateLimiter(cfg.Security.RateLimit.GlobalRequests, cfg.Security.RateLimit.GlobalWindow, cfg.Security.RateLimit.TrustedProxyCIDRs))
-	router.Use(runtimePersistenceMiddleware(logger, runtimeRepo, runtimeParticipants))
+	// Like hydration above, the legacy snapshot mirror only applies to pre-DB
+	// in-memory mode; with a pool every service already writes through to
+	// Postgres, and re-serialising all state via psql per mutation is waste.
+	snapshotRepo := runtimeRepo
+	if dbPool != nil {
+		snapshotRepo = nil
+	}
+	router.Use(runtimePersistenceMiddleware(logger, snapshotRepo, runtimeParticipants))
 	router.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   cfg.AllowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
@@ -715,12 +797,32 @@ func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.M
 		api.Get("/openapi", handlers.OpenAPIStub)
 
 		// Public routes: no auth middleware required.
+		if devStorage != nil {
+			api.Handle("/dev-storage/*", devStorageHandler(devStorage))
+		}
 		stripeHandlers.RegisterPublicRoutes(api)
 		commsHandlers.RegisterPublicRoutes(api)
 		userHandlers.RegisterPublicRoutes(api)
+		engagement.clubEvents.RegisterPublicRoutes(api)
+		publicSiteHandlers.RegisterPublicRoutes(api)
 
 		api.Route("/auth", func(auth chi.Router) {
-			auth.Use(appmiddleware.NewRateLimiter(cfg.Security.RateLimit.AuthRequests, cfg.Security.RateLimit.AuthWindow, cfg.Security.RateLimit.TrustedProxyCIDRs))
+			// The strict auth limiter guards credential-bearing writes (OIDC
+			// callback, session issue/refresh, MFA challenge/enroll). Reads such
+			// as GET /auth/session run on every page load and stay under the
+			// global limiter, or a club's shared NAT would lock families out.
+			authLimiter := appmiddleware.NewRateLimiter(cfg.Security.RateLimit.AuthRequests, cfg.Security.RateLimit.AuthWindow, cfg.Security.RateLimit.TrustedProxyCIDRs)
+			auth.Use(func(next http.Handler) http.Handler {
+				limited := authLimiter(next)
+				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					switch r.Method {
+					case http.MethodGet, http.MethodHead, http.MethodOptions:
+						next.ServeHTTP(w, r)
+					default:
+						limited.ServeHTTP(w, r)
+					}
+				})
+			})
 			// OIDC endpoints are exempt from CSRF: the signed state parameter
 			// already provides CSRF protection for the authorization code flow.
 			auth.Group(func(oidc chi.Router) {
@@ -760,6 +862,7 @@ func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.M
 			exportsHandlers.RegisterRoutes(protected)
 			performanceHandlers.RegisterRoutes(protected)
 			billingHandlers.RegisterRoutes(protected)
+			billingHandlers.RegisterFinanceRoutes(protected)
 			stripeHandlers.RegisterProtectedRoutes(protected)
 			commsHandlers.RegisterRoutes(protected)
 			auditHandlers.RegisterRoutes(protected)
@@ -767,6 +870,10 @@ func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.M
 			documentHandlers.RegisterRoutes(protected)
 			trainingHandlers.RegisterRoutes(protected)
 			seasonsHandlers.RegisterRoutes(protected)
+			engagement.clubEvents.RegisterRoutes(protected)
+			engagement.wellness.RegisterRoutes(protected)
+			engagement.attendanceSummary.RegisterRoutes(protected)
+			volunteerHandlers.RegisterRoutes(protected)
 			orgSettingsHandlers.RegisterRoutes(protected)
 			reportsHandlers.RegisterRoutes(protected)
 			jobsHandlers.RegisterRoutes(protected)
@@ -839,6 +946,8 @@ func registerWorkerHandlers(registrar workerHandlerRegistrar, logger *slog.Logge
 	registrar.RegisterHandler(workers.TypeSendCampaignBatch, jobhandlers.SendCampaignBatchHandler(logger, commsService))
 	registrar.RegisterHandler(workers.TypeBillingReconcile, jobhandlers.BillingReconcileHandler(logger, billingService, stripeClient, reconciliationAlertThresholdCents))
 	registrar.RegisterHandler(workers.TypeNightlyIntegrity, jobhandlers.NightlyIntegrityHandler(logger, billingService))
+	registrar.RegisterHandler(workers.TypeBillingRecurringRun, jobhandlers.BillingRecurringRunHandler(logger, billingService))
+	registrar.RegisterHandler(workers.TypeBillingLateFees, jobhandlers.BillingLateFeesHandler(logger, billingService))
 	registrar.RegisterHandler(workers.TypePurgeExpiredFiles, jobhandlers.PurgeExpiredFilesHandler(logger, exportsService, reportsService))
 	registrar.RegisterHandler(workers.TypeProcessDataExport, jobhandlers.ProcessDataExportHandler(logger, complianceService, objectStore))
 	registrar.RegisterHandler(workers.TypeProcessDataDeletion, jobhandlers.ProcessDataDeletionHandler(logger, complianceService, membershipService, commsService, documentsService, objectStore, kcClient))
@@ -865,6 +974,20 @@ func registerScheduledJobs(s scheduledJobRegistrar, cfg Config) {
 			taskType:  workers.TypeNightlyIntegrity,
 			queue:     workers.QueueBilling,
 			interval:  cfg.Worker.IntegrityInterval,
+			orgScoped: true,
+		},
+		{
+			name:      "billing-recurring-run",
+			taskType:  workers.TypeBillingRecurringRun,
+			queue:     workers.QueueBilling,
+			interval:  cfg.Worker.BillingAutomationInterval,
+			orgScoped: true,
+		},
+		{
+			name:      "billing-late-fees",
+			taskType:  workers.TypeBillingLateFees,
+			queue:     workers.QueueBilling,
+			interval:  cfg.Worker.BillingAutomationInterval,
 			orgScoped: true,
 		},
 		{

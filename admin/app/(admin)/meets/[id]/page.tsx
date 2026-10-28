@@ -9,8 +9,13 @@ import { Table, type Column } from '@/components/ui/Table'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
 import { parseBackendDate } from '@/lib/dates'
-import { useApiClient, ApiError } from '@/lib/api'
+import { useApiClient } from '@/lib/api'
 import { ReportsPanel } from './ReportsPanel'
+import { AddMeetEventForm } from './AddMeetEventForm'
+import { EntryFileExport } from './EntryFileExport'
+import { ResultsImport } from './ResultsImport'
+import { MeetVolunteersPanel } from '@/components/volunteer/MeetVolunteersPanel'
+import { formatAgeGroup, formatStroke } from '@/lib/meet-events'
 import {
   fetchHouseholds,
   fetchMeet,
@@ -24,6 +29,7 @@ import {
   transitionMeet,
   type MeetRecord,
 } from '@/lib/adminData'
+import { uiErrorMessage } from '@/lib/frontend-telemetry'
 
 type SessionRow = {
   id: string
@@ -69,7 +75,7 @@ function formatDate(value?: string | null) {
 
 function formatTime(value?: string | null) {
   if (!value) return '—'
-  const parsed = new Date(value)
+  const parsed = parseBackendDate(value)
   if (!Number.isNaN(parsed.getTime())) {
     return parsed.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
   }
@@ -87,26 +93,18 @@ function formatSeedTime(ms?: number) {
   return seconds.toFixed(2)
 }
 
-function formatAgeGroup(minAge?: number, maxAge?: number, fallback?: string) {
-  if (fallback) return fallback
-  if (minAge != null && maxAge != null) return `${minAge}-${maxAge}`
-  if (minAge != null) return `${minAge}&O`
-  if (maxAge != null) return `Under ${maxAge}`
-  return 'Open'
-}
-
 function StatusBadge({ status }: { status: string }) {
   const cfg: Record<string, { label: string; color: string; bg: string }> = {
     draft: { label: 'Draft', color: 'var(--text-muted)', bg: 'var(--bg-elevated)' },
     published: { label: 'Published', color: 'var(--info)', bg: 'var(--info-bg)' },
-    commitment_open: { label: 'Commitments Open', color: 'var(--warning)', bg: 'var(--warning-bg)' },
-    commitment_closed: { label: 'Commitments Closed', color: 'var(--warning)', bg: 'var(--warning-bg)' },
-    entry_finalized: { label: 'Entries Finalized', color: 'var(--accent)', bg: 'var(--accent-subtle)' },
+    commitment_open: { label: 'Commitments open', color: 'var(--warning)', bg: 'var(--warning-bg)' },
+    commitment_closed: { label: 'Commitments closed', color: 'var(--warning)', bg: 'var(--warning-bg)' },
+    entry_finalized: { label: 'Entries finalized', color: 'var(--accent)', bg: 'var(--accent-subtle)' },
     completed: { label: 'Completed', color: 'var(--success)', bg: 'var(--success-bg)' },
     archived: { label: 'Archived', color: 'var(--text-muted)', bg: 'var(--bg-elevated)' },
     invited: { label: 'Invited', color: 'var(--text-muted)', bg: 'var(--bg-elevated)' },
-    committed_yes: { label: 'Committed Yes', color: 'var(--success)', bg: 'var(--success-bg)' },
-    committed_no: { label: 'Committed No', color: 'var(--error)', bg: 'var(--error-bg)' },
+    committed_yes: { label: 'Committed yes', color: 'var(--success)', bg: 'var(--success-bg)' },
+    committed_no: { label: 'Committed no', color: 'var(--error)', bg: 'var(--error-bg)' },
     locked: { label: 'Locked', color: 'var(--accent)', bg: 'var(--accent-subtle)' },
     submitted: { label: 'Submitted', color: 'var(--info)', bg: 'var(--info-bg)' },
     approved: { label: 'Approved', color: 'var(--success)', bg: 'var(--success-bg)' },
@@ -116,31 +114,31 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 const SESSION_COLS: Column<SessionRow>[] = [
-  { key: 'name', label: 'Session', render: (row) => <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>{row.name}</span> },
-  { key: 'date', label: 'Date', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-subtle)' }}>{formatDate(row.date)}</span> },
-  { key: 'warmupTime', label: 'Warm-up', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-muted)' }}>{formatTime(row.warmupTime)}</span> },
-  { key: 'startTime', label: 'Start', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text)' }}>{formatTime(row.startTime)}</span> },
-  { key: 'eventCount', label: 'Events', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text)' }}>{row.eventCount}</span> },
+  { key: 'name', label: 'Session', render: (row) => <span style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)' }}>{row.name}</span> },
+  { key: 'date', label: 'Date', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{formatDate(row.date)}</span> },
+  { key: 'warmupTime', label: 'Warm-up', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>{formatTime(row.warmupTime)}</span> },
+  { key: 'startTime', label: 'Start', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text)' }}>{formatTime(row.startTime)}</span> },
+  { key: 'eventCount', label: 'Events', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text)' }}>{row.eventCount}</span> },
 ]
 
 const EVENT_COLS: Column<EventRow>[] = [
-  { key: 'eventNumber', label: 'Event', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', fontWeight: 600, color: 'var(--text)' }}>{row.eventNumber}</span> },
-  { key: 'name', label: 'Name', render: (row) => <span style={{ fontSize: '13px', color: 'var(--text)' }}>{row.name}</span> },
-  { key: 'sessionName', label: 'Session', render: (row) => <span style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>{row.sessionName}</span> },
-  { key: 'ageGroup', label: 'Age/Gender', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-muted)' }}>{row.gender} {row.ageGroup}</span> },
-  { key: 'entries', label: 'Entries', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--accent)' }}>{row.entries}</span> },
+  { key: 'eventNumber', label: 'Event', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text)' }}>{row.eventNumber}</span> },
+  { key: 'name', label: 'Name', render: (row) => <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text)' }}>{row.name}</span> },
+  { key: 'sessionName', label: 'Session', render: (row) => <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{row.sessionName}</span> },
+  { key: 'ageGroup', label: 'Age/Gender', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>{row.gender} {row.ageGroup}</span> },
+  { key: 'entries', label: 'Entries', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--accent)' }}>{row.entries}</span> },
 ]
 
 const COMMITMENT_COLS: Column<CommitmentRow>[] = [
-  { key: 'swimmer', label: 'Swimmer', render: (row) => <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>{row.swimmer}</span> },
-  { key: 'household', label: 'Household', render: (row) => <span style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>{row.household}</span> },
+  { key: 'swimmer', label: 'Swimmer', render: (row) => <span style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)' }}>{row.swimmer}</span> },
+  { key: 'household', label: 'Household', render: (row) => <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{row.household}</span> },
   { key: 'status', label: 'Status', render: (row) => <StatusBadge status={row.status} /> },
 ]
 
 const ENTRY_COLS: Column<EntryRow>[] = [
-  { key: 'swimmer', label: 'Swimmer', render: (row) => <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>{row.swimmer}</span> },
-  { key: 'event', label: 'Event', render: (row) => <span style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>{row.event}</span> },
-  { key: 'seedTime', label: 'Seed', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--accent)' }}>{row.seedTime}</span> },
+  { key: 'swimmer', label: 'Swimmer', render: (row) => <span style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)' }}>{row.swimmer}</span> },
+  { key: 'event', label: 'Event', render: (row) => <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{row.event}</span> },
+  { key: 'seedTime', label: 'Seed', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--accent)' }}>{row.seedTime}</span> },
   { key: 'status', label: 'Status', render: (row) => <StatusBadge status={row.status} /> },
 ]
 
@@ -149,9 +147,9 @@ const ENTRY_COLS: Column<EntryRow>[] = [
 const LIFECYCLE_STAGES = [
   { key: 'draft', label: 'Draft' },
   { key: 'published', label: 'Published' },
-  { key: 'commitment_open', label: 'Commitments Open' },
-  { key: 'commitment_closed', label: 'Commitments Closed' },
-  { key: 'entry_finalized', label: 'Entries Finalized' },
+  { key: 'commitment_open', label: 'Commitments open' },
+  { key: 'commitment_closed', label: 'Commitments closed' },
+  { key: 'entry_finalized', label: 'Entries finalized' },
   { key: 'completed', label: 'Completed' },
   { key: 'archived', label: 'Archived' },
 ]
@@ -166,18 +164,18 @@ type LifecycleAction = {
 function getLifecycleActions(status: string): LifecycleAction[] {
   switch (status) {
     case 'draft':
-      return [{ label: 'Publish Meet', toStatus: 'published', variant: 'primary' }]
+      return [{ label: 'Publish meet', toStatus: 'published', variant: 'primary' }]
     case 'published':
       return [
-        { label: 'Open Commitments', toStatus: 'commitment_open', variant: 'primary' },
-        { label: 'Revert to Draft', toStatus: 'draft', variant: 'danger', confirm: 'Revert this meet back to draft? It will no longer be visible to swimmers.' },
+        { label: 'Open commitments', toStatus: 'commitment_open', variant: 'primary' },
+        { label: 'Revert to draft', toStatus: 'draft', variant: 'danger', confirm: 'Revert this meet back to draft? It will no longer be visible to swimmers.' },
       ]
     case 'commitment_open':
-      return [{ label: 'Close Commitments', toStatus: 'commitment_closed', variant: 'primary', confirm: 'Close commitments? Swimmers will no longer be able to respond.' }]
+      return [{ label: 'Close commitments', toStatus: 'commitment_closed', variant: 'primary', confirm: 'Close commitments? Families will no longer be able to respond, and event selections for swimmers who are going become entries for coach review.' }]
     case 'commitment_closed':
-      return [{ label: 'Finalize Entries', toStatus: 'entry_finalized', variant: 'primary' }]
+      return [{ label: 'Finalize entries', toStatus: 'entry_finalized', variant: 'primary' }]
     case 'entry_finalized':
-      return [{ label: 'Mark Complete', toStatus: 'completed', variant: 'primary', confirm: 'Mark this meet as completed?' }]
+      return [{ label: 'Mark complete', toStatus: 'completed', variant: 'primary', confirm: 'Mark this meet as completed?' }]
     case 'completed':
       return [{ label: 'Archive', toStatus: 'archived', variant: 'ghost', confirm: 'Archive this meet? This cannot be undone.' }]
     default:
@@ -203,7 +201,7 @@ function MeetLifecycleBar({
     <div style={{
       background: 'var(--bg-elevated)',
       border: '1px solid var(--border)',
-      borderRadius: '10px',
+      borderRadius: '12px',
       padding: '16px 20px',
       marginBottom: '24px',
       display: 'flex',
@@ -241,7 +239,7 @@ function MeetLifecycleBar({
       </div>
 
       {/* Current label */}
-      <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+      <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap', flexShrink: 0 }}>
         {LIFECYCLE_STAGES[stageIndex]?.label ?? meet.status}
       </div>
 
@@ -259,9 +257,9 @@ function MeetLifecycleBar({
                 onTransition(action.toStatus)
               }}
               style={{
-                padding: '7px 14px',
+                padding: '8px 16px',
                 borderRadius: '6px',
-                fontSize: '12px',
+                fontSize: 'var(--fs-sm)',
                 fontWeight: 600,
                 fontFamily: 'var(--font-body)',
                 cursor: transitioning ? 'not-allowed' : 'pointer',
@@ -287,6 +285,18 @@ function MeetLifecycleBar({
       )}
     </div>
   )
+}
+
+// Events can be added until entries are finalized; after that the event list
+// is what was exported to the host and must not drift.
+const EDITABLE_EVENT_STATUSES = new Set(['draft', 'published', 'commitment_open', 'commitment_closed'])
+
+function nextEventNumber(events: EventRow[]): string {
+  const max = events.reduce((acc, event) => {
+    const n = parseInt(event.eventNumber, 10)
+    return Number.isFinite(n) && n > acc ? n : acc
+  }, 0)
+  return String(max + 1)
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -316,6 +326,7 @@ function MeetDetailPageContent() {
   const [transitioning, setTransitioning] = useState(false)
   const [transitionError, setTransitionError] = useState<string | null>(null)
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -361,8 +372,8 @@ function MeetDetailPageContent() {
         setEvents(rawEvents.map((event) => ({
           id: event.id,
           eventNumber: event.event_number?.toString() || '—',
-          name: [event.distance, event.stroke].filter(Boolean).join(' ') || 'Meet event',
-          course: nextMeet.course,
+          name: [event.distance, formatStroke(event.stroke)].filter(Boolean).join(' ') || 'Meet event',
+          course: event.course || nextMeet.course,
           gender: event.gender || 'X',
           ageGroup: formatAgeGroup(event.min_age, event.max_age, event.age_group),
           entries: entryCountByEvent[event.id] ?? 0,
@@ -383,7 +394,7 @@ function MeetDetailPageContent() {
           return {
             id: entry.id,
             swimmer: swimmer ? `${swimmer.preferred_name || swimmer.first_name} ${swimmer.last_name}`.trim() : entry.swimmer_id,
-            event: event ? `${event.distance || ''} ${event.stroke || ''} ${event.gender || ''} ${formatAgeGroup(event.min_age, event.max_age, event.age_group)}`.trim() : 'Meet event',
+            event: event ? `${event.distance || ''} ${formatStroke(event.stroke)} ${event.gender || ''} ${formatAgeGroup(event.min_age, event.max_age, event.age_group)}`.trim() : 'Meet event',
             seedTime: formatSeedTime(entry.seed_time_ms),
             status: entry.status,
           }
@@ -391,7 +402,7 @@ function MeetDetailPageContent() {
         setLastRefreshedAt(new Date())
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof ApiError ? err.message : 'Failed to load meet details.')
+          setError(uiErrorMessage(err, 'Couldn’t load meet details. Try again.'))
         }
       } finally {
         if (!cancelled) setLoading(false)
@@ -402,10 +413,14 @@ function MeetDetailPageContent() {
     return () => {
       cancelled = true
     }
-  }, [api, meetId, session?.user.orgId])
+  }, [api, meetId, session?.user.orgId, reloadKey])
 
   async function handleTransition(toStatus: string) {
     if (!session?.user.orgId || !meetId) return
+    if (toStatus === 'entry_finalized') {
+      const pending = entries.filter((entry) => entry.status === 'submitted').length
+      if (pending > 0 && !window.confirm(`${pending} entr${pending === 1 ? 'y is' : 'ies are'} still awaiting approval and will not be in the SD3 entry file. Finalize anyway?`)) return
+    }
     setTransitioning(true)
     setTransitionError(null)
     try {
@@ -419,8 +434,11 @@ function MeetDetailPageContent() {
         updated = await transitionMeet(api, session.user.orgId, meetId, toStatus)
       }
       setMeet(updated)
+      // Opening/closing commitments creates or locks commitment records, so
+      // refetch the tabs rather than showing stale counts.
+      setReloadKey((k) => k + 1)
     } catch (err) {
-      setTransitionError(err instanceof Error ? err.message : 'Transition failed.')
+      setTransitionError(uiErrorMessage(err, 'Transition failed.'))
     } finally {
       setTransitioning(false)
     }
@@ -432,30 +450,31 @@ function MeetDetailPageContent() {
     { id: 'events', label: 'Events', count: events.length },
     { id: 'commitments', label: 'Commitments', count: commitments.length },
     { id: 'entries', label: 'Entries', count: entries.length },
+    { id: 'volunteers', label: 'Volunteers' },
     { id: 'reports', label: 'Reports' },
   ], [commitments.length, entries.length, events.length, sessions.length])
 
   if (loading) {
-    return <div style={{ padding: '24px', maxWidth: '1200px' }}><EmptyState icon="calendar" title="Loading meet" description="Fetching meet details." /></div>
+    return <div className="page"><EmptyState icon="calendar" title="Loading meet" description="Fetching meet details." /></div>
   }
 
   if (error || !meet) {
-    return <div style={{ padding: '24px', maxWidth: '1200px' }}><EmptyState icon="alert-circle" title="Unable to load meet" description={error ?? 'Meet not found.'} /></div>
+    return <div className="page"><EmptyState icon="alert-circle" title="Unable to load meet" description={error ?? 'Meet not found.'} /></div>
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1200px' }}>
-      <Link href="/meets" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '13px', color: 'var(--text-subtle)', textDecoration: 'none', marginBottom: '20px' }}>
+    <div className="page">
+      <Link href="/meets" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', textDecoration: 'none', marginBottom: '20px' }}>
         <Icon name="chevron-left" size={14} /> Meets
       </Link>
 
       <div className="page-header">
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px 12px', marginBottom: '4px' }}>
             <h1 className="page-title">{meet.name}</h1>
             <StatusBadge status={meet.status} />
           </div>
-          <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+          <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
             {meet.host_org || 'Host TBD'} · {meet.location || 'Location TBD'}
           </div>
         </div>
@@ -464,21 +483,21 @@ function MeetDetailPageContent() {
       <MeetLifecycleBar meet={meet} onTransition={handleTransition} transitioning={transitioning} />
 
       {transitionError && (
-        <div style={{ marginBottom: '16px', padding: '10px 14px', borderRadius: '6px', background: 'var(--error-bg)', color: 'var(--error)', fontSize: '13px', fontFamily: 'var(--font-body)', border: '1px solid var(--error)' }}>
+        <div style={{ marginBottom: '16px', padding: '12px 16px', borderRadius: '6px', background: 'var(--error-bg)', color: 'var(--error)', fontSize: 'var(--fs-base)', fontFamily: 'var(--font-body)', border: '1px solid var(--error)' }}>
           {transitionError}
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '28px' }}>
+      <div className="cols-4" style={{ gap: '12px', marginBottom: '24px' }}>
         {[
           { label: 'Course', value: meet.course, color: 'var(--text)' },
           { label: 'Sessions', value: sessions.length.toString(), color: 'var(--text)' },
           { label: 'Events', value: events.length.toString(), color: 'var(--accent)' },
           { label: 'Entries', value: entries.length.toString(), color: 'var(--success)' },
         ].map((stat) => (
-          <div key={stat.label} className="card" style={{ padding: '14px 16px' }}>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
-            <div style={{ fontSize: '18px', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
+          <div key={stat.label} className="card" style={{ padding: '16px 16px' }}>
+            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
+            <div style={{ fontSize: 'var(--fs-xl)', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
           </div>
         ))}
       </div>
@@ -486,18 +505,21 @@ function MeetDetailPageContent() {
       <Tabs tabs={tabs} active={activeTab} onChange={setActiveTab} />
 
       {activeTab === 'overview' ? (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+        <div className="cols-2" style={{ gap: '16px' }}>
+          {meet.status === 'entry_finalized' || meet.status === 'completed' || meet.status === 'archived' ? (
+            <ResultsImport meetId={meetId} />
+          ) : null}
           <div className="card" style={{ padding: '20px' }}>
-            <h3 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '16px', fontFamily: 'var(--font-body)' }}>Meet Details</h3>
+            <h3 className="card-title" style={{ marginBottom: '16px' }}>Dates &amp; host</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {[
-                { label: 'Start Date', value: formatDate(meet.start_date) },
-                { label: 'End Date', value: formatDate(meet.end_date || meet.start_date) },
-                { label: 'Commit Deadline', value: formatDate(meet.commitment_deadline) },
-                { label: 'Entry Deadline', value: formatDate(meet.entry_deadline) },
+                { label: 'Start date', value: formatDate(meet.start_date) },
+                { label: 'End date', value: formatDate(meet.end_date || meet.start_date) },
+                { label: 'Commit deadline', value: formatDate(meet.commitment_deadline) },
+                { label: 'Entry deadline', value: formatDate(meet.entry_deadline) },
                 { label: 'Host', value: meet.host_org || '—' },
               ].map((row) => (
-                <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px', borderBottom: '1px solid var(--border)', paddingBottom: '10px' }}>
+                <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 'var(--fs-base)', borderBottom: '1px solid var(--border)', paddingBottom: '12px' }}>
                   <span style={{ color: 'var(--text-muted)' }}>{row.label}</span>
                   <span style={{ fontFamily: 'var(--font-body)', color: 'var(--text)', fontWeight: 600 }}>{row.value}</span>
                 </div>
@@ -505,21 +527,21 @@ function MeetDetailPageContent() {
             </div>
           </div>
           <div className="card" style={{ padding: '20px' }}>
-            <h3 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '16px', fontFamily: 'var(--font-body)' }}>Operations Snapshot</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
+            <h3 className="card-title" style={{ marginBottom: '16px' }}>Open items</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 'var(--fs-base)' }}>
                 <span style={{ color: 'var(--text-muted)' }}>Households yet to respond</span>
                 <span style={{ fontFamily: 'var(--font-body)', fontWeight: 600, color: commitments.filter((c) => c.status === 'invited').length > 0 ? 'var(--warning)' : 'var(--text)' }}>
                   {commitments.filter((c) => c.status === 'invited').length}
                 </span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 'var(--fs-base)' }}>
                 <span style={{ color: 'var(--text-muted)' }}>Entries awaiting approval</span>
                 <span style={{ fontFamily: 'var(--font-body)', fontWeight: 600, color: entries.filter((e) => e.status === 'submitted').length > 0 ? 'var(--warning)' : 'var(--text)' }}>
                   {entries.filter((e) => e.status === 'submitted').length}
                 </span>
               </div>
-              <p style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginTop: '4px' }}>
+              <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginTop: '4px' }}>
                 {lastRefreshedAt ? `Updated ${lastRefreshedAt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : 'Waiting for first refresh…'}
               </p>
             </div>
@@ -528,11 +550,24 @@ function MeetDetailPageContent() {
       ) : null}
 
       {activeTab === 'sessions' ? <Table columns={SESSION_COLS} data={sessions} emptyTitle="No sessions" emptyDescription="No meet sessions have been created yet." /> : null}
-      {activeTab === 'events' ? <Table columns={EVENT_COLS} data={events} emptyTitle="No events" emptyDescription="No events have been configured yet." /> : null}
+      {activeTab === 'events' && meet ? (
+        <div>
+          {EDITABLE_EVENT_STATUSES.has(meet.status) ? (
+            <AddMeetEventForm
+              meetId={meetId}
+              course={meet.course || 'SCY'}
+              sessions={sessions.map((s) => ({ id: s.id, name: s.name }))}
+              suggestedEventNumber={nextEventNumber(events)}
+              onCreated={() => setReloadKey((k) => k + 1)}
+            />
+          ) : null}
+          <Table columns={EVENT_COLS} data={events} emptyTitle="No events" emptyDescription="No events have been configured yet." />
+        </div>
+      ) : null}
       {activeTab === 'commitments' ? (
         <div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
-            <Link href={`/commitments?meet=${meetId}`} style={{ fontSize: '12px', color: 'var(--accent)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+            <Link href={`/commitments?meet=${meetId}`} style={{ fontSize: 'var(--fs-sm)', color: 'var(--accent)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
               Manage commitments (selections, approvals, lock) <Icon name="chevron-right" size={12} />
             </Link>
           </div>
@@ -541,14 +576,21 @@ function MeetDetailPageContent() {
       ) : null}
       {activeTab === 'entries' ? (
         <div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
-            <Link href={`/entries?meet=${meetId}`} style={{ fontSize: '12px', color: 'var(--accent)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+          {meet && (meet.status === 'entry_finalized' || meet.status === 'completed') && entries.length > 0 ? (
+            <EntryFileExport meetId={meetId} onExported={() => setReloadKey((k) => k + 1)} />
+          ) : null}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '16px', flexWrap: 'wrap', marginBottom: '12px' }}>
+            <Link href={`/performance/relays?meet_id=${meetId}`} style={{ fontSize: 'var(--fs-sm)', color: 'var(--accent)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+              Build relays <Icon name="chevron-right" size={12} />
+            </Link>
+            <Link href={`/entries?meet=${meetId}`} style={{ fontSize: 'var(--fs-sm)', color: 'var(--accent)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
               Manage entries (approve, scratch, add) <Icon name="chevron-right" size={12} />
             </Link>
           </div>
           <Table columns={ENTRY_COLS} data={entries} emptyTitle="No entries" emptyDescription="No entries have been proposed for this meet yet." />
         </div>
       ) : null}
+      {activeTab === 'volunteers' ? <MeetVolunteersPanel meetId={meetId} meetStartDate={meet?.start_date} /> : null}
       {activeTab === 'reports' ? <ReportsPanel meetId={meetId} /> : null}
     </div>
   )

@@ -6,7 +6,8 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { Modal } from '@/components/ui/Modal'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
-import { ApiError, useApiClient } from '@/lib/api'
+import { setAnnouncementPublic } from '@/lib/publicSiteData'
+import { useApiClient } from '@/lib/api'
 import {
   archiveAnnouncement,
   createAnnouncement,
@@ -14,6 +15,7 @@ import {
   publishAnnouncement,
   type AnnouncementRecord,
 } from '@/lib/adminData'
+import { uiErrorMessage } from '@/lib/frontend-telemetry'
 
 function formatDateTime(value?: string) {
   if (!value) return '—'
@@ -27,8 +29,8 @@ function formatDateTime(value?: string) {
 }
 
 const FIELD_INPUT_STYLE: React.CSSProperties = {
-  width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)',
-  background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: '13px', boxSizing: 'border-box',
+  width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)',
+  background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: 'var(--fs-base)', boxSizing: 'border-box',
 }
 
 export default function AnnouncementsPage() {
@@ -46,6 +48,7 @@ export default function AnnouncementsPage() {
     title: '',
     body: '',
     audience: 'all',
+    public: false,
   })
 
   async function loadAnnouncements(selectedStatus = statusFilter) {
@@ -69,7 +72,7 @@ export default function AnnouncementsPage() {
         if (!cancelled) setAnnouncements(next)
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof ApiError ? err.message : 'Unable to load announcements.')
+          setError(uiErrorMessage(err, 'Couldn’t load announcements. Try again.'))
           setAnnouncements([])
         }
       } finally {
@@ -105,12 +108,13 @@ export default function AnnouncementsPage() {
         title: form.title.trim(),
         body: form.body.trim(),
         audience: form.audience,
+        public: form.audience === 'all' && form.public,
       })
-      setForm({ title: '', body: '', audience: 'all' })
+      setForm({ title: '', body: '', audience: 'all', public: false })
       await loadAnnouncements()
       setModalOpen(false)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Unable to create announcement.')
+      setError(uiErrorMessage(err, 'Couldn’t create announcement. Try again.'))
     } finally {
       setSubmitting(false)
     }
@@ -124,7 +128,21 @@ export default function AnnouncementsPage() {
       await publishAnnouncement(api, session.user.orgId, id)
       await loadAnnouncements()
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Unable to publish announcement.')
+      setError(uiErrorMessage(err, 'Couldn’t publish announcement. Try again.'))
+    } finally {
+      setActionId(null)
+    }
+  }
+
+  async function handleTogglePublic(id: string, next: boolean) {
+    if (!session?.user.orgId) return
+    setActionId(id)
+    setError(null)
+    try {
+      await setAnnouncementPublic(api, session.user.orgId, id, next)
+      await loadAnnouncements()
+    } catch (err) {
+      setError(uiErrorMessage(err, 'Couldn’t update website visibility. Try again.'))
     } finally {
       setActionId(null)
     }
@@ -138,7 +156,7 @@ export default function AnnouncementsPage() {
       await archiveAnnouncement(api, session.user.orgId, id)
       await loadAnnouncements()
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Unable to archive announcement.')
+      setError(uiErrorMessage(err, 'Couldn’t archive announcement. Try again.'))
     } finally {
       setActionId(null)
     }
@@ -149,14 +167,10 @@ export default function AnnouncementsPage() {
   }
 
   return (
-    <div style={{ padding: '32px 36px 80px', maxWidth: 1240, margin: '0 auto' }}>
+    <div className="page">
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px', marginBottom: '24px', flexWrap: 'wrap' }}>
         <div>
-          <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
-            Communications
-          </p>
           <h1 className="page-title">Announcements</h1>
-          <p className="page-subtitle">Draft, publish, and archive announcements for your club.</p>
         </div>
         <button onClick={() => setModalOpen(true)} className="btn btn-primary">
           <Icon name="plus" size={14} />
@@ -165,12 +179,12 @@ export default function AnnouncementsPage() {
       </div>
 
       {error ? (
-        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: '12px' }}>
+        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: 'var(--fs-sm)' }}>
           {error}
         </div>
       ) : null}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px', flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', flex: '1 1 220px', maxWidth: '320px' }}>
           <span style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}>
             <Icon name="search" size={14} />
@@ -210,18 +224,19 @@ export default function AnnouncementsPage() {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             {visibleAnnouncements.map((announcement, index) => (
-              <div key={announcement.id} style={{ padding: '16px 18px', borderBottom: index < visibleAnnouncements.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start', marginBottom: '8px' }}>
-                  <div>
+              <div key={announcement.id} style={{ padding: '16px 20px', borderBottom: index < visibleAnnouncements.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px 12px', alignItems: 'flex-start', marginBottom: '8px' }}>
+                  <div style={{ flex: '1 1 260px', minWidth: 0 }}>
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '4px' }}>
-                      <Link href={`/announcements/${announcement.id}`} style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text)', textDecoration: 'none' }}>
+                      <Link href={`/announcements/${announcement.id}`} style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--text)', textDecoration: 'none' }}>
                         {announcement.title}
                       </Link>
                       <span className={`badge ${announcement.status === 'published' ? 'badge-success' : announcement.status === 'draft' ? 'badge-warning' : 'badge-default'}`}>
                         {announcement.status}
                       </span>
+                      {announcement.public ? <span className="badge badge-info">On website</span> : null}
                     </div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                    <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
                       Audience: {announcement.audience} · Created {formatDateTime(announcement.created_at)} · Updated {formatDateTime(announcement.updated_at)}
                     </div>
                   </div>
@@ -235,6 +250,15 @@ export default function AnnouncementsPage() {
                         Publish
                       </button>
                     ) : null}
+                    {announcement.status !== 'archived' && announcement.audience === 'all' ? (
+                      <button
+                        onClick={() => void handleTogglePublic(announcement.id, !announcement.public)}
+                        disabled={actionId === announcement.id}
+                        className="btn btn-sm btn-secondary"
+                      >
+                        {announcement.public ? 'Remove from website' : 'Show on website'}
+                      </button>
+                    ) : null}
                     {announcement.status !== 'archived' ? (
                       <button
                         onClick={() => void handleArchive(announcement.id)}
@@ -246,7 +270,7 @@ export default function AnnouncementsPage() {
                     ) : null}
                   </div>
                 </div>
-                <p style={{ fontSize: '13px', color: 'var(--text-subtle)', lineHeight: 1.6, margin: 0 }}>
+                <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', lineHeight: 1.6, margin: 0 }}>
                   {announcement.body}
                 </p>
               </div>
@@ -258,7 +282,7 @@ export default function AnnouncementsPage() {
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title="New Announcement"
+        title="New announcement"
         description="Announcements post as drafts first — publish when you're ready for members to see them."
         footer={
           <>
@@ -288,6 +312,12 @@ export default function AnnouncementsPage() {
             <option value="all">All members</option>
             <option value="group">Specific group</option>
           </select>
+          {form.audience === 'all' ? (
+            <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 'var(--fs-base)', color: 'var(--text)' }}>
+              <input type="checkbox" checked={form.public} onChange={(event) => setForm((current) => ({ ...current, public: event.target.checked }))} />
+              Show on the public team website once published
+            </label>
+          ) : null}
           <textarea
             value={form.body}
             onChange={(event) => setForm((current) => ({ ...current, body: event.target.value }))}

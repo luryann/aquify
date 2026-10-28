@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { getCSRFCookieValue, useSession } from '@/lib/session'
 import { destinationForRole } from '@/lib/auth-routing'
 import { resolveMfaBootstrapState, type MfaFactorSummary } from '@/lib/mfa-flow'
+import { uiErrorMessage } from '@/lib/frontend-telemetry'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -39,7 +40,7 @@ const STEP_LABELS: Record<number, string> = { 1: 'SCAN', 2: 'VERIFY', 3: 'BACKUP
 
 function SetupSteps({ step }: { step: 1 | 2 | 3 }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '28px' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '24px' }}>
       {[1, 2, 3].map((n) => {
         const done = n < step
         const active = n === step
@@ -59,13 +60,13 @@ function SetupSteps({ step }: { step: 1 | 2 | 3 }) {
                 </svg>
               ) : (
                 <span style={{
-                  fontSize: '10px', fontFamily: 'var(--font-body)', fontWeight: 700,
+                  fontSize: 'var(--fs-2xs)', fontFamily: 'var(--font-body)', fontWeight: 700,
                   color: active ? 'var(--accent)' : 'var(--text-muted)',
                 }}>{n}</span>
               )}
             </div>
             <span style={{
-              fontSize: '11px', fontFamily: 'var(--font-body)',
+              fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)',
               color: active ? 'var(--text)' : done ? 'var(--text-muted)' : 'var(--text-muted)',
               letterSpacing: '0.04em',
               fontWeight: active ? 600 : 400,
@@ -134,7 +135,7 @@ function QRCanvas({ uri }: { uri: string }) {
             justifyContent: 'center',
             textAlign: 'center',
             color: 'var(--text-muted)',
-            fontSize: '12px',
+            fontSize: 'var(--fs-sm)',
             lineHeight: 1.5,
             padding: '16px',
           }}>
@@ -181,12 +182,12 @@ function DigitInputs({
           style={{
             width: '46px', height: '54px',
             textAlign: 'center',
-            fontSize: '22px',
+            fontSize: 'var(--fs-2xl)',
             fontFamily: 'var(--font-body)',
             fontWeight: 600,
             background: 'var(--bg-elevated)',
             border: `1px solid ${d ? 'var(--accent-border)' : 'var(--border)'}`,
-            borderRadius: '10px',
+            borderRadius: '12px',
             color: 'var(--text)',
             outline: 'none',
             transition: 'border-color 0.15s ease',
@@ -217,14 +218,14 @@ function CopyButton({ text }: { text: string }) {
         background: copied ? 'rgba(52,211,153,0.1)' : 'var(--bg-elevated)',
         border: `1px solid ${copied ? 'rgba(52,211,153,0.3)' : 'var(--border)'}`,
         borderRadius: '6px',
-        padding: '4px 10px',
-        fontSize: '11px',
+        padding: '4px 12px',
+        fontSize: 'var(--fs-xs)',
         fontFamily: 'var(--font-body)',
         color: copied ? '#34d399' : 'var(--text-muted)',
         cursor: 'pointer',
         display: 'flex',
         alignItems: 'center',
-        gap: '5px',
+        gap: '4px',
         transition: 'all 0.2s ease',
         flexShrink: 0,
       }}
@@ -305,7 +306,7 @@ export default function MfaPage() {
       credentials: 'include',
       body: JSON.stringify({ factor_type: 'totp', label: 'Authenticator App' }),
     })
-    if (!res.ok) throw new Error('Unable to set up two-factor authentication.')
+    if (!res.ok) throw new Error('Couldn’t set up two-factor authentication. Try again.')
     const payload = await res.json() as {
       factor: {
         id: string
@@ -325,7 +326,7 @@ export default function MfaPage() {
 
     const uri = payload.factor.provisioning_uri ?? ''
     if (!uri) {
-      throw new Error('Failed to generate QR code. Please refresh and try again.')
+      throw new Error('Couldn’t generate the QR code. Refresh the page and try again.')
     }
 
     setProvisioningUri(uri)
@@ -393,7 +394,7 @@ export default function MfaPage() {
           if (!cancelled) router.replace('/login')
           return
         }
-        if (!res.ok) throw new Error('Unable to load verification methods.')
+        if (!res.ok) throw new Error('Couldn’t load verification methods. Try again.')
         const payload = await res.json() as {
           factors: MfaFactorSummary[]
         }
@@ -419,7 +420,7 @@ export default function MfaPage() {
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Unable to load verification methods.')
+          setError(uiErrorMessage(err, 'Couldn’t load verification methods. Try again.'))
           setStage('error')
         }
         return
@@ -429,7 +430,7 @@ export default function MfaPage() {
         await enrollTotpFactor()
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Two-factor setup failed. Please refresh and try again.')
+          setError(uiErrorMessage(err, 'Couldn’t set up two-factor authentication. Refresh the page and try again.'))
           setStage('error')
         }
       }
@@ -481,7 +482,7 @@ export default function MfaPage() {
       return
     }
     if ((mode === 'totp' && code.length < 6) || (mode === 'backup' && !code)) {
-      setError('Please enter a complete code.')
+      setError('Enter the full code.')
       triggerShake()
       return
     }
@@ -520,7 +521,7 @@ export default function MfaPage() {
       router.replace(destinationForRole(next?.user.roles ?? session?.user.roles ?? ['admin']))
     } catch (err) {
       setLoading(false)
-      setError(err instanceof Error ? err.message : 'Verification failed.')
+      setError(uiErrorMessage(err, 'Verification failed.'))
       triggerShake()
     }
   }
@@ -530,7 +531,7 @@ export default function MfaPage() {
       const next = await refreshSession()
       router.replace(destinationForRole(next?.user.roles ?? session?.user.roles ?? ['admin']))
     } catch {
-      setError('Session refresh failed. Please sign in again.')
+      setError('Your session couldn’t be refreshed. Sign in again.')
     }
   }
 
@@ -558,37 +559,9 @@ export default function MfaPage() {
 
   // ── Shared layout pieces ──────────────────────────────────────────────────
 
-  const iconBox = (children: React.ReactNode) => (
-    <div style={{
-      width: '48px', height: '48px', borderRadius: '12px',
-      background: 'var(--accent-subtle)',
-      border: '1px solid var(--accent-border)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      marginBottom: '20px',
-    }}>
-      {children}
-    </div>
-  )
-
-  const shieldIcon = (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
-      stroke="var(--accent)" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-      <path d="M9 12l2 2 4-4" />
-    </svg>
-  )
-
-  const phoneIcon = (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
-      stroke="var(--accent)" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-      <rect x="5" y="2" width="14" height="20" rx="2" />
-      <line x1="12" y1="18" x2="12.01" y2="18" />
-    </svg>
-  )
-
   const errorRow = error && (
     <p style={{
-      fontSize: '12px', color: 'var(--error)', marginBottom: '12px',
+      fontSize: 'var(--fs-sm)', color: 'var(--error)', marginBottom: '12px',
       display: 'flex', alignItems: 'center', gap: '6px',
     }}>
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -619,7 +592,7 @@ export default function MfaPage() {
         onClick={handleCancel}
         style={{
           background: 'none', border: 'none', cursor: 'pointer',
-          fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)',
+          fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)',
           textDecoration: 'underline', textDecorationColor: 'transparent',
           transition: 'color 0.15s, text-decoration-color 0.15s',
         }}
@@ -645,9 +618,9 @@ export default function MfaPage() {
         width: '100%', padding: '12px 20px',
         background: disabled || loading ? 'var(--bg-elevated)' : 'var(--accent)',
         border: `1px solid ${disabled || loading ? 'var(--border)' : 'transparent'}`,
-        borderRadius: '10px',
+        borderRadius: '12px',
         color: disabled || loading ? 'var(--text-muted)' : '#fff',
-        fontSize: '14px', fontWeight: 600, fontFamily: 'var(--font-body)',
+        fontSize: 'var(--fs-md)', fontWeight: 600, fontFamily: 'var(--font-body)',
         cursor: (disabled || loading) ? 'not-allowed' : 'pointer',
         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
         transition: 'all 0.15s ease', letterSpacing: '-0.01em',
@@ -709,8 +682,7 @@ export default function MfaPage() {
         {stage === 'loading' && (
           <div style={{
             background: 'var(--bg-surface)', border: '1px solid var(--border)',
-            borderRadius: '16px', padding: '40px',
-            boxShadow: '0 24px 64px rgba(0,0,0,0.4)',
+            borderRadius: '12px', padding: '40px',
             display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px',
           }}>
             <div style={{
@@ -718,7 +690,7 @@ export default function MfaPage() {
               background: 'var(--accent)',
               animation: 'mfaPulse 1.4s ease-in-out infinite',
             }} />
-            <p style={{ fontSize: '13px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', letterSpacing: '0.04em' }}>
+            <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', letterSpacing: '0.04em' }}>
               Checking your account…
             </p>
           </div>
@@ -728,8 +700,7 @@ export default function MfaPage() {
         {stage === 'error' && (
           <div style={{
             background: 'var(--bg-surface)', border: '1px solid var(--border)',
-            borderRadius: '16px', padding: '40px',
-            boxShadow: '0 24px 64px rgba(0,0,0,0.4)',
+            borderRadius: '12px', padding: '40px',
             display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '12px',
           }}>
             <div style={{
@@ -745,18 +716,18 @@ export default function MfaPage() {
                 <line x1="12" y1="16" x2="12.01" y2="16" />
               </svg>
             </div>
-            <p style={{ fontSize: '16px', fontFamily: 'var(--font-display)', color: 'var(--text)', fontWeight: 500 }}>
+            <p style={{ fontSize: 'var(--fs-lg)', fontFamily: 'var(--font-display)', color: 'var(--text)', fontWeight: 'var(--display-weight)' }}>
               Something went wrong
             </p>
-            <p style={{ fontSize: '13px', color: 'var(--text-muted)', lineHeight: 1.6, maxWidth: '300px' }}>
-              {error || 'Unable to load your two-factor authentication settings.'}
+            <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)', lineHeight: 1.6, maxWidth: '300px' }}>
+              {error || 'Couldn’t load your two-factor authentication settings. Try again.'}
             </p>
             <button
               onClick={() => { setStage('loading'); setError(''); window.location.reload() }}
               style={{
-                marginTop: '8px', padding: '10px 24px',
-                background: 'var(--accent)', border: 'none', borderRadius: '9px',
-                color: '#fff', fontSize: '13px', fontWeight: 600,
+                marginTop: '8px', padding: '12px 24px',
+                background: 'var(--accent)', border: 'none', borderRadius: '8px',
+                color: '#fff', fontSize: 'var(--fs-base)', fontWeight: 600,
                 fontFamily: 'var(--font-body)', cursor: 'pointer',
               }}
             >
@@ -770,19 +741,17 @@ export default function MfaPage() {
         {stage === 'setup-scan' && (
           <div style={{
             background: 'var(--bg-surface)', border: '1px solid var(--border)',
-            borderRadius: '16px', padding: '36px 40px',
-            boxShadow: '0 24px 64px rgba(0,0,0,0.4), 0 1px 0 rgba(255,255,255,0.04) inset',
+            borderRadius: '12px', padding: '40px 40px',
           }}>
-            {iconBox(phoneIcon)}
             <SetupSteps step={1} />
 
             <h1 style={{
-              fontFamily: 'var(--font-display)', fontSize: '24px', fontWeight: 400,
-              color: 'var(--text)', marginBottom: '6px', letterSpacing: '-0.01em',
+              fontFamily: 'var(--font-display)', fontSize: 'var(--fs-2xl)', fontWeight: 'var(--display-weight)',
+              color: 'var(--text)', marginBottom: '6px', letterSpacing: 'var(--display-tracking)',
             }}>
               Set up two-factor auth
             </h1>
-            <p style={{ fontSize: '13px', color: 'var(--text-subtle)', marginBottom: '24px', lineHeight: 1.6 }}>
+            <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', marginBottom: '24px', lineHeight: 1.6 }}>
               Scan this QR code with your authenticator app, then continue.
             </p>
 
@@ -807,10 +776,10 @@ export default function MfaPage() {
             }}>
               {['Google Authenticator', 'Authy', 'Apple Passwords', 'Bitwarden'].map((app) => (
                 <span key={app} style={{
-                  fontSize: '10px', fontFamily: 'var(--font-body)',
+                  fontSize: 'var(--fs-2xs)', fontFamily: 'var(--font-body)',
                   color: 'var(--text-muted)', letterSpacing: '0.03em',
                   background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-                  borderRadius: '4px', padding: '2px 7px',
+                  borderRadius: '4px', padding: '2px 8px',
                 }}>
                   {app}
                 </span>
@@ -824,9 +793,9 @@ export default function MfaPage() {
                 onClick={() => setShowManualKey((v) => !v)}
                 style={{
                   background: 'none', border: 'none', cursor: 'pointer',
-                  fontSize: '11.5px', color: 'var(--text-muted)',
+                  fontSize: 'var(--fs-xs)', color: 'var(--text-muted)',
                   fontFamily: 'var(--font-body)', padding: 0,
-                  display: 'flex', alignItems: 'center', gap: '5px',
+                  display: 'flex', alignItems: 'center', gap: '4px',
                   width: '100%', justifyContent: 'center',
                   transition: 'color 0.15s',
                 }}
@@ -842,14 +811,14 @@ export default function MfaPage() {
 
               {showManualKey && totpSecret && (
                 <div style={{
-                  marginTop: '10px', padding: '10px 12px',
+                  marginTop: '12px', padding: '12px 12px',
                   background: 'var(--bg-elevated)',
                   border: '1px solid var(--border)',
                   borderRadius: '8px',
-                  display: 'flex', alignItems: 'center', gap: '10px',
+                  display: 'flex', alignItems: 'center', gap: '12px',
                 }}>
                   <span style={{
-                    flex: 1, fontSize: '12px', fontFamily: 'var(--font-body)',
+                    flex: 1, fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)',
                     color: 'var(--text)', letterSpacing: '0.12em', wordBreak: 'break-all',
                   }}>
                     {totpSecret.match(/.{1,4}/g)?.join(' ') ?? totpSecret}
@@ -865,8 +834,8 @@ export default function MfaPage() {
               style={{
                 width: '100%', padding: '12px 20px',
                 background: 'var(--accent)', border: 'none',
-                borderRadius: '10px', color: '#fff',
-                fontSize: '14px', fontWeight: 600, fontFamily: 'var(--font-body)',
+                borderRadius: '12px', color: '#fff',
+                fontSize: 'var(--fs-md)', fontWeight: 600, fontFamily: 'var(--font-body)',
                 cursor: 'pointer', letterSpacing: '-0.01em',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
                 transition: 'opacity 0.15s',
@@ -888,20 +857,18 @@ export default function MfaPage() {
         {stage === 'setup-verify' && (
           <div style={{
             background: 'var(--bg-surface)', border: '1px solid var(--border)',
-            borderRadius: '16px', padding: '40px',
-            boxShadow: '0 24px 64px rgba(0,0,0,0.4), 0 1px 0 rgba(255,255,255,0.04) inset',
+            borderRadius: '12px', padding: '40px',
             animation: shake ? 'mfaShake 0.5s ease' : 'none',
           }}>
-            {iconBox(shieldIcon)}
             <SetupSteps step={2} />
 
             <h1 style={{
-              fontFamily: 'var(--font-display)', fontSize: '24px', fontWeight: 400,
-              color: 'var(--text)', marginBottom: '6px', letterSpacing: '-0.01em',
+              fontFamily: 'var(--font-display)', fontSize: 'var(--fs-2xl)', fontWeight: 'var(--display-weight)',
+              color: 'var(--text)', marginBottom: '6px', letterSpacing: 'var(--display-tracking)',
             }}>
               Confirm your setup
             </h1>
-            <p style={{ fontSize: '13px', color: 'var(--text-subtle)', marginBottom: '28px', lineHeight: 1.6 }}>
+            <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', marginBottom: '24px', lineHeight: 1.6 }}>
               Enter the 6-digit code shown in your authenticator app to confirm.
             </p>
 
@@ -923,7 +890,7 @@ export default function MfaPage() {
                 onClick={() => { setError(''); setStage('setup-scan') }}
                 style={{
                   background: 'none', border: 'none', cursor: 'pointer',
-                  fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)',
+                  fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)',
                   textDecoration: 'underline', textDecorationColor: 'transparent',
                   transition: 'color 0.15s, text-decoration-color 0.15s',
                 }}
@@ -946,26 +913,17 @@ export default function MfaPage() {
         {stage === 'setup-backup' && (
           <div style={{
             background: 'var(--bg-surface)', border: '1px solid var(--border)',
-            borderRadius: '16px', padding: '36px 40px',
-            boxShadow: '0 24px 64px rgba(0,0,0,0.4), 0 1px 0 rgba(255,255,255,0.04) inset',
+            borderRadius: '12px', padding: '40px 40px',
           }}>
-            {iconBox(
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
-                stroke="var(--accent)" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="11" width="18" height="11" rx="2" />
-                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                <circle cx="12" cy="16" r="1" fill="var(--accent)" stroke="none" />
-              </svg>
-            )}
             <SetupSteps step={3} />
 
             <h1 style={{
-              fontFamily: 'var(--font-display)', fontSize: '24px', fontWeight: 400,
-              color: 'var(--text)', marginBottom: '6px', letterSpacing: '-0.01em',
+              fontFamily: 'var(--font-display)', fontSize: 'var(--fs-2xl)', fontWeight: 'var(--display-weight)',
+              color: 'var(--text)', marginBottom: '6px', letterSpacing: 'var(--display-tracking)',
             }}>
               Save your backup codes
             </h1>
-            <p style={{ fontSize: '13px', color: 'var(--text-subtle)', marginBottom: '20px', lineHeight: 1.6 }}>
+            <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', marginBottom: '20px', lineHeight: 1.6 }}>
               Store these codes somewhere safe. Each can be used once if you lose access to your authenticator app.
             </p>
 
@@ -974,7 +932,7 @@ export default function MfaPage() {
                 <div style={{
                   background: 'var(--bg-elevated)',
                   border: '1px solid var(--border)',
-                  borderRadius: '10px',
+                  borderRadius: '12px',
                   padding: '16px',
                   marginBottom: '12px',
                   overflow: 'hidden',
@@ -989,7 +947,7 @@ export default function MfaPage() {
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
-                        padding: '6px 10px',
+                        padding: '6px 12px',
                         background: 'var(--bg-surface)',
                         border: '1px solid var(--border)',
                         borderRadius: '6px',
@@ -997,7 +955,7 @@ export default function MfaPage() {
                         minWidth: 0,
                       }}>
                         <span style={{
-                          fontSize: '12px',
+                          fontSize: 'var(--fs-sm)',
                           fontFamily: 'var(--font-body)',
                           color: 'var(--text)',
                           letterSpacing: '0.08em',
@@ -1023,14 +981,14 @@ export default function MfaPage() {
                 padding: '16px',
                 background: 'rgba(235,93,30,0.08)',
                 border: '1px solid rgba(235,93,30,0.4)',
-                borderRadius: '10px',
+                borderRadius: '12px',
                 marginBottom: '20px',
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
                 gap: '12px',
               }}>
-                <p style={{ fontSize: '13px', color: 'var(--text-subtle)', margin: 0, textAlign: 'center', lineHeight: 1.5 }}>
+                <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', margin: 0, textAlign: 'center', lineHeight: 1.5 }}>
                   Backup codes could not be generated. You must save backup codes before finishing setup.
                 </p>
                 <button
@@ -1043,7 +1001,7 @@ export default function MfaPage() {
                     border: 'none',
                     borderRadius: '8px',
                     color: '#fff',
-                    fontSize: '13px',
+                    fontSize: 'var(--fs-base)',
                     fontWeight: 600,
                     fontFamily: 'var(--font-body)',
                     cursor: backupRetrying ? 'not-allowed' : 'pointer',
@@ -1057,7 +1015,7 @@ export default function MfaPage() {
 
             {/* Acknowledgment checkbox — only shown when codes were successfully generated */}
             <label style={{
-              display: backupCodes.length > 0 ? 'flex' : 'none', alignItems: 'flex-start', gap: '10px',
+              display: backupCodes.length > 0 ? 'flex' : 'none', alignItems: 'flex-start', gap: '12px',
               cursor: 'pointer', marginBottom: '20px',
             }}>
               <input
@@ -1066,7 +1024,7 @@ export default function MfaPage() {
                 onChange={(e) => setBackupSaved(e.target.checked)}
                 style={{ marginTop: '2px', accentColor: 'var(--accent)', cursor: 'pointer', flexShrink: 0 }}
               />
-              <span style={{ fontSize: '12.5px', color: 'var(--text-subtle)', lineHeight: 1.5 }}>
+              <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', lineHeight: 1.5 }}>
                 I&apos;ve saved my backup codes in a secure location and understand each code can only be used once.
               </span>
             </label>
@@ -1079,9 +1037,9 @@ export default function MfaPage() {
                 width: '100%', padding: '12px 20px',
                 background: (backupSaved && !backupGenFailed && backupCodes.length > 0) ? 'var(--accent)' : 'var(--bg-elevated)',
                 border: `1px solid ${(backupSaved && !backupGenFailed && backupCodes.length > 0) ? 'transparent' : 'var(--border)'}`,
-                borderRadius: '10px',
+                borderRadius: '12px',
                 color: (backupSaved && !backupGenFailed && backupCodes.length > 0) ? '#fff' : 'var(--text-muted)',
-                fontSize: '14px', fontWeight: 600, fontFamily: 'var(--font-body)',
+                fontSize: 'var(--fs-md)', fontWeight: 600, fontFamily: 'var(--font-body)',
                 cursor: (backupSaved && !backupGenFailed && backupCodes.length > 0) ? 'pointer' : 'not-allowed',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
                 transition: 'all 0.15s ease', letterSpacing: '-0.01em',
@@ -1099,19 +1057,17 @@ export default function MfaPage() {
         {stage === 'verify' && (
           <div style={{
             background: 'var(--bg-surface)', border: '1px solid var(--border)',
-            borderRadius: '16px', padding: '40px',
-            boxShadow: '0 24px 64px rgba(0,0,0,0.4), 0 1px 0 rgba(255,255,255,0.04) inset',
+            borderRadius: '12px', padding: '40px',
             animation: shake ? 'mfaShake 0.5s ease' : 'none',
           }}>
-            {iconBox(shieldIcon)}
 
             <h1 style={{
-              fontFamily: 'var(--font-display)', fontSize: '26px', fontWeight: 400,
-              color: 'var(--text)', marginBottom: '6px', letterSpacing: '-0.01em',
+              fontFamily: 'var(--font-display)', fontSize: 'var(--fs-3xl)', fontWeight: 'var(--display-weight)',
+              color: 'var(--text)', marginBottom: '6px', letterSpacing: 'var(--display-tracking)',
             }}>
               Two-factor verification
             </h1>
-            <p style={{ fontSize: '13px', color: 'var(--text-subtle)', marginBottom: '28px', lineHeight: 1.6 }}>
+            <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', marginBottom: '24px', lineHeight: 1.6 }}>
               {mode === 'totp'
                 ? 'Enter the 6-digit code from your authenticator app.'
                 : 'Enter one of your saved backup codes.'}
@@ -1122,14 +1078,14 @@ export default function MfaPage() {
               <div style={{
                 display: 'flex', gap: '4px',
                 background: 'var(--bg-elevated)', borderRadius: '8px',
-                padding: '3px', marginBottom: '24px',
+                padding: '4px', marginBottom: '24px',
               }}>
                 {availableVerifyModes.map((m) => (
                   <button key={m} onClick={() => { setMode(m); setError('') }} style={{
                     flex: 1, padding: '6px 12px', borderRadius: '6px', border: 'none',
                     background: mode === m ? 'var(--bg-surface)' : 'transparent',
                     color: mode === m ? 'var(--text)' : 'var(--text-muted)',
-                    fontSize: '12px', fontWeight: mode === m ? 600 : 400,
+                    fontSize: 'var(--fs-sm)', fontWeight: mode === m ? 600 : 400,
                     fontFamily: 'var(--font-body)', cursor: 'pointer',
                     transition: 'all 0.15s ease',
                     boxShadow: mode === m ? 'var(--shadow-xs)' : 'none',
@@ -1156,11 +1112,11 @@ export default function MfaPage() {
                   value={backupCode}
                   onChange={(e) => { setBackupCode(e.target.value); setError('') }}
                   style={{
-                    width: '100%', padding: '12px 14px',
+                    width: '100%', padding: '12px 16px',
                     background: 'var(--bg-elevated)',
                     border: `1px solid ${error ? 'var(--error-border)' : 'var(--border)'}`,
-                    borderRadius: '10px', color: 'var(--text)',
-                    fontSize: '16px', fontFamily: 'var(--font-body)',
+                    borderRadius: '12px', color: 'var(--text)',
+                    fontSize: 'var(--fs-lg)', fontFamily: 'var(--font-body)',
                     letterSpacing: '0.08em', textAlign: 'center', outline: 'none',
                     marginBottom: '20px', transition: 'border-color 0.15s ease',
                   }}

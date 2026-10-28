@@ -8,6 +8,12 @@ import { useApiClient } from '@/lib/api'
 import { shouldShowCollectionEmptyState } from '@/lib/collection-load-state'
 import { reportUIError } from '@/lib/frontend-telemetry'
 import { fetchMeets, fetchPractices, fetchGroups, type MeetRecord, type PracticeRecord, type GroupRecord } from '@/lib/adminData'
+import { fetchClubEvents, type ClubEventRecord } from '@/lib/engagementData'
+import { clubEventDateKey, formatClubEventWhen } from '@/lib/club-events'
+import { CalendarSubscribeCard } from '@/components/engagement/CalendarSubscribeCard'
+import { fetchTrainingSchedule, type Workout } from '@/lib/trainingData'
+import { addDaysISO } from '@/lib/workout-format'
+import { WorkoutSheet } from '@/components/training/WorkoutSheet'
 
 // ── Types ───────────────────────────────────────────────────────────────────
 type EventType = 'meet' | 'practice' | 'deadline' | 'holiday' | 'event'
@@ -21,6 +27,7 @@ type CalEvent = {
   location?: string
   detail?: string
   linkPath?: string
+  workout?: Workout
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -75,7 +82,7 @@ function meetsToCalEvents(meets: MeetRecord[]): CalEvent[] {
 }
 
 
-function practicesToCalEvents(practices: PracticeRecord[], groupNameById: Map<string, string>): CalEvent[] {
+function practicesToCalEvents(practices: PracticeRecord[], groupNameById: Map<string, string>, workouts: Map<string, Workout>): CalEvent[] {
   return practices.map((p) => {
     const groupName = p.group_id ? groupNameById.get(p.group_id) : undefined
     const label = groupName ?? 'All groups'
@@ -85,8 +92,22 @@ function practicesToCalEvents(practices: PracticeRecord[], groupNameById: Map<st
       type: 'practice' as EventType,
       date: p.date,
       detail: p.yardage_target > 0 ? `${p.yardage_target.toLocaleString()} yds target` : undefined,
+      workout: workouts.get(p.id),
     }
   })
+}
+
+function clubEventsToCalEvents(list: ClubEventRecord[]): CalEvent[] {
+  return list.map((e) => ({
+    id: `club-${e.id}`,
+    title: e.status === 'cancelled' ? `Cancelled: ${e.title}` : e.title,
+    type: 'event' as EventType,
+    date: clubEventDateKey(e),
+    time: formatClubEventWhen(e).split(', ').slice(2).join(', ') || undefined,
+    location: e.location || undefined,
+    detail: e.rsvp_enabled && e.status !== 'cancelled' ? (e.my_rsvps?.length ? 'You have replied. Change it on the Events page.' : 'RSVP on the Events page.') : undefined,
+    linkPath: `/portal/events#event-${e.id}`,
+  }))
 }
 
 // ── Config ─────────────────────────────────────────────────────────────────
@@ -127,12 +148,12 @@ function EventChip({ ev }: { ev: CalEvent }) {
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: '5px',
-        padding: '3px 8px',
-        borderRadius: '5px',
+        gap: '4px',
+        padding: '4px 8px',
+        borderRadius: '6px',
         background: s.bg,
         border: `1px solid ${s.border}`,
-        fontSize: '11px',
+        fontSize: 'var(--fs-xs)',
         fontWeight: 500,
         color: s.color,
         overflow: 'hidden',
@@ -157,73 +178,62 @@ function EventChip({ ev }: { ev: CalEvent }) {
   )
 }
 
+const UPCOMING_PREVIEW = 5
+const UPCOMING_MAX = 15
+
+// Rows stay two lines at most: long practice titles clamp instead of stacking
+// one word per line in the narrow side column.
+const clampLines = (lines: number): React.CSSProperties => ({
+  display: '-webkit-box',
+  WebkitLineClamp: lines,
+  WebkitBoxOrient: 'vertical',
+  overflow: 'hidden',
+})
+
+function upcomingDateLabel(date: string): { day: string; weekday: string } {
+  const [y, m, d] = date.split('-').map(Number)
+  const local = new Date(y, (m ?? 1) - 1, d ?? 1)
+  return {
+    day: local.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+    weekday: local.toLocaleDateString('en-US', { weekday: 'short' }),
+  }
+}
+
 function UpcomingEventRow({ ev }: { ev: CalEvent }) {
   const s = EVENT_STYLE[ev.type]
+  const when = upcomingDateLabel(ev.date)
+  const meta = [ev.time, ev.location].filter(Boolean).join(' · ')
   const content = (
     <div
+      title={ev.title}
       style={{
-        display: 'flex',
+        display: 'grid',
+        gridTemplateColumns: '52px minmax(0, 1fr)',
         gap: '12px',
-        alignItems: 'flex-start',
+        alignItems: 'start',
         padding: '12px 16px',
-        borderBottom: '1px solid rgba(0,0,0,0.06)',
+        borderBottom: '1px solid var(--border)',
         transition: 'background 120ms ease',
       }}
       onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(0,0,0,0.02)')}
       onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
     >
-      {/* Type dot */}
-      <div
-        style={{
-          width: '10px',
-          height: '10px',
-          borderRadius: '50%',
-          background: s.dot,
-          flexShrink: 0,
-          marginTop: '4px',
-        }}
-      />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', marginBottom: '2px', lineHeight: 1.3 }}>
-          {ev.title}
+      <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.25 }}>
+        <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text)' }}>{when.day}</span>
+        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>{when.weekday}</span>
+      </div>
+      <div style={{ minWidth: 0 }}>
+        <p style={{ display: 'flex', gap: '8px', alignItems: 'baseline', fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.3 }}>
+          <span aria-label={s.label} style={{ width: '8px', height: '8px', borderRadius: '50%', background: s.dot, flexShrink: 0, transform: 'translateY(-1px)' }} />
+          <span style={clampLines(2)}>{ev.title}</span>
         </p>
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          {ev.time && (
-            <span style={{ fontSize: '11.5px', color: 'var(--text-subtle)', display: 'flex', alignItems: 'center', gap: '3px' }}>
-              <Icon name="clock" size={11} />
-              {ev.time}
-            </span>
-          )}
-          {ev.location && (
-            <span style={{ fontSize: '11.5px', color: 'var(--text-subtle)', display: 'flex', alignItems: 'center', gap: '3px' }}>
-              <Icon name="map-pin" size={11} />
-              {ev.location}
-            </span>
-          )}
-        </div>
+        {meta && (
+          <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-subtle)', marginTop: '2px', ...clampLines(1) }}>{meta}</p>
+        )}
         {ev.detail && (
-          <p style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.4 }}>
-            {ev.detail}
-          </p>
+          <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: '2px', ...clampLines(1) }}>{ev.detail}</p>
         )}
       </div>
-      <span
-        style={{
-          fontSize: '10px',
-          fontFamily: 'var(--font-body)',
-          fontWeight: 600,
-          textTransform: 'uppercase',
-          letterSpacing: '0.04em',
-          color: s.color,
-          background: s.bg,
-          border: `1px solid ${s.border}`,
-          padding: '2px 7px',
-          borderRadius: '999px',
-          flexShrink: 0,
-        }}
-      >
-        {s.label}
-      </span>
     </div>
   )
 
@@ -242,6 +252,20 @@ export default function CalendarPage() {
   const [events, setEvents] = useState<CalEvent[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
+  const [clubCalEvents, setClubCalEvents] = useState<CalEvent[]>([])
+  const [clubError, setClubError] = useState<string | null>(null)
+
+  // Club events load independently so a failure there never blanks meets/practices.
+  useEffect(() => {
+    if (!orgId) return
+    setClubError(null)
+    fetchClubEvents(api, orgId)
+      .then((list) => setClubCalEvents(clubEventsToCalEvents(list)))
+      .catch((error) => {
+        setClubCalEvents([])
+        setClubError(reportUIError('portal-calendar-club-events', error, 'Club events could not be loaded.', { orgId }))
+      })
+  }, [api, orgId, reloadKey])
 
   useEffect(() => {
     if (!orgId) {
@@ -253,10 +277,14 @@ export default function CalendarPage() {
       fetchMeets(api, orgId),
       fetchPractices(api, orgId),
       fetchGroups(api, orgId),
+      // Structured sets for nearby practices; the calendar still renders if unavailable.
+      fetchTrainingSchedule(api, orgId, addDaysISO(new Date().toISOString().slice(0, 10), -30), addDaysISO(new Date().toISOString().slice(0, 10), 90)).catch(() => []),
     ])
-      .then(([meets, practices, groups]) => {
+      .then(([meets, practices, groups, scheduleItems]) => {
         const groupNameById = new Map<string, string>(groups.map((g: GroupRecord) => [g.id, g.name]))
-        setEvents([...meetsToCalEvents(meets), ...practicesToCalEvents(practices, groupNameById)])
+        const workoutByPractice = new Map<string, Workout>()
+        for (const item of scheduleItems) if (item.workout) workoutByPractice.set(item.practice.id, item.workout)
+        setEvents([...meetsToCalEvents(meets), ...practicesToCalEvents(practices, groupNameById, workoutByPractice)])
       })
       .catch((error) => {
         setEvents([])
@@ -273,6 +301,7 @@ export default function CalendarPage() {
   const [viewYear, setViewYear] = useState(today.getFullYear())
   const [viewMonth, setViewMonth] = useState(today.getMonth())
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
+  const [showAllUpcoming, setShowAllUpcoming] = useState(false)
   const [view, setView] = useState<'month' | 'week'>('month')
   const [typeFilter, setTypeFilter] = useState<EventType | 'all'>('all')
 
@@ -292,7 +321,8 @@ export default function CalendarPage() {
   const firstDow = getFirstDayOfWeek(viewYear, viewMonth)
 
   // Events indexed by date string
-  const eventsByDate = events.reduce<Record<string, CalEvent[]>>((acc, ev) => {
+  const allEvents = [...events, ...clubCalEvents]
+  const eventsByDate = allEvents.reduce<Record<string, CalEvent[]>>((acc, ev) => {
     if (!acc[ev.date]) acc[ev.date] = []
     acc[ev.date].push(ev)
     return acc
@@ -315,11 +345,12 @@ export default function CalendarPage() {
   const todayStr = toDateStr(today.getFullYear(), today.getMonth(), today.getDate())
 
   // Upcoming events from today
-  const upcomingEvents = events
+  const upcomingEvents = allEvents
     .filter((ev) => ev.date >= todayStr)
     .filter((ev) => typeFilter === 'all' || ev.type === typeFilter)
     .sort((a, b) => a.date.localeCompare(b.date))
-    .slice(0, 15)
+    .slice(0, UPCOMING_MAX)
+  const visibleUpcoming = showAllUpcoming ? upcomingEvents : upcomingEvents.slice(0, UPCOMING_PREVIEW)
 
   // Selected date events
   const selectedEvents = selectedDate
@@ -360,7 +391,7 @@ export default function CalendarPage() {
           display: 'flex',
           alignItems: 'flex-end',
           justifyContent: 'space-between',
-          marginBottom: '28px',
+          marginBottom: '24px',
           flexWrap: 'wrap',
           gap: '12px',
           animation: 'slideUp 0.4s var(--ease-out) both',
@@ -370,9 +401,6 @@ export default function CalendarPage() {
           <h1 className="page-title">
             Calendar
           </h1>
-          <p className="page-subtitle">
-            Meets, practices, and important deadlines.
-          </p>
         </div>
 
         {/* View toggle */}
@@ -382,7 +410,7 @@ export default function CalendarPage() {
             gap: '4px',
             background: 'rgba(0,0,0,0.05)',
             borderRadius: '8px',
-            padding: '3px',
+            padding: '4px',
           }}
         >
           {(['month', 'week'] as const).map((v) => (
@@ -390,12 +418,12 @@ export default function CalendarPage() {
               key={v}
               onClick={() => setView(v)}
               style={{
-                padding: '5px 14px',
+                padding: '4px 16px',
                 borderRadius: '6px',
                 border: 'none',
                 background: view === v ? 'var(--bg-elevated)' : 'transparent',
                 color: view === v ? 'var(--text)' : 'var(--text-subtle)',
-                fontSize: '12.5px',
+                fontSize: 'var(--fs-sm)',
                 fontWeight: view === v ? 600 : 400,
                 cursor: 'pointer',
                 boxShadow: view === v ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
@@ -409,6 +437,13 @@ export default function CalendarPage() {
         </div>
       </div>
 
+      {clubError && !loadError && (
+        <p role="alert" style={{ marginBottom: '12px', fontSize: 'var(--fs-sm)', color: 'var(--warning)' }}>
+          {clubError}{' '}
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setReloadKey((key) => key + 1)}>Retry</button>
+        </p>
+      )}
+
       {loadError && (
         <div
           style={{
@@ -416,21 +451,21 @@ export default function CalendarPage() {
             padding: '12px 16px',
             background: 'var(--warning-bg)',
             border: '1px solid #fdba74',
-            borderRadius: '10px',
+            borderRadius: '12px',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
             gap: '12px',
           }}
         >
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
             <Icon name="alert-circle" size={15} style={{ color: 'var(--warning)', marginTop: '1px', flexShrink: 0 }} />
-            <span style={{ fontSize: '13px', color: 'var(--warning)', lineHeight: 1.5 }}>{loadError}</span>
+            <span style={{ fontSize: 'var(--fs-base)', color: 'var(--warning)', lineHeight: 1.5 }}>{loadError}</span>
           </div>
           <button
             type="button"
             onClick={() => setReloadKey((key) => key + 1)}
-            style={{ background: 'var(--bg-elevated)', border: '1px solid #fdba74', borderRadius: '8px', cursor: 'pointer', color: 'var(--warning)', fontSize: '12px', fontWeight: 600, padding: '8px 14px', whiteSpace: 'nowrap' }}
+            style={{ background: 'var(--bg-elevated)', border: '1px solid #fdba74', borderRadius: '8px', cursor: 'pointer', color: 'var(--warning)', fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '8px 16px', whiteSpace: 'nowrap' }}
           >
             Retry
           </button>
@@ -459,12 +494,12 @@ export default function CalendarPage() {
                 display: 'flex',
                 alignItems: 'center',
                 gap: '6px',
-                padding: '5px 12px',
+                padding: '4px 12px',
                 borderRadius: '999px',
                 border: `1px solid ${active ? (s ? s.border : 'rgba(0,0,0,0.22)') : 'rgba(0,0,0,0.10)'}`,
                 background: active ? (s ? s.bg : 'rgba(0,0,0,0.06)') : 'transparent',
                 color: active ? (s ? s.color : 'var(--text)') : 'var(--text-subtle)',
-                fontSize: '12px',
+                fontSize: 'var(--fs-sm)',
                 fontWeight: 500,
                 cursor: 'pointer',
                 transition: 'all 120ms ease',
@@ -500,7 +535,7 @@ export default function CalendarPage() {
       >
         {/* ── MAIN CALENDAR ─────────────────────────────────────────── */}
         <div
-          className="card" style={{ overflowX: 'auto', overflowY: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', minWidth: 0 }}
+          className="card" style={{ overflowX: 'auto', overflowY: 'hidden', minWidth: 0 }}
         >
           {/* Month nav */}
           <div
@@ -508,7 +543,7 @@ export default function CalendarPage() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              padding: '18px 20px 16px',
+              padding: '20px 20px 16px',
               borderBottom: '1px solid rgba(0,0,0,0.07)',
             }}
           >
@@ -535,13 +570,7 @@ export default function CalendarPage() {
             </button>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <h2
-                style={{
-                  fontFamily: 'var(--font-display)',
-                  fontSize: '20px',
-                  color: 'var(--text)',
-                  letterSpacing: '-0.01em',
-                }}
+              <h2 className="section-title"
               >
                 {MONTH_NAMES[viewMonth]} {viewYear}
               </h2>
@@ -552,7 +581,7 @@ export default function CalendarPage() {
                   borderRadius: '6px',
                   border: '1px solid rgba(0,0,0,0.12)',
                   background: 'transparent',
-                  fontSize: '12px',
+                  fontSize: 'var(--fs-sm)',
                   fontWeight: 500,
                   color: 'var(--text-subtle)',
                   cursor: 'pointer',
@@ -635,7 +664,7 @@ export default function CalendarPage() {
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        fontSize: '13px',
+                        fontSize: 'var(--fs-base)',
                         fontWeight: isToday ? 700 : 400,
                         color: isToday ? 'var(--bg-elevated)' : isSelected ? 'var(--accent)' : 'var(--text)',
                         background: isToday ? 'var(--accent)' : 'transparent',
@@ -644,11 +673,11 @@ export default function CalendarPage() {
                       {d.getDate()}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px' }}>
+                      <p style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', fontWeight: 600, color: 'var(--text-subtle)', marginBottom: '6px' }}>
                         {d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
                       </p>
                       {dayEvents.length === 0 ? (
-                        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No events</span>
+                        <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>No events</span>
                       ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                           {dayEvents.map((ev) => (
@@ -667,9 +696,9 @@ export default function CalendarPage() {
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(7, minmax(110px, 1fr))',
+                  gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
                   borderBottom: '1px solid rgba(0,0,0,0.06)',
-                  minWidth: '770px',
+                  minWidth: '560px',
                 }}
               >
                 {DAY_LABELS.map((d) => (
@@ -678,7 +707,7 @@ export default function CalendarPage() {
                     style={{
                       padding: '8px 4px',
                       textAlign: 'center',
-                      fontSize: '11px',
+                      fontSize: 'var(--fs-xs)',
                       fontFamily: 'var(--font-body)',
                       fontWeight: 600,
                       letterSpacing: '0.05em',
@@ -695,8 +724,8 @@ export default function CalendarPage() {
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(7, minmax(110px, 1fr))',
-                  minWidth: '770px',
+                  gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
+                  minWidth: '560px',
                 }}
               >
                 {/* Empty cells before first day */}
@@ -731,7 +760,7 @@ export default function CalendarPage() {
                         minHeight: '172px',
                         borderRight: colIndex < 6 ? '1px solid rgba(0,0,0,0.05)' : 'none',
                         borderBottom: '1px solid rgba(0,0,0,0.05)',
-                        padding: '10px 8px 8px',
+                        padding: '12px 8px 8px',
                         cursor: 'pointer',
                         background: isSelected ? 'rgba(235,93,30,0.04)' : 'transparent',
                         transition: 'background 100ms ease',
@@ -753,7 +782,7 @@ export default function CalendarPage() {
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          fontSize: '13px',
+                          fontSize: 'var(--fs-base)',
                           fontWeight: isToday ? 700 : 400,
                           color: isToday ? 'var(--bg-elevated)' : isSelected ? 'var(--accent)' : 'var(--text)',
                           background: isToday ? 'var(--accent)' : 'transparent',
@@ -771,7 +800,7 @@ export default function CalendarPage() {
                         {dayEvents.length > 3 && (
                           <span
                             style={{
-                              fontSize: '10px',
+                              fontSize: 'var(--fs-2xs)',
                               color: 'var(--text-muted)',
                               fontFamily: 'var(--font-body)',
                               padding: '1px 4px',
@@ -792,9 +821,9 @@ export default function CalendarPage() {
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(7, minmax(110px, 1fr))',
+                  gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
                   borderBottom: '1px solid rgba(0,0,0,0.06)',
-                  minWidth: '770px',
+                  minWidth: '560px',
                 }}
               >
                 {weekDays.map((wd) => (
@@ -808,7 +837,7 @@ export default function CalendarPage() {
                   >
                     <p
                       style={{
-                        fontSize: '11px',
+                        fontSize: 'var(--fs-xs)',
                         fontFamily: 'var(--font-body)',
                         color: 'var(--text-muted)',
                         textTransform: 'uppercase',
@@ -828,7 +857,7 @@ export default function CalendarPage() {
                         alignItems: 'center',
                         justifyContent: 'center',
                         margin: '0 auto',
-                        fontSize: '15px',
+                        fontSize: 'var(--fs-md)',
                         fontWeight: wd.isToday ? 700 : 400,
                         color: wd.isToday ? 'var(--bg-elevated)' : 'var(--text)',
                       }}
@@ -842,9 +871,9 @@ export default function CalendarPage() {
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(7, minmax(110px, 1fr))',
+                  gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
                   minHeight: '340px',
-                  minWidth: '770px',
+                  minWidth: '560px',
                 }}
               >
                 {weekDays.map((wd, idx) => {
@@ -855,7 +884,7 @@ export default function CalendarPage() {
                     <div
                       key={wd.date}
                       style={{
-                        padding: '10px 6px',
+                        padding: '12px 6px',
                         borderRight: idx < 6 ? '1px solid rgba(0,0,0,0.05)' : 'none',
                         display: 'flex',
                         flexDirection: 'column',
@@ -867,7 +896,7 @@ export default function CalendarPage() {
                         <EventChip key={ev.id} ev={ev} />
                       ))}
                       {dayEvents.length === 0 && (
-                        <span style={{ fontSize: '11px', color: '#D0CCC9', textAlign: 'center', paddingTop: '12px' }}>
+                        <span style={{ fontSize: 'var(--fs-xs)', color: '#D0CCC9', textAlign: 'center', paddingTop: '12px' }}>
                           —
                         </span>
                       )}
@@ -881,33 +910,22 @@ export default function CalendarPage() {
 
         {/* ── SIDEBAR ──────────────────────────────────────────────── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <CalendarSubscribeCard api={api} orgId={orgId} />
           {/* Selected day detail */}
           {selectedDate && selectedEvents.length > 0 && (
             <div
-              className="card" style={{ overflow: 'hidden', boxShadow: '0 2px 12px rgba(235,93,30,0.08)', animation: 'slideUp 0.2s var(--ease-out) both' }}
+              className="card" style={{ overflow: 'hidden', animation: 'slideUp 0.2s var(--ease-out) both' }}
             >
               <div
                 style={{
-                  padding: '14px 16px 12px',
+                  padding: '16px 16px 12px',
                   borderBottom: '1px solid rgba(0,0,0,0.07)',
                 }}
               >
                 <p
                   style={{
-                    fontSize: '11px',
-                    fontFamily: 'var(--font-body)',
-                    color: 'var(--accent)',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                    marginBottom: '2px',
-                  }}
-                >
-                  Selected
-                </p>
-                <p
-                  style={{
-                    fontFamily: 'var(--font-display)',
-                    fontSize: '18px',
+                    fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)',
+                    fontSize: 'var(--fs-xl)',
                     color: 'var(--text)',
                   }}
                 >
@@ -917,47 +935,50 @@ export default function CalendarPage() {
                 </p>
               </div>
               {selectedEvents.map((ev) => (
-                <UpcomingEventRow key={ev.id} ev={ev} />
+                <div key={ev.id}>
+                  <UpcomingEventRow ev={ev} />
+                  {ev.workout && (
+                    <div style={{ padding: '4px 16px 16px' }}>
+                      <WorkoutSheet workout={ev.workout} />
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
           )}
 
           {/* Upcoming events */}
           <div
-            className="card" style={{ overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}
+            className="card" style={{ padding: 0, overflow: 'hidden' }}
           >
-            <div
-              style={{
-                padding: '14px 16px 12px',
-                borderBottom: '1px solid rgba(0,0,0,0.07)',
-              }}
-            >
-              <p
-                style={{
-                  fontFamily: 'var(--font-display)',
-                  fontSize: '17px',
-                  color: 'var(--text)',
-                }}
-              >
-                Upcoming
-              </p>
-              <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                Next events from today
-              </p>
+            <div style={{ padding: '16px 16px 12px', borderBottom: '1px solid var(--border)' }}>
+              <h2 className="card-title">Upcoming</h2>
             </div>
 
             {loadError ? (
               <div style={{ padding: '32px 16px', textAlign: 'center' }}>
-                <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Upcoming calendar events are unavailable right now.</p>
+                <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)' }}>Upcoming calendar events are unavailable right now.</p>
               </div>
             ) : shouldShowCollectionEmptyState(false, loadError, upcomingEvents.length) ? (
               <div style={{ padding: '32px 16px', textAlign: 'center' }}>
-                <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>No upcoming events</p>
+                <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)' }}>No upcoming events</p>
               </div>
             ) : (
-              upcomingEvents.map((ev) => (
-                <UpcomingEventRow key={ev.id} ev={ev} />
-              ))
+              <>
+                {visibleUpcoming.map((ev) => (
+                  <UpcomingEventRow key={ev.id} ev={ev} />
+                ))}
+                {upcomingEvents.length > UPCOMING_PREVIEW && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setShowAllUpcoming((v) => !v)}
+                    style={{ width: '100%', justifyContent: 'center', borderRadius: 0, minHeight: '40px' }}
+                  >
+                    {showAllUpcoming ? 'Show fewer' : `Show ${upcomingEvents.length - UPCOMING_PREVIEW} more`}
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>

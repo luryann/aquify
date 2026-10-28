@@ -26,6 +26,8 @@ import {
   type MeetEventRecord,
   type EntryRecord,
 } from '@/lib/adminData'
+import { parseBackendDate } from '@/lib/dates'
+import { uiErrorMessage } from '@/lib/frontend-telemetry'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -59,7 +61,7 @@ type SwimmerPanelData = {
 const STATUS_CFG: Record<string, { label: string; color: string; bg: string }> = {
   invited:        { label: 'Awaiting',  color: 'var(--text-muted)',  bg: 'var(--bg-elevated)' },
   committed_yes:  { label: 'Going',     color: 'var(--success)',     bg: 'var(--success-bg)' },
-  committed_no:   { label: 'Not Going', color: 'var(--error)',       bg: 'var(--error-bg)' },
+  committed_no:   { label: 'Not going', color: 'var(--error)',       bg: 'var(--error-bg)' },
   locked:         { label: 'Locked',    color: 'var(--accent)',      bg: 'var(--accent-subtle)' },
   coach_reviewed: { label: 'Reviewed',  color: 'var(--info)',        bg: 'var(--info-bg)' },
 }
@@ -67,9 +69,9 @@ const STATUS_CFG: Record<string, { label: string; color: string; bg: string }> =
 const MEET_STATUS_CFG: Record<string, { label: string; color: string }> = {
   draft:             { label: 'Draft',              color: 'var(--text-muted)' },
   published:         { label: 'Published',          color: 'var(--info)' },
-  commitment_open:   { label: 'Commitments Open',   color: 'var(--warning)' },
-  commitment_closed: { label: 'Commitments Closed', color: 'var(--warning)' },
-  entry_finalized:   { label: 'Entries Finalized',  color: 'var(--accent)' },
+  commitment_open:   { label: 'Commitments open',   color: 'var(--warning)' },
+  commitment_closed: { label: 'Commitments closed', color: 'var(--warning)' },
+  entry_finalized:   { label: 'Entries finalized',  color: 'var(--accent)' },
   completed:         { label: 'Completed',          color: 'var(--success)' },
   archived:          { label: 'Archived',           color: 'var(--text-muted)' },
 }
@@ -93,7 +95,7 @@ const STROKE_LABELS: Record<string, string> = {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  return parseBackendDate(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 function eventLabel(ev: MeetEventRecord): string {
@@ -180,7 +182,7 @@ function SwimmerPanel({
         setSelections((prev) => new Map(prev).set(sel.meet_event_id, sel.id))
       }
     } catch (err) {
-      showFeedback('error', err instanceof Error ? err.message : 'Failed to update selection')
+      showFeedback('error', uiErrorMessage(err, 'Failed to update selection'))
     } finally {
       setToggling((prev) => { const s = new Set(prev); s.delete(eventId); return s })
     }
@@ -194,7 +196,7 @@ function SwimmerPanel({
       setLocalEntries((prev) => prev.map((e) => e.id === entryId ? { ...e, status: updated.status } : e))
       showFeedback('success', 'Entry approved')
     } catch (err) {
-      showFeedback('error', err instanceof Error ? err.message : 'Failed to approve entry')
+      showFeedback('error', uiErrorMessage(err, 'Failed to approve entry'))
     } finally {
       setApprovingEntry((prev) => { const s = new Set(prev); s.delete(entryId); return s })
     }
@@ -209,7 +211,7 @@ function SwimmerPanel({
       showFeedback('success', 'All commitments locked for this meet')
       onRefreshTable()
     } catch (err) {
-      showFeedback('error', err instanceof Error ? err.message : 'Failed to lock commitments')
+      showFeedback('error', uiErrorMessage(err, 'Failed to lock commitments'))
     } finally {
       setLocking(false)
     }
@@ -259,7 +261,7 @@ function SwimmerPanel({
         }}
       >
         {/* Header */}
-        <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
+        <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
           <div
             style={{
               width: '40px',
@@ -270,7 +272,7 @@ function SwimmerPanel({
               alignItems: 'center',
               justifyContent: 'center',
               color: '#fff',
-              fontSize: '14px',
+              fontSize: 'var(--fs-md)',
               fontWeight: 700,
               fontFamily: 'var(--font-body)',
               flexShrink: 0,
@@ -279,10 +281,10 @@ function SwimmerPanel({
             {(swimmer.first_name[0] ?? '') + (swimmer.last_name[0] ?? '')}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: '16px', fontFamily: 'var(--font-display)', color: 'var(--text)', lineHeight: 1.2 }}>
+            <div style={{ fontSize: 'var(--fs-lg)', fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', color: 'var(--text)', lineHeight: 1.2 }}>
               {swimmer.first_name} {swimmer.last_name}
             </div>
-            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginTop: '2px' }}>
               {row.meetName} · {row.meetDate ? formatDate(row.meetDate) : '—'}
             </div>
           </div>
@@ -298,10 +300,10 @@ function SwimmerPanel({
         {/* Inline feedback banner */}
         {feedback && (
           <div style={{
-            padding: '10px 22px',
+            padding: '12px 24px',
             background: feedback.type === 'success' ? 'var(--success-bg)' : 'var(--error-bg)',
             color: feedback.type === 'success' ? 'var(--success)' : 'var(--error)',
-            fontSize: '12px',
+            fontSize: 'var(--fs-sm)',
             fontWeight: 600,
             fontFamily: 'var(--font-body)',
             display: 'flex',
@@ -315,23 +317,23 @@ function SwimmerPanel({
         )}
 
         {/* Scrollable body */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 22px' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
 
           {/* Status & meet info row */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '20px' }}>
-            <div className="card" style={{ padding: '12px 14px' }}>
-              <div style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '5px' }}>
+          <div className="cols-2" style={{ gap: '12px', marginBottom: '20px' }}>
+            <div className="card" style={{ padding: '12px 16px' }}>
+              <div style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '4px' }}>
                 Commitment
               </div>
               <span className="badge" style={{ background: commitCfg.bg, color: commitCfg.color }}>
                 {commitCfg.label}
               </span>
             </div>
-            <div className="card" style={{ padding: '12px 14px' }}>
-              <div style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '5px' }}>
-                Meet Status
+            <div className="card" style={{ padding: '12px 16px' }}>
+              <div style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                Meet status
               </div>
-              <span style={{ fontSize: '12px', color: MEET_STATUS_CFG[row.meetStatus]?.color ?? 'var(--text-muted)', fontFamily: 'var(--font-body)', fontWeight: 600 }}>
+              <span style={{ fontSize: 'var(--fs-sm)', color: MEET_STATUS_CFG[row.meetStatus]?.color ?? 'var(--text-muted)', fontFamily: 'var(--font-body)', fontWeight: 600 }}>
                 {meetStatusLabel}
               </span>
             </div>
@@ -341,19 +343,19 @@ function SwimmerPanel({
           {row.note && (
             <div
               className="card"
-              style={{ padding: '12px 14px', marginBottom: '20px', borderLeft: '3px solid var(--accent)' }}
+              style={{ padding: '12px 16px', marginBottom: '20px', borderColor: 'var(--accent-border)', background: 'var(--accent-subtle)' }}
             >
-              <div style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '5px' }}>
+              <div style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '4px' }}>
                 Note from family
               </div>
-              <p style={{ fontSize: '13px', color: 'var(--text-subtle)', lineHeight: 1.55, margin: 0 }}>{row.note}</p>
+              <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', lineHeight: 1.55, margin: 0 }}>{row.note}</p>
             </div>
           )}
 
           {/* Event selections */}
           <div style={{ marginBottom: '20px' }}>
-            <div style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span>Event Selections</span>
+            <div style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span>Event selections</span>
               {selectionsLoading ? (
                 <span style={{ color: 'var(--text-muted)' }}>Loading…</span>
               ) : (
@@ -364,23 +366,23 @@ function SwimmerPanel({
             </div>
 
             {canEditSelections && (
-              <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '10px', lineHeight: 1.5 }}>
+              <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginBottom: '12px', lineHeight: 1.5 }}>
                 Click events below to add or remove them from this swimmer&apos;s selection.
               </p>
             )}
 
             {events.length === 0 ? (
               <div className="card" style={{ padding: '24px', textAlign: 'center' }}>
-                <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: 0 }}>No events for this meet yet.</p>
+                <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)', margin: 0 }}>No events for this meet yet.</p>
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {sessionGroups.map((group) => (
                   <div key={group.id}>
-                    <div style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px', paddingLeft: '2px' }}>
+                    <div style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px', paddingLeft: '2px' }}>
                       {group.id === 'main' ? 'Main Session' : 'Unscheduled'}
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                       {group.events.map((ev) => {
                         const isSelected = selections.has(ev.id)
                         const isPending = toggling.has(ev.id)
@@ -393,8 +395,8 @@ function SwimmerPanel({
                             style={{
                               display: 'flex',
                               alignItems: 'center',
-                              gap: '10px',
-                              padding: '10px 12px',
+                              gap: '12px',
+                              padding: '12px 12px',
                               borderRadius: '8px',
                               border: isSelected ? '1.5px solid var(--accent)' : '1px solid var(--border)',
                               background: isSelected ? 'var(--accent-subtle)' : 'var(--bg-surface)',
@@ -427,11 +429,11 @@ function SwimmerPanel({
                                 <div style={{ width: '8px', height: '8px', borderRadius: '50%', border: '1.5px solid var(--accent)', borderTopColor: 'transparent', animation: 'spin 0.6s linear infinite' }} />
                               )}
                             </div>
-                            <span style={{ fontSize: '13px', color: isSelected ? 'var(--text)' : 'var(--text-subtle)', flex: 1, fontWeight: isSelected ? 600 : 400 }}>
+                            <span style={{ fontSize: 'var(--fs-base)', color: isSelected ? 'var(--text)' : 'var(--text-subtle)', flex: 1, fontWeight: isSelected ? 600 : 400 }}>
                               {eventLabel(ev)}
                             </span>
                             {ev.event_number && (
-                              <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>
+                              <span style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>
                                 #{ev.event_number}
                               </span>
                             )}
@@ -448,7 +450,7 @@ function SwimmerPanel({
           {/* Entry records with approve actions */}
           {localEntries.length > 0 && (
             <div style={{ marginBottom: '20px' }}>
-              <div style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '10px' }}>
+              <div style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '12px' }}>
                 Entry Records ({localEntries.length})
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -457,11 +459,11 @@ function SwimmerPanel({
                   const isApproving = approvingEntry.has(e.id)
                   const entryEvent = events.find((ev) => ev.id === e.meet_event_id)
                   return (
-                    <div key={e.id} className="card" style={{ padding: '9px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
-                      <span style={{ fontSize: '12px', color: 'var(--text)', fontFamily: 'var(--font-body)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <div key={e.id} className="card" style={{ padding: '8px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                      <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text)', fontFamily: 'var(--font-body)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {entryEvent ? eventLabel(entryEvent) : `Entry #${e.id.slice(-6)}`}
                       </span>
-                      <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '8px', background: cfg.bg, color: cfg.color, fontFamily: 'var(--font-body)', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                      <span style={{ fontSize: 'var(--fs-xs)', padding: '2px 8px', borderRadius: '8px', background: cfg.bg, color: cfg.color, fontFamily: 'var(--font-body)', fontWeight: 600, whiteSpace: 'nowrap' }}>
                         {cfg.label}
                       </span>
                       {e.status === 'submitted' && (
@@ -469,8 +471,8 @@ function SwimmerPanel({
                           onClick={() => handleApproveEntry(e.id)}
                           disabled={isApproving}
                           style={{
-                            fontSize: '11px',
-                            padding: '3px 10px',
+                            fontSize: 'var(--fs-xs)',
+                            padding: '4px 12px',
                             borderRadius: '6px',
                             background: isApproving ? 'var(--bg-elevated)' : 'var(--success)',
                             color: isApproving ? 'var(--text-muted)' : '#fff',
@@ -493,17 +495,17 @@ function SwimmerPanel({
         </div>
 
         {/* Footer actions */}
-        <div style={{ padding: '14px 22px', borderTop: '1px solid var(--border)', display: 'flex', gap: '8px', flexShrink: 0, background: 'var(--bg)', flexWrap: 'wrap' }}>
+        <div style={{ padding: '16px 24px', borderTop: '1px solid var(--border)', display: 'flex', gap: '8px', flexShrink: 0, background: 'var(--bg)', flexWrap: 'wrap' }}>
           <Link
             href={`/meets/${row.meetId}`}
-            style={{ flex: 1, minWidth: '120px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', padding: '10px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '8px', fontSize: '13px', fontWeight: 600, color: 'var(--text)', textDecoration: 'none', transition: 'border-color 0.15s' }}
+            style={{ flex: 1, minWidth: '120px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', padding: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '8px', fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)', textDecoration: 'none', transition: 'border-color 0.15s' }}
           >
             <Icon name="calendar" size={13} />
             Open Meet
           </Link>
           <Link
             href={`/members/swimmers/${row.swimmerId}`}
-            style={{ flex: 1, minWidth: '120px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', padding: '10px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '8px', fontSize: '13px', fontWeight: 600, color: 'var(--text)', textDecoration: 'none', transition: 'border-color 0.15s' }}
+            style={{ flex: 1, minWidth: '120px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', padding: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '8px', fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)', textDecoration: 'none', transition: 'border-color 0.15s' }}
           >
             <Icon name="user" size={13} />
             Swimmer Profile
@@ -518,12 +520,12 @@ function SwimmerPanel({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '5px',
-                padding: '10px',
+                gap: '4px',
+                padding: '12px',
                 background: locking ? 'var(--bg-elevated)' : 'var(--accent)',
                 border: 'none',
                 borderRadius: '8px',
-                fontSize: '13px',
+                fontSize: 'var(--fs-base)',
                 fontWeight: 600,
                 color: locking ? 'var(--text-muted)' : '#fff',
                 cursor: locking ? 'wait' : 'pointer',
@@ -635,7 +637,7 @@ function CommitmentsPageContent() {
 
         if (!cancelled) setRows(combined)
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load commitments')
+        if (!cancelled) setError(uiErrorMessage(err, 'Failed to load commitments'))
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -691,7 +693,7 @@ function CommitmentsPageContent() {
   const meetOptions = useMemo(() => {
     const seen = new Map<string, string>()
     for (const r of rows) seen.set(r.meetId, r.meetName)
-    return [{ value: 'all', label: 'All Meets' }, ...[...seen.entries()].map(([v, l]) => ({ value: v, label: l }))]
+    return [{ value: 'all', label: 'All meets' }, ...[...seen.entries()].map(([v, l]) => ({ value: v, label: l }))]
   }, [rows])
 
   const filtered = useMemo(() => {
@@ -719,7 +721,7 @@ function CommitmentsPageContent() {
             style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}
           >
             <span
-              style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}
+              style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}
               onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--accent)' }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--text)' }}
             >
@@ -728,7 +730,7 @@ function CommitmentsPageContent() {
             </span>
           </button>
           {r.householdId && (
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '1px' }}>
+            <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: '1px' }}>
               <Link
                 href={`/members/households/${r.householdId}`}
                 style={{ color: 'var(--text-muted)', textDecoration: 'none' }}
@@ -740,7 +742,7 @@ function CommitmentsPageContent() {
             </div>
           )}
           {r.note && (
-            <div style={{ fontSize: '10px', color: 'var(--accent)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+            <div style={{ fontSize: 'var(--fs-2xs)', color: 'var(--accent)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
               <Icon name="info" size={10} />
               has note
             </div>
@@ -756,13 +758,13 @@ function CommitmentsPageContent() {
         <div>
           <Link
             href={`/meets/${r.meetId}`}
-            style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', textDecoration: 'none' }}
+            style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)', textDecoration: 'none' }}
             onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--accent)')}
             onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text)')}
           >
             {r.meetName}
           </Link>
-          <div style={{ fontSize: '11px', color: MEET_STATUS_CFG[r.meetStatus]?.color ?? 'var(--text-muted)', marginTop: '1px', fontFamily: 'var(--font-body)' }}>
+          <div style={{ fontSize: 'var(--fs-xs)', color: MEET_STATUS_CFG[r.meetStatus]?.color ?? 'var(--text-muted)', marginTop: '1px', fontFamily: 'var(--font-body)' }}>
             {MEET_STATUS_CFG[r.meetStatus]?.label ?? r.meetStatus}
           </div>
         </div>
@@ -772,7 +774,7 @@ function CommitmentsPageContent() {
       key: 'meetDate',
       label: 'Date',
       render: (r) => (
-        <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-muted)' }}>
+        <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
           {r.meetDate ? formatDate(r.meetDate) : '—'}
         </span>
       ),
@@ -795,7 +797,7 @@ function CommitmentsPageContent() {
       render: (r) => (
         <button
           onClick={() => openPanel(r)}
-          style={{ fontSize: '12px', color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px', padding: '2px 4px', borderRadius: '4px', transition: 'color 0.15s' }}
+          style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 4px', borderRadius: '4px', transition: 'color 0.15s' }}
           onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--accent)')}
           onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
         >
@@ -807,19 +809,19 @@ function CommitmentsPageContent() {
 
   if (error) {
     return (
-      <div style={{ padding: '24px', maxWidth: '1200px' }}>
-        <div className="card" style={{ padding: '20px', borderLeft: '3px solid var(--error)' }}>
-          <p style={{ color: 'var(--error)', fontSize: '13px' }}>Failed to load commitments: {error}</p>
+      <div className="page">
+        <div className="card" style={{ padding: '20px', borderColor: 'var(--error-border)', background: 'var(--error-bg)' }}>
+          <p style={{ color: 'var(--error)', fontSize: 'var(--fs-base)' }}>Failed to load commitments: {error}</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1200px' }}>
+    <div className="page">
 
       {lockedMeetId && (
-        <Link href={`/meets/${lockedMeetId}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '13px', color: 'var(--text-subtle)', textDecoration: 'none', marginBottom: '16px' }}>
+        <Link href={`/meets/${lockedMeetId}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', textDecoration: 'none', marginBottom: '16px' }}>
           <Icon name="chevron-left" size={14} /> Back to meet
         </Link>
       )}
@@ -830,43 +832,38 @@ function CommitmentsPageContent() {
           <h1 className="page-title">
             Commitments
           </h1>
-          <p className="page-subtitle">
-            {lockedMeetId
-              ? 'Commitment tracker for this meet — click a swimmer to view their entries and event selections'
-              : 'Cross-meet commitment tracker — click a swimmer to view their entries and event selections'}
-          </p>
         </div>
       </div>
 
       {/* Stats strip */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px', marginBottom: '24px' }}>
+      <div className="cols-5" style={{ gap: '12px', marginBottom: '24px' }}>
         {[
           { label: 'Total',     value: loading ? '—' : total,    color: 'var(--text)' },
           { label: 'Going',     value: loading ? '—' : going,    color: 'var(--success)' },
-          { label: 'Not Going', value: loading ? '—' : notGoing, color: 'var(--error)' },
+          { label: 'Not going', value: loading ? '—' : notGoing, color: 'var(--error)' },
           { label: 'Awaiting',  value: loading ? '—' : pending,  color: (pending > 0 && !loading) ? 'var(--warning)' : 'var(--text-muted)' },
           { label: 'Locked',    value: loading ? '—' : locked,   color: 'var(--accent)' },
         ].map((s) => (
-          <div key={s.label} className="card" style={{ padding: '14px 16px' }}>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{s.label}</div>
-            <div style={{ fontSize: '22px', fontFamily: 'var(--font-body)', fontWeight: 700, color: s.color }}>{s.value}</div>
+          <div key={s.label} className="card" style={{ padding: '16px 16px' }}>
+            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{s.label}</div>
+            <div style={{ fontSize: 'var(--fs-2xl)', fontFamily: 'var(--font-body)', fontWeight: 700, color: s.color }}>{s.value}</div>
           </div>
         ))}
       </div>
 
       {/* Response rate bar */}
       {!loading && total > 0 && (
-        <div className="card" style={{ padding: '14px 16px', marginBottom: '20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+        <div className="card" style={{ padding: '16px 16px', marginBottom: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
             <span>Response rate</span>
             <span>{Math.round(((going + notGoing + locked) / total) * 100)}%</span>
           </div>
-          <div style={{ height: '5px', borderRadius: '3px', background: 'var(--bg-elevated)', overflow: 'hidden', display: 'flex' }}>
+          <div style={{ height: '5px', borderRadius: '4px', background: 'var(--bg-elevated)', overflow: 'hidden', display: 'flex' }}>
             <div style={{ height: '100%', width: `${(going / total) * 100}%`, background: 'var(--success)', transition: 'width 0.6s var(--ease-out)' }} />
             <div style={{ height: '100%', width: `${(locked / total) * 100}%`, background: 'var(--accent)', transition: 'width 0.6s var(--ease-out)' }} />
             <div style={{ height: '100%', width: `${(notGoing / total) * 100}%`, background: 'var(--error)', transition: 'width 0.6s var(--ease-out)' }} />
           </div>
-          <div style={{ display: 'flex', gap: '16px', marginTop: '8px', fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>
+          <div style={{ display: 'flex', gap: '16px', marginTop: '8px', fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>
             <span style={{ color: 'var(--success)' }}>■ Going ({going})</span>
             <span style={{ color: 'var(--accent)' }}>■ Locked ({locked})</span>
             <span style={{ color: 'var(--error)' }}>■ Not Going ({notGoing})</span>
@@ -876,7 +873,7 @@ function CommitmentsPageContent() {
       )}
 
       {/* Filters */}
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', flex: '1 1 260px' }}>
           <Icon name="search" size={14} color="var(--text-muted)" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' } as CSSProperties} />
           <input
@@ -889,10 +886,10 @@ function CommitmentsPageContent() {
           />
         </div>
         {lockedMeetId ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg-elevated)', fontSize: '13px', color: 'var(--text)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg-elevated)', fontSize: 'var(--fs-base)', color: 'var(--text)' }}>
             <Icon name="calendar" size={13} color="var(--text-muted)" />
             {meetOptions.find((o) => o.value === lockedMeetId)?.label ?? 'This meet'}
-            <Link href="/commitments" style={{ fontSize: '11px', color: 'var(--accent)', textDecoration: 'none' }}>Clear</Link>
+            <Link href="/commitments" style={{ fontSize: 'var(--fs-xs)', color: 'var(--accent)', textDecoration: 'none' }}>Clear</Link>
           </div>
         ) : (
           <select value={meetFilter} onChange={(e) => setMeetFilter(e.target.value)} className="input" style={{ minWidth: '180px' }}>
@@ -900,24 +897,24 @@ function CommitmentsPageContent() {
           </select>
         )}
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="input" style={{ minWidth: '150px' }}>
-          <option value="all">All Statuses</option>
+          <option value="all">All statuses</option>
           <option value="invited">Awaiting</option>
           <option value="committed_yes">Going</option>
-          <option value="committed_no">Not Going</option>
+          <option value="committed_no">Not going</option>
           <option value="locked">Locked</option>
         </select>
       </div>
 
       {/* Result count */}
       {!loading && (
-        <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginBottom: '12px' }}>
+        <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginBottom: '12px' }}>
           {filtered.length} of {total} commitments · click a swimmer name to view their entries
         </div>
       )}
 
       {/* Loading skeleton */}
       {loading && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {[1,2,3,4,5].map((i) => (
             <div key={i} style={{ height: '44px', background: 'var(--bg-elevated)', borderRadius: '6px', animation: 'pulse 1.5s ease-in-out infinite', animationDelay: `${i * 0.1}s` }} />
           ))}

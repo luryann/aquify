@@ -6,8 +6,9 @@ import { Modal } from '@/components/ui/Modal'
 import { Table, col } from '@/components/ui/Table'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
-import { ApiError, useApiClient } from '@/lib/api'
+import { useApiClient } from '@/lib/api'
 import { createDataExportRequest, fetchDataExportRequests, fetchHouseholds, type DataExportRequestRecord, type HouseholdRecord } from '@/lib/adminData'
+import { uiErrorMessage } from '@/lib/frontend-telemetry'
 
 function formatDateTime(value?: string) {
   if (!value) return '—'
@@ -21,8 +22,8 @@ function formatDateTime(value?: string) {
 }
 
 const FIELD_INPUT_STYLE: React.CSSProperties = {
-  width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)',
-  background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: '13px', boxSizing: 'border-box',
+  width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)',
+  background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: 'var(--fs-base)', boxSizing: 'border-box',
 }
 
 type ExportRow = DataExportRequestRecord & { householdName: string }
@@ -72,7 +73,7 @@ export default function DataExportsPage() {
         if (!selectedHouseholdId && nextHouseholds[0]) setSelectedHouseholdId(nextHouseholds[0].id)
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof ApiError ? err.message : 'Unable to load data export requests.')
+          setError(uiErrorMessage(err, 'Couldn’t load data export requests. Try again.'))
           setRequests([])
           setHouseholds([])
         }
@@ -107,7 +108,7 @@ export default function DataExportsPage() {
       await loadData()
       setModalOpen(false)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Unable to create data export request.')
+      setError(uiErrorMessage(err, 'Couldn’t create data export request. Try again.'))
     } finally {
       setSubmitting(false)
     }
@@ -135,24 +136,20 @@ export default function DataExportsPage() {
       sortable: false,
       render: (row) =>
         row.download_url ? (
-          <a href={row.download_url} target="_blank" rel="noreferrer" style={{ fontSize: '12px', color: 'var(--accent)', textDecoration: 'none' }}>
+          <a href={row.download_url} target="_blank" rel="noreferrer" style={{ fontSize: 'var(--fs-sm)', color: 'var(--accent)', textDecoration: 'none' }}>
             Open artifact
           </a>
         ) : (
-          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Pending</span>
+          <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>Pending</span>
         ),
     }),
   ]
 
   return (
-    <div style={{ padding: '32px 36px 80px', maxWidth: 1240, margin: '0 auto' }}>
+    <div className="page">
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px', marginBottom: '24px', flexWrap: 'wrap' }}>
         <div>
-          <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
-            Compliance
-          </p>
-          <h1 className="page-title">Data Export Requests</h1>
-          <p className="page-subtitle">A parent asked you to download their family&rsquo;s data — start here.</p>
+          <h1 className="page-title">Data export requests</h1>
         </div>
         <button onClick={() => setModalOpen(true)} className="btn btn-primary">
           <Icon name="plus" size={14} />
@@ -161,7 +158,7 @@ export default function DataExportsPage() {
       </div>
 
       {error ? (
-        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: '12px' }}>
+        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: 'var(--fs-sm)' }}>
           {error}
         </div>
       ) : null}
@@ -180,7 +177,7 @@ export default function DataExportsPage() {
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title="New Export Request"
+        title="New export request"
         description="Generates a downloadable file of everything on file for this household."
         footer={
           <>
@@ -192,7 +189,7 @@ export default function DataExportsPage() {
         }
       >
         <div>
-          <label style={{ display: 'block', fontSize: '10.5px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '5px' }}>Household</label>
+          <label style={{ display: 'block', fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '4px' }}>Household</label>
           <select value={selectedHouseholdId} onChange={(event) => setSelectedHouseholdId(event.target.value)} style={FIELD_INPUT_STYLE}>
             {households.map((household) => <option key={household.id} value={household.id}>{household.household_name}</option>)}
           </select>

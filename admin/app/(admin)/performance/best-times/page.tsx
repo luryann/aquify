@@ -6,8 +6,9 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { Table, col } from '@/components/ui/Table'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
-import { ApiError, useApiClient } from '@/lib/api'
+import { useApiClient } from '@/lib/api'
 import { fetchPerformanceBestTimes, fetchSwimmers, type BestTimeRecord, type SwimmerRecord } from '@/lib/adminData'
+import { uiErrorMessage } from '@/lib/frontend-telemetry'
 
 function formatSwimTime(milliseconds?: number | null) {
   if (milliseconds == null) return 'NT'
@@ -23,7 +24,7 @@ const STROKE_OPTIONS = ['free', 'back', 'breast', 'fly', 'im']
 const DISTANCE_OPTIONS = [25, 50, 100, 200, 400, 500, 800, 1000, 1500, 1650]
 
 const FIELD_INPUT_STYLE: React.CSSProperties = {
-  padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)',
+  padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)',
   background: 'var(--bg-elevated)', color: 'var(--text)', boxSizing: 'border-box',
 }
 
@@ -65,7 +66,7 @@ export default function BestTimesPage() {
         setBestTimes(nextBestTimes)
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof ApiError ? err.message : 'Unable to load live best times.')
+          setError(uiErrorMessage(err, 'Couldn’t load live best times. Try again.'))
           setSwimmers([])
           setBestTimes([])
         }
@@ -154,22 +155,18 @@ export default function BestTimesPage() {
   ]
 
   return (
-    <div style={{ padding: '32px 36px 80px', maxWidth: 1240, margin: '0 auto' }}>
-      <div style={{ marginBottom: '24px' }}>
-        <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
-          Performance
-        </p>
-        <h1 className="page-title">Best Times</h1>
-        <p className="page-subtitle">Team leaderboard of every swimmer&apos;s best recorded time, event by event.</p>
+    <div className="page">
+      <div className="page-heading">
+        <h1 className="page-title">Best times</h1>
       </div>
 
       {error ? (
-        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: '12px' }}>
+        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: 'var(--fs-sm)' }}>
           {error}
         </div>
       ) : null}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', flex: '1 1 200px', maxWidth: '280px' }}>
           <span style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}>
             <Icon name="search" size={14} />
@@ -195,11 +192,11 @@ export default function BestTimesPage() {
               key={c}
               onClick={() => setCourseFilter(c)}
               style={{
-                padding: '9px 12px',
+                padding: '8px 12px',
                 border: 'none',
                 background: courseFilter === c ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
                 color: courseFilter === c ? 'var(--accent)' : 'var(--text-subtle)',
-                fontSize: '12px',
+                fontSize: 'var(--fs-sm)',
                 fontWeight: courseFilter === c ? 600 : 400,
                 cursor: 'pointer',
               }}
@@ -208,7 +205,7 @@ export default function BestTimesPage() {
             </button>
           ))}
         </div>
-        <span style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap' }}>
+        <span style={{ marginLeft: 'auto', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap' }}>
           {rows.length} records · {manualOverrides} manual overrides
         </span>
       </div>

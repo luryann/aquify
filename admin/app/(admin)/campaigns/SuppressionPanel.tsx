@@ -6,8 +6,9 @@ import { Modal } from '@/components/ui/Modal'
 import { Table, col } from '@/components/ui/Table'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
-import { ApiError, useApiClient } from '@/lib/api'
+import { useApiClient } from '@/lib/api'
 import { createSuppression, fetchSuppression, removeSuppression, type SuppressionRecord } from '@/lib/adminData'
+import { uiErrorMessage } from '@/lib/frontend-telemetry'
 
 function formatDateTime(value: string) {
   return new Date(value).toLocaleString('en-US', {
@@ -20,8 +21,8 @@ function formatDateTime(value: string) {
 }
 
 const FIELD_INPUT_STYLE: React.CSSProperties = {
-  width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)',
-  background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: '13px', boxSizing: 'border-box',
+  width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)',
+  background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: 'var(--fs-base)', boxSizing: 'border-box',
 }
 
 export function SuppressionPanel() {
@@ -58,7 +59,7 @@ export function SuppressionPanel() {
         if (!cancelled) setEntries(next)
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof ApiError ? err.message : 'Unable to load suppression entries.')
+          setError(uiErrorMessage(err, 'Couldn’t load suppression entries. Try again.'))
           setEntries([])
         }
       } finally {
@@ -99,7 +100,7 @@ export function SuppressionPanel() {
       await loadEntries()
       setModalOpen(false)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Unable to add suppression entry.')
+      setError(uiErrorMessage(err, 'Couldn’t add suppression entry. Try again.'))
     } finally {
       setSubmitting(false)
     }
@@ -113,7 +114,7 @@ export function SuppressionPanel() {
       await removeSuppression(api, session.user.orgId, id)
       await loadEntries()
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Unable to remove suppression entry.')
+      setError(uiErrorMessage(err, 'Couldn’t remove suppression entry. Try again.'))
     } finally {
       setWorkingId(null)
     }
@@ -156,17 +157,17 @@ export function SuppressionPanel() {
 
   return (
     <div>
-      <p style={{ fontSize: '12px', color: 'var(--text-subtle)', marginBottom: '20px', lineHeight: 1.5, maxWidth: '640px' }}>
+      <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', marginBottom: '20px', lineHeight: 1.5, maxWidth: '640px' }}>
         Addresses here are never emailed again, whether they bounced, complained about a past send, or were added by hand.
       </p>
 
       {error ? (
-        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: '12px' }}>
+        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: 'var(--fs-sm)' }}>
           {error}
         </div>
       ) : null}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', flex: '1 1 220px', maxWidth: '320px' }}>
           <span style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}>
             <Icon name="search" size={14} />
@@ -204,7 +205,7 @@ export function SuppressionPanel() {
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title="Add Suppression"
+        title="Add suppression"
         description="This address will never be emailed by any future campaign."
         footer={
           <>

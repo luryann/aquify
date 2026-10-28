@@ -51,11 +51,10 @@ function MembersPageContent() {
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1200px' }}>
+    <div className="page">
       <div className="page-header">
         <div>
           <h1 className="page-title">Members</h1>
-          <p className="page-subtitle">Households, swimmers, groups, registrations, and required documents in one place.</p>
         </div>
       </div>
 
@@ -73,7 +72,7 @@ function MembersPageContent() {
         <DocumentsPanel />
       ) : (
         <div style={{ padding: '20px 0' }}>
-          <EmptyState icon="shield-check" title="Not available" description="Document Center requires admin access." />
+          <EmptyState icon="shield-check" title="Admins only" description="Only admins can view documents." />
         </div>
       )}
     </div>

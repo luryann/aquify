@@ -8,8 +8,9 @@ import { Table, type Column } from '@/components/ui/Table'
 import { Tabs } from '@/components/ui/Tabs'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
-import { useApiClient, ApiError } from '@/lib/api'
+import { useApiClient } from '@/lib/api'
 import { fetchMeetCommitments, fetchMeetEntries, fetchMeetEvents, fetchMeets, type MeetRecord } from '@/lib/adminData'
+import { uiErrorMessage } from '@/lib/frontend-telemetry'
 
 type MeetStatus = 'draft' | 'published' | 'commitment_open' | 'commitment_closed' | 'entry_finalized' | 'completed' | 'archived'
 type MeetCourse = 'SCY' | 'SCM' | 'LCM'
@@ -31,9 +32,9 @@ type MeetRow = {
 const STATUS_CONFIG: Record<MeetStatus, { label: string; color: string; bg: string }> = {
   draft: { label: 'Draft', color: 'var(--text-muted)', bg: 'var(--bg-elevated)' },
   published: { label: 'Published', color: 'var(--info)', bg: 'var(--info-bg)' },
-  commitment_open: { label: 'Commitments Open', color: 'var(--warning)', bg: 'var(--warning-bg)' },
-  commitment_closed: { label: 'Commitments Closed', color: 'var(--warning)', bg: 'var(--warning-bg)' },
-  entry_finalized: { label: 'Entries Finalized', color: 'var(--accent)', bg: 'var(--accent-subtle)' },
+  commitment_open: { label: 'Commitments open', color: 'var(--warning)', bg: 'var(--warning-bg)' },
+  commitment_closed: { label: 'Commitments closed', color: 'var(--warning)', bg: 'var(--warning-bg)' },
+  entry_finalized: { label: 'Entries finalized', color: 'var(--accent)', bg: 'var(--accent-subtle)' },
   completed: { label: 'Completed', color: 'var(--success)', bg: 'var(--success-bg)' },
   archived: { label: 'Archived', color: 'var(--text-muted)', bg: 'var(--bg-elevated)' },
 }
@@ -51,7 +52,7 @@ const COURSE_LABELS: Record<MeetCourse, string> = {
 
 function CourseBadge({ course }: { course: MeetCourse }) {
   const colors: Record<MeetCourse, string> = { SCY: 'var(--text-subtle)', SCM: 'var(--info)', LCM: 'var(--accent)' }
-  return <span title={COURSE_LABELS[course]} style={{ fontFamily: 'var(--font-body)', fontSize: '11px', padding: '2px 6px', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)', color: colors[course], background: 'var(--bg-elevated)' }}>{course}</span>
+  return <span title={COURSE_LABELS[course]} style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-xs)', padding: '2px 6px', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)', color: colors[course], background: 'var(--bg-elevated)' }}>{course}</span>
 }
 
 const COLUMNS: Column<MeetRow>[] = [
@@ -61,8 +62,8 @@ const COLUMNS: Column<MeetRow>[] = [
     sortable: true,
     render: (row) => (
       <div>
-        <Link href={`/meets/${row.id}`} style={{ color: 'var(--text)', fontWeight: 600, textDecoration: 'none', fontSize: '13px' }}>{row.name}</Link>
-        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{row.host} · {row.location || 'Location TBD'}</div>
+        <Link href={`/meets/${row.id}`} style={{ color: 'var(--text)', fontWeight: 600, textDecoration: 'none', fontSize: 'var(--fs-base)' }}>{row.name}</Link>
+        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: '2px' }}>{row.host} · {row.location || 'Location TBD'}</div>
       </div>
     ),
   },
@@ -71,7 +72,7 @@ const COLUMNS: Column<MeetRow>[] = [
     label: 'Dates',
     sortable: true,
     render: (row) => (
-      <div style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-subtle)' }}>
+      <div style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>
         <div>{row.startDate || '—'}</div>
         {row.endDate && row.endDate !== row.startDate && <div style={{ color: 'var(--text-muted)' }}>→ {row.endDate}</div>}
       </div>
@@ -79,9 +80,9 @@ const COLUMNS: Column<MeetRow>[] = [
   },
   { key: 'course', label: 'Course', render: (row) => <CourseBadge course={row.course} /> },
   { key: 'status', label: 'Status', render: (row) => <StatusBadge status={row.status} /> },
-  { key: 'events', label: 'Events', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: row.events > 0 ? 'var(--text)' : 'var(--text-muted)' }}>{row.events || '—'}</span> },
-  { key: 'commitments', label: 'Commitments', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: row.commitments > 0 ? 'var(--text)' : 'var(--text-muted)' }}>{row.commitments || '—'}</span> },
-  { key: 'entries', label: 'Entries', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', fontWeight: row.entries > 0 ? 600 : 400, color: row.entries > 0 ? 'var(--accent)' : 'var(--text-muted)' }}>{row.entries || '—'}</span> },
+  { key: 'events', label: 'Events', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: row.events > 0 ? 'var(--text)' : 'var(--text-muted)' }}>{row.events || '—'}</span> },
+  { key: 'commitments', label: 'Commitments', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: row.commitments > 0 ? 'var(--text)' : 'var(--text-muted)' }}>{row.commitments || '—'}</span> },
+  { key: 'entries', label: 'Entries', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', fontWeight: row.entries > 0 ? 600 : 400, color: row.entries > 0 ? 'var(--accent)' : 'var(--text-muted)' }}>{row.entries || '—'}</span> },
 ]
 
 const ACTIVE_STATUSES: MeetStatus[] = ['draft', 'published', 'commitment_open', 'commitment_closed', 'entry_finalized']
@@ -150,7 +151,7 @@ function MeetsPageContent() {
         if (!cancelled) setRows(builtRows)
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof ApiError ? err.message : 'Failed to load meets.')
+          setError(uiErrorMessage(err, 'Couldn’t load meets. Try again.'))
           setRows([])
         }
       } finally {
@@ -181,51 +182,50 @@ function MeetsPageContent() {
   const totalEntries = rows.reduce((acc, row) => acc + row.entries, 0)
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1200px' }}>
+    <div className="page">
       <div className="page-header">
         <div>
           <h1 className="page-title">Meets</h1>
-          <p className="page-subtitle">Every meet your club is planning, running, or has completed</p>
         </div>
-        <Link href="/meets/new" className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px', textDecoration: 'none' }}>
+        <Link href="/meets/new" className="btn btn-primary">
           <Icon name="plus" size={14} /> New Meet
         </Link>
       </div>
 
       {createdNotice === '1' && (
-        <div className="card" style={{ padding: '14px 16px', marginBottom: '20px', borderColor: 'var(--success-border)', background: 'var(--success-bg)' }}>
-          <div style={{ fontSize: '13px', color: 'var(--success)', fontWeight: 600 }}>Meet created.</div>
+        <div className="card" style={{ padding: '16px 16px', marginBottom: '20px', borderColor: 'var(--success-border)', background: 'var(--success-bg)' }}>
+          <div style={{ fontSize: 'var(--fs-base)', color: 'var(--success)', fontWeight: 600 }}>Meet created.</div>
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>
+      <div className="cols-4" style={{ gap: '12px', marginBottom: '20px' }}>
         {[
-          { label: 'Active Meets', value: rows.filter((row) => ACTIVE_STATUSES.includes(row.status)).length, color: 'var(--text)' },
-          { label: 'Open Commitments', value: rows.filter((row) => row.status === 'commitment_open').length, color: 'var(--warning)' },
+          { label: 'Active meets', value: rows.filter((row) => ACTIVE_STATUSES.includes(row.status)).length, color: 'var(--text)' },
+          { label: 'Open commitments', value: rows.filter((row) => row.status === 'commitment_open').length, color: 'var(--warning)' },
           { label: 'Finalized', value: rows.filter((row) => row.status === 'entry_finalized').length, color: 'var(--accent)' },
-          { label: 'Total Entries (Season)', value: totalEntries, color: 'var(--success)' },
+          { label: 'Entries this season', value: totalEntries, color: 'var(--success)' },
         ].map((stat) => (
-          <div key={stat.label} className="card" style={{ padding: '14px 16px' }}>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
-            <div style={{ fontSize: '22px', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
+          <div key={stat.label} className="card" style={{ padding: '16px 16px' }}>
+            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
+            <div style={{ fontSize: 'var(--fs-2xl)', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
           </div>
         ))}
       </div>
 
       <Tabs tabs={viewTabs} active={viewTab} onChange={setViewTab} />
 
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', alignItems: 'center' }}>
-        <div style={{ position: 'relative', flex: 1, maxWidth: '320px' }}>
+      <div className="toolbar">
+        <div className="toolbar-search">
           <Icon name="search" size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
-          <input type="text" placeholder="Search meets..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: '100%', padding: '8px 12px 8px 32px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none' }} />
+          <input type="text" placeholder="Search meets..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: '100%', padding: '8px 12px 8px 32px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none' }} />
         </div>
-        <select value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)} style={{ padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none', cursor: 'pointer' }}>
-          <option value="all">All Courses</option>
+        <select value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)} style={{ padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none', cursor: 'pointer' }}>
+          <option value="all">All courses</option>
           <option value="SCY">SCY - Short Course Yards</option>
           <option value="SCM">SCM - Short Course Meters</option>
           <option value="LCM">LCM - Long Course Meters</option>
         </select>
-        <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginLeft: 'auto' }}>{filtered.length} meets</span>
+        <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginLeft: 'auto' }}>{filtered.length} meets</span>
       </div>
 
       {loading ? (

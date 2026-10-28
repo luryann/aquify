@@ -5,13 +5,44 @@ package orgsettings
 
 import (
 	"context"
+	"errors"
 	"log/slog"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+var (
+	// ErrInvalidSlug means the public slug is malformed or required but empty.
+	ErrInvalidSlug = errors.New("public slug must be 3-40 lowercase letters, digits or hyphens")
+	// ErrSlugTaken means another club already uses the slug.
+	ErrSlugTaken = errors.New("public slug is already in use")
+
+	slugPattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{1,38})[a-z0-9]$`)
+)
+
+// FindBySlug returns the settings whose public_slug matches, or (nil, nil).
+func (s *Service) FindBySlug(slug string) (*OrgSettings, error) {
+	slug = strings.ToLower(strings.TrimSpace(slug))
+	if slug == "" {
+		return nil, nil
+	}
+	if s.repo != nil {
+		return s.repo.FindBySlug(context.Background(), slug)
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, row := range s.settings {
+		if row.PublicSlug == slug {
+			cp := *row
+			return &cp, nil
+		}
+	}
+	return nil, nil
+}
 
 // OrgSettings holds the export identity fields for a single org.
 type OrgSettings struct {
@@ -21,6 +52,12 @@ type OrgSettings struct {
 	LSCCode            string    `json:"lsc_code"`
 	EmailSenderName    string    `json:"email_sender_name"`
 	EmailSenderAddress string    `json:"email_sender_address"`
+	PublicSlug         string    `json:"public_slug"`
+	PublicSiteEnabled  bool      `json:"public_site_enabled"`
+	PublicShowCoaches  bool      `json:"public_show_coaches"`
+	PublicAbout        string    `json:"public_about"`
+	PublicContactEmail string    `json:"public_contact_email"`
+	PublicContactPhone string    `json:"public_contact_phone"`
 	CreatedAt          time.Time `json:"created_at"`
 	UpdatedAt          time.Time `json:"updated_at"`
 	UpdatedBy          string    `json:"updated_by"`
@@ -34,6 +71,12 @@ type Updates struct {
 	LSCCode            *string `json:"lsc_code,omitempty"`
 	EmailSenderName    *string `json:"email_sender_name,omitempty"`
 	EmailSenderAddress *string `json:"email_sender_address,omitempty"`
+	PublicSlug         *string `json:"public_slug,omitempty"`
+	PublicSiteEnabled  *bool   `json:"public_site_enabled,omitempty"`
+	PublicShowCoaches  *bool   `json:"public_show_coaches,omitempty"`
+	PublicAbout        *string `json:"public_about,omitempty"`
+	PublicContactEmail *string `json:"public_contact_email,omitempty"`
+	PublicContactPhone *string `json:"public_contact_phone,omitempty"`
 }
 
 // Service manages org settings with an in-memory write-through cache.
@@ -117,6 +160,38 @@ func (s *Service) Update(orgID string, updates Updates, updatedBy string) (*OrgS
 	}
 	if updates.EmailSenderAddress != nil {
 		current.EmailSenderAddress = strings.TrimSpace(*updates.EmailSenderAddress)
+	}
+	if updates.PublicSlug != nil {
+		slug := strings.ToLower(strings.TrimSpace(*updates.PublicSlug))
+		if slug != "" && !slugPattern.MatchString(slug) {
+			return nil, ErrInvalidSlug
+		}
+		if slug != "" {
+			if other, err := s.FindBySlug(slug); err != nil {
+				return nil, err
+			} else if other != nil && other.OrgID != current.OrgID {
+				return nil, ErrSlugTaken
+			}
+		}
+		current.PublicSlug = slug
+	}
+	if updates.PublicSiteEnabled != nil {
+		current.PublicSiteEnabled = *updates.PublicSiteEnabled
+	}
+	if updates.PublicShowCoaches != nil {
+		current.PublicShowCoaches = *updates.PublicShowCoaches
+	}
+	if updates.PublicAbout != nil {
+		current.PublicAbout = strings.TrimSpace(*updates.PublicAbout)
+	}
+	if updates.PublicContactEmail != nil {
+		current.PublicContactEmail = strings.TrimSpace(*updates.PublicContactEmail)
+	}
+	if updates.PublicContactPhone != nil {
+		current.PublicContactPhone = strings.TrimSpace(*updates.PublicContactPhone)
+	}
+	if current.PublicSiteEnabled && current.PublicSlug == "" {
+		return nil, ErrInvalidSlug
 	}
 	current.UpdatedAt = now
 	current.UpdatedBy = updatedBy

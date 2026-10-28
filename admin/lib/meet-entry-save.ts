@@ -23,7 +23,7 @@ export async function saveMeetEntriesBatch(
 export function formatMeetEntriesSaveError(error: unknown, attemptedCount: number): string {
   const prefix = attemptedCount > 1
     ? `Failed to save all ${attemptedCount} selected entries.`
-    : 'Failed to save the selected entry.'
+    : 'Couldn’t save the selected entry. Try again.'
 
   if (error instanceof ApiError && error.message.trim() !== '') {
     return `${prefix} ${error.message} Some entries may have been created before the failure.`

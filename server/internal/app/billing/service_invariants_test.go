@@ -125,3 +125,54 @@ func TestLedgerInvariants_WriteOffProducesZeroOutstandingBalance(t *testing.T) {
 		t.Fatalf("expected write-off to zero amount due, got %d", writtenOff.AmountDueCents)
 	}
 }
+
+func TestIssueInvoiceRejectsEmptyInvoice(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService()
+	principal := billingAdminPrincipal()
+	invoice, err := svc.CreateInvoice(principal.OrgID, principal.UserID, principal, CreateInvoiceInput{
+		HouseholdID:   "hh-empty",
+		InvoiceNumber: "INV-EMPTY-1",
+	})
+	if err != nil {
+		t.Fatalf("CreateInvoice: %v", err)
+	}
+	if _, _, err := svc.IssueInvoice(principal.OrgID, principal.UserID, principal, invoice.ID); err != ErrInvoiceEmpty {
+		t.Fatalf("want ErrInvoiceEmpty, got %v", err)
+	}
+}
+
+func TestParentCannotSeeDraftInvoices(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService()
+	admin := billingAdminPrincipal()
+	parent := &appmiddleware.Principal{UserID: "p", OrgID: admin.OrgID, Roles: []string{"parent"}, HouseholdID: "hh-draft"}
+	draft, err := svc.CreateInvoice(admin.OrgID, admin.UserID, admin, CreateInvoiceInput{HouseholdID: "hh-draft", InvoiceNumber: "INV-DRAFT-1"})
+	if err != nil {
+		t.Fatalf("CreateInvoice: %v", err)
+	}
+	if _, err := svc.GetInvoice(admin.OrgID, parent, draft.ID); err != ErrInvoiceNotFound {
+		t.Fatalf("parent get draft: want ErrInvoiceNotFound, got %v", err)
+	}
+	if _, err := svc.ListInvoiceItems(admin.OrgID, parent, draft.ID); err != ErrInvoiceNotFound {
+		t.Fatalf("parent list draft items: want ErrInvoiceNotFound, got %v", err)
+	}
+	if list, err := svc.ListInvoices(admin.OrgID, parent, ListInvoicesFilters{}); err != nil || len(list) != 0 {
+		t.Fatalf("parent list: want empty, got %d err=%v", len(list), err)
+	}
+	// Staff still see the draft.
+	if list, err := svc.ListInvoices(admin.OrgID, admin, ListInvoicesFilters{}); err != nil || len(list) != 1 {
+		t.Fatalf("admin list: want 1, got %d err=%v", len(list), err)
+	}
+	if _, err := svc.AddInvoiceItem(admin.OrgID, admin.UserID, admin, draft.ID, AddInvoiceItemInput{Description: "Dues", Quantity: 1, UnitAmountCents: 1000, Category: "manual"}); err != nil {
+		t.Fatalf("AddInvoiceItem: %v", err)
+	}
+	if _, _, err := svc.IssueInvoice(admin.OrgID, admin.UserID, admin, draft.ID); err != nil {
+		t.Fatalf("IssueInvoice: %v", err)
+	}
+	if list, err := svc.ListInvoices(admin.OrgID, parent, ListInvoicesFilters{}); err != nil || len(list) != 1 {
+		t.Fatalf("parent list after issue: want 1, got %d err=%v", len(list), err)
+	}
+}

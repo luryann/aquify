@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -20,17 +21,41 @@ func newRepository(pool *pgxpool.Pool) *Repository {
 	return &Repository{pool: pool}
 }
 
+// querier is satisfied by both *pgxpool.Pool and pgx.Tx.
+type querier interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+// withTx runs fn inside a transaction, committing on success.
+func (r *Repository) withTx(ctx context.Context, fn func(q querier) error) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("training: begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := fn(tx); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 // Upsert inserts or updates a practice record.
 func (r *Repository) Upsert(ctx context.Context, p *Practice) error {
-	_, err := r.pool.Exec(ctx, `
+	return upsertPractice(ctx, r.pool, p)
+}
+
+func upsertPractice(ctx context.Context, q querier, p *Practice) error {
+	_, err := q.Exec(ctx, `
 		INSERT INTO practices (
 			id, org_id, date, group_id, type, description, yardage_target,
 			attendance, strokes_free, strokes_back, strokes_breast, strokes_fly, strokes_im,
-			notes, created_at, updated_at, created_by, updated_by
+			notes, created_at, updated_at, created_by, updated_by, workout_id
 		) VALUES (
 			$1::uuid, $2, $3::date, $4, $5, $6, $7,
 			$8, $9, $10, $11, $12, $13,
-			$14, $15, $16, $17, $18
+			$14, $15, $16, $17, $18, $19::uuid
 		)
 		ON CONFLICT (id) DO UPDATE SET
 			date           = EXCLUDED.date,
@@ -46,10 +71,11 @@ func (r *Repository) Upsert(ctx context.Context, p *Practice) error {
 			strokes_im     = EXCLUDED.strokes_im,
 			notes          = EXCLUDED.notes,
 			updated_at     = EXCLUDED.updated_at,
-			updated_by     = EXCLUDED.updated_by`,
+			updated_by     = EXCLUDED.updated_by,
+			workout_id     = EXCLUDED.workout_id`,
 		p.ID, p.OrgID, p.Date, nullableString(p.GroupID), p.Type, p.Description, p.YardageTarget,
 		p.Attendance, p.Strokes.Free, p.Strokes.Back, p.Strokes.Breast, p.Strokes.Fly, p.Strokes.IM,
-		p.Notes, p.CreatedAt, p.UpdatedAt, p.CreatedBy, p.UpdatedBy,
+		p.Notes, p.CreatedAt, p.UpdatedAt, p.CreatedBy, p.UpdatedBy, nullableString(p.WorkoutID),
 	)
 	return err
 }
@@ -75,7 +101,8 @@ func (r *Repository) ListByOrg(ctx context.Context, orgID string) ([]*Practice, 
 		       strokes_free, strokes_back, strokes_breast, strokes_fly, strokes_im,
 		       COALESCE(notes, ''),
 		       created_at, updated_at,
-		       COALESCE(created_by, ''), COALESCE(updated_by, '')
+		       COALESCE(created_by, ''), COALESCE(updated_by, ''),
+		       COALESCE(workout_id::text, '')
 		FROM practices
 		WHERE org_id = $1
 		ORDER BY date DESC, created_at DESC`, orgID)
@@ -88,14 +115,19 @@ func (r *Repository) ListByOrg(ctx context.Context, orgID string) ([]*Practice, 
 }
 
 func (r *Repository) GetByID(ctx context.Context, orgID, id string) (*Practice, error) {
-	row := r.pool.QueryRow(ctx, `
+	return getPractice(ctx, r.pool, orgID, id)
+}
+
+func getPractice(ctx context.Context, q querier, orgID, id string) (*Practice, error) {
+	row := q.QueryRow(ctx, `
 		SELECT id::text, org_id, date::text, COALESCE(group_id, ''), type,
 		       COALESCE(description, ''), yardage_target,
 		       attendance,
 		       strokes_free, strokes_back, strokes_breast, strokes_fly, strokes_im,
 		       COALESCE(notes, ''),
 		       created_at, updated_at,
-		       COALESCE(created_by, ''), COALESCE(updated_by, '')
+		       COALESCE(created_by, ''), COALESCE(updated_by, ''),
+		       COALESCE(workout_id::text, '')
 		FROM practices
 		WHERE id = $1::uuid AND org_id = $2`,
 		id, orgID,
@@ -109,6 +141,7 @@ func (r *Repository) GetByID(ctx context.Context, orgID, id string) (*Practice, 
 		&p.Notes,
 		&p.CreatedAt, &p.UpdatedAt,
 		&p.CreatedBy, &p.UpdatedBy,
+		&p.WorkoutID,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -127,7 +160,8 @@ func (r *Repository) LoadAll(ctx context.Context) ([]*Practice, error) {
 		       strokes_free, strokes_back, strokes_breast, strokes_fly, strokes_im,
 		       COALESCE(notes, ''),
 		       created_at, updated_at,
-		       COALESCE(created_by, ''), COALESCE(updated_by, '')
+		       COALESCE(created_by, ''), COALESCE(updated_by, ''),
+		       COALESCE(workout_id::text, '')
 		FROM practices
 		ORDER BY date DESC, created_at DESC`)
 	if err != nil {
@@ -215,6 +249,7 @@ func scanPractices(rows pgx.Rows) ([]*Practice, error) {
 			&p.Notes,
 			&p.CreatedAt, &p.UpdatedAt,
 			&p.CreatedBy, &p.UpdatedBy,
+			&p.WorkoutID,
 		); err != nil {
 			return nil, fmt.Errorf("training: scan practice: %w", err)
 		}

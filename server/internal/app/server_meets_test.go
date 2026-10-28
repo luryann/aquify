@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/dareaquatics/aquify/server/internal/app/meets"
+	"github.com/dareaquatics/aquify/server/internal/app/members"
 )
 
 // ─── Envelope helpers ─────────────────────────────────────────────────────────
@@ -1720,6 +1721,175 @@ func TestInvalidPathParametersReturn400(t *testing.T) {
 		router.ServeHTTP(rr, req)
 		if rr.Code != http.StatusBadRequest {
 			t.Fatalf("%s %s: expected 400 for whitespace meet ID, got %d body=%s", tc.method, tc.path, rr.Code, rr.Body.String())
+		}
+	}
+}
+
+func TestSwimmerCreatedWhileCommitmentsOpenIsInvited(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	meetsService := meets.NewService()
+	membersService := members.NewService()
+	router := NewRouterWithServices(Config{}, logger, nil, membersService, nil, meetsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	adminToken := issueSessionToken(t, router, "org-test", []string{"admin"}, false)
+
+	do := func(method, path string, body map[string]any) *httptest.ResponseRecorder {
+		var req *http.Request
+		if body != nil {
+			req = httptest.NewRequest(method, path, encodeJSONBody(t, body))
+			req.Header.Set("Content-Type", "application/json")
+		} else {
+			req = httptest.NewRequest(method, path, nil)
+		}
+		req.Header.Set("X-Org-Id", "org-test")
+		req.Header.Set("Authorization", "Bearer "+adminToken)
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		return rr
+	}
+
+	meetID := createMeet(t, router, "org-test", adminToken, "Late Roster Meet")
+	publishMeet(t, router, "org-test", adminToken, meetID)
+	if rr := do(http.MethodPost, "/api/v1/meets/"+meetID+"/commitment-request", nil); rr.Code != http.StatusOK {
+		t.Fatalf("commitment-request: %d %s", rr.Code, rr.Body.String())
+	}
+
+	hh := do(http.MethodPost, "/api/v1/members/households", map[string]any{"org_id": "org-test", "household_name": "Late Family"})
+	if hh.Code != http.StatusCreated {
+		t.Fatalf("create household: %d %s", hh.Code, hh.Body.String())
+	}
+	var hhEnv struct {
+		Household struct {
+			ID string `json:"id"`
+		} `json:"household"`
+	}
+	if err := json.Unmarshal(hh.Body.Bytes(), &hhEnv); err != nil {
+		t.Fatalf("decode household: %v", err)
+	}
+	sw := do(http.MethodPost, "/api/v1/members/swimmers", map[string]any{
+		"org_id": "org-test", "household_id": hhEnv.Household.ID, "first_name": "Late", "last_name": "Joiner",
+		"date_of_birth": "2013-05-01", "gender": "female",
+	})
+	if sw.Code != http.StatusCreated {
+		t.Fatalf("create swimmer: %d %s", sw.Code, sw.Body.String())
+	}
+	var swEnv struct {
+		Swimmer struct {
+			ID string `json:"id"`
+		} `json:"swimmer"`
+	}
+	if err := json.Unmarshal(sw.Body.Bytes(), &swEnv); err != nil {
+		t.Fatalf("decode swimmer: %v", err)
+	}
+
+	list := do(http.MethodGet, "/api/v1/meets/"+meetID+"/commitments", nil)
+	var listEnv struct {
+		Commitments []struct {
+			SwimmerID   string `json:"swimmer_id"`
+			HouseholdID string `json:"household_id"`
+			Status      string `json:"status"`
+		} `json:"commitments"`
+	}
+	if err := json.Unmarshal(list.Body.Bytes(), &listEnv); err != nil {
+		t.Fatalf("decode commitments: %v", err)
+	}
+	if len(listEnv.Commitments) != 1 || listEnv.Commitments[0].SwimmerID != swEnv.Swimmer.ID ||
+		listEnv.Commitments[0].Status != "invited" || listEnv.Commitments[0].HouseholdID != hhEnv.Household.ID {
+		t.Fatalf("expected one invited commitment for late swimmer, got %s", list.Body.String())
+	}
+}
+
+func TestLockCommitmentsCreatesEntriesAndPreservesDeclines(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	meetsService := meets.NewService()
+	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	adminToken := issueSessionToken(t, router, "org-test", []string{"admin"}, false)
+	parentToken := issueSessionTokenForUser(t, router, "user-parent-1", "org-test", []string{"parent"}, false)
+	meetsService.SeedSwimmer("org-test", "swm-yes", "hsh-001")
+	meetsService.SeedSwimmer("org-test", "swm-no", "hsh-001")
+	meetsService.SeedSwimmer("org-test", "swm-silent", "hsh-001")
+	meetsService.SeedParentHousehold("user-parent-1", "hsh-001")
+
+	do := func(method, path, token string, body map[string]any) *httptest.ResponseRecorder {
+		var req *http.Request
+		if body != nil {
+			req = httptest.NewRequest(method, path, encodeJSONBody(t, body))
+			req.Header.Set("Content-Type", "application/json")
+		} else {
+			req = httptest.NewRequest(method, path, nil)
+		}
+		req.Header.Set("X-Org-Id", "org-test")
+		req.Header.Set("Authorization", "Bearer "+token)
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		return rr
+	}
+
+	meetID := createMeet(t, router, "org-test", adminToken, "Lock Meet")
+	ev1 := createMeetEvent(t, router, "org-test", adminToken, meetID, "1")
+	ev2 := createMeetEvent(t, router, "org-test", adminToken, meetID, "2")
+	publishMeet(t, router, "org-test", adminToken, meetID)
+	pub := do(http.MethodPost, "/api/v1/meets/"+meetID+"/commitment-request", adminToken, nil)
+	var pubEnv commitmentRequestEnvelope
+	if err := json.Unmarshal(pub.Body.Bytes(), &pubEnv); err != nil {
+		t.Fatalf("decode commitment-request: %v", err)
+	}
+	bySwimmer := map[string]string{}
+	for _, c := range pubEnv.Commitments {
+		bySwimmer[c.SwimmerID] = c.ID
+	}
+	yesID, noID := bySwimmer["swm-yes"], bySwimmer["swm-no"]
+	if rr := do(http.MethodPost, "/api/v1/meets/"+meetID+"/commitments/"+yesID+"/respond", parentToken, map[string]any{"response": "committed_yes"}); rr.Code != http.StatusOK {
+		t.Fatalf("respond yes: %d %s", rr.Code, rr.Body.String())
+	}
+	if rr := do(http.MethodPost, "/api/v1/meets/"+meetID+"/commitments/"+noID+"/respond", parentToken, map[string]any{"response": "committed_no"}); rr.Code != http.StatusOK {
+		t.Fatalf("respond no: %d %s", rr.Code, rr.Body.String())
+	}
+	for _, ev := range []string{ev1, ev2} {
+		if rr := do(http.MethodPost, "/api/v1/meets/"+meetID+"/commitments/"+yesID+"/event-selections", parentToken, map[string]any{"meet_event_id": ev}); rr.Code != http.StatusCreated {
+			t.Fatalf("select %s: %d %s", ev, rr.Code, rr.Body.String())
+		}
+	}
+	if rr := do(http.MethodPost, "/api/v1/meets/"+meetID+"/lock-commitments", adminToken, nil); rr.Code != http.StatusOK {
+		t.Fatalf("lock: %d %s", rr.Code, rr.Body.String())
+	}
+
+	var entriesEnv struct {
+		Entries []struct {
+			SwimmerID string `json:"swimmer_id"`
+			Status    string `json:"status"`
+		} `json:"entries"`
+	}
+	entries := do(http.MethodGet, "/api/v1/meets/"+meetID+"/entries", adminToken, nil)
+	if err := json.Unmarshal(entries.Body.Bytes(), &entriesEnv); err != nil {
+		t.Fatalf("decode entries: %v", err)
+	}
+	if len(entriesEnv.Entries) != 2 {
+		t.Fatalf("expected 2 entries from selections, got %s", entries.Body.String())
+	}
+	for _, e := range entriesEnv.Entries {
+		if e.SwimmerID != "swm-yes" || e.Status != "submitted" {
+			t.Fatalf("unexpected entry %+v", e)
+		}
+	}
+
+	var listEnv struct {
+		Commitments []struct {
+			SwimmerID string `json:"swimmer_id"`
+			Status    string `json:"status"`
+		} `json:"commitments"`
+	}
+	list := do(http.MethodGet, "/api/v1/meets/"+meetID+"/commitments", adminToken, nil)
+	if err := json.Unmarshal(list.Body.Bytes(), &listEnv); err != nil {
+		t.Fatalf("decode commitments: %v", err)
+	}
+	want := map[string]string{"swm-yes": "locked", "swm-no": "committed_no", "swm-silent": "invited"}
+	for _, c := range listEnv.Commitments {
+		if want[c.SwimmerID] != c.Status {
+			t.Fatalf("swimmer %s: want status %q, got %q", c.SwimmerID, want[c.SwimmerID], c.Status)
 		}
 	}
 }

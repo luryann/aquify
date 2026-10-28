@@ -29,18 +29,19 @@ func nullableString(s string) interface{} {
 func (r *Repository) UpsertAnnouncement(ctx context.Context, a *Announcement) error {
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO announcements (id, org_id, title, body, status, audience, group_id,
-		                           published_at, archived_at, created_at, updated_at)
-		VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		                           published_at, archived_at, created_at, updated_at, is_public)
+		VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		ON CONFLICT (id) DO UPDATE SET
 		  title       = EXCLUDED.title,
 		  body        = EXCLUDED.body,
 		  status      = EXCLUDED.status,
 		  published_at = EXCLUDED.published_at,
 		  archived_at = EXCLUDED.archived_at,
+		  is_public   = EXCLUDED.is_public,
 		  updated_at  = EXCLUDED.updated_at`,
 		a.ID, a.OrgID, a.Title, a.Body, a.Status, a.Audience,
 		nullableString(a.GroupID), a.PublishedAt, a.ArchivedAt,
-		a.CreatedAt, a.UpdatedAt,
+		a.CreatedAt, a.UpdatedAt, a.Public,
 	)
 	return err
 }
@@ -49,7 +50,7 @@ func (r *Repository) LoadAnnouncements(ctx context.Context) ([]*Announcement, er
 	rows, err := r.pool.Query(ctx, `
 		SELECT id::text, org_id::text, title, body, status, audience,
 		       COALESCE(group_id::text, ''), published_at, archived_at,
-		       created_at, updated_at
+		       created_at, updated_at, is_public
 		FROM announcements WHERE deleted_at IS NULL`)
 	if err != nil {
 		return nil, fmt.Errorf("comms: load announcements: %w", err)
@@ -61,7 +62,7 @@ func (r *Repository) LoadAnnouncements(ctx context.Context) ([]*Announcement, er
 		if err := rows.Scan(
 			&a.ID, &a.OrgID, &a.Title, &a.Body, &a.Status, &a.Audience,
 			&a.GroupID, &a.PublishedAt, &a.ArchivedAt,
-			&a.CreatedAt, &a.UpdatedAt,
+			&a.CreatedAt, &a.UpdatedAt, &a.Public,
 		); err != nil {
 			return nil, fmt.Errorf("comms: scan announcement: %w", err)
 		}

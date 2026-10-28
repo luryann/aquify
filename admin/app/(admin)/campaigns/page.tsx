@@ -42,13 +42,9 @@ function CampaignsRootPageContent() {
   }
 
   return (
-    <div style={{ padding: '32px 36px 80px', maxWidth: 1240, margin: '0 auto' }}>
-      <div style={{ marginBottom: '28px' }}>
-        <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
-          Communications
-        </p>
-        <h1 className="page-title">Email Campaigns</h1>
-        <p className="page-subtitle">Campaign drafts, sends, delivery history, and a list of addresses that should never receive email from your club.</p>
+    <div className="page">
+      <div className="page-heading">
+        <h1 className="page-title">Email campaigns</h1>
       </div>
 
       <Tabs
@@ -56,7 +52,7 @@ function CampaignsRootPageContent() {
           canSeeSuppression
             ? [
                 { id: 'campaigns', label: 'Campaigns' },
-                { id: 'suppression', label: 'Suppression List' },
+                { id: 'suppression', label: 'Suppression list' },
               ]
             : [{ id: 'campaigns', label: 'Campaigns' }]
         }

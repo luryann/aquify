@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, useCallback, useRef, type FormEvent } fro
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
-import { ApiError, useApiClient } from '@/lib/api'
+import { useApiClient } from '@/lib/api'
 import { useMessageStream } from '@/lib/useMessageStream'
 import {
   fetchMessageThreads,
@@ -22,6 +22,7 @@ import {
   type HouseholdRecord,
   type SwimmerRecord,
 } from '@/lib/adminData'
+import { uiErrorMessage } from '@/lib/frontend-telemetry'
 
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '🎉', '😮', '😢']
 
@@ -99,7 +100,7 @@ export default function MessagesInboxPage() {
           setSelected({ householdId: nextThreads[0].household_id, swimmerId: nextThreads[0].swimmer_id })
         }
       } catch (err) {
-        if (!cancelled) setError(err instanceof ApiError ? err.message : 'Failed to load message threads.')
+        if (!cancelled) setError(uiErrorMessage(err, 'Couldn’t load message threads. Try again.'))
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -121,6 +122,19 @@ export default function MessagesInboxPage() {
     })
   }, [threads, search, swimmerNameById, householdNameById])
 
+  // Staff can open a conversation with any swimmer's family; if no thread
+  // exists yet, show a placeholder until the first message creates it.
+  const startConversation = useCallback((swimmerId: string) => {
+    const swimmer = swimmers.find((s) => s.id === swimmerId)
+    if (!swimmer) return
+    const key = { householdId: swimmer.household_id, swimmerId: swimmer.id }
+    setThreads((prev) => prev.some((t) => t.household_id === key.householdId && t.swimmer_id === key.swimmerId)
+      ? prev
+      : [{ household_id: key.householdId, swimmer_id: key.swimmerId, message_count: 0, last_body: 'New conversation', last_sender_role: '', last_message_at: '', unread_count: 0 }, ...prev])
+    setSearch('')
+    setSelected(key)
+  }, [swimmers])
+
   const refreshThreads = useCallback(() => {
     if (!orgId) return
     fetchMessageThreads(api, orgId).then(setThreads).catch(() => {})
@@ -132,7 +146,7 @@ export default function MessagesInboxPage() {
     setThreadError(null)
     fetchMessages(api, orgId, selected.householdId, selected.swimmerId)
       .then(setMessages)
-      .catch((err) => setThreadError(err instanceof ApiError ? err.message : 'Failed to load this conversation.'))
+      .catch((err) => setThreadError(uiErrorMessage(err, 'Couldn’t load this conversation. Try again.')))
       .finally(() => setThreadLoading(false))
   }, [api, orgId, selected])
 
@@ -186,7 +200,7 @@ export default function MessagesInboxPage() {
       setThreadReloadKey((k) => k + 1)
       refreshThreads()
     } catch (err) {
-      setSendError(err instanceof ApiError ? err.message : 'Failed to send your reply.')
+      setSendError(uiErrorMessage(err, 'Couldn’t send your reply. Try again.'))
     } finally {
       setSending(false)
     }
@@ -208,7 +222,7 @@ export default function MessagesInboxPage() {
       if (!putResp.ok) throw new Error('Upload failed')
       setPendingAttachment({ object_key, file_name: expected_file_name, file_mime: file.type })
     } catch {
-      setAttachError('Could not upload that image. Try a smaller file or a different format.')
+      setAttachError('Couldn’t upload that image. Try a smaller file or a different format. Try again.')
     } finally {
       setUploading(false)
     }
@@ -244,13 +258,30 @@ export default function MessagesInboxPage() {
   }
 
   return (
-    <div style={{ padding: '32px 36px 40px', maxWidth: '1240px', margin: '0 auto', height: 'calc(100vh - 52px)', display: 'flex', flexDirection: 'column' }}>
+    <div className="page-fill">
       <div style={{ marginBottom: '20px', flexShrink: 0 }}>
-        <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
-          Communications
-        </p>
-        <h1 className="page-title">Messages</h1>
-        <p className="page-subtitle">Direct conversations between families and staff, one thread per swimmer.</p>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
+          <div>
+            <h1 className="page-title">Messages</h1>
+          </div>
+          {!loading && !error && swimmers.length > 0 && (
+            <select
+              aria-label="Start a conversation"
+              value=""
+              onChange={(e) => { if (e.target.value) startConversation(e.target.value) }}
+              style={{ padding: '8px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: 'var(--fs-base)', maxWidth: '280px' }}
+            >
+              <option value="">New message to a family…</option>
+              {[...swimmers]
+                .sort((a, b) => `${a.last_name} ${a.first_name}`.localeCompare(`${b.last_name} ${b.first_name}`))
+                .map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.last_name}, {s.first_name} — {householdNameById.get(s.household_id) ?? 'Household'}
+                  </option>
+                ))}
+            </select>
+          )}
+        </div>
       </div>
 
       {loading ? (
@@ -258,11 +289,11 @@ export default function MessagesInboxPage() {
       ) : error ? (
         <EmptyState icon="alert-circle" title="Unable to load messages" description={error} />
       ) : threads.length === 0 ? (
-        <EmptyState icon="mail" title="No conversations yet" description="Messages from parents will appear here once a family starts one." />
+        <EmptyState icon="mail" title="No conversations yet" description="Messages from families appear here. Use “New message to a family” to start one." />
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '16px', flex: 1, minHeight: 0 }}>
+        <div className="split-list" style={{ gap: '16px', flex: 1, minHeight: 0, alignItems: 'stretch' }}>
           <div className="card" style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-            <div style={{ padding: '10px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+            <div style={{ padding: '12px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
               <div style={{ position: 'relative' }}>
                 <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}>
                   <Icon name="search" size={13} />
@@ -271,7 +302,7 @@ export default function MessagesInboxPage() {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search conversations…"
-                  style={{ width: '100%', padding: '8px 10px 8px 30px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: '12.5px', boxSizing: 'border-box' }}
+                  style={{ width: '100%', padding: '8px 12px 8px 32px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: 'var(--fs-sm)', boxSizing: 'border-box' }}
                 />
               </div>
             </div>
@@ -287,8 +318,8 @@ export default function MessagesInboxPage() {
                       width: '100%',
                       textAlign: 'left',
                       display: 'flex',
-                      gap: '10px',
-                      padding: '10px',
+                      gap: '12px',
+                      padding: '12px',
                       borderRadius: 'var(--r-md)',
                       border: active ? '1px solid var(--accent-border)' : '1px solid transparent',
                       background: active ? 'var(--accent-subtle)' : 'transparent',
@@ -297,13 +328,13 @@ export default function MessagesInboxPage() {
                     }}
                   >
                     <div style={{ position: 'relative', flexShrink: 0 }}>
-                      <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--bg-elevated)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 600, color: 'var(--text-subtle)' }}>
+                      <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--bg-elevated)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--text-subtle)' }}>
                         {initials(swimmerName)}
                       </div>
                       {t.unread_count > 0 && (
                         <span style={{
                           position: 'absolute', top: '-4px', right: '-4px', minWidth: '16px', height: '16px', padding: '0 4px',
-                          borderRadius: '999px', background: 'var(--accent)', color: '#fff', fontSize: '10px', fontWeight: 700,
+                          borderRadius: '999px', background: 'var(--accent)', color: '#fff', fontSize: 'var(--fs-2xs)', fontWeight: 700,
                           display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-body)',
                         }}>
                           {t.unread_count > 9 ? '9+' : t.unread_count}
@@ -312,17 +343,17 @@ export default function MessagesInboxPage() {
                     </div>
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
-                        <span style={{ fontSize: '13px', fontWeight: t.unread_count > 0 ? 700 : 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <span style={{ fontSize: 'var(--fs-base)', fontWeight: t.unread_count > 0 ? 700 : 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {swimmerName}
                         </span>
-                        <span style={{ fontSize: '10.5px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', flexShrink: 0 }}>
+                        <span style={{ fontSize: 'var(--fs-2xs)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', flexShrink: 0 }}>
                           {formatDateTime(t.last_message_at)}
                         </span>
                       </div>
-                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '2px' }}>
+                      <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginBottom: '2px' }}>
                         {householdNameById.get(t.household_id) ?? 'Unknown household'}
                       </div>
-                      <div style={{ fontSize: '12px', color: 'var(--text-subtle)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {t.last_body}
                       </div>
                     </div>
@@ -333,20 +364,20 @@ export default function MessagesInboxPage() {
           </div>
 
           <div className="card" style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-            <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-              <p style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text)' }}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+              <p style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--text)' }}>
                 {selected ? (swimmerNameById.get(selected.swimmerId) ?? 'Conversation') : 'Select a conversation'}
               </p>
               {selected && (
-                <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
                   {householdNameById.get(selected.householdId) ?? ''}
                 </p>
               )}
             </div>
 
-            <div style={{ flex: 1, padding: '18px', display: 'flex', flexDirection: 'column', gap: '14px', overflowY: 'auto', minHeight: 0 }}>
+            <div style={{ flex: 1, padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', overflowY: 'auto', minHeight: 0 }}>
               {threadError ? (
-                <p style={{ fontSize: '13px', color: 'var(--error)' }}>{threadError}</p>
+                <p style={{ fontSize: 'var(--fs-base)', color: 'var(--error)' }}>{threadError}</p>
               ) : threadLoading ? (
                 <p className="page-subtitle">Loading conversation…</p>
               ) : messages.length === 0 ? (
@@ -366,7 +397,7 @@ export default function MessagesInboxPage() {
                             value={editDraft}
                             onChange={(e) => setEditDraft(e.target.value)}
                             rows={2}
-                            style={{ minWidth: '220px', padding: '8px 10px', borderRadius: 'var(--r-md)', border: '1px solid var(--accent-border)', background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: '13px', resize: 'vertical' }}
+                            style={{ minWidth: '220px', padding: '8px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--accent-border)', background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: 'var(--fs-base)', resize: 'vertical' }}
                           />
                           <button className="btn btn-sm btn-primary" onClick={() => void handleEditSave(m.id)}>Save</button>
                           <button className="btn btn-sm btn-secondary" onClick={() => setEditingId(null)}>Cancel</button>
@@ -376,9 +407,9 @@ export default function MessagesInboxPage() {
                           style={{
                             background: mine ? 'var(--accent)' : 'var(--bg-elevated)',
                             color: mine ? '#fff' : 'var(--text)',
-                            padding: '10px 14px',
+                            padding: '12px 16px',
                             borderRadius: mine ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
-                            fontSize: '13.5px',
+                            fontSize: 'var(--fs-base)',
                             lineHeight: 1.5,
                             whiteSpace: 'pre-wrap',
                           }}
@@ -394,7 +425,7 @@ export default function MessagesInboxPage() {
                       )}
 
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', justifyContent: mine ? 'flex-end' : 'flex-start' }}>
-                        <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                        <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
                           {senderLabel(m.sender_role)} · {formatDateTime(m.created_at)}{m.edited_at ? ' · (edited)' : ''}
                         </p>
                         {canEdit && !isEditing && (
@@ -418,7 +449,7 @@ export default function MessagesInboxPage() {
                       {reactionPickerId === m.id && (
                         <div style={{ display: 'flex', gap: '4px', marginTop: '4px', padding: '4px 6px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg-elevated)', width: 'fit-content' }}>
                           {QUICK_REACTIONS.map((emoji) => (
-                            <button key={emoji} onClick={() => void handleToggleReaction(m, emoji)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '15px', padding: '2px' }}>
+                            <button key={emoji} onClick={() => void handleToggleReaction(m, emoji)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--fs-md)', padding: '2px' }}>
                               {emoji}
                             </button>
                           ))}
@@ -432,7 +463,7 @@ export default function MessagesInboxPage() {
                               key={r.emoji}
                               onClick={() => void handleToggleReaction(m, r.emoji)}
                               style={{
-                                display: 'flex', alignItems: 'center', gap: '3px', padding: '2px 7px', borderRadius: '999px', fontSize: '11.5px', cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 8px', borderRadius: '999px', fontSize: 'var(--fs-xs)', cursor: 'pointer',
                                 border: r.reacted_by_me ? '1px solid var(--accent-border)' : '1px solid var(--border)',
                                 background: r.reacted_by_me ? 'var(--accent-subtle)' : 'var(--bg-surface)',
                                 color: 'var(--text)',
@@ -451,16 +482,16 @@ export default function MessagesInboxPage() {
             </div>
 
             {pendingAttachment && (
-              <div style={{ padding: '0 18px 8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ padding: '0 20px 8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span className="badge badge-default">{pendingAttachment.file_name}</span>
                 <button onClick={() => setPendingAttachment(null)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex' }}>
                   <Icon name="x" size={12} />
                 </button>
               </div>
             )}
-            {attachError && <p style={{ padding: '0 18px 8px', fontSize: '12px', color: 'var(--error)' }}>{attachError}</p>}
+            {attachError && <p style={{ padding: '0 20px 8px', fontSize: 'var(--fs-sm)', color: 'var(--error)' }}>{attachError}</p>}
 
-            <form onSubmit={(e) => void handleSend(e)} style={{ padding: '14px 18px', borderTop: '1px solid var(--border)', display: 'flex', gap: '10px', flexShrink: 0 }}>
+            <form onSubmit={(e) => void handleSend(e)} style={{ padding: '16px 20px', borderTop: '1px solid var(--border)', display: 'flex', gap: '12px', flexShrink: 0 }}>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -474,7 +505,7 @@ export default function MessagesInboxPage() {
                 disabled={!selected || uploading}
                 title="Attach an image"
                 className="btn-icon"
-                style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', color: 'var(--text-muted)', cursor: 'pointer', padding: '9px', display: 'flex' }}
+                style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', color: 'var(--text-muted)', cursor: 'pointer', padding: '8px', display: 'flex' }}
               >
                 <Icon name="upload-cloud" size={15} />
               </button>
@@ -485,13 +516,13 @@ export default function MessagesInboxPage() {
                 placeholder="Reply to this family…"
                 disabled={!selected || sending}
                 maxLength={4000}
-                style={{ flex: 1, padding: '9px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none' }}
+                style={{ flex: 1, padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none' }}
               />
               <button type="submit" className="btn btn-primary" disabled={!selected || sending || (!draft.trim() && !pendingAttachment)}>
                 {sending ? 'Sending…' : 'Send'}
               </button>
             </form>
-            {sendError && <p style={{ padding: '0 18px 14px', fontSize: '12px', color: 'var(--error)' }}>{sendError}</p>}
+            {sendError && <p style={{ padding: '0 20px 16px', fontSize: 'var(--fs-sm)', color: 'var(--error)' }}>{sendError}</p>}
           </div>
         </div>
       )}

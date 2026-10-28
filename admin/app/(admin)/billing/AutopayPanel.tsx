@@ -33,11 +33,11 @@ function formatDate(value?: string) {
 function inputStyle(): CSSProperties {
   return {
     width: '100%',
-    padding: '10px 12px',
-    borderRadius: '10px',
+    padding: '12px 12px',
+    borderRadius: '12px',
     border: '1px solid var(--border)',
-    background: '#fff',
-    fontSize: '13px',
+    background: 'var(--bg-elevated)',
+    fontSize: 'var(--fs-base)',
     color: 'var(--text)',
   }
 }
@@ -76,7 +76,7 @@ export function AutopayPanel() {
         const nextSelected = householdList[0]?.id ?? ''
         setSelectedHouseholdId(nextSelected)
       } catch (loadError) {
-        if (!cancelled) setError(autopayErrorMessage(loadError, 'Unable to load autopay households right now.'))
+        if (!cancelled) setError(autopayErrorMessage(loadError, 'Couldn’t load autopay households. Try again.'))
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -142,7 +142,7 @@ export function AutopayPanel() {
       await refreshStatuses(selectedHouseholdId)
       setSuccess('Autopay has been turned off for this household.')
     } catch (saveError) {
-      setError(autopayErrorMessage(saveError, 'Unable to opt this household out right now.'))
+      setError(autopayErrorMessage(saveError, 'Couldn’t opt this household out. Try again.'))
     } finally {
       setSaving(false)
     }
@@ -151,35 +151,35 @@ export function AutopayPanel() {
   return (
     <div>
       {error ? (
-        <div style={{ padding: '10px 14px', marginBottom: '18px', background: 'var(--danger-bg)', border: '1px solid var(--danger-border)', borderRadius: '7px', fontSize: '12px', color: 'var(--danger)', fontFamily: 'var(--font-body)' }}>
+        <div style={{ padding: '12px 16px', marginBottom: '20px', background: 'var(--danger-bg)', border: '1px solid var(--danger-border)', borderRadius: '8px', fontSize: 'var(--fs-sm)', color: 'var(--danger)', fontFamily: 'var(--font-body)' }}>
           {error}
         </div>
       ) : null}
       {success ? (
-        <div style={{ padding: '10px 14px', marginBottom: '18px', background: 'var(--success-bg)', border: '1px solid rgba(5,150,105,0.15)', borderRadius: '7px', fontSize: '12px', color: 'var(--success)', fontFamily: 'var(--font-body)' }}>
+        <div style={{ padding: '12px 16px', marginBottom: '20px', background: 'var(--success-bg)', border: '1px solid rgba(5,150,105,0.15)', borderRadius: '8px', fontSize: 'var(--fs-sm)', color: 'var(--success)', fontFamily: 'var(--font-body)' }}>
           {success}
         </div>
       ) : null}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '20px' }}>
+      <div className="cols-3" style={{ gap: '12px', marginBottom: '20px' }}>
         {[
-          { label: 'Autopay Enabled', value: enabledCount, sub: `${rows.length} tracked households`, color: 'var(--accent)' },
-          { label: 'Next Charge Batch', value: scheduledCount, sub: 'households with upcoming charges', color: 'var(--success)' },
-          { label: 'Manual Review', value: rows.length - enabledCount, sub: 'households still on manual billing', color: 'var(--text)' },
+          { label: 'Autopay enabled', value: enabledCount, sub: `${rows.length} tracked households`, color: 'var(--accent)' },
+          { label: 'Next charge batch', value: scheduledCount, sub: 'households with upcoming charges', color: 'var(--success)' },
+          { label: 'Manual review', value: rows.length - enabledCount, sub: 'households still on manual billing', color: 'var(--text)' },
         ].map((stat) => (
-          <div key={stat.label} className="card" style={{ padding: '16px 18px' }}>
-            <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
-            <div style={{ fontSize: '24px', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{loading ? '—' : stat.value}</div>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{stat.sub}</div>
+          <div key={stat.label} className="card" style={{ padding: '16px 20px' }}>
+            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
+            <div style={{ fontSize: 'var(--fs-2xl)', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{loading ? '—' : stat.value}</div>
+            <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: '2px' }}>{stat.sub}</div>
           </div>
         ))}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1.35fr 1fr', gap: '16px', alignItems: 'start' }}>
-        <div className="card" style={{ padding: '16px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr 1fr 0.8fr 0.8fr', gap: '12px', paddingBottom: '10px', borderBottom: '1px solid var(--border)' }}>
+      <div className="split-pair" style={{ gap: '16px' }}>
+        <div className="card" style={{ padding: '16px', overflowX: 'auto' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr 1fr 0.8fr 0.8fr', gap: '12px', paddingBottom: '12px', borderBottom: '1px solid var(--border)', minWidth: '560px' }}>
             {['Household', 'Saved Method', 'Next Scheduled Charge', 'Status', 'Actions'].map((header) => (
-              <div key={header} style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              <div key={header} className="col-head">
                 {header}
               </div>
             ))}
@@ -187,19 +187,19 @@ export function AutopayPanel() {
 
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             {loading ? (
-              <div style={{ padding: '24px', color: 'var(--text-muted)', fontSize: '13px' }}>Loading households…</div>
+              <div style={{ padding: '24px', color: 'var(--text-muted)', fontSize: 'var(--fs-base)' }}>Loading households…</div>
             ) : rows.length === 0 ? (
-              <div style={{ padding: '24px', color: 'var(--text-muted)', fontSize: '13px' }}>No households available.</div>
+              <div style={{ padding: '24px', color: 'var(--text-muted)', fontSize: 'var(--fs-base)' }}>No households available.</div>
             ) : (
               rows.map((row) => (
-                <div key={row.householdId} style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr 1fr 0.8fr 0.8fr', gap: '12px', alignItems: 'center', padding: '14px 0', borderBottom: '1px solid var(--border)' }}>
+                <div key={row.householdId} style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr 1fr 0.8fr 0.8fr', gap: '12px', alignItems: 'center', padding: '16px 0', borderBottom: '1px solid var(--border)', minWidth: '560px' }}>
                   <div>
-                    <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>{row.householdName}</div>
+                    <div style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)' }}>{row.householdName}</div>
                   </div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>{row.methodLabel}</div>
+                  <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{row.methodLabel}</div>
                   <div>
-                    <div style={{ fontSize: '13px', color: 'var(--text)' }}>{formatDate(row.nextChargeDate)}</div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginTop: '3px' }}>{formatCurrencyCents(row.nextChargeAmountCents)}</div>
+                    <div style={{ fontSize: 'var(--fs-base)', color: 'var(--text)' }}>{formatDate(row.nextChargeDate)}</div>
+                    <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginTop: '4px' }}>{formatCurrencyCents(row.nextChargeAmountCents)}</div>
                   </div>
                   <span className="badge" style={{ width: 'fit-content', background: row.enabled ? 'var(--success-bg)' : 'var(--warning-bg)', color: row.enabled ? 'var(--success)' : 'var(--warning)' }}>
                     {row.enabled ? 'Enabled' : 'Paused'}
@@ -215,29 +215,26 @@ export function AutopayPanel() {
           </div>
         </div>
 
-        <div className="card" style={{ padding: '18px' }}>
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>
-            Selected Household
-          </div>
-          <h2 style={{ fontSize: '18px', fontWeight: 600, color: 'var(--text)', marginBottom: '4px' }}>
+        <div className="card" style={{ padding: '20px' }}>
+          <h2 className="section-title" style={{ marginBottom: '4px' }}>
             {selectedRow?.householdName ?? 'Choose a household'}
           </h2>
-          <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '16px' }}>
-            {selectedRow ? (selectedRow.enabled ? 'Autopay enabled' : 'Manual billing') : 'Select a row to edit autopay settings.'}
+          <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginBottom: '16px' }}>
+            {selectedRow ? (selectedRow.enabled ? 'Autopay enabled' : 'Manual billing') : 'Select a row to edit.'}
           </p>
 
           {selectedRow ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div style={{ padding: '12px 14px', borderRadius: '10px', background: selectedRow.enabled ? 'var(--success-bg)' : 'var(--surface-subtle)', border: '1px solid var(--border)' }}>
-                <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)', marginBottom: '4px' }}>{formatAutopayMethod(selectedRow.status)}</div>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ padding: '12px 16px', borderRadius: '12px', background: selectedRow.enabled ? 'var(--success-bg)' : 'var(--surface-subtle)', border: '1px solid var(--border)' }}>
+                <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text)', marginBottom: '4px' }}>{formatAutopayMethod(selectedRow.status)}</div>
+                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', lineHeight: 1.5 }}>
                   Next charge: {formatDate(selectedRow.nextChargeDate)} · {formatCurrencyCents(selectedRow.nextChargeAmountCents)}
                 </div>
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                  Payment Type
+                <label style={{ display: 'block', fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                  Payment type
                 </label>
                 <select value={form.paymentMethodType} onChange={(event) => setForm((current) => ({ ...current, paymentMethodType: event.target.value === 'ach' ? 'ach' : 'card' }))} style={inputStyle()}>
                   <option value="card">Card</option>
@@ -246,21 +243,21 @@ export function AutopayPanel() {
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                  Saved Label
+                <label style={{ display: 'block', fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                  Saved label
                 </label>
                 <input value={form.paymentMethodLabel} onChange={(event) => setForm((current) => ({ ...current, paymentMethodLabel: event.target.value }))} style={inputStyle()} placeholder="Visa •••• 4242" />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <div className="cols-2" style={{ gap: '12px' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  <label style={{ display: 'block', fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>
                     {form.paymentMethodType === 'ach' ? 'Bank Name' : 'Brand'}
                   </label>
                   <input value={form.paymentMethodBrand} onChange={(event) => setForm((current) => ({ ...current, paymentMethodBrand: event.target.value }))} style={inputStyle()} placeholder={form.paymentMethodType === 'ach' ? 'Chase Bank' : 'Visa'} />
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  <label style={{ display: 'block', fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>
                     {form.paymentMethodType === 'ach' ? 'Reference' : 'Last 4'}
                   </label>
                   <input
@@ -277,16 +274,16 @@ export function AutopayPanel() {
               </div>
 
               {form.paymentMethodType === 'card' ? (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div className="cols-2" style={{ gap: '12px' }}>
                   <div>
-                    <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                      Expiry Month
+                    <label style={{ display: 'block', fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                      Expiry month
                     </label>
                     <input value={form.paymentMethodExpMonth} onChange={(event) => setForm((current) => ({ ...current, paymentMethodExpMonth: event.target.value }))} style={inputStyle()} placeholder="09" />
                   </div>
                   <div>
-                    <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                      Expiry Year
+                    <label style={{ display: 'block', fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                      Expiry year
                     </label>
                     <input value={form.paymentMethodExpYear} onChange={(event) => setForm((current) => ({ ...current, paymentMethodExpYear: event.target.value }))} style={inputStyle()} placeholder="2028" />
                   </div>
@@ -294,10 +291,10 @@ export function AutopayPanel() {
               ) : null}
 
               <div>
-                <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                  Charge Timing
+                <label style={{ display: 'block', fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '8px' }}>
+                  Charge timing
                 </label>
-                <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '8px', lineHeight: 1.5 }}>
+                <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginBottom: '8px', lineHeight: 1.5 }}>
                   Charging early means the family&apos;s card or bank account is billed a few days before the invoice is actually due.
                 </p>
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -315,7 +312,7 @@ export function AutopayPanel() {
                         border: `1px solid ${form.triggerDaysBeforeDue === option.value ? 'var(--text)' : 'var(--border)'}`,
                         background: form.triggerDaysBeforeDue === option.value ? 'var(--text)' : '#fff',
                         color: form.triggerDaysBeforeDue === option.value ? '#fff' : 'var(--text-muted)',
-                        fontSize: '12px',
+                        fontSize: 'var(--fs-sm)',
                         cursor: 'pointer',
                       }}
                     >
@@ -337,9 +334,7 @@ export function AutopayPanel() {
               </div>
             </div>
           ) : (
-            <p className="page-subtitle">
-              Select a household from the table to edit its billing automation settings.
-            </p>
+            <p className="page-subtitle">Select a household to edit.</p>
           )}
         </div>
       </div>

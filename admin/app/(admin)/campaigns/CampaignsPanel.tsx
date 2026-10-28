@@ -7,13 +7,14 @@ import { Modal } from '@/components/ui/Modal'
 import { Table, col } from '@/components/ui/Table'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
-import { ApiError, useApiClient } from '@/lib/api'
+import { useApiClient } from '@/lib/api'
 import {
   createCampaign,
   fetchCampaigns,
   fetchOrgSettings,
   type EmailCampaignRecord,
 } from '@/lib/adminData'
+import { uiErrorMessage } from '@/lib/frontend-telemetry'
 
 function formatDateTime(value?: string) {
   if (!value) return '—'
@@ -27,8 +28,8 @@ function formatDateTime(value?: string) {
 }
 
 const FIELD_INPUT_STYLE: React.CSSProperties = {
-  width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)',
-  background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: '13px', boxSizing: 'border-box',
+  width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)',
+  background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: 'var(--fs-base)', boxSizing: 'border-box',
 }
 
 export function CampaignsPanel() {
@@ -83,7 +84,7 @@ export function CampaignsPanel() {
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof ApiError ? err.message : 'Unable to load campaigns.')
+          setError(uiErrorMessage(err, 'Couldn’t load campaigns. Try again.'))
           setCampaigns([])
         }
       } finally {
@@ -129,7 +130,7 @@ export function CampaignsPanel() {
       setModalOpen(false)
       router.push(`/campaigns/${created.id}`)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Unable to create campaign.')
+      setError(uiErrorMessage(err, 'Couldn’t create campaign. Try again.'))
     } finally {
       setSubmitting(false)
     }
@@ -173,12 +174,12 @@ export function CampaignsPanel() {
   return (
     <div>
       {error ? (
-        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: '12px' }}>
+        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: 'var(--fs-sm)' }}>
           {error}
         </div>
       ) : null}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', flex: '1 1 220px', maxWidth: '320px' }}>
           <span style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}>
             <Icon name="search" size={14} />
@@ -217,7 +218,7 @@ export function CampaignsPanel() {
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title="New Campaign"
+        title="New campaign"
         description="Creates a draft — you'll review and send it from the campaign page."
         width={560}
         footer={
@@ -232,7 +233,7 @@ export function CampaignsPanel() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder="Campaign name" style={FIELD_INPUT_STYLE} />
           <input value={form.subject} onChange={(event) => setForm((current) => ({ ...current, subject: event.target.value }))} placeholder="Subject line" style={FIELD_INPUT_STYLE} />
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+          <div className="cols-2" style={{ gap: '12px' }}>
             <input value={form.from_name} onChange={(event) => setForm((current) => ({ ...current, from_name: event.target.value }))} placeholder="From name" style={FIELD_INPUT_STYLE} />
             <input value={form.from_email} onChange={(event) => setForm((current) => ({ ...current, from_email: event.target.value }))} placeholder="From address" type="email" style={FIELD_INPUT_STYLE} />
           </div>
@@ -246,7 +247,7 @@ export function CampaignsPanel() {
           </select>
           <textarea value={form.body_html} onChange={(event) => setForm((current) => ({ ...current, body_html: event.target.value }))} rows={7} placeholder="Email body (HTML)" style={{ ...FIELD_INPUT_STYLE, fontFamily: 'var(--font-body)', resize: 'vertical' }} />
           <textarea value={form.body_text} onChange={(event) => setForm((current) => ({ ...current, body_text: event.target.value }))} rows={3} placeholder="Optional plain text fallback" style={{ ...FIELD_INPUT_STYLE, resize: 'vertical' }} />
-          <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+          <p style={{ margin: 0, fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', lineHeight: 1.5 }}>
             Recipients are resolved automatically from the audience you choose once you send.
           </p>
         </div>

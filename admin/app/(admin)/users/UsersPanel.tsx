@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
-import { useApiClient, ApiError } from '@/lib/api'
+import { useApiClient } from '@/lib/api'
 import {
   fetchUsers,
   inviteUser,
@@ -13,6 +13,7 @@ import {
   type UserListSource,
 } from '@/lib/adminData'
 import { ROLE_HIERARCHY, type Role } from '@/lib/roles'
+import { uiErrorMessage } from '@/lib/frontend-telemetry'
 
 const ROLE_OPTIONS: { value: string; label: string }[] = [
   { value: 'admin', label: 'Admin' },
@@ -34,12 +35,10 @@ function RoleBadge({ role }: { role: string }) {
   return (
     <span style={{
       display: 'inline-block',
-      fontSize: '10px',
+      fontSize: 'var(--fs-2xs)',
       fontWeight: 700,
-      letterSpacing: '0.04em',
-      textTransform: 'uppercase',
-      padding: '2px 7px',
-      borderRadius: '5px',
+      padding: '2px 8px',
+      borderRadius: '6px',
       background: c.bg,
       color: c.color,
       fontFamily: 'var(--font-body)',
@@ -52,11 +51,11 @@ function StatusPill({ enabled }: { enabled: boolean }) {
     <span style={{
       display: 'inline-flex',
       alignItems: 'center',
-      gap: '5px',
-      fontSize: '11px',
+      gap: '4px',
+      fontSize: 'var(--fs-xs)',
       fontWeight: 600,
-      padding: '3px 9px',
-      borderRadius: '20px',
+      padding: '4px 8px',
+      borderRadius: '16px',
       background: enabled ? 'var(--success-bg)' : 'var(--bg-elevated)',
       color: enabled ? 'var(--success)' : 'var(--text-muted)',
       fontFamily: 'var(--font-body)',
@@ -73,23 +72,21 @@ function StatusPill({ enabled }: { enabled: boolean }) {
 
 const INPUT_STYLE: React.CSSProperties = {
   width: '100%',
-  padding: '9px 12px',
+  padding: '8px 12px',
   background: 'var(--bg-elevated)',
   border: '1px solid var(--border)',
   borderRadius: 'var(--r-md)',
-  fontSize: '13px',
+  fontSize: 'var(--fs-base)',
   color: 'var(--text)',
   outline: 'none',
   boxSizing: 'border-box',
 }
 const LABEL_STYLE: React.CSSProperties = {
-  fontSize: '11px',
+  fontSize: 'var(--fs-sm)',
   fontWeight: 600,
   color: 'var(--text-muted)',
-  textTransform: 'uppercase',
-  letterSpacing: '0.05em',
   display: 'block',
-  marginBottom: '5px',
+  marginBottom: '4px',
   fontFamily: 'var(--font-body)',
 }
 
@@ -150,7 +147,7 @@ export function UsersPanel() {
     if (!session?.user.orgId) {
       setUsers([])
       setUserSource('keycloak')
-      setError('Your session is missing org scope. Sign out and sign back in after fixing the Keycloak org_id claim mapping.')
+      setError('Your account isn’t linked to a club yet. Sign out and back in. If this keeps happening, ask your platform administrator to check your account’s club assignment.')
       setLoading(false)
       return
     }
@@ -166,7 +163,7 @@ export function UsersPanel() {
       })
       .catch((err) => {
         if (loadRequestIdRef.current !== requestId) return
-        setError(err instanceof ApiError ? err.message : 'Failed to load users.')
+        setError(uiErrorMessage(err, 'Couldn’t load users. Try again.'))
       })
       .finally(() => {
         if (loadRequestIdRef.current === requestId) setLoading(false)
@@ -209,7 +206,7 @@ export function UsersPanel() {
       setInviteForm({ first_name: '', last_name: '', email: '', role: 'parent', create_household: false })
       loadUsers()
     } catch (err) {
-      setInviteError(err instanceof ApiError ? err.message : 'Failed to send invitation.')
+      setInviteError(uiErrorMessage(err, 'Couldn’t send invitation. Try again.'))
     } finally {
       setInviting(false)
     }
@@ -227,7 +224,7 @@ export function UsersPanel() {
       setCreateForm({ first_name: '', last_name: '', email: '', password: '', role: 'parent', temporary_password: false, create_household: false })
       loadUsers()
     } catch (err) {
-      setCreateError(err instanceof ApiError ? err.message : 'Failed to create user.')
+      setCreateError(uiErrorMessage(err, 'Couldn’t create user. Try again.'))
     } finally {
       setCreating(false)
     }
@@ -238,7 +235,7 @@ export function UsersPanel() {
     background: 'var(--bg-elevated)',
     border: '1px solid var(--border)',
     borderRadius: 'var(--r-md)',
-    fontSize: '13px',
+    fontSize: 'var(--fs-base)',
     color: 'var(--text)',
     outline: 'none',
     cursor: 'pointer',
@@ -269,19 +266,19 @@ export function UsersPanel() {
         <div
           className="card"
           style={{
-            padding: '14px 16px',
+            padding: '16px 16px',
             marginBottom: '16px',
             background: 'rgba(251,191,36,0.10)',
             border: '1px solid rgba(251,191,36,0.24)',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
             <Icon name="alert-circle" size={16} style={{ color: '#fbbf24', flexShrink: 0, marginTop: '1px' }} />
             <div>
-              <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', marginBottom: '3px' }}>
+              <div style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)', marginBottom: '4px' }}>
                 Development stub data
               </div>
-              <div style={{ fontSize: '12px', color: 'var(--text-subtle)', lineHeight: 1.5 }}>
+              <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', lineHeight: 1.5 }}>
                 This list is coming from seeded local development accounts, not a live Keycloak admin realm.
               </div>
             </div>
@@ -292,19 +289,19 @@ export function UsersPanel() {
       <div
         className="card"
         style={{
-          padding: '14px 16px',
+          padding: '16px 16px',
           marginBottom: '20px',
           background: 'var(--bg-elevated)',
           border: '1px solid var(--border)',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
           <Icon name="info" size={16} style={{ color: 'var(--accent)', flexShrink: 0, marginTop: '1px' }} />
           <div>
-            <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', marginBottom: '3px' }}>
+            <div style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)', marginBottom: '4px' }}>
               Swimmers and users are different records
             </div>
-            <div style={{ fontSize: '12px', color: 'var(--text-subtle)', lineHeight: 1.5 }}>
+            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', lineHeight: 1.5 }}>
               Add swimmers from Members to attach them to a parent account&apos;s household. Create a user here only when that person needs an actual Aquify login.
             </div>
           </div>
@@ -312,21 +309,21 @@ export function UsersPanel() {
       </div>
 
       {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '20px' }}>
+      <div className="cols-3" style={{ gap: '12px', marginBottom: '20px' }}>
         {[
-          { label: 'Total Users', value: stats.total, color: 'var(--text)' },
+          { label: 'Total users', value: stats.total, color: 'var(--text)' },
           { label: 'Active', value: stats.active, color: 'var(--success)' },
           { label: 'Disabled', value: stats.disabled, color: 'var(--text-muted)' },
         ].map((stat) => (
-          <div key={stat.label} className="card" style={{ padding: '14px 16px' }}>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
-            <div style={{ fontSize: '22px', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
+          <div key={stat.label} className="card" style={{ padding: '16px 16px' }}>
+            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
+            <div style={{ fontSize: 'var(--fs-2xl)', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
           </div>
         ))}
       </div>
 
       {/* Filters */}
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
         <div style={{ position: 'relative', flex: 1, minWidth: '200px', maxWidth: '320px' }}>
           <Icon name="search" size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
           <input
@@ -334,129 +331,125 @@ export function UsersPanel() {
             placeholder="Search name or email…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            style={{ width: '100%', padding: '8px 12px 8px 32px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none' }}
+            style={{ width: '100%', padding: '8px 12px 8px 32px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none' }}
           />
         </div>
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={selectStyle}>
-          <option value="all">All Statuses</option>
+          <option value="all">All statuses</option>
           <option value="active">Active</option>
           <option value="disabled">Disabled</option>
         </select>
         <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} style={selectStyle}>
-          <option value="all">All Roles</option>
+          <option value="all">All roles</option>
           {ROLE_OPTIONS.map((r) => (
             <option key={r.value} value={r.value}>{r.label}</option>
           ))}
         </select>
-        <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginLeft: 'auto' }}>
+        <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginLeft: 'auto' }}>
           {filtered.length} of {users.length}
         </span>
       </div>
 
       {/* Table */}
       {loading ? (
-        <div className="card" style={{ padding: '48px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
-          <Icon name="loader" size={20} style={{ marginBottom: '10px', opacity: 0.5 }} />
+        <div className="card" style={{ padding: '48px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--fs-base)' }}>
+          <Icon name="loader" size={20} style={{ marginBottom: '12px', opacity: 0.5 }} />
           <div>Loading users…</div>
         </div>
       ) : error ? (
-        <div className="card" style={{ padding: '32px', textAlign: 'center', color: 'var(--error)', fontSize: '13px' }}>
+        <div className="card" style={{ padding: '32px', textAlign: 'center', color: 'var(--error)', fontSize: 'var(--fs-base)' }}>
           <Icon name="alert-circle" size={18} style={{ marginBottom: '8px' }} />
           <div>{error}</div>
         </div>
       ) : filtered.length === 0 ? (
-        <div className="card" style={{ padding: '48px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
-          <Icon name="users" size={24} style={{ marginBottom: '10px', opacity: 0.3 }} />
+        <div className="card" style={{ padding: '48px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--fs-base)' }}>
+          <Icon name="users" size={24} style={{ marginBottom: '12px', opacity: 0.3 }} />
           <div style={{ fontWeight: 500, marginBottom: '4px' }}>No users found</div>
-          <div style={{ fontSize: '12px' }}>Adjust your filters or create a login account. Household swimmers appear in Members, not here.</div>
+          <div style={{ fontSize: 'var(--fs-sm)' }}>Adjust your filters or create a login account. Household swimmers appear in Members, not here.</div>
         </div>
       ) : (
         <div className="card" style={{ overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                {['User', 'Email', 'Roles', 'Status', 'Last Login', ''].map((col) => (
-                  <th key={col} style={{
-                    padding: '10px 16px',
-                    fontSize: '10px',
-                    fontWeight: 700,
-                    color: 'var(--text-muted)',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.06em',
-                    textAlign: 'left',
-                    fontFamily: 'var(--font-body)',
-                    background: 'var(--bg-elevated)',
-                  }}>{col}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((user, i) => (
-                <tr
-                  key={user.id}
-                  style={{
-                    borderBottom: i < filtered.length - 1 ? '1px solid var(--border)' : 'none',
-                    transition: 'background var(--dur-fast)',
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-elevated)')}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = '')}
-                >
-                  <td style={{ padding: '14px 16px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <div style={{
-                        width: '32px', height: '32px', borderRadius: '50%',
-                        background: 'var(--accent-subtle)',
-                        border: '1px solid var(--accent-border)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        fontSize: '12px', fontWeight: 700, color: 'var(--accent)',
-                        fontFamily: 'var(--font-body)', flexShrink: 0,
-                      }}>
-                        {((user.firstName?.[0] ?? '') + (user.lastName?.[0] ?? '')).toUpperCase() || (user.email?.[0] ?? '?').toUpperCase()}
-                      </div>
-                      <div>
-                        <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>
-                          {user.firstName || user.lastName
-                            ? `${user.firstName} ${user.lastName}`.trim()
-                            : <span style={{ color: 'var(--text-muted)' }}>No name</span>}
-                        </div>
-                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginTop: '1px' }}>
-                          {user.id.slice(0, 8)}…
-                        </div>
-                      </div>
-                    </div>
-                  </td>
-                  <td style={{ padding: '14px 16px', fontSize: '13px', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)' }}>
-                    {user.email}
-                  </td>
-                  <td style={{ padding: '14px 16px' }}>
-                    {user.roles && user.roles.length > 0 ? (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                        {user.roles.map((r) => <RoleBadge key={r} role={r} />)}
-                      </div>
-                    ) : (
-                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>—</span>
-                    )}
-                  </td>
-                  <td style={{ padding: '14px 16px' }}>
-                    <StatusPill enabled={user.enabled} />
-                  </td>
-                  <td style={{ padding: '14px 16px', fontSize: '12px', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)' }}>
-                    {user.lastLoginAt
-                      ? new Date(user.lastLoginAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                      : <span style={{ color: 'var(--text-muted)' }}>—</span>}
-                  </td>
-                  <td style={{ padding: '14px 16px', textAlign: 'right' }}>
-                    <Link
-                      href={`/users/${user.id}`}
-                      style={{ fontSize: '12px', color: 'var(--accent)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '3px', fontWeight: 500 }}
-                    >
-                      Manage <Icon name="chevron-right" size={12} />
-                    </Link>
-                  </td>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                  {['User', 'Email', 'Roles', 'Status', 'Last Login', ''].map((col) => (
+                    <th key={col} className="col-head" style={{
+                      padding: '12px 16px',
+                      textAlign: 'left',
+                      background: 'var(--bg-elevated)',
+                    }}>{col}</th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filtered.map((user, i) => (
+                  <tr
+                    key={user.id}
+                    style={{
+                      borderBottom: i < filtered.length - 1 ? '1px solid var(--border)' : 'none',
+                      transition: 'background var(--dur-fast)',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-elevated)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = '')}
+                  >
+                    <td style={{ padding: '16px 16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{
+                          width: '32px', height: '32px', borderRadius: '50%',
+                          background: 'var(--accent-subtle)',
+                          border: '1px solid var(--accent-border)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--accent)',
+                          fontFamily: 'var(--font-body)', flexShrink: 0,
+                        }}>
+                          {((user.firstName?.[0] ?? '') + (user.lastName?.[0] ?? '')).toUpperCase() || (user.email?.[0] ?? '?').toUpperCase()}
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)' }}>
+                            {user.firstName || user.lastName
+                              ? `${user.firstName} ${user.lastName}`.trim()
+                              : <span style={{ color: 'var(--text-muted)' }}>No name</span>}
+                          </div>
+                          <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginTop: '1px' }}>
+                            {user.id.slice(0, 8)}…
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                    <td style={{ padding: '16px 16px', fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)' }}>
+                      {user.email}
+                    </td>
+                    <td style={{ padding: '16px 16px' }}>
+                      {user.roles && user.roles.length > 0 ? (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                          {user.roles.map((r) => <RoleBadge key={r} role={r} />)}
+                        </div>
+                      ) : (
+                        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>—</span>
+                      )}
+                    </td>
+                    <td style={{ padding: '16px 16px' }}>
+                      <StatusPill enabled={user.enabled} />
+                    </td>
+                    <td style={{ padding: '16px 16px', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)' }}>
+                      {user.lastLoginAt
+                        ? new Date(user.lastLoginAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                        : <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                    </td>
+                    <td style={{ padding: '16px 16px', textAlign: 'right' }}>
+                      <Link
+                        href={`/users/${user.id}`}
+                        style={{ fontSize: 'var(--fs-sm)', color: 'var(--accent)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 500 }}
+                      >
+                        Manage <Icon name="chevron-right" size={12} />
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -469,16 +462,16 @@ export function UsersPanel() {
           <div style={{
             background: 'var(--bg-card)',
             border: '1px solid var(--border-strong)',
-            borderRadius: '14px',
-            padding: '28px',
+            borderRadius: '12px',
+            padding: '24px',
             width: '100%',
             maxWidth: '480px',
             boxShadow: 'var(--shadow-lg)',
           }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
               <div>
-                <h2 style={{ fontSize: '18px', fontFamily: 'var(--font-display)', color: 'var(--text)', margin: 0 }}>Create User</h2>
-                <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                <h2 className="section-title" style={{ margin: 0 }}>Create user</h2>
+                <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginTop: '4px' }}>
                   Creates a Keycloak account with a directly-set password. No email sent.
                 </p>
               </div>
@@ -488,24 +481,24 @@ export function UsersPanel() {
             </div>
 
             {createSuccess && (
-              <div style={{ background: 'var(--success-bg)', border: '1px solid var(--success-border)', color: 'var(--success)', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px' }}>
+              <div style={{ background: 'var(--success-bg)', border: '1px solid var(--success-border)', color: 'var(--success)', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: 'var(--fs-base)' }}>
                 {createSuccess}
               </div>
             )}
             {createError && (
-              <div style={{ background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px' }}>
+              <div style={{ background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: 'var(--fs-base)' }}>
                 {createError}
               </div>
             )}
 
-            <form onSubmit={handleCreate} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <form onSubmit={handleCreate} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div className="cols-2" style={{ gap: '12px' }}>
                 <div>
-                  <label style={LABEL_STYLE}>First Name</label>
+                  <label style={LABEL_STYLE}>First name</label>
                   <input style={INPUT_STYLE} value={createForm.first_name} onChange={(e) => setCreateForm((f) => ({ ...f, first_name: e.target.value }))} placeholder="Jane" />
                 </div>
                 <div>
-                  <label style={LABEL_STYLE}>Last Name</label>
+                  <label style={LABEL_STYLE}>Last name</label>
                   <input style={INPUT_STYLE} value={createForm.last_name} onChange={(e) => setCreateForm((f) => ({ ...f, last_name: e.target.value }))} placeholder="Smith" />
                 </div>
               </div>
@@ -554,17 +547,17 @@ export function UsersPanel() {
                 </select>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
                   <input type="checkbox" id="create-temp-pwd" checked={createForm.temporary_password} onChange={(e) => setCreateForm((f) => ({ ...f, temporary_password: e.target.checked }))} style={{ width: '14px', height: '14px', accentColor: 'var(--accent)', cursor: 'pointer' }} />
-                  <label htmlFor="create-temp-pwd" style={{ fontSize: '13px', color: 'var(--text)', cursor: 'pointer', flex: 1 }}>Require password change on first login</label>
+                  <label htmlFor="create-temp-pwd" style={{ fontSize: 'var(--fs-base)', color: 'var(--text)', cursor: 'pointer', flex: 1 }}>Require password change on first login</label>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
                   <input type="checkbox" id="create-household-2" checked={createForm.create_household} onChange={(e) => setCreateForm((f) => ({ ...f, create_household: e.target.checked }))} style={{ width: '14px', height: '14px', accentColor: 'var(--accent)', cursor: 'pointer' }} />
-                  <label htmlFor="create-household-2" style={{ fontSize: '13px', color: 'var(--text)', cursor: 'pointer', flex: 1 }}>Create linked household</label>
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Optional</span>
+                  <label htmlFor="create-household-2" style={{ fontSize: 'var(--fs-base)', color: 'var(--text)', cursor: 'pointer', flex: 1 }}>Create linked household</label>
+                  <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>Optional</span>
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '4px' }}>
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '4px' }}>
                 <button type="button" className="btn" onClick={() => setShowCreate(false)}>Cancel</button>
                 <button type="submit" className="btn btn-primary" disabled={creating}>
                   {creating ? 'Creating…' : 'Create Account'}
@@ -584,16 +577,16 @@ export function UsersPanel() {
           <div style={{
             background: 'var(--bg-card)',
             border: '1px solid var(--border-strong)',
-            borderRadius: '14px',
-            padding: '28px',
+            borderRadius: '12px',
+            padding: '24px',
             width: '100%',
             maxWidth: '480px',
             boxShadow: 'var(--shadow-lg)',
           }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
               <div>
-                <h2 style={{ fontSize: '18px', fontFamily: 'var(--font-display)', color: 'var(--text)', margin: 0 }}>Invite User</h2>
-                <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                <h2 className="section-title" style={{ margin: 0 }}>Invite user</h2>
+                <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginTop: '4px' }}>
                   Provisions a Keycloak account and sends a welcome email.
                 </p>
               </div>
@@ -603,20 +596,20 @@ export function UsersPanel() {
             </div>
 
             {inviteSuccess && (
-              <div style={{ background: 'var(--success-bg)', border: '1px solid var(--success-border)', color: 'var(--success)', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px' }}>
+              <div style={{ background: 'var(--success-bg)', border: '1px solid var(--success-border)', color: 'var(--success)', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: 'var(--fs-base)' }}>
                 {inviteSuccess}
               </div>
             )}
             {inviteError && (
-              <div style={{ background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px' }}>
+              <div style={{ background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: 'var(--fs-base)' }}>
                 {inviteError}
               </div>
             )}
 
-            <form onSubmit={handleInvite} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <form onSubmit={handleInvite} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div className="cols-2" style={{ gap: '12px' }}>
                 <div>
-                  <label style={LABEL_STYLE}>First Name</label>
+                  <label style={LABEL_STYLE}>First name</label>
                   <input
                     style={INPUT_STYLE}
                     value={inviteForm.first_name}
@@ -625,7 +618,7 @@ export function UsersPanel() {
                   />
                 </div>
                 <div>
-                  <label style={LABEL_STYLE}>Last Name</label>
+                  <label style={LABEL_STYLE}>Last name</label>
                   <input
                     style={INPUT_STYLE}
                     value={inviteForm.last_name}
@@ -659,7 +652,7 @@ export function UsersPanel() {
                 </select>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
                 <input
                   type="checkbox"
                   id="create-household"
@@ -667,13 +660,13 @@ export function UsersPanel() {
                   onChange={(e) => setInviteForm((f) => ({ ...f, create_household: e.target.checked }))}
                   style={{ width: '14px', height: '14px', accentColor: 'var(--accent)', cursor: 'pointer' }}
                 />
-                <label htmlFor="create-household" style={{ fontSize: '13px', color: 'var(--text)', cursor: 'pointer', flex: 1 }}>
+                <label htmlFor="create-household" style={{ fontSize: 'var(--fs-base)', color: 'var(--text)', cursor: 'pointer', flex: 1 }}>
                   Create linked household
                 </label>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Optional</span>
+                <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>Optional</span>
               </div>
 
-              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '4px' }}>
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '4px' }}>
                 <button type="button" className="btn" onClick={() => setShowInvite(false)}>Cancel</button>
                 <button type="submit" className="btn btn-primary" disabled={inviting}>
                   {inviting ? 'Sending…' : 'Send Invitation'}

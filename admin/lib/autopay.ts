@@ -73,7 +73,7 @@ export function autopayPayloadFromForm(form: AutopayFormState) {
   }
 }
 
-export function autopayErrorMessage(error: unknown, fallback = 'Unable to update autopay right now.'): string {
+export function autopayErrorMessage(error: unknown, fallback = 'Couldn’t update autopay. Try again.'): string {
   if (error instanceof ApiError) return error.message
   return fallback
 }

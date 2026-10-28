@@ -122,6 +122,8 @@ func main() {
 		os.Stdout,
 		&slog.HandlerOptions{Level: slog.LevelInfo},
 	))
+	// httpx.WriteError logs 5xx causes through the default logger.
+	slog.SetDefault(logger)
 	mode := "api"
 	if len(os.Args) > 1 && strings.TrimSpace(os.Args[1]) != "" {
 		mode = strings.ToLower(strings.TrimSpace(os.Args[1]))

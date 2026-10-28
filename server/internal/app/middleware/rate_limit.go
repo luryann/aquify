@@ -1,8 +1,10 @@
 package middleware
 
 import (
+	"math"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -77,8 +79,9 @@ func NewRateLimiter(limit int, window time.Duration, trustedProxyCIDRs []string)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			key := rl.clientAddress(r)
-			if !rl.allow(key, time.Now().UTC()) {
-				w.Header().Set("Retry-After", "60")
+			allowed, retryAfter := rl.allow(key, time.Now().UTC())
+			if !allowed {
+				w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(retryAfter.Seconds()))))
 				httpx.WriteError(w, r, http.StatusTooManyRequests, "rate_limited", "Too many requests. Please try again shortly.", nil)
 				return
 			}
@@ -87,7 +90,9 @@ func NewRateLimiter(limit int, window time.Duration, trustedProxyCIDRs []string)
 	}
 }
 
-func (rl *rateLimiter) allow(key string, now time.Time) bool {
+// allow reports whether the request may proceed and, when it may not, how
+// long until the caller's current window resets.
+func (rl *rateLimiter) allow(key string, now time.Time) (bool, time.Duration) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
@@ -106,13 +111,17 @@ func (rl *rateLimiter) allow(key string, now time.Time) bool {
 			count:      1,
 			windowEnds: now.Add(rl.window),
 		}
-		return true
+		return true, 0
 	}
 	if entry.count >= rl.limit {
-		return false
+		retryAfter := entry.windowEnds.Sub(now)
+		if retryAfter < time.Second {
+			retryAfter = time.Second
+		}
+		return false, retryAfter
 	}
 	entry.count++
-	return true
+	return true, 0
 }
 
 // clientAddress returns the IP address to use as the rate-limit key.

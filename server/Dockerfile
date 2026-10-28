@@ -4,19 +4,27 @@
 # Stage 1: Build the Go binary
 # ---------------------------------------------------------------------------
 
-FROM golang:1.24-alpine AS builder
+# Go version must satisfy server/go.mod's `go` directive; official images run
+# with GOTOOLCHAIN=local, so an older base image fails the build outright.
+FROM golang:1.26-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates tzdata
 
-WORKDIR /app
+# Build context is the repository root (see .github/workflows/deploy-staging.yml):
+# server/go.mod replaces github.com/dareaquatics/aquify/meetfiles with
+# ../internal/meetfiles, so both trees must be laid out as in the repo.
+# server/Dockerfile.dockerignore keeps the context to just those two trees.
+WORKDIR /src
 
 # Download dependencies first (cached layer when source changes but go.mod does not)
-COPY go.mod go.sum ./
+COPY internal/meetfiles ./internal/meetfiles
+COPY server/go.mod server/go.sum ./server/
+WORKDIR /src/server
 RUN go mod download && go mod verify
 
 # Copy source
-COPY . .
+COPY server/ ./
 
 # Build arguments for embedding version metadata
 ARG BUILD_SHA=unknown
@@ -28,7 +36,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -ldflags="-s -w \
       -X main.BuildSHA=${BUILD_SHA} \
       -X main.BuildRef=${BUILD_REF}" \
-    -o dare-api \
+    -o /dare-api \
     ./cmd/api
 
 # ---------------------------------------------------------------------------
@@ -42,7 +50,7 @@ FROM gcr.io/distroless/static-debian12
 COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
-COPY --from=builder /app/dare-api /dare-api
+COPY --from=builder /dare-api /dare-api
 
 # Run as the built-in nonroot user (uid 65532) — never root
 USER nonroot:nonroot

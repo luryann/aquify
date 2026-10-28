@@ -22,6 +22,9 @@ export function PortalShell({ children }: { children: ReactNode }) {
       style={{
         minHeight: '100vh',
         background: 'var(--bg)',
+        // Re-resolve text color against this portal's tokens; body's color was
+        // computed from the admin (dark) root tokens and would otherwise inherit.
+        color: 'var(--text)',
         fontFamily: 'var(--font-body)',
         position: 'relative',
       }}
@@ -48,15 +51,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
         onSignOut={handleSignOut}
       />
 
-      <main
-        style={{
-          position: 'relative',
-          zIndex: 1,
-          maxWidth: '1100px',
-          margin: '0 auto',
-          padding: '40px 28px 80px',
-        }}
-      >
+      <main className="portal-frame portal-main">
         {children}
       </main>
     </div>

@@ -678,3 +678,58 @@ func TestUserMgmt_AuditEvents_DisableEmitsEvent(t *testing.T) {
 		t.Fatalf("expected audit event %s not found", audit.ActionAuthUserDisable)
 	}
 }
+
+// ─── Staff directory ──────────────────────────────────────────────────────────
+
+func TestUserMgmt_ListStaff_CoachSeesOnlyStaffNames(t *testing.T) {
+	kc := keycloak.NewStubClient()
+	for _, u := range []struct {
+		id, first, role string
+		enabled         bool
+	}{
+		{"coach1", "Casey", "coach", true},
+		{"admin1", "Avery", "admin", true},
+		{"parent1", "Pat", "parent", true},
+		{"coach2", "Dormant", "coach", false},
+	} {
+		kc.AddUser(keycloak.User{
+			ID: u.id, Email: u.id + "@example.com", FirstName: u.first, LastName: "Doe",
+			Enabled: u.enabled, Attributes: map[string][]string{"org_id": {"org-test"}},
+		})
+		_ = kc.AssignRealmRole(t.Context(), u.id, u.role)
+	}
+	router := newStep30BRouter(t, kc)
+	token := issueStep30BToken(t, router, "coach1", "org-test", []string{"coach"}, false)
+
+	rr := do30B(router, http.MethodGet, "/api/v1/users/staff", token, "", "org-test")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var resp struct {
+		Staff []map[string]any `json:"staff"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.Staff) != 2 {
+		t.Fatalf("want 2 enabled staff, got %d: %s", len(resp.Staff), rr.Body.String())
+	}
+	if resp.Staff[0]["name"] != "Avery Doe" || resp.Staff[1]["name"] != "Casey Doe" {
+		t.Fatalf("unexpected staff order/names: %v", resp.Staff)
+	}
+	for _, s := range resp.Staff {
+		if _, leaked := s["email"]; leaked {
+			t.Fatalf("staff directory must not expose email: %v", s)
+		}
+	}
+}
+
+func TestUserMgmt_ListStaff_ParentForbidden(t *testing.T) {
+	router := newStep30BRouter(t, keycloak.NewStubClient())
+	token := issueStep30BToken(t, router, "parent1", "org-test", []string{"parent"}, false)
+
+	rr := do30B(router, http.MethodGet, "/api/v1/users/staff", token, "", "org-test")
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("want 403, got %d: %s", rr.Code, rr.Body.String())
+	}
+}

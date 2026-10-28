@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import Link from 'next/link'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
@@ -15,6 +14,7 @@ import {
   savePortalCommunicationPreferences,
   type PortalCommunicationPreference,
 } from '@/lib/portal-communications-preferences'
+import { parseBackendDate } from '@/lib/dates'
 
 // ── Category config ─────────────────────────────────────────────────────────
 const CATEGORY_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
@@ -32,7 +32,7 @@ type NotifChannel = 'email' | 'push'
 // ── Helpers ─────────────────────────────────────────────────────────────────
 function fmtDate(dateStr?: string): string {
   if (!dateStr) return '—'
-  const d = new Date(dateStr)
+  const d = parseBackendDate(dateStr)
   if (isNaN(d.getTime())) return dateStr
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
@@ -52,14 +52,14 @@ function Skeleton() {
           key={i}
           style={{
             background: 'var(--bg-elevated)',
-            borderRadius: '14px',
+            borderRadius: '12px',
             border: '1px solid rgba(0,0,0,0.07)',
             padding: '20px 24px',
             animation: 'pulse 1.5s ease-in-out infinite',
             animationDelay: `${i * 0.1}s`,
           }}
         >
-          <div style={{ width: '60%', height: '14px', background: '#f0eeec', borderRadius: '6px', marginBottom: '10px' }} />
+          <div style={{ width: '60%', height: '14px', background: '#f0eeec', borderRadius: '6px', marginBottom: '12px' }} />
           <div style={{ width: '90%', height: '10px', background: '#f5f4f2', borderRadius: '6px', marginBottom: '6px' }} />
           <div style={{ width: '70%', height: '10px', background: '#f5f4f2', borderRadius: '6px' }} />
         </div>
@@ -99,10 +99,10 @@ export default function CommunicationsPage() {
     fetchAnnouncements(api, orgId, 'published')
       .then(setAnnouncements)
       .catch((error) => {
-        reportUIError('portal.communications.announcements.load', error, 'Unable to load announcements right now. Please try again.', {
+        reportUIError('portal.communications.announcements.load', error, 'Couldn’t load announcements. Try again.', {
           orgId,
         })
-        setAnnouncementsError('Unable to load announcements right now. Please try again.')
+        setAnnouncementsError('Couldn’t load announcements. Try again.')
       })
       .finally(() => setLoading(false))
   }, [api, orgId, announcementsRetryKey])
@@ -170,17 +170,10 @@ export default function CommunicationsPage() {
   return (
     <div>
       {/* Page header */}
-      <div style={{ marginBottom: '28px', animation: 'slideUp 0.35s ease both' }}>
+      <div className="page-heading">
         <h1 className="page-title">
           Communications
         </h1>
-        <p className="page-subtitle">
-          Announcements and notification settings from your club.
-        </p>
-        <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '6px' }}>
-          Need to talk to your child&rsquo;s coach directly? Visit{' '}
-          <Link href="/portal/messages" style={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>Messages</Link>.
-        </p>
       </div>
 
       {/* Tabs */}
@@ -188,9 +181,9 @@ export default function CommunicationsPage() {
         style={{
           display: 'flex',
           gap: '2px',
-          marginBottom: '28px',
+          marginBottom: '24px',
           background: 'rgba(0,0,0,0.04)',
-          borderRadius: '10px',
+          borderRadius: '12px',
           padding: '4px',
           maxWidth: '340px',
           animation: 'slideUp 0.38s ease both',
@@ -202,12 +195,12 @@ export default function CommunicationsPage() {
             onClick={() => setActiveTab(t)}
             style={{
               flex: 1,
-              padding: '9px 0',
-              borderRadius: '7px',
+              padding: '8px 0',
+              borderRadius: '8px',
               border: 'none',
               background: activeTab === t ? 'var(--bg-elevated)' : 'transparent',
               color: activeTab === t ? 'var(--text)' : 'var(--text-subtle)',
-              fontSize: '13.5px',
+              fontSize: 'var(--fs-base)',
               fontWeight: activeTab === t ? 600 : 450,
               cursor: 'pointer',
               boxShadow: activeTab === t ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
@@ -239,12 +232,12 @@ export default function CommunicationsPage() {
                 key={key}
                 onClick={() => setFilter(key)}
                 style={{
-                  padding: '5px 12px',
+                  padding: '4px 12px',
                   borderRadius: '999px',
                   border: `1px solid ${filter === key ? cfg.color : 'rgba(0,0,0,0.12)'}`,
                   background: filter === key ? cfg.bg : 'var(--bg-elevated)',
                   color: filter === key ? cfg.color : 'var(--text-subtle)',
-                  fontSize: '12.5px',
+                  fontSize: 'var(--fs-sm)',
                   fontWeight: filter === key ? 600 : 450,
                   cursor: 'pointer',
                   transition: 'all 120ms ease',
@@ -263,7 +256,7 @@ export default function CommunicationsPage() {
             <div
               style={{
                 background: 'var(--error-bg)',
-                borderRadius: '14px',
+                borderRadius: '12px',
                 border: '1px solid rgba(220,38,38,0.18)',
                 padding: '20px',
                 display: 'flex',
@@ -274,20 +267,20 @@ export default function CommunicationsPage() {
               }}
             >
               <div>
-                <p style={{ fontSize: '14px', color: 'var(--error)', fontWeight: 600, marginBottom: '4px' }}>
+                <p style={{ fontSize: 'var(--fs-md)', color: 'var(--error)', fontWeight: 600, marginBottom: '4px' }}>
                   Announcements are unavailable
                 </p>
-                <p style={{ fontSize: '13px', color: 'var(--error)' }}>{announcementsError}</p>
+                <p style={{ fontSize: 'var(--fs-base)', color: 'var(--error)' }}>{announcementsError}</p>
               </div>
               <button
                 onClick={() => setAnnouncementsRetryKey((current) => current + 1)}
                 style={{
-                  padding: '9px 16px',
-                  borderRadius: '9px',
+                  padding: '8px 16px',
+                  borderRadius: '8px',
                   border: 'none',
                   background: 'var(--error)',
                   color: 'var(--bg-elevated)',
-                  fontSize: '13px',
+                  fontSize: 'var(--fs-base)',
                   fontWeight: 600,
                   cursor: 'pointer',
                   flexShrink: 0,
@@ -300,11 +293,11 @@ export default function CommunicationsPage() {
             <div
               className="card" style={{ padding: '56px 32px', textAlign: 'center', animation: 'slideUp 0.3s ease both' }}
             >
-              <Icon name="megaphone" size={32} style={{ color: '#D4D1CE', marginBottom: '14px' }} />
-              <p style={{ fontSize: '15px', color: 'var(--text-muted)', fontWeight: 500, marginBottom: '6px' }}>
+              <Icon name="megaphone" size={32} style={{ color: '#D4D1CE', marginBottom: '16px' }} />
+              <p style={{ fontSize: 'var(--fs-md)', color: 'var(--text-muted)', fontWeight: 500, marginBottom: '6px' }}>
                 No announcements
               </p>
-              <p style={{ fontSize: '13px', color: 'var(--border-strong)' }}>
+              <p style={{ fontSize: 'var(--fs-base)', color: 'var(--border-strong)' }}>
                 {filter === 'all'
                   ? 'Club announcements will appear here when published.'
                   : 'No announcements in this category.'}
@@ -320,9 +313,8 @@ export default function CommunicationsPage() {
                     key={ann.id}
                     style={{
                       background: 'var(--bg-elevated)',
-                      borderRadius: '14px',
+                      borderRadius: '12px',
                       border: '1px solid rgba(0,0,0,0.07)',
-                      boxShadow: '0 1px 6px rgba(0,0,0,0.04)',
                       overflow: 'hidden',
                       animation: `slideUp 0.3s ease ${i * 0.06}s both`,
                     }}
@@ -336,7 +328,7 @@ export default function CommunicationsPage() {
                         alignItems: 'flex-start',
                         justifyContent: 'space-between',
                         gap: '16px',
-                        padding: '18px 20px',
+                        padding: '20px 20px',
                         background: 'none',
                         border: 'none',
                         cursor: 'pointer',
@@ -352,20 +344,20 @@ export default function CommunicationsPage() {
                             display: 'flex',
                             alignItems: 'center',
                             gap: '8px',
-                            marginBottom: '5px',
+                            marginBottom: '4px',
                             flexWrap: 'wrap',
                           }}
                         >
                           <span
                             style={{
-                              fontSize: '10.5px',
+                              fontSize: 'var(--fs-2xs)',
                               fontWeight: 600,
                               fontFamily: 'var(--font-body)',
                               textTransform: 'uppercase',
                               letterSpacing: '0.05em',
                               color: cat.color,
                               background: cat.bg,
-                              padding: '2px 7px',
+                              padding: '2px 8px',
                               borderRadius: '4px',
                             }}
                           >
@@ -373,7 +365,7 @@ export default function CommunicationsPage() {
                           </span>
                           <span
                             style={{
-                              fontSize: '11px',
+                              fontSize: 'var(--fs-xs)',
                               color: 'var(--text-muted)',
                               fontFamily: 'var(--font-body)',
                             }}
@@ -383,16 +375,16 @@ export default function CommunicationsPage() {
                         </div>
                         <p
                           style={{
-                            fontSize: '15px',
+                            fontSize: 'var(--fs-md)',
                             fontWeight: 600,
                             color: 'var(--text)',
-                            marginBottom: '3px',
+                            marginBottom: '4px',
                             lineHeight: 1.3,
                           }}
                         >
                           {ann.title}
                         </p>
-                        <p style={{ fontSize: '12.5px', color: 'var(--text-muted)' }}>
+                        <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
                           {ann.created_by || 'Club Administration'}
                         </p>
                       </div>
@@ -420,7 +412,7 @@ export default function CommunicationsPage() {
                       >
                         <p
                           style={{
-                            fontSize: '14px',
+                            fontSize: 'var(--fs-md)',
                             color: '#3D3A38',
                             lineHeight: 1.65,
                             marginTop: '16px',
@@ -440,24 +432,24 @@ export default function CommunicationsPage() {
 
       {/* ── PREFERENCES TAB ────────────────────────────────────────────────── */}
       {activeTab === 'preferences' && (
-        <div style={{ maxWidth: '640px', animation: 'slideUp 0.35s ease both' }}>
+        <div style={{ animation: 'slideUp 0.35s ease both' }}>
           {prefsError && (
             <div
               style={{
                 marginBottom: '16px',
-                padding: '12px 14px',
+                padding: '12px 16px',
                 borderRadius: '12px',
                 border: '1px solid rgba(220,38,38,0.18)',
                 background: 'var(--error-bg)',
                 color: 'var(--error)',
-                fontSize: '13px',
+                fontSize: 'var(--fs-base)',
               }}
             >
               {prefsError}
             </div>
           )}
           <div
-            className="card" style={{ boxShadow: '0 1px 6px rgba(0,0,0,0.04)', overflow: 'hidden', marginBottom: '20px' }}
+            className="card" style={{ overflow: 'hidden', marginBottom: '20px' }}
           >
             {/* Header */}
             <div
@@ -470,13 +462,13 @@ export default function CommunicationsPage() {
                 alignItems: 'center',
               }}
             >
-              <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+              <span className="col-head">
                 Notification Event
               </span>
-              <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center' }}>
+              <span className="col-head" style={{ textAlign: 'center' }}>
                 Email
               </span>
-              <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center' }}>
+              <span className="col-head" style={{ textAlign: 'center' }}>
                 Push
               </span>
             </div>
@@ -494,10 +486,10 @@ export default function CommunicationsPage() {
                 }}
               >
                 <div>
-                  <p style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text)', marginBottom: '2px' }}>
+                  <p style={{ fontSize: 'var(--fs-md)', fontWeight: 500, color: 'var(--text)', marginBottom: '2px' }}>
                     {pref.label}
                   </p>
-                  <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{pref.description}</p>
+                  <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>{pref.description}</p>
                 </div>
                 {(['email', 'push'] as NotifChannel[]).map((ch) => (
                   <div key={ch} style={{ display: 'flex', justifyContent: 'center' }}>
@@ -542,12 +534,12 @@ export default function CommunicationsPage() {
               onClick={savePrefs}
               disabled={prefsLoading || prefsSaving || !portalCommunicationPreferencesChanged(prefs, savedPrefs)}
               style={{
-                padding: '10px 24px',
+                padding: '12px 24px',
                 background: prefsLoading || prefsSaving || !portalCommunicationPreferencesChanged(prefs, savedPrefs) ? 'var(--text-subtle)' : 'var(--text)',
                 color: 'var(--bg-elevated)',
                 border: 'none',
-                borderRadius: '9px',
-                fontSize: '14px',
+                borderRadius: '8px',
+                fontSize: 'var(--fs-md)',
                 fontWeight: 600,
                 cursor: prefsLoading || prefsSaving || !portalCommunicationPreferencesChanged(prefs, savedPrefs) ? 'not-allowed' : 'pointer',
                 fontFamily: 'var(--font-body)',
@@ -569,7 +561,7 @@ export default function CommunicationsPage() {
                   alignItems: 'center',
                   gap: '6px',
                   color: 'var(--success)',
-                  fontSize: '13px',
+                  fontSize: 'var(--fs-base)',
                   fontWeight: 500,
                   animation: 'slideUp 0.2s ease both',
                 }}

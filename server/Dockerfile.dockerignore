@@ -1,0 +1,9 @@
+# Build context for server/Dockerfile is the repository root; only the API
+# module and its locally replaced meetfiles module are needed.
+*
+!server/
+!internal/meetfiles/
+server/**/*_test.go
+internal/meetfiles/**/*_test.go
+internal/meetfiles/testdata/
+internal/meetfiles/**/testdata/

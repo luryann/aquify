@@ -133,6 +133,14 @@ func ProcessDataExportHandler(logger *slog.Logger, complianceService *compliance
 			"generated_at": generatedAt,
 			"source":       "compliance_worker",
 		}
+		householdData, err := complianceService.CollectHouseholdData(p.OrgID, p.HouseholdID)
+		if err != nil {
+			_, _ = complianceService.FailDataExport(p.OrgID, p.RequestID)
+			return fmt.Errorf("process data export: collect household data: %w", err)
+		}
+		if householdData != nil {
+			artifact["data"] = householdData
+		}
 		data, err := json.MarshalIndent(artifact, "", "  ")
 		if err != nil {
 			_, _ = complianceService.FailDataExport(p.OrgID, p.RequestID)

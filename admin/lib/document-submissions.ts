@@ -56,7 +56,9 @@ export function selectLatestSubmission<T extends SubmissionLike>(
 }
 
 export function getPortalDocumentAction({ effectiveStatus }: PortalDocumentActionInput): PortalDocumentActionKind {
-  if (effectiveStatus === 'missing' || effectiveStatus === 'rejected' || effectiveStatus === 'expired') {
+  // 'pending' means a submission exists with no attached file (an interrupted
+  // upload), so the family still needs to upload.
+  if (effectiveStatus === 'missing' || effectiveStatus === 'pending' || effectiveStatus === 'rejected' || effectiveStatus === 'expired') {
     return 'upload'
   }
   return 'none'

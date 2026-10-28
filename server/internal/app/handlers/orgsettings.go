@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/dareaquatics/aquify/server/internal/app/audit"
@@ -53,6 +54,12 @@ type updateOrgSettingsBody struct {
 	LSCCode            *string `json:"lsc_code"`
 	EmailSenderName    *string `json:"email_sender_name"`
 	EmailSenderAddress *string `json:"email_sender_address"`
+	PublicSlug         *string `json:"public_slug"`
+	PublicSiteEnabled  *bool   `json:"public_site_enabled"`
+	PublicShowCoaches  *bool   `json:"public_show_coaches"`
+	PublicAbout        *string `json:"public_about"`
+	PublicContactEmail *string `json:"public_contact_email"`
+	PublicContactPhone *string `json:"public_contact_phone"`
 }
 
 func (h *OrgSettingsHandlers) update(w http.ResponseWriter, r *http.Request) {
@@ -77,7 +84,21 @@ func (h *OrgSettingsHandlers) update(w http.ResponseWriter, r *http.Request) {
 		LSCCode:            body.LSCCode,
 		EmailSenderName:    body.EmailSenderName,
 		EmailSenderAddress: body.EmailSenderAddress,
+		PublicSlug:         body.PublicSlug,
+		PublicSiteEnabled:  body.PublicSiteEnabled,
+		PublicShowCoaches:  body.PublicShowCoaches,
+		PublicAbout:        body.PublicAbout,
+		PublicContactEmail: body.PublicContactEmail,
+		PublicContactPhone: body.PublicContactPhone,
 	}, principal.UserID)
+	if errors.Is(err, orgsettings.ErrInvalidSlug) {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "invalid_slug", err.Error(), nil)
+		return
+	}
+	if errors.Is(err, orgsettings.ErrSlugTaken) {
+		httpx.WriteError(w, r, http.StatusConflict, "slug_taken", err.Error(), nil)
+		return
+	}
 	if err != nil {
 		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to update org settings.", err)
 		return

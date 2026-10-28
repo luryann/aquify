@@ -83,24 +83,24 @@ function StatCard({
   label: string; value: string; delta?: string; positive?: boolean; caption?: string; loading?: boolean
 }) {
   return (
-    <div className="card-elevated" style={{ padding: '20px 22px' }}>
-      <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', fontWeight: 500, color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '10px' }}>
+    <div className="card-elevated" style={{ padding: '20px 24px' }}>
+      <p style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', fontWeight: 500, color: 'var(--text-muted)', marginBottom: '12px' }}>
         {label}
       </p>
       {loading ? (
         <div style={{ height: '32px', background: 'var(--bg-elevated)', borderRadius: '4px', animation: 'pulse 1.5s ease-in-out infinite' }} />
       ) : (
-        <p style={{ fontSize: '26px', fontFamily: 'var(--font-display)', color: 'var(--text)', lineHeight: 1.1, letterSpacing: '-0.01em', marginBottom: '6px' }}>
+        <p style={{ fontSize: 'var(--fs-3xl)', fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', color: 'var(--text)', lineHeight: 1.1, letterSpacing: 'var(--display-tracking)', marginBottom: '6px' }}>
           {value}
         </p>
       )}
       {delta && !loading && (
-        <p style={{ fontSize: '11px', color: positive ? 'var(--success)' : 'var(--error)', fontFamily: 'var(--font-body)' }}>
+        <p style={{ fontSize: 'var(--fs-xs)', color: positive ? 'var(--success)' : 'var(--error)', fontFamily: 'var(--font-body)' }}>
           {positive ? '↑' : '↓'} {delta}
         </p>
       )}
       {caption && !loading && (
-        <p style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+        <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
           {caption}
         </p>
       )}
@@ -110,10 +110,10 @@ function StatCard({
 
 function ActivityItem({ description, time, actor }: { description: string; time: string; actor?: string }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
-      <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent)', flexShrink: 0, marginTop: '5px' }} />
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '12px 0', borderBottom: '1px solid var(--border)' }}>
+      <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent)', flexShrink: 0, marginTop: '4px' }} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ fontSize: '13px', color: 'var(--text)', lineHeight: 1.4 }}>
+        <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text)', lineHeight: 1.4 }}>
           {actor && (
             <>
               <span style={{ color: 'var(--text-subtle)', fontWeight: 500 }}>{actor}</span>
@@ -123,7 +123,7 @@ function ActivityItem({ description, time, actor }: { description: string; time:
           <span style={{ color: actor ? 'var(--text-muted)' : 'var(--text)' }}>{description}</span>
         </p>
       </div>
-      <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', flexShrink: 0, whiteSpace: 'nowrap' }}>
+      <p style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', flexShrink: 0, whiteSpace: 'nowrap' }}>
         {time}
       </p>
     </div>
@@ -157,39 +157,39 @@ function PerfSnapshot({
   maxCount: number
 }) {
   return (
-    <div className="card-elevated" style={{ padding: '20px 22px' }}>
+    <div className="card-elevated" style={{ padding: '20px 24px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-        <p style={{ fontSize: '12px', fontWeight: 600, fontFamily: 'var(--font-body)', color: 'var(--text-subtle)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-          Performance Snapshot
+        <p style={{ fontSize: 'var(--fs-md)', fontWeight: 600, fontFamily: 'var(--font-body)', color: 'var(--text)' }}>
+          Performance snapshot
         </p>
-        <a href="/performance/visualization" style={{ fontSize: '12px', color: 'var(--accent)', textDecoration: 'none', fontFamily: 'var(--font-body)' }}>
+        <a href="/performance/visualization" style={{ fontSize: 'var(--fs-sm)', color: 'var(--accent)', textDecoration: 'none', fontFamily: 'var(--font-body)' }}>
           full view →
         </a>
       </div>
 
       {loading ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {[1,2,3,4].map((i) => (
             <div key={i} style={{ height: '28px', background: 'var(--bg-elevated)', borderRadius: '4px', animation: 'pulse 1.5s ease-in-out infinite', animationDelay: `${i * 0.08}s` }} />
           ))}
         </div>
       ) : topEvents.length === 0 ? (
-        <p style={{ fontSize: '13px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+        <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)', fontStyle: 'italic' }}>
           No performance data yet.
         </p>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+        <div className="cols-2" style={{ gap: '20px' }}>
           {/* Top events */}
           <div>
-            <p style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '10px' }}>
-              Top Events
+            <p style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '12px' }}>
+              Top events
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {topEvents.slice(0, 5).map((ev) => (
                 <div key={ev.event}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-                    <span style={{ fontSize: '12px', color: 'var(--text)', fontWeight: 500 }}>{ev.event}</span>
-                    <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                    <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text)', fontWeight: 500 }}>{ev.event}</span>
+                    <span style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>
                       {ev.fastest ? formatSwimTime(ev.fastest) : '—'}&nbsp;<span style={{ color: 'var(--text-muted)', opacity: 0.6 }}>·</span>&nbsp;{ev.count}
                     </span>
                   </div>
@@ -210,19 +210,19 @@ function PerfSnapshot({
 
           {/* Top swimmers */}
           <div>
-            <p style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '10px' }}>
-              Most Coverage
+            <p style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '12px' }}>
+              Most events swum
             </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {topSwimmers.slice(0, 5).map((sw, i) => (
                 <div key={sw.name} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', width: '14px', textAlign: 'right', flexShrink: 0 }}>
+                  <span style={{ fontSize: 'var(--fs-2xs)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', width: '14px', textAlign: 'right', flexShrink: 0 }}>
                     {i + 1}
                   </span>
-                  <span style={{ fontSize: '12px', color: 'var(--text)', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text)', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {sw.name}
                   </span>
-                  <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--accent)', flexShrink: 0 }}>
+                  <span style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', color: 'var(--accent)', flexShrink: 0 }}>
                     {sw.count}
                   </span>
                 </div>
@@ -251,6 +251,9 @@ export default function DashboardPage() {
   const [bestTimes, setBestTimes] = useState<BestTimeRecord[]>([])
   const [actorNames, setActorNames] = useState<Record<string, string>>({})
   const [seasons, setSeasons] = useState<SeasonRecord[]>([])
+  // Invoices, the audit log, and the user directory are admin-only APIs; coaches
+  // must not see placeholder billing totals or an empty "recent activity" feed.
+  const isAdmin = (session?.user.roles ?? (session?.user.role ? [session.user.role] : [])).includes('admin')
 
   useEffect(() => {
     let cancelled = false
@@ -262,11 +265,11 @@ export default function DashboardPage() {
           fetchSwimmers(api, session.user.orgId).catch(() => [] as SwimmerRecord[]),
           fetchHouseholds(api, session.user.orgId).catch(() => [] as HouseholdRecord[]),
           fetchMeets(api, session.user.orgId).catch(() => [] as MeetRecord[]),
-          fetchInvoices(api, session.user.orgId).catch(() => [] as InvoiceRecord[]),
+          isAdmin ? fetchInvoices(api, session.user.orgId).catch(() => [] as InvoiceRecord[]) : Promise.resolve([] as InvoiceRecord[]),
           fetchGroups(api, session.user.orgId).catch(() => [] as GroupRecord[]),
-          fetchAuditEvents(api, session.user.orgId).catch(() => ({ events: [] as AuditEventRecord[] })),
+          isAdmin ? fetchAuditEvents(api, session.user.orgId).catch(() => ({ events: [] as AuditEventRecord[] })) : Promise.resolve({ events: [] as AuditEventRecord[] }),
           fetchPerformanceBestTimes(api, session.user.orgId).catch(() => [] as BestTimeRecord[]),
-          fetchUsers(api, session.user.orgId, { limit: 200 }).catch(() => ({ users: [] as UserRecord[] })),
+          isAdmin ? fetchUsers(api, session.user.orgId, { limit: 200 }).catch(() => ({ users: [] as UserRecord[] })) : Promise.resolve({ users: [] as UserRecord[] }),
           fetchSeasons(api, session.user.orgId).catch(() => [] as SeasonRecord[]),
         ])
         if (cancelled) return
@@ -285,7 +288,7 @@ export default function DashboardPage() {
     }
     run()
     return () => { cancelled = true }
-  }, [session?.user.orgId, api])
+  }, [session?.user.orgId, api, isAdmin])
 
   // Derived stats
   const activeSwimmers = swimmers.filter((s) => s.registration_status === 'active').length
@@ -342,36 +345,38 @@ export default function DashboardPage() {
   // current calendar year — an implied season the Seasons page doesn't
   // actually have would mislead an owner looking for "the current season."
   const activeSeason = seasons.find((s) => s.status === 'active') ?? null
-  const seasonLabel = activeSeason ? `Aquify · ${activeSeason.name}` : 'Aquify · No active season'
+  const seasonLabel = activeSeason ? activeSeason.name : 'No active season'
 
   return (
-    <div style={{ maxWidth: '1200px', animation: 'slideUp 0.35s var(--ease-out) both' }}>
+    <div className="page" style={{ animation: 'slideUp 0.35s var(--ease-out) both' }}>
       <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }`}</style>
 
       {/* Page header */}
       <div className="page-header">
         <div>
           <h1 className="page-title">Dashboard</h1>
-          <p className="page-subtitle">{loading ? 'Aquify' : seasonLabel}</p>
+          <p className="page-subtitle">{loading ? '\u00a0' : seasonLabel}</p>
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: '4px 9px' }}>
+          <span style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: '4px 8px' }}>
             {today}
           </span>
         </div>
       </div>
 
       {/* Stat grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: '14px', marginBottom: '28px' }}>
-        <StatCard label="Active Swimmers" value={activeSwimmers.toString()} delta={totalSwimmers !== activeSwimmers ? `${totalSwimmers} total` : undefined} positive loading={loading} />
+      <div className="cols-4" style={{ gap: '16px', marginBottom: '24px' }}>
+        <StatCard label="Active swimmers" value={activeSwimmers.toString()} delta={totalSwimmers !== activeSwimmers ? `${totalSwimmers} total` : undefined} positive loading={loading} />
         <StatCard label="Households" value={households.length.toString()} loading={loading} />
-        <StatCard label="Upcoming Meets" value={upcomingMeets.toString()} loading={loading} />
-        <StatCard label="Open Invoices" value={formatCurrency(openInvoiceAmount)} delta={overdueAmount > 0 ? `${formatCurrency(overdueAmount)} overdue` : undefined} loading={loading} />
-        <StatCard label="Active Groups" value={activeGroups.toString()} loading={loading} />
-        <StatCard label="New Best Times" value={recentBestTimes.toString()} caption="last 30 days" loading={loading} />
-        <StatCard label="Pending Registrations" value={pendingRegistrations.toString()} loading={loading} />
+        <StatCard label="Upcoming meets" value={upcomingMeets.toString()} loading={loading} />
+        {isAdmin && (
+          <StatCard label="Open invoices" value={formatCurrency(openInvoiceAmount)} delta={overdueAmount > 0 ? `${formatCurrency(overdueAmount)} overdue` : undefined} loading={loading} />
+        )}
+        <StatCard label="Active groups" value={activeGroups.toString()} loading={loading} />
+        <StatCard label="New best times" value={recentBestTimes.toString()} caption="last 30 days" loading={loading} />
+        <StatCard label="Pending registrations" value={pendingRegistrations.toString()} loading={loading} />
         <StatCard
-          label="Next Commitment Due"
+          label="Next commitment due"
           value={nextCommitmentDeadlineDays != null ? `${nextCommitmentDeadlineDays}d` : '—'}
           caption={nextCommitmentDeadlineDays != null ? 'until deadline' : 'no deadline set'}
           loading={loading}
@@ -379,14 +384,14 @@ export default function DashboardPage() {
       </div>
 
       {/* Upcoming Meets + Quick Actions */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 260px', gap: '16px', marginBottom: '16px' }}>
+      <div className="split-aside" style={{ gap: '16px', marginBottom: '16px', alignItems: 'stretch' }}>
         {/* Upcoming Meets list */}
-        <div className="card-elevated" style={{ padding: '20px 22px' }}>
+        <div className="card-elevated" style={{ padding: '20px 24px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-            <p style={{ fontSize: '12px', fontWeight: 600, fontFamily: 'var(--font-body)', color: 'var(--text-subtle)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-              Upcoming Meets
+            <p style={{ fontSize: 'var(--fs-md)', fontWeight: 600, fontFamily: 'var(--font-body)', color: 'var(--text)' }}>
+              Upcoming meets
             </p>
-            <Link href="/meets" style={{ fontSize: '12px', color: 'var(--accent)', textDecoration: 'none', fontFamily: 'var(--font-body)' }}>
+            <Link href="/meets" style={{ fontSize: 'var(--fs-sm)', color: 'var(--accent)', textDecoration: 'none', fontFamily: 'var(--font-body)' }}>
               all meets →
             </Link>
           </div>
@@ -397,7 +402,7 @@ export default function DashboardPage() {
               ))}
             </div>
           ) : upcomingMeetsList.length === 0 ? (
-            <p style={{ fontSize: '13px', color: 'var(--text-muted)', fontStyle: 'italic', padding: '8px 0' }}>
+            <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)', fontStyle: 'italic', padding: '8px 0' }}>
               No upcoming meets scheduled.
             </p>
           ) : (
@@ -406,20 +411,20 @@ export default function DashboardPage() {
                 <Link
                   key={meet.id}
                   href={`/meets/${meet.id}`}
-                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: '8px', background: 'var(--bg-surface)', border: '1px solid var(--border)', textDecoration: 'none', transition: 'border-color 0.15s' }}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderRadius: '8px', background: 'var(--bg-surface)', border: '1px solid var(--border)', textDecoration: 'none', transition: 'border-color 0.15s' }}
                   onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent)' }}
                   onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)' }}
                 >
                   <div>
-                    <p style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', marginBottom: '2px' }}>{meet.name}</p>
-                    <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>
+                    <p style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)', marginBottom: '2px' }}>{meet.name}</p>
+                    <p style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>
                       {meet.start_date ? parseBackendDate(meet.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Date TBD'}
                       {meet.course && <span style={{ marginLeft: '8px', opacity: 0.7 }}>· {meet.course}</span>}
                     </p>
                   </div>
                   <span style={{
-                    fontSize: '10px', fontFamily: 'var(--font-body)', fontWeight: 700, letterSpacing: '0.05em',
-                    padding: '3px 8px', borderRadius: '6px', textTransform: 'uppercase',
+                    fontSize: 'var(--fs-2xs)', fontFamily: 'var(--font-body)', fontWeight: 700, letterSpacing: '0.05em',
+                    padding: '4px 8px', borderRadius: '6px', textTransform: 'uppercase',
                     background: meet.status === 'commitment_open' ? 'var(--success-bg)' : meet.status === 'entry_finalized' ? 'var(--info-bg)' : 'var(--bg-elevated)',
                     color: meet.status === 'commitment_open' ? 'var(--success)' : meet.status === 'entry_finalized' ? 'var(--info)' : 'var(--text-muted)',
                   }}>
@@ -432,16 +437,13 @@ export default function DashboardPage() {
         </div>
 
         {/* Quick Actions */}
-        <div className="card-elevated" style={{ padding: '20px 22px' }}>
-          <p style={{ fontSize: '12px', fontWeight: 600, fontFamily: 'var(--font-body)', color: 'var(--text-subtle)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '14px' }}>
-            Quick Actions
-          </p>
+        <div className="card-elevated" style={{ padding: '20px 24px' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {[
-              { label: 'New Meet', href: '/meets/new', icon: '＋', roles: ['admin', 'coach'] },
-              { label: 'Add Swimmer', href: '/members?tab=swimmers', icon: '＋', roles: ['admin', 'coach'] },
-              { label: 'New Household', href: '/members?tab=households', icon: '＋', roles: ['admin'] },
-              { label: 'New Invoice', href: '/billing?tab=invoices', icon: '＋', roles: ['admin'] },
+              { label: 'New meet', href: '/meets/new', icon: '＋', roles: ['admin', 'coach'] },
+              { label: 'Add swimmer', href: '/members?tab=swimmers', icon: '＋', roles: ['admin', 'coach'] },
+              { label: 'New household', href: '/members?tab=households', icon: '＋', roles: ['admin'] },
+              { label: 'New invoice', href: '/billing?tab=invoices', icon: '＋', roles: ['admin'] },
             ]
               .filter((action) => {
                 const roles = session?.user.roles ?? (session?.user.role ? [session.user.role] : [])
@@ -452,8 +454,8 @@ export default function DashboardPage() {
                 key={action.href}
                 href={action.href}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: '10px',
-                  padding: '9px 12px', borderRadius: '8px',
+                  display: 'flex', alignItems: 'center', gap: '12px',
+                  padding: '8px 12px', borderRadius: '8px',
                   background: 'var(--bg-surface)', border: '1px solid var(--border)',
                   textDecoration: 'none', transition: 'all 0.15s',
                   color: 'var(--text)',
@@ -461,10 +463,10 @@ export default function DashboardPage() {
                 onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.background = 'var(--accent-subtle)' }}
                 onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = 'var(--bg-surface)' }}
               >
-                <span style={{ fontSize: '12px', fontFamily: 'var(--font-body)', color: 'var(--accent)', width: '14px', textAlign: 'center', flexShrink: 0 }}>
+                <span style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--accent)', width: '14px', textAlign: 'center', flexShrink: 0 }}>
                   {action.icon}
                 </span>
-                <span style={{ fontSize: '13px', fontWeight: 500 }}>{action.label}</span>
+                <span style={{ fontSize: 'var(--fs-base)', fontWeight: 500 }}>{action.label}</span>
               </Link>
             ))}
           </div>
@@ -474,13 +476,14 @@ export default function DashboardPage() {
       {/* Performance snapshot — full width */}
       <PerfSnapshot loading={loading} topEvents={topEvents} topSwimmers={topSwimmers} maxCount={maxCount} />
 
-      {/* Recent activity — full width, bottom of page */}
-      <div className="card-elevated" style={{ padding: '20px 22px', marginTop: '16px' }}>
+      {/* Recent activity — full width, bottom of page (admin-only audit feed) */}
+      {isAdmin && (
+      <div className="card-elevated" style={{ padding: '20px 24px', marginTop: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-          <p style={{ fontSize: '12px', fontWeight: 600, fontFamily: 'var(--font-body)', color: 'var(--text-subtle)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-            Recent Activity
+          <p style={{ fontSize: 'var(--fs-md)', fontWeight: 600, fontFamily: 'var(--font-body)', color: 'var(--text)' }}>
+            Recent activity
           </p>
-          <a href="/audit" style={{ fontSize: '12px', color: 'var(--accent)', textDecoration: 'none', fontFamily: 'var(--font-body)' }}>
+          <a href="/audit" style={{ fontSize: 'var(--fs-sm)', color: 'var(--accent)', textDecoration: 'none', fontFamily: 'var(--font-body)' }}>
             view audit log →
           </a>
         </div>
@@ -491,7 +494,7 @@ export default function DashboardPage() {
             ))}
           </div>
         ) : auditEvents.length === 0 ? (
-          <p style={{ fontSize: '13px', color: 'var(--text-muted)', fontStyle: 'italic', padding: '8px 0' }}>
+          <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)', fontStyle: 'italic', padding: '8px 0' }}>
             No recent activity recorded yet.
           </p>
         ) : (
@@ -520,6 +523,7 @@ export default function DashboardPage() {
           })
         )}
       </div>
+      )}
     </div>
   )
 }

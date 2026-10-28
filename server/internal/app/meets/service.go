@@ -1541,6 +1541,74 @@ func (s *Service) PublishCommitmentRequest(principal *appmiddleware.Principal, o
 	return meet, created, event, nil
 }
 
+// InviteSwimmerToOpenMeets creates "invited" commitments for a newly created
+// swimmer on every meet in the org whose commitment window is already open.
+// PublishCommitmentRequest only invites the roster that exists at open time,
+// so without this a swimmer added mid-window could never respond.
+func (s *Service) InviteSwimmerToOpenMeets(orgID, swimmerID, householdID, actorUserID string) ([]Commitment, error) {
+	orgID, swimmerID, householdID = strings.TrimSpace(orgID), strings.TrimSpace(swimmerID), strings.TrimSpace(householdID)
+	if orgID == "" || swimmerID == "" {
+		return nil, errors.New("org_id and swimmer_id are required")
+	}
+	if err := s.syncFromDB(context.Background()); err != nil {
+		return nil, err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Keep the scope index current for in-memory mode; DB mode reloads it.
+	s.swimmers[swimmerID] = swimmerRef{ID: swimmerID, OrgID: orgID, HouseholdID: householdID}
+	if householdID != "" {
+		s.households[householdID] = householdRef{ID: householdID, OrgID: orgID}
+	}
+
+	now := time.Now().UTC()
+	var created []Commitment
+	for _, meet := range s.meets {
+		if meet.OrgID != orgID || meet.Status != "commitment_open" {
+			continue
+		}
+		exists := false
+		for _, c := range s.commitments {
+			if c.MeetID == meet.ID && c.SwimmerID == swimmerID {
+				exists = true
+				break
+			}
+		}
+		if exists {
+			continue
+		}
+		c := Commitment{
+			ID:          s.newID("cmt_"),
+			OrgID:       orgID,
+			MeetID:      meet.ID,
+			HouseholdID: householdID,
+			SwimmerID:   swimmerID,
+			Status:      "invited",
+			CreatedAt:   now,
+			UpdatedAt:   now,
+			CreatedBy:   actorUserID,
+			UpdatedBy:   actorUserID,
+		}
+		if s.repo != nil {
+			if err := s.repo.UpsertCommitment(context.Background(), c); err != nil {
+				return created, fmt.Errorf("persist commitment (late invite): %w", err)
+			}
+		}
+		s.commitments[c.ID] = c
+		created = append(created, c)
+		s.recordAuditEventLocked(MeetAuditEvent{
+			OrgID:       orgID,
+			ActorUserID: actorUserID,
+			Action:      "meet.commitment_invited",
+			After:       map[string]any{"commitment_id": c.ID, "swimmer_id": swimmerID, "status": "invited"},
+			Metadata:    map[string]any{"meet_id": meet.ID, "reason": "swimmer_created_while_commitments_open"},
+		})
+	}
+	return created, nil
+}
+
 // ─── Commitments ─────────────────────────────────────────────────────────────
 
 // ListCommitments returns commitments for a meet. Parents only see their own household's commitments.
@@ -1836,6 +1904,9 @@ func (s *Service) LockCommitments(principal *appmiddleware.Principal, orgID, mee
 	if !hasAnyRole(principal, "admin", "coach") {
 		return Meet{}, MeetAuditEvent{}, ErrForbidden
 	}
+	if err := s.syncFromDB(context.Background()); err != nil {
+		return Meet{}, MeetAuditEvent{}, err
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1861,10 +1932,14 @@ func (s *Service) LockCommitments(principal *appmiddleware.Principal, orgID, mee
 	}
 	s.meets[meet.ID] = meet
 
-	// Lock all commitments for this meet.
+	// Lock the "going" commitments and turn each one's event selections into
+	// submitted entries for coach review. Declined and unanswered commitments
+	// keep their status so coaches can still see who is not attending; the
+	// meet leaving commitment_open already prevents further responses.
 	lockedCount := 0
+	entriesCreated := 0
 	for id, cmt := range s.commitments {
-		if cmt.MeetID != meet.ID {
+		if cmt.MeetID != meet.ID || (cmt.Status != "committed_yes" && cmt.Status != "coach_reviewed") {
 			continue
 		}
 		cmt.Status = "locked"
@@ -1878,19 +1953,58 @@ func (s *Service) LockCommitments(principal *appmiddleware.Principal, orgID, mee
 		}
 		s.commitments[id] = cmt
 		lockedCount++
+
+		for _, sel := range s.selections {
+			if sel.CommitmentID != cmt.ID || s.hasEntryLocked(meet.ID, cmt.SwimmerID, sel.MeetEventID) {
+				continue
+			}
+			if ev, ok := s.events[sel.MeetEventID]; !ok || ev.MeetID != meet.ID {
+				continue
+			}
+			entry := Entry{
+				ID:           s.newID("ent_"),
+				OrgID:        orgID,
+				MeetID:       meet.ID,
+				SwimmerID:    cmt.SwimmerID,
+				MeetEventID:  sel.MeetEventID,
+				CommitmentID: cmt.ID,
+				Status:       "submitted",
+				ProposedBy:   principal.UserID,
+				CreatedAt:    now,
+				UpdatedAt:    now,
+				CreatedBy:    principal.UserID,
+				UpdatedBy:    principal.UserID,
+			}
+			if s.repo != nil {
+				if err := s.repo.UpsertEntry(context.Background(), entry); err != nil {
+					return Meet{}, MeetAuditEvent{}, fmt.Errorf("persist entry (from selection): %w", err)
+				}
+			}
+			s.entries[entry.ID] = entry
+			entriesCreated++
+		}
 	}
 
 	event := s.recordAuditEventLocked(MeetAuditEvent{
 		OrgID:       orgID,
 		ActorUserID: principal.UserID,
 		Action:      "meet.commitments_locked",
-		After:       map[string]any{"status": "commitment_closed", "locked_count": lockedCount},
+		After:       map[string]any{"status": "commitment_closed", "locked_count": lockedCount, "entries_created": entriesCreated},
 		Metadata:    map[string]any{"meet_id": meet.ID},
 	})
 	return meet, event, nil
 }
 
 // ─── Entries ──────────────────────────────────────────────────────────────────
+
+func (s *Service) hasEntryLocked(meetID, swimmerID, meetEventID string) bool {
+	for _, e := range s.entries {
+		if e.MeetID == meetID && e.SwimmerID == swimmerID && e.MeetEventID == meetEventID {
+			return true
+		}
+	}
+	return false
+}
 
 // ListEntries returns all entries for a meet.
 func (s *Service) ListEntries(principal *appmiddleware.Principal, orgID, meetID string) ([]Entry, error) {
@@ -2251,6 +2365,51 @@ func (s *Service) ApproveEntry(principal *appmiddleware.Principal, orgID, meetID
 		},
 	})
 	return entry, auditEvent, nil
+}
+
+// MarkEntriesExported moves the given approved entries to "exported" after an
+// SD3 entry file has been generated for the host. Entries already exported are
+// left as-is so a re-download does not fail; any other status is skipped.
+func (s *Service) MarkEntriesExported(principal *appmiddleware.Principal, orgID, meetID string, entryIDs []string) (int, MeetAuditEvent, error) {
+	if !hasAnyRole(principal, "admin", "coach") {
+		return 0, MeetAuditEvent{}, ErrForbidden
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	meet, ok := s.meets[strings.TrimSpace(meetID)]
+	if !ok || meet.OrgID != orgID {
+		return 0, MeetAuditEvent{}, ErrMeetNotFound
+	}
+
+	now := time.Now().UTC()
+	marked := 0
+	for _, id := range entryIDs {
+		entry, ok := s.entries[strings.TrimSpace(id)]
+		if !ok || entry.MeetID != meet.ID || entry.Status != "approved" {
+			continue
+		}
+		entry.Status = "exported"
+		entry.UpdatedAt = now
+		entry.UpdatedBy = principal.UserID
+		if s.repo != nil {
+			if err := s.repo.UpsertEntry(context.Background(), entry); err != nil {
+				return marked, MeetAuditEvent{}, fmt.Errorf("persist entry (exported): %w", err)
+			}
+		}
+		s.entries[entry.ID] = entry
+		marked++
+	}
+
+	auditEvent := s.recordAuditEventLocked(MeetAuditEvent{
+		OrgID:       orgID,
+		ActorUserID: principal.UserID,
+		Action:      "meet.entries_exported",
+		After:       map[string]any{"exported_count": marked, "entry_count": len(entryIDs)},
+		Metadata:    map[string]any{"meet_id": meet.ID, "format": "sd3"},
+	})
+	return marked, auditEvent, nil
 }
 
 // ─── Seed-time back-fill ──────────────────────────────────────────────────────

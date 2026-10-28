@@ -276,6 +276,11 @@ type Service struct {
 	auditEvents      []*BestTimeAuditEvent
 	entrySeedUpdater EntrySeedTimeUpdater    // optional; wired after construction
 	householdChecker SwimmerHouseholdChecker // optional; enforces parent household scoping
+	directory        Directory               // optional; swimmer/meet facts for records, top lists, relays
+
+	recordEntries map[string]*RecordEntry // id → team record entry
+	goals         map[string]*Goal        // id → swimmer goal
+	lineups       map[string]*RelayLineup // id → saved relay lineup
 }
 
 // AuditEvents returns a snapshot of all audit events recorded by the service.
@@ -297,6 +302,10 @@ func NewService() *Service {
 		bestTimes: make(map[string]*BestTime),
 		btByKey:   make(map[string]*BestTime),
 		standards: make(map[string]*TimeStandard),
+
+		recordEntries: make(map[string]*RecordEntry),
+		goals:         make(map[string]*Goal),
+		lineups:       make(map[string]*RelayLineup),
 	}
 }
 
@@ -334,7 +343,7 @@ func (s *Service) loadFromDB(ctx context.Context) error {
 	for _, ts := range standards {
 		s.standards[ts.ID] = ts
 	}
-	return nil
+	return s.loadExtensionsLocked(ctx)
 }
 
 func (s *Service) newID() string {
@@ -483,9 +492,36 @@ func isRelayStroke(stroke string) bool {
 // relay stroke, it also triggers a best-time recompute for the swimmer and
 // calls the injected EntrySeedTimeUpdater (if set) to back-fill seed times on
 // future draft/submitted meet entries for the swimmer.
+// HasMeetResult reports whether a result is already recorded for this swimmer
+// and event at the given meet — used to make results-file imports idempotent.
+func (s *Service) HasMeetResult(orgID, swimmerID, meetID string, distance int, stroke, course string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, r := range s.results {
+		if r.OrgID == orgID && r.SwimmerID == swimmerID && r.MeetID == meetID &&
+			r.Distance == distance && r.Stroke == stroke && r.Course == course && r.Status == "active" {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Service) UpsertResult(orgID, actorID string, principal *appmiddleware.Principal, input UpsertResultInput) (*Result, error) {
+	result, _, err := s.UpsertResultWithRecords(orgID, actorID, principal, input)
+	return result, err
+}
+
+// UpsertResultWithRecords behaves like UpsertResult and additionally reports
+// any team records the result breaks (one per age group it counts toward:
+// the swimmer's age group and Open).
+func (s *Service) UpsertResultWithRecords(orgID, actorID string, principal *appmiddleware.Principal, input UpsertResultInput) (*Result, []RecordBreak, error) {
 	if err := s.requireAdminOrCoach(principal); err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	var dir directorySnapshot
+	recordCandidate := input.IsOfficial && !input.DQ && input.FinTimeMs != nil && isIndividualStroke(input.Stroke)
+	if recordCandidate {
+		dir = s.snapshotDirectory(orgID)
 	}
 
 	s.mu.Lock()
@@ -518,9 +554,13 @@ func (s *Service) UpsertResult(orgID, actorID string, principal *appmiddleware.P
 		CreatedBy:   actorID,
 		UpdatedBy:   actorID,
 	}
+	// Postgres is canonical: an unpersisted result would vanish on restart and
+	// skew best times across instances, so surface the failure.
 	if s.repo != nil {
 		if err := s.repo.UpsertResult(context.Background(), result); err != nil {
 			slog.Error("performance: upsert result", "error", err)
+			s.mu.Unlock()
+			return nil, nil, fmt.Errorf("persist result: %w", err)
 		}
 	}
 	s.results[result.ID] = result
@@ -563,6 +603,11 @@ func (s *Service) UpsertResult(orgID, actorID string, principal *appmiddleware.P
 		}
 	}
 
+	var breaks []RecordBreak
+	if recordCandidate {
+		breaks = s.detectRecordBreaksLocked(orgID, actorID, result, dir)
+	}
+
 	// Emit result.upserted audit event.
 	s.auditEvents = append(s.auditEvents, &BestTimeAuditEvent{
 		ID:         newID(),
@@ -595,7 +640,7 @@ func (s *Service) UpsertResult(orgID, actorID string, principal *appmiddleware.P
 		updater.UpdateSeedTimesForSwimmer(orgID, input.SwimmerID, input.Distance, input.Stroke, input.Course, newBestTimeMs)
 	}
 
-	return result, nil
+	return result, breaks, nil
 }
 
 // recomputeBestTimeLocked scans all active results for the swimmer/event/course

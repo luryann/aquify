@@ -164,9 +164,12 @@ func (s *Service) GenerateExport(principal *appmiddleware.Principal, orgID, meet
 		pendingInput: &cpInput,
 	}
 
+	// Postgres is canonical: an export that was never persisted would vanish on
+	// restart and be invisible to other instances, so fail the request instead.
 	if s.repo != nil {
 		if err := s.repo.UpsertFileExport(context.Background(), job); err != nil {
 			slog.Error("exports: persist file export", "err", err)
+			return nil, nil, fmt.Errorf("persist file export: %w", err)
 		}
 	}
 	s.mu.Lock()
@@ -235,6 +238,7 @@ func (s *Service) ProcessExport(ctx context.Context, exportID string) error {
 	if s.repo != nil {
 		if err := s.repo.UpsertFileExport(ctx, job); err != nil {
 			slog.Error("exports: persist ready file export", "err", err)
+			return fmt.Errorf("persist ready file export: %w", err)
 		}
 	}
 	return nil

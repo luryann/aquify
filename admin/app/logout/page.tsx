@@ -33,7 +33,7 @@ export default function LogoutPage() {
         })
 
         if (!res.ok) {
-          let message = 'Unable to revoke your session.'
+          let message = 'Couldn’t revoke your session. Try again.'
           try {
             const payload = await res.json() as {
               message?: string
@@ -59,11 +59,11 @@ export default function LogoutPage() {
           setTopLevelRedirect(Boolean(logoutURL))
           setStage('done')
         }
-      } catch (err) {
+      } catch {
         signOut()
         if (!cancelled) {
           setStage('error')
-          setError(err instanceof Error ? `${err.message} Please retry sign-out.` : 'Unable to sign out cleanly. Please retry.')
+          setError('Couldn’t sign out cleanly. Try again.')
         }
       }
     }
@@ -104,15 +104,6 @@ export default function LogoutPage() {
         @keyframes logoutFade { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
       `}</style>
 
-      {/* Subtle background */}
-      <div aria-hidden style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
-        <div style={{
-          position: 'absolute', top: '30%', left: '50%', transform: 'translateX(-50%)',
-          width: '400px', height: '400px', borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(235,93,30,0.04) 0%, transparent 65%)',
-        }} />
-      </div>
-
       <div
         style={{
           textAlign: 'center',
@@ -136,12 +127,12 @@ export default function LogoutPage() {
               }} />
             </div>
             <h2 style={{
-              fontFamily: 'var(--font-display)', fontSize: '22px', fontWeight: 400,
-              color: 'var(--text)', marginBottom: '8px', letterSpacing: '-0.01em',
+              fontFamily: 'var(--font-display)', fontSize: 'var(--fs-2xl)', fontWeight: 'var(--display-weight)',
+              color: 'var(--text)', marginBottom: '8px', letterSpacing: 'var(--display-tracking)',
             }}>
               Signing you out…
             </h2>
-            <p style={{ fontSize: '12px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
+            <p style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
               Revoking session and clearing credentials
             </p>
           </>
@@ -160,12 +151,12 @@ export default function LogoutPage() {
               </svg>
             </div>
             <h2 style={{
-              fontFamily: 'var(--font-display)', fontSize: '22px', fontWeight: 400,
-              color: 'var(--text)', marginBottom: '8px', letterSpacing: '-0.01em',
+              fontFamily: 'var(--font-display)', fontSize: 'var(--fs-2xl)', fontWeight: 'var(--display-weight)',
+              color: 'var(--text)', marginBottom: '8px', letterSpacing: 'var(--display-tracking)',
             }}>
               Signed out
             </h2>
-            <p style={{ fontSize: '12px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
+            <p style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
               Redirecting to sign-in…
             </p>
 
@@ -178,9 +169,9 @@ export default function LogoutPage() {
                 router.push(redirectTarget)
               }}
               style={{
-                marginTop: '24px', padding: '9px 22px',
+                marginTop: '24px', padding: '8px 24px',
                 background: 'var(--bg-surface)', border: '1px solid var(--border)',
-                borderRadius: '8px', color: 'var(--text-subtle)', fontSize: '12px',
+                borderRadius: '8px', color: 'var(--text-subtle)', fontSize: 'var(--fs-sm)',
                 fontFamily: 'var(--font-body)', cursor: 'pointer',
                 transition: 'border-color 0.15s, color 0.15s',
               }}
@@ -206,20 +197,20 @@ export default function LogoutPage() {
               </svg>
             </div>
             <h2 style={{
-              fontFamily: 'var(--font-display)', fontSize: '22px', fontWeight: 400,
-              color: 'var(--text)', marginBottom: '8px', letterSpacing: '-0.01em',
+              fontFamily: 'var(--font-display)', fontSize: 'var(--fs-2xl)', fontWeight: 'var(--display-weight)',
+              color: 'var(--text)', marginBottom: '8px', letterSpacing: 'var(--display-tracking)',
             }}>
               Sign-out needs attention
             </h2>
-            <p style={{ fontSize: '12px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.04em', maxWidth: '320px' }}>
+            <p style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.04em', maxWidth: '320px' }}>
               {error}
             </p>
             <button
               onClick={() => window.location.reload()}
               style={{
-                marginTop: '24px', padding: '9px 22px',
+                marginTop: '24px', padding: '8px 24px',
                 background: 'var(--bg-surface)', border: '1px solid var(--border)',
-                borderRadius: '8px', color: 'var(--text-subtle)', fontSize: '12px',
+                borderRadius: '8px', color: 'var(--text-subtle)', fontSize: 'var(--fs-sm)',
                 fontFamily: 'var(--font-body)', cursor: 'pointer',
               }}
             >

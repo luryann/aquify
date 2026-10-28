@@ -3,12 +3,12 @@ package billing
 import "encoding/json"
 
 type runtimeSnapshot struct {
-	Invoices      map[string]*Invoice             `json:"invoices"`
-	Items         map[string][]*InvoiceItem       `json:"items"`
-	Payments      map[string][]*Payment           `json:"payments"`
-	Refunds       map[string][]*Refund            `json:"refunds"`
-	Ledger        []*LedgerEvent                  `json:"ledger"`
-	WebhookEvents map[string]*WebhookEventRecord  `json:"webhook_events"`
+	Invoices        map[string]*Invoice                 `json:"invoices"`
+	Items           map[string][]*InvoiceItem           `json:"items"`
+	Payments        map[string][]*Payment               `json:"payments"`
+	Refunds         map[string][]*Refund                `json:"refunds"`
+	Ledger          []*LedgerEvent                      `json:"ledger"`
+	WebhookEvents   map[string]*WebhookEventRecord      `json:"webhook_events"`
 	AutopayProfiles map[string]*HouseholdAutopayProfile `json:"autopay_profiles"`
 }
 
@@ -17,12 +17,12 @@ func (s *Service) ExportRuntimeSnapshot() ([]byte, error) {
 	defer s.mu.RUnlock()
 
 	snapshot := runtimeSnapshot{
-		Invoices:      cloneInvoices(s.invoices),
-		Items:         cloneInvoiceItemLists(s.items),
-		Payments:      clonePaymentLists(s.payments),
-		Refunds:       cloneRefundLists(s.refunds),
-		Ledger:        cloneLedgerEvents(s.ledger),
-		WebhookEvents: cloneWebhookEvents(s.webhookEvents),
+		Invoices:        cloneInvoices(s.invoices),
+		Items:           cloneInvoiceItemLists(s.items),
+		Payments:        clonePaymentLists(s.payments),
+		Refunds:         cloneRefundLists(s.refunds),
+		Ledger:          cloneLedgerEvents(s.ledger),
+		WebhookEvents:   cloneWebhookEvents(s.webhookEvents),
 		AutopayProfiles: cloneAutopayProfiles(s.autopayProfiles),
 	}
 	return json.Marshal(snapshot)

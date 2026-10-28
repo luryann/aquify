@@ -3,9 +3,9 @@
 import { useState, useEffect } from 'react'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
-import { ApiError, useApiClient } from '@/lib/api'
+import { useApiClient } from '@/lib/api'
 import { shouldShowCollectionEmptyState } from '@/lib/collection-load-state'
-import { reportUIError } from '@/lib/frontend-telemetry'
+import { reportUIError, uiErrorMessage } from '@/lib/frontend-telemetry'
 import { UnlinkedSwimmerNotice } from '@/components/swimmer/UnlinkedSwimmerNotice'
 import {
   fetchSwimmers,
@@ -58,17 +58,15 @@ function ReadOnlyField({ label, value }: { label: string; value: string }) {
     <div>
       <p
         style={{
-          fontSize: '10.5px',
+          fontSize: 'var(--fs-sm)',
           fontFamily: 'var(--font-body)',
           color: C.muted,
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
           marginBottom: '4px',
         }}
       >
         {label}
       </p>
-      <p style={{ fontSize: '14px', color: C.text, fontWeight: 500, lineHeight: 1.4 }}>
+      <p style={{ fontSize: 'var(--fs-md)', color: C.text, fontWeight: 500, lineHeight: 1.4 }}>
         {value}
       </p>
     </div>
@@ -79,22 +77,13 @@ function FieldGroup({ label, children }: { label: string; children: React.ReactN
   return (
     <div className="card"
       style={{
-        padding: '22px',
+        padding: '24px',
         display: 'flex',
         flexDirection: 'column',
-        gap: '18px',
+        gap: '20px',
       }}
     >
-      <h3
-        style={{
-          fontFamily: 'var(--font-display)',
-          fontSize: '17px',
-          color: C.text,
-          letterSpacing: '-0.01em',
-          paddingBottom: '14px',
-          borderBottom: `1px solid ${C.border}`,
-          margin: '-4px 0 0',
-        }}
+      <h3 className="section-title" style={{ paddingBottom: '16px', borderBottom: `1px solid ${C.border}`, margin: '-4px 0 0' }}
       >
         {label}
       </h3>
@@ -187,7 +176,7 @@ export default function SwimmerProfilePage() {
       setBio(updated.notes ?? '')
       setBioSaved(true)
     } catch (error) {
-      setBioError(error instanceof ApiError ? error.message : 'Failed to save bio.')
+      setBioError(uiErrorMessage(error, 'Couldn’t save bio. Try again.'))
     } finally {
       setBioSaving(false)
     }
@@ -215,7 +204,7 @@ export default function SwimmerProfilePage() {
           display: 'flex',
           alignItems: 'flex-start',
           gap: '20px',
-          marginBottom: '36px',
+          marginBottom: '40px',
           animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both',
         }}
       >
@@ -230,7 +219,7 @@ export default function SwimmerProfilePage() {
             alignItems: 'center',
             justifyContent: 'center',
             color: 'var(--bg)',
-            fontSize: '24px',
+            fontSize: 'var(--fs-2xl)',
             fontWeight: 700,
             fontFamily: 'var(--font-body)',
             boxShadow: '0 0 32px rgba(0,212,170,0.28)',
@@ -242,37 +231,29 @@ export default function SwimmerProfilePage() {
 
         <div style={{ flex: 1 }}>
           {loading ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '4px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '4px' }}>
               <SkeletonLine width="200px" height="28px" />
               <SkeletonLine width="140px" height="14px" />
             </div>
           ) : (
             <>
-              <h1
-                style={{
-                  fontFamily: 'var(--font-display)',
-                  fontSize: 'clamp(24px, 4vw, 32px)',
-                  color: C.text,
-                  letterSpacing: '-0.02em',
-                  lineHeight: 1.1,
-                  marginBottom: '4px',
-                }}
+              <h1 className="page-title"
               >
                 {displayName}
               </h1>
-              <p style={{ fontSize: '13px', color: C.subtle, marginBottom: '10px' }}>
+              <p style={{ fontSize: 'var(--fs-base)', color: C.subtle, marginBottom: '12px' }}>
                 {group ? group.name : 'No group assigned'}
                 {swimmer?.swimmer_external_id ? ` · USS# ${swimmer.swimmer_external_id}` : ''}
               </p>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 <span
                   style={{
-                    fontSize: '11px',
+                    fontSize: 'var(--fs-xs)',
                     fontFamily: 'var(--font-body)',
                     color: 'var(--accent)',
                     background: 'var(--accent-subtle)',
                     border: '1px solid rgba(0,212,170,0.25)',
-                    padding: '3px 10px',
+                    padding: '4px 12px',
                     borderRadius: '999px',
                     fontWeight: 600,
                     textTransform: 'capitalize',
@@ -291,17 +272,17 @@ export default function SwimmerProfilePage() {
         style={{
           background: 'var(--border)',
           border: `1px solid ${C.accentBorder}`,
-          borderRadius: '10px',
+          borderRadius: '12px',
           padding: '12px 16px',
           display: 'flex',
-          gap: '10px',
+          gap: '12px',
           alignItems: 'flex-start',
           marginBottom: '24px',
           animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) 0.05s both',
         }}
       >
         <Icon name="info" size={15} style={{ color: C.accent, marginTop: '1px', flexShrink: 0 }} />
-        <p style={{ fontSize: '12.5px', color: C.subtle, lineHeight: 1.5 }}>
+        <p style={{ fontSize: 'var(--fs-sm)', color: C.subtle, lineHeight: 1.5 }}>
           Most profile fields are managed by the club or your parent account. You can update your bio below. To change other information, please ask a parent to update it via the parent portal.
         </p>
       </div>
@@ -311,7 +292,7 @@ export default function SwimmerProfilePage() {
           style={{
             background: 'var(--warning-bg)',
             border: '1px solid rgba(245,158,11,0.25)',
-            borderRadius: '10px',
+            borderRadius: '12px',
             padding: '12px 16px',
             display: 'flex',
             justifyContent: 'space-between',
@@ -320,20 +301,20 @@ export default function SwimmerProfilePage() {
             marginBottom: '24px',
           }}
         >
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
             <Icon name="alert-circle" size={15} style={{ color: 'var(--warning)', marginTop: '1px', flexShrink: 0 }} />
-            <p style={{ margin: 0, fontSize: '12.5px', color: C.text, lineHeight: 1.5 }}>{loadError}</p>
+            <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: C.text, lineHeight: 1.5 }}>{loadError}</p>
           </div>
           <button
             type="button"
             onClick={() => setReloadKey((key) => key + 1)}
             style={{
-              padding: '8px 14px',
+              padding: '8px 16px',
               borderRadius: '8px',
               border: '1px solid rgba(245,158,11,0.25)',
               background: 'transparent',
               color: C.text,
-              fontSize: '12px',
+              fontSize: 'var(--fs-sm)',
               fontWeight: 600,
               cursor: 'pointer',
               whiteSpace: 'nowrap',
@@ -347,9 +328,8 @@ export default function SwimmerProfilePage() {
       {!loading && !loadError && noLinkedSwimmer && <UnlinkedSwimmerNotice />}
 
       <div
+        className="split-aside"
         style={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(0,1fr) 300px',
           gap: '20px',
           alignItems: 'start',
         }}
@@ -359,17 +339,17 @@ export default function SwimmerProfilePage() {
           {/* Club info */}
           <div style={{ animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) 0.08s both' }}>
             {loading ? (
-              <div className="card" style={{ padding: '22px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div className="card" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <SkeletonLine width="120px" height="18px" />
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px' }}>
+                <div className="cols-2" style={{ gap: '20px' }}>
                   {[1,2,3,4].map(i => <SkeletonLine key={i} height="40px" />)}
                 </div>
               </div>
             ) : (
-              <FieldGroup label="Club Information">
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px' }}>
+              <FieldGroup label="Club information">
+                <div className="cols-2" style={{ gap: '20px' }}>
                   <ReadOnlyField label="Group" value={group?.name ?? '—'} />
-                  <ReadOnlyField label="Group Code" value={group?.code ?? '—'} />
+                  <ReadOnlyField label="Group code" value={group?.code ?? '—'} />
                   <ReadOnlyField label="Registration" value={swimmer?.registration_status ?? '—'} />
                   <ReadOnlyField label="External ID" value={swimmer?.swimmer_external_id ?? '—'} />
                 </div>
@@ -380,22 +360,22 @@ export default function SwimmerProfilePage() {
           {/* Personal info */}
           <div style={{ animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) 0.12s both' }}>
             {loading ? (
-              <div className="card" style={{ padding: '22px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div className="card" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <SkeletonLine width="160px" height="18px" />
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px' }}>
+                <div className="cols-2" style={{ gap: '20px' }}>
                   {[1,2,3,4,5,6].map(i => <SkeletonLine key={i} height="40px" />)}
                 </div>
               </div>
             ) : swimmer ? (
-              <FieldGroup label="Personal Information">
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px' }}>
-                  <ReadOnlyField label="First Name" value={swimmer.first_name} />
-                  <ReadOnlyField label="Last Name" value={swimmer.last_name} />
+              <FieldGroup label="Personal information">
+                <div className="cols-2" style={{ gap: '20px' }}>
+                  <ReadOnlyField label="First name" value={swimmer.first_name} />
+                  <ReadOnlyField label="Last name" value={swimmer.last_name} />
                   {swimmer.preferred_name && (
-                    <ReadOnlyField label="Preferred Name" value={swimmer.preferred_name} />
+                    <ReadOnlyField label="Preferred name" value={swimmer.preferred_name} />
                   )}
                   <ReadOnlyField
-                    label="Date of Birth"
+                    label="Date of birth"
                     value={swimmer.date_of_birth ? fmtDob(swimmer.date_of_birth) : '—'}
                   />
                   <ReadOnlyField
@@ -411,7 +391,7 @@ export default function SwimmerProfilePage() {
                 </div>
                 {swimmer.medical_flags && (
                   <div>
-                    <ReadOnlyField label="Medical Notes" value={swimmer.medical_flags?.join('; ') ?? ''} />
+                    <ReadOnlyField label="Medical notes" value={swimmer.medical_flags?.join('; ') ?? ''} />
                   </div>
                 )}
                 {swimmer.allergies && (
@@ -420,9 +400,9 @@ export default function SwimmerProfilePage() {
                   </div>
                 )}
                 {(swimmer.emergency_contact_name || swimmer.emergency_contact_phone) && (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px' }}>
-                    <ReadOnlyField label="Emergency Contact" value={swimmer.emergency_contact_name || '—'} />
-                    <ReadOnlyField label="Emergency Phone" value={swimmer.emergency_contact_phone || '—'} />
+                  <div className="cols-2" style={{ gap: '20px' }}>
+                    <ReadOnlyField label="Emergency contact" value={swimmer.emergency_contact_name || '—'} />
+                    <ReadOnlyField label="Emergency phone" value={swimmer.emergency_contact_phone || '—'} />
                     {swimmer.emergency_contact_relationship && (
                       <ReadOnlyField label="Relationship" value={swimmer.emergency_contact_relationship} />
                     )}
@@ -432,12 +412,12 @@ export default function SwimmerProfilePage() {
             ) : shouldShowCollectionEmptyState(loading, loadError, swimmer ? 1 : 0) ? (
               noLinkedSwimmer ? null : (
                 <div className="card" style={{ padding: '24px', textAlign: 'center' }}>
-                  <p style={{ fontSize: '14px', color: C.muted }}>No swimmer profile found for your account.</p>
+                  <p style={{ fontSize: 'var(--fs-md)', color: C.muted }}>No swimmer profile found for your account.</p>
                 </div>
               )
             ) : (
               <div className="card" style={{ padding: '24px', textAlign: 'center' }}>
-                <p style={{ fontSize: '14px', color: C.muted }}>Profile details are unavailable until the latest data loads successfully.</p>
+                <p style={{ fontSize: 'var(--fs-md)', color: C.muted }}>Profile details are unavailable until the latest data loads successfully.</p>
               </div>
             )}
           </div>
@@ -446,16 +426,16 @@ export default function SwimmerProfilePage() {
           <div style={{ animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) 0.16s both' }}>
             <div className="card"
               style={{
-                padding: '22px',
+                padding: '24px',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', paddingBottom: '14px', borderBottom: `1px solid ${C.border}` }}>
-                <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '17px', color: C.text, letterSpacing: '-0.01em' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', paddingBottom: '16px', borderBottom: `1px solid ${C.border}` }}>
+                <h3 className="section-title">
                   My Bio
                 </h3>
                 <span
                   style={{
-                    fontSize: '10px',
+                    fontSize: 'var(--fs-2xs)',
                     fontFamily: 'var(--font-body)',
                     color: C.accent,
                     background: C.accentDim,
@@ -468,7 +448,7 @@ export default function SwimmerProfilePage() {
                 </span>
               </div>
 
-              <p style={{ fontSize: '12.5px', color: C.muted, marginBottom: '12px', lineHeight: 1.5 }}>
+              <p style={{ fontSize: 'var(--fs-sm)', color: C.muted, marginBottom: '12px', lineHeight: 1.5 }}>
                 Share a little about yourself — this appears on your team profile.
               </p>
 
@@ -487,8 +467,8 @@ export default function SwimmerProfilePage() {
                   background: C.inputBg,
                   border: `1px solid ${C.inputBorder}`,
                   borderRadius: '8px',
-                  padding: '12px 14px',
-                  fontSize: '13.5px',
+                  padding: '12px 16px',
+                  fontSize: 'var(--fs-base)',
                   color: C.text,
                   fontFamily: 'var(--font-body)',
                   lineHeight: 1.6,
@@ -502,18 +482,18 @@ export default function SwimmerProfilePage() {
               />
 
               {bioError && (
-                <div style={{ marginTop: '10px', fontSize: '12px', color: 'var(--error)', lineHeight: 1.5 }}>
+                <div style={{ marginTop: '12px', fontSize: 'var(--fs-sm)', color: 'var(--error)', lineHeight: 1.5 }}>
                   {bioError}
                 </div>
               )}
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '12px' }}>
-                <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: C.muted }}>
+                <span style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', color: C.muted }}>
                   {bio.length}/{SWIMMER_BIO_MAX_LENGTH}
                 </span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   {bioSaved && (
-                    <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: C.accent }}>
+                    <span style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', color: C.accent }}>
                       Saved
                     </span>
                   )}
@@ -526,7 +506,7 @@ export default function SwimmerProfilePage() {
                       color: bioSaving ? C.muted : C.accent,
                       border: `1px solid ${bioSaving ? 'var(--accent-subtle)' : C.accentBorder}`,
                       borderRadius: '8px',
-                      fontSize: '13px',
+                      fontSize: 'var(--fs-base)',
                       fontWeight: 700,
                       cursor: loading || !swimmer || bioSaving ? 'not-allowed' : 'pointer',
                       opacity: loading || !swimmer ? 0.65 : 1,
@@ -548,41 +528,33 @@ export default function SwimmerProfilePage() {
           {/* Group card */}
           <div className="card"
             style={{
-              padding: '18px',
+              padding: '20px',
               animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) 0.10s both',
             }}
           >
-            <h3
-              style={{
-                fontFamily: 'var(--font-display)',
-                fontSize: '16px',
-                color: C.text,
-                marginBottom: '14px',
-                paddingBottom: '12px',
-                borderBottom: `1px solid ${C.border}`,
-              }}
+            <h3 className="section-title" style={{ marginBottom: '16px', paddingBottom: '12px', borderBottom: `1px solid ${C.border}` }}
             >
               My Group
             </h3>
             {loading ? (
               <SkeletonLine />
             ) : group ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', background: C.accentDim, border: `1px solid ${C.accentBorder}`, borderRadius: '8px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 12px', background: C.accentDim, border: `1px solid ${C.accentBorder}`, borderRadius: '8px' }}>
                   <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: C.accent, flexShrink: 0 }} />
                   <div>
-                    <p style={{ fontSize: '14px', fontWeight: 600, color: C.text }}>{group.name}</p>
-                    <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: C.muted }}>{group.code}</p>
+                    <p style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: C.text }}>{group.name}</p>
+                    <p style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', color: C.muted }}>{group.code}</p>
                   </div>
                 </div>
                 {(group.min_age != null || group.max_age != null) && (
-                  <p style={{ fontSize: '11.5px', color: C.muted }}>
+                  <p style={{ fontSize: 'var(--fs-xs)', color: C.muted }}>
                     Age range: {group.min_age ?? '—'} – {group.max_age ?? '—'}
                   </p>
                 )}
               </div>
             ) : (
-              <p style={{ fontSize: '13px', color: C.muted }}>No group assigned yet.</p>
+              <p style={{ fontSize: 'var(--fs-base)', color: C.muted }}>No group assigned yet.</p>
             )}
           </div>
 
@@ -591,22 +563,22 @@ export default function SwimmerProfilePage() {
             style={{
               background: 'rgba(0,0,0,0.20)',
               border: `1px solid ${C.border}`,
-              borderRadius: '14px',
-              padding: '18px',
+              borderRadius: '12px',
+              padding: '20px',
               animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) 0.14s both',
             }}
           >
-            <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '16px', color: C.text, marginBottom: '10px' }}>
+            <h3 className="section-title" style={{ marginBottom: '12px' }}>
               Saved Bio
             </h3>
             {loading ? (
               <SkeletonLine />
             ) : swimmer?.notes ? (
-              <p style={{ fontSize: '13px', color: C.subtle, lineHeight: 1.6 }}>{swimmer.notes}</p>
+              <p style={{ fontSize: 'var(--fs-base)', color: C.subtle, lineHeight: 1.6 }}>{swimmer.notes}</p>
             ) : (
-              <p style={{ fontSize: '13px', color: C.muted, lineHeight: 1.5 }}>No bio saved yet.</p>
+              <p style={{ fontSize: 'var(--fs-base)', color: C.muted, lineHeight: 1.5 }}>No bio saved yet.</p>
             )}
-            <p style={{ fontSize: '11.5px', color: C.muted, marginTop: '10px', lineHeight: 1.5 }}>
+            <p style={{ fontSize: 'var(--fs-xs)', color: C.muted, marginTop: '12px', lineHeight: 1.5 }}>
               This panel reflects the currently saved bio text from your swimmer profile record.
             </p>
           </div>

@@ -195,6 +195,15 @@ type Service struct {
 	households      map[string]householdRef
 	parentHousehold map[string]map[string]struct{}
 	auditEvents     []GroupAuditEvent
+	// onRegistrationActivated runs (outside the lock) when a registration
+	// becomes active, so the swimmer joins the group's roster.
+	onRegistrationActivated func(reg Registration, groupCode, actorUserID string)
+}
+
+// SetRegistrationActivatedHook registers a callback fired after a registration
+// transitions to "active". Wire it once at startup.
+func (s *Service) SetRegistrationActivatedHook(fn func(reg Registration, groupCode, actorUserID string)) {
+	s.onRegistrationActivated = fn
 }
 
 // NewService returns a new in-memory groups service.
@@ -787,6 +796,19 @@ func (s *Service) CreateRegistration(principal *appmiddleware.Principal, orgID s
 
 // TransitionRegistrationStatus moves a registration through its status state machine.
 func (s *Service) TransitionRegistrationStatus(principal *appmiddleware.Principal, orgID, registrationID, toStatus string) (Registration, GroupAuditEvent, error) {
+	reg, event, err := s.transitionRegistrationStatus(principal, orgID, registrationID, toStatus)
+	if err == nil && reg.Status == "active" && s.onRegistrationActivated != nil {
+		s.mu.RLock()
+		groupCode := s.groups[reg.GroupID].Code
+		s.mu.RUnlock()
+		if groupCode != "" {
+			s.onRegistrationActivated(reg, groupCode, principal.UserID)
+		}
+	}
+	return reg, event, err
+}
+
+func (s *Service) transitionRegistrationStatus(principal *appmiddleware.Principal, orgID, registrationID, toStatus string) (Registration, GroupAuditEvent, error) {
 	if !hasAnyRole(principal, "admin", "coach", "parent") {
 		return Registration{}, GroupAuditEvent{}, ErrForbidden
 	}

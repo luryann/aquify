@@ -33,7 +33,7 @@ function LoadingSplash() {
       }}
     >
       {/* Brand mark */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
         <div
           style={{
             width: '9px',
@@ -46,11 +46,11 @@ function LoadingSplash() {
         />
         <span
           style={{
-            fontFamily: 'var(--font-display)',
+            fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)',
             fontStyle: 'italic',
-            fontSize: '22px',
+            fontSize: 'var(--fs-2xl)',
             color: 'var(--text)',
-            letterSpacing: '-0.01em',
+            letterSpacing: 'var(--display-tracking)',
             userSelect: 'none',
           }}
         >
@@ -62,7 +62,7 @@ function LoadingSplash() {
 
       <p
         style={{
-          fontSize: '12px',
+          fontSize: 'var(--fs-sm)',
           fontFamily: 'var(--font-body)',
           color: 'var(--text-muted)',
           letterSpacing: '0.04em',
@@ -127,18 +127,18 @@ function UnauthorizedScreen({ reason }: { reason: 'unauthenticated' | 'forbidden
 
       <p
         style={{
-          fontFamily: 'var(--font-display)',
-          fontSize: '20px',
+          fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)',
+          fontSize: 'var(--fs-xl)',
           color: 'var(--text)',
         }}
       >
         {reason === 'forbidden' ? 'Access Denied' : 'Sign In Required'}
       </p>
 
-      <p style={{ fontSize: '13px', color: 'var(--text-subtle)', maxWidth: '320px', lineHeight: 1.6 }}>
+      <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', maxWidth: '320px', lineHeight: 1.6 }}>
         {reason === 'forbidden'
           ? "You don't have permission to access this area. Contact your administrator."
-          : 'Please sign in to continue.'}
+          : 'Sign in to continue.'}
       </p>
 
       <button

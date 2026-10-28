@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
+import { GoalsPanel } from '@/components/performance/GoalsPanel'
 import { useApiClient } from '@/lib/api'
 import { reportUIError } from '@/lib/frontend-telemetry'
 import { UnlinkedSwimmerNotice } from '@/components/swimmer/UnlinkedSwimmerNotice'
@@ -172,19 +173,19 @@ function CourseCell({ entry }: { entry?: PivotEntry }) {
   if (!entry) {
     return (
       <div style={{ textAlign: 'center' }}>
-        <span style={{ fontSize: '13px', color: C.muted, fontFamily: 'var(--font-body)' }}>—</span>
+        <span style={{ fontSize: 'var(--fs-base)', color: C.muted, fontFamily: 'var(--font-body)' }}>—</span>
       </div>
     )
   }
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '2px' }}>
-        <span style={{ fontSize: '15px', fontFamily: 'var(--font-body)', fontWeight: 700, color: C.accent }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
+        <span style={{ fontSize: 'var(--fs-md)', fontFamily: 'var(--font-body)', fontWeight: 700, color: C.accent }}>
           {entry.time}
         </span>
       </div>
       {entry.date && (
-        <p style={{ fontSize: '10.5px', color: C.muted }}>{entry.date}</p>
+        <p style={{ fontSize: 'var(--fs-2xs)', color: C.muted }}>{entry.date}</p>
       )}
     </div>
   )
@@ -295,7 +296,7 @@ export default function PerformancePage() {
           setCutError(reportUIError(
             'swimmer.performance.cuts.load',
             error,
-            'Failed to load cut qualifications.',
+            'Couldn’t load cut qualifications. Try again.',
             { orgId, householdId, swimmerId: mySwimmer.id },
           ))
         }
@@ -304,10 +305,10 @@ export default function PerformancePage() {
         reportUIError(
           'swimmer.performance.load',
           error,
-          'Unable to load swimmer performance right now. Please try again.',
+          'Couldn’t load swimmer performance. Try again.',
           { orgId, householdId },
         )
-        setLoadError('Unable to load swimmer performance right now. Please try again.')
+        setLoadError('Couldn’t load swimmer performance. Try again.')
       } finally {
         if (!cancelled) {
           setLoading(false)
@@ -366,12 +367,9 @@ export default function PerformancePage() {
           @keyframes slideUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
         `}</style>
         <div style={{ marginBottom: '32px', animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both' }}>
-          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(26px, 4vw, 34px)', color: C.text, letterSpacing: '-0.02em', lineHeight: 1.1, marginBottom: '6px' }}>
+          <h1 className="page-title">
             Performance
           </h1>
-          <p style={{ fontSize: '14px', color: C.subtle }}>
-            Your best times, and whether you&apos;ve hit any qualifying times (&quot;cuts&quot;) set by meets or leagues.
-          </p>
         </div>
         <UnlinkedSwimmerNotice />
       </div>
@@ -386,26 +384,20 @@ export default function PerformancePage() {
           @keyframes slideUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
         `}</style>
         <div style={{ marginBottom: '32px', animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both' }}>
-          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(26px, 4vw, 34px)', color: C.text, letterSpacing: '-0.02em', lineHeight: 1.1, marginBottom: '6px' }}>
+          <h1 className="page-title">
             Performance
           </h1>
-          <p style={{ fontSize: '14px', color: C.subtle }}>
-            Your best times, and whether you&apos;ve hit any qualifying times (&quot;cuts&quot;) set by meets or leagues.
-          </p>
         </div>
-        <div className="card" style={{ padding: '24px 22px' }}>
-          <div style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--error)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
-            Swimmer Performance
-          </div>
-          <p style={{ fontSize: '18px', color: C.text, fontWeight: 600, marginBottom: '8px' }}>
+        <div className="card" style={{ padding: '24px 24px' }}>
+          <p style={{ fontSize: 'var(--fs-xl)', color: C.text, fontWeight: 600, marginBottom: '8px' }}>
             Performance data is unavailable right now.
           </p>
-          <p style={{ fontSize: '13px', color: C.subtle, lineHeight: 1.6, marginBottom: '16px' }}>
+          <p style={{ fontSize: 'var(--fs-base)', color: C.subtle, lineHeight: 1.6, marginBottom: '16px' }}>
             {loadError}
           </p>
           <button
             onClick={() => setRetryKey((current) => current + 1)}
-            style={{ padding: '10px 16px', borderRadius: '9px', border: 'none', background: 'var(--error)', color: '#fff', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+            style={{ padding: '12px 16px', borderRadius: '8px', border: 'none', background: 'var(--error)', color: '#fff', fontSize: 'var(--fs-base)', fontWeight: 600, cursor: 'pointer' }}
           >
             Retry
           </button>
@@ -423,51 +415,45 @@ export default function PerformancePage() {
 
       {/* Page header */}
       <div style={{ marginBottom: '32px', animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both' }}>
-        <h1
-          style={{
-            fontFamily: 'var(--font-display)',
-            fontSize: 'clamp(26px, 4vw, 34px)',
-            color: C.text,
-            letterSpacing: '-0.02em',
-            lineHeight: 1.1,
-            marginBottom: '6px',
-          }}
+        <h1 className="page-title"
         >
           Performance
         </h1>
-        <p style={{ fontSize: '14px', color: C.subtle }}>
-          Best times, cut qualifications, and progression history.
-        </p>
       </div>
 
       {/* Tabs */}
       <div
+        className="tab-strip"
         style={{
           display: 'flex',
           gap: '4px',
           background: 'rgba(0,0,0,0.30)',
-          borderRadius: '10px',
+          borderRadius: '12px',
           padding: '4px',
-          marginBottom: '28px',
+          marginBottom: '24px',
           width: 'fit-content',
+          maxWidth: '100%',
+          overflowX: 'auto',
           animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) 0.05s both',
         }}
       >
         {[
-          { key: 'times',       label: 'Best Times' },
-          { key: 'cuts',        label: 'Cut Qualification' },
+          { key: 'times',       label: 'Best times' },
+          { key: 'cuts',        label: 'Cut qualification' },
           { key: 'progression', label: 'Progression' },
         ].map(({ key, label }) => (
           <button
             key={key}
             onClick={() => setTab(key as typeof tab)}
             style={{
-              padding: '7px 16px',
-              borderRadius: '7px',
+              padding: '8px 16px',
+              borderRadius: '8px',
               border: 'none',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
               background: tab === key ? C.accentDim : 'transparent',
               color: tab === key ? C.accent : C.subtle,
-              fontSize: '13.5px',
+              fontSize: 'var(--fs-base)',
               fontWeight: tab === key ? 600 : 400,
               cursor: 'pointer',
               boxShadow: tab === key ? `0 0 0 1px ${C.accentBorder}` : 'none',
@@ -494,7 +480,7 @@ export default function PerformancePage() {
                   border: `1px solid ${courseFilter === course ? C.accentBorder : C.border}`,
                   background: courseFilter === course ? C.accentDim : 'transparent',
                   color: courseFilter === course ? C.accent : C.subtle,
-                  fontSize: '12.5px',
+                  fontSize: 'var(--fs-sm)',
                   fontWeight: 600,
                   fontFamily: 'var(--font-body)',
                   cursor: 'pointer',
@@ -512,7 +498,7 @@ export default function PerformancePage() {
             {/* Header */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', padding: '12px 20px', borderBottom: `1px solid ${C.border}` }}>
               {['Event', 'SCY', 'SCM', 'LCM'].map((h) => (
-                <span key={h} style={{ fontSize: '10.5px', fontFamily: 'var(--font-body)', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                <span key={h} style={{ fontSize: 'var(--fs-2xs)', fontFamily: 'var(--font-body)', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                   {h}
                 </span>
               ))}
@@ -525,7 +511,7 @@ export default function PerformancePage() {
               </div>
             ) : pivotedRows.length === 0 ? (
               <div style={{ padding: '40px 20px', textAlign: 'center' }}>
-                <p style={{ fontSize: '14px', color: C.muted }}>No best times recorded yet.</p>
+                <p style={{ fontSize: 'var(--fs-md)', color: C.muted }}>No best times recorded yet.</p>
               </div>
             ) : (
               pivotedRows.map((bt, i) => (
@@ -534,7 +520,7 @@ export default function PerformancePage() {
                   style={{
                     display: 'grid',
                     gridTemplateColumns: '1fr 1fr 1fr 1fr',
-                    padding: '14px 20px',
+                    padding: '16px 20px',
                     borderBottom: i < pivotedRows.length - 1 ? `1px solid ${C.border}` : 'none',
                     alignItems: 'center',
                     transition: 'background 100ms ease',
@@ -544,7 +530,7 @@ export default function PerformancePage() {
                   onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--border)')}
                   onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                 >
-                  <span style={{ fontSize: '14px', fontWeight: 600, color: C.text }}>{bt.event}</span>
+                  <span style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: C.text }}>{bt.event}</span>
                   <CourseCell entry={bt.scy} />
                   <CourseCell entry={bt.scm} />
                   <CourseCell entry={bt.lcm} />
@@ -554,13 +540,13 @@ export default function PerformancePage() {
           </div>
 
           {/* Standard legend */}
-          <div style={{ display: 'flex', gap: '16px', marginTop: '14px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: '16px', marginTop: '16px', flexWrap: 'wrap' }}>
             {Object.entries(STANDARD_COLOR).map(([std, color]) => (
-              <div key={std} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                <span style={{ fontSize: '10px', fontFamily: 'var(--font-body)', fontWeight: 700, color, background: `${color}18`, padding: '2px 7px', borderRadius: '4px' }}>
+              <div key={std} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ fontSize: 'var(--fs-2xs)', fontFamily: 'var(--font-body)', fontWeight: 700, color, background: `${color}18`, padding: '2px 8px', borderRadius: '4px' }}>
                   {std}
                 </span>
-                <span style={{ fontSize: '11px', color: C.muted }}>
+                <span style={{ fontSize: 'var(--fs-xs)', color: C.muted }}>
                   {std === 'AAA' ? 'National Qualifying' : std === 'AA' ? 'Junior National' : std === 'A' ? 'Regional' : std === 'BB' ? 'Sectional' : 'Divisional'}
                 </span>
               </div>
@@ -575,8 +561,8 @@ export default function PerformancePage() {
           {(cutsView.state === 'loading' || cutsView.state === 'error' || cutsView.state === 'empty') && (
             <div className="card" style={{ padding: '32px 20px', textAlign: 'center' }}>
               <Icon name={cutsView.state === 'error' ? 'alert-circle' : 'zap'} size={28} style={{ color: cutsView.state === 'error' ? 'var(--warning)' : C.muted, marginBottom: '12px' }} />
-              <p style={{ fontSize: '15px', color: C.subtle, fontWeight: 500, marginBottom: '6px' }}>{cutsView.title}</p>
-              <p style={{ fontSize: '13px', color: C.muted, lineHeight: 1.5 }}>
+              <p style={{ fontSize: 'var(--fs-md)', color: C.subtle, fontWeight: 500, marginBottom: '6px' }}>{cutsView.title}</p>
+              <p style={{ fontSize: 'var(--fs-base)', color: C.muted, lineHeight: 1.5 }}>
                 {cutsView.message}
               </p>
             </div>
@@ -584,22 +570,22 @@ export default function PerformancePage() {
 
           {cutsView.state === 'ready' && (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '12px', marginBottom: '20px' }}>
+              <div className="cols-3" style={{ gap: '12px', marginBottom: '20px' }}>
                 {[
                   { label: 'Qualified', value: String(cutsView.qualifiedCount), accent: C.accent },
-                  { label: 'Active Standards', value: String(cutsView.totalCount), accent: C.text },
-                  { label: 'Still Chasing', value: String(cutsView.totalCount - cutsView.qualifiedCount), accent: 'var(--warning)' },
+                  { label: 'Active standards', value: String(cutsView.totalCount), accent: C.text },
+                  { label: 'Still chasing', value: String(cutsView.totalCount - cutsView.qualifiedCount), accent: 'var(--warning)' },
                 ].map((stat) => (
-                  <div key={stat.label} className="card" style={{ padding: '14px 16px' }}>
-                    <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', color: C.muted, fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
-                    <div style={{ fontSize: '20px', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.accent }}>{stat.value}</div>
+                  <div key={stat.label} className="card" style={{ padding: '16px 16px' }}>
+                    <div style={{ fontSize: 'var(--fs-sm)', color: C.muted, fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
+                    <div style={{ fontSize: 'var(--fs-xl)', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.accent }}>{stat.value}</div>
                   </div>
                 ))}
               </div>
 
-              <div style={{ marginBottom: '16px', background: 'rgba(0,212,170,0.05)', border: `1px solid ${C.border}`, borderRadius: '12px', padding: '14px 16px' }}>
-                <p style={{ fontSize: '14px', color: C.subtle, fontWeight: 600, marginBottom: '4px' }}>{cutsView.title}</p>
-                <p style={{ fontSize: '12px', color: C.muted, lineHeight: 1.5 }}>{cutsView.message}</p>
+              <div style={{ marginBottom: '16px', background: 'rgba(0,212,170,0.05)', border: `1px solid ${C.border}`, borderRadius: '12px', padding: '16px 16px' }}>
+                <p style={{ fontSize: 'var(--fs-md)', color: C.subtle, fontWeight: 600, marginBottom: '4px' }}>{cutsView.title}</p>
+                <p style={{ fontSize: 'var(--fs-sm)', color: C.muted, lineHeight: 1.5 }}>{cutsView.message}</p>
               </div>
 
               <div style={{ display: 'grid', gap: '12px' }}>
@@ -609,31 +595,31 @@ export default function PerformancePage() {
                   const standard = card.standard
                   const qualification = card.qualification
                   return (
-                    <div key={standard.id} style={{ background: C.card, border: `1px solid ${colors.border}`, borderRadius: '14px', padding: '16px 18px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: '10px' }}>
+                    <div key={standard.id} style={{ background: C.card, border: `1px solid ${colors.border}`, borderRadius: '12px', padding: '16px 20px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: '12px' }}>
                         <div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '6px' }}>
-                            <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', fontWeight: 700, color: colors.text, background: colors.bg, border: `1px solid ${colors.border}`, padding: '3px 8px', borderRadius: '999px' }}>
+                            <span style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', fontWeight: 700, color: colors.text, background: colors.bg, border: `1px solid ${colors.border}`, padding: '4px 8px', borderRadius: '999px' }}>
                               {status.badge}
                             </span>
-                            <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', fontWeight: 700, color: C.subtle }}>
+                            <span style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', fontWeight: 700, color: C.subtle }}>
                               {standard.standard_code}
                             </span>
                           </div>
-                          <p style={{ fontSize: '16px', fontWeight: 700, color: C.text, marginBottom: '4px' }}>
+                          <p style={{ fontSize: 'var(--fs-lg)', fontWeight: 700, color: C.text, marginBottom: '4px' }}>
                             {standard.event_distance} {standard.stroke.charAt(0).toUpperCase() + standard.stroke.slice(1)} {standard.course}
                           </p>
-                          <p style={{ fontSize: '12px', color: C.muted, lineHeight: 1.5 }}>
+                          <p style={{ fontSize: 'var(--fs-sm)', color: C.muted, lineHeight: 1.5 }}>
                             {status.detail}
                           </p>
                         </div>
                         <div style={{ minWidth: '170px', textAlign: 'right' }}>
-                          <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', color: C.muted, fontFamily: 'var(--font-body)', marginBottom: '4px' }}>Cut Time</div>
-                          <div style={{ fontSize: '18px', fontFamily: 'var(--font-body)', fontWeight: 700, color: C.text, marginBottom: '8px' }}>
+                          <div style={{ fontSize: 'var(--fs-sm)', color: C.muted, fontFamily: 'var(--font-body)', marginBottom: '4px' }}>Cut time</div>
+                          <div style={{ fontSize: 'var(--fs-xl)', fontFamily: 'var(--font-body)', fontWeight: 700, color: C.text, marginBottom: '8px' }}>
                             {fmtTime(standard.time_ms)}
                           </div>
-                          <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', color: C.muted, fontFamily: 'var(--font-body)', marginBottom: '4px' }}>Best Time</div>
-                          <div style={{ fontSize: '15px', fontFamily: 'var(--font-body)', fontWeight: 700, color: qualification.best_time_ms != null ? colors.text : C.muted }}>
+                          <div style={{ fontSize: 'var(--fs-sm)', color: C.muted, fontFamily: 'var(--font-body)', marginBottom: '4px' }}>Best time</div>
+                          <div style={{ fontSize: 'var(--fs-md)', fontFamily: 'var(--font-body)', fontWeight: 700, color: qualification.best_time_ms != null ? colors.text : C.muted }}>
                             {qualification.best_time_ms != null ? fmtTime(qualification.best_time_ms) : 'No time yet'}
                           </div>
                         </div>
@@ -656,19 +642,19 @@ export default function PerformancePage() {
             </div>
           ) : progressionKeys.length === 0 ? (
             <div className="card" style={{ padding: '40px 20px', textAlign: 'center' }}>
-              <p style={{ fontSize: '14px', color: C.muted }}>No progression data available yet.</p>
+              <p style={{ fontSize: 'var(--fs-md)', color: C.muted }}>No progression data available yet.</p>
             </div>
           ) : (
             <>
               {/* Event picker + view mode */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
                 <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                   {progressionKeys.map((ev) => (
                     <button
                       key={ev}
                       onClick={() => setProgressEvent(ev)}
                       style={{
-                        fontSize: '11px', padding: '4px 12px', borderRadius: '20px', cursor: 'pointer',
+                        fontSize: 'var(--fs-xs)', padding: '4px 12px', borderRadius: '16px', cursor: 'pointer',
                         background: progressEvent === ev ? C.accent : 'var(--border)',
                         color: progressEvent === ev ? 'var(--bg)' : C.subtle,
                         border: `1px solid ${progressEvent === ev ? C.accent : C.border}`,
@@ -684,7 +670,7 @@ export default function PerformancePage() {
                       key={m}
                       onClick={() => setViewMode(m)}
                       style={{
-                        fontSize: '11px', padding: '4px 12px', borderRadius: '20px', cursor: 'pointer',
+                        fontSize: 'var(--fs-xs)', padding: '4px 12px', borderRadius: '16px', cursor: 'pointer',
                         background: viewMode === m ? 'var(--accent-subtle)' : 'transparent',
                         color: viewMode === m ? C.accent : C.muted,
                         border: `1px solid ${viewMode === m ? C.accentBorder : C.border}`,
@@ -696,26 +682,26 @@ export default function PerformancePage() {
               </div>
 
               {/* Stats strip */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '10px', marginBottom: '20px' }}>
+              <div className="cols-4" style={{ gap: '12px', marginBottom: '20px' }}>
                 {[
-                  { label: 'Current Best', value: latestTime ? fmtSec(latestTime) : '—', color: C.accent, sub: eventData[eventData.length - 1]?.meet ?? '' },
-                  { label: 'Total Drop', value: improvement > 0 ? `-${improvement.toFixed(2)}s` : '—', color: improvement > 0 ? C.accent : C.muted, sub: `over ${eventData.length} data points` },
-                  { label: 'My Goal', value: goalSec ? fmtSec(goalSec) : 'Not set', color: goalSec ? 'var(--warning)' : C.muted, sub: toGoal !== null ? (toGoal > 0 ? `${toGoal.toFixed(2)}s to go` : `Beat by ${Math.abs(toGoal).toFixed(2)}s!`) : 'Tap to set a goal' },
-                  { label: 'Data Points', value: String(eventData.length), color: C.subtle, sub: 'recorded swims' },
+                  { label: 'Current best', value: latestTime ? fmtSec(latestTime) : '—', color: C.accent, sub: eventData[eventData.length - 1]?.meet ?? '' },
+                  { label: 'Total drop', value: improvement > 0 ? `-${improvement.toFixed(2)}s` : '—', color: improvement > 0 ? C.accent : C.muted, sub: `over ${eventData.length} data points` },
+                  { label: 'My goal', value: goalSec ? fmtSec(goalSec) : 'Not set', color: goalSec ? 'var(--warning)' : C.muted, sub: toGoal !== null ? (toGoal > 0 ? `${toGoal.toFixed(2)}s to go` : `Beat by ${Math.abs(toGoal).toFixed(2)}s!`) : 'Tap to set a goal' },
+                  { label: 'Data points', value: String(eventData.length), color: C.subtle, sub: 'recorded swims' },
                 ].map((s) => (
-                  <div key={s.label} className="card" style={{ padding: '14px 16px' }}>
-                    <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', color: C.muted, fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{s.label}</div>
-                    <div style={{ fontSize: '18px', fontFamily: 'var(--font-body)', fontWeight: 700, color: s.color, marginBottom: '2px' }}>{s.value}</div>
-                    <div style={{ fontSize: '10px', color: C.muted }}>{s.sub}</div>
+                  <div key={s.label} className="card" style={{ padding: '16px 16px' }}>
+                    <div style={{ fontSize: 'var(--fs-sm)', color: C.muted, fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{s.label}</div>
+                    <div style={{ fontSize: 'var(--fs-xl)', fontFamily: 'var(--font-body)', fontWeight: 700, color: s.color, marginBottom: '2px' }}>{s.value}</div>
+                    <div style={{ fontSize: 'var(--fs-2xs)', color: C.muted }}>{s.sub}</div>
                   </div>
                 ))}
               </div>
 
               {/* Goal editor */}
-              <div style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.22)', borderRadius: '12px', padding: '14px 16px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.22)', borderRadius: '12px', padding: '16px 16px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <Icon name="zap" size={16} style={{ color: 'var(--warning)', flexShrink: 0 }} />
                 <div style={{ flex: 1 }}>
-                  <p style={{ fontSize: '12px', fontWeight: 600, color: C.text, marginBottom: '2px' }}>Goal for {progressEvent}</p>
+                  <p style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: C.text, marginBottom: '2px' }}>Goal for {progressEvent}</p>
                   {editingGoal ? (
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '6px' }}>
                       <input
@@ -725,7 +711,7 @@ export default function PerformancePage() {
                           setGoalError(null)
                         }}
                         placeholder="e.g. 58.50 or 1:58.00"
-                        style={{ background: 'var(--border)', border: `1px solid ${C.border}`, borderRadius: '8px', padding: '5px 10px', fontSize: '12px', fontFamily: 'var(--font-body)', color: C.text, width: '160px' }}
+                        style={{ background: 'var(--border)', border: `1px solid ${C.border}`, borderRadius: '8px', padding: '4px 12px', fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: C.text, width: '160px' }}
                       />
                       <button
                         onClick={() => {
@@ -739,14 +725,14 @@ export default function PerformancePage() {
                       >Save</button>
                     </div>
                   ) : (
-                    <p style={{ fontSize: '11px', color: C.muted }}>{goalTime[progressEvent] ? `Target: ${goalTime[progressEvent]}` : 'No goal set for this event.'}</p>
+                    <p style={{ fontSize: 'var(--fs-xs)', color: C.muted }}>{goalTime[progressEvent] ? `Target: ${goalTime[progressEvent]}` : 'No goal set for this event.'}</p>
                   )}
-                  {goalError && <p style={{ fontSize: '11px', color: 'var(--error)', marginTop: '6px' }}>{goalError}</p>}
+                  {goalError && <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--error)', marginTop: '6px' }}>{goalError}</p>}
                 </div>
                 {!editingGoal && (
                   <button
                     onClick={() => { setGoalInput({ ...goalInput, [progressEvent]: goalTime[progressEvent] ?? '' }); setGoalError(null); setEditingGoal(true) }}
-                    style={{ fontSize: '11px', padding: '5px 12px', background: 'rgba(245,158,11,0.15)', color: 'var(--warning)', border: '1px solid rgba(245,158,11,0.30)', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 }}
+                    style={{ fontSize: 'var(--fs-xs)', padding: '4px 12px', background: 'rgba(245,158,11,0.15)', color: 'var(--warning)', border: '1px solid rgba(245,158,11,0.30)', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 }}
                   >
                     {goalTime[progressEvent] ? 'Edit Goal' : 'Set Goal'}
                   </button>
@@ -755,16 +741,13 @@ export default function PerformancePage() {
 
               {eventData.length === 0 ? (
                 <div className="card" style={{ padding: '32px 20px', textAlign: 'center' }}>
-                  <p style={{ fontSize: '13px', color: C.muted }}>No data points for this event yet.</p>
+                  <p style={{ fontSize: 'var(--fs-base)', color: C.muted }}>No data points for this event yet.</p>
                 </div>
               ) : (
                 <>
                   {/* Chart view */}
                   {viewMode === 'chart' && (
                     <div className="card" style={{ padding: '24px', marginBottom: '20px' }}>
-                      <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '20px' }}>
-                        {progressEvent} — Time Progression
-                      </p>
                       <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px', height: '140px', position: 'relative' }}>
                         {goalSec && (
                           <div style={{
@@ -772,7 +755,7 @@ export default function PerformancePage() {
                             bottom: `${((1 - (goalSec - minTime) / (maxTime - minTime)) * 140)}px`,
                             left: 0, right: 0, height: '1px', borderTop: '1px dashed #F59E0B', zIndex: 2,
                           }}>
-                            <span style={{ position: 'absolute', right: 0, top: '-14px', fontSize: '9px', color: 'var(--warning)', fontFamily: 'var(--font-body)', background: C.card, padding: '0 4px' }}>goal</span>
+                            <span style={{ position: 'absolute', right: 0, top: '-14px', fontSize: 'var(--fs-2xs)', color: 'var(--warning)', fontFamily: 'var(--font-body)', background: C.card, padding: '0 4px' }}>goal</span>
                           </div>
                         )}
                         {eventData.map((d, i) => {
@@ -781,7 +764,7 @@ export default function PerformancePage() {
                           const isLatest = i === eventData.length - 1
                           return (
                             <div key={`${d.date}-${i}`} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
-                              <p style={{ fontSize: '9px', fontFamily: 'var(--font-body)', color: isLatest ? C.accent : C.muted, fontWeight: isLatest ? 700 : 400, whiteSpace: 'nowrap' }}>
+                              <p style={{ fontSize: 'var(--fs-2xs)', fontFamily: 'var(--font-body)', color: isLatest ? C.accent : C.muted, fontWeight: isLatest ? 700 : 400, whiteSpace: 'nowrap' }}>
                                 {fmtSec(d.time)}
                               </p>
                               <div style={{
@@ -799,13 +782,13 @@ export default function PerformancePage() {
                       <div style={{ display: 'flex', gap: '8px', marginTop: '8px', borderTop: `1px solid ${C.border}`, paddingTop: '8px' }}>
                         {eventData.map((d, i) => (
                           <div key={`label-${i}`} style={{ flex: 1, textAlign: 'center' }}>
-                            <p style={{ fontSize: '9px', fontFamily: 'var(--font-body)', color: C.muted }}>{d.date}</p>
+                            <p style={{ fontSize: 'var(--fs-2xs)', fontFamily: 'var(--font-body)', color: C.muted }}>{d.date}</p>
                           </div>
                         ))}
                       </div>
                       {eventData.length >= 3 && improvement > 0 && (
-                        <div style={{ marginTop: '14px', padding: '10px 12px', background: 'var(--border)', borderRadius: '8px', border: `1px solid ${C.border}` }}>
-                          <p style={{ fontSize: '11px', color: C.subtle }}>
+                        <div style={{ marginTop: '16px', padding: '12px 12px', background: 'var(--border)', borderRadius: '8px', border: `1px solid ${C.border}` }}>
+                          <p style={{ fontSize: 'var(--fs-xs)', color: C.subtle }}>
                             At your current rate of improvement <strong style={{ color: C.accent }}>({(improvement / eventData.length).toFixed(2)}s/period)</strong>,
                             you could reach {goalSec ? <strong style={{ color: 'var(--warning)' }}>{fmtSec(goalSec)} (your goal)</strong> : 'your next milestone'} in approximately {goalSec && toGoal && toGoal > 0 ? Math.ceil(toGoal / (improvement / eventData.length)) : '?'} more period(s).
                           </p>
@@ -817,9 +800,9 @@ export default function PerformancePage() {
                   {/* Table view */}
                   {viewMode === 'table' && (
                     <div className="card" style={{ overflow: 'hidden' }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: '100px 100px 1fr 1fr', padding: '10px 18px', borderBottom: `1px solid ${C.border}` }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '100px 100px 1fr 1fr', padding: '12px 20px', borderBottom: `1px solid ${C.border}` }}>
                         {['Period', 'Time', 'Drop', 'Meet'].map((h) => (
-                          <span key={h} style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</span>
+                          <span key={h} style={{ fontSize: 'var(--fs-2xs)', fontFamily: 'var(--font-body)', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</span>
                         ))}
                       </div>
                       {[...eventData].reverse().map((d, i) => {
@@ -827,13 +810,13 @@ export default function PerformancePage() {
                         const drop = prev ? prev.time - d.time : null
                         const isLatest = i === 0
                         return (
-                          <div key={`tbl-${i}`} style={{ display: 'grid', gridTemplateColumns: '100px 100px 1fr 1fr', padding: '12px 18px', borderBottom: i < eventData.length - 1 ? `1px solid ${C.border}` : 'none', background: isLatest ? 'var(--border)' : 'transparent' }}>
-                            <span style={{ fontSize: '12px', color: isLatest ? C.accent : C.subtle, fontFamily: 'var(--font-body)' }}>{d.date}</span>
-                            <span style={{ fontSize: '14px', fontFamily: 'var(--font-body)', fontWeight: 700, color: isLatest ? C.accent : C.text }}>{fmtSec(d.time)}</span>
-                            <span style={{ fontSize: '12px', fontFamily: 'var(--font-body)', color: drop !== null && drop > 0 ? C.accent : drop !== null ? 'var(--error)' : C.muted }}>
+                          <div key={`tbl-${i}`} style={{ display: 'grid', gridTemplateColumns: '100px 100px 1fr 1fr', padding: '12px 20px', borderBottom: i < eventData.length - 1 ? `1px solid ${C.border}` : 'none', background: isLatest ? 'var(--border)' : 'transparent' }}>
+                            <span style={{ fontSize: 'var(--fs-sm)', color: isLatest ? C.accent : C.subtle, fontFamily: 'var(--font-body)' }}>{d.date}</span>
+                            <span style={{ fontSize: 'var(--fs-md)', fontFamily: 'var(--font-body)', fontWeight: 700, color: isLatest ? C.accent : C.text }}>{fmtSec(d.time)}</span>
+                            <span style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: drop !== null && drop > 0 ? C.accent : drop !== null ? 'var(--error)' : C.muted }}>
                               {drop !== null ? (drop > 0 ? `-${drop.toFixed(2)}s` : `+${Math.abs(drop).toFixed(2)}s`) : '—'}
                             </span>
-                            <span style={{ fontSize: '11px', color: C.muted }}>{d.meet ?? '—'}</span>
+                            <span style={{ fontSize: 'var(--fs-xs)', color: C.muted }}>{d.meet ?? '—'}</span>
                           </div>
                         )
                       })}
@@ -842,22 +825,22 @@ export default function PerformancePage() {
 
                   {/* Monthly view */}
                   {viewMode === 'monthly' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                       {Object.entries(monthMap).map(([month, times]) => {
                         const best = Math.min(...times)
                         const worst = Math.max(...times)
                         return (
                           <div key={month} className="card" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '16px' }}>
                             <div style={{ width: '72px', flexShrink: 0 }}>
-                              <span style={{ fontSize: '13px', fontFamily: 'var(--font-body)', fontWeight: 700, color: C.subtle }}>{month}</span>
+                              <span style={{ fontSize: 'var(--fs-base)', fontFamily: 'var(--font-body)', fontWeight: 700, color: C.subtle }}>{month}</span>
                             </div>
                             <div style={{ flex: 1 }}>
                               <ProgressionBar value={1 - (best - minTime) / (maxTime - minTime)} max={1} color={C.accent} />
                             </div>
                             <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                              <div style={{ fontFamily: 'var(--font-body)', fontWeight: 700, color: C.accent, fontSize: '15px' }}>{fmtSec(best)}</div>
-                              {times.length > 1 && <div style={{ fontSize: '10px', color: C.muted, fontFamily: 'var(--font-body)' }}>range: {fmtSec(best)} – {fmtSec(worst)}</div>}
-                              <div style={{ fontSize: '10px', color: C.muted }}>{times.length} swims</div>
+                              <div style={{ fontFamily: 'var(--font-body)', fontWeight: 700, color: C.accent, fontSize: 'var(--fs-md)' }}>{fmtSec(best)}</div>
+                              {times.length > 1 && <div style={{ fontSize: 'var(--fs-2xs)', color: C.muted, fontFamily: 'var(--font-body)' }}>range: {fmtSec(best)} – {fmtSec(worst)}</div>}
+                              <div style={{ fontSize: 'var(--fs-2xs)', color: C.muted }}>{times.length} swims</div>
                             </div>
                           </div>
                         )
@@ -870,6 +853,12 @@ export default function PerformancePage() {
           )}
         </div>
       )}
+
+      {swimmerId ? (
+        <div style={{ marginTop: '32px' }}>
+          <GoalsPanel swimmerId={swimmerId} />
+        </div>
+      ) : null}
     </div>
   )
 }

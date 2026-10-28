@@ -4,8 +4,18 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// dbExec is satisfied by both *pgxpool.Pool and pgx.Tx so the same write
+// helpers can run standalone or inside a multi-statement transaction.
+type dbExec interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
 
 // Repository handles DB persistence for the billing domain.
 type Repository struct {
@@ -26,23 +36,36 @@ func nullableString(s string) interface{} {
 // ─── Invoices ─────────────────────────────────────────────────────────────────
 
 func (r *Repository) UpsertInvoice(ctx context.Context, inv *Invoice) error {
-	_, err := r.pool.Exec(ctx, `
+	return upsertInvoice(ctx, r.pool, inv)
+}
+
+func upsertInvoice(ctx context.Context, q dbExec, inv *Invoice) error {
+	_, err := q.Exec(ctx, `
 		INSERT INTO invoices (id, org_id, household_id, invoice_number, status,
-		                      subtotal_cents, total_cents, issued_at, due_date, notes, created_at, updated_at)
-		VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		                      subtotal_cents, tax_cents, total_cents, amount_paid_cents, amount_due_cents,
+		                      issued_at, voided_at, written_off_at, due_date, notes, external_ref,
+		                      created_at, updated_at)
+		VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 		ON CONFLICT (id) DO UPDATE SET
-		  status       = EXCLUDED.status,
-		  subtotal_cents = EXCLUDED.subtotal_cents,
-		  total_cents  = EXCLUDED.total_cents,
-		  issued_at    = EXCLUDED.issued_at,
-		  due_date     = EXCLUDED.due_date,
-		  notes        = EXCLUDED.notes,
-		  updated_at   = EXCLUDED.updated_at`,
+		  status            = EXCLUDED.status,
+		  subtotal_cents    = EXCLUDED.subtotal_cents,
+		  tax_cents         = EXCLUDED.tax_cents,
+		  total_cents       = EXCLUDED.total_cents,
+		  amount_paid_cents = EXCLUDED.amount_paid_cents,
+		  amount_due_cents  = EXCLUDED.amount_due_cents,
+		  issued_at         = EXCLUDED.issued_at,
+		  voided_at         = EXCLUDED.voided_at,
+		  written_off_at    = EXCLUDED.written_off_at,
+		  due_date          = EXCLUDED.due_date,
+		  notes             = EXCLUDED.notes,
+		  external_ref      = EXCLUDED.external_ref,
+		  updated_at        = EXCLUDED.updated_at`,
 		inv.ID, inv.OrgID,
 		nullableString(inv.HouseholdID),
 		inv.InvoiceNumber, inv.Status,
-		inv.SubtotalCents, inv.TotalCents,
-		inv.IssuedAt, nullableString(inv.DueDate), nullableString(inv.Notes),
+		inv.SubtotalCents, inv.TaxCents, inv.TotalCents, inv.AmountPaidCents, inv.AmountDueCents,
+		inv.IssuedAt, inv.VoidedAt, inv.WrittenOffAt,
+		nullableString(inv.DueDate), nullableString(inv.Notes), nullableString(inv.ExternalRef),
 		inv.CreatedAt, inv.UpdatedAt,
 	)
 	return err
@@ -51,8 +74,10 @@ func (r *Repository) UpsertInvoice(ctx context.Context, inv *Invoice) error {
 func (r *Repository) LoadInvoices(ctx context.Context) ([]*Invoice, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id::text, org_id::text, COALESCE(household_id::text, ''),
-		       invoice_number, status, subtotal_cents, total_cents,
-		       issued_at, COALESCE(due_date::text, ''), COALESCE(notes, ''),
+		       invoice_number, status, subtotal_cents, tax_cents, total_cents,
+		       amount_paid_cents, amount_due_cents,
+		       issued_at, voided_at, written_off_at,
+		       COALESCE(due_date::text, ''), COALESCE(notes, ''), COALESCE(external_ref, ''),
 		       created_at, updated_at
 		FROM invoices WHERE deleted_at IS NULL`)
 	if err != nil {
@@ -64,13 +89,14 @@ func (r *Repository) LoadInvoices(ctx context.Context) ([]*Invoice, error) {
 		inv := &Invoice{}
 		if err := rows.Scan(
 			&inv.ID, &inv.OrgID, &inv.HouseholdID,
-			&inv.InvoiceNumber, &inv.Status, &inv.SubtotalCents, &inv.TotalCents,
-			&inv.IssuedAt, &inv.DueDate, &inv.Notes,
+			&inv.InvoiceNumber, &inv.Status, &inv.SubtotalCents, &inv.TaxCents, &inv.TotalCents,
+			&inv.AmountPaidCents, &inv.AmountDueCents,
+			&inv.IssuedAt, &inv.VoidedAt, &inv.WrittenOffAt,
+			&inv.DueDate, &inv.Notes, &inv.ExternalRef,
 			&inv.CreatedAt, &inv.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("billing: scan invoice: %w", err)
 		}
-		inv.AmountDueCents = inv.TotalCents
 		out = append(out, inv)
 	}
 	return out, rows.Err()
@@ -79,13 +105,18 @@ func (r *Repository) LoadInvoices(ctx context.Context) ([]*Invoice, error) {
 // ─── Invoice Items ────────────────────────────────────────────────────────────
 
 func (r *Repository) UpsertInvoiceItem(ctx context.Context, item *InvoiceItem) error {
-	_, err := r.pool.Exec(ctx, `
-		INSERT INTO invoice_items (id, org_id, invoice_id, description, quantity, unit_amount_cents, category, swimmer_id, meet_id, created_at, updated_at)
-		VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8::uuid, $9::uuid, $10, $11)
+	return upsertInvoiceItem(ctx, r.pool, item)
+}
+
+func upsertInvoiceItem(ctx context.Context, q dbExec, item *InvoiceItem) error {
+	_, err := q.Exec(ctx, `
+		INSERT INTO invoice_items (id, org_id, invoice_id, description, quantity, unit_amount_cents, total_cents, category, swimmer_id, meet_id, created_at, updated_at)
+		VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5::int, $6::int, $5::int * $6::int, $7, $8::uuid, $9::uuid, $10, $11)
 		ON CONFLICT (id) DO UPDATE SET
 		  description      = EXCLUDED.description,
 		  quantity         = EXCLUDED.quantity,
 		  unit_amount_cents = EXCLUDED.unit_amount_cents,
+		  total_cents      = EXCLUDED.total_cents,
 		  category         = EXCLUDED.category,
 		  swimmer_id       = EXCLUDED.swimmer_id,
 		  meet_id          = EXCLUDED.meet_id,
@@ -134,21 +165,28 @@ func (r *Repository) LoadInvoiceItems(ctx context.Context) ([]*InvoiceItem, erro
 // ─── Payments ────────────────────────────────────────────────────────────────
 
 func (r *Repository) UpsertPayment(ctx context.Context, p *Payment) error {
-	_, err := r.pool.Exec(ctx, `
+	return upsertPayment(ctx, r.pool, p)
+}
+
+func upsertPayment(ctx context.Context, q dbExec, p *Payment) error {
+	_, err := q.Exec(ctx, `
 		INSERT INTO payments (id, org_id, invoice_id, household_id, amount_cents, payment_method,
-		                      status, stripe_payment_intent_id, notes, paid_at, created_at, updated_at)
-		VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		                      status, stripe_payment_intent_id, external_ref, notes, paid_at, failed_at,
+		                      created_at, updated_at)
+		VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		ON CONFLICT (id) DO UPDATE SET
 		  status                    = EXCLUDED.status,
 		  stripe_payment_intent_id  = EXCLUDED.stripe_payment_intent_id,
+		  external_ref              = EXCLUDED.external_ref,
 		  notes                     = EXCLUDED.notes,
 		  paid_at                   = EXCLUDED.paid_at,
+		  failed_at                 = EXCLUDED.failed_at,
 		  updated_at                = EXCLUDED.updated_at`,
 		p.ID, p.OrgID, p.InvoiceID,
-		nil, // household_id — not stored on Payment struct
+		nil, // household_id — derived from the invoice; not stored on Payment
 		p.AmountCents, p.Method, p.Status,
-		nullableString(p.StripePaymentIntentID), nullableString(p.Notes),
-		p.PaidAt, p.CreatedAt, p.UpdatedAt,
+		nullableString(p.StripePaymentIntentID), nullableString(p.ExternalRef), nullableString(p.Notes),
+		p.PaidAt, p.FailedAt, p.CreatedAt, p.UpdatedAt,
 	)
 	return err
 }
@@ -157,8 +195,8 @@ func (r *Repository) LoadPayments(ctx context.Context) ([]*Payment, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id::text, org_id::text, invoice_id::text,
 		       amount_cents, payment_method, status,
-		       COALESCE(stripe_payment_intent_id, ''), COALESCE(notes, ''),
-		       paid_at, created_at, updated_at
+		       COALESCE(stripe_payment_intent_id, ''), COALESCE(external_ref, ''), COALESCE(notes, ''),
+		       paid_at, failed_at, created_at, updated_at
 		FROM payments`)
 	if err != nil {
 		return nil, fmt.Errorf("billing: load payments: %w", err)
@@ -170,8 +208,8 @@ func (r *Repository) LoadPayments(ctx context.Context) ([]*Payment, error) {
 		if err := rows.Scan(
 			&p.ID, &p.OrgID, &p.InvoiceID,
 			&p.AmountCents, &p.Method, &p.Status,
-			&p.StripePaymentIntentID, &p.Notes,
-			&p.PaidAt, &p.CreatedAt, &p.UpdatedAt,
+			&p.StripePaymentIntentID, &p.ExternalRef, &p.Notes,
+			&p.PaidAt, &p.FailedAt, &p.CreatedAt, &p.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("billing: scan payment: %w", err)
 		}
@@ -183,16 +221,23 @@ func (r *Repository) LoadPayments(ctx context.Context) ([]*Payment, error) {
 // ─── Refunds ──────────────────────────────────────────────────────────────────
 
 func (r *Repository) UpsertRefund(ctx context.Context, ref *Refund) error {
-	_, err := r.pool.Exec(ctx, `
-		INSERT INTO refunds (id, org_id, payment_id, amount_cents, reason, status, stripe_refund_id, created_at, updated_at)
-		VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8, $9)
+	return upsertRefund(ctx, r.pool, ref)
+}
+
+func upsertRefund(ctx context.Context, q dbExec, ref *Refund) error {
+	_, err := q.Exec(ctx, `
+		INSERT INTO refunds (id, org_id, invoice_id, payment_id, amount_cents, reason, status,
+		                     stripe_refund_id, processed_at, rejected_at, created_at, updated_at)
+		VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7, $8, $9, $10, $11, $12)
 		ON CONFLICT (id) DO UPDATE SET
-		  status          = EXCLUDED.status,
+		  status           = EXCLUDED.status,
 		  stripe_refund_id = EXCLUDED.stripe_refund_id,
-		  updated_at      = EXCLUDED.updated_at`,
-		ref.ID, ref.OrgID, ref.PaymentID,
+		  processed_at     = EXCLUDED.processed_at,
+		  rejected_at      = EXCLUDED.rejected_at,
+		  updated_at       = EXCLUDED.updated_at`,
+		ref.ID, ref.OrgID, ref.InvoiceID, ref.PaymentID,
 		ref.AmountCents, ref.Reason, ref.Status,
-		nullableString(ref.StripeRefundID),
+		nullableString(ref.StripeRefundID), ref.ProcessedAt, ref.RejectedAt,
 		ref.CreatedAt, ref.UpdatedAt,
 	)
 	return err
@@ -200,9 +245,9 @@ func (r *Repository) UpsertRefund(ctx context.Context, ref *Refund) error {
 
 func (r *Repository) LoadRefunds(ctx context.Context) ([]*Refund, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id::text, org_id::text, payment_id::text,
+		SELECT id::text, org_id::text, invoice_id::text, payment_id::text,
 		       amount_cents, reason, status, COALESCE(stripe_refund_id, ''),
-		       created_at, updated_at
+		       processed_at, rejected_at, created_at, updated_at
 		FROM refunds`)
 	if err != nil {
 		return nil, fmt.Errorf("billing: load refunds: %w", err)
@@ -212,9 +257,9 @@ func (r *Repository) LoadRefunds(ctx context.Context) ([]*Refund, error) {
 	for rows.Next() {
 		ref := &Refund{}
 		if err := rows.Scan(
-			&ref.ID, &ref.OrgID, &ref.PaymentID,
+			&ref.ID, &ref.OrgID, &ref.InvoiceID, &ref.PaymentID,
 			&ref.AmountCents, &ref.Reason, &ref.Status, &ref.StripeRefundID,
-			&ref.CreatedAt, &ref.UpdatedAt,
+			&ref.ProcessedAt, &ref.RejectedAt, &ref.CreatedAt, &ref.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("billing: scan refund: %w", err)
 		}
@@ -226,12 +271,18 @@ func (r *Repository) LoadRefunds(ctx context.Context) ([]*Refund, error) {
 // ─── Ledger Events (append-only INSERT) ──────────────────────────────────────
 
 func (r *Repository) InsertLedgerEvent(ctx context.Context, ev *LedgerEvent) error {
-	_, err := r.pool.Exec(ctx, `
-		INSERT INTO ledger_events (id, org_id, event_type, invoice_id, amount_cents, description, created_at)
-		VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7)
+	return insertLedgerEvent(ctx, r.pool, ev)
+}
+
+func insertLedgerEvent(ctx context.Context, q dbExec, ev *LedgerEvent) error {
+	_, err := q.Exec(ctx, `
+		INSERT INTO ledger_events (id, org_id, event_type, invoice_id, payment_id, refund_id,
+		                           household_id, amount_cents, description, created_at)
+		VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (id) DO NOTHING`,
 		ev.ID, ev.OrgID, ev.EventType,
-		nullableString(ev.InvoiceID),
+		nullableString(ev.InvoiceID), nullableString(ev.PaymentID), nullableString(ev.RefundID),
+		nullableString(ev.HouseholdID),
 		ev.AmountCents, nullableString(ev.Description),
 		ev.CreatedAt,
 	)
@@ -241,9 +292,10 @@ func (r *Repository) InsertLedgerEvent(ctx context.Context, ev *LedgerEvent) err
 func (r *Repository) LoadLedgerEvents(ctx context.Context) ([]*LedgerEvent, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id::text, org_id::text, event_type,
-		       COALESCE(invoice_id::text, ''), amount_cents, COALESCE(description, ''),
+		       COALESCE(invoice_id::text, ''), COALESCE(payment_id::text, ''), COALESCE(refund_id::text, ''),
+		       COALESCE(household_id, ''), amount_cents, COALESCE(description, ''),
 		       created_at
-		FROM ledger_events ORDER BY created_at`)
+		FROM ledger_events ORDER BY created_at, id`)
 	if err != nil {
 		return nil, fmt.Errorf("billing: load ledger_events: %w", err)
 	}
@@ -253,7 +305,8 @@ func (r *Repository) LoadLedgerEvents(ctx context.Context) ([]*LedgerEvent, erro
 		ev := &LedgerEvent{}
 		if err := rows.Scan(
 			&ev.ID, &ev.OrgID, &ev.EventType,
-			&ev.InvoiceID, &ev.AmountCents, &ev.Description,
+			&ev.InvoiceID, &ev.PaymentID, &ev.RefundID,
+			&ev.HouseholdID, &ev.AmountCents, &ev.Description,
 			&ev.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("billing: scan ledger_event: %w", err)

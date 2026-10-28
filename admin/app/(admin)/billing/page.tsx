@@ -47,13 +47,9 @@ function BillingPageContent() {
   }
 
   return (
-    <div style={{ padding: '32px 36px 80px', maxWidth: 1240, margin: '0 auto' }}>
-      <div style={{ marginBottom: '28px' }}>
-        <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
-          Billing
-        </p>
+    <div className="page">
+      <div className="page-heading">
         <h1 className="page-title">Billing</h1>
-        <p className="page-subtitle">Invoices, payments, ledger history, and autopay enrollment for your club, in one place.</p>
       </div>
 
       <Tabs tabs={availableTabs} active={tab} onChange={changeTab} />

@@ -51,6 +51,12 @@ export function useMessageStream({ orgId, token, onEvent, enabled = true }: UseM
           credentials: 'include',
           signal: controller.signal,
         })
+        // 503 means this deployment has no realtime broadcaster (no Redis);
+        // that will not change by retrying, so stay on polling/refresh.
+        if (res.status === 503) {
+          stopped = true
+          return
+        }
         if (!res.ok || !res.body) {
           throw new Error(`stream unavailable: ${res.status}`)
         }

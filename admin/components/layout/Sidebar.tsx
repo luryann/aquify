@@ -13,6 +13,7 @@ type SidebarProps = {
   userName?: string
   onSignOut?: () => void
   orgId?: string
+  token?: string
 }
 
 const SECTION_ORDER = [
@@ -45,7 +46,7 @@ function loadStoredWidth(): number {
   return DEFAULT_WIDTH
 }
 
-export function Sidebar({ role, roles, userName, onSignOut, orgId }: SidebarProps) {
+export function Sidebar({ role, roles, userName, onSignOut, orgId, token }: SidebarProps) {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_WIDTH)
@@ -78,11 +79,11 @@ export function Sidebar({ role, roles, userName, onSignOut, orgId }: SidebarProp
 
     Promise.all([
       fetch('/api/v1/users?status=pending_approval', {
-        ...pendingApprovalsRequestInit(orgId),
+        ...pendingApprovalsRequestInit(orgId, token),
         signal: controller.signal,
       }).then((r) => (r.ok ? r.json() : null)) as Promise<{ count?: number; users?: unknown[] } | null>,
       fetch('/api/v1/users/swimmer-link-requests', {
-        ...pendingApprovalsRequestInit(orgId),
+        ...pendingApprovalsRequestInit(orgId, token),
         signal: controller.signal,
       }).then((r) => (r.ok ? r.json() : null)) as Promise<{ requests?: unknown[] } | null>,
     ])
@@ -95,7 +96,7 @@ export function Sidebar({ role, roles, userName, onSignOut, orgId }: SidebarProp
       })
       .catch(() => { /* silent */ })
     return () => controller.abort()
-  }, [orgId, roles])
+  }, [orgId, roles, token])
 
   const grouped = useMemo(() => {
     const items = filterNavItems(roles)
@@ -161,7 +162,7 @@ export function Sidebar({ role, roles, userName, onSignOut, orgId }: SidebarProp
           display: 'flex',
           alignItems: 'center',
           justifyContent: collapsed ? 'center' : 'space-between',
-          padding: collapsed ? '0 12px' : '0 14px 0 18px',
+          padding: collapsed ? '0 12px' : '0 16px 0 20px',
           height: 'var(--topbar-h)',
           borderBottom: '1px solid var(--border)',
           flexShrink: 0,
@@ -172,29 +173,16 @@ export function Sidebar({ role, roles, userName, onSignOut, orgId }: SidebarProp
             <span
               style={{
                 fontFamily: 'var(--font-display)',
-                fontWeight: 'bold',
-                fontSize: '18px',
+                fontWeight: 'var(--display-weight)',
+                fontSize: 'var(--fs-xl)',
                 color: 'var(--text)',
-                letterSpacing: '-0.01em',
+                letterSpacing: 'var(--display-tracking)',
                 lineHeight: 1,
                 userSelect: 'none',
                 whiteSpace: 'nowrap',
               }}
             >
               aquify
-            </span>
-            <span
-              style={{
-                fontSize: '10px',
-                fontFamily: 'var(--font-body)',
-                color: 'var(--text-muted)',
-                letterSpacing: '0.08em',
-                textTransform: 'uppercase',
-                paddingTop: '2px',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              admin
             </span>
           </div>
         )}
@@ -242,13 +230,11 @@ export function Sidebar({ role, roles, userName, onSignOut, orgId }: SidebarProp
             {!collapsed && (
               <div
                 style={{
-                  padding: '10px 18px 4px',
-                  fontSize: '10px',
+                  padding: '12px 20px 4px',
+                  fontSize: 'var(--fs-2xs)',
                   fontFamily: 'var(--font-body)',
                   fontWeight: 500,
                   color: 'var(--text-muted)',
-                  letterSpacing: '0.10em',
-                  textTransform: 'uppercase',
                   whiteSpace: 'nowrap',
                   overflow: 'hidden',
                 }}
@@ -262,8 +248,8 @@ export function Sidebar({ role, roles, userName, onSignOut, orgId }: SidebarProp
               const baseStyle: CSSProperties = {
                 display: 'flex',
                 alignItems: 'center',
-                gap: '9px',
-                padding: collapsed ? '8px 0' : '7px 14px 7px 18px',
+                gap: '8px',
+                padding: collapsed ? '8px 0' : '8px 16px 8px 20px',
                 justifyContent: collapsed ? 'center' : 'flex-start',
                 textDecoration: 'none',
                 color: active ? 'var(--text)' : 'var(--text-subtle)',
@@ -271,7 +257,7 @@ export function Sidebar({ role, roles, userName, onSignOut, orgId }: SidebarProp
                 borderLeft: active ? '2px solid var(--accent)' : '2px solid transparent',
                 borderRadius: collapsed ? '0' : '0 var(--r-sm) var(--r-sm) 0',
                 marginRight: collapsed ? '0' : '8px',
-                fontSize: '13px',
+                fontSize: 'var(--fs-base)',
                 fontWeight: active ? 600 : 400,
                 transition:
                   'background var(--dur-fast), color var(--dur-fast), border-color var(--dur-fast)',
@@ -297,16 +283,16 @@ export function Sidebar({ role, roles, userName, onSignOut, orgId }: SidebarProp
                       flexShrink: 0,
                       minWidth: '18px',
                       height: '18px',
-                      borderRadius: '9px',
+                      borderRadius: '8px',
                       background: 'var(--accent)',
                       color: '#fff',
-                      fontSize: '10px',
+                      fontSize: 'var(--fs-2xs)',
                       fontWeight: 700,
                       fontFamily: 'var(--font-body)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      padding: '0 5px',
+                      padding: '0 4px',
                       lineHeight: 1,
                     }}>
                       {pendingCount > 99 ? '99+' : pendingCount}
@@ -365,7 +351,7 @@ export function Sidebar({ role, roles, userName, onSignOut, orgId }: SidebarProp
       <div
         style={{
           borderTop: '1px solid var(--border)',
-          padding: collapsed ? '10px 0' : '10px 14px',
+          padding: collapsed ? '12px 0' : '12px 16px',
           display: 'flex',
           alignItems: 'center',
           gap: '8px',
@@ -386,7 +372,7 @@ export function Sidebar({ role, roles, userName, onSignOut, orgId }: SidebarProp
             justifyContent: 'center',
             flexShrink: 0,
             color: 'var(--accent)',
-            fontSize: '11px',
+            fontSize: 'var(--fs-xs)',
             fontWeight: 700,
             fontFamily: 'var(--font-body)',
             textTransform: 'uppercase',
@@ -400,11 +386,11 @@ export function Sidebar({ role, roles, userName, onSignOut, orgId }: SidebarProp
             <div style={{ flex: 1, minWidth: 0 }}>
               <p
                 className="truncate"
-                style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)', lineHeight: 1.3 }}
+                style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.3 }}
               >
                 {userName ?? 'User'}
               </p>
-              <p style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+              <p style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
                 {ROLE_LABELS[role]}
               </p>
             </div>

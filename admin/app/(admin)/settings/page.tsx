@@ -4,11 +4,13 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
-import { useApiClient, ApiError } from '@/lib/api'
+import { useApiClient } from '@/lib/api'
+import { PublicSitePanel } from './PublicSitePanel'
 import { fetchOrgSettings, updateOrgSettings, type OrgSettingsRecord } from '@/lib/adminData'
+import { uiErrorMessage } from '@/lib/frontend-telemetry'
 
-const TEAM_INPUT_STYLE: React.CSSProperties = { width: '100%', padding: '9px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none', boxSizing: 'border-box' }
-const TEAM_LABEL_STYLE: React.CSSProperties = { fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '5px' }
+const TEAM_INPUT_STYLE: React.CSSProperties = { width: '100%', padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none', boxSizing: 'border-box' }
+const TEAM_LABEL_STYLE: React.CSSProperties = { fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }
 
 export default function SettingsPage() {
   const { session } = useSession()
@@ -55,7 +57,7 @@ export default function SettingsPage() {
       setTeamForm({ team_code: saved.team_code ?? '', team_name: saved.team_name ?? '', lsc_code: saved.lsc_code ?? '' })
       setTeamMsg('Saved.')
     } catch (err) {
-      setTeamErr(err instanceof ApiError ? err.message : 'Failed to save team identity.')
+      setTeamErr(uiErrorMessage(err, 'Couldn’t save team identity. Try again.'))
     } finally {
       setTeamSaving(false)
     }
@@ -72,42 +74,33 @@ export default function SettingsPage() {
       setEmailForm({ email_sender_name: saved.email_sender_name ?? '', email_sender_address: saved.email_sender_address ?? '' })
       setEmailMsg('Saved.')
     } catch (err) {
-      setEmailErr(err instanceof ApiError ? err.message : 'Failed to save email sender identity.')
+      setEmailErr(uiErrorMessage(err, 'Couldn’t save email sender identity. Try again.'))
     } finally {
       setEmailSaving(false)
     }
   }
 
   return (
-    <div style={{ padding: '32px 32px 80px', maxWidth: '1000px' }}>
-      <div style={{ marginBottom: '28px' }}>
-        <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
-          Settings
-        </p>
+    <div className="page">
+      <div className="page-heading">
         <h1 className="page-title">
           Settings
         </h1>
-        <p className="page-subtitle">
-          Your club&rsquo;s identity, used across meet reports and exports.
-        </p>
       </div>
 
       <div className="card" style={{ padding: '20px', marginBottom: '20px' }}>
         <div style={{ marginBottom: '4px' }}>
-          <h2 style={{ fontSize: '15px', fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)' }}>Team &amp; Export Identity</h2>
-          <p style={{ fontSize: '12px', color: 'var(--text-subtle)', marginTop: '4px' }}>
-            Your club’s team code, name, and LSC — printed on generated meet reports.
-          </p>
+          <h2 className="card-title">Team &amp; export identity</h2>
         </div>
-        {teamMsg ? <div style={{ marginTop: '12px', padding: '8px 12px', background: 'var(--success-bg)', border: '1px solid var(--success-border)', borderRadius: '8px', color: 'var(--success)', fontSize: '12px' }}>{teamMsg}</div> : null}
-        {teamErr ? <div style={{ marginTop: '12px', padding: '8px 12px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', borderRadius: '8px', color: 'var(--error)', fontSize: '12px' }}>{teamErr}</div> : null}
-        <form onSubmit={handleSaveTeam} style={{ marginTop: '16px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '14px', alignItems: 'end' }}>
+        {teamMsg ? <div style={{ marginTop: '12px', padding: '8px 12px', background: 'var(--success-bg)', border: '1px solid var(--success-border)', borderRadius: '8px', color: 'var(--success)', fontSize: 'var(--fs-sm)' }}>{teamMsg}</div> : null}
+        {teamErr ? <div style={{ marginTop: '12px', padding: '8px 12px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', borderRadius: '8px', color: 'var(--error)', fontSize: 'var(--fs-sm)' }}>{teamErr}</div> : null}
+        <form className="cols-3" onSubmit={handleSaveTeam} style={{ marginTop: '16px', gap: '16px', alignItems: 'end' }}>
           <div>
-            <label style={TEAM_LABEL_STYLE}>Team Code</label>
+            <label style={TEAM_LABEL_STYLE}>Team code</label>
             <input style={TEAM_INPUT_STYLE} value={teamForm.team_code} disabled={!canEditTeam || !teamLoaded} onChange={(e) => setTeamForm((f) => ({ ...f, team_code: e.target.value.toUpperCase() }))} placeholder="DARE" />
           </div>
           <div>
-            <label style={TEAM_LABEL_STYLE}>Team Name</label>
+            <label style={TEAM_LABEL_STYLE}>Team name</label>
             <input style={TEAM_INPUT_STYLE} value={teamForm.team_name} disabled={!canEditTeam || !teamLoaded} onChange={(e) => setTeamForm((f) => ({ ...f, team_name: e.target.value }))} placeholder="DARE Aquatics" />
           </div>
           <div>
@@ -119,27 +112,27 @@ export default function SettingsPage() {
               <button type="submit" className="btn btn-primary" disabled={teamSaving || !teamLoaded}>{teamSaving ? 'Saving…' : 'Save identity'}</button>
             </div>
           ) : (
-            <p style={{ gridColumn: '1 / -1', fontSize: '11px', color: 'var(--text-muted)', margin: 0 }}>Only admins can edit team identity.</p>
+            <p style={{ gridColumn: '1 / -1', fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', margin: 0 }}>Only admins can edit team identity.</p>
           )}
         </form>
       </div>
 
       <div className="card" style={{ padding: '20px', marginBottom: '20px' }}>
         <div style={{ marginBottom: '4px' }}>
-          <h2 style={{ fontSize: '15px', fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)' }}>Email Sender Identity</h2>
-          <p style={{ fontSize: '12px', color: 'var(--text-subtle)', marginTop: '4px' }}>
-            The name and address new email campaigns send from by default — still editable per campaign.
+          <h2 className="card-title">Email sender identity</h2>
+          <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', marginTop: '4px' }}>
+            Default sender for new campaigns.
           </p>
         </div>
-        {emailMsg ? <div style={{ marginTop: '12px', padding: '8px 12px', background: 'var(--success-bg)', border: '1px solid var(--success-border)', borderRadius: '8px', color: 'var(--success)', fontSize: '12px' }}>{emailMsg}</div> : null}
-        {emailErr ? <div style={{ marginTop: '12px', padding: '8px 12px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', borderRadius: '8px', color: 'var(--error)', fontSize: '12px' }}>{emailErr}</div> : null}
-        <form onSubmit={handleSaveEmail} style={{ marginTop: '16px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', alignItems: 'end' }}>
+        {emailMsg ? <div style={{ marginTop: '12px', padding: '8px 12px', background: 'var(--success-bg)', border: '1px solid var(--success-border)', borderRadius: '8px', color: 'var(--success)', fontSize: 'var(--fs-sm)' }}>{emailMsg}</div> : null}
+        {emailErr ? <div style={{ marginTop: '12px', padding: '8px 12px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', borderRadius: '8px', color: 'var(--error)', fontSize: 'var(--fs-sm)' }}>{emailErr}</div> : null}
+        <form className="cols-2" onSubmit={handleSaveEmail} style={{ marginTop: '16px', gap: '16px', alignItems: 'end' }}>
           <div>
-            <label style={TEAM_LABEL_STYLE}>Sender Name</label>
+            <label style={TEAM_LABEL_STYLE}>Sender name</label>
             <input style={TEAM_INPUT_STYLE} value={emailForm.email_sender_name} disabled={!canEditTeam || !teamLoaded} onChange={(e) => setEmailForm((f) => ({ ...f, email_sender_name: e.target.value }))} placeholder="Your club's name" />
           </div>
           <div>
-            <label style={TEAM_LABEL_STYLE}>Sender Address</label>
+            <label style={TEAM_LABEL_STYLE}>Sender address</label>
             <input style={TEAM_INPUT_STYLE} value={emailForm.email_sender_address} disabled={!canEditTeam || !teamLoaded} type="email" onChange={(e) => setEmailForm((f) => ({ ...f, email_sender_address: e.target.value }))} placeholder="noreply@yourclub.org" />
           </div>
           {canEditTeam ? (
@@ -147,10 +140,12 @@ export default function SettingsPage() {
               <button type="submit" className="btn btn-primary" disabled={emailSaving || !teamLoaded}>{emailSaving ? 'Saving…' : 'Save sender identity'}</button>
             </div>
           ) : (
-            <p style={{ gridColumn: '1 / -1', fontSize: '11px', color: 'var(--text-muted)', margin: 0 }}>Only admins can edit email sender identity.</p>
+            <p style={{ gridColumn: '1 / -1', fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', margin: 0 }}>Only admins can edit email sender identity.</p>
           )}
         </form>
       </div>
+
+      <PublicSitePanel canEdit={canEditTeam} />
 
       {canEditTeam ? (
         <Link
@@ -161,8 +156,8 @@ export default function SettingsPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <Icon name="cpu" size={16} style={{ color: 'var(--text-muted)' }} />
             <div>
-              <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>System Diagnostics</div>
-              <div style={{ fontSize: '12px', color: 'var(--text-subtle)', marginTop: '2px' }}>
+              <div style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)' }}>System diagnostics</div>
+              <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', marginTop: '2px' }}>
                 Raw backend configuration for engineering and deployment troubleshooting.
               </div>
             </div>

@@ -148,10 +148,10 @@ Description: Limit import job submission to prevent queue flooding
 Name: Global API Rate Limit
 Expression: (http.host eq "api.dare.club") or (http.host eq "staging-api.dare.club")
 Characteristics: IP address
-Requests per period: 240
+Requests per period: 1200
 Period: 1 minute
 Action: Block (429 response)
-Description: Matches APP global rate limit — SECURITY_RATE_LIMIT_GLOBAL_REQUESTS=240/1m
+Description: Matches APP global rate limit — SECURITY_RATE_LIMIT_GLOBAL_REQUESTS=1200/1m (sized for a club's shared pool/office NAT, where every coach and parent device presents one IP and each portal page issues ~10 API reads)
 ```
 
 ---

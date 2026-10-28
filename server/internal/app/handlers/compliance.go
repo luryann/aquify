@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -8,6 +10,7 @@ import (
 	"github.com/dareaquatics/aquify/server/internal/app/compliance"
 	"github.com/dareaquatics/aquify/server/internal/app/httpx"
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	"github.com/dareaquatics/aquify/server/internal/workers"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
 )
@@ -18,6 +21,32 @@ type ComplianceHandlers struct {
 	service      *compliance.Service
 	auditService *audit.Service
 	validate     *validator.Validate
+	// queue runs the export/erasure work (compliance:data_export and
+	// compliance:data_deletion); without it requests never leave "pending".
+	queue workers.Queue
+}
+
+// SetJobQueue wires the worker queue used to process export and erasure jobs.
+func (h *ComplianceHandlers) SetJobQueue(queue workers.Queue) {
+	h.queue = queue
+}
+
+func (h *ComplianceHandlers) enqueue(ctx context.Context, taskType string, payload any) error {
+	if h.queue == nil {
+		return errors.New("job queue is not configured")
+	}
+	task, err := workers.NewTask(taskType, payload)
+	if err != nil {
+		return err
+	}
+	_, err = h.queue.Enqueue(ctx, task)
+	return err
+}
+
+type complianceJobPayload struct {
+	RequestID   string `json:"request_id"`
+	OrgID       string `json:"org_id"`
+	HouseholdID string `json:"household_id"`
 }
 
 // NewComplianceHandlers returns a new ComplianceHandlers.
@@ -40,6 +69,8 @@ func (h *ComplianceHandlers) RegisterRoutes(router chi.Router) {
 	router.Post("/compliance/data-deletion-requests", h.createDataDeletionRequest)
 	router.Get("/compliance/data-deletion-requests", h.listDataDeletionRequests)
 	router.Get("/compliance/data-deletion-requests/{requestID}", h.getDataDeletionRequest)
+	router.Post("/compliance/data-deletion-requests/{requestID}/approve", h.approveDataDeletionRequest)
+	router.Post("/compliance/data-deletion-requests/{requestID}/reject", h.rejectDataDeletionRequest)
 }
 
 // ─── Scope helper ─────────────────────────────────────────────────────────────
@@ -87,6 +118,12 @@ func (h *ComplianceHandlers) createDataExportRequest(w http.ResponseWriter, r *h
 	req, err := h.service.CreateDataExportRequest(orgID, body.HouseholdID, principal.UserID)
 	if err != nil {
 		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to create data export request.", err)
+		return
+	}
+	// The request stays "pending" until the worker builds the archive; if the
+	// enqueue fails the request is still recorded and an admin can retry.
+	if err := h.enqueue(r.Context(), workers.TypeProcessDataExport, complianceJobPayload{RequestID: req.ID, OrgID: orgID, HouseholdID: req.HouseholdID}); err != nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, "export_queue_unavailable", "The export request was saved but could not be queued for processing. Try again shortly.", nil)
 		return
 	}
 
@@ -250,5 +287,90 @@ func (h *ComplianceHandlers) getDataDeletionRequest(w http.ResponseWriter, r *ht
 		return
 	}
 
+	httpx.WriteJSON(w, http.StatusOK, req)
+}
+
+// ─── Data deletion review ─────────────────────────────────────────────────────
+
+type reviewDataDeletionBody struct {
+	ReviewNotes string `json:"review_notes"`
+}
+
+// approveDataDeletionRequest handles POST .../data-deletion-requests/{id}/approve.
+// Approval irreversibly erases household data, so it is admin-only and
+// requires an MFA-authenticated session.
+func (h *ComplianceHandlers) approveDataDeletionRequest(w http.ResponseWriter, r *http.Request) {
+	h.reviewDataDeletionRequest(w, r, true)
+}
+
+// rejectDataDeletionRequest handles POST .../data-deletion-requests/{id}/reject.
+func (h *ComplianceHandlers) rejectDataDeletionRequest(w http.ResponseWriter, r *http.Request) {
+	h.reviewDataDeletionRequest(w, r, false)
+}
+
+func (h *ComplianceHandlers) reviewDataDeletionRequest(w http.ResponseWriter, r *http.Request, approve bool) {
+	principal, orgID, ok := complianceScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+	if !hasAnyRole(principal, "admin") {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only admins can review deletion requests.", nil)
+		return
+	}
+	if approve && !principal.MFAAuthenticated {
+		httpx.WriteError(w, r, http.StatusForbidden, "mfa_required", "MFA authentication is required to approve data deletion.", nil)
+		return
+	}
+	var body reviewDataDeletionBody
+	if err := decodeOptionalJSONBody(w, r, &body); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", nil)
+		return
+	}
+	requestID := chi.URLParam(r, "requestID")
+
+	var (
+		req *compliance.DataDeletionRequest
+		err error
+	)
+	if approve {
+		req, err = h.service.ApproveDataDeletion(orgID, requestID, body.ReviewNotes)
+	} else {
+		req, err = h.service.RejectDataDeletion(orgID, requestID, body.ReviewNotes)
+	}
+	switch {
+	case errors.Is(err, compliance.ErrDeletionNotFound):
+		httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Data deletion request not found.", nil)
+		return
+	case errors.Is(err, compliance.ErrInvalidTransition):
+		httpx.WriteError(w, r, http.StatusConflict, "invalid_transition", "This request has already been reviewed.", nil)
+		return
+	case err != nil:
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "invalid_review", err.Error(), nil)
+		return
+	}
+
+	if approve {
+		if err := h.enqueue(r.Context(), workers.TypeProcessDataDeletion, complianceJobPayload{RequestID: req.ID, OrgID: orgID, HouseholdID: req.HouseholdID}); err != nil {
+			httpx.WriteError(w, r, http.StatusServiceUnavailable, "deletion_queue_unavailable", "The request was approved but could not be queued for erasure. Approve again to retry.", nil)
+			return
+		}
+	}
+
+	if h.auditService != nil {
+		action := "compliance.data_deletion.reject"
+		if approve {
+			action = "compliance.data_deletion.approve"
+		}
+		_, _ = h.auditService.Append(audit.AppendRequest{
+			OrgID:        orgID,
+			ActorUserID:  principal.UserID,
+			ActorRoles:   principal.Roles,
+			Action:       action,
+			ResourceType: "data_deletion_request",
+			ResourceID:   req.ID,
+			After:        req,
+			Metadata:     map[string]string{"household_id": req.HouseholdID},
+		})
+	}
 	httpx.WriteJSON(w, http.StatusOK, req)
 }

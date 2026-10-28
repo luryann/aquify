@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
-import { useApiClient, ApiError } from '@/lib/api'
+import { useApiClient } from '@/lib/api'
 import {
   fetchUser,
   fetchAuditEvents,
@@ -19,12 +19,19 @@ import {
   fetchUserSwimmer,
   linkUserSwimmer,
   unlinkUserSwimmer,
+  fetchUserHousehold,
+  linkUserHousehold,
+  unlinkUserHousehold,
+  fetchHouseholds,
+  fetchSwimmers,
+  type HouseholdRecord,
   type UserRecord,
   type UserRoleRecord,
   type AuditEventRecord,
   type SwimmerRecord,
 } from '@/lib/adminData'
 import { ROLE_HIERARCHY, type Role } from '@/lib/roles'
+import { uiErrorMessage } from '@/lib/frontend-telemetry'
 
 const ROLE_OPTIONS: { value: string; label: string }[] = [
   { value: 'admin', label: 'Admin' },
@@ -47,11 +54,9 @@ function RoleChip({ roleName, onRemove, canRemove }: { roleName: string; onRemov
     <span style={{
       display: 'inline-flex',
       alignItems: 'center',
-      gap: '5px',
-      fontSize: '11px',
+      gap: '4px',
+      fontSize: 'var(--fs-xs)',
       fontWeight: 700,
-      letterSpacing: '0.04em',
-      textTransform: 'uppercase',
       padding: '4px 8px',
       borderRadius: '6px',
       background: c.bg,
@@ -79,17 +84,7 @@ function RoleChip({ roleName, onRemove, canRemove }: { roleName: string; onRemov
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="card" style={{ padding: '20px 24px', marginBottom: '16px' }}>
-      <h3 style={{
-        fontSize: '11px',
-        fontWeight: 700,
-        color: 'var(--text-muted)',
-        textTransform: 'uppercase',
-        letterSpacing: '0.06em',
-        fontFamily: 'var(--font-body)',
-        marginBottom: '16px',
-        paddingBottom: '10px',
-        borderBottom: '1px solid var(--border)',
-      }}>{title}</h3>
+      <h3 className="card-title" style={{ marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid var(--border)' }}>{title}</h3>
       {children}
     </div>
   )
@@ -97,20 +92,20 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div style={{ marginBottom: '14px' }}>
-      <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '4px' }}>{label}</div>
-      <div style={{ fontSize: '14px', color: 'var(--text)' }}>{value}</div>
+    <div style={{ marginBottom: '16px' }}>
+      <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginBottom: '4px' }}>{label}</div>
+      <div style={{ fontSize: 'var(--fs-md)', color: 'var(--text)' }}>{value}</div>
     </div>
   )
 }
 
 const INPUT_STYLE: React.CSSProperties = {
   width: '100%',
-  padding: '9px 12px',
+  padding: '8px 12px',
   background: 'var(--bg-elevated)',
   border: '1px solid var(--border)',
   borderRadius: 'var(--r-md)',
-  fontSize: '13px',
+  fontSize: 'var(--fs-base)',
   color: 'var(--text)',
   outline: 'none',
   boxSizing: 'border-box',
@@ -126,7 +121,12 @@ export default function UserDetailPage() {
   const [user, setUser] = useState<UserRecord | null>(null)
   const [roles, setRoles] = useState<UserRoleRecord[]>([])
   const [auditEvents, setAuditEvents] = useState<AuditEventRecord[]>([])
-  const [householdId, setHouseholdId] = useState<string | null>(null)
+  const [linkedHousehold, setLinkedHousehold] = useState<HouseholdRecord | null>(null)
+  const [householdOptions, setHouseholdOptions] = useState<HouseholdRecord[]>([])
+  const [swimmerOptions, setSwimmerOptions] = useState<SwimmerRecord[]>([])
+  const [householdIdInput, setHouseholdIdInput] = useState('')
+  const [householdLinkLoading, setHouseholdLinkLoading] = useState(false)
+  const [householdLinkError, setHouseholdLinkError] = useState<string | null>(null)
   const [linkedSwimmer, setLinkedSwimmer] = useState<SwimmerRecord | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -174,22 +174,27 @@ export default function UserDetailPage() {
     setLoading(true)
     setError(null)
     try {
-      const [{ user: u, roles: r }, auditRes, swimmer] = await Promise.all([
+      const [{ user: u, roles: r }, auditRes, swimmer, household, households, swimmers] = await Promise.all([
         fetchUser(api, session.user.orgId, userId),
         fetchAuditEvents(api, session.user.orgId, {
           resource_id: userId,
           limit: '50',
         }).catch(() => ({ events: [] as AuditEventRecord[] })),
         fetchUserSwimmer(api, session.user.orgId, userId).catch(() => null),
+        fetchUserHousehold(api, session.user.orgId, userId).catch(() => null),
+        fetchHouseholds(api, session.user.orgId).catch(() => [] as HouseholdRecord[]),
+        fetchSwimmers(api, session.user.orgId).catch(() => [] as SwimmerRecord[]),
       ])
       setUser(u)
       setRoles(r)
       setAuditEvents(auditRes.events ?? [])
-      setHouseholdId(u.attributes?.household_id?.[0] ?? u.householdId ?? null)
+      setLinkedHousehold(household)
+      setHouseholdOptions(households)
+      setSwimmerOptions(swimmers)
       setLinkedSwimmer(swimmer)
       setEditForm({ first_name: u.firstName, last_name: u.lastName, email: u.email })
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to load user.')
+      setError(uiErrorMessage(err, 'Couldn’t load user. Try again.'))
     } finally {
       setLoading(false)
     }
@@ -210,7 +215,7 @@ export default function UserDetailPage() {
       setEditMode(false)
       await load()
     } catch (err) {
-      setSaveError(err instanceof ApiError ? err.message : 'Failed to update user.')
+      setSaveError(uiErrorMessage(err, 'Couldn’t update user. Try again.'))
     } finally {
       setSaving(false)
     }
@@ -226,7 +231,7 @@ export default function UserDetailPage() {
       setNewRole('')
       await load()
     } catch (err) {
-      setRoleError(err instanceof ApiError ? err.message : 'Failed to assign role.')
+      setRoleError(uiErrorMessage(err, 'Couldn’t assign role. Try again.'))
     } finally {
       setRoleLoading(false)
     }
@@ -240,7 +245,7 @@ export default function UserDetailPage() {
       await removeUserRole(api, session.user.orgId, userId, roleName)
       await load()
     } catch (err) {
-      setRoleError(err instanceof ApiError ? err.message : 'Failed to remove role.')
+      setRoleError(uiErrorMessage(err, 'Couldn’t remove role. Try again.'))
     } finally {
       setRoleLoading(false)
     }
@@ -255,9 +260,38 @@ export default function UserDetailPage() {
       await sendPasswordReset(api, session.user.orgId, userId)
       setActionSuccess('Password reset email sent.')
     } catch (err) {
-      setActionError(err instanceof ApiError ? err.message : 'Failed to send password reset.')
+      setActionError(uiErrorMessage(err, 'Couldn’t send password reset. Try again.'))
     } finally {
       setActionLoading(false)
+    }
+  }
+
+  async function handleLinkHousehold() {
+    if (!session?.user.orgId || !householdIdInput) return
+    setHouseholdLinkLoading(true)
+    setHouseholdLinkError(null)
+    try {
+      await linkUserHousehold(api, session.user.orgId, userId, householdIdInput)
+      setHouseholdIdInput('')
+      await load()
+    } catch (err) {
+      setHouseholdLinkError(uiErrorMessage(err, 'Couldn’t link household. Try again.'))
+    } finally {
+      setHouseholdLinkLoading(false)
+    }
+  }
+
+  async function handleUnlinkHousehold() {
+    if (!session?.user.orgId || !linkedHousehold) return
+    setHouseholdLinkLoading(true)
+    setHouseholdLinkError(null)
+    try {
+      await unlinkUserHousehold(api, session.user.orgId, userId, linkedHousehold.id)
+      await load()
+    } catch (err) {
+      setHouseholdLinkError(uiErrorMessage(err, 'Couldn’t unlink household. Try again.'))
+    } finally {
+      setHouseholdLinkLoading(false)
     }
   }
 
@@ -270,7 +304,7 @@ export default function UserDetailPage() {
       setSwimmerIdInput('')
       await load()
     } catch (err) {
-      setSwimmerLinkError(err instanceof ApiError ? err.message : 'Failed to link swimmer.')
+      setSwimmerLinkError(uiErrorMessage(err, 'Couldn’t link swimmer. Try again.'))
     } finally {
       setSwimmerLinkLoading(false)
     }
@@ -284,7 +318,7 @@ export default function UserDetailPage() {
       await unlinkUserSwimmer(api, session.user.orgId, userId, linkedSwimmer.id)
       await load()
     } catch (err) {
-      setSwimmerLinkError(err instanceof ApiError ? err.message : 'Failed to unlink swimmer.')
+      setSwimmerLinkError(uiErrorMessage(err, 'Couldn’t unlink swimmer. Try again.'))
     } finally {
       setSwimmerLinkLoading(false)
     }
@@ -301,7 +335,7 @@ export default function UserDetailPage() {
       setActionSuccess('User account disabled.')
       await load()
     } catch (err) {
-      setActionError(err instanceof ApiError ? err.message : 'Failed to disable user.')
+      setActionError(uiErrorMessage(err, 'Couldn’t disable user. Try again.'))
     } finally {
       setActionLoading(false)
     }
@@ -318,7 +352,7 @@ export default function UserDetailPage() {
       setActionSuccess('User account enabled.')
       await load()
     } catch (err) {
-      setActionError(err instanceof ApiError ? err.message : 'Failed to enable user.')
+      setActionError(uiErrorMessage(err, 'Couldn’t enable user. Try again.'))
     } finally {
       setActionLoading(false)
     }
@@ -334,14 +368,14 @@ export default function UserDetailPage() {
       await deleteUser(api, session.user.orgId, userId)
       router.push('/users')
     } catch (err) {
-      setActionError(err instanceof ApiError ? err.message : 'Failed to delete user.')
+      setActionError(uiErrorMessage(err, 'Couldn’t delete user. Try again.'))
       setActionLoading(false)
     }
   }
 
   if (loading) {
     return (
-      <div style={{ padding: '24px', display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-muted)', fontSize: '13px' }}>
+      <div style={{ padding: '24px', display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--text-muted)', fontSize: 'var(--fs-base)' }}>
         <Icon name="loader" size={16} />
         Loading user…
       </div>
@@ -351,10 +385,10 @@ export default function UserDetailPage() {
   if (error || !user) {
     return (
       <div style={{ padding: '24px' }}>
-        <div className="card" style={{ padding: '32px', textAlign: 'center', color: 'var(--error)', fontSize: '13px' }}>
+        <div className="card" style={{ padding: '32px', textAlign: 'center', color: 'var(--error)', fontSize: 'var(--fs-base)' }}>
           <Icon name="alert-circle" size={20} style={{ marginBottom: '8px' }} />
           <div>{error ?? 'User not found.'}</div>
-          <Link href="/users" style={{ color: 'var(--accent)', textDecoration: 'none', fontSize: '12px', marginTop: '12px', display: 'inline-block' }}>
+          <Link href="/users" style={{ color: 'var(--accent)', textDecoration: 'none', fontSize: 'var(--fs-sm)', marginTop: '12px', display: 'inline-block' }}>
             ← Back to Users
           </Link>
         </div>
@@ -368,9 +402,9 @@ export default function UserDetailPage() {
   )
 
   return (
-    <div style={{ padding: '24px', maxWidth: '860px' }}>
+    <div className="page">
       {/* Breadcrumb */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '20px', fontSize: '12px', color: 'var(--text-muted)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '20px', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
         <Link href="/users" style={{ color: 'var(--text-muted)', textDecoration: 'none' }}>Users</Link>
         <Icon name="chevron-right" size={12} />
         <span style={{ color: 'var(--text)' }}>{user.firstName || user.lastName ? `${user.firstName} ${user.lastName}`.trim() : user.email}</span>
@@ -383,20 +417,20 @@ export default function UserDetailPage() {
           background: 'var(--accent-subtle)',
           border: '2px solid var(--accent-border)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: '18px', fontWeight: 700, color: 'var(--accent)',
+          fontSize: 'var(--fs-xl)', fontWeight: 700, color: 'var(--accent)',
           fontFamily: 'var(--font-body)', flexShrink: 0,
         }}>
           {((user.firstName?.[0] ?? '') + (user.lastName?.[0] ?? '')).toUpperCase() || user.email[0].toUpperCase()}
         </div>
         <div style={{ flex: 1 }}>
           <h1 className="page-title">
-            {user.firstName || user.lastName ? `${user.firstName} ${user.lastName}`.trim() : <span style={{ color: 'var(--text-muted)' }}>Unnamed User</span>}
+            {user.firstName || user.lastName ? `${user.firstName} ${user.lastName}`.trim() : <span style={{ color: 'var(--text-muted)' }}>Unnamed user</span>}
           </h1>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '13px', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)' }}>{user.email}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)' }}>{user.email}</span>
             <span style={{
               display: 'inline-flex', alignItems: 'center', gap: '4px',
-              fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '20px',
+              fontSize: 'var(--fs-xs)', fontWeight: 600, padding: '2px 8px', borderRadius: '16px',
               background: user.enabled ? 'var(--success-bg)' : 'var(--bg-elevated)',
               color: user.enabled ? 'var(--success)' : 'var(--text-muted)',
               fontFamily: 'var(--font-body)',
@@ -405,7 +439,7 @@ export default function UserDetailPage() {
               {user.enabled ? 'Active' : 'Disabled'}
             </span>
             {!user.emailVerified && (
-              <span style={{ fontSize: '11px', color: 'var(--warning)', display: 'flex', alignItems: 'center', gap: '3px' }}>
+              <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--warning)', display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <Icon name="alert-triangle" size={11} /> Email not verified
               </span>
             )}
@@ -415,17 +449,17 @@ export default function UserDetailPage() {
 
       {/* Action feedback */}
       {actionSuccess && (
-        <div style={{ background: 'var(--success-bg)', border: '1px solid var(--success-border)', color: 'var(--success)', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ background: 'var(--success-bg)', border: '1px solid var(--success-border)', color: 'var(--success)', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: 'var(--fs-base)', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Icon name="check-circle" size={14} /> {actionSuccess}
         </div>
       )}
       {actionError && (
-        <div style={{ background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px' }}>
+        <div style={{ background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: 'var(--fs-base)' }}>
           {actionError}
         </div>
       )}
       {saveSuccess && (
-        <div style={{ background: 'var(--success-bg)', border: '1px solid var(--success-border)', color: 'var(--success)', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ background: 'var(--success-bg)', border: '1px solid var(--success-border)', color: 'var(--success)', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: 'var(--fs-base)', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Icon name="check-circle" size={14} /> Profile updated.
         </div>
       )}
@@ -433,57 +467,57 @@ export default function UserDetailPage() {
       {/* Profile */}
       <Section title="Profile">
         {editMode ? (
-          <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {saveError && (
-              <div style={{ background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', borderRadius: '8px', padding: '10px 14px', fontSize: '13px' }}>
+              <div style={{ background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', borderRadius: '8px', padding: '12px 16px', fontSize: 'var(--fs-base)' }}>
                 {saveError}
               </div>
             )}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div className="cols-2" style={{ gap: '12px' }}>
               <div>
-                <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '5px', fontFamily: 'var(--font-body)' }}>
-                  First Name
+                <label style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '4px', fontFamily: 'var(--font-body)' }}>
+                  First name
                 </label>
                 <input style={INPUT_STYLE} value={editForm.first_name} onChange={(e) => setEditForm((f) => ({ ...f, first_name: e.target.value }))} />
               </div>
               <div>
-                <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '5px', fontFamily: 'var(--font-body)' }}>
-                  Last Name
+                <label style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '4px', fontFamily: 'var(--font-body)' }}>
+                  Last name
                 </label>
                 <input style={INPUT_STYLE} value={editForm.last_name} onChange={(e) => setEditForm((f) => ({ ...f, last_name: e.target.value }))} />
               </div>
             </div>
             <div>
-              <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '5px', fontFamily: 'var(--font-body)' }}>
+              <label style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '4px', fontFamily: 'var(--font-body)' }}>
                 Email
               </label>
               <input type="email" style={INPUT_STYLE} value={editForm.email} onChange={(e) => setEditForm((f) => ({ ...f, email: e.target.value }))} />
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
-              <button type="submit" className="btn btn-primary" style={{ fontSize: '12px', padding: '7px 14px' }} disabled={saving}>
+              <button type="submit" className="btn btn-primary" style={{ fontSize: 'var(--fs-sm)', padding: '8px 16px' }} disabled={saving}>
                 {saving ? 'Saving…' : 'Save Changes'}
               </button>
-              <button type="button" className="btn" style={{ fontSize: '12px', padding: '7px 14px' }} onClick={() => { setEditMode(false); setSaveError(null) }}>
+              <button type="button" className="btn" style={{ fontSize: 'var(--fs-sm)', padding: '8px 16px' }} onClick={() => { setEditMode(false); setSaveError(null) }}>
                 Cancel
               </button>
             </div>
           </form>
         ) : (
           <div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0' }}>
-              <Field label="First Name" value={user.firstName || <span style={{ color: 'var(--text-muted)' }}>—</span>} />
-              <Field label="Last Name" value={user.lastName || <span style={{ color: 'var(--text-muted)' }}>—</span>} />
-              <Field label="Email" value={<span style={{ fontFamily: 'var(--font-body)', fontSize: '13px' }}>{user.email}</span>} />
-              <Field label="Username" value={<span style={{ fontFamily: 'var(--font-body)', fontSize: '13px', color: 'var(--text-subtle)' }}>{user.username}</span>} />
-              <Field label="Email Verified" value={
+            <div className="cols-2" style={{ gap: '0' }}>
+              <Field label="First name" value={user.firstName || <span style={{ color: 'var(--text-muted)' }}>—</span>} />
+              <Field label="Last name" value={user.lastName || <span style={{ color: 'var(--text-muted)' }}>—</span>} />
+              <Field label="Email" value={<span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-base)' }}>{user.email}</span>} />
+              <Field label="Username" value={<span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-base)', color: 'var(--text-subtle)' }}>{user.username}</span>} />
+              <Field label="Email verified" value={
                 user.emailVerified
-                  ? <span style={{ color: 'var(--success)', fontSize: '13px' }}>Verified</span>
-                  : <span style={{ color: 'var(--warning)', fontSize: '13px' }}>Not verified</span>
+                  ? <span style={{ color: 'var(--success)', fontSize: 'var(--fs-base)' }}>Verified</span>
+                  : <span style={{ color: 'var(--warning)', fontSize: 'var(--fs-base)' }}>Not verified</span>
               } />
-              <Field label="Keycloak ID" value={<span style={{ fontFamily: 'var(--font-body)', fontSize: '11px', color: 'var(--text-muted)' }}>{user.id}</span>} />
+              <Field label="User ID" value={<span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>{user.id}</span>} />
             </div>
-            <button className="btn" style={{ fontSize: '12px', padding: '6px 12px', marginTop: '4px' }} onClick={() => { setEditMode(true); setSaveSuccess(false) }}>
-              <Icon name="edit-2" size={12} style={{ marginRight: '5px' }} />
+            <button className="btn" style={{ fontSize: 'var(--fs-sm)', padding: '6px 12px', marginTop: '4px' }} onClick={() => { setEditMode(true); setSaveSuccess(false) }}>
+              <Icon name="edit-2" size={12} style={{ marginRight: '4px' }} />
               Edit Profile
             </button>
           </div>
@@ -493,13 +527,13 @@ export default function UserDetailPage() {
       {/* Roles */}
       <Section title="Roles">
         {roleError && (
-          <div style={{ background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', borderRadius: '8px', padding: '8px 12px', marginBottom: '12px', fontSize: '12px' }}>
+          <div style={{ background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', borderRadius: '8px', padding: '8px 12px', marginBottom: '12px', fontSize: 'var(--fs-sm)' }}>
             {roleError}
           </div>
         )}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px', alignItems: 'center' }}>
           {roles.length === 0 ? (
-            <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>No roles assigned.</span>
+            <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)' }}>No roles assigned.</span>
           ) : (
             roles.map((r) => (
               <RoleChip
@@ -513,7 +547,7 @@ export default function UserDetailPage() {
           {!addingRole && availableRolesToAdd.length > 0 && (
             <button
               className="btn"
-              style={{ fontSize: '11px', padding: '4px 10px', display: 'flex', alignItems: 'center', gap: '4px' }}
+              style={{ fontSize: 'var(--fs-xs)', padding: '4px 12px', display: 'flex', alignItems: 'center', gap: '4px' }}
               onClick={() => { setAddingRole(true); setRoleError(null) }}
               disabled={roleLoading}
             >
@@ -526,7 +560,7 @@ export default function UserDetailPage() {
             <select
               value={newRole}
               onChange={(e) => setNewRole(e.target.value)}
-              style={{ padding: '7px 10px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none' }}
+              style={{ padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none' }}
             >
               <option value="">Select role…</option>
               {availableRolesToAdd.map((r) => (
@@ -535,7 +569,7 @@ export default function UserDetailPage() {
             </select>
             <button
               className="btn btn-primary"
-              style={{ fontSize: '12px', padding: '7px 12px' }}
+              style={{ fontSize: 'var(--fs-sm)', padding: '8px 12px' }}
               onClick={() => { void handleAddRole() }}
               disabled={!newRole || roleLoading}
             >
@@ -543,7 +577,7 @@ export default function UserDetailPage() {
             </button>
             <button
               className="btn"
-              style={{ fontSize: '12px', padding: '7px 12px' }}
+              style={{ fontSize: 'var(--fs-sm)', padding: '8px 12px' }}
               onClick={() => { setAddingRole(false); setNewRole('') }}
             >
               Cancel
@@ -553,93 +587,143 @@ export default function UserDetailPage() {
       </Section>
 
       {/* Linked Household */}
-      <Section title="Linked Household">
-        {householdId ? (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '12px 14px', background: 'var(--bg-elevated)', borderRadius: 'var(--r-md)', border: '1px solid var(--border)' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+      <Section title="Linked household">
+        {householdLinkError && (
+          <div style={{ background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', borderRadius: '8px', padding: '8px 12px', marginBottom: '12px', fontSize: 'var(--fs-sm)' }}>
+            {householdLinkError}
+          </div>
+        )}
+        {linkedHousehold ? (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '12px 16px', background: 'var(--bg-elevated)', borderRadius: 'var(--r-md)', border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
               <Icon name="home" size={16} style={{ color: 'var(--accent)', flexShrink: 0, marginTop: '1px' }} />
               <div>
-                <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text)' }}>Linked household</div>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>{householdId}</div>
-                <div style={{ fontSize: '11px', color: 'var(--text-disabled)', marginTop: '4px', lineHeight: 1.5, maxWidth: '440px' }}>
-                  Household swimmers linked here appear in the parent portal through Members. They do not create separate login accounts in <span style={{ fontFamily: 'var(--font-body)' }}>/users</span> unless you create a user for them.
+                <div style={{ fontSize: 'var(--fs-base)', fontWeight: 500, color: 'var(--text)' }}>{linkedHousehold.household_name}</div>
+                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>{linkedHousehold.primary_email || linkedHousehold.id}</div>
+                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-disabled)', marginTop: '4px', lineHeight: 1.5, maxWidth: '440px' }}>
+                  When this user signs in as a parent, the portal shows this household&apos;s swimmers, invoices, documents, and meet commitments.
                 </div>
               </div>
             </div>
-            <Link href={`/members/households/${householdId}`} style={{ fontSize: '12px', color: 'var(--accent)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '3px' }}>
-              View <Icon name="chevron-right" size={12} />
-            </Link>
-          </div>
-        ) : (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', background: 'var(--bg-elevated)', borderRadius: 'var(--r-md)', border: '1px solid var(--border)' }}>
-            <Icon name="home" size={16} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-            <div>
-              <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>No household linked</div>
-              <div style={{ fontSize: '11px', color: 'var(--text-disabled)', marginTop: '2px' }}>
-                Link a household from Members to give a parent access to that family&apos;s swimmers in the portal.
-              </div>
-            </div>
-          </div>
-        )}
-      </Section>
-
-      {/* Linked Swimmer */}
-      <Section title="Linked Swimmer">
-        {swimmerLinkError && (
-          <div style={{ background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', borderRadius: '8px', padding: '8px 12px', marginBottom: '12px', fontSize: '12px' }}>
-            {swimmerLinkError}
-          </div>
-        )}
-        {linkedSwimmer ? (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '12px 14px', background: 'var(--bg-elevated)', borderRadius: 'var(--r-md)', border: '1px solid var(--border)' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-              <Icon name="user" size={16} style={{ color: 'var(--accent)', flexShrink: 0, marginTop: '1px' }} />
-              <div>
-                <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text)' }}>
-                  {linkedSwimmer.first_name} {linkedSwimmer.last_name}
-                </div>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>{linkedSwimmer.id}</div>
-                <div style={{ fontSize: '11px', color: 'var(--text-disabled)', marginTop: '4px', lineHeight: 1.5, maxWidth: '440px' }}>
-                  When this user logs in with the swimmer role, their portal session resolves to this exact swimmer record — never a guess from the household roster.
-                </div>
-              </div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <button
                 className="btn"
-                style={{ fontSize: '12px', padding: '6px 10px', color: 'var(--error)', borderColor: 'var(--error-border)' }}
-                onClick={() => { void handleUnlinkSwimmer() }}
-                disabled={swimmerLinkLoading}
+                style={{ fontSize: 'var(--fs-sm)', padding: '6px 12px', color: 'var(--error)', borderColor: 'var(--error-border)' }}
+                onClick={() => { void handleUnlinkHousehold() }}
+                disabled={householdLinkLoading}
               >
-                {swimmerLinkLoading ? 'Unlinking…' : 'Unlink'}
+                {householdLinkLoading ? 'Unlinking…' : 'Unlink'}
               </button>
-              <Link href={`/members/swimmers/${linkedSwimmer.id}`} style={{ fontSize: '12px', color: 'var(--accent)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '3px' }}>
+              <Link href={`/members/households/${linkedHousehold.id}`} style={{ fontSize: 'var(--fs-sm)', color: 'var(--accent)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
                 View <Icon name="chevron-right" size={12} />
               </Link>
             </div>
           </div>
         ) : (
           <div style={{ padding: '12px', background: 'var(--bg-elevated)', borderRadius: 'var(--r-md)', border: '1px solid var(--border)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+              <Icon name="home" size={16} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+              <div>
+                <div style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)' }}>No household linked</div>
+                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-disabled)', marginTop: '2px' }}>
+                  Link a household to give this parent portal access to that family&apos;s swimmers.
+                </div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <select
+                aria-label="Household to link"
+                value={householdIdInput}
+                onChange={(e) => setHouseholdIdInput(e.target.value)}
+                style={INPUT_STYLE}
+              >
+                <option value="">Select a household…</option>
+                {[...householdOptions]
+                  .sort((a, b) => a.household_name.localeCompare(b.household_name))
+                  .map((h) => (
+                    <option key={h.id} value={h.id}>
+                      {h.household_name}{h.primary_email ? ` — ${h.primary_email}` : ''}
+                    </option>
+                  ))}
+              </select>
+              <button
+                className="btn btn-primary"
+                style={{ fontSize: 'var(--fs-sm)', padding: '8px 16px', whiteSpace: 'nowrap' }}
+                onClick={() => { void handleLinkHousehold() }}
+                disabled={!householdIdInput || householdLinkLoading}
+              >
+                {householdLinkLoading ? 'Linking…' : 'Link'}
+              </button>
+            </div>
+          </div>
+        )}
+      </Section>
+
+      {/* Linked Swimmer */}
+      <Section title="Linked swimmer">
+        {swimmerLinkError && (
+          <div style={{ background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', borderRadius: '8px', padding: '8px 12px', marginBottom: '12px', fontSize: 'var(--fs-sm)' }}>
+            {swimmerLinkError}
+          </div>
+        )}
+        {linkedSwimmer ? (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '12px 16px', background: 'var(--bg-elevated)', borderRadius: 'var(--r-md)', border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+              <Icon name="user" size={16} style={{ color: 'var(--accent)', flexShrink: 0, marginTop: '1px' }} />
+              <div>
+                <div style={{ fontSize: 'var(--fs-base)', fontWeight: 500, color: 'var(--text)' }}>
+                  {linkedSwimmer.first_name} {linkedSwimmer.last_name}
+                </div>
+                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>{linkedSwimmer.id}</div>
+                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-disabled)', marginTop: '4px', lineHeight: 1.5, maxWidth: '440px' }}>
+                  When this user logs in with the swimmer role, their portal session resolves to this exact swimmer record — never a guess from the household roster.
+                </div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <button
+                className="btn"
+                style={{ fontSize: 'var(--fs-sm)', padding: '6px 12px', color: 'var(--error)', borderColor: 'var(--error-border)' }}
+                onClick={() => { void handleUnlinkSwimmer() }}
+                disabled={swimmerLinkLoading}
+              >
+                {swimmerLinkLoading ? 'Unlinking…' : 'Unlink'}
+              </button>
+              <Link href={`/members/swimmers/${linkedSwimmer.id}`} style={{ fontSize: 'var(--fs-sm)', color: 'var(--accent)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                View <Icon name="chevron-right" size={12} />
+              </Link>
+            </div>
+          </div>
+        ) : (
+          <div style={{ padding: '12px', background: 'var(--bg-elevated)', borderRadius: 'var(--r-md)', border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
               <Icon name="user" size={16} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
               <div>
-                <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>No swimmer linked</div>
-                <div style={{ fontSize: '11px', color: 'var(--text-disabled)', marginTop: '2px' }}>
+                <div style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)' }}>No swimmer linked</div>
+                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-disabled)', marginTop: '2px' }}>
                   Required for this user&apos;s swim portal session to know which swimmer is &quot;them&quot; when the household has more than one.
                 </div>
               </div>
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
-              <input
-                type="text"
-                placeholder="Swimmer ID"
+              <select
+                aria-label="Swimmer to link"
                 value={swimmerIdInput}
                 onChange={(e) => setSwimmerIdInput(e.target.value)}
                 style={INPUT_STYLE}
-              />
+              >
+                <option value="">Select a swimmer…</option>
+                {[...swimmerOptions]
+                  .sort((a, b) => `${a.last_name} ${a.first_name}`.localeCompare(`${b.last_name} ${b.first_name}`))
+                  .map((sw) => (
+                    <option key={sw.id} value={sw.id}>
+                      {sw.last_name}, {sw.first_name}{sw.date_of_birth ? ` (${sw.date_of_birth.slice(0, 10)})` : ''}
+                    </option>
+                  ))}
+              </select>
               <button
                 className="btn btn-primary"
-                style={{ fontSize: '12px', padding: '7px 14px', whiteSpace: 'nowrap' }}
+                style={{ fontSize: 'var(--fs-sm)', padding: '8px 16px', whiteSpace: 'nowrap' }}
                 onClick={() => { void handleLinkSwimmer() }}
                 disabled={!swimmerIdInput.trim() || swimmerLinkLoading}
               >
@@ -651,11 +735,11 @@ export default function UserDetailPage() {
       </Section>
 
       {/* Actions */}
-      <Section title="Actions">
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+      <Section title="Account access">
+        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
           <button
             className="btn"
-            style={{ fontSize: '12px', padding: '7px 14px', display: 'flex', alignItems: 'center', gap: '6px' }}
+            style={{ fontSize: 'var(--fs-sm)', padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '6px' }}
             onClick={() => { void handlePasswordReset() }}
             disabled={actionLoading}
           >
@@ -666,7 +750,7 @@ export default function UserDetailPage() {
           {user.enabled ? (
             <button
               className="btn"
-              style={{ fontSize: '12px', padding: '7px 14px', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--warning)', borderColor: 'var(--warning-border)' }}
+              style={{ fontSize: 'var(--fs-sm)', padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--warning)', borderColor: 'var(--warning-border)' }}
               onClick={() => setShowDisableConfirm(true)}
               disabled={actionLoading}
             >
@@ -676,7 +760,7 @@ export default function UserDetailPage() {
           ) : (
             <button
               className="btn"
-              style={{ fontSize: '12px', padding: '7px 14px', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--success)', borderColor: 'var(--success-border)' }}
+              style={{ fontSize: 'var(--fs-sm)', padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--success)', borderColor: 'var(--success-border)' }}
               onClick={() => setShowEnableConfirm(true)}
               disabled={actionLoading}
             >
@@ -688,7 +772,7 @@ export default function UserDetailPage() {
           {isAdmin && (
             <button
               className="btn"
-              style={{ fontSize: '12px', padding: '7px 14px', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--error)', borderColor: 'var(--error-border)', marginLeft: 'auto' }}
+              style={{ fontSize: 'var(--fs-sm)', padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--error)', borderColor: 'var(--error-border)', marginLeft: 'auto' }}
               onClick={() => { setShowDeleteConfirm(true); setDeleteEmailConfirm('') }}
               disabled={actionLoading}
             >
@@ -700,9 +784,9 @@ export default function UserDetailPage() {
       </Section>
 
       {/* Audit Trail */}
-      <Section title="Audit Trail">
+      <Section title="Audit trail">
         {auditEvents.length === 0 ? (
-          <div style={{ fontSize: '13px', color: 'var(--text-muted)', padding: '8px 0' }}>No audit events recorded for this user.</div>
+          <div style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)', padding: '8px 0' }}>No audit events recorded for this user.</div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
             {auditEvents.slice(0, 20).map((event, i) => (
@@ -710,7 +794,7 @@ export default function UserDetailPage() {
                 display: 'flex',
                 alignItems: 'flex-start',
                 gap: '12px',
-                padding: '10px 0',
+                padding: '12px 0',
                 borderBottom: i < Math.min(auditEvents.length, 20) - 1 ? '1px solid var(--border)' : 'none',
               }}>
                 <div style={{
@@ -723,8 +807,8 @@ export default function UserDetailPage() {
                   <Icon name="shield" size={12} style={{ color: 'var(--text-muted)' }} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: '12px', color: 'var(--text)', fontFamily: 'var(--font-body)' }}>{event.action}</div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text)', fontFamily: 'var(--font-body)' }}>{event.action}</div>
+                  <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: '2px' }}>
                     by <span style={{ color: 'var(--text-subtle)' }}>{event.actor_user_id.slice(0, 8)}…</span>
                     {' · '}
                     {new Date(event.occurred_at).toLocaleString('en-US', {
@@ -742,9 +826,9 @@ export default function UserDetailPage() {
       {/* Disable Confirmation */}
       {showDisableConfirm && (
         <ConfirmModal
-          title="Disable Account"
-          message={`Are you sure you want to disable ${user.email}? They will not be able to log in until re-enabled.`}
-          confirmLabel="Disable"
+          title="Disable account"
+          message={`${user.email} won’t be able to sign in until you enable the account again.`}
+          confirmLabel="Disable account"
           danger={false}
           onConfirm={() => { void handleDisable() }}
           onCancel={() => setShowDisableConfirm(false)}
@@ -754,9 +838,9 @@ export default function UserDetailPage() {
       {/* Enable Confirmation */}
       {showEnableConfirm && (
         <ConfirmModal
-          title="Enable Account"
+          title="Enable account"
           message={`Re-enable ${user.email}? They will regain login access immediately.`}
-          confirmLabel="Enable"
+          confirmLabel="Enable account"
           danger={false}
           onConfirm={() => { void handleEnable() }}
           onCancel={() => setShowEnableConfirm(false)}
@@ -769,17 +853,17 @@ export default function UserDetailPage() {
           style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.7)' }}
           onClick={(e) => { if (e.target === e.currentTarget) setShowDeleteConfirm(false) }}
         >
-          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--error-border)', borderRadius: '14px', padding: '28px', width: '100%', maxWidth: '460px', boxShadow: 'var(--shadow-lg)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--error-border)', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '460px', boxShadow: 'var(--shadow-lg)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
               <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'var(--error-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <Icon name="trash-2" size={16} style={{ color: 'var(--error)' }} />
               </div>
-              <h2 style={{ fontSize: '16px', fontFamily: 'var(--font-display)', color: 'var(--text)', margin: 0 }}>Permanently Delete User</h2>
+              <h2 className="section-title" style={{ margin: 0 }}>Permanently delete user</h2>
             </div>
-            <p style={{ fontSize: '13px', color: 'var(--text-subtle)', marginBottom: '8px', lineHeight: 1.5 }}>
-              This will permanently delete <strong style={{ color: 'var(--text)' }}>{user.email}</strong> from Keycloak and anonymize all associated DARE records. This action <strong style={{ color: 'var(--error)' }}>cannot be undone</strong>.
+            <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', marginBottom: '8px', lineHeight: 1.5 }}>
+              This will permanently delete <strong style={{ color: 'var(--text)' }}>{user.email}</strong> from the identity provider and anonymize all associated DARE records. This action <strong style={{ color: 'var(--error)' }}>cannot be undone</strong>.
             </p>
-            <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '16px' }}>
+            <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginBottom: '16px' }}>
               Type the user&apos;s email address to confirm:
             </p>
             <input
@@ -790,10 +874,10 @@ export default function UserDetailPage() {
               onChange={(e) => setDeleteEmailConfirm(e.target.value)}
             />
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-              <button className="btn" style={{ fontSize: '13px' }} onClick={() => setShowDeleteConfirm(false)}>Cancel</button>
+              <button className="btn" style={{ fontSize: 'var(--fs-base)' }} onClick={() => setShowDeleteConfirm(false)}>Cancel</button>
               <button
                 className="btn"
-                style={{ fontSize: '13px', background: 'var(--error)', color: '#fff', border: 'none' }}
+                style={{ fontSize: 'var(--fs-base)', background: 'var(--error)', color: '#fff', border: 'none' }}
                 disabled={deleteEmailConfirm !== user.email || actionLoading}
                 onClick={() => { void handleDelete() }}
               >
@@ -828,13 +912,13 @@ function ConfirmModal({
       onClick={(e) => { if (e.target === e.currentTarget) onCancel() }}
     >
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-strong)', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '400px', boxShadow: 'var(--shadow-lg)' }}>
-        <h2 style={{ fontSize: '16px', fontFamily: 'var(--font-display)', color: 'var(--text)', marginBottom: '10px' }}>{title}</h2>
-        <p style={{ fontSize: '13px', color: 'var(--text-subtle)', lineHeight: 1.5, marginBottom: '20px' }}>{message}</p>
+        <h2 className="section-title" style={{ marginBottom: '12px' }}>{title}</h2>
+        <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', lineHeight: 1.5, marginBottom: '20px' }}>{message}</p>
         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-          <button className="btn" style={{ fontSize: '13px' }} onClick={onCancel}>Cancel</button>
+          <button className="btn" style={{ fontSize: 'var(--fs-base)' }} onClick={onCancel}>Cancel</button>
           <button
             className="btn btn-primary"
-            style={danger ? { background: 'var(--error)', border: 'none', fontSize: '13px' } : { fontSize: '13px' }}
+            style={danger ? { background: 'var(--error)', border: 'none', fontSize: 'var(--fs-base)' } : { fontSize: 'var(--fs-base)' }}
             onClick={onConfirm}
           >
             {confirmLabel}

@@ -161,7 +161,7 @@ test('Step 29E audit and jobs helpers cover the live operational admin endpoints
   const mock = createMockApi()
   mock.respond('GET', '/api/v1/audit-events?action=announcement.publish', { events: [{ id: 'evt_1', action: 'announcement.publish' }], next_cursor: 'next_1' })
   mock.respond('GET', '/api/v1/jobs', { tasks: [{ id: 'job_1', type: 'billing_reconcile' }] })
-  mock.respond('GET', '/api/v1/jobs/queues', { queues: [{ queue: 'default', pending: 1, active: 0, retrying: 0, completed: 3, failed: 0, dead_letter: 0 }] })
+  mock.respond('GET', '/api/v1/jobs/queues', { queues: [{ name: 'default', pending: 1, active: 0, completed: 3, failed: 0, dead_letter: 0 }] })
   mock.respond('GET', '/api/v1/jobs/metrics', { by_type: { billing_reconcile: { enqueued: 1, succeeded: 1, failed: 0, dlq: 0 } }, recent_executions: [] })
   mock.respond('GET', '/api/v1/jobs/dlq', { dead_letter_tasks: [{ id: 'dlq_1', type: 'send_email' }] })
   mock.respond('POST', '/api/v1/jobs/dlq/dlq_1/retry', undefined)
@@ -171,7 +171,7 @@ test('Step 29E audit and jobs helpers cover the live operational admin endpoints
 
   assert.equal((await fetchAuditEvents(api, 'org_ops', { action: 'announcement.publish' })).next_cursor, 'next_1')
   assert.equal((await fetchJobs(api, 'org_ops'))[0]?.id, 'job_1')
-  assert.equal((await fetchQueueStats(api, 'org_ops'))[0]?.queue, 'default')
+  assert.equal((await fetchQueueStats(api, 'org_ops'))[0]?.name, 'default')
   assert.equal((await fetchJobMetrics(api, 'org_ops')).by_type.billing_reconcile?.succeeded, 1)
   assert.equal((await fetchDLQTasks(api, 'org_ops'))[0]?.id, 'dlq_1')
   await retryDLQTask(api, 'org_ops', 'dlq_1')

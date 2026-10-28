@@ -130,12 +130,11 @@ function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) =
       style={{
         display: 'flex',
         alignItems: 'flex-start',
-        gap: '10px',
+        gap: '12px',
         background: 'var(--bg-elevated)',
         border: `1px solid ${cfg.border}`,
-        borderLeft: `3px solid ${cfg.color}`,
         borderRadius: 'var(--r-lg)',
-        padding: '12px 14px',
+        padding: '12px 16px',
         boxShadow: 'var(--shadow-toast)',
         width: '320px',
         maxWidth: '90vw',
@@ -153,11 +152,11 @@ function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) =
 
       {/* Content */}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', lineHeight: 1.4 }}>
+        <p style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.4 }}>
           {title}
         </p>
         {description && (
-          <p style={{ fontSize: '12px', color: 'var(--text-subtle)', marginTop: '2px', lineHeight: 1.5 }}>
+          <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', marginTop: '2px', lineHeight: 1.5 }}>
             {description}
           </p>
         )}

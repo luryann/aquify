@@ -57,6 +57,7 @@ var (
 	ErrInvalidTransition            = errors.New("invalid invoice state transition")
 	ErrInvoiceNotDraft              = errors.New("invoice must be in draft status to modify items")
 	ErrInvoiceNotIssuable           = errors.New("invoice must be in draft status to issue")
+	ErrInvoiceEmpty                 = errors.New("invoice has no billable amount; add line items before issuing")
 	ErrInvoiceNotVoidable           = errors.New("invoice must be in issued status to void")
 	ErrInvoiceNotWriteOffable       = errors.New("invoice must be in issued or partially_paid status to write off")
 	ErrPaymentExceedsBalance        = errors.New("payment amount exceeds outstanding balance")
@@ -157,6 +158,7 @@ type LedgerEvent struct {
 	InvoiceID   string    `json:"invoice_id,omitempty"`
 	PaymentID   string    `json:"payment_id,omitempty"`
 	RefundID    string    `json:"refund_id,omitempty"`
+	HouseholdID string    `json:"household_id,omitempty"`
 	EventType   string    `json:"event_type"`
 	AmountCents int       `json:"amount_cents"`
 	Description string    `json:"description,omitempty"`
@@ -256,6 +258,9 @@ type RecordPaymentInput struct {
 	ExternalRef           string `json:"external_ref"`
 	Notes                 string `json:"notes"`
 	PaidAt                string `json:"paid_at"`
+	// ExcessToCredit allows an amount above the outstanding balance: the
+	// balance is settled and the excess lands in the household account credit.
+	ExcessToCredit bool `json:"excess_to_credit"`
 }
 
 // CreateRefundInput holds fields for creating a refund request.
@@ -264,6 +269,9 @@ type CreateRefundInput struct {
 	AmountCents    int    `json:"amount_cents" validate:"required,gt=0"`
 	Reason         string `json:"reason" validate:"required"`
 	StripeRefundID string `json:"-"`
+	// ToAccountCredit is set by the refund-to-credit flow: no money leaves the
+	// club; the refunded amount becomes household account credit.
+	ToAccountCredit bool `json:"-"`
 }
 
 // RefundPreflight captures the local state validated before an external refund
@@ -320,6 +328,13 @@ type Service struct {
 	invoiceNums       map[string]bool                // "orgID|invoiceNumber" → true
 	webhookEvents     map[string]*WebhookEventRecord // "provider|eventID" → record
 	autopayProfiles   map[string]*HouseholdAutopayProfile
+
+	// Club finance state (fee schedules, runs, credits, late fees).
+	finance *financeState
+	// runMu serialises billing-run commits and late-fee sweeps in-process; the
+	// DB path additionally takes a per-org advisory lock across instances.
+	runMu  sync.Mutex
+	roster RosterSource
 }
 
 // NewService creates a new in-memory billing Service.
@@ -336,6 +351,7 @@ func NewService() *Service {
 		invoiceNums:       make(map[string]bool),
 		webhookEvents:     make(map[string]*WebhookEventRecord),
 		autopayProfiles:   make(map[string]*HouseholdAutopayProfile),
+		finance:           newFinanceState(),
 	}
 }
 
@@ -354,12 +370,33 @@ func NewServiceWithPool(pool *pgxpool.Pool) *Service {
 }
 
 func (s *Service) loadFromDB(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.reloadLocked(ctx)
+}
+
+// reloadLocked replaces the in-memory cache with the canonical Postgres state.
+// Finance reads (runs, reports, statements, credits) call it so a second API
+// instance or the worker process observes writes made elsewhere.
+// Must be called with s.mu held (write).
+func (s *Service) reloadLocked(ctx context.Context) error {
+	if s.repo == nil {
+		return nil
+	}
 	invoices, items, payments, refunds, ledger, autopayProfiles, err := s.repo.LoadAll(ctx)
 	if err != nil {
 		return err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.invoices = make(map[string]*Invoice, len(invoices))
+	s.items = make(map[string][]*InvoiceItem)
+	s.itemsByID = make(map[string]*InvoiceItem, len(items))
+	s.payments = make(map[string][]*Payment)
+	s.paymentsByID = make(map[string]*Payment, len(payments))
+	s.stripeIntentIndex = make(map[string]*Payment)
+	s.refunds = make(map[string][]*Refund)
+	s.refundsByID = make(map[string]*Refund, len(refunds))
+	s.invoiceNums = make(map[string]bool, len(invoices))
+	s.autopayProfiles = make(map[string]*HouseholdAutopayProfile, len(autopayProfiles))
 	for _, inv := range invoices {
 		s.invoices[inv.ID] = inv
 		s.invoiceNums[invoiceNumKey(inv.OrgID, inv.InvoiceNumber)] = true
@@ -383,7 +420,43 @@ func (s *Service) loadFromDB(ctx context.Context) error {
 	for _, profile := range autopayProfiles {
 		s.autopayProfiles[autopayProfileKey(profile.OrgID, profile.HouseholdID)] = profile
 	}
+	s.deriveAmountsPaidLocked()
+	// Finance tables load independently so a missing finance migration never
+	// hides core invoice data.
+	finance, err := s.repo.loadFinanceState(ctx)
+	if err != nil {
+		slog.Error("billing: failed to load finance state from DB", "err", err)
+		return nil
+	}
+	s.finance = finance
 	return nil
+}
+
+// deriveAmountsPaidLocked recomputes amount_paid/amount_due from the payment
+// and refund records, which are the source of truth (older rows never stored
+// amount_paid_cents). Must be called with s.mu held (write).
+func (s *Service) deriveAmountsPaidLocked() {
+	for _, inv := range s.invoices {
+		paid := 0
+		for _, p := range s.payments[inv.ID] {
+			if p.Status == "succeeded" || p.Status == "reversed" {
+				paid += p.AmountCents
+			}
+		}
+		for _, r := range s.refunds[inv.ID] {
+			if r.Status == "processed" {
+				paid -= r.AmountCents
+			}
+		}
+		if paid < 0 {
+			paid = 0
+		}
+		inv.AmountPaidCents = paid
+		inv.AmountDueCents = inv.TotalCents - paid
+		if inv.AmountDueCents < 0 {
+			inv.AmountDueCents = 0
+		}
+	}
 }
 
 func (s *Service) newID() string {
@@ -470,6 +543,15 @@ func (s *Service) ensureParentHouseholdAccess(principal *appmiddleware.Principal
 	return nil
 }
 
+// parentCannotSeeInvoice reports whether a parent-scoped caller must not see
+// the invoice: drafts are staff work in progress until they are issued.
+func (s *Service) parentCannotSeeInvoice(principal *appmiddleware.Principal, inv *Invoice) bool {
+	if _, parentScoped := s.parentHouseholdScope(principal); !parentScoped {
+		return false
+	}
+	return inv.Status == "draft"
+}
+
 func (s *Service) requireLedgerReadAccess(principal *appmiddleware.Principal) error {
 	for _, r := range principal.Roles {
 		switch strings.ToLower(r) {
@@ -505,12 +587,17 @@ func (s *Service) recomputeTotals(inv *Invoice) {
 
 // appendLedger appends an immutable ledger event. Must be called with s.mu held (write).
 func (s *Service) appendLedger(orgID, invoiceID, paymentID, refundID, eventType string, amountCents int, description, actorID string) (*LedgerEvent, error) {
+	householdID := ""
+	if inv, ok := s.invoices[invoiceID]; ok {
+		householdID = inv.HouseholdID
+	}
 	ev := &LedgerEvent{
 		ID:          s.newID(),
 		OrgID:       orgID,
 		InvoiceID:   invoiceID,
 		PaymentID:   paymentID,
 		RefundID:    refundID,
+		HouseholdID: householdID,
 		EventType:   eventType,
 		AmountCents: amountCents,
 		Description: description,
@@ -680,6 +767,9 @@ func (s *Service) GetInvoice(orgID string, principal *appmiddleware.Principal, i
 	if err := s.ensureParentHouseholdAccess(principal, inv.HouseholdID); err != nil {
 		return nil, err
 	}
+	if s.parentCannotSeeInvoice(principal, inv) {
+		return nil, ErrInvoiceNotFound
+	}
 	cp := *inv
 	return &cp, nil
 }
@@ -711,6 +801,9 @@ func (s *Service) ListInvoices(orgID string, principal *appmiddleware.Principal,
 			continue
 		}
 		if filters.Status != "" && inv.Status != filters.Status {
+			continue
+		}
+		if s.parentCannotSeeInvoice(principal, inv) {
 			continue
 		}
 		cp := *inv
@@ -842,6 +935,9 @@ func (s *Service) ListInvoiceItems(orgID string, principal *appmiddleware.Princi
 	if err := s.ensureParentHouseholdAccess(principal, inv.HouseholdID); err != nil {
 		return nil, err
 	}
+	if s.parentCannotSeeInvoice(principal, inv) {
+		return nil, ErrInvoiceNotFound
+	}
 
 	items := s.items[invoiceID]
 	out := make([]*InvoiceItem, len(items))
@@ -867,6 +963,9 @@ func (s *Service) IssueInvoice(orgID, actorID string, principal *appmiddleware.P
 	if inv.Status != "draft" {
 		return nil, nil, ErrInvoiceNotIssuable
 	}
+	if inv.TotalCents <= 0 {
+		return nil, nil, ErrInvoiceEmpty
+	}
 
 	now := time.Now().UTC()
 	inv.Status = "issued"
@@ -885,6 +984,10 @@ func (s *Service) IssueInvoice(orgID, actorID string, principal *appmiddleware.P
 	if err != nil {
 		return nil, nil, err
 	}
+	// Household account credit is auto-applied to newly issued invoices.
+	if _, err := s.applyHouseholdCreditLocked(context.Background(), inv, actorID); err != nil {
+		slog.Error("billing: auto-apply account credit failed", "invoice_id", inv.ID, "err", err)
+	}
 
 	return inv, ev, nil
 }
@@ -902,13 +1005,15 @@ func (s *Service) VoidInvoice(orgID, actorID string, principal *appmiddleware.Pr
 	if !ok || inv.OrgID != orgID {
 		return nil, nil, ErrInvoiceNotFound
 	}
-	if inv.Status != "issued" {
+	if inv.Status != "issued" && inv.Status != "draft" {
 		return nil, nil, ErrInvoiceNotVoidable
 	}
 	if inv.AmountPaidCents > 0 {
 		return nil, nil, errors.New("cannot void invoice with existing payments")
 	}
 
+	wasIssued := inv.Status == "issued"
+	before := *inv
 	now := time.Now().UTC()
 	inv.Status = "voided"
 	inv.VoidedAt = &now
@@ -917,8 +1022,17 @@ func (s *Service) VoidInvoice(orgID, actorID string, principal *appmiddleware.Pr
 
 	if s.repo != nil {
 		if err := s.repo.UpsertInvoice(context.Background(), inv); err != nil {
+			*inv = before
 			return nil, nil, fmt.Errorf("persist voided invoice: %w", err)
 		}
+	}
+	// Voiding releases the invoice's billing-run charge keys and returns its
+	// manual adjustments to pending so the period can be re-billed on purpose.
+	if err := s.releaseInvoiceFinanceLocked(context.Background(), orgID, invoiceID, actorID); err != nil {
+		slog.Error("billing: release run charges on void failed", "invoice_id", invoiceID, "err", err)
+	}
+	if !wasIssued || inv.AmountDueCents == 0 {
+		return inv, nil, nil
 	}
 	ev, err := s.appendLedger(orgID, invoiceID, "", "", "invoice_voided", -inv.AmountDueCents,
 		fmt.Sprintf("Invoice %s voided", inv.InvoiceNumber), actorID)
@@ -986,8 +1100,16 @@ func (s *Service) RecordPayment(orgID, actorID string, principal *appmiddleware.
 	if inv.Status != "issued" && inv.Status != "partially_paid" {
 		return nil, nil, ErrInvalidTransition
 	}
+	excessCents := 0
 	if input.AmountCents > inv.AmountDueCents {
-		return nil, nil, ErrPaymentExceedsBalance
+		if !input.ExcessToCredit || strings.TrimSpace(inv.HouseholdID) == "" {
+			return nil, nil, ErrPaymentExceedsBalance
+		}
+		excessCents = input.AmountCents - inv.AmountDueCents
+		input.AmountCents = inv.AmountDueCents
+		if input.AmountCents <= 0 {
+			return nil, nil, ErrPaymentExceedsBalance
+		}
 	}
 
 	now := time.Now().UTC()
@@ -1041,6 +1163,15 @@ func (s *Service) RecordPayment(orgID, actorID string, principal *appmiddleware.
 		fmt.Sprintf("Payment of %d cents recorded for invoice %s", input.AmountCents, inv.InvoiceNumber), actorID)
 	if err != nil {
 		return nil, nil, err
+	}
+	if excessCents > 0 {
+		if _, err := s.addCreditEntryLocked(context.Background(), creditEntryParams{
+			OrgID: orgID, HouseholdID: inv.HouseholdID, AmountCents: excessCents, Kind: CreditKindOverpayment,
+			InvoiceID: invoiceID, PaymentID: payment.ID, ActorID: actorID,
+			Reason: fmt.Sprintf("Overpayment on invoice %s", inv.InvoiceNumber),
+		}); err != nil {
+			return nil, nil, fmt.Errorf("record overpayment credit: %w", err)
+		}
 	}
 
 	return payment, ev, nil
@@ -1322,6 +1453,9 @@ func (s *Service) ValidateRefundPreflight(orgID string, principal *appmiddleware
 	if payment.Status != "succeeded" {
 		return nil, ErrInvalidTransition
 	}
+	if payment.Method == PaymentMethodAccountCredit && !input.ToAccountCredit {
+		return nil, ErrCreditPaymentRefundToCredit
+	}
 
 	alreadyRefunded := 0
 	for _, r := range s.refunds[invoiceID] {
@@ -1445,6 +1579,15 @@ func (s *Service) CreateRefund(orgID, actorID string, principal *appmiddleware.P
 		fmt.Sprintf("Refund of %d cents processed for invoice %s", input.AmountCents, inv.InvoiceNumber), actorID)
 	if err != nil {
 		return nil, nil, err
+	}
+	if input.ToAccountCredit {
+		if _, err := s.addCreditEntryLocked(context.Background(), creditEntryParams{
+			OrgID: orgID, HouseholdID: inv.HouseholdID, AmountCents: input.AmountCents, Kind: CreditKindRefundToCredit,
+			InvoiceID: invoiceID, PaymentID: input.PaymentID, RefundID: refund.ID, ActorID: actorID,
+			Reason: input.Reason,
+		}); err != nil {
+			return nil, nil, fmt.Errorf("record refund-to-credit: %w", err)
+		}
 	}
 
 	return refund, ev, nil
@@ -1714,6 +1857,12 @@ func (s *Service) HandleStripePaymentIntentSucceeded(
 		UpdatedBy:             actorID,
 	}
 
+	if s.repo != nil {
+		payment.ID = s.newID()
+		if err := s.repo.UpsertPayment(context.Background(), payment); err != nil {
+			return nil, nil, fmt.Errorf("persist stripe payment: %w", err)
+		}
+	}
 	s.payments[invoiceID] = append(s.payments[invoiceID], payment)
 	s.paymentsByID[payment.ID] = payment
 	s.stripeIntentIndex[paymentIntentID] = payment
@@ -1722,6 +1871,11 @@ func (s *Service) HandleStripePaymentIntentSucceeded(
 	s.updateInvoiceStatusAfterPayment(inv)
 	inv.UpdatedAt = now
 	inv.UpdatedBy = actorID
+	if s.repo != nil {
+		if err := s.repo.UpsertInvoice(context.Background(), inv); err != nil {
+			return nil, nil, fmt.Errorf("persist invoice after stripe payment: %w", err)
+		}
+	}
 
 	ev, err := s.appendLedger(orgID, invoiceID, payment.ID, "", "payment_succeeded", -amountCents,
 		fmt.Sprintf("Stripe payment %s of %d cents for invoice %s", paymentIntentID, amountCents, inv.InvoiceNumber), actorID)
@@ -1749,6 +1903,11 @@ func (s *Service) HandleStripePaymentIntentFailed(paymentIntentID string) error 
 	payment.Status = "failed"
 	payment.FailedAt = &now
 	payment.UpdatedAt = now
+	if s.repo != nil {
+		if err := s.repo.UpsertPayment(context.Background(), payment); err != nil {
+			return fmt.Errorf("persist failed stripe payment: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -1808,7 +1967,7 @@ func (s *Service) HandleStripeChargeRefunded(
 
 	now := time.Now().UTC()
 	refund := &Refund{
-		ID:             newID(),
+		ID:             s.newID(),
 		OrgID:          orgID,
 		InvoiceID:      invoiceID,
 		PaymentID:      payment.ID,
@@ -1849,6 +2008,18 @@ func (s *Service) HandleStripeChargeRefunded(
 	}
 	inv.UpdatedAt = now
 	inv.UpdatedBy = actorID
+	if s.repo != nil {
+		ctx := context.Background()
+		if err := s.repo.UpsertRefund(ctx, refund); err != nil {
+			return nil, nil, fmt.Errorf("persist stripe refund: %w", err)
+		}
+		if err := s.repo.UpsertPayment(ctx, payment); err != nil {
+			return nil, nil, fmt.Errorf("persist payment after stripe refund: %w", err)
+		}
+		if err := s.repo.UpsertInvoice(ctx, inv); err != nil {
+			return nil, nil, fmt.Errorf("persist invoice after stripe refund: %w", err)
+		}
+	}
 
 	ev, err := s.appendLedger(orgID, invoiceID, payment.ID, refund.ID, "refund_processed", amountRefundedCents,
 		fmt.Sprintf("Stripe refund %s of %d cents for invoice %s", stripeRefundID, amountRefundedCents, inv.InvoiceNumber), actorID)

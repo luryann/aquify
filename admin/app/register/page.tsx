@@ -112,10 +112,10 @@ function RegisterPageContent() {
       const data = await res.json().catch(() => ({}))
       const message = (data as { message?: string; error?: { message?: string } }).error?.message
         ?? (data as { message?: string }).message
-      setApiError(message ?? 'Something went wrong. Please try again.')
+      setApiError(message ?? 'Couldn’t send your request. Try again.')
       setSubmitStatus('error')
     } catch {
-      setApiError('Unable to connect. Please check your connection and try again.')
+      setApiError('Couldn’t connect. Check your connection and try again.')
       setSubmitStatus('error')
     }
   }, [form, searchParams])
@@ -192,7 +192,7 @@ function RegisterPageContent() {
           <div className="rp-heading">
             <h1 className="rp-title">Request access.</h1>
             <p className="rp-subtitle">
-              Fill out the form below. A club administrator will review and approve your request.
+              A club administrator will review and approve your request.
             </p>
           </div>
 
@@ -200,7 +200,7 @@ function RegisterPageContent() {
             {/* API error alerts */}
             {submitStatus === 'error' && (
               <div className="rp-api-alert rp-api-alert-error" role="alert">
-                {apiError || 'Something went wrong. Please try again.'}
+                {apiError || 'Couldn’t send your request. Try again.'}
               </div>
             )}
             {submitStatus === 'conflict' && (
@@ -295,7 +295,7 @@ function RegisterPageContent() {
                   maxLength={120}
                 />
                 <span className="rp-hint-text">
-                  This request creates your account only — tell us who you&rsquo;re swimming for so staff can follow up about registering them.
+                  Tell us who you&rsquo;re swimming for so staff can follow up.
                 </span>
               </div>
             )}
@@ -425,7 +425,7 @@ const SHARED_CSS = `
     align-items: center;
     gap: 6px;
     font-family: var(--font-body);
-    font-size: 13px;
+    font-size: var(--fs-base);
     color: rgba(237,233,227,0.4);
     text-decoration: none;
     margin-bottom: 28px;
@@ -465,27 +465,27 @@ const SHARED_CSS = `
     margin-bottom: 40px;
   }
   .rp-brandname {
-    font-family: var(--font-display);
+    font-family: var(--font-display); font-weight: var(--display-weight);
     font-style: italic;
-    font-size: 21px;
+    font-size: var(--fs-2xl);
     color: #EDE9E3;
-    letter-spacing: -.01em;
+    letter-spacing: var(--display-tracking);
   }
 
   /* Heading */
   .rp-heading { margin-bottom: 36px; }
   .rp-title {
     font-family: var(--font-display);
-    font-size: 36px;
-    font-weight: 400;
+    font-size: var(--fs-4xl);
+    font-weight: var(--display-weight);
     color: #EDE9E3;
     margin: 0 0 8px;
-    letter-spacing: -.022em;
+    letter-spacing: var(--display-tracking);
     line-height: 1.12;
   }
   .rp-subtitle {
     font-family: var(--font-body);
-    font-size: 13.5px;
+    font-size: var(--fs-base);
     color: rgba(237,233,227,0.38);
     margin: 0;
     line-height: 1.65;
@@ -512,17 +512,15 @@ const SHARED_CSS = `
   }
   .rp-label {
     font-family: var(--font-body);
-    font-size: 11px;
+    font-size: var(--fs-sm);
     font-weight: 600;
-    color: rgba(237,233,227,0.45);
-    letter-spacing: .055em;
-    text-transform: uppercase;
+    color: rgba(237,233,227,0.55);
   }
   .rp-optional {
     font-weight: 400;
     text-transform: none;
     letter-spacing: 0;
-    font-size: 10.5px;
+    font-size: var(--fs-2xs);
     color: rgba(237,233,227,0.28);
   }
   .rp-input, .rp-textarea {
@@ -532,7 +530,7 @@ const SHARED_CSS = `
     border-radius: 10px;
     color: #EDE9E3;
     font-family: var(--font-body);
-    font-size: 14px;
+    font-size: var(--fs-md);
     padding: 12px 15px;
     outline: none;
     transition: border-color .2s, background .2s, box-shadow .2s;
@@ -554,13 +552,13 @@ const SHARED_CSS = `
   .rp-input-err { border-color: rgba(248,113,113,0.5) !important; }
   .rp-err {
     font-family: var(--font-body);
-    font-size: 11px;
+    font-size: var(--fs-xs);
     color: #f87171;
     margin: 0;
   }
   .rp-hint-text {
     font-family: var(--font-body);
-    font-size: 11px;
+    font-size: var(--fs-xs);
     color: rgba(237,233,227,0.28);
     line-height: 1.5;
   }
@@ -595,13 +593,13 @@ const SHARED_CSS = `
     border-color: rgba(235,93,30,0.45) !important;
   }
   .rp-role-label {
-    font-size: 13.5px;
+    font-size: var(--fs-base);
     font-weight: 600;
     color: rgba(237,233,227,0.85);
   }
   .rp-role-active .rp-role-label { color: #f0795a; }
   .rp-role-desc {
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
     color: rgba(237,233,227,0.35);
   }
 
@@ -618,7 +616,7 @@ const SHARED_CSS = `
     border-radius: 10px;
     color: #fff;
     font-family: var(--font-body);
-    font-size: 14px;
+    font-size: var(--fs-md);
     font-weight: 600;
     letter-spacing: .01em;
     cursor: pointer;
@@ -659,7 +657,7 @@ const SHARED_CSS = `
   .rp-footer-note {
     margin-top: 24px;
     font-family: var(--font-body);
-    font-size: 13px;
+    font-size: var(--fs-base);
     color: rgba(237,233,227,0.36);
     text-align: center;
   }
@@ -711,15 +709,15 @@ const SHARED_CSS = `
   }
   .rp-success-title {
     font-family: var(--font-display);
-    font-size: 32px;
-    font-weight: 400;
+    font-size: var(--fs-4xl);
+    font-weight: var(--display-weight);
     color: #EDE9E3;
     margin: 0 0 16px;
-    letter-spacing: -.02em;
+    letter-spacing: var(--display-tracking);
   }
   .rp-success-body {
     font-family: var(--font-body);
-    font-size: 14px;
+    font-size: var(--fs-md);
     color: rgba(237,233,227,0.45);
     line-height: 1.7;
     margin: 0 0 36px;
@@ -736,7 +734,7 @@ const SHARED_CSS = `
     padding: 10px 20px;
     color: rgba(237,233,227,0.5);
     font-family: var(--font-body);
-    font-size: 13.5px;
+    font-size: var(--fs-base);
     cursor: pointer;
     transition: border-color .2s, color .2s;
   }
@@ -750,7 +748,7 @@ const SHARED_CSS = `
     padding: 11px 14px;
     border-radius: 9px;
     font-family: var(--font-body);
-    font-size: 13px;
+    font-size: var(--fs-base);
     line-height: 1.55;
   }
   .rp-api-alert-error {

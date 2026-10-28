@@ -247,7 +247,7 @@ export function SelectField<T extends FieldValues>({
           {...fieldProps}
           disabled={disabled}
           className={`form-input${error ? ' error' : ''}`}
-          style={{ height: '36px', paddingRight: '28px', appearance: 'none' }}
+          style={{ height: '36px', paddingRight: '24px', appearance: 'none' }}
         >
           {placeholder && (
             <option value="" disabled>
@@ -303,7 +303,7 @@ export function CheckboxField<T extends FieldValues>({
           disabled={disabled}
           style={{ accentColor: 'var(--accent)', width: '14px', height: '14px' }}
         />
-        <span style={{ fontSize: '13px', color: 'var(--text)' }}>{label}</span>
+        <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text)' }}>{label}</span>
       </label>
       {hint && !errorMsg && <p className="form-hint">{hint}</p>}
       {errorMsg && (
@@ -380,14 +380,14 @@ export function FormSection({
   children: ReactNode
 }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
       {(title || description) && (
         <div style={{ paddingBottom: '12px', borderBottom: '1px solid var(--border)' }}>
           {title && (
-            <p style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text)' }}>{title}</p>
+            <p style={{ fontWeight: 600, fontSize: 'var(--fs-base)', color: 'var(--text)' }}>{title}</p>
           )}
           {description && (
-            <p style={{ fontSize: '12px', color: 'var(--text-subtle)', marginTop: '3px' }}>
+            <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', marginTop: '4px' }}>
               {description}
             </p>
           )}

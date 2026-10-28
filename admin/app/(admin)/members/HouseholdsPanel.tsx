@@ -6,10 +6,11 @@ import { Icon } from '@/components/ui/icons'
 import { Table, type Column } from '@/components/ui/Table'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
-import { useApiClient, ApiError } from '@/lib/api'
+import { useApiClient } from '@/lib/api'
 import { fetchHouseholds, fetchSwimmers, createHousehold, deleteHousehold, type HouseholdRecord, type SwimmerRecord } from '@/lib/adminData'
 import { normalizeHouseholdStatus, type HouseholdStatus } from '@/lib/household-status'
 import { canAccess } from '@/lib/roles'
+import { uiErrorMessage } from '@/lib/frontend-telemetry'
 
 type HouseholdRow = {
   id: string
@@ -44,7 +45,7 @@ function buildColumns(onDelete: (row: HouseholdRow) => void, canDelete: boolean)
       sortable: true,
       render: (row) => (
         <div>
-          <Link href={`/members/households/${row.id}`} style={{ color: 'var(--text)', fontWeight: 600, textDecoration: 'none', fontSize: '13px' }}>
+          <Link href={`/members/households/${row.id}`} style={{ color: 'var(--text)', fontWeight: 600, textDecoration: 'none', fontSize: 'var(--fs-base)' }}>
             {row.name}
           </Link>
         </div>
@@ -56,8 +57,8 @@ function buildColumns(onDelete: (row: HouseholdRow) => void, canDelete: boolean)
       sortable: true,
       render: (row) => (
         <div>
-          <div style={{ fontSize: '13px', color: 'var(--text)' }}>{row.contact}</div>
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{row.email || 'No email on file'}</div>
+          <div style={{ fontSize: 'var(--fs-base)', color: 'var(--text)' }}>{row.contact}</div>
+          <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: '2px' }}>{row.email || 'No email on file'}</div>
         </div>
       ),
     },
@@ -66,7 +67,7 @@ function buildColumns(onDelete: (row: HouseholdRow) => void, canDelete: boolean)
       label: 'Swimmers',
       sortable: true,
       align: 'right',
-      render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '13px', color: 'var(--text)' }}>{row.swimmerCount}</span>,
+      render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-base)', color: 'var(--text)' }}>{row.swimmerCount}</span>,
     },
     {
       key: 'status',
@@ -77,7 +78,7 @@ function buildColumns(onDelete: (row: HouseholdRow) => void, canDelete: boolean)
       key: 'joinedAt',
       label: 'Created',
       sortable: true,
-      render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-subtle)' }}>{new Date(row.joinedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>,
+      render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{new Date(row.joinedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>,
     },
     {
       key: 'id',
@@ -85,7 +86,7 @@ function buildColumns(onDelete: (row: HouseholdRow) => void, canDelete: boolean)
       width: '120px',
       render: (row) => (
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Link href={`/members/households/${row.id}`} style={{ fontSize: '12px', color: 'var(--text-muted)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <Link href={`/members/households/${row.id}`} style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
             View <Icon name="chevron-right" size={12} />
           </Link>
           {canDelete && (
@@ -122,8 +123,8 @@ function deriveHouseholdRows(households: HouseholdRecord[], swimmers: SwimmerRec
     .sort((a, b) => a.name.localeCompare(b.name))
 }
 
-const INPUT_STYLE: React.CSSProperties = { width: '100%', padding: '9px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none', boxSizing: 'border-box' }
-const LABEL_STYLE: React.CSSProperties = { fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '5px' }
+const INPUT_STYLE: React.CSSProperties = { width: '100%', padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none', boxSizing: 'border-box' }
+const LABEL_STYLE: React.CSSProperties = { fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }
 
 export function HouseholdsPanel() {
   const { session } = useSession()
@@ -165,7 +166,7 @@ export function HouseholdsPanel() {
         if (!cancelled) setRows(deriveHouseholdRows(households, swimmers))
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof ApiError ? err.message : 'Failed to load households.')
+          setError(uiErrorMessage(err, 'Couldn’t load households. Try again.'))
           setRows([])
         }
       } finally {
@@ -210,7 +211,7 @@ export function HouseholdsPanel() {
       const [households, swimmers] = await Promise.all([fetchHouseholds(api, session.user.orgId), fetchSwimmers(api, session.user.orgId)])
       setRows(deriveHouseholdRows(households, swimmers))
     } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : 'Failed to create household.')
+      setFormError(uiErrorMessage(err, 'Couldn’t create household. Try again.'))
     } finally {
       setSubmitting(false)
     }
@@ -226,7 +227,7 @@ export function HouseholdsPanel() {
       const [households, swimmers] = await Promise.all([fetchHouseholds(api, session.user.orgId), fetchSwimmers(api, session.user.orgId)])
       setRows(deriveHouseholdRows(households, swimmers))
     } catch (err) {
-      setDeleteError(err instanceof ApiError ? err.message : 'Failed to delete household.')
+      setDeleteError(uiErrorMessage(err, 'Couldn’t delete household. Try again.'))
     } finally {
       setDeleting(false)
     }
@@ -241,32 +242,32 @@ export function HouseholdsPanel() {
         </button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>
+      <div className="cols-4" style={{ gap: '12px', marginBottom: '20px' }}>
         {[
           { label: 'Total', value: counts.total, color: 'var(--text)' },
           { label: 'Active', value: counts.active, color: 'var(--success)' },
           { label: 'Inactive', value: counts.inactive, color: 'var(--text-muted)' },
           { label: 'Archived', value: counts.archived, color: 'var(--text-subtle)' },
         ].map((stat) => (
-          <div key={stat.label} className="card" style={{ padding: '14px 16px' }}>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
-            <div style={{ fontSize: '22px', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
+          <div key={stat.label} className="card" style={{ padding: '16px 16px' }}>
+            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
+            <div style={{ fontSize: 'var(--fs-2xl)', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
           </div>
         ))}
       </div>
 
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', alignItems: 'center' }}>
-        <div style={{ position: 'relative', flex: 1, maxWidth: '360px' }}>
+      <div className="toolbar">
+        <div className="toolbar-search">
           <Icon name="search" size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
-          <input type="text" placeholder="Search households or contacts..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: '100%', padding: '8px 12px 8px 32px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none' }} />
+          <input type="text" placeholder="Search households or contacts..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: '100%', padding: '8px 12px 8px 32px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none' }} />
         </div>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none', cursor: 'pointer' }}>
-          <option value="all">All Statuses</option>
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none', cursor: 'pointer' }}>
+          <option value="all">All statuses</option>
           <option value="active">Active</option>
           <option value="inactive">Inactive</option>
           <option value="archived">Archived</option>
         </select>
-        <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginLeft: 'auto' }}>{filtered.length} households</span>
+        <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginLeft: 'auto' }}>{filtered.length} households</span>
       </div>
 
       {loading ? (
@@ -280,21 +281,21 @@ export function HouseholdsPanel() {
       {/* Delete Confirmation Modal */}
       {deleteTarget && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)' }} onClick={(e) => { if (e.target === e.currentTarget) setDeleteTarget(null) }}>
-          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '14px', padding: '28px', width: '100%', maxWidth: '440px', boxShadow: '0 24px 80px rgba(0,0,0,0.4)' }}>
+          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '440px', boxShadow: '0 24px 80px rgba(0,0,0,0.4)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-              <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'var(--error-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'var(--error-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <Icon name="trash-2" size={18} style={{ color: 'var(--error)' }} />
               </div>
               <div>
-                <h2 style={{ fontSize: '16px', fontFamily: 'var(--font-display)', color: 'var(--text)', margin: 0, marginBottom: '2px' }}>Delete Household</h2>
-                <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>This action cannot be undone.</p>
+                <h2 className="section-title" style={{ margin: 0, marginBottom: '2px' }}>Delete household</h2>
+                <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', margin: 0 }}>This action cannot be undone.</p>
               </div>
             </div>
-            <p style={{ fontSize: '13px', color: 'var(--text-subtle)', marginBottom: '20px', lineHeight: 1.5 }}>
-              Are you sure you want to delete <strong style={{ color: 'var(--text)' }}>{deleteTarget.name}</strong>? All associated data will be soft-deleted.
+            <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', marginBottom: '20px', lineHeight: 1.5 }}>
+              Delete <strong style={{ color: 'var(--text)' }}>{deleteTarget.name}</strong>? Its swimmers, registrations and invoices are archived with it.
             </p>
-            {deleteError && <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px' }}>{deleteError}</div>}
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+            {deleteError && <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: 'var(--fs-base)' }}>{deleteError}</div>}
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
               <button className="btn" onClick={() => setDeleteTarget(null)} disabled={deleting}>Cancel</button>
               <button
                 className="btn"
@@ -312,19 +313,19 @@ export function HouseholdsPanel() {
       {/* New Household Modal */}
       {showNew && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)' }} onClick={(e) => { if (e.target === e.currentTarget) setShowNew(false) }}>
-          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '14px', padding: '28px', width: '100%', maxWidth: '480px', boxShadow: '0 24px 80px rgba(0,0,0,0.4)' }}>
+          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '480px', boxShadow: '0 24px 80px rgba(0,0,0,0.4)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-              <h2 style={{ fontSize: '18px', fontFamily: 'var(--font-display)', color: 'var(--text)', margin: 0 }}>New Household</h2>
+              <h2 className="section-title" style={{ margin: 0 }}>New household</h2>
               <button onClick={() => setShowNew(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><Icon name="x" size={18} /></button>
             </div>
-            {formError && <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px' }}>{formError}</div>}
-            <form onSubmit={handleCreateHousehold} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            {formError && <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: 'var(--fs-base)' }}>{formError}</div>}
+            <form onSubmit={handleCreateHousehold} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
                 <label style={LABEL_STYLE}>Household Name *</label>
                 <input required style={INPUT_STYLE} value={form.household_name} onChange={(e) => setForm((f) => ({ ...f, household_name: e.target.value }))} placeholder="Smith Family" />
               </div>
               <div>
-                <label style={LABEL_STYLE}>Primary Email</label>
+                <label style={LABEL_STYLE}>Primary email</label>
                 <input type="email" style={INPUT_STYLE} value={form.primary_email} onChange={(e) => setForm((f) => ({ ...f, primary_email: e.target.value }))} placeholder="parent@example.com" />
               </div>
               <div>
@@ -343,7 +344,7 @@ export function HouseholdsPanel() {
                 <label style={LABEL_STYLE}>Notes</label>
                 <textarea style={{ ...INPUT_STYLE, resize: 'vertical' }} rows={3} value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} placeholder="Optional notes..." />
               </div>
-              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '4px' }}>
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '4px' }}>
                 <button type="button" className="btn" onClick={() => setShowNew(false)}>Cancel</button>
                 <button type="submit" className="btn btn-primary" disabled={submitting}>{submitting ? 'Creating…' : 'Create Household'}</button>
               </div>

@@ -77,7 +77,7 @@ export function RolesPanel() {
       })
       .catch((err: unknown) => {
         if (cancelled) return
-        setError(toFriendlyErrorMessage(err, 'Unable to load role management data.'))
+        setError(toFriendlyErrorMessage(err, 'Couldn’t load role management data. Try again.'))
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -126,7 +126,7 @@ export function RolesPanel() {
       setForm({ target_user_id: '', role: 'coach', reason: '' })
       setUserQuery('')
     } catch (err) {
-      setError(toFriendlyErrorMessage(err, 'Unable to assign role.'))
+      setError(toFriendlyErrorMessage(err, 'Couldn’t assign role. Try again.'))
     } finally {
       setSubmitting(false)
     }
@@ -139,43 +139,43 @@ export function RolesPanel() {
   return (
     <div>
       {error ? (
-        <div style={{ padding: '12px 16px', marginBottom: '20px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', borderRadius: '8px', color: 'var(--error)', fontSize: '12px' }}>
+        <div style={{ padding: '12px 16px', marginBottom: '20px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', borderRadius: '8px', color: 'var(--error)', fontSize: 'var(--fs-sm)' }}>
           {error}
         </div>
       ) : null}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '24px' }}>
+      <div className="cols-4" style={{ gap: '12px', marginBottom: '24px' }}>
         {[
           { label: 'Assignments', value: assignments.length.toString() },
-          { label: 'Role Types', value: roleCounts.size.toString() },
-          { label: 'Your Role', value: session.user.role },
+          { label: 'Role types', value: roleCounts.size.toString() },
+          { label: 'Your role', value: session.user.role },
           { label: 'Your MFA', value: mfaSummary(mfaFactors) },
         ].map((stat) => (
-          <div key={stat.label} className="card-elevated" style={{ padding: '14px 16px' }}>
-            <p style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>{stat.label}</p>
-            <p style={{ fontSize: '18px', fontFamily: 'var(--font-body)', color: 'var(--text)' }}>{stat.value}</p>
+          <div key={stat.label} className="card-elevated" style={{ padding: '16px 16px' }}>
+            <p style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>{stat.label}</p>
+            <p style={{ fontSize: 'var(--fs-xl)', fontFamily: 'var(--font-body)', color: 'var(--text)' }}>{stat.value}</p>
           </div>
         ))}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '20px', alignItems: 'start' }}>
+      <div className="split-list" style={{ gap: '20px', alignItems: 'start' }}>
         <div className="card" style={{ padding: '20px' }}>
-          <h2 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', marginBottom: '16px' }}>Assign Role</h2>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <h2 className="card-title" style={{ marginBottom: '16px' }}>Assign role</h2>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div>
-              <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase' }}>
-                Target User
+              <label style={{ display: 'block', fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                Target user
               </label>
               <input
                 value={userQuery}
                 onChange={(event) => setUserQuery(event.target.value)}
                 placeholder="Search users by name or email…"
-                style={{ width: '100%', padding: '9px 12px', marginBottom: '8px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '7px', color: 'var(--text)', fontSize: '13px', fontFamily: 'var(--font-body)', outline: 'none' }}
+                style={{ width: '100%', padding: '8px 12px', marginBottom: '8px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)', fontSize: 'var(--fs-base)', fontFamily: 'var(--font-body)', outline: 'none' }}
               />
               <select
                 value={form.target_user_id}
                 onChange={(event) => setForm((current) => ({ ...current, target_user_id: event.target.value }))}
-                style={{ width: '100%', padding: '9px 12px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '7px', color: 'var(--text)', fontSize: '13px', fontFamily: 'var(--font-body)', outline: 'none' }}
+                style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)', fontSize: 'var(--fs-base)', fontFamily: 'var(--font-body)', outline: 'none' }}
               >
                 <option value="">{filteredUsers.length === 0 ? 'No matching users' : 'Select user…'}</option>
                 {filteredUsers.map((u) => (
@@ -186,19 +186,19 @@ export function RolesPanel() {
               </select>
             </div>
             <div>
-              <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase' }}>
+              <label style={{ display: 'block', fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>
                 Role
               </label>
               <select
                 value={form.role}
                 onChange={(event) => setForm((current) => ({ ...current, role: event.target.value as RoleOption }))}
-                style={{ width: '100%', padding: '9px 12px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '7px', color: 'var(--text)', fontSize: '13px', fontFamily: 'var(--font-body)', outline: 'none' }}
+                style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)', fontSize: 'var(--fs-base)', fontFamily: 'var(--font-body)', outline: 'none' }}
               >
                 {ROLE_OPTIONS.map((role) => <option key={role} value={role}>{role}</option>)}
               </select>
             </div>
             <div>
-              <label style={{ display: 'block', fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase' }}>
+              <label style={{ display: 'block', fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>
                 Reason
               </label>
               <textarea
@@ -206,19 +206,19 @@ export function RolesPanel() {
                 onChange={(event) => setForm((current) => ({ ...current, reason: event.target.value }))}
                 rows={4}
                 placeholder="Document why this access is required."
-                style={{ width: '100%', padding: '9px 12px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '7px', color: 'var(--text)', fontSize: '13px', fontFamily: 'var(--font-body)', outline: 'none', resize: 'vertical' }}
+                style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)', fontSize: 'var(--fs-base)', fontFamily: 'var(--font-body)', outline: 'none', resize: 'vertical' }}
               />
             </div>
             <button
               onClick={handleAssignRole}
               disabled={submitting || !form.target_user_id.trim() || !form.reason.trim()}
               style={{
-                padding: '9px 16px',
+                padding: '8px 16px',
                 background: submitting || !form.target_user_id.trim() || !form.reason.trim() ? 'var(--bg-elevated)' : 'var(--accent)',
                 border: submitting || !form.target_user_id.trim() || !form.reason.trim() ? '1px solid var(--border)' : 'none',
-                borderRadius: '7px',
+                borderRadius: '8px',
                 color: submitting || !form.target_user_id.trim() || !form.reason.trim() ? 'var(--text-muted)' : '#fff',
-                fontSize: '13px',
+                fontSize: 'var(--fs-base)',
                 fontWeight: 600,
                 cursor: submitting || !form.target_user_id.trim() || !form.reason.trim() ? 'not-allowed' : 'pointer',
                 fontFamily: 'var(--font-body)',
@@ -230,8 +230,8 @@ export function RolesPanel() {
         </div>
 
         <div className="card" style={{ overflow: 'hidden' }}>
-          <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
-            <h2 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>Assignment History</h2>
+          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
+            <h2 className="card-title">Assignment history</h2>
           </div>
           {loading ? (
             <div style={{ padding: '24px' }}>
@@ -242,39 +242,41 @@ export function RolesPanel() {
               <EmptyState icon="shield-check" title="No role assignments yet" description="New assignments will appear here as they are created." />
             </div>
           ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                  {['Target User', 'Role', 'Reason', 'Actor', 'Assigned'].map((header) => (
-                    <th key={header} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                      {header}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {assignments.map((assignment) => {
-                  const colors = ROLE_COLORS[assignment.role] ?? ROLE_COLORS.parent
-                  return (
-                    <tr key={`${assignment.target_user_id}-${assignment.assigned_at}-${assignment.role}`} style={{ borderBottom: '1px solid var(--border)' }}>
-                      <td style={{ padding: '11px 14px', fontSize: '12px', color: 'var(--text)' }}>{userNameById.get(assignment.target_user_id) ?? assignment.target_user_id}</td>
-                      <td style={{ padding: '11px 14px' }}>
-                        <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '20px', fontFamily: 'var(--font-body)', fontWeight: 700, background: colors.bg, color: colors.color, border: `1px solid ${colors.border}` }}>
-                          {assignment.role.toUpperCase()}
-                        </span>
-                      </td>
-                      <td style={{ padding: '11px 14px', fontSize: '12px', color: 'var(--text-subtle)' }}>{assignment.reason}</td>
-                      <td style={{ padding: '11px 14px', fontSize: '12px', color: 'var(--text-muted)' }}>{userNameById.get(assignment.actor_user_id) ?? assignment.actor_user_id}</td>
-                      <td style={{ padding: '11px 14px', fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-muted)' }}>{formatDateTime(assignment.assigned_at)}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                    {['Target User', 'Role', 'Reason', 'Actor', 'Assigned'].map((header) => (
+                      <th key={header} className="col-head" style={{ padding: '12px 16px', textAlign: 'left' }}>
+                        {header}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {assignments.map((assignment) => {
+                    const colors = ROLE_COLORS[assignment.role] ?? ROLE_COLORS.parent
+                    return (
+                      <tr key={`${assignment.target_user_id}-${assignment.assigned_at}-${assignment.role}`} style={{ borderBottom: '1px solid var(--border)' }}>
+                        <td style={{ padding: '12px 16px', fontSize: 'var(--fs-sm)', color: 'var(--text)' }}>{userNameById.get(assignment.target_user_id) ?? assignment.target_user_id}</td>
+                        <td style={{ padding: '12px 16px' }}>
+                          <span style={{ fontSize: 'var(--fs-xs)', padding: '2px 8px', borderRadius: '16px', fontFamily: 'var(--font-body)', fontWeight: 700, background: colors.bg, color: colors.color, border: `1px solid ${colors.border}` }}>
+                            {assignment.role.toUpperCase()}
+                          </span>
+                        </td>
+                        <td style={{ padding: '12px 16px', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{assignment.reason}</td>
+                        <td style={{ padding: '12px 16px', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>{userNameById.get(assignment.actor_user_id) ?? assignment.actor_user_id}</td>
+                        <td style={{ padding: '12px 16px', fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>{formatDateTime(assignment.assigned_at)}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
 
-          <div style={{ padding: '14px 18px', borderTop: '1px solid var(--border)', background: 'var(--bg-surface)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-subtle)', fontSize: '12px' }}>
+          <div style={{ padding: '16px 20px', borderTop: '1px solid var(--border)', background: 'var(--bg-surface)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-subtle)', fontSize: 'var(--fs-sm)' }}>
               <Icon name="shield-check" size={12} />
               Current session MFA status: {mfaSummary(mfaFactors)}
             </div>

@@ -55,6 +55,7 @@ const (
 	ActionCommsAnnouncementCreate            = "comms.announcement.create"
 	ActionCommsAnnouncementPublish           = "comms.announcement.publish"
 	ActionCommsAnnouncementArchive           = "comms.announcement.archive"
+	ActionCommsAnnouncementVisibility        = "comms.announcement.visibility"
 	ActionBillingInvoiceIssue                = "billing.invoice.issue"
 	ActionBillingInvoiceVoid                 = "billing.invoice.void"
 	ActionBillingInvoiceWriteOff             = "billing.invoice.write_off"

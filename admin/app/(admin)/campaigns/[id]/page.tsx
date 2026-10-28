@@ -5,7 +5,8 @@ import { useParams } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
-import { ApiError, useApiClient } from '@/lib/api'
+import { useApiClient } from '@/lib/api'
+import { useStaffNames } from '@/lib/useStaffNames'
 import {
   fetchCampaign,
   fetchCampaignDeliveries,
@@ -13,6 +14,7 @@ import {
   type EmailCampaignRecord,
   type EmailDeliveryRecord,
 } from '@/lib/adminData'
+import { uiErrorMessage } from '@/lib/frontend-telemetry'
 
 function formatDateTime(value?: string) {
   if (!value) return '—'
@@ -47,6 +49,7 @@ export default function CampaignDetailPage() {
   const campaignId = Array.isArray(params?.id) ? params.id[0] : params?.id
   const { session } = useSession()
   const api = useApiClient(session?.token)
+  const staffName = useStaffNames(api, session?.user.orgId)
   const [campaign, setCampaign] = useState<EmailCampaignRecord | null>(null)
   const [deliveries, setDeliveries] = useState<EmailDeliveryRecord[]>([])
   const [loading, setLoading] = useState(true)
@@ -83,7 +86,7 @@ export default function CampaignDetailPage() {
         setDeliveries(nextDeliveries)
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof ApiError ? err.message : 'Unable to load campaign.')
+          setError(uiErrorMessage(err, 'Couldn’t load campaign. Try again.'))
           setCampaign(null)
           setDeliveries([])
         }
@@ -109,7 +112,7 @@ export default function CampaignDetailPage() {
       await loadCampaignState(session.user.orgId, campaign.id)
       setNotice(`Sent campaign to ${sentCampaign.total_recipients} eligible recipient${sentCampaign.total_recipients === 1 ? '' : 's'}.`)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Unable to send campaign.')
+      setError(uiErrorMessage(err, 'Couldn’t send campaign. Try again.'))
     } finally {
       setSending(false)
     }
@@ -134,54 +137,54 @@ export default function CampaignDetailPage() {
   }
 
   return (
-    <div style={{ padding: '32px 36px 80px', maxWidth: 1080, margin: '0 auto' }}>
+    <div className="page">
       <div style={{ marginBottom: '20px' }}>
-        <Link href="/campaigns" style={{ fontSize: '12px', color: 'var(--accent)', textDecoration: 'none' }}>← Back to campaigns</Link>
+        <Link href="/campaigns" style={{ fontSize: 'var(--fs-sm)', color: 'var(--accent)', textDecoration: 'none' }}>← Back to campaigns</Link>
       </div>
 
       {error ? (
-        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: '12px' }}>
+        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: 'var(--fs-sm)' }}>
           {error}
         </div>
       ) : null}
 
       {notice ? (
-        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--success-bg)', border: '1px solid var(--success-border)', color: 'var(--success)', fontSize: '12px' }}>
+        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--success-bg)', border: '1px solid var(--success-border)', color: 'var(--success)', fontSize: 'var(--fs-sm)' }}>
           {notice}
         </div>
       ) : null}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-        <section className="card" style={{ padding: '24px' }}>
-          <div style={{ marginBottom: '16px' }}>
-            <div style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>
-              {campaign.status} · {campaign.audience}
+        <section>
+          <div style={{ marginBottom: '20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '4px' }}>
+              <h1 className="page-title">
+                {campaign.name}
+              </h1>
+              <span className="badge badge-default">{campaign.status}</span>
             </div>
-            <h1 className="page-title">
-              {campaign.name}
-            </h1>
-            <div style={{ fontSize: '13px', color: 'var(--text-subtle)', marginBottom: '4px' }}>{campaign.subject}</div>
-            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-              Created {formatDateTime(campaign.created_at)} by {campaign.created_by} · Sent {formatDateTime(campaign.sent_at)}
+            <div style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', marginBottom: '4px' }}>{campaign.subject}</div>
+            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
+              Audience: {campaign.audience} · Created {formatDateTime(campaign.created_at)} by {staffName(campaign.created_by)} · Sent {formatDateTime(campaign.sent_at)}
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '18px' }}>
+          <div className="cols-4" style={{ gap: '12px', marginBottom: '20px' }}>
             {[
               { label: 'Recipients', value: String(campaign.total_recipients) },
               { label: 'Sent', value: String(campaign.sent_count) },
               { label: 'Failed', value: String(campaign.failed_count) },
               { label: 'Suppressed', value: String(campaign.suppressed_count) },
             ].map((stat) => (
-              <div key={stat.label} className="card-elevated" style={{ padding: '14px 16px' }}>
-                <div style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>{stat.label}</div>
-                <div style={{ fontSize: '22px', fontFamily: 'var(--font-body)', color: 'var(--text)' }}>{stat.value}</div>
+              <div key={stat.label} className="card-elevated" style={{ padding: '16px 16px' }}>
+                <div style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>{stat.label}</div>
+                <div style={{ fontSize: 'var(--fs-2xl)', fontFamily: 'var(--font-body)', color: 'var(--text)' }}>{stat.value}</div>
               </div>
             ))}
           </div>
 
-          <div style={{ padding: '16px 18px', borderRadius: '10px', background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
-            <div style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>HTML Preview</div>
+          <div style={{ padding: '16px 20px', borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
+            <div style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '8px' }}>HTML preview</div>
             <iframe
               title={`${campaign.name} HTML preview`}
               sandbox=""
@@ -191,10 +194,9 @@ export default function CampaignDetailPage() {
           </div>
 
           {campaign.status === 'draft' ? (
-            <div style={{ padding: '16px 18px', borderRadius: '10px', background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
-              <div style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>Send Draft</div>
+            <div style={{ padding: '16px 20px', borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', lineHeight: 1.5 }}>
                   Recipients are resolved server-side from the campaign audience and current org membership records.
                 </span>
                 <button
@@ -210,35 +212,37 @@ export default function CampaignDetailPage() {
         </section>
 
         <section className="card" style={{ overflow: 'hidden' }}>
-          <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
-            <h2 style={{ fontSize: '14px', color: 'var(--text)' }}>Deliveries</h2>
-            <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+            <h2 className="card-title">Deliveries</h2>
+            <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
               Delivered {deliverySummary.delivered} · Failed {deliverySummary.failed} · Suppressed {deliverySummary.suppressed}
             </span>
           </div>
           {deliveries.length === 0 ? (
             <div style={{ padding: '20px' }}><EmptyState icon="mail" title="No deliveries recorded" description="This campaign has not produced delivery rows yet." /></div>
           ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                  {['Recipient', 'Status', 'Sent', 'Delivered', 'Message'].map((header) => (
-                    <th key={header} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{header}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {deliveries.map((delivery) => (
-                  <tr key={delivery.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                    <td style={{ padding: '11px 14px', fontSize: '13px', color: 'var(--text)' }}>{delivery.recipient_email}</td>
-                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-body)', fontSize: '11px', color: delivery.status === 'delivered' ? 'var(--success)' : delivery.status === 'failed' ? 'var(--error)' : 'var(--text-subtle)' }}>{delivery.status}</td>
-                    <td style={{ padding: '11px 14px', fontSize: '12px', color: 'var(--text-subtle)' }}>{formatDateTime(delivery.sent_at)}</td>
-                    <td style={{ padding: '11px 14px', fontSize: '12px', color: 'var(--text-subtle)' }}>{formatDateTime(delivery.delivered_at)}</td>
-                    <td style={{ padding: '11px 14px', fontSize: '12px', color: delivery.error_message ? 'var(--error)' : 'var(--text-muted)' }}>{delivery.provider_message_id || delivery.error_message || '—'}</td>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                    {['Recipient', 'Status', 'Sent', 'Delivered', 'Message'].map((header) => (
+                      <th key={header} className="col-head" style={{ padding: '12px 16px', textAlign: 'left' }}>{header}</th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {deliveries.map((delivery) => (
+                    <tr key={delivery.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                      <td style={{ padding: '12px 16px', fontSize: 'var(--fs-base)', color: 'var(--text)' }}>{delivery.recipient_email}</td>
+                      <td style={{ padding: '12px 16px', fontFamily: 'var(--font-body)', fontSize: 'var(--fs-xs)', color: delivery.status === 'delivered' ? 'var(--success)' : delivery.status === 'failed' ? 'var(--error)' : 'var(--text-subtle)' }}>{delivery.status}</td>
+                      <td style={{ padding: '12px 16px', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{formatDateTime(delivery.sent_at)}</td>
+                      <td style={{ padding: '12px 16px', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{formatDateTime(delivery.delivered_at)}</td>
+                      <td style={{ padding: '12px 16px', fontSize: 'var(--fs-sm)', color: delivery.error_message ? 'var(--error)' : 'var(--text-muted)' }}>{delivery.provider_message_id || delivery.error_message || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </section>
       </div>

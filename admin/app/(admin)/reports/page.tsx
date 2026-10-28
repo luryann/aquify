@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Icon } from '@/components/ui/icons'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
-import { ApiError, useApiClient } from '@/lib/api'
+import { useApiClient } from '@/lib/api'
 import {
   downloadReportArtifact,
   fetchInvoiceAgingReport,
@@ -14,6 +14,7 @@ import {
   fetchRegistrationStatusReport,
   type ReportArtifactRecord,
 } from '@/lib/adminData'
+import { uiErrorMessage } from '@/lib/frontend-telemetry'
 
 type ReportKey = 'membership-status' | 'meet-fees' | 'invoice-aging' | 'payment-reconciliation' | 'registration-status'
 
@@ -24,16 +25,7 @@ type ReportSummary = {
   description: string
   rowCount: number
   generatedAt: string
-  accent: string
 }
-
-const REPORTS: Array<{ key: ReportKey; title: string; category: string; description: string; accent: string }> = [
-  { key: 'membership-status', title: 'Membership Status', category: 'Members', description: 'Roster, household, and primary group coverage.', accent: 'var(--accent)' },
-  { key: 'meet-fees', title: 'Meet Fees', category: 'Billing', description: 'Issued meet-fee invoice lines grouped by household.', accent: 'var(--warning)' },
-  { key: 'invoice-aging', title: 'Invoice Aging', category: 'Billing', description: 'Outstanding balances bucketed by current aging windows.', accent: 'var(--error)' },
-  { key: 'payment-reconciliation', title: 'Payment Check', category: 'Billing', description: 'Confirms payments, refunds, and account totals all match up.', accent: 'var(--success)' },
-  { key: 'registration-status', title: 'Registration Status', category: 'Members', description: 'Current season registration and waiver completion view.', accent: 'var(--info)' },
-]
 
 function formatDateTime(value: string) {
   return new Date(value).toLocaleString('en-US', {
@@ -96,17 +88,17 @@ export default function ReportsPage() {
         ])
 
         const next: ReportSummary[] = [
-          { key: 'membership-status', title: 'Membership Status', category: 'Members', description: 'Roster, household, and primary group coverage.', rowCount: membership.row_count, generatedAt: membership.generated_at, accent: 'var(--accent)' },
-          { key: 'meet-fees', title: 'Meet Fees', category: 'Billing', description: 'Issued meet-fee invoice lines grouped by household.', rowCount: meetFees.row_count, generatedAt: meetFees.generated_at, accent: 'var(--warning)' },
-          { key: 'invoice-aging', title: 'Invoice Aging', category: 'Billing', description: 'Outstanding balances bucketed by current aging windows.', rowCount: invoiceAging.row_count, generatedAt: invoiceAging.generated_at, accent: 'var(--error)' },
-          { key: 'payment-reconciliation', title: 'Payment Check', category: 'Billing', description: 'Confirms payments, refunds, and account totals all match up.', rowCount: reconciliation.row_count, generatedAt: reconciliation.generated_at, accent: 'var(--success)' },
-          { key: 'registration-status', title: 'Registration Status', category: 'Members', description: 'Current season registration and waiver completion view.', rowCount: registration.row_count, generatedAt: registration.generated_at, accent: 'var(--info)' },
+          { key: 'membership-status', title: 'Membership status', category: 'Members', description: 'Roster, household, and primary group coverage.', rowCount: membership.row_count, generatedAt: membership.generated_at },
+          { key: 'meet-fees', title: 'Meet fees', category: 'Billing', description: 'Issued meet-fee invoice lines grouped by household.', rowCount: meetFees.row_count, generatedAt: meetFees.generated_at },
+          { key: 'invoice-aging', title: 'Invoice aging', category: 'Billing', description: 'Outstanding balances bucketed by current aging windows.', rowCount: invoiceAging.row_count, generatedAt: invoiceAging.generated_at },
+          { key: 'payment-reconciliation', title: 'Payment check', category: 'Billing', description: 'Confirms payments, refunds, and account totals all match up.', rowCount: reconciliation.row_count, generatedAt: reconciliation.generated_at },
+          { key: 'registration-status', title: 'Registration status', category: 'Members', description: 'Current season registration and waiver completion view.', rowCount: registration.row_count, generatedAt: registration.generated_at },
         ]
 
         if (!cancelled) setSummaries(next)
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof ApiError ? err.message : 'Unable to load report summaries.')
+          setError(uiErrorMessage(err, 'Couldn’t load report summaries. Try again.'))
           setSummaries([])
         }
       } finally {
@@ -141,7 +133,7 @@ export default function ReportsPage() {
         window.open(artifact.download_url, '_blank', 'noopener,noreferrer')
       }
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Unable to generate report artifact.')
+      setError(uiErrorMessage(err, 'Couldn’t generate report artifact. Try again.'))
     } finally {
       setDownloading(null)
     }
@@ -152,21 +144,15 @@ export default function ReportsPage() {
   }
 
   return (
-    <div style={{ padding: '32px 36px 80px', maxWidth: 1180, margin: '0 auto' }}>
-      <div style={{ marginBottom: '28px' }}>
-        <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
-          Reporting
-        </p>
+    <div className="page">
+      <div className="page-heading">
         <h1 className="page-title">
           Reports
         </h1>
-        <p style={{ fontSize: '13px', color: 'var(--text-subtle)', maxWidth: '68ch' }}>
-          Generate and download CSV reports on membership, billing, and registrations.
-        </p>
       </div>
 
       {error ? (
-        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: '12px' }}>
+        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: 'var(--fs-sm)' }}>
           {error}
         </div>
       ) : null}
@@ -176,71 +162,50 @@ export default function ReportsPage() {
       ) : summaries.length === 0 ? (
         <EmptyState icon="bar-chart-2" title="No reports available" description="No report data is available for this organization yet." />
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+        <div className="stack">
           {grouped.map(([category, items]) => (
             <section key={category}>
-              <div style={{ marginBottom: '12px' }}>
-                <h2 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text)' }}>{category}</h2>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '14px' }}>
-                {items.map((report) => {
+              <h2 className="section-title" style={{ marginBottom: '12px' }}>{category}</h2>
+              <div className="card" style={{ padding: 0 }}>
+                {items.map((report, i) => {
                   const artifact = artifacts[report.key]
                   return (
-                    <div key={report.key} className="card" style={{ padding: '18px 18px 16px', borderTop: `3px solid ${report.accent}` }}>
-                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', marginBottom: '12px' }}>
-                        <div>
-                          <div style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: report.accent, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>
-                            {REPORTS.find((item) => item.key === report.key)?.category}
-                          </div>
-                          <h3 style={{ fontSize: '18px', color: 'var(--text)', marginBottom: '4px' }}>{report.title}</h3>
-                          <p style={{ fontSize: '12px', color: 'var(--text-subtle)', lineHeight: 1.55 }}>{report.description}</p>
-                        </div>
-                        <div style={{ width: '36px', height: '36px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--accent-subtle)', color: 'var(--accent)', flexShrink: 0 }}>
-                          <Icon name="file-text" size={16} />
-                        </div>
-                      </div>
-
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
-                        <div style={{ padding: '12px', borderRadius: '8px', background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
-                          <div style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>Records</div>
-                          <div style={{ fontSize: '22px', fontFamily: 'var(--font-body)', color: 'var(--text)' }}>{report.rowCount}</div>
-                        </div>
-                        <div style={{ padding: '12px', borderRadius: '8px', background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
-                          <div style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>Generated</div>
-                          <div style={{ fontSize: '12px', color: 'var(--text-subtle)', lineHeight: 1.45 }}>{formatDateTime(report.generatedAt)}</div>
-                        </div>
-                      </div>
-
-                      <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-                        <button
-                          onClick={() => void handleDownload(report.key)}
-                          disabled={downloading === report.key}
-                          style={{
-                            padding: '8px 12px',
-                            borderRadius: '7px',
-                            border: 'none',
-                            background: report.accent,
-                            color: '#fff',
-                            fontSize: '12px',
-                            fontWeight: 600,
-                            cursor: downloading === report.key ? 'not-allowed' : 'pointer',
-                          }}
-                        >
-                          {downloading === report.key ? 'Generating…' : 'Generate CSV'}
-                        </button>
+                    <div
+                      key={report.key}
+                      className="report-row"
+                      style={{ borderTop: i === 0 ? 'none' : '1px solid var(--border)' }}
+                    >
+                      <div style={{ minWidth: 0 }}>
+                        <h3 className="card-title">{report.title}</h3>
+                        <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', marginTop: '2px' }}>{report.description}</p>
                         {artifact ? (
                           <a
                             href={artifact.download_url}
                             target="_blank"
                             rel="noreferrer"
-                            style={{ fontSize: '12px', color: 'var(--accent)', textDecoration: 'none' }}
+                            style={{ display: 'inline-block', marginTop: '4px', fontSize: 'var(--fs-sm)' }}
                           >
                             {artifact.filename} · {formatBytes(artifact.size_bytes)}
                           </a>
-                        ) : (
-                          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Ready to download</span>
-                        )}
+                        ) : null}
                       </div>
+                      <div className="report-stat">
+                        <span>Records</span>
+                        <strong className="tabular">{report.rowCount}</strong>
+                      </div>
+                      <div className="report-stat">
+                        <span>Generated</span>
+                        <strong>{formatDateTime(report.generatedAt)}</strong>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => void handleDownload(report.key)}
+                        disabled={downloading === report.key}
+                      >
+                        <Icon name="download" size={14} />
+                        {downloading === report.key ? 'Generating…' : 'Download CSV'}
+                      </button>
                     </div>
                   )
                 })}

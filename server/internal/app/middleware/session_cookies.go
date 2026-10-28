@@ -30,6 +30,13 @@ func NewCSRFToken() (string, error) {
 }
 
 func RequestUsesCookieAuth(r *http.Request) bool {
+	// An Authorization header always wins in extractAuthToken, so such a request
+	// is never authenticated by ambient cookies. Browsers cannot attach that
+	// header cross-site without a CORS preflight, so CSRF does not apply even
+	// when unrelated cookies ride along (e.g. other localhost apps).
+	if strings.TrimSpace(r.Header.Get("Authorization")) != "" {
+		return false
+	}
 	cookieHeader := strings.TrimSpace(r.Header.Get("Cookie"))
 	return cookieHeader != ""
 }

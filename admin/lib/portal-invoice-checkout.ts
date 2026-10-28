@@ -44,5 +44,5 @@ export function portalInvoiceCheckoutErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
     return error.message
   }
-  return 'Unable to start Stripe Checkout right now.'
+  return 'Couldn’t start Stripe Checkout. Try again.'
 }

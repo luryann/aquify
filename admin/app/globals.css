@@ -1,9 +1,32 @@
-@import '@fontsource/instrument-serif/latin.css';
-@import '@fontsource/instrument-serif/latin-italic.css';
-@import '@fontsource/plus-jakarta-sans/latin-400.css';
-@import '@fontsource/plus-jakarta-sans/latin-500.css';
-@import '@fontsource/plus-jakarta-sans/latin-600.css';
-@import '@fontsource/plus-jakarta-sans/latin-700.css';
+/* Type families, one set per audience (all bundled locally, no font CDN):
+   admin/coach  Atkinson Hyperlegible Next + Mono — built for character
+                disambiguation (0/O, 1/l/I), so names, IDs and splits read
+                unambiguously in dense tables.
+   parent       Literata headings + Figtree body — calm, bookish reading.
+   swimmer      Barlow Condensed headings + Lexend body — scoreboard voice,
+                low-strain reading on phones.
+   Times, IDs and codes use Atkinson Hyperlegible Mono in every portal. */
+@import '@fontsource/atkinson-hyperlegible-next/latin-400.css';
+@import '@fontsource/atkinson-hyperlegible-next/latin-400-italic.css';
+@import '@fontsource/atkinson-hyperlegible-next/latin-500.css';
+@import '@fontsource/atkinson-hyperlegible-next/latin-600.css';
+@import '@fontsource/atkinson-hyperlegible-next/latin-700.css';
+@import '@fontsource/atkinson-hyperlegible-mono/latin-400.css';
+@import '@fontsource/atkinson-hyperlegible-mono/latin-500.css';
+@import '@fontsource/atkinson-hyperlegible-mono/latin-600.css';
+@import '@fontsource/literata/latin-500.css';
+@import '@fontsource/literata/latin-600.css';
+@import '@fontsource/literata/latin-600-italic.css';
+@import '@fontsource/figtree/latin-400.css';
+@import '@fontsource/figtree/latin-500.css';
+@import '@fontsource/figtree/latin-600.css';
+@import '@fontsource/figtree/latin-700.css';
+@import '@fontsource/barlow-condensed/latin-600.css';
+@import '@fontsource/barlow-condensed/latin-700.css';
+@import '@fontsource/lexend/latin-400.css';
+@import '@fontsource/lexend/latin-500.css';
+@import '@fontsource/lexend/latin-600.css';
+@import '@fontsource/lexend/latin-700.css';
 
 /* ==========================================================
    DARE ADMIN — GLOBAL DESIGN SYSTEM
@@ -59,23 +82,69 @@
   --info-bg:              rgba(96, 165, 250, 0.08);
   --info-border:          rgba(96, 165, 250, 0.20);
 
-  /* Typography */
-  --font-display:         'Instrument Serif', Georgia, serif;
-  --font-body:            'Plus Jakarta Sans', system-ui, sans-serif;
-  --font-mono:            'Plus Jakarta Sans', system-ui, sans-serif;
+  /* Typography — families (admin/coach set; portals override below) */
+  --font-display:         'Atkinson Hyperlegible Next', ui-sans-serif, system-ui, sans-serif;
+  --font-body:            'Atkinson Hyperlegible Next', ui-sans-serif, system-ui, sans-serif;
+  --font-mono:            'Atkinson Hyperlegible Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --display-weight:       700;
+  --display-tracking:     -0.015em;
+  --display-leading:      1.15;
+
+  /* Type scale — one role scale for every portal. Inline styles reference
+     these tokens; never hand-write a pixel size.
+     2xs badges/caps · xs meta · sm dense cells · base body/controls ·
+     md emphasis · lg section title · xl card display · 2xl stat ·
+     3xl page title · 4xl hero figure */
+  --fs-2xs:               11px;
+  --fs-xs:                12px;
+  --fs-sm:                13px;
+  --fs-base:              14px;
+  --fs-md:                15px;
+  --fs-lg:                17px;
+  --fs-xl:                20px;
+  --fs-2xl:               24px;
+  --fs-3xl:               30px;
+  --fs-4xl:               38px;
+  --leading-tight:        1.25;
+  --leading-body:         1.5;
+  --leading-prose:        1.6;
+  --measure:              72ch;
 
   /* Layout */
   --sidebar-w:            224px;
   --topbar-h:             52px;
 
-  /* Radius */
-  --r-xs:                 3px;
-  --r-sm:                 5px;
-  --r:                    7px;
+  /* Spacing scale (4px base). Tight steps group, wide steps separate. */
+  --space-1:              4px;
+  --space-2:              8px;
+  --space-3:              12px;
+  --space-4:              16px;
+  --space-5:              20px;
+  --space-6:              24px;
+  --space-8:              32px;
+  --space-10:             40px;
+  --space-12:             48px;
+  --space-16:             64px;
+  --space-20:             80px;
+
+  /* Page frame. The shell owns gutters; pages only choose a width role and
+     stay anchored to the same left edge so titles never jump between routes. */
+  --page-gutter:          clamp(16px, 2.5vw, 32px);
+  --page-top:             24px;
+  --page-bottom:          var(--space-12);
+  --page-max:             1600px;
+  --portal-max:           1200px;
+  --portal-gutter:        clamp(16px, 3vw, 32px);
+  --section-gap:          var(--space-6);
+
+  /* Radius — controls 8, containers 12, overlays 16 */
+  --r-xs:                 4px;
+  --r-sm:                 6px;
+  --r:                    8px;
   --r-md:                 8px;
-  --r-lg:                 10px;
-  --r-xl:                 14px;
-  --r-2xl:                20px;
+  --r-lg:                 12px;
+  --r-xl:                 12px;
+  --r-2xl:                16px;
 
   /* Motion */
   --ease-out:             cubic-bezier(0.16, 1, 0.3, 1);
@@ -129,7 +198,17 @@
    but resolves through the SAME shared classes (.page-title, .card, .btn-*, .badge-*)
    as admin — so shape/spacing/type scale stay identical across portals and only the
    color tokens differ. Applied via a `data-portal` attribute on each shell's root node. */
+[data-portal] {
+  font-family: var(--font-body);
+}
+
 [data-portal="parent"] {
+  --font-display:         'Literata', Georgia, 'Times New Roman', serif;
+  --font-body:            'Figtree', ui-sans-serif, system-ui, sans-serif;
+  --display-weight:       600;
+  --display-tracking:     -0.01em;
+  --display-leading:      1.2;
+
   --bg:                   #F7F4F0;
   --bg-surface:           #F0EAE1;
   --bg-elevated:          #ffffff;
@@ -151,6 +230,12 @@
 }
 
 [data-portal="swim"] {
+  --font-display:         'Barlow Condensed', 'Arial Narrow', ui-sans-serif, sans-serif;
+  --font-body:            'Lexend', ui-sans-serif, system-ui, sans-serif;
+  --display-weight:       700;
+  --display-tracking:     0;
+  --display-leading:      1.05;
+
   --accent:               #00D4AA;
   --accent-hover:         #00b896;
   --accent-subtle:        rgba(0, 212, 170, 0.12);
@@ -198,10 +283,29 @@ html {
 
 body {
   font-family: var(--font-body);
+  font-size: var(--fs-base);
   background: var(--bg);
   color: var(--text);
-  line-height: 1.6;
+  line-height: var(--leading-body);
   min-height: 100vh;
+  font-variant-numeric: lining-nums;
+}
+
+h1, h2, h3, h4 {
+  font-weight: 600;
+  line-height: var(--leading-tight);
+  text-wrap: balance;
+}
+
+p { text-wrap: pretty; }
+
+/* Tabular figures wherever numbers line up: tables, times, money. */
+table, .tabular, .code, code, kbd, samp {
+  font-variant-numeric: tabular-nums;
+}
+
+code, kbd, samp, pre {
+  font-family: var(--font-mono);
 }
 
 a {
@@ -221,7 +325,7 @@ input, textarea, select {
   background: var(--bg-elevated);
   border: 1px solid var(--border-strong);
   border-radius: var(--r-sm);
-  font-size: 13px;
+  font-size: var(--fs-base);
   transition: border-color var(--dur-fast) var(--ease);
 }
 
@@ -365,38 +469,127 @@ input:focus, textarea:focus, select:focus {
 .admin-content {
   flex: 1;
   overflow-y: auto;
-  padding: 28px 32px;
+  padding: var(--page-top) var(--page-gutter) var(--page-bottom);
 }
 
-/* ── Page header ── */
+/* ── Page frame ──
+   One frame for every page in every portal. The shell owns the gutters; every
+   page root fills the same width so titles, cards and tables share one left
+   and right edge on every route. .page-narrow / .page-form are kept only as
+   aliases so older markup resolves to the identical frame. Long-form text
+   keeps its own measure (see .prose) instead of shrinking the whole page.
+   .page-fill is the same frame at full height for self-scrolling workspaces. */
+.page,
+.page-narrow,
+.page-form,
+.page-fill {
+  width: 100%;
+  min-width: 0;
+  max-width: var(--page-max);
+}
+
+.page-fill {
+  height: calc(100vh - var(--topbar-h) - var(--page-top) - var(--page-bottom));
+  min-height: 480px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Every direct child of a content shell is a page root: same frame even when
+   a page forgot its class. */
+.admin-content > *,
+.portal-main > * {
+  width: 100%;
+  min-width: 0;
+  max-width: var(--page-max);
+}
+
+/* Portal + swimmer shells: one centered column, nav and content share a gutter.
+   Inside it, pages fill the column (no second, narrower cap). */
+.portal-frame {
+  max-width: var(--portal-max);
+  margin: 0 auto;
+  padding-inline: var(--portal-gutter);
+}
+.portal-main {
+  position: relative;
+  z-index: 1;
+  padding-top: var(--space-8);
+  padding-bottom: var(--space-12);
+}
+.portal-main > * { max-width: none; }
+
+/* Readable line length for paragraphs that run long. */
+.prose { max-width: var(--measure); line-height: var(--leading-prose); }
+
+/* ── Page header ──
+   Title + optional subtitle on the left, actions on the right. Same bottom
+   spacing on every page, in every portal. */
 .page-header {
   display: flex;
-  align-items: flex-start;
+  align-items: flex-end;
   justify-content: space-between;
-  margin-bottom: 28px;
-  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: var(--section-gap);
+  gap: var(--space-3) var(--space-4);
 }
+.page-header > :first-child { min-width: 0; flex: 1 1 280px; }
+
+/* Title stack without actions: same bottom spacing as .page-header. */
+.page-heading {
+  margin-bottom: var(--section-gap);
+  animation: slideUp var(--dur-slow) var(--ease-out) both;
+}
+.page-header { animation: slideUp var(--dur-slow) var(--ease-out) both; }
 
 .page-title {
   font-family: var(--font-display);
-  font-size: 1.75rem;
-  line-height: 1.2;
+  font-size: var(--fs-3xl);
+  font-weight: var(--display-weight);
+  line-height: var(--display-leading);
+  letter-spacing: var(--display-tracking);
   color: var(--text);
-  letter-spacing: -0.01em;
+  text-wrap: balance;
 }
 
 .page-subtitle {
-  font-size: 13px;
+  font-size: var(--fs-base);
+  line-height: var(--leading-body);
   color: var(--text-subtle);
-  margin-top: 4px;
+  margin-top: var(--space-1);
+  max-width: var(--measure);
 }
 
-/* ── Cards ── */
+/* Heading roles below the page title. Same two levels on every page:
+   .section-title  a page section (h2) — display face, portal voice
+   .card-title     a card or panel heading (h3) — body face, semibold */
+.section-title {
+  font-family: var(--font-display);
+  font-size: var(--fs-xl);
+  font-weight: var(--display-weight);
+  line-height: var(--display-leading);
+  letter-spacing: var(--display-tracking);
+  color: var(--text);
+  text-wrap: balance;
+}
+
+.card-title {
+  font-family: var(--font-body);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  line-height: var(--leading-tight);
+  color: var(--text);
+}
+
+/* Vertical rhythm between stacked page sections. */
+.stack { display: flex; flex-direction: column; gap: var(--section-gap); }
+
+/* ── Cards ── one container recipe everywhere */
 .card {
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
-  padding: 20px;
+  padding: var(--space-5);
 }
 
 .card-elevated {
@@ -410,23 +603,35 @@ input:focus, textarea:focus, select:focus {
 .btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  padding: 7px 14px;
-  border-radius: var(--r-sm);
-  font-size: 13px;
-  font-weight: 500;
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: var(--r);
+  font-size: var(--fs-base);
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.005em;
   font-family: var(--font-body);
+  text-decoration: none;
   background: var(--bg-elevated);
   color: var(--text);
   border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-xs);
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease),
               color var(--dur-fast) var(--ease),
-              box-shadow var(--dur-fast) var(--ease);
+              border-color var(--dur-fast) var(--ease),
+              box-shadow var(--dur-fast) var(--ease),
+              transform var(--dur-fast) var(--ease-out);
   white-space: nowrap;
   user-select: none;
 }
 .btn:hover:not(:disabled) { background: var(--bg-surface); }
+.btn:active:not(:disabled) { transform: translateY(1px); }
+/* Leading icons sit optically centred: pull them toward the edge so the
+   label, not the glyph's bounding box, lines up with the padding. */
+.btn > svg:first-child:not(:last-child) { margin-left: -3px; flex-shrink: 0; }
 
 .btn:disabled {
   opacity: 0.45;
@@ -434,20 +639,101 @@ input:focus, textarea:focus, select:focus {
   pointer-events: none;
 }
 
+/* Primary: a slightly deepened accent (white label clears AA on the brand
+   orange) with a soft top light and a tinted, offset shadow, so the button
+   reads as a pressable key instead of a flat slab. Built on color-mix so the
+   swimmer portal's teal accent gets the same treatment. */
 .btn-primary {
-  background: var(--accent);
+  --btn-fill: color-mix(in srgb, var(--accent) 88%, black);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0) 60%),
+    var(--btn-fill);
   color: var(--text-on-accent);
-  border: none;
+  border: 1px solid color-mix(in srgb, var(--accent) 72%, black);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.20),
+    0 1px 2px rgba(0, 0, 0, 0.22),
+    0 3px 8px -3px color-mix(in oklab, var(--accent) 55%, transparent);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.12);
 }
-.btn-primary:hover { background: var(--accent-hover); }
-.btn-primary:active { filter: brightness(0.9); }
+.btn-primary:hover:not(:disabled) {
+  --btn-fill: color-mix(in srgb, var(--accent) 95%, black);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 60%),
+    var(--btn-fill);
+  color: var(--text-on-accent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 1px 2px rgba(0, 0, 0, 0.22),
+    0 6px 14px -4px color-mix(in oklab, var(--accent) 60%, transparent);
+}
+.btn-primary:active:not(:disabled) {
+  --btn-fill: color-mix(in srgb, var(--accent) 82%, black);
+  background: var(--btn-fill);
+  box-shadow:
+    inset 0 1px 3px rgba(0, 0, 0, 0.28),
+    0 0 0 0 transparent;
+}
+.btn-primary:focus-visible { outline-color: color-mix(in oklab, var(--accent) 80%, white); }
 
 .btn-secondary {
   background: var(--bg-elevated);
   color: var(--text);
   border: 1px solid var(--border-strong);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), var(--shadow-xs);
 }
-.btn-secondary:hover { background: var(--bg-surface); border-color: var(--border-focus); }
+.btn-secondary:hover:not(:disabled) { background: var(--bg-surface); border-color: var(--border-focus); color: var(--text); }
+
+/* Segmented control: a recessed track with a raised neutral thumb. The active
+   segment is lifted, not painted in accent, so it never competes with the
+   page's primary action. */
+.seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--r-lg);
+  background: var(--bg-sidebar);
+  border: 1px solid var(--border);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+.seg-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 14px;
+  border-radius: calc(var(--r-lg) - 3px);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-subtle);
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--dur-fast) var(--ease),
+              color var(--dur-fast) var(--ease),
+              box-shadow var(--dur-fast) var(--ease);
+}
+.seg-item:hover { color: var(--text); }
+.seg-item[aria-selected="true"] {
+  background: var(--bg-elevated);
+  border-color: var(--border-strong);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), var(--shadow-sm);
+}
+.seg-count {
+  min-width: 18px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  text-align: center;
+  background: var(--warning-bg);
+  color: var(--warning);
+  border: 1px solid var(--warning-border);
+}
 
 .btn-ghost {
   background: transparent;
@@ -464,13 +750,15 @@ input:focus, textarea:focus, select:focus {
 .btn-danger:hover { background: rgba(248, 113, 113, 0.14); }
 
 .btn-sm {
+  min-height: 28px;
   padding: 4px 10px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 
 .btn-lg {
+  min-height: 42px;
   padding: 10px 20px;
-  font-size: 14px;
+  font-size: var(--fs-md);
 }
 
 .btn-icon {
@@ -490,10 +778,11 @@ input:focus, textarea:focus, select:focus {
   gap: 4px;
   padding: 2px 8px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: var(--fs-2xs);
   font-weight: 600;
   font-family: var(--font-body);
-  letter-spacing: 0.02em;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   white-space: nowrap;
 }
@@ -512,7 +801,7 @@ input:focus, textarea:focus, select:focus {
   border: 1px solid var(--border-strong);
   border-radius: var(--r-sm);
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--fs-base);
   font-family: var(--font-body);
   transition: border-color var(--dur-fast), box-shadow var(--dur-fast);
 }
@@ -527,14 +816,13 @@ input:focus, textarea:focus, select:focus {
 .form-field {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: var(--space-1);
 }
 
 .form-label {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--text-subtle);
-  letter-spacing: 0.02em;
 }
 
 .form-label-required::after {
@@ -549,7 +837,7 @@ input:focus, textarea:focus, select:focus {
   border: 1px solid var(--border-strong);
   border-radius: var(--r-sm);
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--fs-base);
   transition: border-color var(--dur-fast), box-shadow var(--dur-fast);
   width: 100%;
 }
@@ -573,7 +861,7 @@ input:focus, textarea:focus, select:focus {
 }
 
 .form-error {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--error);
   display: flex;
   align-items: center;
@@ -581,7 +869,7 @@ input:focus, textarea:focus, select:focus {
 }
 
 .form-hint {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--text-muted);
 }
 
@@ -594,8 +882,8 @@ input:focus, textarea:focus, select:focus {
 
 /* ── Code ── */
 .code {
-  font-family: var(--font-body);
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--r-xs);
@@ -655,6 +943,180 @@ input:focus, textarea:focus, select:focus {
 .gap-3 { gap: 12px; }
 .gap-4 { gap: 16px; }
 
+/* Filter toolbars: search grows first, controls wrap, and on phones the search
+   takes its own full row instead of collapsing to an icon. */
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.toolbar-search {
+  position: relative;
+  flex: 1 1 240px;
+  min-width: min(100%, 200px);
+  max-width: 360px;
+}
+@media (max-width: 560px) {
+  .toolbar-search { flex-basis: 100%; max-width: none; }
+}
+
+/* Shift rows: time | job | capacity pips. On phones the job title gets the full
+   width on its own line instead of being squeezed between time and pips. */
+.job-row {
+  display: grid;
+  grid-template-columns: minmax(92px, auto) minmax(0, 1fr) auto;
+  grid-template-areas: "time main pips";
+}
+.job-row > :nth-child(1) { grid-area: time; }
+.job-row > :nth-child(2) { grid-area: main; }
+.job-row > :nth-child(3) { grid-area: pips; }
+@media (max-width: 560px) {
+  .job-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "time pips" "main main";
+    row-gap: 4px !important;
+  }
+}
+
+/* Audit entries: when/who | what | disclosure. Stacks on phones. */
+.audit-row {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr) auto;
+  gap: 8px 16px;
+  align-items: start;
+}
+@media (max-width: 640px) {
+  .audit-row { grid-template-columns: minmax(0, 1fr); }
+  .audit-row > :last-child { text-align: left !important; }
+}
+
+/* Meet list rows: date | meet | status | action. On phones the meet name gets
+   its own full-width line under the date, status and action. */
+.meet-row {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr) auto auto;
+  grid-template-areas: "date main status action";
+  align-items: center;
+  gap: 16px;
+}
+.meet-row > :nth-child(1) { grid-area: date; }
+.meet-row > :nth-child(2) { grid-area: main; }
+.meet-row > :nth-child(3) { grid-area: status; }
+.meet-row > :nth-child(4) { grid-area: action; }
+@media (max-width: 560px) {
+  .meet-row {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas: "date status action" "main main main";
+    gap: 8px 10px;
+  }
+}
+
+/* Invoice list rows: invoice | amount | due | status | chevron. On phones the
+   description gets the full width and the figures sit on the line below. */
+.inv-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 100px 100px 100px 36px;
+  align-items: center;
+  gap: 12px;
+}
+@media (max-width: 560px) {
+  .inv-row { grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px 12px; }
+  .inv-row > :nth-child(1) { grid-column: 1 / -1; }
+  .inv-row > :nth-child(5) { display: none; }
+  .inv-row-head { display: none !important; }
+}
+
+/* Statement lines: date | description | amount | running balance. On phones the
+   description moves to its own line under the figures. */
+.ledger-row {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr) auto auto;
+  grid-template-areas: "date desc amt bal";
+  gap: 12px;
+  align-items: baseline;
+}
+.ledger-row > :nth-child(1) { grid-area: date; }
+.ledger-row > :nth-child(2) { grid-area: desc; }
+.ledger-row > :nth-child(3) { grid-area: amt; }
+.ledger-row > :nth-child(4) { grid-area: bal; }
+@media (max-width: 560px) {
+  .ledger-row {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas: "date amt bal" "desc desc desc";
+    gap: 4px 12px;
+  }
+}
+
+/* Report rows: name + description | records | generated | action. On phones
+   the figures and action wrap under the description. */
+.report-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px 200px auto;
+  gap: var(--space-4);
+  align-items: center;
+  padding: var(--space-4) var(--space-5);
+}
+.report-stat { display: flex; flex-direction: column; gap: 2px; }
+.report-stat span { font-size: var(--fs-xs); color: var(--text-muted); }
+.report-stat strong { font-size: var(--fs-sm); font-weight: 600; color: var(--text); }
+@media (max-width: 720px) {
+  .report-row { grid-template-columns: auto auto minmax(0, 1fr); row-gap: var(--space-3); }
+  .report-row > :first-child { grid-column: 1 / -1; }
+  .report-row > :last-child { justify-self: end; }
+}
+
+/* Horizontally scrolling strips (tabs, filter chips): scroll, don't show a bar. */
+.tab-strip { scrollbar-width: none; }
+.tab-strip::-webkit-scrollbar { display: none; }
+
+/* ── Column grids ──
+   Equal-column grids that step down instead of squeezing: 4/5 → 2 below
+   900px, everything → 1 (4/5 → 2) below 560px. Set `gap` inline as before. */
+.cols-2, .cols-3, .cols-4, .cols-5 { display: grid; }
+.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.cols-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+
+/* Two-region splits; every variant stacks below 900px.
+   .split-aside  main content + supporting side column (summary, actions)
+   .split-list   master list + detail pane (threads, roles)
+   .split-nav    section nav + panel (settings) */
+.split-aside, .split-list, .split-nav, .split-pair {
+  display: grid;
+  align-items: start;
+}
+.split-pair  { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
+.split-aside { grid-template-columns: minmax(0, 1fr) 300px; }
+.split-list  { grid-template-columns: 320px minmax(0, 1fr); }
+.split-nav   { grid-template-columns: 220px minmax(0, 1fr); }
+
+@media (max-width: 900px) {
+  .cols-4, .cols-5 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .split-aside,
+  .split-list,
+  .split-nav,
+  .split-pair      { grid-template-columns: minmax(0, 1fr); }
+  /* Section nav turns into a horizontal strip above the panel. */
+  .split-nav > :first-child {
+    display: flex;
+    gap: 2px;
+    overflow-x: auto !important;
+    scrollbar-width: none;
+  }
+  .split-nav > :first-child > * { width: auto !important; flex-shrink: 0; white-space: nowrap; }
+}
+
+@media (max-width: 560px) {
+  /* Topbar: the page title already names the section; keep only the current crumb. */
+  .crumb-parent, .crumb-current .crumb-sep { display: none !important; }
+  .cols-2, .cols-3 { grid-template-columns: minmax(0, 1fr); }
+  /* Step trackers keep every dot but only name the current step. */
+  .step-label:not(.is-current) { display: none; }
+}
+
 /* ── Mobile nav (shared across admin sidebar, portal nav, swimmer nav) ──
    One breakpoint, one interaction pattern: below 768px a hamburger button
    opens a left slide-over drawer with the same links stacked vertically. */
@@ -694,10 +1156,28 @@ input:focus, textarea:focus, select:focus {
   display: flex;
 }
 
+/* The parent portal bar carries more links than the others, so it hands off
+   to the drawer earlier, before the link row can collide with the user menu. */
+@media (max-width: 1024px) {
+  .portal-nav-bar .desktop-nav-links { display: none !important; }
+  .portal-nav-bar .mobile-nav-toggle { display: inline-flex !important; }
+}
+
 @media (max-width: 768px) {
   .admin-sidebar-wrap { display: none; }
-  .admin-content { padding: 20px 16px; }
+  :root { --page-top: var(--space-5); --page-bottom: var(--space-10); --fs-3xl: 26px; --fs-4xl: 32px; }
+  .page-fill { height: auto; min-height: 0; }
+  .portal-main { padding-top: var(--space-5); padding-bottom: var(--space-10); }
   .mobile-nav-toggle { display: inline-flex !important; }
   .desktop-nav-links { display: none !important; }
   .mobile-only { display: flex !important; }
+}
+
+/* Table/list column header label (shared) */
+.col-head {
+  font-family: var(--font-body);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }

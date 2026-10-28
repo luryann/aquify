@@ -9,6 +9,7 @@ import { useApiClient } from '@/lib/api'
 import { shouldShowCollectionEmptyState } from '@/lib/collection-load-state'
 import { reportUIError } from '@/lib/frontend-telemetry'
 import { UnlinkedSwimmerNotice } from '@/components/swimmer/UnlinkedSwimmerNotice'
+import { WellnessPromptCard } from '@/components/engagement/WellnessPromptCard'
 
 const COURSE_LABELS: Record<string, string> = {
   SCY: 'Short Course Yards',
@@ -75,8 +76,8 @@ function commitStatus(raw: string | undefined): 'committed' | 'pending' | 'no' |
 
 const COMMIT_STATUS = {
   committed: { label: 'Committed',       color: 'var(--accent)', bg: 'var(--border)', border: 'var(--accent-border)' },
-  pending:   { label: 'Response Needed', color: 'var(--warning)', bg: 'var(--warning-bg)', border: 'var(--warning-border)' },
-  no:        { label: 'Not Going',       color: 'var(--error)', bg: 'var(--error-bg)',  border: 'var(--error-border)' },
+  pending:   { label: 'Response needed', color: 'var(--warning)', bg: 'var(--warning-bg)', border: 'var(--warning-border)' },
+  no:        { label: 'Not going',       color: 'var(--error)', bg: 'var(--error-bg)',  border: 'var(--error-border)' },
   closed:    { label: 'Closed',          color: 'var(--text-muted)', bg: 'var(--border)', border: 'var(--border-strong)' },
   open:      { label: 'Sign-ups Not Started',    color: 'var(--text-muted)', bg: 'var(--border)', border: 'var(--border-strong)' },
 }
@@ -117,10 +118,10 @@ function SkeletonCard() {
   return (
     <div className="card"
       style={{
-        padding: '18px 20px',
+        padding: '20px 20px',
         display: 'flex',
         flexDirection: 'column',
-        gap: '10px',
+        gap: '12px',
       }}
     >
       <SkeletonLine width="60%" height="16px" />
@@ -134,18 +135,18 @@ function StatCard({ label, value, sub, accent }: { label: string; value: string;
   return (
     <div className="card"
       style={{
-        padding: '18px 20px',
+        padding: '20px 20px',
         boxShadow: accent ? `0 0 20px rgba(0,212,170,0.08)` : 'none',
       }}
     >
-      <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: C.muted, letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: '6px' }}>
+      <p style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: C.muted, marginBottom: '6px' }}>
         {label}
       </p>
-      <p style={{ fontFamily: 'var(--font-display)', fontSize: '28px', color: accent ? C.accent : C.text, letterSpacing: '-0.02em', lineHeight: 1 }}>
+      <p style={{ fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--fs-3xl)', color: accent ? C.accent : C.text, letterSpacing: 'var(--display-tracking)', lineHeight: 1 }}>
         {value}
       </p>
       {sub && (
-        <p style={{ fontSize: '12px', color: C.muted, marginTop: '4px' }}>{sub}</p>
+        <p style={{ fontSize: 'var(--fs-sm)', color: C.muted, marginTop: '4px' }}>{sub}</p>
       )}
     </div>
   )
@@ -156,10 +157,10 @@ function MeetCard({ meet }: { meet: MeetDisplay }) {
   return (
     <div className="card"
       style={{
-        padding: '18px 20px',
+        padding: '20px 20px',
         display: 'flex',
         flexDirection: 'column',
-        gap: '14px',
+        gap: '16px',
         transition: 'border-color 150ms ease, box-shadow 150ms ease',
       }}
       onMouseEnter={(e) => {
@@ -176,36 +177,36 @@ function MeetCard({ meet }: { meet: MeetDisplay }) {
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
         <div>
-          <p style={{ fontSize: '15px', fontWeight: 600, color: C.text, marginBottom: '3px' }}>
+          <p style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: C.text, marginBottom: '4px' }}>
             {meet.name}
           </p>
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '12px', color: C.subtle, display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 'var(--fs-sm)', color: C.subtle, display: 'flex', alignItems: 'center', gap: '4px' }}>
               <Icon name="calendar" size={11} />
               {meet.date}
             </span>
             {meet.location && (
-              <span style={{ fontSize: '12px', color: C.subtle, display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span style={{ fontSize: 'var(--fs-sm)', color: C.subtle, display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <Icon name="map-pin" size={11} />
                 {meet.location}
               </span>
             )}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '7px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           {meet.course && (
-            <span title={courseTitle(meet.course)} style={{ fontSize: '10px', fontFamily: 'var(--font-body)', fontWeight: 600, color: 'var(--bg-surface)', background: C.accent, padding: '2px 7px', borderRadius: '4px', letterSpacing: '0.04em' }}>
+            <span title={courseTitle(meet.course)} style={{ fontSize: 'var(--fs-2xs)', fontFamily: 'var(--font-body)', fontWeight: 600, color: 'var(--bg-surface)', background: C.accent, padding: '2px 8px', borderRadius: '4px', letterSpacing: '0.04em' }}>
               {meet.course}
             </span>
           )}
           <span
             style={{
-              fontSize: '11px',
+              fontSize: 'var(--fs-xs)',
               fontWeight: 500,
               color: status.color,
               background: status.bg,
               border: `1px solid ${status.border}`,
-              padding: '3px 9px',
+              padding: '4px 8px',
               borderRadius: '999px',
               whiteSpace: 'nowrap',
             }}
@@ -219,13 +220,13 @@ function MeetCard({ meet }: { meet: MeetDisplay }) {
         <Link
           href={meet.path}
           style={{
-            fontSize: '12px',
+            fontSize: 'var(--fs-sm)',
             fontWeight: 600,
             color: C.accent,
             textDecoration: 'none',
             display: 'inline-flex',
             alignItems: 'center',
-            gap: '5px',
+            gap: '4px',
           }}
         >
           Meet details
@@ -264,6 +265,7 @@ export default function SwimmerDashboardPage() {
       return
     }
 
+    let cancelled = false
     setLoading(true)
     setLoadError(null)
 
@@ -272,6 +274,7 @@ export default function SwimmerDashboardPage() {
       fetchMeets(api, orgId),
       fetchAnnouncements(api, orgId, 'published'),
     ]).then(async ([swimmers, allMeets, anns]) => {
+      if (cancelled) return
       // Resolve "which swimmer is me" by the stable swimmer_id carried on the
       // session, never by guessing a household roster entry — a household can
       // have multiple swimmers, and only swimmerId identifies which one this
@@ -290,6 +293,7 @@ export default function SwimmerDashboardPage() {
       if (mySwimmer) {
         // Fetch best times
         const rawBT = await fetchSwimmerBestTimes(api, orgId, mySwimmer.id)
+        if (cancelled) return
         const btDisplay: BestTimeDisplay[] = rawBT
           .filter(bt => bt.best_time_ms != null)
           .slice(0, 3)
@@ -322,6 +326,7 @@ export default function SwimmerDashboardPage() {
             }
           })
         )
+        if (cancelled) return
         setMeets(meetDisplays)
       } else {
         // No swimmer resolved — still show meets without commitment status
@@ -337,6 +342,8 @@ export default function SwimmerDashboardPage() {
         setMeets(meetDisplays)
       }
     }).catch((error) => {
+      // A re-run (e.g. the session hydrating swimmer_id) supersedes this load.
+      if (cancelled) return
       setSwimmer(null)
       setMeets([])
       setBestTimes([])
@@ -347,7 +354,8 @@ export default function SwimmerDashboardPage() {
         'Swimmer dashboard data is unavailable right now.',
         { orgId, householdId },
       ))
-    }).finally(() => setLoading(false))
+    }).finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
   }, [api, orgId, householdId, swimmerId, reloadKey])
 
   const firstName = swimmer
@@ -383,18 +391,18 @@ export default function SwimmerDashboardPage() {
         }}
       >
         {/* Swimmer avatar + name */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '18px', marginBottom: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '20px', marginBottom: '8px' }}>
           <div
             style={{
               width: '56px',
               height: '56px',
               borderRadius: '50%',
-              background: 'linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%)',
+              background: 'var(--accent)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               color: 'var(--bg)',
-              fontSize: '18px',
+              fontSize: 'var(--fs-xl)',
               fontWeight: 700,
               fontFamily: 'var(--font-body)',
               boxShadow: '0 0 24px rgba(0,212,170,0.30)',
@@ -404,44 +412,20 @@ export default function SwimmerDashboardPage() {
             {loading ? '…' : initials}
           </div>
           <div>
-            <p
-              style={{
-                fontSize: '12px',
-                fontFamily: 'var(--font-body)',
-                color: C.muted,
-                letterSpacing: '0.05em',
-                marginBottom: '4px',
-              }}
+            <h1 className="page-title"
             >
-              {greeting}
-            </p>
-            <h1
-              style={{
-                fontFamily: 'var(--font-display)',
-                fontSize: 'clamp(26px, 4vw, 36px)',
-                color: C.text,
-                letterSpacing: '-0.02em',
-                lineHeight: 1.1,
-              }}
-            >
-              {loading ? '…' : `${firstName}.`}
+              {loading ? '…' : `${greeting}, ${firstName}.`}
             </h1>
           </div>
         </div>
-        <p style={{ fontSize: '14px', color: C.subtle, marginTop: '8px', marginLeft: '74px' }}>
-          {loading
-            ? ''
-            : swimmer
-              ? `${swimmer.registration_status === 'active' ? 'Active' : swimmer.registration_status} member`
-              : 'Swimmer portal'}
-        </p>
       </div>
+
+      <WellnessPromptCard api={api} orgId={orgId} swimmerId={swimmerId} />
 
       {/* Stats strip */}
       <div
+        className="cols-4"
         style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))',
           gap: '12px',
           marginBottom: '40px',
           animation: 'slideUp 0.45s cubic-bezier(0.16,1,0.3,1) 0.06s both',
@@ -457,13 +441,13 @@ export default function SwimmerDashboardPage() {
         ) : (
           <>
             <StatCard
-              label="Upcoming Meets"
+              label="Upcoming meets"
               value={noLinkedSwimmer ? '—' : String(meets.length)}
               sub={noLinkedSwimmer ? 'Link your account to see this' : 'Scheduled this season'}
               accent
             />
             <StatCard
-              label="Next Meet"
+              label="Next meet"
               value={noLinkedSwimmer ? '—' : nextMeet ? (meets[0]?.date ?? '—') : '—'}
               sub={noLinkedSwimmer ? 'Link your account to see this' : (nextMeet?.name ?? 'No meets scheduled')}
             />
@@ -488,27 +472,27 @@ export default function SwimmerDashboardPage() {
             background: C.warnBg,
             border: `1px solid ${C.warnBorder}`,
             borderRadius: '12px',
-            padding: '14px 16px',
+            padding: '16px 16px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: '16px',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
             <Icon name="alert-circle" size={16} style={{ color: C.warn, marginTop: '1px', flexShrink: 0 }} />
-            <p style={{ margin: 0, fontSize: '13px', color: C.text, lineHeight: 1.5 }}>{loadError}</p>
+            <p style={{ margin: 0, fontSize: 'var(--fs-base)', color: C.text, lineHeight: 1.5 }}>{loadError}</p>
           </div>
           <button
             type="button"
             onClick={() => setReloadKey((key) => key + 1)}
             style={{
-              padding: '8px 14px',
+              padding: '8px 16px',
               borderRadius: '8px',
               border: `1px solid ${C.warnBorder}`,
               background: 'transparent',
               color: C.text,
-              fontSize: '12px',
+              fontSize: 'var(--fs-sm)',
               fontWeight: 600,
               cursor: 'pointer',
               whiteSpace: 'nowrap',
@@ -522,9 +506,8 @@ export default function SwimmerDashboardPage() {
       {!loading && !loadError && noLinkedSwimmer && <UnlinkedSwimmerNotice />}
 
       <div
+        className="split-aside"
         style={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(0,1fr) 340px',
           gap: '24px',
           alignItems: 'start',
         }}
@@ -534,20 +517,14 @@ export default function SwimmerDashboardPage() {
           {/* Upcoming meets */}
           <section>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-              <h2
-                style={{
-                  fontFamily: 'var(--font-display)',
-                  fontSize: '20px',
-                  color: C.text,
-                  letterSpacing: '-0.01em',
-                }}
+              <h2 className="section-title"
               >
                 Upcoming Meets
               </h2>
               <Link
                 href="/swim/schedule"
                 style={{
-                  fontSize: '13px',
+                  fontSize: 'var(--fs-base)',
                   fontWeight: 500,
                   color: C.accent,
                   textDecoration: 'none',
@@ -576,7 +553,7 @@ export default function SwimmerDashboardPage() {
                     textAlign: 'center',
                   }}
                 >
-                  <p style={{ fontSize: '14px', color: C.subtle }}>Meet data is unavailable right now.</p>
+                  <p style={{ fontSize: 'var(--fs-md)', color: C.subtle }}>Meet data is unavailable right now.</p>
                 </div>
               ) : shouldShowCollectionEmptyState(loading, loadError, meets.length) ? (
                 <div className="card"
@@ -585,13 +562,13 @@ export default function SwimmerDashboardPage() {
                     textAlign: 'center',
                   }}
                 >
-                  <p style={{ fontSize: '14px', color: C.subtle }}>No upcoming meets scheduled.</p>
+                  <p style={{ fontSize: 'var(--fs-md)', color: C.subtle }}>No upcoming meets scheduled.</p>
                 </div>
               ) : (
                 meets.map((meet, i) => (
                   <div
                     key={meet.id}
-                    style={{ animationDelay: `${0.1 + i * 0.07}s`, animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both' }}
+                    style={{ animation: `slideUp 0.4s cubic-bezier(0.16,1,0.3,1) ${0.1 + i * 0.07}s both` }}
                   >
                     <MeetCard meet={meet} />
                   </div>
@@ -603,20 +580,14 @@ export default function SwimmerDashboardPage() {
           {/* Best times preview */}
           <section>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-              <h2
-                style={{
-                  fontFamily: 'var(--font-display)',
-                  fontSize: '20px',
-                  color: C.text,
-                  letterSpacing: '-0.01em',
-                }}
+              <h2 className="section-title"
               >
                 My Best Times
               </h2>
               <Link
                 href="/swim/performance"
                 style={{
-                  fontSize: '13px',
+                  fontSize: 'var(--fs-base)',
                   fontWeight: 500,
                   color: C.accent,
                   textDecoration: 'none',
@@ -643,7 +614,7 @@ export default function SwimmerDashboardPage() {
                 style={{
                   display: 'grid',
                   gridTemplateColumns: '1fr 80px 100px',
-                  padding: '10px 18px',
+                  padding: '12px 20px',
                   borderBottom: `1px solid ${C.border}`,
                 }}
               >
@@ -651,7 +622,7 @@ export default function SwimmerDashboardPage() {
                   <span
                     key={h}
                     style={{
-                      fontSize: '10.5px',
+                      fontSize: 'var(--fs-2xs)',
                       fontFamily: 'var(--font-body)',
                       color: C.muted,
                       textTransform: 'uppercase',
@@ -663,18 +634,18 @@ export default function SwimmerDashboardPage() {
                 ))}
               </div>
               {loading ? (
-                <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <SkeletonLine />
                   <SkeletonLine />
                   <SkeletonLine />
                 </div>
               ) : loadError ? (
-                <div style={{ padding: '24px 18px', textAlign: 'center' }}>
-                  <p style={{ fontSize: '13px', color: C.muted }}>Best-time data is unavailable right now.</p>
+                <div style={{ padding: '24px 20px', textAlign: 'center' }}>
+                  <p style={{ fontSize: 'var(--fs-base)', color: C.muted }}>Best-time data is unavailable right now.</p>
                 </div>
               ) : shouldShowCollectionEmptyState(loading, loadError, bestTimes.length) ? (
-                <div style={{ padding: '24px 18px', textAlign: 'center' }}>
-                  <p style={{ fontSize: '13px', color: C.muted }}>No best times recorded yet.</p>
+                <div style={{ padding: '24px 20px', textAlign: 'center' }}>
+                  <p style={{ fontSize: 'var(--fs-base)', color: C.muted }}>No best times recorded yet.</p>
                 </div>
               ) : (
                 bestTimes.map((bt, i) => (
@@ -683,7 +654,7 @@ export default function SwimmerDashboardPage() {
                     style={{
                       display: 'grid',
                       gridTemplateColumns: '1fr 80px 100px',
-                      padding: '12px 18px',
+                      padding: '12px 20px',
                       borderBottom: i < bestTimes.length - 1 ? `1px solid ${C.border}` : 'none',
                       alignItems: 'center',
                       transition: 'background 100ms ease',
@@ -691,9 +662,9 @@ export default function SwimmerDashboardPage() {
                     onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--border)')}
                     onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                   >
-                    <span style={{ fontSize: '13.5px', fontWeight: 600, color: C.text }}>{bt.event}</span>
-                    <span title={courseTitle(bt.course)} style={{ fontSize: '12px', fontFamily: 'var(--font-body)', color: C.subtle }}>{bt.course}</span>
-                    <span style={{ fontSize: '14px', fontFamily: 'var(--font-body)', fontWeight: 700, color: C.accent }}>{bt.time}</span>
+                    <span style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: C.text }}>{bt.event}</span>
+                    <span title={courseTitle(bt.course)} style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: C.subtle }}>{bt.course}</span>
+                    <span style={{ fontSize: 'var(--fs-md)', fontFamily: 'var(--font-body)', fontWeight: 700, color: C.accent }}>{bt.time}</span>
                   </div>
                 ))
               )}
@@ -710,48 +681,44 @@ export default function SwimmerDashboardPage() {
         >
           <div
             style={{
-              padding: '16px 18px 14px',
+              padding: '16px 20px 16px',
               borderBottom: `1px solid ${C.border}`,
             }}
           >
             <p
               style={{
-                fontFamily: 'var(--font-display)',
-                fontSize: '17px',
+                fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)',
+                fontSize: 'var(--fs-lg)',
                 color: C.text,
-                marginBottom: '2px',
               }}
             >
               Announcements
             </p>
-            <p style={{ fontSize: '12px', color: C.muted }}>
-              Latest from the club
-            </p>
           </div>
 
           {loading ? (
-            <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <SkeletonLine />
               <SkeletonLine width="80%" />
               <SkeletonLine width="90%" />
             </div>
           ) : loadError ? (
-            <div style={{ padding: '24px 18px', textAlign: 'center' }}>
-              <p style={{ fontSize: '13px', color: C.muted }}>Announcements are unavailable right now.</p>
+            <div style={{ padding: '24px 20px', textAlign: 'center' }}>
+              <p style={{ fontSize: 'var(--fs-base)', color: C.muted }}>Announcements are unavailable right now.</p>
             </div>
           ) : shouldShowCollectionEmptyState(loading, loadError, announcements.length) ? (
-            <div style={{ padding: '24px 18px', textAlign: 'center' }}>
-              <p style={{ fontSize: '13px', color: C.muted }}>No announcements.</p>
+            <div style={{ padding: '24px 20px', textAlign: 'center' }}>
+              <p style={{ fontSize: 'var(--fs-base)', color: C.muted }}>No announcements.</p>
             </div>
           ) : (
             announcements.map((ann, i) => (
               <div
                 key={ann.id}
                 style={{
-                  padding: '14px 18px',
+                  padding: '16px 20px',
                   borderBottom: i < announcements.length - 1 ? `1px solid ${C.border}` : 'none',
                   display: 'flex',
-                  gap: '10px',
+                  gap: '12px',
                   alignItems: 'flex-start',
                   transition: 'background 100ms ease',
                 }}
@@ -766,14 +733,14 @@ export default function SwimmerDashboardPage() {
                     borderRadius: '50%',
                     background: C.accent,
                     flexShrink: 0,
-                    marginTop: '5px',
+                    marginTop: '4px',
                   }}
                 />
                 <div>
-                  <p style={{ fontSize: '13px', fontWeight: 500, color: C.text, lineHeight: 1.4, marginBottom: '3px' }}>
+                  <p style={{ fontSize: 'var(--fs-base)', fontWeight: 500, color: C.text, lineHeight: 1.4, marginBottom: '4px' }}>
                     {ann.title}
                   </p>
-                  <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: C.muted }}>
+                  <p style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', color: C.muted }}>
                     {ann.published_at ? new Date(ann.published_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}
                   </p>
                 </div>
@@ -783,7 +750,7 @@ export default function SwimmerDashboardPage() {
 
           <div
             style={{
-              padding: '10px 18px',
+              padding: '12px 20px',
               borderTop: `1px solid ${C.border}`,
               display: 'flex',
               alignItems: 'center',
@@ -791,7 +758,7 @@ export default function SwimmerDashboardPage() {
             }}
           >
             <Icon name="megaphone" size={12} style={{ color: C.muted }} />
-            <span style={{ fontSize: '11.5px', color: C.muted }}>
+            <span style={{ fontSize: 'var(--fs-xs)', color: C.muted }}>
               Ask your parent to check the full inbox for more
             </span>
           </div>

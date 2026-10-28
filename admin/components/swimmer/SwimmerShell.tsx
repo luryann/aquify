@@ -29,7 +29,7 @@ function PortalDisabled() {
         }}
       >
         {/* Wave icon */}
-        <div style={{ marginBottom: '28px' }}>
+        <div style={{ marginBottom: '24px' }}>
           <svg width="48" height="32" viewBox="0 0 48 32" fill="none" style={{ margin: '0 auto' }}>
             <path
               d="M2 16C6 10 10 4 17 4C24 4 24 16 31 16C38 16 38 4 44 4"
@@ -50,19 +50,18 @@ function PortalDisabled() {
           </svg>
         </div>
 
-        <h1 className="page-title" style={{ marginBottom: '12px' }}>
+        <h1 className="page-title">
           Athlete Portal Coming Soon
         </h1>
         <p
           style={{
-            fontSize: '14px',
+            fontSize: 'var(--fs-md)',
             color: 'var(--text-subtle)',
             lineHeight: 1.65,
-            marginBottom: '28px',
+            marginBottom: '24px',
           }}
         >
-          The optional swimmer portal is not yet enabled for your club. All important information —
-          meets, registration, billing, and documents — is available through your parent&apos;s account.
+          The swimmer portal isn&apos;t enabled for your club yet. Meets, billing, and documents are available through your parent&apos;s account.
         </p>
         <a href="/portal/dashboard" className="btn btn-primary" style={{ textDecoration: 'none' }}>
           Go to Parent Portal
@@ -92,6 +91,9 @@ export function SwimmerShell({ children }: { children: ReactNode }) {
       style={{
         minHeight: '100vh',
         background: 'var(--bg)',
+        // Re-resolve text color against this portal's tokens; body's color was
+        // computed from the admin (dark) root tokens and would otherwise inherit.
+        color: 'var(--text)',
         fontFamily: 'var(--font-body)',
         position: 'relative',
       }}
@@ -131,15 +133,7 @@ export function SwimmerShell({ children }: { children: ReactNode }) {
         onSignOut={handleSignOut}
       />
 
-      <main
-        style={{
-          position: 'relative',
-          zIndex: 1,
-          maxWidth: '1100px',
-          margin: '0 auto',
-          padding: '40px 28px 80px',
-        }}
-      >
+      <main className="portal-frame portal-main">
         {children}
       </main>
     </div>

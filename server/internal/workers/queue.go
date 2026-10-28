@@ -39,6 +39,8 @@ const (
 	TypePurgeExpiredFiles   = "cleanup:purge_expired"
 	TypeProcessDataExport   = "compliance:data_export"
 	TypeProcessDataDeletion = "compliance:data_deletion"
+	TypeBillingRecurringRun = "billing:recurring_run"
+	TypeBillingLateFees     = "billing:late_fees"
 )
 
 // TaskStatus represents the lifecycle state of a queued task.

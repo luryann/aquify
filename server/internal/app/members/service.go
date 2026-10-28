@@ -43,6 +43,16 @@ type Service struct {
 	parentHouseholdIndex map[string]map[string]struct{}
 	auditEvents          []SwimmerAuditEvent
 	linkRequests         map[string]SwimmerLinkRequest
+	// onSwimmerCreated is invoked (outside the service lock) after a swimmer
+	// is persisted, so other domains can react — e.g. meets inviting the new
+	// swimmer to meets whose commitment window is already open.
+	onSwimmerCreated func(Swimmer)
+}
+
+// SetSwimmerCreatedHook registers a callback fired after each successful
+// CreateSwimmer. Wire it once at startup, before serving requests.
+func (s *Service) SetSwimmerCreatedHook(fn func(Swimmer)) {
+	s.onSwimmerCreated = fn
 }
 
 func NewService() *Service {
@@ -349,6 +359,36 @@ func (s *Service) CreateHousehold(principal *appmiddleware.Principal, input Crea
 	}
 
 	return household, nil
+}
+
+// EnsureSeedHousehold idempotently creates a household with a fixed ID and
+// associates parentUserID with it. It exists for local development, where the
+// dev stub parent/swimmer principals point at a fixed household that would
+// otherwise never exist; existing records are left untouched.
+func (s *Service) EnsureSeedHousehold(household Household, parentUserID string) error {
+	if err := s.syncFromDB(context.Background()); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.households[household.ID]; !ok {
+		now := time.Now().UTC()
+		if household.Status == "" {
+			household.Status = "active"
+		}
+		household.CreatedAt, household.UpdatedAt = now, now
+		if s.repo != nil {
+			if err := s.repo.UpsertHousehold(context.Background(), household); err != nil {
+				return fmt.Errorf("persist seed household: %w", err)
+			}
+		}
+		s.households[household.ID] = household
+	}
+	if parentUserID = strings.TrimSpace(parentUserID); parentUserID != "" {
+		s.associateParentHouseholdLocked(parentUserID, household.ID)
+	}
+	return nil
 }
 
 func (s *Service) UpdateHousehold(principal *appmiddleware.Principal, orgID, householdID string, input UpdateHouseholdInput) (Household, error) {
@@ -685,6 +725,14 @@ func (s *Service) AddContact(principal *appmiddleware.Principal, orgID, househol
 }
 
 func (s *Service) CreateSwimmer(principal *appmiddleware.Principal, orgID string, input CreateSwimmerInput) (Swimmer, SwimmerAuditEvent, error) {
+	swimmer, event, err := s.createSwimmer(principal, orgID, input)
+	if err == nil && s.onSwimmerCreated != nil {
+		s.onSwimmerCreated(swimmer)
+	}
+	return swimmer, event, err
+}
+
+func (s *Service) createSwimmer(principal *appmiddleware.Principal, orgID string, input CreateSwimmerInput) (Swimmer, SwimmerAuditEvent, error) {
 	if !hasAnyRole(principal, "admin", "coach", "parent") {
 		return Swimmer{}, SwimmerAuditEvent{}, ErrForbidden
 	}
@@ -1028,7 +1076,9 @@ func (s *Service) AssignSwimmerToGroup(principal *appmiddleware.Principal, orgID
 		return SwimmerGroupLink{}, ErrSwimmerNotFound
 	}
 
-	groupCode := strings.TrimSpace(strings.ToLower(input.GroupCode))
+	// Group codes are canonical uppercase (groups.Service stores them that
+	// way); links must match exactly for rosters, attendance, and audiences.
+	groupCode := normalizeGroupCode(input.GroupCode)
 	if groupCode == "" {
 		return SwimmerGroupLink{}, errors.New("group_code is required")
 	}
@@ -1105,7 +1155,7 @@ func (s *Service) ListSwimmers(principal *appmiddleware.Principal, orgID string,
 		}
 	}
 
-	groupFilter := strings.TrimSpace(strings.ToLower(input.GroupCode))
+	groupFilter := normalizeGroupCode(input.GroupCode)
 	statusFilter := strings.TrimSpace(strings.ToLower(input.RegistrationStatus))
 	results := []SwimmerView{}
 
@@ -1288,7 +1338,24 @@ func (s *Service) associateParentHouseholdLocked(parentUserID, householdID strin
 	s.parentHouseholdIndex[parentUserID][householdID] = struct{}{}
 }
 
+// HasPrimaryGroup reports whether the swimmer already has a primary group link.
+func (s *Service) HasPrimaryGroup(orgID, swimmerID string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, link := range s.swimmerGroupLinks {
+		if link.OrgID == orgID && link.SwimmerID == swimmerID && link.IsPrimary {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeGroupCode(code string) string {
+	return strings.ToUpper(strings.TrimSpace(code))
+}
+
 func (s *Service) swimmerInGroupLocked(orgID, swimmerID, groupCode string) bool {
+	groupCode = normalizeGroupCode(groupCode)
 	for _, link := range s.swimmerGroupLinks {
 		if link.OrgID == orgID && link.SwimmerID == swimmerID && link.GroupCode == groupCode {
 			return true

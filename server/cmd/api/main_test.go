@@ -32,7 +32,7 @@ func TestShouldLoadLocalEnvFilesOnlyForExplicitLocalDevelopmentModes(t *testing.
 }
 
 func TestLoadLocalEnvFilesSkipsNonLocalRuntimes(t *testing.T) {
-	t.Parallel()
+	// Not parallel: swaps the package-level loadDotEnvFile hook.
 
 	originalLoader := loadDotEnvFile
 	t.Cleanup(func() {
@@ -54,7 +54,7 @@ func TestLoadLocalEnvFilesSkipsNonLocalRuntimes(t *testing.T) {
 }
 
 func TestLoadLocalEnvFilesLoadsExpectedPathsForDevelopment(t *testing.T) {
-	t.Parallel()
+	// Not parallel: swaps the package-level loadDotEnvFile hook.
 
 	originalLoader := loadDotEnvFile
 	t.Cleanup(func() {

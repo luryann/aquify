@@ -39,7 +39,7 @@ export function DevRoleSwitcher() {
         left: '16px',
         zIndex: 10000,
         fontFamily: 'var(--font-body)',
-        fontSize: '11px',
+        fontSize: 'var(--fs-xs)',
       }}
     >
       {open && (
@@ -54,7 +54,7 @@ export function DevRoleSwitcher() {
             minWidth: '160px',
           }}
         >
-          <div style={{ color: 'var(--text-muted)', padding: '4px 8px 8px', letterSpacing: '0.06em', textTransform: 'uppercase', borderBottom: '1px solid var(--border)', marginBottom: '4px' }}>
+          <div style={{ color: 'var(--text-muted)', padding: '4px 8px 8px', borderBottom: '1px solid var(--border)', marginBottom: '4px' }}>
             Dev Role
           </div>
           {STUB_ORDER.map((stub) => {
@@ -78,7 +78,7 @@ export function DevRoleSwitcher() {
                   color: isActive ? 'var(--accent)' : 'var(--text-subtle)',
                   textAlign: 'left',
                   fontFamily: 'var(--font-body)',
-                  fontSize: '12px',
+                  fontSize: 'var(--fs-sm)',
                   fontWeight: isActive ? 600 : 400,
                 }}
                 onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = 'rgba(255,255,255,0.04)' }}
@@ -103,14 +103,14 @@ export function DevRoleSwitcher() {
           display: 'flex',
           alignItems: 'center',
           gap: '6px',
-          padding: '5px 10px',
+          padding: '4px 12px',
           background: 'var(--bg-elevated)',
           border: '1px solid var(--border-strong)',
           borderRadius: 'var(--r-md)',
           cursor: 'pointer',
           color: 'var(--accent)',
           fontFamily: 'var(--font-body)',
-          fontSize: '11px',
+          fontSize: 'var(--fs-xs)',
           fontWeight: 600,
           boxShadow: 'var(--shadow-md)',
           letterSpacing: '0.02em',

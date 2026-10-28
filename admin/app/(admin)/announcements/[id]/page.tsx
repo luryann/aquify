@@ -5,13 +5,15 @@ import { useParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
-import { ApiError, useApiClient } from '@/lib/api'
+import { useApiClient } from '@/lib/api'
+import { useStaffNames } from '@/lib/useStaffNames'
 import {
   archiveAnnouncement,
   fetchAnnouncement,
   publishAnnouncement,
   type AnnouncementRecord,
 } from '@/lib/adminData'
+import { uiErrorMessage } from '@/lib/frontend-telemetry'
 
 function formatDateTime(value?: string) {
   if (!value) return '—'
@@ -29,6 +31,7 @@ export default function AnnouncementDetailPage() {
   const announcementId = Array.isArray(params?.id) ? params.id[0] : params?.id
   const { session } = useSession()
   const api = useApiClient(session?.token)
+  const staffName = useStaffNames(api, session?.user.orgId)
   const [announcement, setAnnouncement] = useState<AnnouncementRecord | null>(null)
   const [loading, setLoading] = useState(true)
   const [working, setWorking] = useState(false)
@@ -49,7 +52,7 @@ export default function AnnouncementDetailPage() {
         if (!cancelled) setAnnouncement(next)
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof ApiError ? err.message : 'Unable to load announcement.')
+          setError(uiErrorMessage(err, 'Couldn’t load announcement. Try again.'))
           setAnnouncement(null)
         }
       } finally {
@@ -71,7 +74,7 @@ export default function AnnouncementDetailPage() {
       const next = await publishAnnouncement(api, session.user.orgId, announcement.id)
       setAnnouncement(next)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Unable to publish announcement.')
+      setError(uiErrorMessage(err, 'Couldn’t publish announcement. Try again.'))
     } finally {
       setWorking(false)
     }
@@ -85,7 +88,7 @@ export default function AnnouncementDetailPage() {
       const next = await archiveAnnouncement(api, session.user.orgId, announcement.id)
       setAnnouncement(next)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Unable to archive announcement.')
+      setError(uiErrorMessage(err, 'Couldn’t archive announcement. Try again.'))
     } finally {
       setWorking(false)
     }
@@ -104,13 +107,13 @@ export default function AnnouncementDetailPage() {
   }
 
   return (
-    <div style={{ padding: '32px 36px 80px', maxWidth: 980, margin: '0 auto' }}>
+    <div className="page">
       <div style={{ marginBottom: '20px' }}>
-        <Link href="/announcements" style={{ fontSize: '12px', color: 'var(--accent)', textDecoration: 'none' }}>← Back to announcements</Link>
+        <Link href="/announcements" style={{ fontSize: 'var(--fs-sm)', color: 'var(--accent)', textDecoration: 'none' }}>← Back to announcements</Link>
       </div>
 
       {error ? (
-        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: '12px' }}>
+        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: 'var(--fs-sm)' }}>
           {error}
         </div>
       ) : null}
@@ -118,14 +121,14 @@ export default function AnnouncementDetailPage() {
       <div className="card" style={{ padding: '24px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', alignItems: 'flex-start', marginBottom: '16px', flexWrap: 'wrap' }}>
           <div>
-            <div style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>
-              {announcement.status} · {announcement.audience}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '4px' }}>
+              <h1 className="page-title">
+                {announcement.title}
+              </h1>
+              <span className="badge badge-default">{announcement.status}</span>
             </div>
-            <h1 className="page-title">
-              {announcement.title}
-            </h1>
-            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-              Created {formatDateTime(announcement.created_at)} by {announcement.created_by} · Updated {formatDateTime(announcement.updated_at)}
+            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
+              Audience: {announcement.audience} · Created {formatDateTime(announcement.created_at)} by {staffName(announcement.created_by)} · Updated {formatDateTime(announcement.updated_at)}
             </div>
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
@@ -135,18 +138,18 @@ export default function AnnouncementDetailPage() {
               </button>
             ) : null}
             {announcement.status !== 'archived' ? (
-              <button onClick={() => void handleArchive()} disabled={working} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: '12px', cursor: working ? 'not-allowed' : 'pointer' }}>
+              <button onClick={() => void handleArchive()} disabled={working} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: 'var(--fs-sm)', cursor: working ? 'not-allowed' : 'pointer' }}>
                 Archive
               </button>
             ) : null}
           </div>
         </div>
 
-        <div style={{ padding: '16px 18px', borderRadius: '10px', background: 'var(--bg-surface)', border: '1px solid var(--border)', fontSize: '14px', lineHeight: 1.7, color: 'var(--text-subtle)', whiteSpace: 'pre-wrap' }}>
+        <div style={{ padding: '16px 20px', borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border)', fontSize: 'var(--fs-md)', lineHeight: 1.7, color: 'var(--text-subtle)', whiteSpace: 'pre-wrap' }}>
           {announcement.body}
         </div>
 
-        <div style={{ marginTop: '16px', fontSize: '12px', color: 'var(--text-muted)' }}>
+        <div style={{ marginTop: '16px', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
           Published {formatDateTime(announcement.published_at)} · Archived {formatDateTime(announcement.archived_at)} · Group {announcement.group_id || 'All'}
         </div>
       </div>

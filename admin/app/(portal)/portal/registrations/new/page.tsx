@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
-import { ApiError, useApiClient } from '@/lib/api'
+import { useApiClient } from '@/lib/api'
 import {
   acceptRegistrationWaiver,
   createRegistration,
@@ -23,11 +23,13 @@ import {
   derivePortalRegistrationWaivers,
 } from '@/lib/portal-registration-wizard'
 import { useSession } from '@/lib/session'
+import { parseBackendDate } from '@/lib/dates'
+import { uiErrorMessage } from '@/lib/frontend-telemetry'
 
 const STEP_LABELS = ['Select Program', 'Select Swimmers', 'Review Waivers', 'Confirm']
 
 function calculateAge(dateOfBirth: string): number | null {
-  const dob = new Date(dateOfBirth)
+  const dob = parseBackendDate(dateOfBirth)
   if (Number.isNaN(dob.getTime())) return null
   const now = new Date()
   let age = now.getFullYear() - dob.getFullYear()
@@ -37,7 +39,7 @@ function calculateAge(dateOfBirth: string): number | null {
 }
 
 function formatApiError(error: unknown, fallback: string): string {
-  return error instanceof ApiError ? error.message : fallback
+  return uiErrorMessage(error, fallback)
 }
 
 export default function NewRegistrationPage() {
@@ -86,7 +88,7 @@ export default function NewRegistrationPage() {
         setDocumentTypes(allDocumentTypes)
       } catch (loadError) {
         if (cancelled) return
-        setError(formatApiError(loadError, 'Unable to load registration options right now.'))
+        setError(formatApiError(loadError, 'Couldn’t load registration options. Try again.'))
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -196,7 +198,7 @@ export default function NewRegistrationPage() {
 
       setSubmitted(true)
     } catch (submitError) {
-      setError(formatApiError(submitError, 'Unable to submit this registration right now.'))
+      setError(formatApiError(submitError, 'Couldn’t submit this registration. Try again.'))
     } finally {
       setSubmitting(false)
     }
@@ -214,14 +216,14 @@ export default function NewRegistrationPage() {
             <polyline points="20 6 9 17 4 12" />
           </svg>
         </div>
-        <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '26px', color: 'var(--text)', marginBottom: '10px' }}>Registration submitted</h2>
-        <p style={{ fontSize: '14px', color: 'var(--text-subtle)', lineHeight: 1.7, marginBottom: '28px' }}>
+        <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--fs-3xl)', color: 'var(--text)', marginBottom: '12px' }}>Registration submitted</h2>
+        <p style={{ fontSize: 'var(--fs-md)', color: 'var(--text-subtle)', lineHeight: 1.7, marginBottom: '24px' }}>
           Your {selectedSeasonLabel} registration for <strong style={{ color: 'var(--text)' }}>{selectedProgram?.name ?? 'the selected program'}</strong> is now pending review.
         </p>
         <button
           onClick={() => router.push('/portal/registrations')}
           className="btn btn-primary"
-          style={{ padding: '11px 28px', fontSize: '14px' }}
+          style={{ padding: '12px 24px', fontSize: 'var(--fs-md)' }}
         >
           Back to Registrations
         </button>
@@ -230,10 +232,10 @@ export default function NewRegistrationPage() {
   }
 
   return (
-    <div style={{ padding: '32px 24px 80px', maxWidth: '720px', margin: '0 auto' }}>
+    <div className="page">
       <button
         onClick={() => step > 0 ? setStep(step - 1) : router.push('/portal/registrations')}
-        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '13px', fontFamily: 'var(--font-body)', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '20px', padding: 0 }}
+        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 'var(--fs-base)', fontFamily: 'var(--font-body)', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '20px', padding: 0 }}
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
           <line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" />
@@ -245,11 +247,11 @@ export default function NewRegistrationPage() {
         New Registration
       </h1>
 
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '28px' }}>
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '24px' }}>
         {STEP_LABELS.map((label, idx) => (
           <div key={label} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <div style={{ height: '3px', borderRadius: '2px', background: idx <= step ? 'var(--accent)' : 'var(--border)', transition: 'background 0.3s ease' }} />
-            <span style={{ fontSize: '10px', fontFamily: 'var(--font-body)', color: idx === step ? 'var(--text)' : 'var(--text-muted)', fontWeight: idx === step ? 600 : 400, letterSpacing: '0.02em' }}>
+            <span style={{ fontSize: 'var(--fs-2xs)', fontFamily: 'var(--font-body)', color: idx === step ? 'var(--text)' : 'var(--text-muted)', fontWeight: idx === step ? 600 : 400, letterSpacing: '0.02em' }}>
               {label}
             </span>
           </div>
@@ -257,36 +259,33 @@ export default function NewRegistrationPage() {
       </div>
 
       {error && (
-        <div style={{ marginBottom: '18px', padding: '12px 14px', borderRadius: '10px', background: 'var(--error-bg)', border: '1px solid rgba(220,38,38,0.15)', color: 'var(--error)', fontSize: '13px', lineHeight: 1.5 }}>
+        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '12px', background: 'var(--error-bg)', border: '1px solid rgba(220,38,38,0.15)', color: 'var(--error)', fontSize: 'var(--fs-base)', lineHeight: 1.5 }}>
           {error}
         </div>
       )}
 
       {loading ? (
-        <div style={{ padding: '28px 0', color: 'var(--text-subtle)', fontSize: '14px' }}>Loading registration options…</div>
+        <div style={{ padding: '24px 0', color: 'var(--text-subtle)', fontSize: 'var(--fs-md)' }}>Loading registration options…</div>
       ) : (
         <>
           {step === 0 && (
             <div>
-              <p className="page-subtitle">
-                Choose the season and active program you&apos;d like to register for.
-              </p>
 
               <div style={{ marginBottom: '20px' }}>
-                <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '10px' }}>Season</div>
-                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '12px' }}>Season</div>
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
                   {seasonOptions.map((season) => (
                     <button
                       key={season.id}
                       onClick={() => setSelectedSeason(season.id)}
                       style={{
-                        padding: '10px 14px',
+                        padding: '12px 16px',
                         borderRadius: '999px',
                         border: `1px solid ${selectedSeason === season.id ? 'var(--accent)' : 'var(--border)'}`,
                         background: selectedSeason === season.id ? 'rgba(235,93,30,0.08)' : 'var(--bg-elevated)',
                         color: selectedSeason === season.id ? '#c2410c' : 'var(--text-subtle)',
                         cursor: 'pointer',
-                        fontSize: '13px',
+                        fontSize: 'var(--fs-base)',
                         fontWeight: 600,
                       }}
                     >
@@ -302,7 +301,7 @@ export default function NewRegistrationPage() {
                     key={program.id}
                     onClick={() => setSelectedProgramId(program.id)}
                     style={{
-                      padding: '18px 20px',
+                      padding: '20px 20px',
                       textAlign: 'left',
                       borderRadius: '12px',
                       cursor: 'pointer',
@@ -314,19 +313,19 @@ export default function NewRegistrationPage() {
                   >
                     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
                       <div>
-                        <p style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text)', marginBottom: '4px', fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif' }}>{program.name}</p>
-                        <p style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+                        <p style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--text)', marginBottom: '4px', fontFamily: 'var(--font-body)' }}>{program.name}</p>
+                        <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
                           {program.group.code.toUpperCase()} · {program.type}
                         </p>
                       </div>
-                      <div style={{ textAlign: 'right', flexShrink: 0, color: 'var(--text-muted)', fontSize: '12px' }}>
+                      <div style={{ textAlign: 'right', flexShrink: 0, color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>
                         {program.group.min_age != null || program.group.max_age != null
                           ? `Ages ${program.group.min_age ?? '—'}-${program.group.max_age ?? '—'}`
                           : 'All ages'}
                       </div>
                     </div>
                     {program.description && (
-                      <p style={{ marginTop: '10px', marginBottom: 0, color: 'var(--text-subtle)', fontSize: '13px', lineHeight: 1.55 }}>
+                      <p style={{ marginTop: '12px', marginBottom: 0, color: 'var(--text-subtle)', fontSize: 'var(--fs-base)', lineHeight: 1.55 }}>
                         {program.description}
                       </p>
                     )}
@@ -339,9 +338,9 @@ export default function NewRegistrationPage() {
           {step === 1 && (
             <div>
               <p className="page-subtitle">
-                Select which swimmers to enroll in <strong style={{ color: 'var(--text)' }}>{selectedProgram?.name}</strong> for <strong style={{ color: 'var(--text)' }}>{selectedSeasonLabel}</strong>.
+                Choose swimmers for <strong style={{ color: 'var(--text)' }}>{selectedProgram?.name}</strong>, {selectedSeasonLabel}.
               </p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {swimmerOptions.map((swimmer) => {
                   const age = calculateAge(swimmer.date_of_birth)
                   return (
@@ -350,9 +349,9 @@ export default function NewRegistrationPage() {
                       onClick={() => !swimmer.alreadyRegistered && toggleSwimmer(swimmer.id)}
                       disabled={swimmer.alreadyRegistered}
                       style={{
-                        padding: '16px 18px',
+                        padding: '16px 20px',
                         textAlign: 'left',
-                        borderRadius: '10px',
+                        borderRadius: '12px',
                         cursor: swimmer.alreadyRegistered ? 'not-allowed' : 'pointer',
                         background: swimmer.alreadyRegistered ? '#F5F3F0' : selectedSwimmers.has(swimmer.id) ? 'rgba(235,93,30,0.06)' : 'var(--bg-elevated)',
                         border: `2px solid ${swimmer.alreadyRegistered ? 'var(--border)' : selectedSwimmers.has(swimmer.id) ? 'var(--accent)' : 'var(--border)'}`,
@@ -361,26 +360,26 @@ export default function NewRegistrationPage() {
                         opacity: swimmer.alreadyRegistered ? 0.7 : 1,
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                         <div style={{
                           width: '36px', height: '36px', borderRadius: '50%', flexShrink: 0,
                           background: selectedSwimmers.has(swimmer.id) && !swimmer.alreadyRegistered ? 'var(--accent)' : 'var(--border)',
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontSize: '14px', fontWeight: 700, color: selectedSwimmers.has(swimmer.id) && !swimmer.alreadyRegistered ? 'var(--bg-elevated)' : 'var(--text-muted)',
-                          fontFamily: '"Instrument Serif", Georgia, serif',
+                          fontSize: 'var(--fs-md)', fontWeight: 'var(--display-weight)', color: selectedSwimmers.has(swimmer.id) && !swimmer.alreadyRegistered ? 'var(--bg-elevated)' : 'var(--text-muted)',
+                          fontFamily: 'var(--font-display)',
                         }}>
                           {`${swimmer.first_name[0] ?? ''}${swimmer.last_name[0] ?? ''}`.toUpperCase()}
                         </div>
                         <div style={{ flex: 1 }}>
-                          <p style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text)', marginBottom: '2px', fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif' }}>
+                          <p style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--text)', marginBottom: '2px', fontFamily: 'var(--font-body)' }}>
                             {swimmer.first_name} {swimmer.last_name}
                           </p>
-                          <p style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+                          <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
                             {age != null ? `Age ${age}` : 'Age unavailable'} · {swimmer.registration_status}
                           </p>
                         </div>
                         {swimmer.alreadyRegistered && (
-                          <span style={{ fontSize: '10px', padding: '2px 8px', background: 'var(--border)', color: 'var(--text-muted)', borderRadius: '20px', fontFamily: 'var(--font-body)', fontWeight: 600, flexShrink: 0 }}>
+                          <span style={{ fontSize: 'var(--fs-2xs)', padding: '2px 8px', background: 'var(--border)', color: 'var(--text-muted)', borderRadius: '16px', fontFamily: 'var(--font-body)', fontWeight: 600, flexShrink: 0 }}>
                             ALREADY REGISTERED
                           </span>
                         )}
@@ -395,14 +394,14 @@ export default function NewRegistrationPage() {
           {step === 2 && (
             <div>
               <p className="page-subtitle">
-                Review and accept the live registration and waiver requirements for this enrollment.
+                Review and accept to continue.
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {waiverOptions.map((waiver) => (
                   <div
                     key={waiver.id}
                     style={{
-                      borderRadius: '10px',
+                      borderRadius: '12px',
                       overflow: 'hidden',
                       border: `1px solid ${waiverAccepted[waiver.id] ? 'rgba(22,163,74,0.3)' : 'var(--border)'}`,
                       background: waiverAccepted[waiver.id] ? 'rgba(22,163,74,0.04)' : 'var(--bg-elevated)',
@@ -410,7 +409,7 @@ export default function NewRegistrationPage() {
                   >
                     <button
                       onClick={() => setExpandedWaiver(expandedWaiver === waiver.id ? null : waiver.id)}
-                      style={{ width: '100%', padding: '14px 16px', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px', textAlign: 'left' }}
+                      style={{ width: '100%', padding: '16px 16px', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px', textAlign: 'left' }}
                     >
                       <div style={{
                         width: '20px', height: '20px', borderRadius: '50%', flexShrink: 0,
@@ -425,10 +424,10 @@ export default function NewRegistrationPage() {
                         )}
                       </div>
                       <div style={{ flex: 1 }}>
-                        <p style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text)', fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif' }}>
+                        <p style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--text)', fontFamily: 'var(--font-body)' }}>
                           {waiver.title} {waiver.required && <span style={{ color: 'var(--error)' }}>*</span>}
                         </p>
-                        <p style={{ margin: '4px 0 0', fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+                        <p style={{ margin: '4px 0 0', fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
                           {waiver.appliesTo}
                         </p>
                       </div>
@@ -437,16 +436,16 @@ export default function NewRegistrationPage() {
                     {expandedWaiver === waiver.id && (
                       <div style={{ padding: '0 16px 16px' }}>
                         <div style={{ padding: '12px', background: 'var(--bg)', borderRadius: '8px', marginBottom: '12px' }}>
-                          <p style={{ fontSize: '13px', color: 'var(--text-subtle)', lineHeight: 1.7, margin: 0 }}>{waiver.body}</p>
+                          <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', lineHeight: 1.7, margin: 0 }}>{waiver.body}</p>
                         </div>
-                        <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer' }}>
+                        <label style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', cursor: 'pointer' }}>
                           <input
                             type="checkbox"
                             checked={!!waiverAccepted[waiver.id]}
                             onChange={(event) => setWaiverAccepted((prev) => ({ ...prev, [waiver.id]: event.target.checked }))}
                             style={{ marginTop: '2px', accentColor: 'var(--accent)', width: '16px', height: '16px', cursor: 'pointer' }}
                           />
-                          <span style={{ fontSize: '13px', color: 'var(--text)', lineHeight: 1.5 }}>
+                          <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text)', lineHeight: 1.5 }}>
                             I have read and agree to the <strong>{waiver.title}</strong>
                             {!waiver.required && <span style={{ color: 'var(--text-muted)' }}> (optional)</span>}
                           </span>
@@ -461,48 +460,42 @@ export default function NewRegistrationPage() {
 
           {step === 3 && (
             <div>
-              <p className="page-subtitle">
-                Review your registration summary before submitting.
-              </p>
               <div className="card" style={{ overflow: 'hidden', marginBottom: '20px' }}>
-                <div style={{ padding: '16px 18px', borderBottom: '1px solid #E5E1DC', background: 'var(--bg)' }}>
-                  <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Program</p>
-                  <p style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text)', marginTop: '2px' }}>{selectedProgram?.name}</p>
-                  <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '4px 0 0' }}>{selectedSeasonLabel}</p>
+                <div style={{ padding: '16px 20px', borderBottom: '1px solid #E5E1DC', background: 'var(--bg)' }}>
+                  <p style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>Program</p>
+                  <p style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--text)', marginTop: '2px' }}>{selectedProgram?.name}</p>
+                  <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', margin: '4px 0 0' }}>{selectedSeasonLabel}</p>
                 </div>
-                <div style={{ padding: '16px 18px', borderBottom: '1px solid #E5E1DC' }}>
-                  <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>Swimmers</p>
+                <div style={{ padding: '16px 20px', borderBottom: '1px solid #E5E1DC' }}>
+                  <p style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '8px' }}>Swimmers</p>
                   {selectedSwimmerRecords.map((swimmer) => (
                     <div key={swimmer.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                      <span style={{ fontSize: '13px', color: 'var(--text)' }}>{swimmer.first_name} {swimmer.last_name}</span>
-                      <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-subtle)' }}>{swimmer.registration_status}</span>
+                      <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text)' }}>{swimmer.first_name} {swimmer.last_name}</span>
+                      <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{swimmer.registration_status}</span>
                     </div>
                   ))}
                 </div>
-                <div style={{ padding: '16px 18px' }}>
-                  <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>Accepted Requirements</p>
+                <div style={{ padding: '16px 20px' }}>
+                  <p style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '8px' }}>Accepted requirements</p>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                     {waiverOptions.filter((waiver) => waiverAccepted[waiver.id]).map((waiver) => (
-                      <span key={waiver.id} style={{ padding: '4px 9px', borderRadius: '999px', background: 'var(--warning-bg)', color: '#c2410c', fontSize: '11px', fontWeight: 600 }}>
+                      <span key={waiver.id} style={{ padding: '4px 8px', borderRadius: '999px', background: 'var(--warning-bg)', color: '#c2410c', fontSize: 'var(--fs-xs)', fontWeight: 600 }}>
                         {waiver.title}
                       </span>
                     ))}
                   </div>
                 </div>
               </div>
-              <div style={{ padding: '12px 14px', background: 'rgba(37,99,235,0.06)', border: '1px solid rgba(37,99,235,0.15)', borderRadius: '8px', fontSize: '12px', color: 'var(--info)' }}>
-                Registrations are created immediately in pending status, and accepted waivers are written to the same live registration records shown in the portal and admin views.
-              </div>
             </div>
           )}
         </>
       )}
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '28px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '24px' }}>
         <button
           onClick={() => step > 0 ? setStep(step - 1) : router.push('/portal/registrations')}
           className="btn btn-secondary"
-          style={{ padding: '11px 22px' }}
+          style={{ padding: '12px 24px' }}
         >
           {step === 0 ? 'Cancel' : '← Back'}
         </button>
@@ -510,7 +503,7 @@ export default function NewRegistrationPage() {
           onClick={() => step < 3 ? setStep(step + 1) : void handleSubmit()}
           disabled={loading || !canProceed() || submitting}
           className="btn btn-primary"
-          style={{ padding: '11px 28px' }}
+          style={{ padding: '12px 24px' }}
         >
           {submitting ? 'Submitting…' : step < 3 ? 'Continue →' : 'Submit Registration'}
         </button>

@@ -6,22 +6,25 @@ import { Icon } from '@/components/ui/icons'
 import { Table, type Column } from '@/components/ui/Table'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
-import { useApiClient, ApiError } from '@/lib/api'
+import { useApiClient } from '@/lib/api'
 import { fetchHouseholds, fetchRegistrations, fetchSwimmers, fetchGroups, createRegistration, transitionRegistration, type HouseholdRecord, type RegistrationRecord, type SwimmerRecord, type GroupRecord } from '@/lib/adminData'
+import { uiErrorMessage } from '@/lib/frontend-telemetry'
 
 type RegistrationStatus = 'pending' | 'active' | 'inactive' | 'completed' | 'rejected' | 'withdrawn'
 type WaiverStatus = 'pending' | 'accepted'
 
 type RegistrationRow = {
   id: string
-  registrationIds: string[]
   household: string
   householdId: string
+  swimmer: string
+  swimmerId: string
+  program: string
+  groupId: string
   season: string
   submittedAt: string
   status: RegistrationStatus
   waiverStatus: WaiverStatus
-  swimmerCount: number
   notes: string | null
 }
 
@@ -30,6 +33,13 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   pending: ['active', 'withdrawn'],
   active: ['inactive', 'withdrawn'],
   inactive: ['active', 'withdrawn'],
+}
+
+// Button labels are the action, not the destination status.
+const TRANSITION_LABELS: Record<string, Record<string, string>> = {
+  pending: { active: 'Approve', withdrawn: 'Withdraw' },
+  active: { inactive: 'Deactivate', withdrawn: 'Withdraw' },
+  inactive: { active: 'Reactivate', withdrawn: 'Withdraw' },
 }
 
 const STATUS_CONFIG: Record<RegistrationStatus, { label: string; color: string; bg: string }> = {
@@ -52,21 +62,33 @@ function buildColumns(
 ): Column<RegistrationRow>[] {
   return [
   {
+    key: 'swimmer',
+    label: 'Swimmer',
+    sortable: true,
+    render: (row) => <Link href={`/members/swimmers/${row.swimmerId}`} style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)', textDecoration: 'none' }}>{row.swimmer}</Link>,
+  },
+  {
     key: 'household',
     label: 'Household',
     sortable: true,
-    render: (row) => <Link href={`/members/households/${row.householdId}`} style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', textDecoration: 'none' }}>{row.household}</Link>,
+    render: (row) => <Link href={`/members/households/${row.householdId}`} style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', textDecoration: 'none' }}>{row.household}</Link>,
+  },
+  {
+    key: 'program',
+    label: 'Program',
+    sortable: true,
+    render: (row) => <Link href={`/members/groups/${row.groupId}`} style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', textDecoration: 'none' }}>{row.program}</Link>,
   },
   {
     key: 'season',
     label: 'Season',
-    render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-subtle)', padding: '2px 7px', background: 'var(--bg-elevated)', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)' }}>{row.season}</span>,
+    render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', padding: '2px 8px', background: 'var(--bg-elevated)', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)' }}>{row.season}</span>,
   },
   {
     key: 'submittedAt',
     label: 'Submitted',
     sortable: true,
-    render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-subtle)' }}>{row.submittedAt ? new Date(row.submittedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span>,
+    render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{row.submittedAt ? new Date(row.submittedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span>,
   },
   {
     key: 'status',
@@ -82,14 +104,8 @@ function buildColumns(
     render: (row) => {
       const c = WAIVER_CONFIG[row.waiverStatus]
       const icon = row.waiverStatus === 'accepted' ? 'check-circle' : 'clock'
-      return <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: c.color }}><Icon name={icon} size={13} />{c.label}</div>
+      return <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: 'var(--fs-sm)', color: c.color }}><Icon name={icon} size={13} />{c.label}</div>
     },
-  },
-  {
-    key: 'swimmerCount',
-    label: 'Swimmers',
-    align: 'right',
-    render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '13px', color: 'var(--text)' }}>{row.swimmerCount}</span>,
   },
   {
     key: 'id',
@@ -106,9 +122,9 @@ function buildColumns(
               className="btn btn-sm btn-secondary"
               disabled={busy}
               onClick={() => onTransition(row, toStatus)}
-              title={`Move this registration (${row.swimmerCount} swimmer${row.swimmerCount === 1 ? '' : 's'}) to ${toStatus}`}
+              title={`Move ${row.swimmer}'s registration to ${toStatus}`}
             >
-              {busy ? '…' : STATUS_CONFIG[toStatus as RegistrationStatus]?.label ?? toStatus}
+              {busy ? '…' : TRANSITION_LABELS[row.status]?.[toStatus] ?? toStatus}
             </button>
           ))}
         </div>
@@ -118,36 +134,35 @@ function buildColumns(
   ]
 }
 
-function deriveRows(registrations: RegistrationRecord[], households: HouseholdRecord[]): RegistrationRow[] {
+function deriveRows(
+  registrations: RegistrationRecord[],
+  households: HouseholdRecord[],
+  swimmers: SwimmerRecord[],
+  groups: GroupRecord[],
+): RegistrationRow[] {
   const householdById = new Map(households.map((household) => [household.id, household.household_name]))
-  const grouped = registrations.reduce<Record<string, RegistrationRecord[]>>((acc, registration) => {
-    const key = `${registration.household_id}:${registration.season}`
-    acc[key] = [...(acc[key] ?? []), registration]
-    return acc
-  }, {})
-
-  return Object.values(grouped)
-    .map((group) => {
-      const representative = [...group].sort((a, b) => b.registration_date.localeCompare(a.registration_date))[0]
-      const activeWaiver = (group.every((registration) => registration.waiver_accepted) ? 'accepted' : 'pending') as WaiverStatus
-      return {
-        id: representative.id,
-        registrationIds: group.map((registration) => registration.id),
-        household: householdById.get(representative.household_id) ?? representative.household_id,
-        householdId: representative.household_id,
-        season: representative.season,
-        submittedAt: representative.registration_date,
-        status: representative.status as RegistrationStatus,
-        waiverStatus: activeWaiver,
-        swimmerCount: group.length,
-        notes: representative.notes || null,
-      }
-    })
+  const swimmerById = new Map(swimmers.map((swimmer) => [swimmer.id, `${swimmer.preferred_name || swimmer.first_name} ${swimmer.last_name}`.trim()]))
+  const groupById = new Map(groups.map((group) => [group.id, group.name]))
+  return registrations
+    .map((registration) => ({
+      id: registration.id,
+      household: householdById.get(registration.household_id) ?? 'Unknown household',
+      householdId: registration.household_id,
+      swimmer: swimmerById.get(registration.swimmer_id) ?? 'Unknown swimmer',
+      swimmerId: registration.swimmer_id,
+      program: groupById.get(registration.group_id) ?? 'Unknown program',
+      groupId: registration.group_id,
+      season: registration.season,
+      submittedAt: registration.registration_date || registration.created_at || '',
+      status: registration.status as RegistrationStatus,
+      waiverStatus: (registration.waiver_accepted ? 'accepted' : 'pending') as WaiverStatus,
+      notes: registration.notes || null,
+    }))
     .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))
 }
 
-const INPUT_STYLE: React.CSSProperties = { width: '100%', padding: '9px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none', boxSizing: 'border-box' }
-const LABEL_STYLE: React.CSSProperties = { fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '5px' }
+const INPUT_STYLE: React.CSSProperties = { width: '100%', padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none', boxSizing: 'border-box' }
+const LABEL_STYLE: React.CSSProperties = { fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }
 
 export function RegistrationsPanel() {
   const { session } = useSession()
@@ -187,14 +202,14 @@ export function RegistrationsPanel() {
           fetchGroups(api, session.user.orgId),
         ])
         if (!cancelled) {
-          setRows(deriveRows(registrations, householdsData))
+          setRows(deriveRows(registrations, householdsData, swimmersData, groupsData))
           setHouseholds(householdsData)
           setSwimmers(swimmersData)
           setGroupsList(groupsData)
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof ApiError ? err.message : 'Failed to load registrations.')
+          setError(uiErrorMessage(err, 'Couldn’t load registrations. Try again.'))
           setRows([])
         }
       } finally {
@@ -211,7 +226,7 @@ export function RegistrationsPanel() {
   const seasons = useMemo(() => [...new Set(rows.map((row) => row.season))].sort().reverse(), [rows])
   const filtered = useMemo(() => rows.filter((row) => {
     const query = search.toLowerCase()
-    const matchesSearch = !search || row.household.toLowerCase().includes(query)
+    const matchesSearch = !search || row.household.toLowerCase().includes(query) || row.swimmer.toLowerCase().includes(query) || row.program.toLowerCase().includes(query)
     const matchesStatus = statusFilter === 'all' || row.status === statusFilter
     const matchesSeason = seasonFilter === 'all' || row.season === seasonFilter
     return matchesSearch && matchesStatus && matchesSeason
@@ -223,11 +238,11 @@ export function RegistrationsPanel() {
       total: base.length,
       active: base.filter((row) => row.status === 'active').length,
       pending: base.filter((row) => row.status === 'pending').length,
-      swimmers: base.reduce((acc, row) => acc + row.swimmerCount, 0),
+      swimmers: new Set(base.map((row) => row.swimmerId)).size,
     }
   }, [rows, seasonFilter])
 
-  const selectStyle: React.CSSProperties = { padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none', cursor: 'pointer' }
+  const selectStyle: React.CSSProperties = { padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none', cursor: 'pointer' }
 
   const filteredSwimmers = useMemo(() => form.household_id ? swimmers.filter((s) => s.household_id === form.household_id) : swimmers, [swimmers, form.household_id])
 
@@ -237,25 +252,24 @@ export function RegistrationsPanel() {
   const handleTransition = useCallback(async (row: RegistrationRow, toStatus: string) => {
     const orgId = session?.user.orgId
     if (!orgId) return
-    if (!window.confirm(`Move this registration (${row.swimmerCount} swimmer${row.swimmerCount === 1 ? '' : 's'}) to "${toStatus}"?`)) return
+    const label = TRANSITION_LABELS[row.status]?.[toStatus] ?? toStatus
+    if (!window.confirm(`${label} ${row.swimmer}'s ${row.program} registration?`)) return
     setTransitioningId(row.id)
     setTransitionError(null)
-    const results = await Promise.allSettled(
-      row.registrationIds.map((registrationId) => transitionRegistration(api, orgId, registrationId, toStatus)),
-    )
-    const failures = results.filter((r) => r.status === 'rejected').length
-    if (failures > 0) {
-      setTransitionError(`Failed to transition ${failures} of ${row.registrationIds.length} registration(s) in this group.`)
+    try {
+      await transitionRegistration(api, orgId, row.id, toStatus)
+    } catch (err) {
+      setTransitionError(uiErrorMessage(err, 'Couldn’t update registration. Try again.'))
     }
     try {
-      const [registrations, householdsData] = await Promise.all([fetchRegistrations(api, orgId), fetchHouseholds(api, orgId)])
-      setRows(deriveRows(registrations, householdsData))
+      const registrations = await fetchRegistrations(api, orgId)
+      setRows(deriveRows(registrations, households, swimmers, groupsList))
     } catch {
       // Keep the existing rows if the refresh fails; the transition itself already ran.
     } finally {
       setTransitioningId(null)
     }
-  }, [api, session?.user.orgId])
+  }, [api, session?.user.orgId, households, swimmers, groupsList])
 
   const columns = useMemo(() => buildColumns(handleTransition, transitioningId), [handleTransition, transitioningId])
 
@@ -268,10 +282,10 @@ export function RegistrationsPanel() {
       await createRegistration(api, session.user.orgId, { household_id: form.household_id, swimmer_id: form.swimmer_id, group_id: form.group_id, season: form.season })
       setShowNew(false)
       setForm({ household_id: '', swimmer_id: '', group_id: '', season: new Date().getFullYear().toString() + '-' + (new Date().getFullYear() + 1).toString().slice(-2) })
-      const [registrations, householdsData] = await Promise.all([fetchRegistrations(api, session.user.orgId), fetchHouseholds(api, session.user.orgId)])
-      setRows(deriveRows(registrations, householdsData))
+      const registrations = await fetchRegistrations(api, session.user.orgId)
+      setRows(deriveRows(registrations, households, swimmers, groupsList))
     } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : 'Failed to create registration.')
+      setFormError(uiErrorMessage(err, 'Couldn’t create registration. Try again.'))
     } finally {
       setSubmitting(false)
     }
@@ -285,42 +299,42 @@ export function RegistrationsPanel() {
         </button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>
+      <div className="cols-4" style={{ gap: '12px', marginBottom: '20px' }}>
         {[
           { label: 'Total', value: counts.total, color: 'var(--text)' },
           { label: 'Active', value: counts.active, color: 'var(--success)' },
           { label: 'Pending', value: counts.pending, color: 'var(--warning)' },
           { label: 'Swimmers', value: counts.swimmers, color: 'var(--accent)' },
         ].map((stat) => (
-          <div key={stat.label} className="card" style={{ padding: '14px 16px' }}>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
-            <div style={{ fontSize: '22px', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
+          <div key={stat.label} className="card" style={{ padding: '16px 16px' }}>
+            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
+            <div style={{ fontSize: 'var(--fs-2xl)', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
           </div>
         ))}
       </div>
 
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', alignItems: 'center' }}>
-        <div style={{ position: 'relative', flex: 1, maxWidth: '300px' }}>
+      <div className="toolbar">
+        <div className="toolbar-search">
           <Icon name="search" size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
-          <input type="text" placeholder="Search households..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: '100%', padding: '8px 12px 8px 32px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none' }} />
+          <input type="text" placeholder="Search households..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: '100%', padding: '8px 12px 8px 32px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none' }} />
         </div>
         <select value={seasonFilter} onChange={(e) => setSeasonFilter(e.target.value)} style={selectStyle}>
-          <option value="all">All Seasons</option>
+          <option value="all">All seasons</option>
           {seasons.map((season) => <option key={season} value={season}>{season}</option>)}
         </select>
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={selectStyle}>
-          <option value="all">All Statuses</option>
+          <option value="all">All statuses</option>
           <option value="pending">Pending</option>
           <option value="active">Active</option>
           <option value="completed">Completed</option>
           <option value="rejected">Rejected</option>
           <option value="withdrawn">Withdrawn</option>
         </select>
-        <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginLeft: 'auto' }}>{filtered.length} registrations</span>
+        <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginLeft: 'auto' }}>{filtered.length} registrations</span>
       </div>
 
       {transitionError && (
-        <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px' }}>
+        <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: 'var(--fs-base)' }}>
           {transitionError}
         </div>
       )}
@@ -336,13 +350,13 @@ export function RegistrationsPanel() {
       {/* New Registration Modal */}
       {showNew && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)' }} onClick={(e) => { if (e.target === e.currentTarget) setShowNew(false) }}>
-          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '14px', padding: '28px', width: '100%', maxWidth: '480px', boxShadow: '0 24px 80px rgba(0,0,0,0.4)' }}>
+          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '480px', boxShadow: '0 24px 80px rgba(0,0,0,0.4)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-              <h2 style={{ fontSize: '18px', fontFamily: 'var(--font-display)', color: 'var(--text)', margin: 0 }}>New Registration</h2>
+              <h2 className="section-title" style={{ margin: 0 }}>New registration</h2>
               <button onClick={() => setShowNew(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><Icon name="x" size={18} /></button>
             </div>
-            {formError && <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px' }}>{formError}</div>}
-            <form onSubmit={handleCreateRegistration} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            {formError && <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: 'var(--fs-base)' }}>{formError}</div>}
+            <form onSubmit={handleCreateRegistration} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
                 <label style={LABEL_STYLE}>Household *</label>
                 <select required style={INPUT_STYLE} value={form.household_id} onChange={(e) => setForm((f) => ({ ...f, household_id: e.target.value, swimmer_id: '' }))}>
@@ -368,7 +382,7 @@ export function RegistrationsPanel() {
                 <label style={LABEL_STYLE}>Season *</label>
                 <input required style={INPUT_STYLE} value={form.season} onChange={(e) => setForm((f) => ({ ...f, season: e.target.value }))} placeholder="2025-26" />
               </div>
-              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '4px' }}>
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '4px' }}>
                 <button type="button" className="btn" onClick={() => setShowNew(false)}>Cancel</button>
                 <button type="submit" className="btn btn-primary" disabled={submitting}>{submitting ? 'Creating…' : 'Create Registration'}</button>
               </div>

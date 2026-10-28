@@ -10,6 +10,7 @@ import (
 	"github.com/dareaquatics/aquify/server/internal/app/httpx"
 	"github.com/dareaquatics/aquify/server/internal/app/members"
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	"github.com/dareaquatics/aquify/server/internal/app/seasons"
 	"github.com/dareaquatics/aquify/server/internal/app/training"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
@@ -20,6 +21,7 @@ type TrainingHandlers struct {
 	service        *training.Service
 	membersService *members.Service
 	groupsService  *groups.Service
+	seasonsService *seasons.Service
 	auditService   *audit.Service
 	validate       *validator.Validate
 }
@@ -56,6 +58,7 @@ func (h *TrainingHandlers) RegisterRoutes(router chi.Router) {
 	router.Delete("/practices/{id}", h.deletePractice)
 	router.Get("/practices/{id}/attendance", h.getAttendance)
 	router.Put("/practices/{id}/attendance/{swimmerID}", h.setAttendance)
+	h.registerWorkoutRoutes(router)
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -83,9 +86,21 @@ func (h *TrainingHandlers) listPractices(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if !hasAnyRole(principal, "admin", "coach") {
-		for i := range practices {
-			practices[i].Notes = ""
+		// Parents/swimmers only see team-wide practices and their household
+		// swimmers' groups.
+		scope, err := h.practiceScopeFor(principal, orgID)
+		if err != nil {
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to resolve practice scope.", err)
+			return
 		}
+		visible := make([]*training.Practice, 0, len(practices))
+		for _, p := range practices {
+			if scope.allows(p) {
+				p.Notes = ""
+				visible = append(visible, p)
+			}
+		}
+		practices = visible
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{"practices": practices})
 }
@@ -178,15 +193,11 @@ func (h *TrainingHandlers) getPractice(w http.ResponseWriter, r *http.Request) {
 	}
 	id := chi.URLParam(r, "id")
 
-	p, err := h.service.Get(orgID, id)
-	if err != nil {
-		if errors.Is(err, training.ErrNotFound) {
-			httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Practice not found.", nil)
-		} else {
-			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to get practice.", nil)
-		}
+	p, ok := h.visiblePractice(w, r, principal, orgID, id)
+	if !ok {
 		return
 	}
+	redactPracticeForViewer(principal, p)
 	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{"practice": p})
 }
 

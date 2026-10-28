@@ -11,6 +11,7 @@ import (
 	"log/slog"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -58,10 +59,13 @@ type Practice struct {
 	Attendance    *int            `json:"attendance,omitempty"`
 	Strokes       PracticeStrokes `json:"strokes"`
 	Notes         string          `json:"notes,omitempty"`
-	CreatedAt     time.Time       `json:"created_at"`
-	UpdatedAt     time.Time       `json:"updated_at"`
-	CreatedBy     string          `json:"created_by"`
-	UpdatedBy     string          `json:"updated_by"`
+	// WorkoutID links the practice to its structured workout instance. When
+	// set, yardage_target and strokes are derived from the workout totals.
+	WorkoutID string    `json:"workout_id,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	CreatedBy string    `json:"created_by"`
+	UpdatedBy string    `json:"updated_by"`
 }
 
 // PracticeAttendance records one swimmer's attendance status for a practice.
@@ -97,6 +101,8 @@ type Service struct {
 	repo       *Repository
 	practices  map[string]*Practice
 	attendance map[string]map[string]*PracticeAttendance // practiceID -> swimmerID -> record
+	workouts   map[string]*Workout
+	phases     map[string]*PlanPhase
 }
 
 // NewService returns an empty in-memory Service (no DB backing).
@@ -104,6 +110,8 @@ func NewService() *Service {
 	return &Service{
 		practices:  make(map[string]*Practice),
 		attendance: make(map[string]map[string]*PracticeAttendance),
+		workouts:   make(map[string]*Workout),
+		phases:     make(map[string]*PlanPhase),
 	}
 }
 
@@ -271,6 +279,12 @@ func (s *Service) Update(orgID, id string, updates PracticeUpdates, updatedBy st
 		if updates.Notes != nil {
 			p.Notes = *updates.Notes
 		}
+		if p.WorkoutID != "" {
+			// Yardage/strokes always derive from the linked workout.
+			if w, werr := s.repo.WorkoutsByIDs(context.Background(), orgID, []string{p.WorkoutID}); werr == nil && w[p.WorkoutID] != nil {
+				derivePractice(p, w[p.WorkoutID])
+			}
+		}
 		p.UpdatedAt = time.Now().UTC()
 		p.UpdatedBy = updatedBy
 		if err := s.repo.Upsert(context.Background(), p); err != nil {
@@ -314,6 +328,9 @@ func (s *Service) Update(orgID, id string, updates PracticeUpdates, updatedBy st
 	if updates.Notes != nil {
 		cp.Notes = *updates.Notes
 	}
+	if w, ok := s.workouts[cp.WorkoutID]; ok && cp.WorkoutID != "" {
+		derivePractice(&cp, w)
+	}
 	cp.UpdatedAt = time.Now().UTC()
 	cp.UpdatedBy = updatedBy
 
@@ -331,7 +348,23 @@ func (s *Service) Update(orgID, id string, updates PracticeUpdates, updatedBy st
 // caller cannot delete another org's practice by ID alone.
 func (s *Service) Delete(orgID, id string) error {
 	if s.repo != nil {
-		if err := s.repo.Delete(context.Background(), orgID, id); err != nil {
+		ctx := context.Background()
+		err := s.repo.withTx(ctx, func(q querier) error {
+			var workoutID string
+			err := q.QueryRow(ctx, `DELETE FROM practices WHERE id = $1::uuid AND org_id = $2 RETURNING COALESCE(workout_id::text, '')`, id, orgID).Scan(&workoutID)
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrNotFound
+			}
+			if err != nil {
+				return err
+			}
+			if workoutID != "" {
+				// The practice-owned instance goes with the practice; templates stay.
+				_, err = q.Exec(ctx, `DELETE FROM training_workouts WHERE id = $1::uuid AND org_id = $2 AND NOT is_template`, workoutID, orgID)
+			}
+			return err
+		})
+		if err != nil {
 			return err
 		}
 		s.mu.Lock()
@@ -346,6 +379,9 @@ func (s *Service) Delete(orgID, id string) error {
 	p, ok := s.practices[id]
 	if !ok || p.OrgID != orgID {
 		return ErrNotFound
+	}
+	if w, ok := s.workouts[p.WorkoutID]; ok && p.WorkoutID != "" && !w.IsTemplate {
+		delete(s.workouts, p.WorkoutID)
 	}
 	delete(s.practices, id)
 	return nil

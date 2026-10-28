@@ -192,6 +192,9 @@ func (h *UserHandlers) RegisterRoutes(r chi.Router) {
 	r.Route("/users", func(users chi.Router) {
 		// admin only
 		users.With(appmiddleware.RBACStub("admin")).Get("/", h.listUsers)
+		// staff directory (admin + coach): names only, for coach pickers and
+		// resolving coach_user_id labels without exposing the full user list.
+		users.With(appmiddleware.RBACStub("admin", "coach")).Get("/staff", h.listStaff)
 		users.With(appmiddleware.RBACStub("admin")).Post("/", h.createUser)
 		users.With(appmiddleware.RBACStub("admin")).Post("/invite", h.inviteUser)
 		users.With(appmiddleware.RBACStub("admin")).Get("/{id}", h.getUser)
@@ -402,6 +405,58 @@ func (h *UserHandlers) listUsers(w http.ResponseWriter, r *http.Request) {
 		"source":     keycloakSource(h.kc),
 		"is_stubbed": keycloakSource(h.kc) == "stub",
 		"users":      listItems,
+	})
+}
+
+// ── GET /users/staff ───────────────────────────────────────────────────────────
+
+type staffListItem struct {
+	ID    string   `json:"id"`
+	Name  string   `json:"name"`
+	Roles []string `json:"roles"`
+}
+
+// staffDirectoryLimit bounds the Keycloak page scanned for staff; clubs have
+// far fewer accounts than this, and the admin /users list uses the same cap.
+const staffDirectoryLimit = 500
+
+func (h *UserHandlers) listStaff(w http.ResponseWriter, r *http.Request) {
+	_, orgID, ok := userScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+
+	users, err := h.kc.ListUsers(r.Context(), orgID, "", staffDirectoryLimit, 0)
+	if err != nil {
+		writeKeycloakAdminError(w, r, err, "Failed to list staff.")
+		return
+	}
+
+	staff := make([]staffListItem, 0)
+	for _, u := range users {
+		if !u.Enabled {
+			continue
+		}
+		realmRoles, err := h.kc.GetUserRealmRoles(r.Context(), u.ID)
+		if err != nil {
+			continue
+		}
+		roles := normalizeRealmRoles(realmRoles)
+		if !slices.Contains(roles, "admin") && !slices.Contains(roles, "coach") {
+			continue
+		}
+		name := strings.TrimSpace(u.FirstName + " " + u.LastName)
+		if name == "" {
+			name = u.Email
+		}
+		staff = append(staff, staffListItem{ID: u.ID, Name: name, Roles: roles})
+	}
+	slices.SortFunc(staff, func(a, b staffListItem) int { return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)) })
+
+	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"status": "ok",
+		"count":  len(staff),
+		"staff":  staff,
 	})
 }
 

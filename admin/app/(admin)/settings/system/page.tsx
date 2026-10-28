@@ -52,7 +52,7 @@ function SystemDiagnosticsPageContent() {
           setError(err.message)
           return
         }
-        setError('Unable to load runtime settings.')
+        setError('Couldn’t load runtime settings. Try again.')
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -82,35 +82,29 @@ function SystemDiagnosticsPageContent() {
   }
 
   return (
-    <div style={{ padding: '32px 32px 80px', maxWidth: '1000px' }}>
-      <div style={{ marginBottom: '28px' }}>
-        <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
-          System
-        </p>
+    <div className="page">
+      <div className="page-heading">
         <h1 className="page-title">
           System Diagnostics
         </h1>
-        <p className="page-subtitle">
-          Backend configuration for this environment, for engineering and deployment troubleshooting only. Not club administration.
-        </p>
       </div>
 
       {error ? (
-        <div style={{ padding: '12px 16px', marginBottom: '20px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', borderRadius: '8px', color: 'var(--error)', fontSize: '12px' }}>
+        <div style={{ padding: '12px 16px', marginBottom: '20px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', borderRadius: '8px', color: 'var(--error)', fontSize: 'var(--fs-sm)' }}>
           {error}
         </div>
       ) : null}
 
       {settings?.app_env && settings.app_env !== 'production' ? (
-        <div style={{ padding: '12px 16px', marginBottom: '20px', background: 'var(--warning-bg)', border: '1px solid var(--warning-border)', borderRadius: '8px', display: 'flex', gap: '10px', alignItems: 'center' }}>
+        <div style={{ padding: '12px 16px', marginBottom: '20px', background: 'var(--warning-bg)', border: '1px solid var(--warning-border)', borderRadius: '8px', display: 'flex', gap: '12px', alignItems: 'center' }}>
           <Icon name="alert-triangle" size={14} style={{ color: 'var(--warning)' }} />
-          <span style={{ fontSize: '12px', color: 'var(--warning)', fontWeight: 500 }}>
+          <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--warning)', fontWeight: 500 }}>
             Backend reports `APP_ENV={settings.app_env}`. Verify production-only hardening before cutover.
           </span>
         </div>
       ) : null}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: '20px', alignItems: 'start' }}>
+      <div className="split-nav" style={{ gap: '20px', alignItems: 'start' }}>
         <div className="card" style={{ overflow: 'hidden', padding: '6px' }}>
           {categories.map((category) => (
             <button
@@ -118,14 +112,14 @@ function SystemDiagnosticsPageContent() {
               onClick={() => setActiveCategory(category)}
               style={{
                 width: '100%',
-                padding: '9px 12px',
+                padding: '8px 12px',
                 textAlign: 'left',
                 border: 'none',
                 borderRadius: '6px',
                 cursor: 'pointer',
                 background: activeCategory === category ? 'var(--accent-subtle)' : 'transparent',
                 color: activeCategory === category ? 'var(--accent)' : 'var(--text-subtle)',
-                fontSize: '13px',
+                fontSize: 'var(--fs-base)',
                 fontWeight: activeCategory === category ? 600 : 400,
                 fontFamily: 'var(--font-body)',
                 textTransform: 'capitalize',
@@ -137,31 +131,31 @@ function SystemDiagnosticsPageContent() {
         </div>
 
         <div className="card" style={{ overflow: 'hidden' }}>
-          <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
-            <h2 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', textTransform: 'capitalize' }}>
+          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
+            <h2 className="card-title" style={{ textTransform: 'capitalize' }}>
               {activeCategory} Configuration
             </h2>
           </div>
           {loading ? (
             <div style={{ padding: '24px' }}>
-              <EmptyState icon="settings" title="Loading settings" description="Fetching sanitized runtime configuration from the backend." />
+              <EmptyState icon="settings" title="Loading settings" description="Fetching the server configuration." />
             </div>
           ) : !activeSection ? (
             <div style={{ padding: '24px' }}>
-              <EmptyState icon="settings" title="No settings available" description="This runtime category is not exposed by the backend." />
+              <EmptyState icon="settings" title="No settings available" description="The server doesn’t expose settings in this category." />
             </div>
           ) : (
             <div>
               {sectionEntries(activeSection).map(([key, value], index, all) => (
-                <div key={key} style={{ padding: '16px 18px', borderBottom: index < all.length - 1 ? '1px solid var(--border)' : 'none', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px' }}>
+                <div key={key} style={{ padding: '16px 20px', borderBottom: index < all.length - 1 ? '1px solid var(--border)' : 'none', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px' }}>
                   <div>
                     <div style={{ marginBottom: '4px' }}>
-                      <code style={{ fontSize: '12px', fontFamily: 'var(--font-body)', color: 'var(--text)', background: 'var(--bg-elevated)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--border)' }}>
+                      <code style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text)', background: 'var(--bg-elevated)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--border)' }}>
                         {key}
                       </code>
                     </div>
                   </div>
-                  <code style={{ fontSize: '12px', fontFamily: 'var(--font-body)', color: 'var(--text-subtle)', textAlign: 'right', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                  <code style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-subtle)', textAlign: 'right', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                     {formatValue(value)}
                   </code>
                 </div>

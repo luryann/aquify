@@ -25,6 +25,7 @@ import (
 	"github.com/dareaquatics/aquify/server/internal/app/groups"
 	"github.com/dareaquatics/aquify/server/internal/app/meets"
 	"github.com/dareaquatics/aquify/server/internal/app/members"
+	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
 	"github.com/dareaquatics/aquify/server/internal/app/performance"
 	"github.com/dareaquatics/aquify/server/internal/app/training"
 	"github.com/dareaquatics/aquify/server/internal/storage"
@@ -54,14 +55,33 @@ func openTestPool(t *testing.T) *pgxpool.Pool {
 // testOrgID is a valid UUID for integration tests.
 const testOrgID = "10000000-0000-0000-0000-000000000001"
 
+// testAdminUserID backs created_by/updated_by columns, which are UUID FKs to
+// users(id) — production actors are Keycloak UUIDs synced into users at login.
+const testAdminUserID = "10000000-0000-0000-0000-0000000000a1"
+
+// dbAdminPrincipal returns an admin principal whose user exists in the users
+// table so audit columns satisfy their foreign keys.
+func dbAdminPrincipal(t *testing.T, pool *pgxpool.Pool) *appmiddleware.Principal {
+	t.Helper()
+	if _, err := pool.Exec(context.Background(), `
+		INSERT INTO users (id, org_id, email, oidc_subject)
+		VALUES ($1::uuid, $2::uuid, 'db-test-admin@example.com', 'db-test-admin')
+		ON CONFLICT DO NOTHING`, testAdminUserID, testOrgID); err != nil {
+		t.Fatalf("seed test admin user: %v", err)
+	}
+	admin := testutil.AdminPrincipal()
+	admin.UserID = testAdminUserID
+	return admin
+}
+
 // ─── Members ────────────────────────────────────────────────────────────────
 
 func TestDBRepoMembers_RoundTrip(t *testing.T) {
-	t.Parallel()
+	// Not parallel: DB repo tests share testOrgID fixtures and clean them up.
 	pool := openTestPool(t)
 	_ = testutil.RequireDBHarness(t)
 
-	admin := testutil.AdminPrincipal()
+	admin := dbAdminPrincipal(t, pool)
 	parent := testutil.ParentPrincipal("db-repo-parent", "")
 
 	// Truncate to ensure clean slate for this test's org data.
@@ -118,11 +138,11 @@ func TestDBRepoMembers_RoundTrip(t *testing.T) {
 }
 
 func TestDBRepoMembers_CrossInstanceVisibilityWithoutRestart(t *testing.T) {
-	t.Parallel()
+	// Not parallel: DB repo tests share testOrgID fixtures and clean them up.
 	pool := openTestPool(t)
 	_ = testutil.RequireDBHarness(t)
 
-	admin := testutil.AdminPrincipal()
+	admin := dbAdminPrincipal(t, pool)
 	admin.OrgID = testOrgID
 	cleanupMembersFixtures(t, pool, testOrgID)
 
@@ -184,11 +204,11 @@ func TestDBRepoMembers_CrossInstanceVisibilityWithoutRestart(t *testing.T) {
 }
 
 func TestDBRepoMembers_DeleteSwimmerRejectsWhenDependenciesExist(t *testing.T) {
-	t.Parallel()
+	// Not parallel: DB repo tests share testOrgID fixtures and clean them up.
 	pool := openTestPool(t)
 	_ = testutil.RequireDBHarness(t)
 
-	admin := testutil.AdminPrincipal()
+	admin := dbAdminPrincipal(t, pool)
 	admin.OrgID = testOrgID
 
 	cleanupPerformanceFixtures(t, pool, testOrgID)
@@ -262,8 +282,9 @@ func TestDBRepoMembers_DeleteSwimmerRejectsWhenDependenciesExist(t *testing.T) {
 func cleanupMembersFixtures(t *testing.T, pool *pgxpool.Pool, orgID string) {
 	t.Helper()
 	ctx := context.Background()
-	// Delete in FK-safe order.
+	// Delete in FK-safe order (results restricts swimmer deletion).
 	for _, q := range []string{
+		"DELETE FROM results WHERE org_id = $1::uuid",
 		"DELETE FROM swimmer_groups WHERE org_id = $1::uuid",
 		"DELETE FROM swimmers WHERE org_id = $1::uuid",
 		"DELETE FROM contacts WHERE org_id = $1::uuid",
@@ -278,11 +299,11 @@ func cleanupMembersFixtures(t *testing.T, pool *pgxpool.Pool, orgID string) {
 // ─── Groups ─────────────────────────────────────────────────────────────────
 
 func TestDBRepoGroups_RoundTrip(t *testing.T) {
-	t.Parallel()
+	// Not parallel: DB repo tests share testOrgID fixtures and clean them up.
 	pool := openTestPool(t)
 	_ = testutil.RequireDBHarness(t)
 
-	admin := testutil.AdminPrincipal()
+	admin := dbAdminPrincipal(t, pool)
 
 	cleanupGroupsFixtures(t, pool, testOrgID)
 
@@ -312,11 +333,11 @@ func TestDBRepoGroups_RoundTrip(t *testing.T) {
 }
 
 func TestDBRepoGroups_CrossInstanceConflictAndVisibility(t *testing.T) {
-	t.Parallel()
+	// Not parallel: DB repo tests share testOrgID fixtures and clean them up.
 	pool := openTestPool(t)
 	_ = testutil.RequireDBHarness(t)
 
-	admin := testutil.AdminPrincipal()
+	admin := dbAdminPrincipal(t, pool)
 	admin.OrgID = testOrgID
 	cleanupMembersFixtures(t, pool, testOrgID)
 	cleanupGroupsFixtures(t, pool, testOrgID)
@@ -451,7 +472,7 @@ func cleanupGroupsFixtures(t *testing.T, pool *pgxpool.Pool, orgID string) {
 // ─── Training ───────────────────────────────────────────────────────────────
 
 func TestDBRepoTraining_CrossInstanceVisibilityWithoutRestart(t *testing.T) {
-	t.Parallel()
+	// Not parallel: DB repo tests share testOrgID fixtures and clean them up.
 	pool := openTestPool(t)
 	_ = testutil.RequireDBHarness(t)
 
@@ -523,11 +544,11 @@ func cleanupPracticesFixtures(t *testing.T, pool *pgxpool.Pool, orgID string) {
 // ─── Meets ──────────────────────────────────────────────────────────────────
 
 func TestDBRepoMeets_RoundTrip(t *testing.T) {
-	t.Parallel()
+	// Not parallel: DB repo tests share testOrgID fixtures and clean them up.
 	pool := openTestPool(t)
 	_ = testutil.RequireDBHarness(t)
 
-	admin := testutil.AdminPrincipal()
+	admin := dbAdminPrincipal(t, pool)
 	admin.OrgID = testOrgID
 	cleanupMembersFixtures(t, pool, testOrgID)
 	cleanupMeetsFixtures(t, pool, testOrgID)
@@ -632,11 +653,11 @@ func cleanupMeetsFixtures(t *testing.T, pool *pgxpool.Pool, orgID string) {
 // ─── Performance ────────────────────────────────────────────────────────────
 
 func TestDBRepoPerformance_RoundTrip(t *testing.T) {
-	t.Parallel()
+	// Not parallel: DB repo tests share testOrgID fixtures and clean them up.
 	pool := openTestPool(t)
 	_ = testutil.RequireDBHarness(t)
 
-	admin := testutil.AdminPrincipal()
+	admin := dbAdminPrincipal(t, pool)
 	cleanupPerformanceFixtures(t, pool, testOrgID)
 
 	// Performance service needs a swimmer and meet to exist in DB.
@@ -703,11 +724,11 @@ func cleanupPerformanceFixtures(t *testing.T, pool *pgxpool.Pool, orgID string) 
 // ─── Billing ────────────────────────────────────────────────────────────────
 
 func TestDBRepoBilling_RoundTrip(t *testing.T) {
-	t.Parallel()
+	// Not parallel: DB repo tests share testOrgID fixtures and clean them up.
 	pool := openTestPool(t)
 	_ = testutil.RequireDBHarness(t)
 
-	admin := testutil.AdminPrincipal()
+	admin := dbAdminPrincipal(t, pool)
 	cleanupBillingFixtures(t, pool, testOrgID)
 
 	// Need a household in DB for FK.
@@ -723,6 +744,14 @@ func TestDBRepoBilling_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateInvoice: %v", err)
 	}
+	if _, err := svc.AddInvoiceItem(testOrgID, admin.UserID, admin, inv.ID, billing.AddInvoiceItemInput{
+		Description: "Season fee", Quantity: 2, UnitAmountCents: 7500, Category: "program_fee",
+	}); err != nil {
+		t.Fatalf("AddInvoiceItem: %v", err)
+	}
+	if _, _, err := svc.IssueInvoice(testOrgID, admin.UserID, admin, inv.ID); err != nil {
+		t.Fatalf("IssueInvoice: %v", err)
+	}
 
 	svc2 := billing.NewServiceWithPool(pool)
 	invs := svc2.SnapshotInvoices(testOrgID)
@@ -730,11 +759,18 @@ func TestDBRepoBilling_RoundTrip(t *testing.T) {
 	for _, i := range invs {
 		if i.ID == inv.ID {
 			found = true
+			if i.TotalCents != 15000 || i.Status != "issued" {
+				t.Fatalf("reloaded invoice: want issued total 15000, got %s %d", i.Status, i.TotalCents)
+			}
 			break
 		}
 	}
 	if !found {
 		t.Fatalf("invoice %q not found after DB reload", inv.ID)
+	}
+	var itemTotal int
+	if err := pool.QueryRow(ctx, `SELECT total_cents FROM invoice_items WHERE invoice_id = $1::uuid`, inv.ID).Scan(&itemTotal); err != nil || itemTotal != 15000 {
+		t.Fatalf("invoice item total_cents: want 15000, got %d (err %v)", itemTotal, err)
 	}
 }
 
@@ -758,7 +794,7 @@ func cleanupBillingFixtures(t *testing.T, pool *pgxpool.Pool, orgID string) {
 // ─── Comms ──────────────────────────────────────────────────────────────────
 
 func TestDBRepoComms_RoundTrip(t *testing.T) {
-	t.Parallel()
+	// Not parallel: DB repo tests share testOrgID fixtures and clean them up.
 	pool := openTestPool(t)
 	_ = testutil.RequireDBHarness(t)
 
@@ -810,7 +846,7 @@ func cleanupCommsFixtures(t *testing.T, pool *pgxpool.Pool, orgID string) {
 // ─── Compliance ─────────────────────────────────────────────────────────────
 
 func TestDBRepoCompliance_RoundTrip(t *testing.T) {
-	t.Parallel()
+	// Not parallel: DB repo tests share testOrgID fixtures and clean them up.
 	pool := openTestPool(t)
 	_ = testutil.RequireDBHarness(t)
 
@@ -865,11 +901,11 @@ func cleanupComplianceFixtures(t *testing.T, pool *pgxpool.Pool, orgID string) {
 // ─── Exports ────────────────────────────────────────────────────────────────
 
 func TestDBRepoExports_RoundTrip(t *testing.T) {
-	t.Parallel()
+	// Not parallel: DB repo tests share testOrgID fixtures and clean them up.
 	pool := openTestPool(t)
 	_ = testutil.RequireDBHarness(t)
 
-	admin := testutil.AdminPrincipal()
+	admin := dbAdminPrincipal(t, pool)
 	cleanupExportsFixtures(t, pool, testOrgID)
 
 	// Need a meet in DB for FK.

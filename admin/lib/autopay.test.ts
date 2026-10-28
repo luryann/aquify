@@ -88,5 +88,5 @@ test('autopayErrorMessage and trigger normalization preserve API messages', () =
     autopayErrorMessage(new ApiError(422, 'autopay_payment_method_required', 'Payment method details are required to enable autopay.')),
     'Payment method details are required to enable autopay.',
   )
-  assert.equal(autopayErrorMessage(new Error('boom')), 'Unable to update autopay right now.')
+  assert.equal(autopayErrorMessage(new Error('boom')), 'Couldn’t update autopay. Try again.')
 })

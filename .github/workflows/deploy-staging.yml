@@ -67,7 +67,8 @@ jobs:
       - name: Build and push API Docker image
         uses: docker/build-push-action@v6
         with:
-          context: server
+          # Repo root: server/go.mod replaces the meetfiles module with ../internal/meetfiles.
+          context: .
           file: server/Dockerfile
           push: true
           tags: ${{ steps.api-meta.outputs.tags }}

@@ -18,7 +18,7 @@ export default function LandingPage() {
             <span className="land-wordmark">aquify</span>
           </div>
 
-          <p className="land-tagline">Swim Club Operations Platform</p>
+          <p className="land-tagline">Swim club operations platform</p>
 
           <Link href="/login" className="land-btn">
             Sign in →
@@ -77,20 +77,18 @@ export default function LandingPage() {
           margin-bottom: 4px;
         }
         .land-wordmark {
-          font-family: var(--font-display);
+          font-family: var(--font-display); font-weight: var(--display-weight);
           font-style: italic;
           font-size: 48px;
           color: #EDE9E3;
-          letter-spacing: -0.025em;
+          letter-spacing: var(--display-tracking);
           line-height: 1;
         }
         .land-tagline {
           font-family: var(--font-body);
-          font-size: 13px;
+          font-size: var(--fs-base);
           color: rgba(237,233,227,0.3);
           margin: 0;
-          letter-spacing: 0.04em;
-          text-transform: uppercase;
         }
         .land-btn {
           display: inline-flex;
@@ -102,7 +100,7 @@ export default function LandingPage() {
           border-radius: 9px;
           color: #fff;
           font-family: var(--font-body);
-          font-size: 14px;
+          font-size: var(--fs-md);
           font-weight: 600;
           text-decoration: none;
           letter-spacing: 0.01em;
@@ -117,7 +115,7 @@ export default function LandingPage() {
           position: absolute;
           bottom: 24px;
           font-family: var(--font-body);
-          font-size: 11px;
+          font-size: var(--fs-xs);
           color: rgba(237,233,227,0.14);
           z-index: 1;
         }

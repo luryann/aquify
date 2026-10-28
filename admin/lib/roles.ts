@@ -66,11 +66,31 @@ export const NAV_ITEMS: NavItem[] = [
     allowedRoles: ['admin', 'coach'],
     section: 'Competition',
   },
+  {
+    id: 'volunteer', label: 'Volunteers', path: '/volunteer', icon: 'user-check',
+    allowedRoles: ['admin', 'coach'],
+    section: 'Competition',
+  },
   // Training
   {
     id: 'training', label: 'Training', path: '/training', icon: 'activity',
     allowedRoles: ['admin', 'coach'],
     section: 'Training',
+  },
+  {
+    id: 'attendance', label: 'Roll call', path: '/attendance', icon: 'check-square',
+    allowedRoles: ['admin', 'coach'],
+    section: 'Training',
+  },
+  {
+    id: 'wellness', label: 'Wellness', path: '/wellness', icon: 'activity',
+    allowedRoles: ['admin', 'coach'],
+    section: 'Training',
+  },
+  {
+    id: 'club-events', label: 'Club events', path: '/events', icon: 'calendar',
+    allowedRoles: ['admin', 'coach'],
+    section: 'Communications',
   },
   // Performance
   {
@@ -79,17 +99,37 @@ export const NAV_ITEMS: NavItem[] = [
     section: 'Performance',
   },
   {
-    id: 'time-standards', label: 'Time Standards', path: '/performance/time-standards', icon: 'clipboard-list',
+    id: 'time-standards', label: 'Time standards', path: '/performance/time-standards', icon: 'clipboard-list',
     allowedRoles: ['admin', 'coach'],
     section: 'Performance',
   },
   {
-    id: 'best-times', label: 'Best Times', path: '/performance/best-times', icon: 'zap',
+    id: 'best-times', label: 'Best times', path: '/performance/best-times', icon: 'zap',
     allowedRoles: ['admin', 'coach'],
     section: 'Performance',
   },
   {
-    id: 'visualization', label: 'Team Coverage', path: '/performance/visualization', icon: 'bar-chart-2',
+    id: 'visualization', label: 'Team coverage', path: '/performance/visualization', icon: 'bar-chart-2',
+    allowedRoles: ['admin', 'coach'],
+    section: 'Performance',
+  },
+  {
+    id: 'team-records', label: 'Team records', path: '/performance/records', icon: 'clock',
+    allowedRoles: ['admin', 'coach'],
+    section: 'Performance',
+  },
+  {
+    id: 'top-times', label: 'Top times', path: '/performance/top-times', icon: 'layers',
+    allowedRoles: ['admin', 'coach'],
+    section: 'Performance',
+  },
+  {
+    id: 'relay-builder', label: 'Relay builder', path: '/performance/relays', icon: 'users',
+    allowedRoles: ['admin', 'coach'],
+    section: 'Performance',
+  },
+  {
+    id: 'progress-report', label: 'Progress report', path: '/performance/progress', icon: 'activity',
     allowedRoles: ['admin', 'coach'],
     section: 'Performance',
   },
@@ -101,6 +141,21 @@ export const NAV_ITEMS: NavItem[] = [
   },
   {
     id: 'stripe', label: 'Stripe', path: '/billing/stripe', icon: 'credit-card',
+    allowedRoles: ['admin'],
+    section: 'Billing',
+  },
+  {
+    id: 'billing-schedules', label: 'Fee schedules', path: '/billing/schedules', icon: 'calendar',
+    allowedRoles: ['admin'],
+    section: 'Billing',
+  },
+  {
+    id: 'billing-runs', label: 'Billing runs', path: '/billing/runs', icon: 'refresh-cw',
+    allowedRoles: ['admin'],
+    section: 'Billing',
+  },
+  {
+    id: 'billing-reports', label: 'Finance reports', path: '/billing/reports', icon: 'activity',
     allowedRoles: ['admin'],
     section: 'Billing',
   },
@@ -116,23 +171,18 @@ export const NAV_ITEMS: NavItem[] = [
     section: 'Communications',
   },
   {
-    id: 'campaigns', label: 'Email Campaigns', path: '/campaigns', icon: 'mail',
-    allowedRoles: ['admin'],
-    section: 'Communications',
-  },
-  {
-    id: 'suppression', label: 'Suppression List', path: '/comms/suppression', icon: 'user-x',
+    id: 'campaigns', label: 'Email campaigns', path: '/campaigns', icon: 'mail',
     allowedRoles: ['admin'],
     section: 'Communications',
   },
   // Compliance
   {
-    id: 'data-exports', label: 'Data Exports', path: '/compliance/data-exports', icon: 'download',
+    id: 'data-exports', label: 'Data exports', path: '/compliance/data-exports', icon: 'download',
     allowedRoles: ['admin'],
     section: 'Compliance',
   },
   {
-    id: 'data-deletions', label: 'Data Deletions', path: '/compliance/data-deletions', icon: 'trash-2',
+    id: 'data-deletions', label: 'Data deletions', path: '/compliance/data-deletions', icon: 'trash-2',
     allowedRoles: ['admin'],
     section: 'Compliance',
   },
@@ -148,23 +198,23 @@ export const NAV_ITEMS: NavItem[] = [
     section: 'System',
   },
   {
-    id: 'users', label: 'Users & Roles', path: '/users', icon: 'user-check',
+    id: 'users', label: 'Users & roles', path: '/users', icon: 'user-check',
     allowedRoles: ['admin'],
     section: 'System',
   },
   // Advanced (engineering/ops tooling — not club-administration tasks)
   {
-    id: 'audit', label: 'Audit Log', path: '/audit', icon: 'shield-check',
+    id: 'audit', label: 'Audit log', path: '/audit', icon: 'shield-check',
     allowedRoles: ['admin'],
     section: 'Advanced',
   },
   {
-    id: 'jobs', label: 'Background Jobs', path: '/jobs', icon: 'cpu',
+    id: 'jobs', label: 'Background jobs', path: '/jobs', icon: 'cpu',
     allowedRoles: ['admin'],
     section: 'Advanced',
   },
   {
-    id: 'system-diagnostics', label: 'System Diagnostics', path: '/settings/system', icon: 'cpu',
+    id: 'system-diagnostics', label: 'System diagnostics', path: '/settings/system', icon: 'cpu',
     allowedRoles: ['admin'],
     section: 'Advanced',
   },

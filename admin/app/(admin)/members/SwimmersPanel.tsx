@@ -6,8 +6,10 @@ import { Icon } from '@/components/ui/icons'
 import { Table, type Column } from '@/components/ui/Table'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
-import { useApiClient, ApiError } from '@/lib/api'
+import { useApiClient } from '@/lib/api'
 import { fetchGroups, fetchHouseholds, fetchSwimmerGroups, fetchSwimmers, createSwimmer, type GroupRecord, type HouseholdRecord, type SwimmerGroupLinkRecord, type SwimmerRecord } from '@/lib/adminData'
+import { parseBackendDate } from '@/lib/dates'
+import { uiErrorMessage } from '@/lib/frontend-telemetry'
 
 type SwimmerStatus = 'active' | 'inactive' | 'pending' | 'archived'
 
@@ -29,7 +31,7 @@ type SwimmerRow = {
 }
 
 function calcAge(dob: string): number {
-  const birthDate = new Date(dob)
+  const birthDate = parseBackendDate(dob)
   const now = new Date()
   let age = now.getFullYear() - birthDate.getFullYear()
   const month = now.getMonth() - birthDate.getMonth()
@@ -62,8 +64,8 @@ const COLUMNS: Column<SwimmerRow>[] = [
     sortable: true,
     render: (row) => (
       <div>
-        <Link href={`/members/swimmers/${row.id}`} style={{ color: 'var(--text)', fontWeight: 600, textDecoration: 'none', fontSize: '13px' }}>{row.name}</Link>
-        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', fontFamily: 'var(--font-body)' }}>{row.ussNumber || 'No external ID'}</div>
+        <Link href={`/members/swimmers/${row.id}`} style={{ color: 'var(--text)', fontWeight: 600, textDecoration: 'none', fontSize: 'var(--fs-base)' }}>{row.name}</Link>
+        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: '2px', fontFamily: 'var(--font-body)' }}>{row.ussNumber || 'No external ID'}</div>
       </div>
     ),
   },
@@ -74,15 +76,15 @@ const COLUMNS: Column<SwimmerRow>[] = [
     align: 'right',
     render: (row) => (
       <div style={{ textAlign: 'right' }}>
-        <span style={{ fontFamily: 'var(--font-body)', fontSize: '13px', color: 'var(--text)' }}>{row.age}</span>
-        <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginLeft: '4px' }}>{GENDER_SHORT[row.gender]}</span>
+        <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-base)', color: 'var(--text)' }}>{row.age}</span>
+        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginLeft: '4px' }}>{GENDER_SHORT[row.gender]}</span>
       </div>
     ),
   },
   {
     key: 'household',
     label: 'Household',
-    render: (row) => <Link href={`/members/households/${row.householdId}`} style={{ fontSize: '13px', color: 'var(--text-subtle)', textDecoration: 'none' }}>{row.household}</Link>,
+    render: (row) => <Link href={`/members/households/${row.householdId}`} style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', textDecoration: 'none' }}>{row.household}</Link>,
   },
   {
     key: 'groups',
@@ -90,8 +92,8 @@ const COLUMNS: Column<SwimmerRow>[] = [
     render: (row) => (
       <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
         {row.groups.length > 0 ? row.groups.map((group) => (
-          <span key={group} style={{ fontSize: '11px', padding: '2px 7px', borderRadius: '8px', background: 'var(--accent-subtle)', color: 'var(--accent)', fontFamily: 'var(--font-body)' }}>{group}</span>
-        )) : <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>—</span>}
+          <span key={group} style={{ fontSize: 'var(--fs-xs)', padding: '2px 8px', borderRadius: '8px', background: 'var(--accent-subtle)', color: 'var(--accent)', fontFamily: 'var(--font-body)' }}>{group}</span>
+        )) : <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>—</span>}
       </div>
     ),
   },
@@ -104,7 +106,7 @@ const COLUMNS: Column<SwimmerRow>[] = [
     key: 'id',
     label: '',
     width: '60px',
-    render: (row) => <Link href={`/members/swimmers/${row.id}`} style={{ fontSize: '12px', color: 'var(--text-muted)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>View <Icon name="chevron-right" size={12} /></Link>,
+    render: (row) => <Link href={`/members/swimmers/${row.id}`} style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>View <Icon name="chevron-right" size={12} /></Link>,
   },
 ]
 
@@ -132,8 +134,8 @@ function deriveRows(swimmers: SwimmerRecord[], households: HouseholdRecord[], gr
     .sort((a, b) => a.name.localeCompare(b.name))
 }
 
-const INPUT_STYLE: React.CSSProperties = { width: '100%', padding: '9px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none', boxSizing: 'border-box' }
-const LABEL_STYLE: React.CSSProperties = { fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '5px' }
+const INPUT_STYLE: React.CSSProperties = { width: '100%', padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none', boxSizing: 'border-box' }
+const LABEL_STYLE: React.CSSProperties = { fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }
 
 export function SwimmersPanel() {
   const { session } = useSession()
@@ -177,7 +179,7 @@ export function SwimmersPanel() {
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof ApiError ? err.message : 'Failed to load swimmers.')
+          setError(uiErrorMessage(err, 'Couldn’t load swimmers. Try again.'))
           setRows([])
         }
       } finally {
@@ -210,7 +212,7 @@ export function SwimmersPanel() {
     female: rows.filter((row) => row.gender === 'female').length,
   }), [rows])
 
-  const selectStyle: React.CSSProperties = { padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none', cursor: 'pointer' }
+  const selectStyle: React.CSSProperties = { padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none', cursor: 'pointer' }
 
   async function handleCreateSwimmer(e: React.FormEvent) {
     e.preventDefault()
@@ -230,7 +232,7 @@ export function SwimmersPanel() {
       setRows(deriveRows(swimmers, hhs, grps, swimmerGroups))
       setHouseholds(hhs)
     } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : 'Failed to create swimmer.')
+      setFormError(uiErrorMessage(err, 'Couldn’t create swimmer. Try again.'))
     } finally {
       setSubmitting(false)
     }
@@ -245,44 +247,44 @@ export function SwimmersPanel() {
         </button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>
+      <div className="cols-4" style={{ gap: '12px', marginBottom: '20px' }}>
         {[
-          { label: 'Total Roster', value: counts.total, color: 'var(--text)' },
+          { label: 'Total roster', value: counts.total, color: 'var(--text)' },
           { label: 'Active', value: counts.active, color: 'var(--success)' },
           { label: 'Male', value: counts.male, color: 'var(--info)' },
           { label: 'Female', value: counts.female, color: 'var(--accent)' },
         ].map((stat) => (
-          <div key={stat.label} className="card" style={{ padding: '14px 16px' }}>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
-            <div style={{ fontSize: '22px', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
+          <div key={stat.label} className="card" style={{ padding: '16px 16px' }}>
+            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
+            <div style={{ fontSize: 'var(--fs-2xl)', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
           </div>
         ))}
       </div>
 
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
-        <div style={{ position: 'relative', flex: 1, minWidth: '200px', maxWidth: '320px' }}>
+      <div className="toolbar">
+        <div className="toolbar-search">
           <Icon name="search" size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
-          <input type="text" placeholder="Search swimmers or households..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: '100%', padding: '8px 12px 8px 32px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none' }} />
+          <input type="text" placeholder="Search swimmers or households..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: '100%', padding: '8px 12px 8px 32px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none' }} />
         </div>
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={selectStyle}>
-          <option value="all">All Statuses</option>
+          <option value="all">All statuses</option>
           <option value="active">Active</option>
           <option value="pending">Pending</option>
           <option value="inactive">Inactive</option>
           <option value="archived">Archived</option>
         </select>
         <select value={genderFilter} onChange={(e) => setGenderFilter(e.target.value)} style={selectStyle}>
-          <option value="all">All Genders</option>
+          <option value="all">All genders</option>
           <option value="female">{GENDER_LABEL.female}</option>
           <option value="male">{GENDER_LABEL.male}</option>
           <option value="non_binary">{GENDER_LABEL.non_binary}</option>
           <option value="undisclosed">{GENDER_LABEL.undisclosed}</option>
         </select>
         <select value={groupFilter} onChange={(e) => setGroupFilter(e.target.value)} style={selectStyle}>
-          <option value="all">All Groups</option>
+          <option value="all">All groups</option>
           {groups.map((group) => <option key={group} value={group}>{group}</option>)}
         </select>
-        <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginLeft: 'auto' }}>{filtered.length} of {rows.length}</span>
+        <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginLeft: 'auto' }}>{filtered.length} of {rows.length}</span>
       </div>
 
       {loading ? (
@@ -296,14 +298,14 @@ export function SwimmersPanel() {
       {/* Add Swimmer Modal */}
       {showNew && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)' }} onClick={(e) => { if (e.target === e.currentTarget) setShowNew(false) }}>
-          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '14px', padding: '28px', width: '100%', maxWidth: '500px', boxShadow: '0 24px 80px rgba(0,0,0,0.4)' }}>
+          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '500px', boxShadow: '0 24px 80px rgba(0,0,0,0.4)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-              <h2 style={{ fontSize: '18px', fontFamily: 'var(--font-display)', color: 'var(--text)', margin: 0 }}>Add Swimmer</h2>
+              <h2 className="section-title" style={{ margin: 0 }}>Add swimmer</h2>
               <button onClick={() => setShowNew(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><Icon name="x" size={18} /></button>
             </div>
-            {formError && <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px' }}>{formError}</div>}
-            <form onSubmit={handleCreateSwimmer} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            {formError && <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: 'var(--fs-base)' }}>{formError}</div>}
+            <form onSubmit={handleCreateSwimmer} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div className="cols-2" style={{ gap: '12px' }}>
                 <div>
                   <label style={LABEL_STYLE}>First Name *</label>
                   <input required style={INPUT_STYLE} value={form.first_name} onChange={(e) => setForm((f) => ({ ...f, first_name: e.target.value }))} placeholder="Jane" />
@@ -320,7 +322,7 @@ export function SwimmersPanel() {
                   {households.map((hh) => <option key={hh.id} value={hh.id}>{hh.household_name}</option>)}
                 </select>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div className="cols-2" style={{ gap: '12px' }}>
                 <div>
                   <label style={LABEL_STYLE}>Date of Birth *</label>
                   <input required type="date" style={INPUT_STYLE} value={form.date_of_birth} onChange={(e) => setForm((f) => ({ ...f, date_of_birth: e.target.value }))} />
@@ -340,14 +342,14 @@ export function SwimmersPanel() {
                 <input style={INPUT_STYLE} value={form.usa_swimming_id} onChange={(e) => setForm((f) => ({ ...f, usa_swimming_id: e.target.value.toUpperCase() }))} placeholder="e.g. AB12CD34EF56" />
               </div>
               <div>
-                <label style={LABEL_STYLE}>Registration Status</label>
+                <label style={LABEL_STYLE}>Registration status</label>
                 <select style={INPUT_STYLE} value={form.registration_status} onChange={(e) => setForm((f) => ({ ...f, registration_status: e.target.value }))}>
                   <option value="active">Active</option>
                   <option value="pending">Pending</option>
                   <option value="inactive">Inactive</option>
                 </select>
               </div>
-              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '4px' }}>
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '4px' }}>
                 <button type="button" className="btn" onClick={() => setShowNew(false)}>Cancel</button>
                 <button type="submit" className="btn btn-primary" disabled={submitting}>{submitting ? 'Adding…' : 'Add Swimmer'}</button>
               </div>

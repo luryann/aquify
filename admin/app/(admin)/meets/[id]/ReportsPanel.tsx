@@ -5,7 +5,7 @@ import { Icon } from '@/components/ui/icons'
 import { Table, type Column } from '@/components/ui/Table'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
-import { useApiClient, ApiError } from '@/lib/api'
+import { useApiClient } from '@/lib/api'
 import {
   fetchExportsForMeet,
   generateReport,
@@ -13,6 +13,7 @@ import {
   type ReportType,
   type EntryReportGrouping,
 } from '@/lib/adminData'
+import { uiErrorMessage } from '@/lib/frontend-telemetry'
 
 type ExportStatus = 'pending' | 'generating' | 'ready' | 'failed' | 'expired'
 
@@ -42,9 +43,9 @@ const REPORT_TYPE_LABELS: Record<string, string> = {
 }
 
 const REPORT_TYPE_OPTIONS: { value: ReportType; label: string; hint: string }[] = [
-  { value: 'entry_report', label: 'Entry Report', hint: 'Every approved entry — swimmer, event, seed time.' },
-  { value: 'event_report', label: 'Event Report', hint: 'Swimmers grouped under each event, fastest seed first.' },
-  { value: 'eligibility_report', label: 'Eligibility Report', hint: 'Per event, each swimmer’s sex/age eligibility status.' },
+  { value: 'entry_report', label: 'Entry report', hint: 'Every approved entry — swimmer, event, seed time.' },
+  { value: 'event_report', label: 'Event report', hint: 'Swimmers grouped under each event, fastest seed first.' },
+  { value: 'eligibility_report', label: 'Eligibility report', hint: 'Per event, each swimmer’s sex/age eligibility status.' },
 ]
 
 const GROUPING_OPTIONS: { value: EntryReportGrouping; label: string }[] = [
@@ -58,8 +59,8 @@ function reportLabel(reportType: string): string {
 }
 
 const COLUMNS: Column<ReportRow>[] = [
-  { key: 'reportType', label: 'Report', render: (row) => <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>{reportLabel(row.reportType)}</span> },
-  { key: 'filename', label: 'File', render: (row) => <span style={{ fontSize: '12px', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)' }}>{row.filename}</span> },
+  { key: 'reportType', label: 'Report', render: (row) => <span style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)' }}>{reportLabel(row.reportType)}</span> },
+  { key: 'filename', label: 'File', render: (row) => <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)' }}>{row.filename}</span> },
   {
     key: 'status',
     label: 'Status',
@@ -68,25 +69,25 @@ const COLUMNS: Column<ReportRow>[] = [
       return <span className="badge" style={{ background: c.bg, color: c.color }}>{c.label}</span>
     },
   },
-  { key: 'fileSizeKb', label: 'Size', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-muted)' }}>{row.fileSizeKb != null ? `${row.fileSizeKb} KB` : '—'}</span> },
-  { key: 'createdAt', label: 'Created', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-muted)' }}>{new Date(row.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span> },
+  { key: 'fileSizeKb', label: 'Size', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>{row.fileSizeKb != null ? `${row.fileSizeKb} KB` : '—'}</span> },
+  { key: 'createdAt', label: 'Created', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>{new Date(row.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span> },
   {
     key: 'id',
     label: '',
     align: 'right',
     render: (row) =>
       row.status === 'ready' && row.downloadUrl ? (
-        <a href={row.downloadUrl} target="_blank" rel="noreferrer" className="btn" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '5px 10px' }}>
+        <a href={row.downloadUrl} target="_blank" rel="noreferrer" className="btn" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: 'var(--fs-sm)', padding: '4px 12px' }}>
           <Icon name="download" size={13} /> PDF
         </a>
       ) : (
-        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>—</span>
+        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>—</span>
       ),
   },
 ]
 
-const INPUT_STYLE: React.CSSProperties = { width: '100%', padding: '9px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none', boxSizing: 'border-box' }
-const LABEL_STYLE: React.CSSProperties = { fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '5px' }
+const INPUT_STYLE: React.CSSProperties = { width: '100%', padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none', boxSizing: 'border-box' }
+const LABEL_STYLE: React.CSSProperties = { fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }
 
 export function ReportsPanel({ meetId }: { meetId: string }) {
   const { session } = useSession()
@@ -136,7 +137,7 @@ export function ReportsPanel({ meetId }: { meetId: string }) {
         if (!cancelled) setRows(mapRows(exports))
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof ApiError ? err.message : 'Failed to load reports.')
+          setError(uiErrorMessage(err, 'Couldn’t load reports. Try again.'))
           setRows([])
         }
       } finally {
@@ -165,7 +166,7 @@ export function ReportsPanel({ meetId }: { meetId: string }) {
       setGenForm({ report_type: 'entry_report', grouping: 'session' })
       await loadReports()
     } catch (err) {
-      setGenError(err instanceof ApiError ? err.message : 'Failed to generate report.')
+      setGenError(uiErrorMessage(err, 'Couldn’t generate report. Try again.'))
     } finally {
       setGenerating(false)
     }
@@ -191,19 +192,19 @@ export function ReportsPanel({ meetId }: { meetId: string }) {
 
       {showNew && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)' }} onClick={(e) => { if (e.target === e.currentTarget) setShowNew(false) }}>
-          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '14px', padding: '28px', width: '100%', maxWidth: '440px', boxShadow: '0 24px 80px rgba(0,0,0,0.4)' }}>
+          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '440px', boxShadow: '0 24px 80px rgba(0,0,0,0.4)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-              <h2 style={{ fontSize: '18px', fontFamily: 'var(--font-display)', color: 'var(--text)', margin: 0 }}>Generate Report</h2>
+              <h2 className="section-title" style={{ margin: 0 }}>Generate report</h2>
               <button onClick={() => setShowNew(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><Icon name="x" size={18} /></button>
             </div>
-            {genError && <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px' }}>{genError}</div>}
-            <form onSubmit={handleGenerate} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            {genError && <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: 'var(--fs-base)' }}>{genError}</div>}
+            <form onSubmit={handleGenerate} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
                 <label style={LABEL_STYLE}>Report Type *</label>
                 <select style={INPUT_STYLE} value={genForm.report_type} onChange={(e) => setGenForm((f) => ({ ...f, report_type: e.target.value as ReportType }))}>
                   {REPORT_TYPE_OPTIONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
                 </select>
-                {activeReport && <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: '6px 2px 0' }}>{activeReport.hint}</p>}
+                {activeReport && <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', margin: '6px 2px 0' }}>{activeReport.hint}</p>}
               </div>
               {genForm.report_type === 'entry_report' && (
                 <div>
@@ -219,7 +220,7 @@ export function ReportsPanel({ meetId }: { meetId: string }) {
                           style={{
                             flex: 1,
                             padding: '8px 6px',
-                            fontSize: '12px',
+                            fontSize: 'var(--fs-sm)',
                             fontWeight: 600,
                             cursor: 'pointer',
                             borderRadius: 'var(--r-md)',
@@ -235,7 +236,7 @@ export function ReportsPanel({ meetId }: { meetId: string }) {
                   </div>
                 </div>
               )}
-              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '4px' }}>
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '4px' }}>
                 <button type="button" className="btn" onClick={() => setShowNew(false)}>Cancel</button>
                 <button type="submit" className="btn btn-primary" disabled={generating}>{generating ? 'Generating…' : 'Generate'}</button>
               </div>

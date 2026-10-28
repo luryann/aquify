@@ -596,6 +596,47 @@ func TestGlobalRateLimiterReturns429(t *testing.T) {
 	}
 }
 
+func TestAuthRateLimiterOnlyCountsCredentialWrites(t *testing.T) {
+	t.Parallel()
+
+	cfg := Config{
+		AppEnv: "test",
+		Security: SecurityConfig{
+			RateLimit: RateLimitConfig{
+				GlobalRequests: 100,
+				GlobalWindow:   10 * time.Second,
+				AuthRequests:   2,
+				AuthWindow:     10 * time.Second,
+			},
+		},
+	}
+	router := NewRouter(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	// Session reads happen on every page load and must not exhaust the
+	// strict auth budget.
+	for i := 0; i < 5; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/session", nil)
+		req.RemoteAddr = "203.0.113.20:1234"
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		if rr.Code == http.StatusTooManyRequests {
+			t.Fatalf("GET /auth/session %d was rate limited", i+1)
+		}
+	}
+
+	codes := []int{}
+	for i := 0; i < 3; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/sessions/refresh", nil)
+		req.RemoteAddr = "203.0.113.20:1234"
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		codes = append(codes, rr.Code)
+	}
+	if codes[2] != http.StatusTooManyRequests {
+		t.Fatalf("third credential write should be rate limited, got %v", codes)
+	}
+}
+
 type issuedSessionCookies struct {
 	accessCookie  *http.Cookie
 	refreshCookie *http.Cookie

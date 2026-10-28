@@ -16,11 +16,11 @@ export type PortalCommunicationPreference = {
 }
 
 export const DEFAULT_PORTAL_COMMUNICATION_PREFERENCES: PortalCommunicationPreference[] = [
-  { id: 'meet_commitment', label: 'Meet Commitment Requests', description: 'When a coach sends a new meet invitation', email: true, push: true },
-  { id: 'invoice_due', label: 'Invoice Due Reminders', description: 'When an invoice is due or overdue', email: true, push: true },
-  { id: 'announcement', label: 'Club Announcements', description: 'General announcements from club staff', email: true, push: false },
-  { id: 'doc_reminder', label: 'Document Reminders', description: 'When a required document is expiring', email: true, push: false },
-  { id: 'entry_update', label: 'Entry Updates', description: "When your swimmer's meet entries change", email: false, push: true },
+  { id: 'meet_commitment', label: 'Meet commitment requests', description: 'When a coach sends a new meet invitation', email: true, push: true },
+  { id: 'invoice_due', label: 'Invoice due reminders', description: 'When an invoice is due or overdue', email: true, push: true },
+  { id: 'announcement', label: 'Club announcements', description: 'General announcements from club staff', email: true, push: false },
+  { id: 'doc_reminder', label: 'Document reminders', description: 'When a required document is expiring', email: true, push: false },
+  { id: 'entry_update', label: 'Entry updates', description: "When your swimmer's meet entries change", email: false, push: true },
 ]
 
 export function mergePortalCommunicationPreferences(
@@ -72,5 +72,5 @@ export function portalCommunicationPreferencesErrorMessage(error: unknown): stri
   if (error instanceof ApiError) {
     return error.message
   }
-  return 'Unable to save communication preferences right now.'
+  return 'Couldn’t save communication preferences. Try again.'
 }

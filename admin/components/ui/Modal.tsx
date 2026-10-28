@@ -71,7 +71,7 @@ export function Modal({ open, onClose, title, description, children, footer, wid
             alignItems: 'flex-start',
             justifyContent: 'space-between',
             gap: '12px',
-            padding: '20px 22px 16px',
+            padding: '20px 24px 16px',
             borderBottom: '1px solid var(--border)',
           }}
         >
@@ -80,15 +80,15 @@ export function Modal({ open, onClose, title, description, children, footer, wid
               id="modal-title"
               style={{
                 fontFamily: 'var(--font-display)',
-                fontSize: '19px',
-                fontWeight: 400,
+                fontSize: 'var(--fs-xl)',
+                fontWeight: 'var(--display-weight)',
                 color: 'var(--text)',
               }}
             >
               {title}
             </h2>
             {description && (
-              <p style={{ fontSize: '13px', color: 'var(--text-subtle)', marginTop: '4px', lineHeight: 1.5 }}>
+              <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', marginTop: '4px', lineHeight: 1.5 }}>
                 {description}
               </p>
             )}
@@ -112,7 +112,7 @@ export function Modal({ open, onClose, title, description, children, footer, wid
           </button>
         </div>
 
-        <div style={{ padding: '20px 22px', overflowY: 'auto', flex: 1 }}>{children}</div>
+        <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>{children}</div>
 
         {footer && (
           <div
@@ -120,8 +120,8 @@ export function Modal({ open, onClose, title, description, children, footer, wid
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'flex-end',
-              gap: '10px',
-              padding: '14px 22px',
+              gap: '12px',
+              padding: '16px 24px',
               borderTop: '1px solid var(--border)',
             }}
           >

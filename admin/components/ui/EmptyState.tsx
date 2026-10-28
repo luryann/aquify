@@ -12,9 +12,9 @@ type EmptyStateProps = {
 }
 
 const SIZE_CONFIG = {
-  sm: { padding: '32px 20px', iconSize: 28, titleSize: '14px', descSize: '13px' },
-  md: { padding: '56px 32px', iconSize: 36, titleSize: '15px', descSize: '13px' },
-  lg: { padding: '80px 40px', iconSize: 44, titleSize: '17px', descSize: '14px' },
+  sm: { padding: '24px 20px', iconSize: 24, titleSize: 'var(--fs-md)', descSize: 'var(--fs-sm)' },
+  md: { padding: '32px 24px', iconSize: 28, titleSize: 'var(--fs-lg)', descSize: 'var(--fs-base)' },
+  lg: { padding: '40px 32px', iconSize: 36, titleSize: 'var(--fs-xl)', descSize: 'var(--fs-base)' },
 }
 
 export function EmptyState({
@@ -38,9 +38,8 @@ export function EmptyState({
         padding: cfg.padding,
         ...(bordered
           ? {
-              border: '1px dashed var(--border-strong)',
+              border: '1px dashed var(--border)',
               borderRadius: 'var(--r-xl)',
-              background: 'var(--bg-surface)',
             }
           : {}),
       }}
@@ -48,15 +47,9 @@ export function EmptyState({
       {icon && (
         <div
           style={{
-            width: `${cfg.iconSize + 20}px`,
-            height: `${cfg.iconSize + 20}px`,
-            borderRadius: '50%',
-            background: 'var(--accent-subtle)',
             display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            marginBottom: '16px',
-            color: 'var(--accent)',
+            marginBottom: '8px',
+            color: 'var(--text-muted)',
             flexShrink: 0,
           }}
         >
@@ -70,7 +63,7 @@ export function EmptyState({
           fontSize: cfg.titleSize,
           color: 'var(--text)',
           marginBottom: description ? '6px' : '0',
-          fontWeight: 400,
+          fontWeight: 'var(--display-weight)',
         }}
       >
         {title}
@@ -81,8 +74,8 @@ export function EmptyState({
           style={{
             fontSize: cfg.descSize,
             color: 'var(--text-subtle)',
-            maxWidth: '380px',
-            lineHeight: 1.6,
+            maxWidth: '48ch',
+            lineHeight: 'var(--leading-body)',
             marginBottom: action ? '20px' : '0',
           }}
         >
@@ -109,7 +102,7 @@ export function LoadingState({ message = 'Loading…' }: { message?: string }) {
       }}
     >
       <div className="spinner spinner-lg" />
-      <p style={{ fontSize: '13px' }}>{message}</p>
+      <p style={{ fontSize: 'var(--fs-base)' }}>{message}</p>
     </div>
   )
 }
@@ -128,7 +121,7 @@ export function ErrorState({
     <EmptyState
       icon="alert-circle"
       title={title}
-      description={description ?? 'An error occurred. Please try again.'}
+      description={description ?? 'Something went wrong. Try again.'}
       action={
         onRetry ? (
           <button className="btn btn-secondary" onClick={onRetry}>

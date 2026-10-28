@@ -106,7 +106,7 @@ function Pagination({ page, totalPages, onPageChange }: PaginationProps) {
     border: active ? '1px solid var(--accent-border)' : '1px solid transparent',
     background: active ? 'var(--accent-subtle)' : 'transparent',
     color: active ? 'var(--accent)' : disabled ? 'var(--text-disabled)' : 'var(--text-subtle)',
-    fontSize: '12px',
+    fontSize: 'var(--fs-sm)',
     fontFamily: 'var(--font-body)',
     fontWeight: active ? 600 : 400,
     cursor: disabled ? 'not-allowed' : 'pointer',
@@ -120,13 +120,13 @@ function Pagination({ page, totalPages, onPageChange }: PaginationProps) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '10px 16px',
+        padding: '12px 16px',
         borderTop: '1px solid var(--border)',
         gap: '8px',
         flexWrap: 'wrap',
       }}
     >
-      <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+      <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
         Page {page} of {totalPages}
       </span>
 
@@ -186,7 +186,7 @@ function ColumnHeader<T>({
   const style: CSSProperties = {
     display: 'flex',
     alignItems: 'center',
-    gap: '5px',
+    gap: '4px',
     justifyContent: col.align === 'right' ? 'flex-end' : col.align === 'center' ? 'center' : 'flex-start',
     cursor: col.sortable ? 'pointer' : 'default',
     userSelect: 'none',
@@ -200,7 +200,7 @@ function ColumnHeader<T>({
       style={style}
       onClick={col.sortable ? () => onSort(col.key) : undefined}
     >
-      <span style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+      <span className="col-head" style={{ color: 'inherit' }}>
         {col.label}
       </span>
       {col.sortable && (
@@ -411,15 +411,7 @@ export function Table<T extends Record<string, unknown>>({
                   {sortable && col.sortable !== false ? (
                     <ColumnHeader col={col} sort={sort} onSort={handleSort} />
                   ) : (
-                    <span
-                      style={{
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        letterSpacing: '0.04em',
-                        textTransform: 'uppercase',
-                        color: 'var(--text-subtle)',
-                      }}
-                    >
+                    <span className="col-head">
                       {col.label}
                     </span>
                   )}
@@ -429,18 +421,7 @@ export function Table<T extends Record<string, unknown>>({
           </thead>
 
           <tbody>
-            {displayData.length === 0 ? (
-              <tr>
-                <td colSpan={columns.length + (selectable ? 1 : 0)}>
-                  <EmptyState
-                    title={emptyTitle}
-                    description={emptyDescription}
-                    size="sm"
-                    bordered={false}
-                  />
-                </td>
-              </tr>
-            ) : (
+            {displayData.length === 0 ? null : (
               displayData.map((row, rowIdx) => {
                 const rowKey = keyField ? String(row[keyField]) : String(rowIdx)
                 const isSelected = selectedKeys?.has(rowKey) ?? false
@@ -488,7 +469,7 @@ export function Table<T extends Record<string, unknown>>({
                           style={{
                             padding: rowPadding,
                             textAlign: col.align ?? 'left',
-                            fontSize: '13px',
+                            fontSize: 'var(--fs-base)',
                             color: 'var(--text)',
                             verticalAlign: 'middle',
                             ...col.cellStyle,
@@ -509,6 +490,17 @@ export function Table<T extends Record<string, unknown>>({
           </tbody>
         </table>
       </div>
+
+      {/* Empty state sits outside the horizontal scroller so it stays centered
+          in the visible area when the columns are wider than the screen. */}
+      {displayData.length === 0 && (
+        <EmptyState
+          title={emptyTitle}
+          description={emptyDescription}
+          size="sm"
+          bordered={false}
+        />
+      )}
 
       {/* Pagination */}
       {paginated && totalPages > 1 && (

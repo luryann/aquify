@@ -384,6 +384,7 @@ func (r *Repository) LoadSwimmerGroupLinks(ctx context.Context) ([]SwimmerGroupL
 		); err != nil {
 			return nil, fmt.Errorf("members: scan swimmer_group: %w", err)
 		}
+		link.GroupCode = normalizeGroupCode(link.GroupCode)
 		out = append(out, link)
 	}
 	return out, rows.Err()

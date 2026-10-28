@@ -8,7 +8,7 @@ import { Tabs } from '@/components/ui/Tabs'
 import { Table, type Column } from '@/components/ui/Table'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
-import { useApiClient, ApiError } from '@/lib/api'
+import { useApiClient } from '@/lib/api'
 import {
   addHouseholdContact,
   fetchGroups,
@@ -24,6 +24,8 @@ import {
   type SwimmerGroupLinkRecord,
   type SwimmerRecord,
 } from '@/lib/adminData'
+import { parseBackendDate } from '@/lib/dates'
+import { uiErrorMessage } from '@/lib/frontend-telemetry'
 
 type SwimmerRow = {
   id: string
@@ -59,7 +61,7 @@ function formatCurrency(cents: number) {
 
 function formatDate(value?: string | null) {
   if (!value) return '—'
-  const parsed = new Date(value)
+  const parsed = parseBackendDate(value)
   if (Number.isNaN(parsed.getTime())) return value
   return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
@@ -95,25 +97,25 @@ const SWIMMER_COLS: Column<SwimmerRow>[] = [
     sortable: true,
     render: (row) => (
       <div>
-        <Link href={`/members/swimmers/${row.id}`} style={{ color: 'var(--text)', fontWeight: 600, textDecoration: 'none', fontSize: '13px' }}>
+        <Link href={`/members/swimmers/${row.id}`} style={{ color: 'var(--text)', fontWeight: 600, textDecoration: 'none', fontSize: 'var(--fs-base)' }}>
           {row.name}
         </Link>
-        <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginTop: '2px' }}>{row.ussNumber || 'No external ID'}</div>
+        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginTop: '2px' }}>{row.ussNumber || 'No external ID'}</div>
       </div>
     ),
   },
-  { key: 'dob', label: 'DOB', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-subtle)' }}>{formatDate(row.dob)}</span> },
-  { key: 'gender', label: 'Gender', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-subtle)' }}>{row.gender}</span> },
+  { key: 'dob', label: 'DOB', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{formatDate(row.dob)}</span> },
+  { key: 'gender', label: 'Gender', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{row.gender}</span> },
   {
     key: 'groups',
     label: 'Groups',
     render: (row) => (
       <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
         {row.groups.length ? row.groups.map((group) => (
-          <span key={group} style={{ fontSize: '11px', padding: '2px 7px', borderRadius: '8px', background: 'var(--accent-subtle)', color: 'var(--accent)', fontFamily: 'var(--font-body)' }}>
+          <span key={group} style={{ fontSize: 'var(--fs-xs)', padding: '2px 8px', borderRadius: '8px', background: 'var(--accent-subtle)', color: 'var(--accent)', fontFamily: 'var(--font-body)' }}>
             {group}
           </span>
-        )) : <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Unassigned</span>}
+        )) : <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>Unassigned</span>}
       </div>
     ),
   },
@@ -126,22 +128,22 @@ const CONTACT_COLS: Column<ContactRow>[] = [
     label: 'Contact',
     sortable: true,
     render: (row) => (
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-        <div style={{ width: '30px', height: '30px', borderRadius: '50%', background: 'var(--accent-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 700, color: 'var(--accent)', flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ width: '30px', height: '30px', borderRadius: '50%', background: 'var(--accent-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--accent)', flexShrink: 0 }}>
           {row.name.split(' ').map((part) => part[0]).join('').slice(0, 2)}
         </div>
         <div>
-          <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>
+          <div style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)' }}>
             {row.name}
-            {row.isPrimary ? <span style={{ fontSize: '10px', fontFamily: 'var(--font-body)', background: 'var(--accent-subtle)', color: 'var(--accent)', padding: '1px 6px', borderRadius: '8px', marginLeft: '6px', fontWeight: 600 }}>PRIMARY</span> : null}
+            {row.isPrimary ? <span style={{ fontSize: 'var(--fs-2xs)', fontFamily: 'var(--font-body)', background: 'var(--accent-subtle)', color: 'var(--accent)', padding: '1px 6px', borderRadius: '8px', marginLeft: '6px', fontWeight: 600 }}>PRIMARY</span> : null}
           </div>
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{row.role}</div>
+          <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: '2px' }}>{row.role}</div>
         </div>
       </div>
     ),
   },
-  { key: 'email', label: 'Email', render: (row) => <span style={{ fontSize: '13px', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)' }}>{row.email || '—'}</span> },
-  { key: 'phone', label: 'Phone', render: (row) => <span style={{ fontSize: '13px', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)' }}>{row.phone || '—'}</span> },
+  { key: 'email', label: 'Email', render: (row) => <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)' }}>{row.email || '—'}</span> },
+  { key: 'phone', label: 'Phone', render: (row) => <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)' }}>{row.phone || '—'}</span> },
 ]
 
 const INVOICE_COLS: Column<InvoiceRow>[] = [
@@ -149,14 +151,14 @@ const INVOICE_COLS: Column<InvoiceRow>[] = [
     key: 'invoiceNumber',
     label: 'Invoice',
     render: (row) => (
-      <Link href={`/invoices/${row.id}`} style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text)', textDecoration: 'none', fontWeight: 600 }}>
+      <Link href={`/invoices/${row.id}`} style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text)', textDecoration: 'none', fontWeight: 600 }}>
         {row.invoiceNumber}
       </Link>
     ),
   },
-  { key: 'amountCents', label: 'Amount', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>{formatCurrency(row.amountCents)}</span> },
+  { key: 'amountCents', label: 'Amount', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)' }}>{formatCurrency(row.amountCents)}</span> },
   { key: 'status', label: 'Status', render: (row) => <StatusBadge status={row.status} /> },
-  { key: 'dueAt', label: 'Due', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-subtle)' }}>{formatDate(row.dueAt)}</span> },
+  { key: 'dueAt', label: 'Due', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{formatDate(row.dueAt)}</span> },
 ]
 
 function buildSwimmerRows(swimmers: SwimmerRecord[], groups: GroupRecord[], links: SwimmerGroupLinkRecord[]): SwimmerRow[] {
@@ -254,7 +256,7 @@ export default function HouseholdDetailPage() {
         setInvoices(buildInvoiceRows(nextInvoices))
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof ApiError ? err.message : 'Failed to load household details.')
+          setError(uiErrorMessage(err, 'Couldn’t load household details. Try again.'))
         }
       } finally {
         if (!cancelled) setLoading(false)
@@ -279,7 +281,7 @@ export default function HouseholdDetailPage() {
       setShowAddContact(false)
       setContactForm({ relationship: 'parent', first_name: '', last_name: '', email: '', phone_e164: '', is_primary: false })
     } catch (err) {
-      setAddContactError(err instanceof ApiError ? err.message : 'Failed to add contact.')
+      setAddContactError(uiErrorMessage(err, 'Couldn’t add contact. Try again.'))
     } finally {
       setAddingContact(false)
     }
@@ -288,7 +290,7 @@ export default function HouseholdDetailPage() {
   const tabs = useMemo(() => [
     { id: 'overview', label: 'Overview' },
     { id: 'swimmers', label: 'Swimmers', count: swimmers.length },
-    { id: 'contacts', label: 'Additional Contacts', count: contacts.length },
+    { id: 'contacts', label: 'Additional contacts', count: contacts.length },
     { id: 'invoices', label: 'Invoices', count: invoices.length },
   ], [contacts.length, invoices.length, swimmers.length])
 
@@ -303,44 +305,44 @@ export default function HouseholdDetailPage() {
   const primaryContact = contacts.find((contact) => contact.isPrimary) ?? contacts[0]
 
   if (loading) {
-    return <div style={{ padding: '24px', maxWidth: '1200px' }}><EmptyState icon="users" title="Loading household" description="Fetching live household detail data from the API." /></div>
+    return <div className="page"><EmptyState icon="users" title="Loading household" description="Fetching live household detail data from the API." /></div>
   }
 
   if (error || !household) {
-    return <div style={{ padding: '24px', maxWidth: '1200px' }}><EmptyState icon="alert-circle" title="Unable to load household" description={error ?? 'Household not found.'} /></div>
+    return <div className="page"><EmptyState icon="alert-circle" title="Unable to load household" description={error ?? 'Household not found.'} /></div>
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1200px' }}>
-      <Link href="/members?tab=households" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '13px', color: 'var(--text-subtle)', textDecoration: 'none', marginBottom: '20px' }}>
+    <div className="page">
+      <Link href="/members?tab=households" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', textDecoration: 'none', marginBottom: '20px' }}>
         <Icon name="chevron-left" size={14} />
         Households
       </Link>
 
       <div className="page-header">
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px 12px', marginBottom: '4px' }}>
             <h1 className="page-title">
               {household.household_name}
             </h1>
             <StatusBadge status={household.status || 'active'} />
           </div>
-          <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+          <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
             {household.primary_email || household.primary_phone_e164 || 'No primary contact method'}
           </div>
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '28px' }}>
+      <div className="cols-4" style={{ gap: '12px', marginBottom: '24px' }}>
         {[
-          { label: 'Invoice Total', value: formatCurrency(totalBalanceCents), color: 'var(--text)' },
+          { label: 'Invoice total', value: formatCurrency(totalBalanceCents), color: 'var(--text)' },
           { label: 'Swimmers', value: swimmers.length.toString(), color: 'var(--text)' },
-          { label: 'Additional Contacts', value: contacts.length.toString(), color: 'var(--text)' },
-          { label: 'Member Since', value: formatDate(household.created_at), color: 'var(--text-subtle)' },
+          { label: 'Additional contacts', value: contacts.length.toString(), color: 'var(--text)' },
+          { label: 'Member since', value: formatDate(household.created_at), color: 'var(--text-subtle)' },
         ].map((stat) => (
-          <div key={stat.label} className="card" style={{ padding: '14px 16px' }}>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
-            <div style={{ fontSize: '18px', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
+          <div key={stat.label} className="card" style={{ padding: '16px 16px' }}>
+            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
+            <div style={{ fontSize: 'var(--fs-xl)', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
           </div>
         ))}
       </div>
@@ -348,29 +350,29 @@ export default function HouseholdDetailPage() {
       <Tabs tabs={tabs} active={activeTab} onChange={setActiveTab} />
 
       {activeTab === 'overview' ? (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+        <div className="cols-2" style={{ gap: '16px' }}>
           <div className="card" style={{ padding: '20px' }}>
-            <h3 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '16px', fontFamily: 'var(--font-body)' }}>
-              Account Info
+            <h3 className="card-title" style={{ marginBottom: '16px' }}>
+              Account
             </h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {[
-                { label: 'Primary Email', value: household.primary_email || '—' },
-                { label: 'Primary Phone', value: household.primary_phone_e164 || '—' },
-                { label: 'Open Invoices', value: `${outstandingCount}` },
+                { label: 'Primary email', value: household.primary_email || '—' },
+                { label: 'Primary phone', value: household.primary_phone_e164 || '—' },
+                { label: 'Open invoices', value: `${outstandingCount}` },
                 { label: 'Created', value: formatDate(household.created_at) },
               ].map((row) => (
-                <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px', borderBottom: '1px solid var(--border)', paddingBottom: '10px' }}>
+                <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 'var(--fs-base)', borderBottom: '1px solid var(--border)', paddingBottom: '12px' }}>
                   <span style={{ color: 'var(--text-muted)' }}>{row.label}</span>
                   <span style={{ fontFamily: 'var(--font-body)', color: 'var(--text)', fontWeight: 600 }}>{row.value}</span>
                 </div>
               ))}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 'var(--fs-base)' }}>
                 <span style={{ color: 'var(--text-muted)' }}>Household ID</span>
                 <button
                   onClick={() => { void navigator.clipboard.writeText(household.id) }}
                   title="Copy household ID"
-                  style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'var(--font-body)', color: 'var(--text-muted)', fontWeight: 600, fontSize: '13px' }}
+                  style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'var(--font-body)', color: 'var(--text-muted)', fontWeight: 600, fontSize: 'var(--fs-base)' }}
                 >
                   {household.id.slice(0, 8)}…
                   <Icon name="copy" size={12} style={{ color: 'var(--text-muted)' }} />
@@ -379,26 +381,26 @@ export default function HouseholdDetailPage() {
             </div>
           </div>
           <div className="card" style={{ padding: '20px' }}>
-            <h3 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '16px', fontFamily: 'var(--font-body)' }}>
-              Notes & Contacts
+            <h3 className="card-title" style={{ marginBottom: '16px' }}>
+              Notes &amp; contacts
             </h3>
-            <p style={{ fontSize: '13px', color: 'var(--text-subtle)', lineHeight: 1.7, marginBottom: '16px' }}>
+            <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', lineHeight: 1.7, marginBottom: '16px' }}>
               {household.notes || 'No household notes recorded yet.'}
             </p>
             <div style={{ paddingTop: '16px', borderTop: '1px solid var(--border)' }}>
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-body)', marginBottom: '8px' }}>Additional Contact</div>
+              <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginBottom: '8px' }}>Additional contact</div>
               {primaryContact ? (
                 <>
-                  <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text)' }}>{primaryContact.name}</div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-subtle)', marginTop: '4px' }}>{primaryContact.email || 'No email on file'}</div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>{primaryContact.phone || 'No phone on file'}</div>
+                  <div style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--text)' }}>{primaryContact.name}</div>
+                  <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', marginTop: '4px' }}>{primaryContact.email || 'No email on file'}</div>
+                  <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{primaryContact.phone || 'No phone on file'}</div>
                 </>
               ) : (
                 <div>
-                  <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>No additional contacts on file. The household&apos;s primary email and phone are shown under Account Info.</div>
+                  <div style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)' }}>No additional contacts on file. The household&apos;s primary email and phone are shown under Account Info.</div>
                   <button
                     onClick={() => setActiveTab('contacts')}
-                    style={{ marginTop: '8px', fontSize: '12px', color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: '4px' }}
+                    style={{ marginTop: '8px', fontSize: 'var(--fs-sm)', color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: '4px' }}
                   >
                     Add a contact <Icon name="chevron-right" size={12} />
                   </button>
@@ -421,23 +423,23 @@ export default function HouseholdDetailPage() {
                 <Icon name="plus" size={14} /> Add Contact
               </button>
             ) : (
-              <form onSubmit={handleAddContact} className="card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '480px' }}>
+              <form onSubmit={handleAddContact} className="card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '480px' }}>
                 {addContactError && (
-                  <div style={{ fontSize: '12px', color: 'var(--error)' }}>{addContactError}</div>
+                  <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--error)' }}>{addContactError}</div>
                 )}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <input required placeholder="First name" value={contactForm.first_name} onChange={(e) => setContactForm((c) => ({ ...c, first_name: e.target.value }))} style={{ padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)' }} />
-                  <input required placeholder="Last name" value={contactForm.last_name} onChange={(e) => setContactForm((c) => ({ ...c, last_name: e.target.value }))} style={{ padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)' }} />
+                <div className="cols-2" style={{ gap: '12px' }}>
+                  <input required placeholder="First name" value={contactForm.first_name} onChange={(e) => setContactForm((c) => ({ ...c, first_name: e.target.value }))} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)' }} />
+                  <input required placeholder="Last name" value={contactForm.last_name} onChange={(e) => setContactForm((c) => ({ ...c, last_name: e.target.value }))} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)' }} />
                 </div>
-                <select value={contactForm.relationship} onChange={(e) => setContactForm((c) => ({ ...c, relationship: e.target.value }))} style={{ padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)' }}>
+                <select value={contactForm.relationship} onChange={(e) => setContactForm((c) => ({ ...c, relationship: e.target.value }))} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)' }}>
                   <option value="parent">Parent</option>
                   <option value="guardian">Guardian</option>
                   <option value="emergency">Emergency contact</option>
                   <option value="other">Other</option>
                 </select>
-                <input placeholder="Email" type="email" value={contactForm.email} onChange={(e) => setContactForm((c) => ({ ...c, email: e.target.value }))} style={{ padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)' }} />
-                <input placeholder="Phone" value={contactForm.phone_e164} onChange={(e) => setContactForm((c) => ({ ...c, phone_e164: e.target.value }))} style={{ padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)' }} />
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: 'var(--text-subtle)' }}>
+                <input placeholder="Email" type="email" value={contactForm.email} onChange={(e) => setContactForm((c) => ({ ...c, email: e.target.value }))} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)' }} />
+                <input placeholder="Phone" value={contactForm.phone_e164} onChange={(e) => setContactForm((c) => ({ ...c, phone_e164: e.target.value }))} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)' }} />
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>
                   <input type="checkbox" checked={contactForm.is_primary} onChange={(e) => setContactForm((c) => ({ ...c, is_primary: e.target.checked }))} />
                   Make this the primary contact
                 </label>

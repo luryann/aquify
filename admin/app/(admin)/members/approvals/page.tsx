@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Icon } from '@/components/ui/icons'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
-import { useApiClient, ApiError } from '@/lib/api'
+import { useApiClient } from '@/lib/api'
 import {
   fetchSwimmerLinkRequests,
   resolveSwimmerLinkRequest,
@@ -12,6 +12,7 @@ import {
   type SwimmerLinkRequestRecord,
   type SwimmerRecord,
 } from '@/lib/adminData'
+import { uiErrorMessage } from '@/lib/frontend-telemetry'
 
 type PendingUser = {
   id: string
@@ -73,7 +74,7 @@ function SwimmerLinkRequestsQueue() {
       setRequests(reqs)
       setSwimmers(sw)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to load swimmer link requests.')
+      setError(uiErrorMessage(err, 'Couldn’t load swimmer link requests. Try again.'))
     } finally {
       setLoading(false)
     }
@@ -89,7 +90,7 @@ function SwimmerLinkRequestsQueue() {
       await resolveSwimmerLinkRequest(api, orgId, requestId, swimmerId)
       await load()
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to link swimmer.')
+      setError(uiErrorMessage(err, 'Couldn’t link swimmer. Try again.'))
     } finally {
       setResolving(null)
     }
@@ -100,29 +101,26 @@ function SwimmerLinkRequestsQueue() {
   return (
     <div style={{ marginTop: '32px' }}>
       <div style={{ marginBottom: '16px' }}>
-        <h2 style={{ fontSize: '16px', fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)', marginBottom: '4px' }}>
+        <h2 className="section-title" style={{ marginBottom: '4px' }}>
           Swimmer Link Requests
         </h2>
-        <p className="page-subtitle">
-          Swimmer-role logins asking to be connected to their roster record.
-        </p>
       </div>
 
       {error && (
-        <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px' }}>{error}</div>
+        <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: 'var(--fs-base)' }}>{error}</div>
       )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
         {requests.map((req) => (
           <div key={req.id} className="card" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
             <div>
-              <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text)' }}>
+              <div style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--text)' }}>
                 {req.requested_swimmer_name || 'Name not provided'}
               </div>
               {req.note && (
-                <div style={{ fontSize: '12px', color: 'var(--text-subtle)', marginTop: '2px' }}>{req.note}</div>
+                <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', marginTop: '2px' }}>{req.note}</div>
               )}
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginTop: '4px' }}>
+              <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginTop: '4px' }}>
                 Requested {new Date(req.created_at).toLocaleString()}
               </div>
             </div>
@@ -130,7 +128,7 @@ function SwimmerLinkRequestsQueue() {
               <select
                 value={selectedSwimmer[req.id] ?? ''}
                 onChange={(e) => setSelectedSwimmer((s) => ({ ...s, [req.id]: e.target.value }))}
-                style={{ padding: '7px 10px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '8px', fontSize: '12.5px', color: 'var(--text)' }}
+                style={{ padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '8px', fontSize: 'var(--fs-sm)', color: 'var(--text)' }}
               >
                 <option value="">Select swimmer…</option>
                 {swimmers.map((sw) => (
@@ -140,7 +138,7 @@ function SwimmerLinkRequestsQueue() {
               <button
                 onClick={() => void handleResolve(req.id)}
                 disabled={!selectedSwimmer[req.id] || resolving === req.id}
-                style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '7px 14px', borderRadius: '8px', border: 'none', background: !selectedSwimmer[req.id] || resolving === req.id ? 'var(--bg-elevated)' : 'var(--success)', color: !selectedSwimmer[req.id] || resolving === req.id ? 'var(--text-muted)' : '#fff', fontSize: '12px', fontWeight: 600, cursor: !selectedSwimmer[req.id] || resolving === req.id ? 'not-allowed' : 'pointer' }}
+                style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '8px 16px', borderRadius: '8px', border: 'none', background: !selectedSwimmer[req.id] || resolving === req.id ? 'var(--bg-elevated)' : 'var(--success)', color: !selectedSwimmer[req.id] || resolving === req.id ? 'var(--text-muted)' : '#fff', fontSize: 'var(--fs-sm)', fontWeight: 600, cursor: !selectedSwimmer[req.id] || resolving === req.id ? 'not-allowed' : 'pointer' }}
               >
                 <Icon name="check" size={13} />
                 {resolving === req.id ? 'Linking…' : 'Link'}
@@ -182,7 +180,7 @@ export default function ApprovalsPage() {
         await load(session.user.orgId, controller.signal)
       } catch (err) {
         if (controller.signal.aborted) return
-        if (!cancelled) setError(err instanceof ApiError ? err.message : 'Failed to load pending approvals.')
+        if (!cancelled) setError(uiErrorMessage(err, 'Couldn’t load pending approvals. Try again.'))
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -202,7 +200,7 @@ export default function ApprovalsPage() {
       await api.post(`/api/v1/users/${userId}/approve`, {}, orgHeaders(session.user.orgId))
       await load(session.user.orgId)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to approve user.')
+      setError(uiErrorMessage(err, 'Couldn’t approve user. Try again.'))
     } finally {
       setWorking((w) => { const n = { ...w }; delete n[userId]; return n })
     }
@@ -217,7 +215,7 @@ export default function ApprovalsPage() {
       setRejectNotes((n) => { const r = { ...n }; delete r[userId]; return r })
       await load(session.user.orgId)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to reject user.')
+      setError(uiErrorMessage(err, 'Couldn’t reject user. Try again.'))
     } finally {
       setWorking((w) => { const n = { ...w }; delete n[userId]; return n })
     }
@@ -235,22 +233,21 @@ export default function ApprovalsPage() {
   }, [pending, search])
 
   return (
-    <div style={{ padding: '24px', maxWidth: '900px' }}>
-      <div style={{ marginBottom: '24px' }}>
-        <h1 className="page-title">Pending Approvals</h1>
-        <p className="page-subtitle">Self-registered users awaiting admin review</p>
+    <div className="page">
+      <div className="page-heading">
+        <h1 className="page-title">Pending approvals</h1>
       </div>
 
       {error && (
-        <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px' }}>{error}</div>
+        <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: 'var(--fs-base)' }}>{error}</div>
       )}
 
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', alignItems: 'center' }}>
-        <div style={{ position: 'relative', flex: 1, maxWidth: '360px' }}>
+      <div className="toolbar">
+        <div className="toolbar-search">
           <Icon name="search" size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
-          <input type="text" placeholder="Search by name or email…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: '100%', padding: '8px 12px 8px 32px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none' }} />
+          <input type="text" placeholder="Search by name or email…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: '100%', padding: '8px 12px 8px 32px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none' }} />
         </div>
-        <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginLeft: 'auto' }}>{filtered.length} pending</span>
+        <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginLeft: 'auto' }}>{filtered.length} pending</span>
       </div>
 
       {loading ? (
@@ -272,8 +269,8 @@ export default function ApprovalsPage() {
               <div key={user.id} className="card" style={{ padding: '20px' }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
-                      <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text)' }}>{displayName}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '4px' }}>
+                      <span style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: 'var(--text)' }}>{displayName}</span>
                       <span className="badge" style={{ background: 'var(--warning-bg)', color: 'var(--warning)' }}>Pending</span>
                       {requestedRole && (
                         <span className="badge badge-default">{requestedRoleLabel(requestedRole)}</span>
@@ -282,12 +279,12 @@ export default function ApprovalsPage() {
                         onClick={() => void navigator.clipboard.writeText(user.id)}
                         title={`Copy user ID (${user.id})`}
                         aria-label="Copy user ID"
-                        style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', padding: '3px', background: 'none', border: 'none', color: 'var(--text-disabled)', cursor: 'pointer', borderRadius: 'var(--r-xs)' }}
+                        style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', padding: '4px', background: 'none', border: 'none', color: 'var(--text-disabled)', cursor: 'pointer', borderRadius: 'var(--r-xs)' }}
                       >
                         <Icon name="copy" size={12} />
                       </button>
                     </div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-subtle)', marginBottom: '4px', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                    <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', marginBottom: '4px', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
                       <span>{user.email}</span>
                       {user.firstName && user.lastName && (
                         <span style={{ fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>Self-registered</span>
@@ -299,17 +296,17 @@ export default function ApprovalsPage() {
                     {(swimmerName || clubCode || registrationNote) && (
                       <div style={{ marginTop: '12px', display: 'grid', gap: '6px' }}>
                         {swimmerName && (
-                          <div style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>
+                          <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>
                             Swimmer: <strong style={{ color: 'var(--text)' }}>{swimmerName}</strong> <span style={{ color: 'var(--text-muted)' }}>(not registered yet, will need to register after approval)</span>
                           </div>
                         )}
                         {clubCode && (
-                          <div style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>
+                          <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>
                             Club code: <span style={{ fontFamily: 'var(--font-body)', color: 'var(--text)' }}>{clubCode}</span>
                           </div>
                         )}
                         {registrationNote && (
-                          <div style={{ fontSize: '12px', color: 'var(--text-subtle)', lineHeight: 1.5 }}>
+                          <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', lineHeight: 1.5 }}>
                             Note: <span style={{ color: 'var(--text)' }}>{registrationNote}</span>
                           </div>
                         )}
@@ -320,7 +317,7 @@ export default function ApprovalsPage() {
                     <button
                       onClick={() => void approve(user.id)}
                       disabled={!!busyState}
-                      style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '7px 14px', borderRadius: '8px', border: 'none', background: busyState ? 'var(--bg-elevated)' : 'var(--success)', color: busyState ? 'var(--text-muted)' : '#fff', fontSize: '12px', fontWeight: 600, cursor: busyState ? 'not-allowed' : 'pointer', transition: 'all 0.15s' }}
+                      style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '8px 16px', borderRadius: '8px', border: 'none', background: busyState ? 'var(--bg-elevated)' : 'var(--success)', color: busyState ? 'var(--text-muted)' : '#fff', fontSize: 'var(--fs-sm)', fontWeight: 600, cursor: busyState ? 'not-allowed' : 'pointer', transition: 'all 0.15s' }}
                     >
                       <Icon name="check" size={13} />
                       {busyState === 'approving' ? 'Approving…' : 'Approve'}
@@ -328,7 +325,7 @@ export default function ApprovalsPage() {
                     <button
                       onClick={() => setShowRejectId(isRejectOpen ? null : user.id)}
                       disabled={!!busyState}
-                      style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '7px 14px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text-muted)', fontSize: '12px', fontWeight: 600, cursor: busyState ? 'not-allowed' : 'pointer', transition: 'all 0.15s' }}
+                      style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text-muted)', fontSize: 'var(--fs-sm)', fontWeight: 600, cursor: busyState ? 'not-allowed' : 'pointer', transition: 'all 0.15s' }}
                     >
                       <Icon name="x" size={13} />
                       {busyState === 'rejecting' ? 'Rejecting…' : 'Reject'}
@@ -337,18 +334,18 @@ export default function ApprovalsPage() {
                 </div>
 
                 {isRejectOpen && (
-                  <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid var(--border)' }}>
-                    <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>Rejection Reason (optional)</label>
+                  <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border)' }}>
+                    <label style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>Rejection reason (optional)</label>
                     <textarea
                       rows={2}
                       placeholder="Optional note for internal records…"
                       value={rejectNotes[user.id] ?? ''}
                       onChange={(e) => setRejectNotes((n) => ({ ...n, [user.id]: e.target.value }))}
-                      style={{ width: '100%', padding: '8px 10px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '8px', fontSize: '13px', color: 'var(--text)', outline: 'none', resize: 'vertical', boxSizing: 'border-box' }}
+                      style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '8px', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none', resize: 'vertical', boxSizing: 'border-box' }}
                     />
                     <div style={{ display: 'flex', gap: '8px', marginTop: '8px', justifyContent: 'flex-end' }}>
-                      <button onClick={() => setShowRejectId(null)} style={{ padding: '6px 14px', borderRadius: '7px', border: '1px solid var(--border)', background: 'none', color: 'var(--text-muted)', fontSize: '12px', cursor: 'pointer' }}>Cancel</button>
-                      <button onClick={() => void reject(user.id)} disabled={!!busyState} style={{ padding: '6px 14px', borderRadius: '7px', border: 'none', background: 'var(--error)', color: '#fff', fontSize: '12px', fontWeight: 600, cursor: busyState ? 'not-allowed' : 'pointer' }}>
+                      <button onClick={() => setShowRejectId(null)} style={{ padding: '6px 16px', borderRadius: '8px', border: '1px solid var(--border)', background: 'none', color: 'var(--text-muted)', fontSize: 'var(--fs-sm)', cursor: 'pointer' }}>Cancel</button>
+                      <button onClick={() => void reject(user.id)} disabled={!!busyState} style={{ padding: '6px 16px', borderRadius: '8px', border: 'none', background: 'var(--error)', color: '#fff', fontSize: 'var(--fs-sm)', fontWeight: 600, cursor: busyState ? 'not-allowed' : 'pointer' }}>
                         {busyState === 'rejecting' ? 'Rejecting…' : 'Confirm Reject'}
                       </button>
                     </div>

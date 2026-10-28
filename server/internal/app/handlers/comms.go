@@ -89,6 +89,7 @@ func (h *CommsHandlers) RegisterRoutes(router chi.Router) {
 	router.Get("/announcements/{announcementID}", h.getAnnouncement)
 	router.Post("/announcements/{announcementID}/publish", h.publishAnnouncement)
 	router.Post("/announcements/{announcementID}/archive", h.archiveAnnouncement)
+	router.Patch("/announcements/{announcementID}", h.setAnnouncementPublic)
 
 	// Email campaigns — admin/coach only.
 	router.Post("/email-campaigns", h.createCampaign)
@@ -808,6 +809,7 @@ func (h *CommsHandlers) createAnnouncement(w http.ResponseWriter, r *http.Reques
 		Body     string `json:"body"     validate:"required"`
 		Audience string `json:"audience" validate:"required,oneof=all group"`
 		GroupID  string `json:"group_id"`
+		Public   bool   `json:"public"`
 	}
 	if err := decodeJSONBody(w, r, &body); err != nil {
 		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Could not parse request body.", nil)
@@ -824,6 +826,7 @@ func (h *CommsHandlers) createAnnouncement(w http.ResponseWriter, r *http.Reques
 		Body:      body.Body,
 		Audience:  body.Audience,
 		GroupID:   body.GroupID,
+		Public:    body.Public,
 		CreatedBy: principal.UserID,
 	})
 	if err != nil {
@@ -865,6 +868,41 @@ func (h *CommsHandlers) getAnnouncement(w http.ResponseWriter, r *http.Request) 
 		httpx.WriteError(w, r, http.StatusInternalServerError, "get_failed", err.Error(), nil)
 		return
 	}
+	httpx.WriteJSON(w, http.StatusOK, ann)
+}
+
+func (h *CommsHandlers) setAnnouncementPublic(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := commsScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+	if !hasAnyRole(principal, "admin", "coach") {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role to update announcements.", nil)
+		return
+	}
+	var body struct {
+		Public *bool `json:"public" validate:"required"`
+	}
+	if err := decodeJSONBody(w, r, &body); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Could not parse request body.", nil)
+		return
+	}
+	if err := h.validate.Struct(body); err != nil {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "validation_error", "Request validation failed.", httpx.FormatValidationErrors(err))
+		return
+	}
+	ann, err := h.service.SetAnnouncementPublic(orgID, chi.URLParam(r, "announcementID"), principal.UserID, *body.Public)
+	if err != nil {
+		if errors.Is(err, comms.ErrAnnouncementNotFound) {
+			httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Announcement not found.", nil)
+			return
+		}
+		httpx.WriteError(w, r, http.StatusBadRequest, "update_failed", err.Error(), nil)
+		return
+	}
+	h.emitAudit(principal, audit.ActionCommsAnnouncementVisibility, "announcement", ann.ID, map[string]string{
+		"public": strconv.FormatBool(*body.Public),
+	}, ann)
 	httpx.WriteJSON(w, http.StatusOK, ann)
 }
 

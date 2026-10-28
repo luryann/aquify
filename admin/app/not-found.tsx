@@ -71,10 +71,10 @@ export default function NotFound() {
               fontFamily: 'var(--font-display)',
               fontStyle: 'italic',
               fontSize: 'clamp(96px, 16vw, 144px)',
-              fontWeight: 400,
+              fontWeight: 'var(--display-weight)',
               color: 'transparent',
               WebkitTextStroke: '1px rgba(255,255,255,0.06)',
-              letterSpacing: '-0.04em',
+              letterSpacing: 'var(--display-tracking)',
               lineHeight: 1,
               userSelect: 'none',
               display: 'block',
@@ -87,21 +87,21 @@ export default function NotFound() {
         <h1
           style={{
             fontFamily: 'var(--font-display)',
-            fontSize: '28px',
-            fontWeight: 400,
+            fontSize: 'var(--fs-3xl)',
+            fontWeight: 'var(--display-weight)',
             color: 'var(--text)',
             marginBottom: '12px',
-            letterSpacing: '-0.02em',
+            letterSpacing: 'var(--display-tracking)',
           }}
         >
           Page not found
         </h1>
         <p
           style={{
-            fontSize: '14px',
+            fontSize: 'var(--fs-md)',
             color: 'var(--text-subtle)',
             lineHeight: 1.7,
-            marginBottom: '36px',
+            marginBottom: '40px',
           }}
         >
           The page you&apos;re looking for doesn&apos;t exist or may have moved.
@@ -112,18 +112,18 @@ export default function NotFound() {
           <Link
             href="/dashboard"
             style={{
-              padding: '10px 22px',
+              padding: '12px 24px',
               background: 'var(--accent)',
               border: 'none',
               borderRadius: '8px',
               color: '#fff',
-              fontSize: '13px',
+              fontSize: 'var(--fs-base)',
               fontWeight: 600,
               fontFamily: 'var(--font-body)',
               textDecoration: 'none',
               display: 'inline-flex',
               alignItems: 'center',
-              gap: '7px',
+              gap: '8px',
             }}
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"

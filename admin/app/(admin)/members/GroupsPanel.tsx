@@ -6,8 +6,9 @@ import { Icon } from '@/components/ui/icons'
 import { Table, type Column } from '@/components/ui/Table'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
-import { useApiClient, ApiError } from '@/lib/api'
-import { fetchGroups, fetchRegistrations, fetchUsers, createGroup, type GroupRecord, type RegistrationRecord, type UserRecord } from '@/lib/adminData'
+import { useApiClient } from '@/lib/api'
+import { fetchGroups, fetchRegistrations, fetchStaff, createGroup, type GroupRecord, type RegistrationRecord, type StaffRecord } from '@/lib/adminData'
+import { uiErrorMessage } from '@/lib/frontend-telemetry'
 
 function formatAgeRange(minAge: number | null | undefined, maxAge: number | null | undefined) {
   if (minAge == null && maxAge == null) return 'All ages'
@@ -50,7 +51,7 @@ const COLUMNS: Column<GroupRow>[] = [
     sortable: true,
     render: (row) => (
       <div>
-        <Link href={`/members/groups/${row.id}`} style={{ color: 'var(--text)', fontWeight: 600, textDecoration: 'none', fontSize: '13px' }}>{row.name}</Link>
+        <Link href={`/members/groups/${row.id}`} style={{ color: 'var(--text)', fontWeight: 600, textDecoration: 'none', fontSize: 'var(--fs-base)' }}>{row.name}</Link>
       </div>
     ),
   },
@@ -64,17 +65,17 @@ const COLUMNS: Column<GroupRow>[] = [
     label: 'Swimmers',
     sortable: true,
     align: 'right',
-    render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>{row.swimmerCount}</span>,
+    render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)' }}>{row.swimmerCount}</span>,
   },
   {
     key: 'coachName',
     label: 'Coach',
-    render: (row) => <span style={{ fontSize: '13px', color: row.coachName ? 'var(--text-subtle)' : 'var(--text-muted)' }}>{row.coachName ?? 'Unassigned'}</span>,
+    render: (row) => <span style={{ fontSize: 'var(--fs-base)', color: row.coachName ? 'var(--text-subtle)' : 'var(--text-muted)' }}>{row.coachName ?? 'Unassigned'}</span>,
   },
   {
     key: 'minAge',
-    label: 'Age Range',
-    render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-subtle)' }}>{formatAgeRange(row.minAge, row.maxAge)}</span>,
+    label: 'Age range',
+    render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{formatAgeRange(row.minAge, row.maxAge)}</span>,
   },
   {
     key: 'status',
@@ -82,11 +83,6 @@ const COLUMNS: Column<GroupRow>[] = [
     render: (row) => <span className="badge" style={{ background: row.status === 'active' ? 'var(--success-bg)' : 'var(--bg-elevated)', color: row.status === 'active' ? 'var(--success)' : 'var(--text-muted)' }}>{row.status}</span>,
   },
 ]
-
-function displayNameForUser(user: UserRecord): string {
-  const name = `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim()
-  return name || user.email || user.id
-}
 
 function deriveRows(groups: GroupRecord[], registrations: RegistrationRecord[], userNameById: Record<string, string>): GroupRow[] {
   const registrationCountByGroup = registrations.reduce<Record<string, number>>((acc, registration) => {
@@ -111,14 +107,15 @@ function deriveRows(groups: GroupRecord[], registrations: RegistrationRecord[], 
     .sort((a, b) => a.name.localeCompare(b.name))
 }
 
-const INPUT_STYLE: React.CSSProperties = { width: '100%', padding: '9px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none', boxSizing: 'border-box' }
-const LABEL_STYLE: React.CSSProperties = { fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '5px' }
+const INPUT_STYLE: React.CSSProperties = { width: '100%', padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none', boxSizing: 'border-box' }
+const LABEL_STYLE: React.CSSProperties = { fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }
 
 export function GroupsPanel() {
   const { session } = useSession()
   const api = useApiClient(session?.token)
   const [rows, setRows] = useState<GroupRow[]>([])
   const [userNameById, setUserNameById] = useState<Record<string, string>>({})
+  const [staff, setStaff] = useState<StaffRecord[]>([])
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('active')
@@ -129,7 +126,7 @@ export function GroupsPanel() {
   const [showNew, setShowNew] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
-  const [form, setForm] = useState({ code: '', name: '', description: '', type: 'competitive', min_age: '', max_age: '' })
+  const [form, setForm] = useState({ code: '', name: '', description: '', type: 'competitive', min_age: '', max_age: '', coach_user_id: '' })
 
   useEffect(() => {
     let cancelled = false
@@ -146,16 +143,17 @@ export function GroupsPanel() {
         const [groups, registrations, users] = await Promise.all([
           fetchGroups(api, session.user.orgId),
           fetchRegistrations(api, session.user.orgId),
-          fetchUsers(api, session.user.orgId, { limit: 200 }).catch(() => ({ users: [] as UserRecord[] })),
+          fetchStaff(api, session.user.orgId).catch(() => [] as StaffRecord[]),
         ])
-        const userNameById = Object.fromEntries(users.users.map((u) => [u.id, displayNameForUser(u)]))
+        const userNameById = Object.fromEntries(users.map((u) => [u.id, u.name]))
         if (!cancelled) {
           setUserNameById(userNameById)
+          setStaff(users)
           setRows(deriveRows(groups, registrations, userNameById))
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof ApiError ? err.message : 'Failed to load groups.')
+          setError(uiErrorMessage(err, 'Couldn’t load groups. Try again.'))
           setRows([])
         }
       } finally {
@@ -178,7 +176,7 @@ export function GroupsPanel() {
 
   const totalRegistrations = rows.filter((row) => row.status === 'active').reduce((acc, row) => acc + row.swimmerCount, 0)
 
-  const selectStyle: React.CSSProperties = { padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none', cursor: 'pointer' }
+  const selectStyle: React.CSSProperties = { padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none', cursor: 'pointer' }
 
   async function handleCreateGroup(e: React.FormEvent) {
     e.preventDefault()
@@ -193,13 +191,14 @@ export function GroupsPanel() {
         type: form.type,
         min_age: form.min_age ? parseInt(form.min_age) : undefined,
         max_age: form.max_age ? parseInt(form.max_age) : undefined,
+        coach_user_id: form.coach_user_id || undefined,
       })
       setShowNew(false)
-      setForm({ code: '', name: '', description: '', type: 'competitive', min_age: '', max_age: '' })
+      setForm({ code: '', name: '', description: '', type: 'competitive', min_age: '', max_age: '', coach_user_id: '' })
       const [grps, regs] = await Promise.all([fetchGroups(api, session.user.orgId), fetchRegistrations(api, session.user.orgId)])
       setRows(deriveRows(grps, regs, userNameById))
     } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : 'Failed to create group.')
+      setFormError(uiErrorMessage(err, 'Couldn’t create group. Try again.'))
     } finally {
       setSubmitting(false)
     }
@@ -213,27 +212,27 @@ export function GroupsPanel() {
         </button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>
+      <div className="cols-4" style={{ gap: '12px', marginBottom: '20px' }}>
         {[
-          { label: 'Active Groups', value: rows.filter((row) => row.status === 'active').length, color: 'var(--text)' },
+          { label: 'Active groups', value: rows.filter((row) => row.status === 'active').length, color: 'var(--text)' },
           { label: 'Competitive', value: rows.filter((row) => row.type === 'competitive').length, color: 'var(--accent)' },
           { label: 'Developmental', value: rows.filter((row) => row.type === 'developmental').length, color: 'var(--warning)' },
-          { label: 'Total Enrolled', value: totalRegistrations, color: 'var(--success)' },
+          { label: 'Total enrolled', value: totalRegistrations, color: 'var(--success)' },
         ].map((stat) => (
-          <div key={stat.label} className="card" style={{ padding: '14px 16px' }}>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
-            <div style={{ fontSize: '22px', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
+          <div key={stat.label} className="card" style={{ padding: '16px 16px' }}>
+            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
+            <div style={{ fontSize: 'var(--fs-2xl)', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
           </div>
         ))}
       </div>
 
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', alignItems: 'center' }}>
-        <div style={{ position: 'relative', flex: 1, maxWidth: '300px' }}>
+      <div className="toolbar">
+        <div className="toolbar-search">
           <Icon name="search" size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
-          <input type="text" placeholder="Search groups..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: '100%', padding: '8px 12px 8px 32px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none' }} />
+          <input type="text" placeholder="Search groups..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: '100%', padding: '8px 12px 8px 32px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none' }} />
         </div>
         <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} style={selectStyle}>
-          <option value="all">All Types</option>
+          <option value="all">All types</option>
           <option value="competitive">Competitive</option>
           <option value="recreational">Recreational</option>
           <option value="developmental">Developmental</option>
@@ -245,7 +244,7 @@ export function GroupsPanel() {
           <option value="archived">Archived</option>
           <option value="all">All</option>
         </select>
-        <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginLeft: 'auto' }}>{filtered.length} groups</span>
+        <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginLeft: 'auto' }}>{filtered.length} groups</span>
       </div>
 
       {loading ? (
@@ -259,14 +258,14 @@ export function GroupsPanel() {
       {/* New Group Modal */}
       {showNew && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)' }} onClick={(e) => { if (e.target === e.currentTarget) setShowNew(false) }}>
-          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '14px', padding: '28px', width: '100%', maxWidth: '480px', boxShadow: '0 24px 80px rgba(0,0,0,0.4)' }}>
+          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '480px', boxShadow: '0 24px 80px rgba(0,0,0,0.4)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-              <h2 style={{ fontSize: '18px', fontFamily: 'var(--font-display)', color: 'var(--text)', margin: 0 }}>New Group</h2>
+              <h2 className="section-title" style={{ margin: 0 }}>New group</h2>
               <button onClick={() => setShowNew(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><Icon name="x" size={18} /></button>
             </div>
-            {formError && <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px' }}>{formError}</div>}
-            <form onSubmit={handleCreateGroup} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            {formError && <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: 'var(--fs-base)' }}>{formError}</div>}
+            <form onSubmit={handleCreateGroup} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div className="cols-2" style={{ gap: '12px' }}>
                 <div>
                   <label style={LABEL_STYLE}>Code *</label>
                   <input required style={INPUT_STYLE} value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value.toUpperCase() }))} placeholder="COMP-A" />
@@ -276,23 +275,34 @@ export function GroupsPanel() {
                   <input required style={INPUT_STYLE} value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="Competitive A" />
                 </div>
               </div>
-              <div>
-                <label style={LABEL_STYLE}>Type</label>
-                <select style={INPUT_STYLE} value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}>
-                  <option value="competitive">Competitive</option>
-                  <option value="recreational">Recreational</option>
-                  <option value="developmental">Developmental</option>
-                  <option value="masters">Masters</option>
-                  <option value="other">Other</option>
-                </select>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div className="cols-2" style={{ gap: '12px' }}>
                 <div>
-                  <label style={LABEL_STYLE}>Min Age</label>
+                  <label style={LABEL_STYLE}>Type</label>
+                  <select style={INPUT_STYLE} value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}>
+                    <option value="competitive">Competitive</option>
+                    <option value="recreational">Recreational</option>
+                    <option value="developmental">Developmental</option>
+                    <option value="masters">Masters</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={LABEL_STYLE}>Coach</label>
+                  <select style={INPUT_STYLE} value={form.coach_user_id} onChange={(e) => setForm((f) => ({ ...f, coach_user_id: e.target.value }))}>
+                    <option value="">Unassigned</option>
+                    {staff.map((member) => (
+                      <option key={member.id} value={member.id}>{member.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="cols-2" style={{ gap: '12px' }}>
+                <div>
+                  <label style={LABEL_STYLE}>Min age</label>
                   <input type="number" min="0" max="99" style={INPUT_STYLE} value={form.min_age} onChange={(e) => setForm((f) => ({ ...f, min_age: e.target.value }))} placeholder="9" />
                 </div>
                 <div>
-                  <label style={LABEL_STYLE}>Max Age</label>
+                  <label style={LABEL_STYLE}>Max age</label>
                   <input type="number" min="0" max="99" style={INPUT_STYLE} value={form.max_age} onChange={(e) => setForm((f) => ({ ...f, max_age: e.target.value }))} placeholder="14" />
                 </div>
               </div>
@@ -300,7 +310,7 @@ export function GroupsPanel() {
                 <label style={LABEL_STYLE}>Description</label>
                 <textarea style={{ ...INPUT_STYLE, resize: 'vertical' }} rows={2} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="Optional description..." />
               </div>
-              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '4px' }}>
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '4px' }}>
                 <button type="button" className="btn" onClick={() => setShowNew(false)}>Cancel</button>
                 <button type="submit" className="btn btn-primary" disabled={submitting}>{submitting ? 'Creating…' : 'Create Group'}</button>
               </div>

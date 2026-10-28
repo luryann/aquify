@@ -28,7 +28,12 @@ test('buildSidebarSessionProps forwards org scope for the approvals badge', () =
     roles: ['admin'],
     userName: 'AL',
     orgId: 'org-42',
+    token: undefined,
   })
+})
+
+test('buildSidebarSessionProps forwards bearer tokens for stub sessions', () => {
+  assert.equal(buildSidebarSessionProps({ ...session, token: 'stub-admin' }).token, 'stub-admin')
 })
 
 test('shouldFetchPendingApprovals only enables privileged scoped sessions', () => {
@@ -44,6 +49,17 @@ test('pendingApprovalsRequestInit uses cookie-backed auth with org scoping', () 
     credentials: 'include',
     headers: {
       'X-Org-Id': 'org-42',
+    },
+  })
+})
+
+test('pendingApprovalsRequestInit adds bearer auth when a token is present', () => {
+  assert.deepEqual(pendingApprovalsRequestInit('org-42', 'stub-admin'), {
+    cache: 'no-store',
+    credentials: 'include',
+    headers: {
+      'X-Org-Id': 'org-42',
+      Authorization: 'Bearer stub-admin',
     },
   })
 })

@@ -63,7 +63,7 @@ export function SkeletonTable({ rows = 5, columns = 4, hasHeader = true }: Skele
             display: 'grid',
             gridTemplateColumns: `repeat(${columns}, 1fr)`,
             gap: '12px',
-            padding: '10px 16px',
+            padding: '12px 16px',
             borderBottom: '1px solid var(--border)',
           }}
         >

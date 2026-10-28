@@ -120,6 +120,8 @@ func mapBillingError(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, r, http.StatusConflict, "invoice_not_draft", "Invoice must be in draft status.", nil)
 	case errors.Is(err, billing.ErrInvoiceNotIssuable):
 		httpx.WriteError(w, r, http.StatusConflict, "invoice_not_issuable", "Invoice must be in draft status to issue.", nil)
+	case errors.Is(err, billing.ErrInvoiceEmpty):
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "invoice_empty", "Add at least one line item before issuing this invoice.", nil)
 	case errors.Is(err, billing.ErrInvoiceNotVoidable):
 		httpx.WriteError(w, r, http.StatusConflict, "invoice_not_voidable", "Invoice must be in issued status to void.", nil)
 	case errors.Is(err, billing.ErrInvoiceNotWriteOffable):

@@ -5,6 +5,7 @@ import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
 import { createSwimmerLinkRequest } from '@/lib/adminData'
+import { uiErrorMessage } from '@/lib/frontend-telemetry'
 
 // Swimmer portal colours — resolved from the [data-portal="swim"] token overrides in globals.css
 const C = {
@@ -43,7 +44,7 @@ export function UnlinkedSwimmerNotice() {
       await createSwimmerLinkRequest(api, orgId, { requested_swimmer_name: name, note })
       setSubmitted(true)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to send your request right now.')
+      setError(uiErrorMessage(err, 'Couldn’t send your request. Try again.'))
     } finally {
       setSubmitting(false)
     }
@@ -57,14 +58,14 @@ export function UnlinkedSwimmerNotice() {
           background: C.successBg,
           border: `1px solid ${C.successBorder}`,
           borderRadius: '12px',
-          padding: '14px 16px',
+          padding: '16px 16px',
           display: 'flex',
           alignItems: 'flex-start',
-          gap: '10px',
+          gap: '12px',
         }}
       >
         <Icon name="check-circle" size={16} style={{ color: C.success, marginTop: '1px', flexShrink: 0 }} />
-        <p style={{ margin: 0, fontSize: '13px', color: C.text, lineHeight: 1.5 }}>
+        <p style={{ margin: 0, fontSize: 'var(--fs-base)', color: C.text, lineHeight: 1.5 }}>
           Request sent. Your coach will connect your account, usually within a day or two.
         </p>
       </div>
@@ -78,28 +79,28 @@ export function UnlinkedSwimmerNotice() {
         background: C.warnBg,
         border: `1px solid ${C.warnBorder}`,
         borderRadius: '12px',
-        padding: '14px 16px',
+        padding: '16px 16px',
         display: 'flex',
         flexDirection: 'column',
-        gap: '10px',
+        gap: '12px',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
         <Icon name="alert-circle" size={16} style={{ color: C.warn, marginTop: '1px', flexShrink: 0 }} />
-        <p style={{ margin: 0, fontSize: '13px', color: C.text, lineHeight: 1.5 }}>
+        <p style={{ margin: 0, fontSize: 'var(--fs-base)', color: C.text, lineHeight: 1.5 }}>
           Your account isn&apos;t linked to a swimmer profile yet, so times and meet commitments can&apos;t be shown.
-          Let your club admin know below, or ask them directly. This usually takes a day or two to fix.
+          Let your club admin know below.
         </p>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginLeft: '26px', maxWidth: '360px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginLeft: '24px', maxWidth: '360px' }}>
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Your full name"
           style={{
-            padding: '8px 10px', background: C.inputBg, border: `1px solid ${C.inputBorder}`,
-            borderRadius: '7px', color: C.text, fontSize: '12.5px', outline: 'none',
+            padding: '8px 12px', background: C.inputBg, border: `1px solid ${C.inputBorder}`,
+            borderRadius: '8px', color: C.text, fontSize: 'var(--fs-sm)', outline: 'none',
           }}
         />
         <input
@@ -107,11 +108,11 @@ export function UnlinkedSwimmerNotice() {
           onChange={(e) => setNote(e.target.value)}
           placeholder="Anything else your admin should know? (optional)"
           style={{
-            padding: '8px 10px', background: C.inputBg, border: `1px solid ${C.inputBorder}`,
-            borderRadius: '7px', color: C.text, fontSize: '12.5px', outline: 'none',
+            padding: '8px 12px', background: C.inputBg, border: `1px solid ${C.inputBorder}`,
+            borderRadius: '8px', color: C.text, fontSize: 'var(--fs-sm)', outline: 'none',
           }}
         />
-        {error && <p style={{ margin: 0, fontSize: '12px', color: 'var(--error)' }}>{error}</p>}
+        {error && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--error)' }}>{error}</p>}
         <button
           onClick={handleSubmit}
           disabled={submitting || !name.trim()}

@@ -3,8 +3,8 @@
 import { useState, useEffect, useRef, type FormEvent } from 'react'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
-import { useApiClient, ApiError } from '@/lib/api'
-import { reportUIError } from '@/lib/frontend-telemetry'
+import { useApiClient } from '@/lib/api'
+import { reportUIError, uiErrorMessage } from '@/lib/frontend-telemetry'
 import { UnlinkedSwimmerNotice } from '@/components/swimmer/UnlinkedSwimmerNotice'
 import { useMessageStream } from '@/lib/useMessageStream'
 import {
@@ -71,7 +71,7 @@ export default function SwimmerMessagesPage() {
     fetchMessages(api, orgId, householdId, swimmerId)
       .then(setMessages)
       .catch((error) => {
-        setLoadError(reportUIError('swim-messages-thread-load', error, 'Unable to load your messages right now.', { orgId, householdId, swimmerId }))
+        setLoadError(reportUIError('swim-messages-thread-load', error, 'Couldn’t load your messages. Try again.', { orgId, householdId, swimmerId }))
       })
       .finally(() => setLoading(false))
   }, [api, orgId, householdId, swimmerId, hasThread, reloadKey])
@@ -116,7 +116,7 @@ export default function SwimmerMessagesPage() {
       setPendingAttachment(null)
       setReloadKey((k) => k + 1)
     } catch (err) {
-      setSendError(err instanceof ApiError ? err.message : 'Failed to send your message.')
+      setSendError(uiErrorMessage(err, 'Couldn’t send your message. Try again.'))
     } finally {
       setSending(false)
     }
@@ -138,7 +138,7 @@ export default function SwimmerMessagesPage() {
       if (!putResp.ok) throw new Error('Upload failed')
       setPendingAttachment({ object_key, file_name: expected_file_name, file_mime: file.type })
     } catch {
-      setAttachError('Could not upload that image. Try a smaller file or a different format.')
+      setAttachError('Couldn’t upload that image. Try a smaller file or a different format. Try again.')
     } finally {
       setUploading(false)
     }
@@ -175,22 +175,22 @@ export default function SwimmerMessagesPage() {
 
   return (
     <div>
-      <div style={{ marginBottom: '28px', animation: 'slideUp 0.35s ease both' }}>
+      <div className="page-heading">
         <h1 className="page-title">Messages</h1>
-        <p className="page-subtitle">Talk directly with your coach — your parent can see this conversation too.</p>
+        <p className="page-subtitle">Your parent can see this conversation too.</p>
       </div>
 
       {!hasThread ? (
         <UnlinkedSwimmerNotice />
       ) : (
         <div className="card" style={{ display: 'flex', flexDirection: 'column', minHeight: '560px' }}>
-          <div style={{ flex: 1, padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px', overflowY: 'auto', maxHeight: '600px' }}>
+          <div style={{ flex: 1, padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', overflowY: 'auto', maxHeight: '600px' }}>
             {loadError ? (
-              <p style={{ fontSize: '13px', color: 'var(--error)' }}>{loadError}</p>
+              <p style={{ fontSize: 'var(--fs-base)', color: 'var(--error)' }}>{loadError}</p>
             ) : loading ? (
-              <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Loading conversation…</p>
+              <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)' }}>Loading conversation…</p>
             ) : messages.length === 0 ? (
-              <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+              <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)' }}>
                 No messages yet. Send the first one below to reach your coach.
               </p>
             ) : (
@@ -206,7 +206,7 @@ export default function SwimmerMessagesPage() {
                           value={editDraft}
                           onChange={(e) => setEditDraft(e.target.value)}
                           rows={2}
-                          style={{ minWidth: '220px', padding: '8px 10px', borderRadius: '10px', border: '1px solid var(--accent-border)', background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: '13.5px', resize: 'vertical' }}
+                          style={{ minWidth: '220px', padding: '8px 12px', borderRadius: '12px', border: '1px solid var(--accent-border)', background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: 'var(--fs-base)', resize: 'vertical' }}
                         />
                         <button className="btn btn-sm btn-primary" onClick={() => void handleEditSave(m.id)}>Save</button>
                         <button className="btn btn-sm btn-secondary" onClick={() => setEditingId(null)}>Cancel</button>
@@ -216,9 +216,9 @@ export default function SwimmerMessagesPage() {
                         style={{
                           background: mine ? 'var(--accent)' : 'var(--bg-elevated)',
                           color: mine ? 'var(--bg)' : 'var(--text)',
-                          padding: '10px 14px',
+                          padding: '12px 16px',
                           borderRadius: mine ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
-                          fontSize: '13.5px',
+                          fontSize: 'var(--fs-base)',
                           lineHeight: 1.5,
                           whiteSpace: 'pre-wrap',
                         }}
@@ -234,7 +234,7 @@ export default function SwimmerMessagesPage() {
                     )}
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', justifyContent: mine ? 'flex-end' : 'flex-start' }}>
-                      <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                      <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
                         {senderLabel(m.sender_role)} · {fmtTime(m.created_at)}{m.edited_at ? ' · (edited)' : ''}
                       </p>
                       {canEdit && !isEditing && (
@@ -256,9 +256,9 @@ export default function SwimmerMessagesPage() {
                     </div>
 
                     {reactionPickerId === m.id && (
-                      <div style={{ display: 'flex', gap: '4px', marginTop: '4px', padding: '4px 6px', borderRadius: '10px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', width: 'fit-content' }}>
+                      <div style={{ display: 'flex', gap: '4px', marginTop: '4px', padding: '4px 6px', borderRadius: '12px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', width: 'fit-content' }}>
                         {QUICK_REACTIONS.map((emoji) => (
-                          <button key={emoji} onClick={() => void handleToggleReaction(m, emoji)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '15px', padding: '2px' }}>
+                          <button key={emoji} onClick={() => void handleToggleReaction(m, emoji)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--fs-md)', padding: '2px' }}>
                             {emoji}
                           </button>
                         ))}
@@ -272,7 +272,7 @@ export default function SwimmerMessagesPage() {
                             key={r.emoji}
                             onClick={() => void handleToggleReaction(m, r.emoji)}
                             style={{
-                              display: 'flex', alignItems: 'center', gap: '3px', padding: '2px 7px', borderRadius: '999px', fontSize: '11.5px', cursor: 'pointer',
+                              display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 8px', borderRadius: '999px', fontSize: 'var(--fs-xs)', cursor: 'pointer',
                               border: r.reacted_by_me ? '1px solid var(--accent-border)' : '1px solid var(--border)',
                               background: r.reacted_by_me ? 'var(--accent-subtle)' : 'var(--bg-surface)',
                               color: 'var(--text)',
@@ -298,9 +298,9 @@ export default function SwimmerMessagesPage() {
               </button>
             </div>
           )}
-          {attachError && <p style={{ padding: '0 20px 8px', fontSize: '12px', color: 'var(--error)' }}>{attachError}</p>}
+          {attachError && <p style={{ padding: '0 20px 8px', fontSize: 'var(--fs-sm)', color: 'var(--error)' }}>{attachError}</p>}
 
-          <form onSubmit={(e) => void handleSend(e)} style={{ padding: '14px 20px', borderTop: '1px solid var(--border)', display: 'flex', gap: '10px' }}>
+          <form onSubmit={(e) => void handleSend(e)} style={{ padding: '16px 20px', borderTop: '1px solid var(--border)', display: 'flex', gap: '12px' }}>
             <input
               ref={fileInputRef}
               type="file"
@@ -313,7 +313,7 @@ export default function SwimmerMessagesPage() {
               onClick={() => fileInputRef.current?.click()}
               disabled={uploading}
               title="Attach an image"
-              style={{ background: 'none', border: '1px solid var(--border)', borderRadius: '10px', color: 'var(--text-muted)', cursor: 'pointer', padding: '10px', display: 'flex' }}
+              style={{ background: 'none', border: '1px solid var(--border)', borderRadius: '12px', color: 'var(--text-muted)', cursor: 'pointer', padding: '12px', display: 'flex' }}
             >
               <Icon name="upload-cloud" size={15} />
             </button>
@@ -324,13 +324,13 @@ export default function SwimmerMessagesPage() {
               placeholder="Write a message to your coach…"
               disabled={sending}
               maxLength={4000}
-              style={{ flex: 1, padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: '13.5px', outline: 'none' }}
+              style={{ flex: 1, padding: '12px 16px', borderRadius: '12px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: 'var(--fs-base)', outline: 'none' }}
             />
             <button type="submit" className="btn btn-primary" disabled={sending || (!draft.trim() && !pendingAttachment)}>
               {sending ? 'Sending…' : 'Send'}
             </button>
           </form>
-          {sendError && <p style={{ padding: '0 20px 14px', fontSize: '12px', color: 'var(--error)' }}>{sendError}</p>}
+          {sendError && <p style={{ padding: '0 20px 16px', fontSize: 'var(--fs-sm)', color: 'var(--error)' }}>{sendError}</p>}
         </div>
       )}
 

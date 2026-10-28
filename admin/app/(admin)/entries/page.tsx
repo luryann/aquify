@@ -7,13 +7,14 @@ import { Icon } from '@/components/ui/icons'
 import { Table, type Column } from '@/components/ui/Table'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
-import { useApiClient, ApiError } from '@/lib/api'
+import { useApiClient } from '@/lib/api'
 import {
   fetchMeets,
   fetchMeetEntries,
   fetchMeetEvents,
   fetchSwimmers,
   scratchEntry,
+  approveEntry,
   overrideEntry,
   type EntryRecord,
   type MeetEventRecord,
@@ -21,7 +22,10 @@ import {
   type SwimmerRecord,
 } from '@/lib/adminData'
 import { formatMeetEntriesSaveError, saveMeetEntriesBatch } from '@/lib/meet-entry-save'
-import { isSwimmerGenderEligibleForEvent } from '@/lib/gender'
+import { isSwimmerEligibleForEvent } from '@/lib/event-eligibility'
+import { formatEventLabel } from '@/lib/meet-events'
+import { parseBackendDate } from '@/lib/dates'
+import { uiErrorMessage } from '@/lib/frontend-telemetry'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -55,7 +59,7 @@ const STATUS_CFG: Record<string, { label: string; color: string; bg: string }> =
 }
 
 const STATUS_FILTER_OPTIONS = [
-  { value: 'all',       label: 'All Statuses' },
+  { value: 'all',       label: 'All statuses' },
   { value: 'draft',     label: 'Draft' },
   { value: 'submitted', label: 'Submitted' },
   { value: 'approved',  label: 'Approved' },
@@ -64,16 +68,12 @@ const STATUS_FILTER_OPTIONS = [
   { value: 'scratched', label: 'Scratched' },
 ]
 
-const STROKE_LABELS: Record<string, string> = {
-  free: 'Freestyle', back: 'Backstroke', breast: 'Breaststroke', fly: 'Butterfly', im: 'IM', medley: 'Medley',
-}
-
 const ENTRY_STATUSES = new Set(['commitment_open', 'commitment_closed', 'entry_finalized', 'completed'])
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  return parseBackendDate(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 function formatSeedTime(ms: number | undefined): string {
@@ -89,12 +89,7 @@ function formatSeedTime(ms: number | undefined): string {
 }
 
 function formatEvent(ev: MeetEventRecord | undefined): string {
-  if (!ev) return '—'
-  const dist = ev.distance ?? ''
-  const stroke = STROKE_LABELS[ev.stroke?.toLowerCase() ?? ''] ?? ev.stroke ?? ''
-  const gender = ev.gender ? (ev.gender === 'M' ? 'M' : ev.gender === 'F' ? 'F' : ev.gender) : ''
-  const age = ev.age_group ? ` ${ev.age_group}` : ' Open'
-  return [dist, stroke, gender ? `(${gender}${age})` : ''].filter(Boolean).join(' ')
+  return formatEventLabel(ev)
 }
 
 // ─── Add Entry Panel ──────────────────────────────────────────────────────────
@@ -188,11 +183,11 @@ function AddEntryPanel({
     return [...map.entries()].map(([id, evs]) => ({ id, events: evs }))
   }, [events])
 
-  // Filter events to swimmer's gender
+  // Filter events to what the swimmer can enter (gender + age at the meet)
   const eligibleEvents = useMemo(() => {
     if (!selectedSwimmer) return events
-    return events.filter((ev) => isSwimmerGenderEligibleForEvent(selectedSwimmer.gender, ev.gender))
-  }, [events, selectedSwimmer])
+    return events.filter((ev) => isSwimmerEligibleForEvent(selectedSwimmer, ev, selectedMeet?.start_date))
+  }, [events, selectedSwimmer, selectedMeet])
 
   const eligibleSessionGroups = sessionGroups
     .map((g) => ({ ...g, events: g.events.filter((e) => eligibleEvents.includes(e)) }))
@@ -220,12 +215,12 @@ function AddEntryPanel({
         }}
       >
         {/* Header */}
-        <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+        <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
           <div>
-            <div style={{ fontSize: '16px', fontFamily: 'var(--font-display)', color: 'var(--text)', lineHeight: 1.2 }}>
+            <div style={{ fontSize: 'var(--fs-lg)', fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', color: 'var(--text)', lineHeight: 1.2 }}>
               Add Entry for Swimmer
             </div>
-            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginTop: '2px' }}>
               Step {step} of 3 — {step === 1 ? 'Select swimmer' : step === 2 ? 'Select meet' : 'Choose events'}
             </div>
           </div>
@@ -235,7 +230,7 @@ function AddEntryPanel({
         </div>
 
         {/* Step progress */}
-        <div style={{ padding: '12px 22px', borderBottom: '1px solid var(--border)', display: 'flex', gap: '8px', flexShrink: 0 }}>
+        <div style={{ padding: '12px 24px', borderBottom: '1px solid var(--border)', display: 'flex', gap: '8px', flexShrink: 0 }}>
           {[
             { n: 1, label: selectedSwimmer ? `${selectedSwimmer.first_name} ${selectedSwimmer.last_name}` : 'Swimmer' },
             { n: 2, label: selectedMeet ? selectedMeet.name : 'Meet' },
@@ -248,18 +243,18 @@ function AddEntryPanel({
                 display: 'flex',
                 alignItems: 'center',
                 gap: '6px',
-                padding: '5px 10px',
+                padding: '4px 12px',
                 borderRadius: '6px',
                 border: 'none',
                 background: step === n ? 'var(--accent-subtle)' : 'transparent',
                 color: step === n ? 'var(--accent)' : step > n ? 'var(--success)' : 'var(--text-muted)',
-                fontSize: '12px',
+                fontSize: 'var(--fs-sm)',
                 fontWeight: step === n ? 600 : 400,
                 cursor: 'pointer',
                 fontFamily: 'var(--font-body)',
               }}
             >
-              <span style={{ width: '18px', height: '18px', borderRadius: '50%', background: step > n ? 'var(--success)' : step === n ? 'var(--accent)' : 'var(--bg-elevated)', color: step >= n ? '#fff' : 'var(--text-muted)', fontSize: '10px', fontFamily: 'var(--font-body)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, flexShrink: 0 }}>
+              <span style={{ width: '18px', height: '18px', borderRadius: '50%', background: step > n ? 'var(--success)' : step === n ? 'var(--accent)' : 'var(--bg-elevated)', color: step >= n ? '#fff' : 'var(--text-muted)', fontSize: 'var(--fs-2xs)', fontFamily: 'var(--font-body)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, flexShrink: 0 }}>
                 {step > n ? '✓' : n}
               </span>
               {label}
@@ -268,12 +263,12 @@ function AddEntryPanel({
         </div>
 
         {/* Body */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 22px' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
 
           {/* Step 1: Swimmer */}
           {step === 1 && (
             <div>
-              <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '14px' }}>Select a swimmer to add entries for:</p>
+              <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)', marginBottom: '16px' }}>Select a swimmer to add entries for:</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 {swimmers.map((sw) => (
                   <button
@@ -282,9 +277,9 @@ function AddEntryPanel({
                     style={{
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '10px',
-                      padding: '11px 14px',
-                      borderRadius: '9px',
+                      gap: '12px',
+                      padding: '12px 16px',
+                      borderRadius: '8px',
                       border: '1px solid var(--border)',
                       background: 'var(--bg-surface)',
                       cursor: 'pointer',
@@ -295,12 +290,12 @@ function AddEntryPanel({
                     onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.background = 'var(--accent-subtle)' }}
                     onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = 'var(--bg-surface)' }}
                   >
-                    <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(135deg, var(--accent) 0%, #b84a18 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '11px', fontWeight: 700, fontFamily: 'var(--font-body)', flexShrink: 0 }}>
+                    <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(135deg, var(--accent) 0%, #b84a18 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 'var(--fs-xs)', fontWeight: 700, fontFamily: 'var(--font-body)', flexShrink: 0 }}>
                       {(sw.first_name[0] ?? '') + (sw.last_name[0] ?? '')}
                     </div>
                     <div>
-                      <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>{sw.first_name} {sw.last_name}</div>
-                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+                      <div style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)' }}>{sw.first_name} {sw.last_name}</div>
+                      <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
                         {sw.gender ?? '—'} · {sw.registration_status}
                       </div>
                     </div>
@@ -308,7 +303,7 @@ function AddEntryPanel({
                   </button>
                 ))}
                 {swimmers.length === 0 && (
-                  <p style={{ fontSize: '13px', color: 'var(--text-muted)', fontStyle: 'italic' }}>No swimmers found.</p>
+                  <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)', fontStyle: 'italic' }}>No swimmers found.</p>
                 )}
               </div>
             </div>
@@ -317,7 +312,7 @@ function AddEntryPanel({
           {/* Step 2: Meet */}
           {step === 2 && (
             <div>
-              <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '14px' }}>Select a meet to add entries to:</p>
+              <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)', marginBottom: '16px' }}>Select a meet to add entries to:</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 {eligibleMeets.map((m) => (
                   <button
@@ -326,9 +321,9 @@ function AddEntryPanel({
                     style={{
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '10px',
-                      padding: '11px 14px',
-                      borderRadius: '9px',
+                      gap: '12px',
+                      padding: '12px 16px',
+                      borderRadius: '8px',
                       border: '1px solid var(--border)',
                       background: 'var(--bg-surface)',
                       cursor: 'pointer',
@@ -341,8 +336,8 @@ function AddEntryPanel({
                   >
                     <Icon name="calendar" size={16} color="var(--text-muted)" style={{ flexShrink: 0 } as CSSProperties} />
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>{m.name}</div>
-                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+                      <div style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)' }}>{m.name}</div>
+                      <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
                         {m.start_date ? formatDate(m.start_date) : '—'} · {m.status.replace(/_/g, ' ')}
                       </div>
                     </div>
@@ -350,7 +345,7 @@ function AddEntryPanel({
                   </button>
                 ))}
                 {eligibleMeets.length === 0 && (
-                  <p style={{ fontSize: '13px', color: 'var(--text-muted)', fontStyle: 'italic' }}>No meets currently accepting entries.</p>
+                  <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)', fontStyle: 'italic' }}>No meets currently accepting entries.</p>
                 )}
               </div>
             </div>
@@ -367,27 +362,27 @@ function AddEntryPanel({
                 </div>
               ) : (
                 <>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
                     <p className="page-subtitle">
                       Select events for <strong style={{ color: 'var(--text)' }}>{selectedSwimmer?.first_name} {selectedSwimmer?.last_name}</strong>:
                     </p>
                     {selectedEvents.size > 0 && (
-                      <span style={{ fontSize: '12px', fontFamily: 'var(--font-body)', color: 'var(--accent)' }}>
+                      <span style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--accent)' }}>
                         {selectedEvents.size} selected
                       </span>
                     )}
                   </div>
 
                   {eligibleSessionGroups.length === 0 ? (
-                    <p style={{ fontSize: '13px', color: 'var(--text-muted)', fontStyle: 'italic' }}>No eligible events found for this swimmer.</p>
+                    <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)', fontStyle: 'italic' }}>No eligible events found for this swimmer.</p>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                       {eligibleSessionGroups.map((group) => (
                         <div key={group.id}>
-                          <div style={{ fontSize: '10.5px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '6px' }}>
-                            {group.id === 'main' ? 'Main Session' : 'Unscheduled'}
+                          <div style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                            {group.id === 'main' ? 'Main session' : 'Unscheduled'}
                           </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                             {group.events.map((ev) => {
                               const isSelected = selectedEvents.has(ev.id)
                               return (
@@ -397,8 +392,8 @@ function AddEntryPanel({
                                   style={{
                                     display: 'flex',
                                     alignItems: 'center',
-                                    gap: '10px',
-                                    padding: '10px 12px',
+                                    gap: '12px',
+                                    padding: '12px 12px',
                                     borderRadius: '8px',
                                     border: isSelected ? '1.5px solid var(--accent)' : '1px solid var(--border)',
                                     background: isSelected ? 'var(--accent-subtle)' : 'var(--bg-surface)',
@@ -409,11 +404,11 @@ function AddEntryPanel({
                                   <div style={{ width: '16px', height: '16px', borderRadius: '4px', border: isSelected ? '2px solid var(--accent)' : '1.5px solid var(--border)', background: isSelected ? 'var(--accent)' : 'transparent', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                     {isSelected && <svg viewBox="0 0 10 8" fill="none" width="9" height="9"><path d="M1 4l3 3 5-6" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
                                   </div>
-                                  <span style={{ fontSize: '13px', color: isSelected ? 'var(--text)' : 'var(--text-subtle)', flex: 1, fontWeight: isSelected ? 600 : 400 }}>
+                                  <span style={{ fontSize: 'var(--fs-base)', color: isSelected ? 'var(--text)' : 'var(--text-subtle)', flex: 1, fontWeight: isSelected ? 600 : 400 }}>
                                     {formatEvent(ev)}
                                   </span>
                                   {ev.event_number && (
-                                    <span style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>#{ev.event_number}</span>
+                                    <span style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>#{ev.event_number}</span>
                                   )}
                                 </div>
                               )
@@ -426,13 +421,13 @@ function AddEntryPanel({
                   {saveError && (
                     <div
                       style={{
-                        marginTop: '14px',
-                        padding: '11px 12px',
+                        marginTop: '16px',
+                        padding: '12px 12px',
                         borderRadius: '8px',
                         border: '1px solid var(--error-border)',
                         background: 'var(--error-bg)',
                         color: 'var(--error)',
-                        fontSize: '12px',
+                        fontSize: 'var(--fs-sm)',
                         lineHeight: 1.45,
                       }}
                     >
@@ -446,15 +441,15 @@ function AddEntryPanel({
         </div>
 
         {/* Footer */}
-        <div style={{ padding: '14px 22px', borderTop: '1px solid var(--border)', display: 'flex', gap: '8px', flexShrink: 0, background: 'var(--bg)' }}>
-          <button onClick={onClose} style={{ flex: 1, padding: '10px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '8px', fontSize: '13px', fontWeight: 600, color: 'var(--text)', cursor: 'pointer' }}>
+        <div style={{ padding: '16px 24px', borderTop: '1px solid var(--border)', display: 'flex', gap: '8px', flexShrink: 0, background: 'var(--bg)' }}>
+          <button onClick={onClose} style={{ flex: 1, padding: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '8px', fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)', cursor: 'pointer' }}>
             Cancel
           </button>
           {step === 3 && (
             <button
               onClick={handleSave}
               disabled={selectedEvents.size === 0 || saving || saved}
-              style={{ flex: 2, padding: '10px', background: saved ? 'var(--success)' : 'var(--accent)', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: 600, color: '#fff', cursor: selectedEvents.size === 0 || saving || saved ? 'not-allowed' : 'pointer', opacity: selectedEvents.size === 0 ? 0.5 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', transition: 'background 0.2s' }}
+              style={{ flex: 2, padding: '12px', background: saved ? 'var(--success)' : 'var(--accent)', border: 'none', borderRadius: '8px', fontSize: 'var(--fs-base)', fontWeight: 600, color: '#fff', cursor: selectedEvents.size === 0 || saving || saved ? 'not-allowed' : 'pointer', opacity: selectedEvents.size === 0 ? 0.5 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', transition: 'background 0.2s' }}
             >
               {saved ? (
                 <><Icon name="check-circle" size={14} /> Saved!</>
@@ -557,7 +552,7 @@ function EntriesPageContent() {
 
       if (!cancelled.v) setRows(combined)
     } catch (err) {
-      if (!cancelled.v) setError(err instanceof Error ? err.message : 'Failed to load entries')
+      if (!cancelled.v) setError(uiErrorMessage(err, 'Failed to load entries'))
     } finally {
       if (!cancelled.v) setLoading(false)
     }
@@ -569,14 +564,34 @@ function EntriesPageContent() {
     return () => { cancelled.v = true }
   }, [loadData])
 
-  const handleApprove = useCallback((entryId: string) => {
-    setRows((prev) => prev.map((e) => e.id === entryId ? { ...e, status: 'approved' } : e))
-  }, [])
+  const handleApprove = useCallback(async (entryId: string, meetId: string): Promise<boolean> => {
+    if (!session?.user.orgId) return false
+    try {
+      await approveEntry(api, session.user.orgId, meetId, entryId)
+      setRows((prev) => prev.map((e) => e.id === entryId ? { ...e, status: 'approved' } : e))
+      return true
+    } catch (err) {
+      setError(uiErrorMessage(err, 'Couldn’t approve entry. Try again.'))
+      return false
+    }
+  }, [api, session?.user.orgId])
 
-  const handleReject = useCallback((entryId: string) => {
-    if (!window.confirm('Reject this submitted entry?')) return
-    setRows((prev) => prev.map((e) => e.id === entryId ? { ...e, status: 'rejected' } : e))
-  }, [])
+  const handleApproveAll = useCallback(async (pending: { id: string; meetId: string }[]) => {
+    setError(null)
+    const results = await Promise.all(pending.map((e) => handleApprove(e.id, e.meetId)))
+    const failed = results.filter((ok) => !ok).length
+    if (failed > 0) setError(`${failed} of ${pending.length} entries could not be approved. Refresh to see their current status.`)
+  }, [handleApprove])
+
+  // The API has no separate "rejected" state: rejecting a submitted entry
+  // scratches it (kept on record, excluded from reports and exports).
+  const handleReject = useCallback((entryId: string, meetId: string) => {
+    if (!session?.user.orgId) return
+    if (!window.confirm('Reject this submitted entry? It will be scratched and excluded from reports and exports.')) return
+    void scratchEntry(api, session.user.orgId, meetId, entryId, 'Rejected during coach review')
+      .then(() => setRows((prev) => prev.map((e) => e.id === entryId ? { ...e, status: 'scratched' } : e)))
+      .catch((err) => setError(uiErrorMessage(err, 'Couldn’t reject entry. Try again.')))
+  }, [api, session?.user.orgId])
 
   const handleScratch = useCallback((entryId: string, meetId: string) => {
     if (!session?.user.orgId) return
@@ -584,7 +599,7 @@ function EntriesPageContent() {
     const reason = window.prompt('Reason for scratch (optional):') ?? undefined
     void scratchEntry(api, session.user.orgId, meetId, entryId, reason)
       .then(() => setRows((prev) => prev.map((e) => e.id === entryId ? { ...e, status: 'scratched' } : e)))
-      .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to scratch entry.'))
+      .catch((err) => setError(uiErrorMessage(err, 'Couldn’t scratch entry. Try again.')))
   }, [api, session?.user.orgId])
 
   const handleOverride = useCallback((entryId: string, meetId: string) => {
@@ -615,7 +630,7 @@ function EntriesPageContent() {
             ? { ...e, event: formatEvent(target), override: true, overrideNote: updated.override_reason ?? reason }
             : e)))
       })
-      .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to override entry.'))
+      .catch((err) => setError(uiErrorMessage(err, 'Couldn’t override entry. Try again.')))
   }, [api, session?.user.orgId])
 
   // Stats
@@ -628,7 +643,7 @@ function EntriesPageContent() {
   const meetOptions = useMemo(() => {
     const seen = new Map<string, string>()
     for (const r of rows) seen.set(r.meetId, r.meetName)
-    return [{ value: 'all', label: 'All Meets' }, ...[...seen.entries()].map(([v, l]) => ({ value: v, label: l }))]
+    return [{ value: 'all', label: 'All meets' }, ...[...seen.entries()].map(([v, l]) => ({ value: v, label: l }))]
   }, [rows])
 
   const filtered = useMemo(() => {
@@ -652,7 +667,7 @@ function EntriesPageContent() {
       label: 'Swimmer',
       sortable: true,
       render: (r) => (
-        <Link href={`/members/swimmers/${r.swimmerId}`} style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', textDecoration: 'none' }}
+        <Link href={`/members/swimmers/${r.swimmerId}`} style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)', textDecoration: 'none' }}
           onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--accent)')}
           onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text)')}>
           {r.swimmer}
@@ -663,15 +678,15 @@ function EntriesPageContent() {
       key: 'event',
       label: 'Event',
       render: (r) => (
-        <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>{r.event}</span>
+        <span style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)' }}>{r.event}</span>
       ),
     },
     {
       key: 'seedTime',
-      label: 'Seed Time',
+      label: 'Seed time',
       align: 'right',
       render: (r) => (
-        <span style={{ fontFamily: 'var(--font-body)', fontSize: '13px', fontWeight: 700, color: r.seedTime === 'NT' ? 'var(--text-muted)' : 'var(--accent)' }}>
+        <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-base)', fontWeight: 700, color: r.seedTime === 'NT' ? 'var(--text-muted)' : 'var(--accent)' }}>
           {r.seedTime}
         </span>
       ),
@@ -682,13 +697,13 @@ function EntriesPageContent() {
       sortable: true,
       render: (r) => (
         <div>
-          <Link href={`/meets/${r.meetId}`} style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', textDecoration: 'none' }}
+          <Link href={`/meets/${r.meetId}`} style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)', textDecoration: 'none' }}
             onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--accent)')}
             onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text)')}>
             {r.meetName}
           </Link>
           {r.meetDate && (
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginTop: '1px' }}>
+            <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginTop: '1px' }}>
               {formatDate(r.meetDate)}
             </div>
           )}
@@ -701,14 +716,14 @@ function EntriesPageContent() {
       render: (r) => {
         const c = STATUS_CFG[r.status] ?? STATUS_CFG['draft']
         return (
-          <div style={{ display: 'flex', gap: '5px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flexWrap: 'wrap' }}>
             <span className="badge" style={{ background: c.bg, color: c.color }}>
               {c.label}
             </span>
             {r.override && (
               <span
                 title={r.overrideNote ? `Seed time changed by hand: ${r.overrideNote}` : 'Seed time changed by hand'}
-                style={{ fontSize: '10px', fontWeight: 700, padding: '2px 6px', borderRadius: '8px', background: 'var(--accent-subtle)', color: 'var(--accent)', fontFamily: 'var(--font-body)' }}
+                style={{ fontSize: 'var(--fs-2xs)', fontWeight: 700, padding: '2px 6px', borderRadius: '8px', background: 'var(--accent-subtle)', color: 'var(--accent)', fontFamily: 'var(--font-body)' }}
               >
                 CHANGED
               </span>
@@ -727,10 +742,10 @@ function EntriesPageContent() {
           <div style={{ display: 'flex', gap: '6px', alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
             {r.status === 'submitted' && (
               <>
-                <button className="btn btn-sm" style={{ background: 'var(--success-bg)', color: 'var(--success)', border: '1px solid var(--success-border)', display: 'flex', alignItems: 'center', gap: '4px' }} onClick={() => handleApprove(r.id)}>
+                <button className="btn btn-sm" style={{ background: 'var(--success-bg)', color: 'var(--success)', border: '1px solid var(--success-border)', display: 'flex', alignItems: 'center', gap: '4px' }} onClick={() => { void handleApprove(r.id, r.meetId) }}>
                   <Icon name="check-circle" size={11} /> Approve
                 </button>
-                <button className="btn btn-sm btn-secondary" style={{ color: 'var(--error)', display: 'flex', alignItems: 'center', gap: '4px' }} onClick={() => handleReject(r.id)}>
+                <button className="btn btn-sm btn-secondary" style={{ color: 'var(--error)', display: 'flex', alignItems: 'center', gap: '4px' }} onClick={() => handleReject(r.id, r.meetId)}>
                   <Icon name="x" size={11} /> Reject
                 </button>
               </>
@@ -755,7 +770,7 @@ function EntriesPageContent() {
                 <Icon name="trash-2" size={11} /> Scratch
               </button>
             )}
-            <Link href={`/meets/${r.meetId}`} style={{ fontSize: '12px', color: 'var(--text-muted)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '3px' }}
+            <Link href={`/meets/${r.meetId}`} style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}
               onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--accent)')}
               onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}>
               Meet <Icon name="chevron-right" size={12} />
@@ -768,20 +783,20 @@ function EntriesPageContent() {
 
   if (error) {
     return (
-      <div style={{ padding: '24px', maxWidth: '1200px' }}>
-        <div className="card" style={{ padding: '20px', borderLeft: '3px solid var(--error)' }}>
-          <p style={{ color: 'var(--error)', fontSize: '13px' }}>Failed to load entries: {error}</p>
+      <div className="page">
+        <div className="card" style={{ padding: '20px', borderColor: 'var(--error-border)', background: 'var(--error-bg)' }}>
+          <p style={{ color: 'var(--error)', fontSize: 'var(--fs-base)' }}>Failed to load entries: {error}</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1200px' }}>
+    <div className="page">
       <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }`}</style>
 
       {lockedMeetId && (
-        <Link href={`/meets/${lockedMeetId}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '13px', color: 'var(--text-subtle)', textDecoration: 'none', marginBottom: '16px' }}>
+        <Link href={`/meets/${lockedMeetId}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', textDecoration: 'none', marginBottom: '16px' }}>
           <Icon name="chevron-left" size={14} /> Back to meet
         </Link>
       )}
@@ -792,18 +807,13 @@ function EntriesPageContent() {
           <h1 className="page-title">
             Entries
           </h1>
-          <p className="page-subtitle">
-            {lockedMeetId
-              ? 'Entry approval queue for this meet — review submitted entries or add entries for a swimmer'
-              : 'Cross-meet entry approval queue — review submitted entries or add entries for a swimmer'}
-          </p>
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           {pendingVisible.length > 0 && (
             <button
               className="btn btn-sm btn-secondary"
               style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-              onClick={() => { for (const e of pendingVisible) handleApprove(e.id) }}
+              onClick={() => { void handleApproveAll(pendingVisible) }}
             >
               <Icon name="check-circle" size={13} /> Approve All ({pendingVisible.length})
             </button>
@@ -819,31 +829,31 @@ function EntriesPageContent() {
       </div>
 
       {/* Stats strip */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '24px' }}>
+      <div className="cols-4" style={{ gap: '12px', marginBottom: '24px' }}>
         {[
           { label: 'Total',        value: loading ? '—' : total,     color: 'var(--text)' },
-          { label: 'Needs Review', value: loading ? '—' : submitted, color: (submitted > 0 && !loading) ? 'var(--warning)' : 'var(--text-muted)' },
+          { label: 'Needs review', value: loading ? '—' : submitted, color: (submitted > 0 && !loading) ? 'var(--warning)' : 'var(--text-muted)' },
           { label: 'Approved',     value: loading ? '—' : approved,  color: 'var(--success)' },
           { label: 'Overrides',    value: loading ? '—' : overrides, color: (overrides > 0 && !loading) ? 'var(--accent)' : 'var(--text-muted)' },
         ].map((s) => (
-          <div key={s.label} className="card" style={{ padding: '14px 16px' }}>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{s.label}</div>
-            <div style={{ fontSize: '22px', fontFamily: 'var(--font-body)', fontWeight: 700, color: s.color }}>{s.value}</div>
+          <div key={s.label} className="card" style={{ padding: '16px 16px' }}>
+            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{s.label}</div>
+            <div style={{ fontSize: 'var(--fs-2xl)', fontFamily: 'var(--font-body)', fontWeight: 700, color: s.color }}>{s.value}</div>
           </div>
         ))}
       </div>
 
       {/* Pending banner */}
       {!loading && submitted > 0 && (
-        <div className="card" style={{ padding: '14px 16px', marginBottom: '20px', borderLeft: '3px solid var(--warning)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div className="card" style={{ padding: '16px 16px', marginBottom: '20px', borderColor: 'var(--warning-border)', background: 'var(--warning-bg)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <Icon name="alert-circle" size={16} color="var(--warning)" />
-            <span style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>
+            <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)' }}>
               <strong style={{ color: 'var(--warning)' }}>{submitted} entr{submitted === 1 ? 'y' : 'ies'}</strong> {submitted === 1 ? 'is' : 'are'} pending coach approval across all meets
             </span>
           </div>
           {draft > 0 && (
-            <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+            <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
               {draft} draft{draft !== 1 ? 's' : ''} not yet submitted
             </span>
           )}
@@ -851,16 +861,16 @@ function EntriesPageContent() {
       )}
 
       {/* Filters */}
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
-        <div style={{ position: 'relative', flex: '1 1 260px' }}>
+      <div className="toolbar">
+        <div className="toolbar-search">
           <Icon name="search" size={14} color="var(--text-muted)" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' } as CSSProperties} />
           <input type="text" placeholder="Search swimmer, event, or meet…" value={search} onChange={(e) => setSearch(e.target.value)} className="input" style={{ paddingLeft: '32px', width: '100%' }} />
         </div>
         {lockedMeetId ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg-elevated)', fontSize: '13px', color: 'var(--text)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg-elevated)', fontSize: 'var(--fs-base)', color: 'var(--text)' }}>
             <Icon name="calendar" size={13} color="var(--text-muted)" />
             {meetOptions.find((o) => o.value === lockedMeetId)?.label ?? 'This meet'}
-            <Link href="/entries" style={{ fontSize: '11px', color: 'var(--accent)', textDecoration: 'none' }}>Clear</Link>
+            <Link href="/entries" style={{ fontSize: 'var(--fs-xs)', color: 'var(--accent)', textDecoration: 'none' }}>Clear</Link>
           </div>
         ) : (
           <select value={meetFilter} onChange={(e) => setMeetFilter(e.target.value)} className="input" style={{ minWidth: '180px' }}>
@@ -873,14 +883,14 @@ function EntriesPageContent() {
       </div>
 
       {!loading && (
-        <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginBottom: '12px' }}>
+        <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginBottom: '12px' }}>
           {filtered.length} of {total} entries
         </div>
       )}
 
       {/* Loading skeleton */}
       {loading && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {[1,2,3,4,5].map((i) => (
             <div key={i} style={{ height: '44px', background: 'var(--bg-elevated)', borderRadius: '6px', animation: 'pulse 1.5s ease-in-out infinite', animationDelay: `${i * 0.1}s` }} />
           ))}

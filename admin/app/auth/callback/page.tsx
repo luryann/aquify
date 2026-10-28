@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
 import { useSession } from '@/lib/session'
 import { destinationForRole, roleRequiresMFA } from '@/lib/auth-routing'
+import { uiErrorMessage } from '@/lib/frontend-telemetry'
 
 // ─── Inner component (uses useSearchParams) ───────────────────────────────────
 
@@ -52,7 +53,7 @@ function CallbackInner() {
         })
 
         if (!res.ok) {
-          let message = 'Unable to complete sign-in.'
+          let message = 'Couldn’t complete sign-in. Try again.'
           try {
             const payload = await res.json() as { message?: string; error?: { message?: string; code?: string } | string }
             const errField = payload.error
@@ -82,7 +83,7 @@ function CallbackInner() {
       } catch (error) {
         if (cancelled) return
         setStage('error')
-        setErrorMsg(error instanceof Error ? error.message : 'An error occurred during sign-in. Please try again.')
+        setErrorMsg(uiErrorMessage(error, 'Couldn’t finish signing you in. Try again.'))
       }
     }
 
@@ -154,34 +155,34 @@ function CallbackInner() {
           <h2
             style={{
               fontFamily: 'var(--font-display)',
-              fontSize: '24px',
-              fontWeight: 400,
+              fontSize: 'var(--fs-2xl)',
+              fontWeight: 'var(--display-weight)',
               color: 'var(--text)',
-              marginBottom: '10px',
-              letterSpacing: '-0.01em',
+              marginBottom: '12px',
+              letterSpacing: 'var(--display-tracking)',
             }}
           >
             Authentication failed
           </h2>
           <p
             style={{
-              fontSize: '13px',
+              fontSize: 'var(--fs-base)',
               color: 'var(--text-subtle)',
               lineHeight: 1.6,
-              marginBottom: '28px',
+              marginBottom: '24px',
             }}
           >
-            {errorMsg || 'An error occurred during sign-in. Please try again.'}
+            {errorMsg || 'Couldn’t finish signing you in. Try again.'}
           </p>
           <button
             onClick={() => router.push('/login')}
             style={{
-              padding: '10px 24px',
+              padding: '12px 24px',
               background: 'var(--accent)',
               border: 'none',
               borderRadius: '8px',
               color: '#fff',
-              fontSize: '13px',
+              fontSize: 'var(--fs-base)',
               fontWeight: 600,
               cursor: 'pointer',
               fontFamily: 'var(--font-body)',
@@ -241,11 +242,11 @@ function CallbackInner() {
           <h2
             style={{
               fontFamily: 'var(--font-display)',
-              fontSize: '22px',
-              fontWeight: 400,
+              fontSize: 'var(--fs-2xl)',
+              fontWeight: 'var(--display-weight)',
               color: 'var(--text)',
               marginBottom: '8px',
-              letterSpacing: '-0.01em',
+              letterSpacing: 'var(--display-tracking)',
             }}
           >
             {stage === 'mfa' ? 'Redirecting to verification' : 'Completing sign-in'}
@@ -253,7 +254,7 @@ function CallbackInner() {
           </h2>
           <p
             style={{
-              fontSize: '12px',
+              fontSize: 'var(--fs-sm)',
               fontFamily: 'var(--font-body)',
               color: 'var(--text-muted)',
               letterSpacing: '0.04em',
@@ -285,7 +286,7 @@ function CallbackInner() {
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '10px',
+                  gap: '12px',
                   opacity: step.done ? 1 : 0.35,
                   transition: 'opacity 0.3s ease',
                 }}
@@ -312,7 +313,7 @@ function CallbackInner() {
                 </div>
                 <span
                   style={{
-                    fontSize: '12px',
+                    fontSize: 'var(--fs-sm)',
                     fontFamily: 'var(--font-body)',
                     color: step.done ? 'var(--text-subtle)' : 'var(--text-muted)',
                     letterSpacing: '0.02em',

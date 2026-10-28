@@ -1,11 +1,10 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback, useRef, type FormEvent } from 'react'
-import Link from 'next/link'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
-import { useApiClient, ApiError } from '@/lib/api'
-import { reportUIError } from '@/lib/frontend-telemetry'
+import { useApiClient } from '@/lib/api'
+import { reportUIError, uiErrorMessage } from '@/lib/frontend-telemetry'
 import { useMessageStream } from '@/lib/useMessageStream'
 import {
   fetchSwimmers,
@@ -81,7 +80,7 @@ export default function PortalMessagesPage() {
         setSelectedSwimmerId((current) => current || householdSwimmers[0]?.id || '')
       })
       .catch((error) => {
-        setSwimmersError(reportUIError('portal-messages-swimmers-load', error, 'Unable to load your swimmers right now.', { orgId }))
+        setSwimmersError(reportUIError('portal-messages-swimmers-load', error, 'Couldn’t load your swimmers. Try again.', { orgId }))
       })
       .finally(() => setSwimmersLoading(false))
   }, [api, orgId, householdId])
@@ -93,7 +92,7 @@ export default function PortalMessagesPage() {
     fetchMessages(api, orgId, householdId, selectedSwimmerId)
       .then(setMessages)
       .catch((error) => {
-        setMessagesError(reportUIError('portal-messages-thread-load', error, 'Unable to load this conversation right now.', { orgId, householdId, swimmerId: selectedSwimmerId }))
+        setMessagesError(reportUIError('portal-messages-thread-load', error, 'Couldn’t load this conversation. Try again.', { orgId, householdId, swimmerId: selectedSwimmerId }))
       })
       .finally(() => setMessagesLoading(false))
   }, [api, orgId, householdId, selectedSwimmerId])
@@ -146,7 +145,7 @@ export default function PortalMessagesPage() {
       setPendingAttachment(null)
       setReloadKey((k) => k + 1)
     } catch (err) {
-      setSendError(err instanceof ApiError ? err.message : 'Failed to send your message.')
+      setSendError(uiErrorMessage(err, 'Couldn’t send your message. Try again.'))
     } finally {
       setSending(false)
     }
@@ -168,7 +167,7 @@ export default function PortalMessagesPage() {
       if (!putResp.ok) throw new Error('Upload failed')
       setPendingAttachment({ object_key, file_name: expected_file_name, file_mime: file.type })
     } catch {
-      setAttachError('Could not upload that image. Try a smaller file or a different format.')
+      setAttachError('Couldn’t upload that image. Try a smaller file or a different format. Try again.')
     } finally {
       setUploading(false)
     }
@@ -205,32 +204,25 @@ export default function PortalMessagesPage() {
 
   return (
     <div>
-      <div style={{ marginBottom: '28px', animation: 'slideUp 0.35s ease both' }}>
+      <div className="page-heading">
         <h1 className="page-title">
           Messages
         </h1>
-        <p className="page-subtitle">
-          Message your child&rsquo;s coach directly — each swimmer has their own conversation.
-        </p>
-        <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '6px' }}>
-          Looking for team announcements or to update what you get notified about? Visit{' '}
-          <Link href="/portal/communications" style={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>Communications</Link>.
-        </p>
       </div>
 
       {swimmersError ? (
-        <div style={{ background: 'var(--error-bg)', borderRadius: '14px', border: '1px solid rgba(220,38,38,0.18)', padding: '20px', color: 'var(--error)', fontSize: '13px' }}>
+        <div style={{ background: 'var(--error-bg)', borderRadius: '12px', border: '1px solid rgba(220,38,38,0.18)', padding: '20px', color: 'var(--error)', fontSize: 'var(--fs-base)' }}>
           {swimmersError}
         </div>
       ) : swimmersLoading ? (
-        <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>Loading your swimmers…</div>
+        <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--fs-base)' }}>Loading your swimmers…</div>
       ) : swimmers.length === 0 ? (
         <div className="card" style={{ padding: '56px 32px', textAlign: 'center' }}>
-          <Icon name="users" size={32} style={{ color: '#D4D1CE', marginBottom: '14px' }} />
-          <p style={{ fontSize: '15px', color: 'var(--text-muted)', fontWeight: 500 }}>No swimmers on your account yet</p>
+          <Icon name="users" size={32} style={{ color: '#D4D1CE', marginBottom: '16px' }} />
+          <p style={{ fontSize: 'var(--fs-md)', color: 'var(--text-muted)', fontWeight: 500 }}>No swimmers on your account yet</p>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {/* Swimmer picker — a horizontal chip row rather than a permanent sidebar, since most
               households have only 1–3 swimmers and this reads better on a phone. */}
           {swimmers.length > 1 && (
@@ -242,12 +234,12 @@ export default function PortalMessagesPage() {
                     key={s.id}
                     onClick={() => setSelectedSwimmerId(s.id)}
                     style={{
-                      padding: '8px 14px',
+                      padding: '8px 16px',
                       borderRadius: '999px',
                       border: `1px solid ${active ? 'rgba(235,93,30,0.3)' : 'rgba(0,0,0,0.08)'}`,
                       background: active ? 'rgba(235,93,30,0.08)' : 'var(--bg-elevated)',
                       color: active ? 'var(--text)' : 'var(--text-subtle)',
-                      fontSize: '13px',
+                      fontSize: 'var(--fs-base)',
                       fontWeight: active ? 600 : 500,
                       cursor: 'pointer',
                       transition: 'all 120ms ease',
@@ -261,20 +253,20 @@ export default function PortalMessagesPage() {
           )}
 
           {/* Thread */}
-          <div className="card" style={{ boxShadow: '0 1px 6px rgba(0,0,0,0.04)', display: 'flex', flexDirection: 'column', minHeight: '520px' }}>
-            <div style={{ padding: '14px 20px', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-              <p style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text)' }}>
+          <div className="card" style={{ display: 'flex', flexDirection: 'column', minHeight: '520px' }}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+              <p style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--text)' }}>
                 {selectedSwimmer ? `${selectedSwimmer.first_name} ${selectedSwimmer.last_name}` : 'Conversation'}
               </p>
             </div>
 
-            <div style={{ flex: 1, padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px', overflowY: 'auto', maxHeight: '560px' }}>
+            <div style={{ flex: 1, padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', overflowY: 'auto', maxHeight: '560px' }}>
               {messagesError ? (
-                <p style={{ fontSize: '13px', color: 'var(--error)' }}>{messagesError}</p>
+                <p style={{ fontSize: 'var(--fs-base)', color: 'var(--error)' }}>{messagesError}</p>
               ) : messagesLoading ? (
-                <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Loading conversation…</p>
+                <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)' }}>Loading conversation…</p>
               ) : messages.length === 0 ? (
-                <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+                <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)' }}>
                   No messages yet. Send the first one below to start the conversation with your coach.
                 </p>
               ) : (
@@ -290,7 +282,7 @@ export default function PortalMessagesPage() {
                             value={editDraft}
                             onChange={(e) => setEditDraft(e.target.value)}
                             rows={2}
-                            style={{ minWidth: '220px', padding: '8px 10px', borderRadius: '10px', border: '1px solid rgba(235,93,30,0.3)', fontSize: '13.5px', resize: 'vertical' }}
+                            style={{ minWidth: '220px', padding: '8px 12px', borderRadius: '12px', border: '1px solid rgba(235,93,30,0.3)', fontSize: 'var(--fs-base)', resize: 'vertical' }}
                           />
                           <button className="btn btn-sm btn-primary" onClick={() => void handleEditSave(m.id)}>Save</button>
                           <button className="btn btn-sm btn-secondary" onClick={() => setEditingId(null)}>Cancel</button>
@@ -300,9 +292,9 @@ export default function PortalMessagesPage() {
                           style={{
                             background: mine ? 'var(--accent)' : 'rgba(0,0,0,0.05)',
                             color: mine ? 'var(--bg-elevated)' : 'var(--text)',
-                            padding: '10px 14px',
+                            padding: '12px 16px',
                             borderRadius: mine ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
-                            fontSize: '13.5px',
+                            fontSize: 'var(--fs-base)',
                             lineHeight: 1.5,
                             whiteSpace: 'pre-wrap',
                           }}
@@ -318,7 +310,7 @@ export default function PortalMessagesPage() {
                       )}
 
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', justifyContent: mine ? 'flex-end' : 'flex-start' }}>
-                        <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                        <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
                           {senderLabel(m.sender_role)} · {fmtTime(m.created_at)}{m.edited_at ? ' · (edited)' : ''}
                         </p>
                         {canEdit && !isEditing && (
@@ -340,9 +332,9 @@ export default function PortalMessagesPage() {
                       </div>
 
                       {reactionPickerId === m.id && (
-                        <div style={{ display: 'flex', gap: '4px', marginTop: '4px', padding: '4px 6px', borderRadius: '10px', border: '1px solid rgba(0,0,0,0.08)', background: 'var(--bg-elevated)', width: 'fit-content' }}>
+                        <div style={{ display: 'flex', gap: '4px', marginTop: '4px', padding: '4px 6px', borderRadius: '12px', border: '1px solid rgba(0,0,0,0.08)', background: 'var(--bg-elevated)', width: 'fit-content' }}>
                           {QUICK_REACTIONS.map((emoji) => (
-                            <button key={emoji} onClick={() => void handleToggleReaction(m, emoji)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '15px', padding: '2px' }}>
+                            <button key={emoji} onClick={() => void handleToggleReaction(m, emoji)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--fs-md)', padding: '2px' }}>
                               {emoji}
                             </button>
                           ))}
@@ -356,7 +348,7 @@ export default function PortalMessagesPage() {
                               key={r.emoji}
                               onClick={() => void handleToggleReaction(m, r.emoji)}
                               style={{
-                                display: 'flex', alignItems: 'center', gap: '3px', padding: '2px 7px', borderRadius: '999px', fontSize: '11.5px', cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 8px', borderRadius: '999px', fontSize: 'var(--fs-xs)', cursor: 'pointer',
                                 border: r.reacted_by_me ? '1px solid rgba(235,93,30,0.3)' : '1px solid rgba(0,0,0,0.08)',
                                 background: r.reacted_by_me ? 'rgba(235,93,30,0.08)' : 'var(--bg-elevated)',
                                 color: 'var(--text)',
@@ -382,9 +374,9 @@ export default function PortalMessagesPage() {
                 </button>
               </div>
             )}
-            {attachError && <p style={{ padding: '0 20px 8px', fontSize: '12px', color: 'var(--error)' }}>{attachError}</p>}
+            {attachError && <p style={{ padding: '0 20px 8px', fontSize: 'var(--fs-sm)', color: 'var(--error)' }}>{attachError}</p>}
 
-            <form onSubmit={(e) => void handleSend(e)} style={{ padding: '14px 20px', borderTop: '1px solid rgba(0,0,0,0.06)', display: 'flex', gap: '10px' }}>
+            <form onSubmit={(e) => void handleSend(e)} style={{ padding: '16px 20px', borderTop: '1px solid rgba(0,0,0,0.06)', display: 'flex', gap: '12px' }}>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -397,7 +389,7 @@ export default function PortalMessagesPage() {
                 onClick={() => fileInputRef.current?.click()}
                 disabled={!selectedSwimmerId || uploading}
                 title="Attach an image"
-                style={{ background: 'none', border: '1px solid rgba(0,0,0,0.12)', borderRadius: '10px', color: 'var(--text-muted)', cursor: 'pointer', padding: '10px', display: 'flex' }}
+                style={{ background: 'none', border: '1px solid rgba(0,0,0,0.12)', borderRadius: '12px', color: 'var(--text-muted)', cursor: 'pointer', padding: '12px', display: 'flex' }}
               >
                 <Icon name="upload-cloud" size={15} />
               </button>
@@ -408,18 +400,18 @@ export default function PortalMessagesPage() {
                 placeholder="Write a message…"
                 disabled={sending || !selectedSwimmerId}
                 maxLength={4000}
-                style={{ flex: 1, padding: '10px 14px', borderRadius: '10px', border: '1px solid rgba(0,0,0,0.12)', fontSize: '13.5px', outline: 'none' }}
+                style={{ flex: 1, padding: '12px 16px', borderRadius: '12px', border: '1px solid rgba(0,0,0,0.12)', fontSize: 'var(--fs-base)', outline: 'none' }}
               />
               <button
                 type="submit"
                 disabled={sending || (!draft.trim() && !pendingAttachment) || !selectedSwimmerId}
                 style={{
-                  padding: '10px 18px',
-                  borderRadius: '10px',
+                  padding: '12px 20px',
+                  borderRadius: '12px',
                   border: 'none',
                   background: sending || (!draft.trim() && !pendingAttachment) ? 'var(--text-subtle)' : 'var(--text)',
                   color: 'var(--bg-elevated)',
-                  fontSize: '13.5px',
+                  fontSize: 'var(--fs-base)',
                   fontWeight: 600,
                   cursor: sending || (!draft.trim() && !pendingAttachment) ? 'not-allowed' : 'pointer',
                 }}
@@ -427,7 +419,7 @@ export default function PortalMessagesPage() {
                 {sending ? 'Sending…' : 'Send'}
               </button>
             </form>
-            {sendError && <p style={{ padding: '0 20px 14px', fontSize: '12px', color: 'var(--error)' }}>{sendError}</p>}
+            {sendError && <p style={{ padding: '0 20px 16px', fontSize: 'var(--fs-sm)', color: 'var(--error)' }}>{sendError}</p>}
           </div>
         </div>
       )}

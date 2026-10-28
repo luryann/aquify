@@ -6,7 +6,7 @@ import { Modal } from '@/components/ui/Modal'
 import { Table, col } from '@/components/ui/Table'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
-import { ApiError, useApiClient } from '@/lib/api'
+import { useApiClient } from '@/lib/api'
 import {
   createTimeStandard,
   deleteTimeStandard,
@@ -14,6 +14,7 @@ import {
   updateTimeStandard,
   type TimeStandardRecord,
 } from '@/lib/adminData'
+import { uiErrorMessage } from '@/lib/frontend-telemetry'
 
 function formatSwimTime(milliseconds: number) {
   const totalSeconds = milliseconds / 1000
@@ -38,11 +39,10 @@ function msFromParts(minutes: string, seconds: string, hundredths: string): numb
 }
 
 const FIELD_LABEL_STYLE: React.CSSProperties = {
-  display: 'block', fontSize: '10.5px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)',
-  textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '5px',
+  display: 'block', fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '4px',
 }
 const FIELD_INPUT_STYLE: React.CSSProperties = {
-  width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)',
+  width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)',
   background: 'var(--bg-elevated)', color: 'var(--text)', boxSizing: 'border-box',
 }
 
@@ -95,7 +95,7 @@ export default function TimeStandardsPage() {
         if (!cancelled) setStandards(next)
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof ApiError ? err.message : 'Unable to load time standards.')
+          setError(uiErrorMessage(err, 'Couldn’t load time standards. Try again.'))
           setStandards([])
         }
       } finally {
@@ -140,7 +140,7 @@ export default function TimeStandardsPage() {
       await loadStandards()
       setModalOpen(false)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Unable to create time standard.')
+      setError(uiErrorMessage(err, 'Couldn’t create time standard. Try again.'))
     } finally {
       setSubmitting(false)
     }
@@ -156,7 +156,7 @@ export default function TimeStandardsPage() {
       })
       await loadStandards()
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Unable to update time standard.')
+      setError(uiErrorMessage(err, 'Couldn’t update time standard. Try again.'))
     } finally {
       setWorkingId(null)
     }
@@ -170,7 +170,7 @@ export default function TimeStandardsPage() {
       await deleteTimeStandard(api, session.user.orgId, standardId)
       await loadStandards()
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Unable to delete time standard.')
+      setError(uiErrorMessage(err, 'Couldn’t delete time standard. Try again.'))
     } finally {
       setWorkingId(null)
     }
@@ -199,7 +199,7 @@ export default function TimeStandardsPage() {
     col<TimeStandardRecord>({ key: 'course', label: 'Course', sortable: true }),
     col<TimeStandardRecord>({
       key: 'time_ms',
-      label: 'Cut Time',
+      label: 'Cut time',
       sortable: true,
       render: (row) => <span style={{ fontFamily: 'var(--font-body)' }} title="Time a swimmer must beat to qualify">{formatSwimTime(row.time_ms)}</span>,
     }),
@@ -241,14 +241,10 @@ export default function TimeStandardsPage() {
   ]
 
   return (
-    <div style={{ padding: '32px 36px 80px', maxWidth: 1240, margin: '0 auto' }}>
+    <div className="page">
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px', marginBottom: '24px', flexWrap: 'wrap' }}>
         <div>
-          <p style={{ fontSize: '11px', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
-            Performance
-          </p>
-          <h1 className="page-title">Time Standards</h1>
-          <p className="page-subtitle">Qualifying time standards used to evaluate swimmer cuts.</p>
+          <h1 className="page-title">Time standards</h1>
         </div>
         <button onClick={() => setModalOpen(true)} className="btn btn-primary">
           <Icon name="plus" size={14} />
@@ -257,12 +253,12 @@ export default function TimeStandardsPage() {
       </div>
 
       {error ? (
-        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: '12px' }}>
+        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: 'var(--fs-sm)' }}>
           {error}
         </div>
       ) : null}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', flex: '1 1 220px', maxWidth: '320px' }}>
           <span style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}>
             <Icon name="search" size={14} />
@@ -282,7 +278,7 @@ export default function TimeStandardsPage() {
           <option value="">All courses</option>
           {COURSE_OPTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
-        <span style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap' }}>
+        <span style={{ marginLeft: 'auto', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap' }}>
           {standards.length} total · {activeCount} active
         </span>
       </div>
@@ -301,7 +297,7 @@ export default function TimeStandardsPage() {
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title="New Time Standard"
+        title="New time standard"
         description="Add a qualifying cut time used to evaluate swimmer results."
         footer={
           <>
@@ -312,18 +308,18 @@ export default function TimeStandardsPage() {
           </>
         }
       >
-        <div style={{ display: 'grid', gap: '14px' }}>
+        <div style={{ display: 'grid', gap: '16px' }}>
           <div>
-            <label style={FIELD_LABEL_STYLE}>Standard Name</label>
+            <label style={FIELD_LABEL_STYLE}>Standard name</label>
             <input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder="e.g. 2026 Senior Cuts" style={FIELD_INPUT_STYLE} />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+          <div className="cols-2" style={{ gap: '12px' }}>
             <div>
               <label style={FIELD_LABEL_STYLE}>Season</label>
               <input value={form.season_year} onChange={(event) => setForm((current) => ({ ...current, season_year: event.target.value }))} placeholder="2026" style={FIELD_INPUT_STYLE} />
             </div>
             <div>
-              <label style={FIELD_LABEL_STYLE}>Standard Code</label>
+              <label style={FIELD_LABEL_STYLE}>Standard code</label>
               <input value={form.standard_code} onChange={(event) => setForm((current) => ({ ...current, standard_code: event.target.value }))} placeholder="A / AA / AAA" style={FIELD_INPUT_STYLE} />
             </div>
           </div>
@@ -358,11 +354,11 @@ export default function TimeStandardsPage() {
                 style={{ ...FIELD_INPUT_STYLE, textAlign: 'center', fontFamily: 'var(--font-body)' }}
               />
             </div>
-            <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '5px', fontFamily: 'var(--font-body)' }}>
+            <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: '4px', fontFamily: 'var(--font-body)' }}>
               = {formatSwimTime(msFromParts(cutTime.minutes, cutTime.seconds, cutTime.hundredths))}
             </p>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
+          <div className="cols-3" style={{ gap: '12px' }}>
             <div>
               <label style={FIELD_LABEL_STYLE}>Stroke</label>
               <select value={form.stroke} onChange={(event) => setForm((current) => ({ ...current, stroke: event.target.value }))} style={FIELD_INPUT_STYLE}>

@@ -7,7 +7,10 @@
 --
 -- Drop order respects FKs: match_conflicts, file_import_rows, and
 -- file_import_errors all reference file_imports(id) ON DELETE CASCADE, so
--- they must go first.
+-- they must go first. results.import_id also references file_imports(id); the
+-- column stays (performance results still carry an optional import_id) but
+-- its FK must be dropped or the table drop fails on any real database.
+ALTER TABLE results DROP CONSTRAINT IF EXISTS results_import_id_fkey;
 DROP TABLE IF EXISTS match_conflicts;
 DROP TABLE IF EXISTS file_import_rows;
 DROP TABLE IF EXISTS file_import_errors;
@@ -113,3 +116,6 @@ CREATE TABLE match_conflicts (
 
 CREATE INDEX match_conflicts_import_id_idx  ON match_conflicts (import_id);
 CREATE INDEX match_conflicts_org_status_idx ON match_conflicts (org_id, status);
+
+ALTER TABLE results
+  ADD CONSTRAINT results_import_id_fkey FOREIGN KEY (import_id) REFERENCES file_imports(id) ON DELETE SET NULL;

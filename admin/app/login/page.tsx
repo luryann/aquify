@@ -103,20 +103,19 @@ function LoginPageContent() {
           {/* Heading */}
           <div className="sl-heading">
             <h1 className="sl-title">Sign in</h1>
-            <p className="sl-subtitle">Enter your email to sign in through your club&apos;s account system</p>
           </div>
 
           {/* Form */}
           <div className="sl-fields">
             {orgError && (
               <div style={{
-                padding: '11px 12px',
-                borderRadius: '9px',
+                padding: '12px 12px',
+                borderRadius: '8px',
                 background: 'rgba(248,113,113,0.1)',
                 border: '1px solid rgba(248,113,113,0.25)',
                 color: '#fca5a5',
                 fontFamily: 'var(--font-body)',
-                fontSize: '12.5px',
+                fontSize: 'var(--fs-sm)',
                 lineHeight: 1.5,
               }}>
                 {orgError}
@@ -256,11 +255,11 @@ function LoginPageContent() {
           margin-bottom: 32px;
         }
         .sl-logo-text {
-          font-family: var(--font-display);
+          font-family: var(--font-display); font-weight: var(--display-weight);
           font-style: italic;
-          font-size: 20px;
+          font-size: var(--fs-xl);
           color: #EDE9E3;
-          letter-spacing: -0.01em;
+          letter-spacing: var(--display-tracking);
         }
 
         /* Heading */
@@ -269,16 +268,16 @@ function LoginPageContent() {
         }
         .sl-title {
           font-family: var(--font-display);
-          font-size: 32px;
-          font-weight: 400;
+          font-size: var(--fs-4xl);
+          font-weight: var(--display-weight);
           color: #EDE9E3;
           margin: 0 0 6px;
-          letter-spacing: -0.02em;
+          letter-spacing: var(--display-tracking);
           line-height: 1.1;
         }
         .sl-subtitle {
           font-family: var(--font-body);
-          font-size: 13.5px;
+          font-size: var(--fs-base);
           color: rgba(237,233,227,0.35);
           margin: 0;
           line-height: 1.5;
@@ -297,11 +296,9 @@ function LoginPageContent() {
         }
         .sl-label {
           font-family: var(--font-body);
-          font-size: 11px;
+          font-size: var(--fs-sm);
           font-weight: 600;
-          color: rgba(237,233,227,0.42);
-          letter-spacing: 0.05em;
-          text-transform: uppercase;
+          color: rgba(237,233,227,0.55);
         }
         .sl-input {
           width: 100%;
@@ -310,7 +307,7 @@ function LoginPageContent() {
           border-radius: 9px;
           color: #EDE9E3;
           font-family: var(--font-body);
-          font-size: 14px;
+          font-size: var(--fs-md);
           padding: 12px 14px;
           outline: none;
           transition: border-color 0.18s, background 0.18s, box-shadow 0.18s;
@@ -337,7 +334,7 @@ function LoginPageContent() {
           border-radius: 9px;
           color: #fff;
           font-family: var(--font-body);
-          font-size: 14px;
+          font-size: var(--fs-md);
           font-weight: 600;
           letter-spacing: 0.01em;
           cursor: pointer;
@@ -364,7 +361,7 @@ function LoginPageContent() {
 
         .sl-hint {
           font-family: var(--font-body);
-          font-size: 11.5px;
+          font-size: var(--fs-xs);
           color: rgba(237,233,227,0.22);
           text-align: center;
           margin: 0;
@@ -377,7 +374,7 @@ function LoginPageContent() {
           align-items: center;
           gap: 10px;
           font-family: var(--font-body);
-          font-size: 12px;
+          font-size: var(--fs-sm);
           color: rgba(237,233,227,0.2);
           margin: 20px 0;
         }
@@ -394,7 +391,7 @@ function LoginPageContent() {
           align-items: center;
           gap: 7px;
           font-family: var(--font-body);
-          font-size: 13px;
+          font-size: var(--fs-base);
         }
         .sl-access-text { color: rgba(237,233,227,0.32); }
         .sl-access-link {
@@ -428,7 +425,7 @@ function LoginPageContent() {
         .sl-dev-toggle:hover { background: rgba(235,93,30,0.09); }
         .sl-dev-badge {
           font-family: var(--font-body);
-          font-size: 9px;
+          font-size: var(--fs-2xs);
           font-weight: 700;
           padding: 2px 6px;
           background: rgba(235,93,30,0.12);
@@ -439,7 +436,7 @@ function LoginPageContent() {
         }
         .sl-dev-label {
           flex: 1;
-          font-size: 12px;
+          font-size: var(--fs-sm);
           color: rgba(237,233,227,0.5);
         }
         .sl-dev-body {
@@ -449,7 +446,7 @@ function LoginPageContent() {
         }
         .sl-dev-note {
           font-family: var(--font-body);
-          font-size: 10.5px;
+          font-size: var(--fs-2xs);
           color: rgba(237,233,227,0.25);
           margin: 0 0 10px;
           line-height: 1.6;
@@ -483,8 +480,8 @@ function LoginPageContent() {
         }
         .sl-dev-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
         .sl-dev-info { flex: 1; display: flex; flex-direction: column; gap: 1px; }
-        .sl-dev-name { font-size: 12px; font-weight: 600; color: rgba(237,233,227,0.78); }
-        .sl-dev-desc { font-size: 10.5px; color: rgba(237,233,227,0.28); }
+        .sl-dev-name { font-size: var(--fs-sm); font-weight: 600; color: rgba(237,233,227,0.78); }
+        .sl-dev-desc { font-size: var(--fs-2xs); color: rgba(237,233,227,0.28); }
 
         /* Footer */
         .sl-footer {
@@ -497,13 +494,13 @@ function LoginPageContent() {
         }
         .sl-foot-link {
           font-family: var(--font-body);
-          font-size: 11.5px;
+          font-size: var(--fs-xs);
           color: rgba(237,233,227,0.22);
           text-decoration: none;
           transition: color 0.18s;
         }
         .sl-foot-link:hover { color: rgba(237,233,227,0.45); }
-        .sl-foot-sep { font-size: 11px; color: rgba(237,233,227,0.12); }
+        .sl-foot-sep { font-size: var(--fs-xs); color: rgba(237,233,227,0.12); }
       `}</style>
     </>
   )

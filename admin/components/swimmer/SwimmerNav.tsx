@@ -15,7 +15,9 @@ const NAV_LINKS = [
   { label: 'Dashboard',   path: '/swim' },
   { label: 'Messages',    path: '/swim/messages' },
   { label: 'Performance', path: '/swim/performance' },
+  { label: 'Records',     path: '/swim/records' },
   { label: 'Schedule',    path: '/swim/schedule' },
+  { label: 'Check-in',    path: '/swim/wellness' },
   { label: 'Profile',     path: '/swim/profile' },
 ]
 
@@ -52,10 +54,8 @@ export function SwimmerNav({ swimmerName, initials, onSignOut }: SwimmerNavProps
       }}
     >
       <div
+        className="portal-frame"
         style={{
-          maxWidth: '1100px',
-          margin: '0 auto',
-          padding: '0 28px',
           height: '58px',
           display: 'flex',
           alignItems: 'center',
@@ -70,7 +70,7 @@ export function SwimmerNav({ swimmerName, initials, onSignOut }: SwimmerNavProps
             alignItems: 'center',
             gap: '8px',
             textDecoration: 'none',
-            marginRight: '36px',
+            marginRight: '40px',
             flexShrink: 0,
           }}
         >
@@ -94,28 +94,15 @@ export function SwimmerNav({ swimmerName, initials, onSignOut }: SwimmerNavProps
           </svg>
           <span
             style={{
-              fontFamily: 'var(--font-display)',
-              fontSize: '19px',
+              fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)',
+              fontSize: 'var(--fs-xl)',
               color: C.text,
-              letterSpacing: '-0.01em',
+              letterSpacing: 'var(--display-tracking)',
               lineHeight: 1,
               userSelect: 'none',
             }}
           >
             aquify
-          </span>
-          <span
-            style={{
-              fontSize: '9.5px',
-              fontFamily: 'var(--font-body)',
-              color: C.accent,
-              letterSpacing: '0.12em',
-              textTransform: 'uppercase',
-              paddingTop: '2px',
-              opacity: 0.85,
-            }}
-          >
-            athlete
           </span>
         </Link>
 
@@ -133,8 +120,8 @@ export function SwimmerNav({ swimmerName, initials, onSignOut }: SwimmerNavProps
                 href={link.path}
                 style={{
                   padding: '6px 12px',
-                  borderRadius: '7px',
-                  fontSize: '13.5px',
+                  borderRadius: '8px',
+                  fontSize: 'var(--fs-base)',
                   fontWeight: active ? 600 : 400,
                   color: active ? C.accent : C.subtle,
                   background: active ? 'rgba(0,212,170,0.10)' : 'transparent',
@@ -180,7 +167,7 @@ export function SwimmerNav({ swimmerName, initials, onSignOut }: SwimmerNavProps
               display: 'flex',
               alignItems: 'center',
               gap: '8px',
-              padding: '4px 10px 4px 4px',
+              padding: '4px 12px 4px 4px',
               background: 'transparent',
               border: `1px solid ${C.border}`,
               borderRadius: '999px',
@@ -207,7 +194,7 @@ export function SwimmerNav({ swimmerName, initials, onSignOut }: SwimmerNavProps
                 alignItems: 'center',
                 justifyContent: 'center',
                 color: 'var(--text-on-accent)',
-                fontSize: '11px',
+                fontSize: 'var(--fs-xs)',
                 fontWeight: 700,
                 fontFamily: 'var(--font-body)',
                 flexShrink: 0,
@@ -217,7 +204,7 @@ export function SwimmerNav({ swimmerName, initials, onSignOut }: SwimmerNavProps
             </div>
             <span
               style={{
-                fontSize: '13px',
+                fontSize: 'var(--fs-base)',
                 fontWeight: 500,
                 color: C.text,
                 maxWidth: '120px',
@@ -245,7 +232,7 @@ export function SwimmerNav({ swimmerName, initials, onSignOut }: SwimmerNavProps
                   right: 0,
                   background: C.surface,
                   border: `1px solid ${C.border}`,
-                  borderRadius: '10px',
+                  borderRadius: '12px',
                   boxShadow: '0 8px 32px rgba(0,0,0,0.40)',
                   minWidth: '180px',
                   padding: '6px',
@@ -259,12 +246,12 @@ export function SwimmerNav({ swimmerName, initials, onSignOut }: SwimmerNavProps
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '9px',
-                    padding: '8px 10px',
-                    borderRadius: '7px',
+                    gap: '8px',
+                    padding: '8px 12px',
+                    borderRadius: '8px',
                     textDecoration: 'none',
                     color: C.text,
-                    fontSize: '13px',
+                    fontSize: 'var(--fs-base)',
                     transition: 'background 100ms ease',
                   }}
                   onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(0,212,170,0.08)')}
@@ -279,13 +266,13 @@ export function SwimmerNav({ swimmerName, initials, onSignOut }: SwimmerNavProps
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '9px',
-                    padding: '8px 10px',
-                    borderRadius: '7px',
+                    gap: '8px',
+                    padding: '8px 12px',
+                    borderRadius: '8px',
                     background: 'transparent',
                     border: 'none',
                     color: 'var(--error)',
-                    fontSize: '13px',
+                    fontSize: 'var(--fs-base)',
                     cursor: 'pointer',
                     width: '100%',
                     textAlign: 'left',
@@ -314,11 +301,11 @@ export function SwimmerNav({ swimmerName, initials, onSignOut }: SwimmerNavProps
             background: C.surface,
             borderRight: `1px solid ${C.border}`,
             flexDirection: 'column',
-            padding: '18px 10px',
+            padding: '20px 12px',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 8px 16px' }}>
-            <span style={{ fontFamily: 'var(--font-display)', fontSize: '18px', color: C.text }}>aquify</span>
+            <span style={{ fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--fs-xl)', color: C.text }}>aquify</span>
             <button
               className="btn-icon"
               onClick={() => setMobileNavOpen(false)}
@@ -336,9 +323,9 @@ export function SwimmerNav({ swimmerName, initials, onSignOut }: SwimmerNavProps
                   href={link.path}
                   onClick={() => setMobileNavOpen(false)}
                   style={{
-                    padding: '11px 12px',
-                    borderRadius: '9px',
-                    fontSize: '14.5px',
+                    padding: '12px 12px',
+                    borderRadius: '8px',
+                    fontSize: 'var(--fs-md)',
                     fontWeight: active ? 600 : 400,
                     color: active ? C.accent : C.subtle,
                     background: active ? 'rgba(0,212,170,0.10)' : 'transparent',

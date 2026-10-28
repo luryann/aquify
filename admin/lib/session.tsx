@@ -166,6 +166,30 @@ async function fetchCurrentSession(allowRefresh: boolean): Promise<Session | nul
   throw new Error(`session bootstrap failed with status ${res.status}`)
 }
 
+// Dev stub sessions start from static fixtures; the API resolves the
+// household and linked swimmer for the stub user the same way a real login
+// does, so merge those in to keep swimmer/parent portal flows realistic.
+async function hydrateDevSession(base: Session): Promise<Session> {
+  try {
+    const res = await fetch('/api/v1/auth/session', {
+      headers: { Authorization: `Bearer ${base.token}` },
+      cache: 'no-store',
+    })
+    if (!res.ok) return base
+    const payload = await res.json() as CurrentSessionResponse
+    return {
+      ...base,
+      user: {
+        ...base.user,
+        householdId: payload.user.household_id || base.user.householdId,
+        swimmerId: payload.user.swimmer_id || base.user.swimmerId,
+      },
+    }
+  } catch {
+    return base
+  }
+}
+
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [session, setSessionState] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
@@ -181,6 +205,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
     if (s && s.token in DEV_SESSIONS) {
       localStorage.setItem(DEV_TOKEN_KEY, s.token)
+      void hydrateDevSession(s).then((hydrated) => {
+        setSessionState((current) => (current?.token === s.token ? hydrated : current))
+      })
       return
     }
 
@@ -213,7 +240,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         if (DEV_STUB_TOKENS_ENABLED) {
           const storedId = localStorage.getItem(DEV_TOKEN_KEY)
           if (storedId && DEV_SESSIONS[storedId]) {
-            if (!cancelled) setSessionState(DEV_SESSIONS[storedId])
+            const hydrated = await hydrateDevSession(DEV_SESSIONS[storedId])
+            if (!cancelled) setSessionState(hydrated)
             return
           }
         }

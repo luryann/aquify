@@ -102,6 +102,6 @@ test('portalCommunicationPreferencesErrorMessage surfaces API errors and hides u
   )
   assert.equal(
     portalCommunicationPreferencesErrorMessage(new Error('unexpected')),
-    'Unable to save communication preferences right now.',
+    'Couldn’t save communication preferences. Try again.',
   )
 })

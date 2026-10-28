@@ -71,6 +71,7 @@ type Announcement struct {
 	Status      string     `json:"status"`   // draft | published | archived
 	Audience    string     `json:"audience"` // all | group
 	GroupID     string     `json:"group_id,omitempty"`
+	Public      bool       `json:"public"`
 	PublishedAt *time.Time `json:"published_at,omitempty"`
 	ArchivedAt  *time.Time `json:"archived_at,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
@@ -281,6 +282,7 @@ type CreateAnnouncementInput struct {
 	Body      string `json:"body"      validate:"required"`
 	Audience  string `json:"audience"  validate:"required,oneof=all group"`
 	GroupID   string `json:"group_id"`
+	Public    bool   `json:"public"`
 	CreatedBy string `json:"-"`
 }
 
@@ -621,6 +623,7 @@ func (s *Service) CreateAnnouncement(inp CreateAnnouncementInput) (*Announcement
 		Status:    "draft",
 		Audience:  inp.Audience,
 		GroupID:   inp.GroupID,
+		Public:    inp.Public && inp.Audience == "all",
 		CreatedAt: now,
 		UpdatedAt: now,
 		CreatedBy: inp.CreatedBy,
@@ -633,6 +636,56 @@ func (s *Service) CreateAnnouncement(inp CreateAnnouncementInput) (*Announcement
 	}
 	s.announcements[a.ID] = a
 	return a, nil
+}
+
+// SetAnnouncementPublic toggles whether a published announcement appears on
+// the public team website. Group-scoped announcements can never be public.
+func (s *Service) SetAnnouncementPublic(orgID, id, actorID string, public bool) (*Announcement, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	a, ok := s.announcements[id]
+	if !ok || a.OrgID != orgID {
+		return nil, ErrAnnouncementNotFound
+	}
+	if public && a.Audience != "all" {
+		return nil, errors.New("only all-club announcements can be public")
+	}
+	next := *a
+	next.Public = public
+	next.UpdatedAt = time.Now().UTC()
+	next.UpdatedBy = actorID
+	if s.repo != nil {
+		if err := s.repo.UpsertAnnouncement(context.Background(), &next); err != nil {
+			return nil, fmt.Errorf("persist announcement: %w", err)
+		}
+	}
+	*a = next
+	cp := next
+	return &cp, nil
+}
+
+// ListPublicAnnouncements returns published, explicitly public, all-club
+// announcements for an org, newest first.
+func (s *Service) ListPublicAnnouncements(orgID string) []Announcement {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := []Announcement{}
+	for _, a := range s.announcements {
+		if a.OrgID == orgID && a.Public && a.Status == "published" && a.Audience == "all" {
+			out = append(out, *a)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		pi, pj := out[i].CreatedAt, out[j].CreatedAt
+		if out[i].PublishedAt != nil {
+			pi = *out[i].PublishedAt
+		}
+		if out[j].PublishedAt != nil {
+			pj = *out[j].PublishedAt
+		}
+		return pi.After(pj)
+	})
+	return out
 }
 
 // PublishAnnouncement transitions an announcement from draft → published.

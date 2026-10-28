@@ -8,13 +8,15 @@ import { Tabs } from '@/components/ui/Tabs'
 import { Table, type Column } from '@/components/ui/Table'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
-import { useApiClient, ApiError } from '@/lib/api'
+import { useStaffNames } from '@/lib/useStaffNames'
+import { useApiClient } from '@/lib/api'
 import { canAccess } from '@/lib/roles'
 import { formatDateOnly, parseBackendDate } from '@/lib/dates'
 import {
   fetchHousehold,
   fetchInvoice,
   fetchInvoiceItems,
+  deleteInvoiceItem,
   fetchInvoicePayments,
   fetchInvoiceRefunds,
   fetchLedgerEventsForInvoice,
@@ -34,6 +36,7 @@ import {
   type HouseholdRecord,
   type SwimmerRecord,
 } from '@/lib/adminData'
+import { uiErrorMessage } from '@/lib/frontend-telemetry'
 
 function formatCents(cents: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100)
@@ -67,15 +70,18 @@ function StatusBadge({ status }: { status: string }) {
   return <span className="badge" style={{ background: colors.bg, color: colors.color }}>{status.replaceAll('_', ' ')}</span>
 }
 
-function buildItemCols(swimmerNameById: Map<string, string>): Column<InvoiceItemRecord>[] {
-  return [
+function buildItemCols(
+  swimmerNameById: Map<string, string>,
+  onRemove: ((item: InvoiceItemRecord) => void) | null,
+): Column<InvoiceItemRecord>[] {
+  const cols: Column<InvoiceItemRecord>[] = [
     {
       key: 'description',
       label: 'Description',
       render: (row) => (
         <div>
-          <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>{row.description}</div>
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', fontFamily: 'var(--font-body)' }}>{row.category}</div>
+          <div style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)' }}>{row.description}</div>
+          <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: '2px', fontFamily: 'var(--font-body)' }}>{row.category}</div>
         </div>
       ),
     },
@@ -83,44 +89,61 @@ function buildItemCols(swimmerNameById: Map<string, string>): Column<InvoiceItem
       key: 'swimmer_id',
       label: 'Swimmer',
       render: (row) => (
-        <span style={{ fontSize: '12px', color: row.swimmer_id ? 'var(--text-subtle)' : 'var(--text-muted)' }}>
+        <span style={{ fontSize: 'var(--fs-sm)', color: row.swimmer_id ? 'var(--text-subtle)' : 'var(--text-muted)' }}>
           {row.swimmer_id ? (swimmerNameById.get(row.swimmer_id) ?? 'Unknown swimmer') : 'Household-wide'}
         </span>
       ),
     },
-    { key: 'quantity', label: 'Qty', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-subtle)' }}>{row.quantity}</span> },
-    { key: 'unit_amount_cents', label: 'Unit Price', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-subtle)' }}>{formatCents(row.unit_amount_cents)}</span> },
-    { key: 'total_cents', label: 'Total', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '13px', fontWeight: 700, color: 'var(--text)' }}>{formatCents(row.total_cents)}</span> },
+    { key: 'quantity', label: 'Qty', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{row.quantity}</span> },
+    { key: 'unit_amount_cents', label: 'Unit price', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{formatCents(row.unit_amount_cents)}</span> },
+    { key: 'total_cents', label: 'Total', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-base)', fontWeight: 700, color: 'var(--text)' }}>{formatCents(row.total_cents)}</span> },
+  ]
+  // Line items can only be removed while the invoice is still a draft.
+  if (onRemove) {
+    cols.push({
+      key: 'id',
+      label: '',
+      render: (row) => (
+        <button type="button" className="btn btn-sm btn-secondary" style={{ color: 'var(--error)' }} onClick={() => onRemove(row)}>
+          Remove
+        </button>
+      ),
+    })
+  }
+  return cols
+}
+
+function buildPaymentCols(nameFor: (id?: string | null) => string): Column<PaymentRecord>[] {
+  return [
+  { key: 'method', label: 'Method', render: (row) => <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-subtle)' }}>{row.method}</span> },
+  { key: 'amount_cents', label: 'Amount', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-base)', fontWeight: 700, color: 'var(--success)' }}>{formatCents(row.amount_cents)}</span> },
+  { key: 'status', label: 'Status', render: (row) => <StatusBadge status={row.status} /> },
+  { key: 'stripe_payment_intent_id', label: 'Reference', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>{row.stripe_payment_intent_id || row.external_ref || '—'}</span> },
+  { key: 'created_by', label: 'Recorded by', render: (row) => <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{nameFor(row.created_by)}</span> },
+  { key: 'created_at', label: 'Date', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>{formatDate(row.paid_at || row.created_at)}</span> },
   ]
 }
 
-const PAYMENT_COLS: Column<PaymentRecord>[] = [
-  { key: 'method', label: 'Method', render: (row) => <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-subtle)' }}>{row.method}</span> },
-  { key: 'amount_cents', label: 'Amount', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '13px', fontWeight: 700, color: 'var(--success)' }}>{formatCents(row.amount_cents)}</span> },
+function buildRefundCols(nameFor: (id?: string | null) => string): Column<RefundRecord>[] {
+  return [
+  { key: 'amount_cents', label: 'Amount', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-base)', fontWeight: 700, color: 'var(--accent)' }}>{formatCents(row.amount_cents)}</span> },
+  { key: 'reason', label: 'Reason', render: (row) => <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)' }}>{row.reason}</span> },
   { key: 'status', label: 'Status', render: (row) => <StatusBadge status={row.status} /> },
-  { key: 'stripe_payment_intent_id', label: 'Reference', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '11px', color: 'var(--text-muted)' }}>{row.stripe_payment_intent_id || row.external_ref || '—'}</span> },
-  { key: 'created_by', label: 'Recorded By', render: (row) => <span style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>{row.created_by}</span> },
-  { key: 'created_at', label: 'Date', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-muted)' }}>{formatDate(row.paid_at || row.created_at)}</span> },
-]
-
-const REFUND_COLS: Column<RefundRecord>[] = [
-  { key: 'amount_cents', label: 'Amount', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '13px', fontWeight: 700, color: 'var(--accent)' }}>{formatCents(row.amount_cents)}</span> },
-  { key: 'reason', label: 'Reason', render: (row) => <span style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>{row.reason}</span> },
-  { key: 'status', label: 'Status', render: (row) => <StatusBadge status={row.status} /> },
-  { key: 'created_by', label: 'By', render: (row) => <span style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>{row.created_by}</span> },
-  { key: 'created_at', label: 'Date', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-muted)' }}>{formatDate(row.created_at)}</span> },
-]
+  { key: 'created_by', label: 'By', render: (row) => <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{nameFor(row.created_by)}</span> },
+  { key: 'created_at', label: 'Date', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>{formatDate(row.created_at)}</span> },
+  ]
+}
 
 const LEDGER_COLS: Column<LedgerEventRecord>[] = [
-  { key: 'event_type', label: 'Action', render: (row) => <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)' }}>{row.event_type.replaceAll('_', ' ')}</span> },
-  { key: 'amount_cents', label: 'Amount', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: row.amount_cents < 0 ? 'var(--success)' : 'var(--text)' }}>{formatCents(row.amount_cents)}</span> },
-  { key: 'description', label: 'Memo', render: (row) => <span style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>{row.description || '—'}</span> },
-  { key: 'actor_id', label: 'Actor', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '11px', color: 'var(--text-muted)' }}>{row.actor_id || 'system'}</span> },
-  { key: 'created_at', label: 'Occurred', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-muted)' }}>{formatDateTime(row.created_at)}</span> },
+  { key: 'event_type', label: 'Action', render: (row) => <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text)' }}>{row.event_type.replaceAll('_', ' ')}</span> },
+  { key: 'amount_cents', label: 'Amount', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: row.amount_cents < 0 ? 'var(--success)' : 'var(--text)' }}>{formatCents(row.amount_cents)}</span> },
+  { key: 'description', label: 'Memo', render: (row) => <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{row.description || '—'}</span> },
+  { key: 'actor_id', label: 'Actor', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>{row.actor_id || 'system'}</span> },
+  { key: 'created_at', label: 'Occurred', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>{formatDateTime(row.created_at)}</span> },
 ]
 
-const INPUT_STYLE = { width: '100%', padding: '9px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '13px', color: 'var(--text)', outline: 'none', boxSizing: 'border-box' as const }
-const LABEL_STYLE = { fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', display: 'block', marginBottom: '5px' }
+const INPUT_STYLE = { width: '100%', padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none', boxSizing: 'border-box' as const }
+const LABEL_STYLE = { fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }
 
 function IssueRefundPanel({
   api, orgId, invoiceId, payments, onIssued,
@@ -187,7 +210,7 @@ function IssueRefundPanel({
       setReason('')
       onIssued()
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to issue refund.')
+      setError(uiErrorMessage(err, 'Couldn’t issue refund. Try again.'))
     } finally {
       setSubmitting(false)
     }
@@ -204,9 +227,9 @@ function IssueRefundPanel({
           Issue refund
         </button>
       ) : (
-        <form onSubmit={(e) => void handleSubmit(e)} style={{ display: 'grid', gap: '14px' }}>
+        <form onSubmit={(e) => void handleSubmit(e)} style={{ display: 'grid', gap: '16px' }}>
           {error && (
-            <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '10px 14px', fontSize: '13px' }}>
+            <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '12px 16px', fontSize: 'var(--fs-base)' }}>
               {error}
             </div>
           )}
@@ -250,7 +273,7 @@ function IssueRefundPanel({
               placeholder="E.g. overpayment, duplicate charge, season cancellation…"
             />
           </div>
-          <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
             <button type="button" className="btn" onClick={() => setOpen(false)} disabled={submitting}>
               Cancel
             </button>
@@ -314,7 +337,7 @@ function AddInvoiceItemPanel({
       setCategory('manual')
       onAdded()
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to add invoice item.')
+      setError(uiErrorMessage(err, 'Couldn’t add invoice item. Try again.'))
     } finally {
       setSubmitting(false)
     }
@@ -327,9 +350,9 @@ function AddInvoiceItemPanel({
           Add item
         </button>
       ) : (
-        <form onSubmit={(e) => void handleSubmit(e)} style={{ display: 'grid', gap: '14px' }}>
+        <form onSubmit={(e) => void handleSubmit(e)} style={{ display: 'grid', gap: '16px' }}>
           {error && (
-            <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '10px 14px', fontSize: '13px' }}>
+            <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '12px 16px', fontSize: 'var(--fs-base)' }}>
               {error}
             </div>
           )}
@@ -337,7 +360,7 @@ function AddInvoiceItemPanel({
             <label style={LABEL_STYLE}>Description *</label>
             <input style={INPUT_STYLE} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="E.g. Fall program fee" />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+          <div className="cols-2" style={{ gap: '16px' }}>
             <div>
               <label style={LABEL_STYLE}>Quantity *</label>
               <input type="number" min="1" step="1" style={INPUT_STYLE} value={quantity} onChange={(e) => setQuantity(e.target.value)} />
@@ -353,7 +376,7 @@ function AddInvoiceItemPanel({
               {ITEM_CATEGORIES.map((c) => <option key={c} value={c}>{c.replaceAll('_', ' ')}</option>)}
             </select>
           </div>
-          <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
             <button type="button" className="btn" onClick={() => setOpen(false)} disabled={submitting}>Cancel</button>
             <button type="submit" className="btn btn-primary" disabled={submitting}>{submitting ? 'Adding…' : 'Add item'}</button>
           </div>
@@ -403,7 +426,7 @@ function RecordPaymentPanel({
       setNotes('')
       onRecorded()
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to record payment.')
+      setError(uiErrorMessage(err, 'Couldn’t record payment. Try again.'))
     } finally {
       setSubmitting(false)
     }
@@ -416,13 +439,13 @@ function RecordPaymentPanel({
           Record offline payment
         </button>
       ) : (
-        <form onSubmit={(e) => void handleSubmit(e)} style={{ display: 'grid', gap: '14px' }}>
+        <form onSubmit={(e) => void handleSubmit(e)} style={{ display: 'grid', gap: '16px' }}>
           {error && (
-            <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '10px 14px', fontSize: '13px' }}>
+            <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '12px 16px', fontSize: 'var(--fs-base)' }}>
               {error}
             </div>
           )}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+          <div className="cols-2" style={{ gap: '16px' }}>
             <div>
               <label style={LABEL_STYLE}>Amount *</label>
               <input type="number" min="0.01" step="0.01" style={INPUT_STYLE} value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
@@ -442,7 +465,7 @@ function RecordPaymentPanel({
             <label style={LABEL_STYLE}>Notes</label>
             <textarea style={{ ...INPUT_STYLE, resize: 'vertical' }} rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
           </div>
-          <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
             <button type="button" className="btn" onClick={() => setOpen(false)} disabled={submitting}>Cancel</button>
             <button type="submit" className="btn btn-primary" disabled={submitting}>{submitting ? 'Recording…' : 'Record payment'}</button>
           </div>
@@ -471,7 +494,7 @@ function CopyableId({ id }: { id: string }) {
       style={{
         display: 'inline-flex', alignItems: 'center', gap: '4px',
         background: 'none', border: 'none', cursor: 'pointer', padding: 0,
-        fontFamily: 'var(--font-body)', fontSize: '12px', color: 'inherit',
+        fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'inherit',
       }}
     >
       {copied ? 'Copied!' : truncateId(id)}
@@ -485,6 +508,9 @@ export default function InvoiceDetailPage() {
   const invoiceId = typeof params?.id === 'string' ? params.id : ''
   const { session } = useSession()
   const api = useApiClient(session?.token)
+  const staffName = useStaffNames(api, session?.user.orgId)
+  const paymentCols = useMemo(() => buildPaymentCols(staffName), [staffName])
+  const refundCols = useMemo(() => buildRefundCols(staffName), [staffName])
   const [activeTab, setActiveTab] = useState('items')
   const [invoice, setInvoice] = useState<InvoiceRecord | null>(null)
   const [household, setHousehold] = useState<HouseholdRecord | null>(null)
@@ -512,7 +538,7 @@ export default function InvoiceDetailPage() {
       else await writeOffInvoice(api, session.user.orgId, invoiceId)
       setReloadKey((k) => k + 1)
     } catch (err) {
-      setLifecycleError(err instanceof ApiError ? err.message : `Failed to ${action} invoice.`)
+      setLifecycleError(uiErrorMessage(err, `Failed to ${action} invoice.`))
     } finally {
       setLifecycleBusy(false)
     }
@@ -532,7 +558,7 @@ export default function InvoiceDetailPage() {
         window.open(artifact.download_url, '_blank', 'noopener,noreferrer')
       }
     } catch (err) {
-      setDownloadError(err instanceof ApiError ? err.message : 'Unable to generate invoice export.')
+      setDownloadError(uiErrorMessage(err, 'Couldn’t generate invoice export. Try again.'))
     } finally {
       setDownloading(false)
     }
@@ -571,7 +597,7 @@ export default function InvoiceDetailPage() {
         setSwimmers(nextSwimmers)
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof ApiError ? err.message : 'Failed to load invoice details.')
+          setError(uiErrorMessage(err, 'Couldn’t load invoice details. Try again.'))
         }
       } finally {
         if (!cancelled) setLoading(false)
@@ -595,29 +621,35 @@ export default function InvoiceDetailPage() {
     () => new Map(swimmers.map((s) => [s.id, `${s.first_name} ${s.last_name}`])),
     [swimmers],
   )
-  const itemCols = useMemo(() => buildItemCols(swimmerNameById), [swimmerNameById])
+  const isDraft = invoice?.status === 'draft'
+  const itemCols = useMemo(() => buildItemCols(swimmerNameById, isDraft ? (item) => {
+    if (!session?.user.orgId || !window.confirm(`Remove "${item.description}" from this invoice?`)) return
+    deleteInvoiceItem(api, session.user.orgId, invoiceId, item.id)
+      .then(() => setReloadKey((k) => k + 1))
+      .catch((err) => setError(uiErrorMessage(err, 'Couldn’t remove line item. Try again.')))
+  } : null), [swimmerNameById, isDraft, api, session?.user.orgId, invoiceId])
 
   if (loading) {
-    return <div style={{ padding: '24px', maxWidth: '1200px' }}><EmptyState icon="credit-card" title="Loading invoice" description="Fetching live invoice detail data from the API." /></div>
+    return <div className="page"><EmptyState icon="credit-card" title="Loading invoice" description="Fetching live invoice detail data from the API." /></div>
   }
 
   if (error || !invoice) {
-    return <div style={{ padding: '24px', maxWidth: '1200px' }}><EmptyState icon="alert-circle" title="Unable to load invoice" description={error ?? 'Invoice not found.'} /></div>
+    return <div className="page"><EmptyState icon="alert-circle" title="Unable to load invoice" description={error ?? 'Invoice not found.'} /></div>
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1200px' }}>
-      <Link href="/billing?tab=invoices" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '13px', color: 'var(--text-subtle)', textDecoration: 'none', marginBottom: '20px' }}>
+    <div className="page">
+      <Link href="/billing?tab=invoices" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', textDecoration: 'none', marginBottom: '20px' }}>
         <Icon name="chevron-left" size={14} /> Invoices
       </Link>
 
       <div className="page-header">
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px 12px', marginBottom: '4px' }}>
             <h1 className="page-title">{invoice.invoice_number}</h1>
             <StatusBadge status={invoice.status} />
           </div>
-          <div style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
             <CopyableId id={invoice.id} /> · {household ? <Link href={`/members/households/${household.id}`} style={{ color: 'var(--accent)', textDecoration: 'none', fontFamily: 'var(--font-body)' }}>{household.household_name}</Link> : 'Unassigned household'}
           </div>
         </div>
@@ -643,21 +675,21 @@ export default function InvoiceDetailPage() {
               {downloading ? 'Preparing…' : 'Download CSV'}
             </button>
           </div>
-          {lifecycleError && <span style={{ fontSize: '12px', color: 'var(--error)' }}>{lifecycleError}</span>}
-          {downloadError && <span style={{ fontSize: '12px', color: 'var(--error)' }}>{downloadError}</span>}
+          {lifecycleError && <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--error)' }}>{lifecycleError}</span>}
+          {downloadError && <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--error)' }}>{downloadError}</span>}
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '28px' }}>
+      <div className="cols-4" style={{ gap: '12px', marginBottom: '24px' }}>
         {[
           { label: 'Total', value: formatCents(invoice.total_cents), color: 'var(--text)' },
           { label: 'Paid', value: formatCents(invoice.amount_paid_cents), color: 'var(--success)' },
           { label: 'Balance', value: formatCents(invoice.amount_due_cents), color: invoice.amount_due_cents > 0 ? 'var(--warning)' : 'var(--success)' },
-          { label: 'Due Date', value: formatDate(invoice.due_date), color: 'var(--text-subtle)' },
+          { label: 'Due date', value: formatDate(invoice.due_date), color: 'var(--text-subtle)' },
         ].map((stat) => (
-          <div key={stat.label} className="card" style={{ padding: '14px 16px' }}>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
-            <div style={{ fontSize: '18px', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
+          <div key={stat.label} className="card" style={{ padding: '16px 16px' }}>
+            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
+            <div style={{ fontSize: 'var(--fs-xl)', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
           </div>
         ))}
       </div>
@@ -687,7 +719,7 @@ export default function InvoiceDetailPage() {
               onRecorded={() => setReloadKey((k) => k + 1)}
             />
           )}
-          <Table columns={PAYMENT_COLS} data={payments} emptyTitle="No payments" emptyDescription="No payments have been recorded for this invoice yet." />
+          <Table columns={paymentCols} data={payments} emptyTitle="No payments" emptyDescription="No payments have been recorded for this invoice yet." />
         </>
       ) : null}
       {activeTab === 'refunds' ? (
@@ -701,7 +733,7 @@ export default function InvoiceDetailPage() {
               onIssued={() => setReloadKey((k) => k + 1)}
             />
           )}
-          <Table columns={REFUND_COLS} data={refunds} emptyTitle="No refunds" emptyDescription="No refunds have been recorded for this invoice." />
+          <Table columns={refundCols} data={refunds} emptyTitle="No refunds" emptyDescription="No refunds have been recorded for this invoice." />
         </>
       ) : null}
       {activeTab === 'ledger' ? <Table columns={LEDGER_COLS} data={ledger} emptyTitle="No ledger activity" emptyDescription="No ledger events were returned for this invoice." /> : null}

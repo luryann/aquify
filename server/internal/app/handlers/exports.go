@@ -6,6 +6,10 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"time"
+
+	"github.com/dareaquatics/aquify/meetfiles"
+	"github.com/dareaquatics/aquify/meetfiles/sdif"
 
 	"github.com/dareaquatics/aquify/server/internal/app/audit"
 	"github.com/dareaquatics/aquify/server/internal/app/exports"
@@ -76,6 +80,9 @@ func (h *ExportsHandlers) RegisterRoutes(router chi.Router) {
 	// Trigger and list exports scoped to a meet
 	router.Post("/meets/{meetID}/exports", h.generateExport)
 	router.Get("/meets/{meetID}/exports", h.listMeetExports)
+	// SD3 entry file for the host meet (admin/coach). POST because it moves
+	// approved entries to "exported".
+	router.Post("/meets/{meetID}/entries/sd3", h.exportEntriesSD3)
 
 	// Export-scoped operations (not meet-scoped for cross-meet listing)
 	router.Get("/exports/{exportID}", h.getExport)
@@ -385,8 +392,8 @@ func (h *ExportsHandlers) assembleReportInput(principal *appmiddleware.Principal
 
 	usedEvents := map[string]bool{}
 	for _, e := range entries {
-		// Reports include approved, non-scratched entries only.
-		if e.Status != "approved" {
+		// Reports include approved (and already exported), non-scratched entries only.
+		if e.Status != "approved" && e.Status != "exported" {
 			continue
 		}
 		ev, ok := eventByID[e.MeetEventID]
@@ -468,4 +475,259 @@ func evaluateReportEligibility(sw members.Swimmer, ev meets.MeetEvent, meetStart
 		return false, fmt.Sprintf("age %d above event maximum %d", age, *ev.MaxAge)
 	}
 	return true, ""
+}
+
+// ─── SD3 entry file ───────────────────────────────────────────────────────────
+
+// sd3ExportableMeetStatuses: entries are exported once finalized (and may be
+// re-downloaded after the meet completes).
+var sd3ExportableMeetStatuses = map[string]bool{"entry_finalized": true, "completed": true}
+
+func (h *ExportsHandlers) exportEntriesSD3(w http.ResponseWriter, r *http.Request) {
+	principal, orgID, ok := exportScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+	if !exportPrincipalHasAnyRole(principal, "admin", "coach") {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only admin or coach can export entry files.", nil)
+		return
+	}
+	if h.meetsService == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, "service_unavailable", "Meet export is not configured.", nil)
+		return
+	}
+	meetID := strings.TrimSpace(chi.URLParam(r, "meetID"))
+	variant := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("variant")))
+	if variant == "" {
+		variant = string(sdif.ExportVariantExtended)
+	}
+	if variant != string(sdif.ExportVariantStandard) && variant != string(sdif.ExportVariantExtended) {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_variant", "variant must be 'standard' or 'extended'.", nil)
+		return
+	}
+
+	meet, err := h.meetsService.GetMeet(principal, orgID, meetID)
+	if err != nil {
+		writeSD3MeetError(w, r, err)
+		return
+	}
+	if !sd3ExportableMeetStatuses[meet.Status] {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "entries_not_finalized", "Finalize entries before exporting the SD3 entry file.", nil)
+		return
+	}
+	events, err := h.meetsService.ListMeetEvents(principal, orgID, meetID)
+	if err != nil {
+		writeSD3MeetError(w, r, err)
+		return
+	}
+	entries, err := h.meetsService.ListEntries(principal, orgID, meetID)
+	if err != nil {
+		writeSD3MeetError(w, r, err)
+		return
+	}
+
+	swimmerByID := map[string]members.Swimmer{}
+	if h.membersService != nil {
+		for _, sw := range h.membersService.SnapshotSwimmers(orgID) {
+			swimmerByID[sw.ID] = sw
+		}
+	}
+	eventByID := make(map[string]meets.MeetEvent, len(events))
+	for _, ev := range events {
+		eventByID[ev.ID] = ev
+	}
+
+	input := sdif.ExportInput{
+		MeetName:      meet.Name,
+		MeetStartDate: parseSD3Date(meet.StartDate),
+		MeetEndDate:   parseSD3Date(meet.EndDate),
+		Course:        meetfiles.Course(strings.ToUpper(meet.Course)),
+	}
+	if h.orgSettings != nil {
+		if settings, err := h.orgSettings.Get(orgID); err == nil && settings != nil {
+			input.HostTeamCode, input.HostTeamName = strings.TrimSpace(settings.TeamCode), strings.TrimSpace(settings.TeamName)
+		}
+	}
+	// The host's meet software attributes entries by the C1 team record, so a
+	// file without a team code cannot be imported.
+	if input.HostTeamCode == "" {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "team_code_required", "Set your club's team code in Settings before exporting an entry file.", nil)
+		return
+	}
+
+	var exportedIDs []string
+	skippedRelays := 0
+	for _, e := range entries {
+		if e.Status != "approved" && e.Status != "exported" {
+			continue
+		}
+		ev, ok := eventByID[e.MeetEventID]
+		if !ok {
+			continue
+		}
+		if e.IsRelay || ev.IsRelay {
+			skippedRelays++
+			continue
+		}
+		sw, ok := swimmerByID[e.SwimmerID]
+		if !ok {
+			continue
+		}
+		course := meetfiles.Course(strings.ToUpper(ev.Course))
+		if course == "" {
+			course = input.Course
+		}
+		seed := meetfiles.Time{Raw: "NT"}
+		if e.SeedTimeMs != nil && *e.SeedTimeMs > 0 {
+			seed = meetfiles.Time{Valid: true, Seconds: float64(*e.SeedTimeMs) / 1000}
+		}
+		input.IndividualEntries = append(input.IndividualEntries, sdif.ExportIndividualEntry{
+			Swimmer: sdif.ExportSwimmer{
+				LastName:  sw.LastName,
+				FirstName: sw.FirstName,
+				USSNumber: sw.USASwimmingID,
+				DOB:       parseSD3Date(sw.DateOfBirth),
+				Gender:    sd3SwimmerGender(sw.Gender),
+				TeamCode:  input.HostTeamCode,
+			},
+			EventNumber: ev.EventNumber,
+			Distance:    ev.Distance,
+			Stroke:      sd3Stroke(ev.Stroke),
+			EventGender: sd3EventGender(ev.Gender),
+			AgeGroup:    sd3AgeGroup(ev.MinAge, ev.MaxAge),
+			Course:      course,
+			SeedTime:    seed,
+		})
+		exportedIDs = append(exportedIDs, e.ID)
+	}
+	if len(input.IndividualEntries) == 0 {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "no_exportable_entries", "There are no approved individual entries to export.", nil)
+		return
+	}
+
+	var payload []byte
+	if variant == string(sdif.ExportVariantStandard) {
+		payload, err = sdif.ExportStandardSD3(input)
+	} else {
+		payload, err = sdif.ExportExtendedSD3(input)
+	}
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "sd3_export_failed", err.Error(), nil)
+		return
+	}
+
+	marked, _, err := h.meetsService.MarkEntriesExported(principal, orgID, meetID, exportedIDs)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "entry_export_state_failed", "Failed to record exported entries.", nil)
+		return
+	}
+	h.emitAudit(principal, "meet.entries_sd3_exported", "meet", meetID, map[string]string{
+		"variant":        variant,
+		"entry_count":    fmt.Sprintf("%d", len(exportedIDs)),
+		"newly_exported": fmt.Sprintf("%d", marked),
+		"skipped_relays": fmt.Sprintf("%d", skippedRelays),
+	})
+
+	w.Header().Set("Content-Type", "text/plain; charset=us-ascii")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", sd3Filename(meet.Name, meet.StartDate)))
+	w.Header().Set("X-Entry-Count", fmt.Sprintf("%d", len(exportedIDs)))
+	w.Header().Set("X-Skipped-Relays", fmt.Sprintf("%d", skippedRelays))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(payload)
+}
+
+func writeSD3MeetError(w http.ResponseWriter, r *http.Request, err error) {
+	switch {
+	case errors.Is(err, meets.ErrMeetNotFound):
+		httpx.WriteError(w, r, http.StatusNotFound, "meet_not_found", "Meet was not found.", nil)
+	case errors.Is(err, meets.ErrForbidden):
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to export this meet.", nil)
+	default:
+		httpx.WriteError(w, r, http.StatusInternalServerError, "sd3_export_failed", "Failed to load meet data for export.", nil)
+	}
+}
+
+func parseSD3Date(raw string) *time.Time {
+	raw = strings.TrimSpace(raw)
+	if len(raw) >= 10 {
+		raw = raw[:10]
+	}
+	t, err := time.Parse("2006-01-02", raw)
+	if err != nil {
+		return nil
+	}
+	return &t
+}
+
+func sd3Stroke(stroke string) meetfiles.Stroke {
+	switch strings.ToLower(strings.TrimSpace(stroke)) {
+	case "freestyle", "free":
+		return meetfiles.StrokeFreestyle
+	case "backstroke", "back":
+		return meetfiles.StrokeBackstroke
+	case "breaststroke", "breast":
+		return meetfiles.StrokeBreaststroke
+	case "butterfly", "fly":
+		return meetfiles.StrokeButterfly
+	case "individual_medley", "im":
+		return meetfiles.StrokeIM
+	case "freestyle_relay", "free_relay":
+		return meetfiles.StrokeFreestyleRelay
+	case "medley_relay":
+		return meetfiles.StrokeMedleyRelay
+	}
+	return meetfiles.StrokeUnknown
+}
+
+func sd3SwimmerGender(gender string) string {
+	switch strings.ToLower(strings.TrimSpace(gender)) {
+	case "female":
+		return "F"
+	case "male":
+		return "M"
+	}
+	return ""
+}
+
+// sd3EventGender maps the meet vocabulary (M|F|X|O) to SDIF event sex; open
+// events are written as mixed.
+func sd3EventGender(gender string) string {
+	switch strings.ToUpper(strings.TrimSpace(gender)) {
+	case "M", "F":
+		return strings.ToUpper(strings.TrimSpace(gender))
+	}
+	return "X"
+}
+
+// sd3AgeGroup encodes the SDIF 4-char event age code: lower+upper bound, with
+// "UN" for no lower bound and "OV" for no upper bound (open = "UNOV").
+func sd3AgeGroup(minAge, maxAge *int) string {
+	lower, upper := "UN", "OV"
+	if minAge != nil && *minAge > 0 {
+		lower = fmt.Sprintf("%02d", *minAge)
+	}
+	if maxAge != nil && *maxAge > 0 && *maxAge < 100 {
+		upper = fmt.Sprintf("%02d", *maxAge)
+	}
+	return lower + upper
+}
+
+func sd3Filename(meetName, startDate string) string {
+	var b strings.Builder
+	for _, r := range strings.TrimSpace(meetName) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == ' ' || r == '-' || r == '_':
+			b.WriteRune('-')
+		}
+	}
+	name := strings.Trim(b.String(), "-")
+	if name == "" {
+		name = "meet"
+	}
+	if d := parseSD3Date(startDate); d != nil {
+		name += "-" + d.Format("20060102")
+	}
+	return name + "-entries.sd3"
 }

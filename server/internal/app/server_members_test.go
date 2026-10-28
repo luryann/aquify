@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/dareaquatics/aquify/server/internal/app/groups"
 	"github.com/dareaquatics/aquify/server/internal/app/members"
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
 	"github.com/dareaquatics/aquify/server/internal/keycloak"
@@ -491,7 +492,7 @@ func TestParentCanListOwnHouseholdSwimmerGroups(t *testing.T) {
 	if env.Count != 1 || env.Total != 1 {
 		t.Fatalf("expected one scoped swimmer group link, got count=%d total=%d", env.Count, env.Total)
 	}
-	if env.SwimmerGroups[0].SwimmerID != swimmer.Swimmer.ID || env.SwimmerGroups[0].GroupCode != "parent-household-group" {
+	if env.SwimmerGroups[0].SwimmerID != swimmer.Swimmer.ID || env.SwimmerGroups[0].GroupCode != "PARENT-HOUSEHOLD-GROUP" {
 		t.Fatalf("unexpected swimmer group payload: %#v", env.SwimmerGroups[0])
 	}
 }
@@ -1215,4 +1216,71 @@ func issueSessionTokenForUser(t *testing.T, router http.Handler, userID, orgID s
 	}
 
 	return issuedAccessTokenFromResponse(t, rr)
+}
+
+func TestSwimmerGroupCodesMatchGroupCodeCasing(t *testing.T) {
+	t.Parallel()
+
+	svc := members.NewService()
+	admin := &appmiddleware.Principal{UserID: "admin-1", OrgID: "org-case", Roles: []string{"admin"}}
+	hh, err := svc.CreateHousehold(admin, members.CreateHouseholdInput{OrgID: "org-case", HouseholdName: "Case"})
+	if err != nil {
+		t.Fatalf("household: %v", err)
+	}
+	sw, _, err := svc.CreateSwimmer(admin, "org-case", members.CreateSwimmerInput{HouseholdID: hh.ID, FirstName: "A", LastName: "B", DateOfBirth: "2012-01-01", Gender: "female"})
+	if err != nil {
+		t.Fatalf("swimmer: %v", err)
+	}
+	link, err := svc.AssignSwimmerToGroup(admin, "org-case", sw.ID, members.AssignSwimmerGroupInput{GroupCode: " senior "})
+	if err != nil || link.GroupCode != "SENIOR" {
+		t.Fatalf("want canonical SENIOR link, got %q (%v)", link.GroupCode, err)
+	}
+	// Re-assigning with different casing is idempotent, and group filters match.
+	again, _ := svc.AssignSwimmerToGroup(admin, "org-case", sw.ID, members.AssignSwimmerGroupInput{GroupCode: "Senior"})
+	if again.ID != link.ID {
+		t.Fatal("expected the existing link to be reused regardless of casing")
+	}
+	list, err := svc.ListSwimmers(admin, "org-case", members.ListSwimmersInput{GroupCode: "senior"})
+	if err != nil || len(list) != 1 {
+		t.Fatalf("group filter should match case-insensitively, got %d (%v)", len(list), err)
+	}
+}
+
+func TestApprovingRegistrationAddsSwimmerToGroupRoster(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	membersSvc := members.NewService()
+	groupsSvc := groups.NewService()
+	router := NewRouterWithServices(Config{}, logger, nil, membersSvc, groupsSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	admin := issueSessionTokenForUser(t, router, "admin-user", "org-roster", []string{"admin"}, true)
+
+	do := func(method, path string, body map[string]any) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, encodeJSONBody(t, body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Org-Id", "org-roster")
+		req.Header.Set("Authorization", "Bearer "+admin)
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		return rr
+	}
+	var hh struct{ Household struct{ ID string } `json:"household"` }
+	_ = json.Unmarshal(do(http.MethodPost, "/api/v1/members/households", map[string]any{"org_id": "org-roster", "household_name": "Roster"}).Body.Bytes(), &hh)
+	var sw struct{ Swimmer struct{ ID string } `json:"swimmer"` }
+	_ = json.Unmarshal(do(http.MethodPost, "/api/v1/members/swimmers", map[string]any{"org_id": "org-roster", "household_id": hh.Household.ID, "first_name": "R", "last_name": "S", "date_of_birth": "2012-01-01", "gender": "male"}).Body.Bytes(), &sw)
+	var grp struct{ Group struct{ ID, Code string } `json:"group"` }
+	_ = json.Unmarshal(do(http.MethodPost, "/api/v1/groups", map[string]any{"code": "gold", "name": "Gold"}).Body.Bytes(), &grp)
+	var reg struct{ Registration struct{ ID string } `json:"registration"` }
+	rr := do(http.MethodPost, "/api/v1/registrations", map[string]any{"household_id": hh.Household.ID, "swimmer_id": sw.Swimmer.ID, "group_id": grp.Group.ID, "season": "2026-27"})
+	if err := json.Unmarshal(rr.Body.Bytes(), &reg); err != nil || reg.Registration.ID == "" {
+		t.Fatalf("registration: %d %s", rr.Code, rr.Body.String())
+	}
+	if rr := do(http.MethodPost, "/api/v1/registrations/"+reg.Registration.ID+"/transition", map[string]any{"status": "active"}); rr.Code != http.StatusOK {
+		t.Fatalf("approve: %d %s", rr.Code, rr.Body.String())
+	}
+
+	links, _ := membersSvc.ListSwimmerGroupLinks(&appmiddleware.Principal{UserID: "admin-user", OrgID: "org-roster", Roles: []string{"admin"}}, "org-roster")
+	if len(links) != 1 || links[0].SwimmerID != sw.Swimmer.ID || links[0].GroupCode != grp.Group.Code || !links[0].IsPrimary {
+		t.Fatalf("expected primary roster link to %q, got %+v", grp.Group.Code, links)
+	}
 }

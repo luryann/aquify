@@ -17,17 +17,14 @@ function useBreadcrumb() {
   const pathname = usePathname()
   const segments = pathname.split('/').filter(Boolean)
 
-  const navItem = NAV_ITEMS.find(
-    (item) => pathname === item.path || pathname.startsWith(item.path + '/'),
-  )
-
   const crumbs: { label: string; path: string }[] = []
 
-  if (navItem?.section && navItem.section !== 'Overview') {
-    crumbs.push({ label: navItem.section, path: '#' })
-  }
-
-  const isUUID = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+  // Sidebar section names (Competition, System, …) are not pages; repeating
+  // them as a crumb only adds a kicker above the title, so the trail starts at
+  // the first real page.
+  // Record IDs are UUIDs when DB-backed, or `<prefix>_<hex>` in in-memory mode.
+  const isUUID = (value: string) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value) || /^[a-z]+_[0-9a-f]{12,}$/i.test(value)
 
   let built = ''
   for (const seg of segments) {
@@ -127,7 +124,7 @@ export function Topbar({ actions, onOpenMobileNav }: TopbarProps) {
         background: 'var(--bg)',
         display: 'flex',
         alignItems: 'center',
-        padding: '0 24px',
+        padding: '0 var(--page-gutter)',
         gap: '12px',
         flexShrink: 0,
       }}
@@ -144,10 +141,10 @@ export function Topbar({ actions, onOpenMobileNav }: TopbarProps) {
         className="mobile-only"
         style={{
           fontFamily: 'var(--font-display)',
-          fontWeight: 'bold',
-          fontSize: '16px',
+          fontWeight: 'var(--display-weight)',
+          fontSize: 'var(--fs-lg)',
           color: 'var(--text)',
-          letterSpacing: '-0.01em',
+          letterSpacing: 'var(--display-tracking)',
           flexShrink: 0,
         }}
       >
@@ -164,19 +161,21 @@ export function Topbar({ actions, onOpenMobileNav }: TopbarProps) {
           return (
             <div
               key={`${crumb.path}-${i}`}
-              style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
+              className={isLast ? 'crumb crumb-current' : 'crumb crumb-parent'}
+              style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: isLast ? 0 : undefined }}
             >
               {i > 0 && (
                 <Icon
                   name="chevron-right"
                   size={13}
+                  className="crumb-sep"
                   style={{ color: 'var(--text-muted)', flexShrink: 0 }}
                 />
               )}
               {isLast ? (
                 <span
                   style={{
-                    fontSize: '13px',
+                    fontSize: 'var(--fs-base)',
                     fontWeight: 600,
                     color: 'var(--text)',
                     overflow: 'hidden',
@@ -189,7 +188,7 @@ export function Topbar({ actions, onOpenMobileNav }: TopbarProps) {
               ) : crumb.path === '#' ? (
                 <span
                   style={{
-                    fontSize: '13px',
+                    fontSize: 'var(--fs-base)',
                     color: 'var(--text-muted)',
                     whiteSpace: 'nowrap',
                   }}
@@ -200,7 +199,7 @@ export function Topbar({ actions, onOpenMobileNav }: TopbarProps) {
                 <Link
                   href={crumb.path}
                   style={{
-                    fontSize: '13px',
+                    fontSize: 'var(--fs-base)',
                     color: 'var(--text-subtle)',
                     whiteSpace: 'nowrap',
                     textDecoration: 'none',

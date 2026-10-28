@@ -37,6 +37,7 @@ test('portal meet selection state reloads persisted event selections from backen
   assert.deepEqual(states.sw_1?.selectedEventSelectionIds, { ev_1: 'sel_1', ev_2: 'sel_2' })
   assert.equal(states.sw_1?.commitment, 'yes')
   assert.equal(states.sw_1?.note, 'prefers sprint free')
+  assert.equal(states.sw_1?.savedNote, 'prefers sprint free')
 })
 
 test('portal meet selection helpers respect commitment-open and committed-yes constraints', () => {
@@ -46,6 +47,7 @@ test('portal meet selection helpers respect commitment-open and committed-yes co
     selectedEvents: [],
     selectedEventSelectionIds: {},
     note: '',
+    savedNote: '',
   }
   const closedState = {
     ...openYesState,
@@ -64,6 +66,7 @@ test('portal meet selection helpers add and remove persisted selections without 
     selectedEvents: ['ev_1'],
     selectedEventSelectionIds: { ev_1: 'sel_1' },
     note: '',
+    savedNote: '',
   }
 
   const withAdded = withAddedPortalMeetSelection(initial, {
