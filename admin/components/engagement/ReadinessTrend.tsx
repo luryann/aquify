@@ -67,15 +67,11 @@ export function ReadinessTrend({ checkins, days }: { checkins: WellnessCheckIn[]
       {hovered && (
         <div
           role="status"
-          style={{
-            position: 'absolute', top: 0, left: `${(x(hover!) / W) * 100}%`, transform: `translateX(${hover! > days.length / 2 ? '-105%' : '5%'})`,
-            background: 'var(--bg-elevated)', border: '1px solid var(--border-strong)', borderRadius: 8, padding: '8px 12px',
-            fontSize: 'var(--fs-sm)', color: 'var(--text)', boxShadow: 'var(--shadow)', pointerEvents: 'none', minWidth: 140,
-          }}
+          className="u-p-8px-12px u-fs-fs-sm" style={{ position: 'absolute', top: 0, left: `${(x(hover!) / W) * 100}%`, transform: `translateX(${hover! > days.length / 2 ? '-105%' : '5%'})`, background: 'var(--bg-elevated)', border: '1px solid var(--border-strong)', borderRadius: 8, color: 'var(--text)', boxShadow: 'var(--shadow)', pointerEvents: 'none', minWidth: 140 }}
         >
-          <div style={{ fontWeight: 600, marginBottom: 2 }}>{fmt(hovered.d)}</div>
+          <div className="u-fw-600 u-mb-2px" >{fmt(hovered.d)}</div>
           {hovered.c ? (
-            <div style={{ color: 'var(--text-subtle)', lineHeight: 1.5 }}>
+            <div className="u-lh-1_5" style={{ color: 'var(--text-subtle)' }}>
               Readiness {hovered.c.readiness.toFixed(1)}<br />
               Sleep {hovered.c.sleep_hours}h · energy {hovered.c.energy} · soreness {hovered.c.soreness}
             </div>

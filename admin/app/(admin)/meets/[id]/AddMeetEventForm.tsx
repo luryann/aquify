@@ -6,7 +6,7 @@ import { useApiClient } from '@/lib/api'
 import { createMeetEvent } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 
-const FIELD_STYLE: React.CSSProperties = { width: '100%', padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none' }
+const FIELD_STYLE: React.CSSProperties = { width: '100%' }
 const LABEL_STYLE: React.CSSProperties = { display: 'block', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginBottom: '4px', fontFamily: 'var(--font-body)' }
 
 const STROKES = [
@@ -100,12 +100,12 @@ export function AddMeetEventForm({ meetId, course, sessions, suggestedEventNumbe
   }
 
   return (
-    <form className="card" onSubmit={handleSubmit} style={{ padding: '16px', marginBottom: '16px' }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
+    <form className="card u-p-16px u-mb-16px" onSubmit={handleSubmit} >
+      <div className="u-gap-12px u-mb-12px" style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap' }}>
         <h3 className="card-title">Add event</h3>
-        <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>For meets without an entry file — events are added in {course}.</p>
+        <p className="u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>For meets without an entry file — events are added in {course}.</p>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '12px', alignItems: 'end' }}>
+      <div className="u-gap-12px" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', alignItems: 'end' }}>
         <div>
           <label htmlFor="event-number" style={LABEL_STYLE}>Event #</label>
           <input id="event-number" value={form.eventNumber} placeholder={suggestedEventNumber} onChange={(e) => setForm((f) => ({ ...f, eventNumber: e.target.value }))} style={FIELD_STYLE} />
@@ -148,9 +148,9 @@ export function AddMeetEventForm({ meetId, course, sessions, suggestedEventNumbe
           <input id="event-fee" type="number" min="0" step="0.01" placeholder="0.00" value={form.fee} onChange={(e) => setForm((f) => ({ ...f, fee: e.target.value }))} style={FIELD_STYLE} />
         </div>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', marginTop: '12px' }}>
-        {error ? <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--danger)', marginRight: 'auto' }}>{error}</div> : null}
-        {success ? <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--success)', marginRight: 'auto' }}>{success}</div> : null}
+      <div className="u-gap-12px u-mt-12px" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+        {error ? <div className="u-fs-fs-sm u-mr-auto" style={{ color: 'var(--danger)' }}>{error}</div> : null}
+        {success ? <div className="u-fs-fs-sm u-mr-auto" style={{ color: 'var(--success)' }}>{success}</div> : null}
         <button type="submit" className="btn btn-primary" disabled={saving}>
           {saving ? 'Adding…' : 'Add Event'}
         </button>

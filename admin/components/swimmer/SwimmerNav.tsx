@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 import { Icon } from '@/components/ui/icons'
+import './SwimmerNav.inline.css'
 
 type SwimmerNavProps = {
   swimmerName?: string
@@ -54,25 +55,13 @@ export function SwimmerNav({ swimmerName, initials, onSignOut }: SwimmerNavProps
       }}
     >
       <div
-        className="portal-frame"
-        style={{
-          height: '58px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0',
-        }}
+        className="portal-frame is-a98e6ad"
+        
       >
         {/* Wordmark */}
         <Link
           href="/swim"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            textDecoration: 'none',
-            marginRight: '40px',
-            flexShrink: 0,
-          }}
+          className="is-e285dd0"
         >
           {/* Teal wave icon */}
           <svg width="22" height="14" viewBox="0 0 22 14" fill="none">
@@ -108,8 +97,8 @@ export function SwimmerNav({ swimmerName, initials, onSignOut }: SwimmerNavProps
 
         {/* Nav links (desktop) */}
         <nav
-          className="desktop-nav-links"
-          style={{ display: 'flex', alignItems: 'center', gap: '2px', flex: 1 }}
+          className="desktop-nav-links is-c7a0c1e"
+          
           aria-label="Athlete navigation"
         >
           {NAV_LINKS.map((link) => {
@@ -148,18 +137,18 @@ export function SwimmerNav({ swimmerName, initials, onSignOut }: SwimmerNavProps
           })}
         </nav>
 
-        <button
-          className="mobile-nav-toggle"
+        <button type="button"
+          className="mobile-nav-toggle is-5387648"
           onClick={() => setMobileNavOpen(true)}
           aria-label="Open navigation menu"
-          style={{ marginLeft: 'auto' }}
+          
         >
           <Icon name="menu" size={16} />
         </button>
 
         {/* User area */}
-        <div style={{ position: 'relative', flexShrink: 0, marginLeft: '8px' }}>
-          <button
+        <div className="is-fed490f">
+          <button type="button"
             onClick={() => setMenuOpen((v) => !v)}
             aria-label="Athlete menu"
             aria-expanded={menuOpen}
@@ -185,20 +174,7 @@ export function SwimmerNav({ swimmerName, initials, onSignOut }: SwimmerNavProps
           >
             {/* Avatar */}
             <div
-              style={{
-                width: '28px',
-                height: '28px',
-                borderRadius: '50%',
-                background: 'linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: 'var(--text-on-accent)',
-                fontSize: 'var(--fs-xs)',
-                fontWeight: 700,
-                fontFamily: 'var(--font-body)',
-                flexShrink: 0,
-              }}
+              className="is-36100be"
             >
               {initials ?? <Icon name="user" size={14} />}
             </div>
@@ -233,7 +209,7 @@ export function SwimmerNav({ swimmerName, initials, onSignOut }: SwimmerNavProps
                   background: C.surface,
                   border: `1px solid ${C.border}`,
                   borderRadius: '12px',
-                  boxShadow: '0 8px 32px rgba(0,0,0,0.40)',
+                  boxShadow: 'var(--shadow-sm)',
                   minWidth: '180px',
                   padding: '6px',
                   zIndex: 100,
@@ -261,23 +237,9 @@ export function SwimmerNav({ swimmerName, initials, onSignOut }: SwimmerNavProps
                   My Profile
                 </Link>
                 <div style={{ height: '1px', background: C.border, margin: '4px 0' }} />
-                <button
+                <button type="button"
                   onClick={() => { setMenuOpen(false); onSignOut?.() }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    padding: '8px 12px',
-                    borderRadius: '8px',
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'var(--error)',
-                    fontSize: 'var(--fs-base)',
-                    cursor: 'pointer',
-                    width: '100%',
-                    textAlign: 'left',
-                    transition: 'background 100ms ease',
-                  }}
+                  className="is-31cee2f"
                   onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--error-bg)')}
                   onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                 >
@@ -304,9 +266,9 @@ export function SwimmerNav({ swimmerName, initials, onSignOut }: SwimmerNavProps
             padding: '20px 12px',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 8px 16px' }}>
+          <div className="is-40001e4">
             <span style={{ fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--fs-xl)', color: C.text }}>aquify</span>
-            <button
+            <button type="button"
               className="btn-icon"
               onClick={() => setMobileNavOpen(false)}
               aria-label="Close navigation menu"
@@ -314,7 +276,7 @@ export function SwimmerNav({ swimmerName, initials, onSignOut }: SwimmerNavProps
               <Icon name="x" size={16} />
             </button>
           </div>
-          <nav style={{ display: 'flex', flexDirection: 'column', gap: '2px' }} aria-label="Athlete navigation">
+          <nav className="is-32bee05" aria-label="Athlete navigation">
             {NAV_LINKS.map((link) => {
               const active = isActive(link.path)
               return (

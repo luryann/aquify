@@ -3,6 +3,7 @@
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
 import { WellnessPanel } from '@/components/engagement/WellnessPanel'
+import './page.inline.css'
 
 export default function SwimmerWellnessPage() {
   const { session } = useSession()
@@ -18,7 +19,7 @@ export default function SwimmerWellnessPage() {
       {swimmerId ? (
         <WellnessPanel api={api} orgId={orgId} swimmerId={swimmerId} selfView />
       ) : (
-        <div className="card" style={{ padding: 24, fontSize: 'var(--fs-md)', color: 'var(--text-subtle)' }}>
+        <div className="card is-0a6919f" >
           Your login is not linked to a swimmer profile yet. Ask your coach to link it, then check in here.
         </div>
       )}

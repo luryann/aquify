@@ -16,13 +16,10 @@ Main set
 6x50 fly @:55 SP2
 Cooldown: 200 easy`
 
-const fieldStyle: React.CSSProperties = {
-  width: '100%', padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-  borderRadius: '8px', color: 'var(--text)', fontSize: 'var(--fs-base)', fontFamily: 'var(--font-body)', outline: 'none',
-}
+const fieldStyle: React.CSSProperties = { width: '100%' }
 
 function Label({ children, htmlFor }: { children: React.ReactNode; htmlFor: string }) {
-  return <label htmlFor={htmlFor} style={{ display: 'block', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginBottom: '6px' }}>{children}</label>
+  return <label htmlFor={htmlFor} className="u-fs-fs-sm u-mb-6px" style={{ display: 'block', color: 'var(--text-muted)' }}>{children}</label>
 }
 
 export function errorText(error: unknown, fallback: string): string {
@@ -91,9 +88,9 @@ export function WorkoutComposer({
   }
 
   return (
-    <div className="composer-grid" style={{ display: 'grid', gap: '20px' }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', minWidth: 0 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 96px', gap: '12px' }}>
+    <div className="composer-grid u-gap-20px" style={{ display: 'grid' }}>
+      <div className="u-gap-12px" style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <div className="u-gap-12px" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 96px' }}>
           <div>
             <Label htmlFor="wk-title">Title</Label>
             <input id="wk-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Threshold Tuesday" style={fieldStyle} maxLength={160} />
@@ -118,22 +115,22 @@ export function WorkoutComposer({
           <textarea
             id="wk-text" value={text} onChange={(e) => setText(e.target.value)} rows={14} spellCheck={false}
             placeholder={EXAMPLE}
-            style={{ ...fieldStyle, fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-base)', lineHeight: 1.6, resize: 'vertical' }}
+            style={{ ...fieldStyle, lineHeight: 1.6, resize: 'vertical' }}
           />
-          <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginTop: '6px', lineHeight: 1.5 }}>
+          <p className="u-fs-fs-sm u-mt-6px u-lh-1_5" style={{ color: 'var(--text-muted)' }}>
             One set per line: <code>8x100 free @1:30 EN2</code>. Start a section with <code>Warmup:</code>, <code>Main</code>, <code>Kick</code>, <code>Cooldown</code>.
             Group rounds with <code>3 x {'{'}4x100, 100 easy{'}'}</code> or <code>3 rounds:</code> and indented lines.
           </p>
         </div>
         {(parsed?.errors.length ?? 0) > 0 && (
-          <ul role="alert" style={{ margin: 0, padding: '12px 12px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', listStyle: 'none', fontSize: 'var(--fs-sm)', color: 'var(--error)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <ul role="alert" className="u-m-0 u-p-12px-12px u-fs-fs-sm u-gap-4px" style={{ borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', listStyle: 'none', color: 'var(--error)', display: 'flex', flexDirection: 'column' }}>
             {parsed!.errors.map((e, i) => (
               <li key={i}>{e.line > 0 ? `Line ${e.line}: ` : ''}{e.message}{e.text ? ` (“${e.text}”)` : ''}</li>
             ))}
           </ul>
         )}
-        {(parseError || saveError) && <p role="alert" style={{ fontSize: 'var(--fs-sm)', color: 'var(--error)' }}>{saveError ?? parseError}</p>}
-        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+        {(parseError || saveError) && <p role="alert" className="u-fs-fs-sm" style={{ color: 'var(--error)' }}>{saveError ?? parseError}</p>}
+        <div className="u-gap-8px" style={{ display: 'flex', justifyContent: 'flex-end' }}>
           {onCancel && <button type="button" className="btn btn-secondary" onClick={onCancel}>Cancel</button>}
           <button type="button" className="btn btn-primary" onClick={handleSave} disabled={!canSave}>
             {saving ? 'Saving…' : saveLabel}
@@ -141,26 +138,26 @@ export function WorkoutComposer({
         </div>
       </div>
 
-      <div style={{ minWidth: 0, border: '1px solid var(--border)', borderRadius: '12px', padding: '16px', background: 'var(--bg-surface)' }}>
+      <div className="u-p-16px" style={{ minWidth: 0, border: '1px solid var(--border)', borderRadius: '12px', background: 'var(--bg-surface)' }}>
         {parsed && parsed.sections.length > 0 ? (
           <>
-            <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'baseline', marginBottom: '12px' }}>
-              <span style={{ fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--fs-3xl)', color: 'var(--text)', lineHeight: 1 }}>
+            <div className="u-gap-20px u-mb-12px" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline' }}>
+              <span className="u-ff-font-display u-fw-display-weight u-fs-fs-3xl u-lh-1" style={{ color: 'var(--text)' }}>
                 {formatDistance(parsed.totals.distance, parsed.totals.unit)}
               </span>
-              <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)' }}>about {formatDuration(parsed.totals.estimated_seconds)}</span>
-              <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)' }}>{parsed.totals.lengths} lengths</span>
+              <span className="u-fs-fs-base" style={{ color: 'var(--text-subtle)' }}>about {formatDuration(parsed.totals.estimated_seconds)}</span>
+              <span className="u-fs-fs-base" style={{ color: 'var(--text-subtle)' }}>{parsed.totals.lengths} lengths</span>
             </div>
-            <div style={{ marginBottom: '16px' }}><ZoneBar byZone={parsed.totals.by_zone} /></div>
+            <div className="u-mb-16px" ><ZoneBar byZone={parsed.totals.by_zone} /></div>
             {parsed.totals.warnings.length > 0 && (
-              <ul style={{ margin: '0 0 16px', padding: '8px 12px', listStyle: 'none', fontSize: 'var(--fs-sm)', color: 'var(--warning)', background: 'var(--warning-bg)', borderRadius: '8px' }}>
+              <ul className="u-m-0-0-16px u-p-8px-12px u-fs-fs-sm" style={{ listStyle: 'none', color: 'var(--warning)', background: 'var(--warning-bg)', borderRadius: '8px' }}>
                 {parsed.totals.warnings.map((w, i) => <li key={i}>{w}</li>)}
               </ul>
             )}
             <WorkoutSheet workout={parsed} />
           </>
         ) : (
-          <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)' }}>
+          <p className="u-fs-fs-base" style={{ color: 'var(--text-muted)' }}>
             The structured workout, distance and zone mix appear here as you type.
           </p>
         )}

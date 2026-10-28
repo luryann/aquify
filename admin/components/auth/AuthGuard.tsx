@@ -19,21 +19,10 @@ type AuthGuardProps = {
 function LoadingSplash() {
   return (
     <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'var(--bg)',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: '16px',
-        zIndex: 9999,
-        animation: 'fadeIn 0.2s ease',
-      }}
+      className="u-gap-16px" style={{ position: 'fixed', inset: 0, background: 'var(--bg)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 9999, animation: 'fadeIn 0.2s ease' }}
     >
       {/* Brand mark */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+      <div className="u-gap-12px u-mb-8px" style={{ display: 'flex', alignItems: 'center' }}>
         <div
           style={{
             width: '9px',
@@ -45,14 +34,7 @@ function LoadingSplash() {
           }}
         />
         <span
-          style={{
-            fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)',
-            fontStyle: 'italic',
-            fontSize: 'var(--fs-2xl)',
-            color: 'var(--text)',
-            letterSpacing: 'var(--display-tracking)',
-            userSelect: 'none',
-          }}
+          className="u-ff-font-display u-fw-display-weight u-fs-fs-2xl u-ls-display-tracking" style={{ fontStyle: 'italic', color: 'var(--text)', userSelect: 'none' }}
         >
           DARE
         </span>
@@ -61,12 +43,7 @@ function LoadingSplash() {
       <div className="spinner" />
 
       <p
-        style={{
-          fontSize: 'var(--fs-sm)',
-          fontFamily: 'var(--font-body)',
-          color: 'var(--text-muted)',
-          letterSpacing: '0.04em',
-        }}
+        className="u-fs-fs-sm u-ff-font-body" style={{ color: 'var(--text-muted)', letterSpacing: '0.04em' }}
       >
         authenticating…
       </p>
@@ -82,32 +59,10 @@ function UnauthorizedScreen({ reason }: { reason: 'unauthenticated' | 'forbidden
 
   return (
     <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'var(--bg)',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: '12px',
-        textAlign: 'center',
-        padding: '24px',
-      }}
+      className="u-gap-12px u-p-24px" style={{ position: 'fixed', inset: 0, background: 'var(--bg)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}
     >
       <div
-        style={{
-          width: '56px',
-          height: '56px',
-          borderRadius: '50%',
-          background: 'var(--error-bg)',
-          border: '1px solid var(--error-border)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: 'var(--error)',
-          marginBottom: '8px',
-        }}
+        className="u-mb-8px" style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'var(--error-bg)', border: '1px solid var(--error-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--error)' }}
       >
         <svg
           viewBox="0 0 24 24"
@@ -126,25 +81,21 @@ function UnauthorizedScreen({ reason }: { reason: 'unauthenticated' | 'forbidden
       </div>
 
       <p
-        style={{
-          fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)',
-          fontSize: 'var(--fs-xl)',
-          color: 'var(--text)',
-        }}
+        className="u-ff-font-display u-fw-display-weight u-fs-fs-xl" style={{ color: 'var(--text)' }}
       >
         {reason === 'forbidden' ? 'Access Denied' : 'Sign In Required'}
       </p>
 
-      <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', maxWidth: '320px', lineHeight: 1.6 }}>
+      <p className="u-fs-fs-base u-lh-1_6" style={{ color: 'var(--text-subtle)', maxWidth: '320px' }}>
         {reason === 'forbidden'
           ? "You don't have permission to access this area. Contact your administrator."
           : 'Sign in to continue.'}
       </p>
 
       <button
-        className="btn btn-secondary"
+        className="btn btn-secondary u-mt-8px"
         onClick={() => router.push(reason === 'forbidden' ? dashboardDestination : '/login')}
-        style={{ marginTop: '8px' }}
+        
       >
         {reason === 'forbidden' ? 'Go to Dashboard' : 'Sign In'}
       </button>

@@ -6,6 +6,7 @@ import { useSession } from '@/lib/session'
 import { usePathname, useRouter } from 'next/navigation'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { Topbar } from '@/components/layout/Topbar'
+import { CommandPalette } from '@/components/layout/CommandPalette'
 import { buildSidebarSessionProps } from '@/lib/sidebar-badge'
 
 export function AdminShell({ children }: { children: ReactNode }) {
@@ -106,6 +107,8 @@ export function AdminShell({ children }: { children: ReactNode }) {
           {children}
         </div>
       </main>
+
+      <CommandPalette />
 
       {mobileNavOpen && (
         <>

@@ -1,0 +1,4 @@
+/* Static layout/type styles migrated from inline style props. */
+.is-9b78534.is-9b78534 { padding: 16px; margin-bottom: 16px; display: flex; justify-content: space-between; gap: 12px; align-items: center; color: var(--warning); font-size: var(--fs-base); }
+.is-ef1427e.is-ef1427e { padding: 24px; color: var(--text-subtle); font-size: var(--fs-md); }
+.is-00afff9.is-00afff9 { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }

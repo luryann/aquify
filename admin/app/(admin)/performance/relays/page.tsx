@@ -122,7 +122,7 @@ function RelayBuilder() {
   return (
     <div className="page">
       <h1 className="page-title">Relay builder</h1>
-      <p className="page-subtitle" style={{ marginBottom: 24 }}>Fastest A, B and C relays from flat-start best times. Lock or exclude swimmers and the rest re-solves.</p>
+      <p className="page-subtitle u-mb-24px" >Fastest A, B and C relays from flat-start best times. Lock or exclude swimmers and the rest re-solves.</p>
 
       <FilterRow>
         <select aria-label="Meet" value={meetId} onChange={(e) => { setMeetId(e.target.value); resetConstraints() }} style={{ ...FIELD_STYLE, maxWidth: '100%' }}>
@@ -147,27 +147,27 @@ function RelayBuilder() {
 
       {proposal ? (
         <>
-          <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)', margin: '0 0 16px' }}>
+          <p className="u-fs-fs-base u-m-0-0-16px" style={{ color: 'var(--text-muted)' }}>
             {proposal.pool.length} eligible swimmer{proposal.pool.length === 1 ? '' : 's'} with {proposal.leg_distance} {proposal.course} times, ages as of {proposal.as_of}.
             {mixedNote(proposal.gender)}
           </p>
           {proposal.warnings.map((w) => <Notice key={w} tone="warning">{w}</Notice>)}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 320px), 1fr))', gap: '16px', marginBottom: '20px' }}>
+          <div className="u-gap-16px u-mb-20px" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 320px), 1fr))' }}>
             {proposal.teams.map((team, ti) => (
-              <section key={team.label} className="card" style={{ padding: '16px 16px' }} aria-label={`Relay ${team.label}`}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '8px' }}>
+              <section key={team.label} className="card u-p-16px-16px" aria-label={`Relay ${team.label}`}>
+                <div className="u-mb-8px" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                   <h2 className="section-title">{team.label}</h2>
-                  <span style={{ fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--fs-3xl)', color: 'var(--accent)', fontVariantNumeric: 'tabular-nums' }}>{formatSwimTime(team.total_ms)}</span>
+                  <span className="u-ff-font-display u-fw-display-weight u-fs-fs-3xl" style={{ color: 'var(--accent-text, var(--accent))', fontVariantNumeric: 'tabular-nums' }}>{formatSwimTime(team.total_ms)}</span>
                 </div>
-                <ol style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+                <ol className="u-m-0 u-p-0" style={{ listStyle: 'none' }}>
                   {team.legs.map((leg) => (
-                    <li key={leg.leg} style={{ display: 'grid', gridTemplateColumns: '64px minmax(0, 1fr) auto', gap: '8px', alignItems: 'center', padding: '8px 0', borderTop: '1px solid var(--border)', fontSize: 'var(--fs-base)' }}>
-                      <span style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>{relayLegLabel(proposal.relay_type, leg.leg)}</span>
+                    <li key={leg.leg} className="u-gap-8px u-p-8px-0 u-fs-fs-base" style={{ display: 'grid', gridTemplateColumns: '64px minmax(0, 1fr) auto', alignItems: 'center', borderTop: '1px solid var(--border)' }}>
+                      <span className="u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>{relayLegLabel(proposal.relay_type, leg.leg)}</span>
                       <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {leg.swimmer_name}{proposal.gender === 'X' ? <span style={{ color: 'var(--text-muted)' }}> ({leg.gender})</span> : null}
                         <span style={{ color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums' }}> {formatSwimTime(leg.time_ms)}</span>
                       </span>
-                      <span style={{ display: 'flex', gap: '4px' }}>
+                      <span className="u-gap-4px" style={{ display: 'flex' }}>
                         <button type="button" className={`btn btn-sm ${leg.locked ? 'btn-secondary' : 'btn-ghost'}`} aria-pressed={leg.locked} disabled={busy} onClick={() => lockLeg(ti, leg.leg, leg.swimmer_id)} title={leg.locked ? 'Unlock this leg' : 'Keep this swimmer on this leg'}>{leg.locked ? 'Locked' : 'Lock'}</button>
                         <button type="button" className="btn btn-sm btn-ghost" disabled={busy} onClick={() => exclude(leg.swimmer_id)} title="Leave this swimmer out and rebuild">Leave out</button>
                       </span>
@@ -179,7 +179,7 @@ function RelayBuilder() {
           </div>
 
           {excludedNames.length > 0 ? (
-            <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', margin: '0 0 16px', display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <p className="u-fs-fs-base u-m-0-0-16px u-gap-6px" style={{ color: 'var(--text-subtle)', display: 'flex', flexWrap: 'wrap', alignItems: 'center' }}>
               Left out:
               {excludedNames.map((x) => (
                 <button key={x.id} type="button" className="badge badge-default" style={{ cursor: 'pointer' }} onClick={() => exclude(x.id)} title="Put back in the pool">{x.name} ✕</button>
@@ -189,7 +189,7 @@ function RelayBuilder() {
 
           {proposal.teams.length > 0 ? (
             meetId ? (
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '24px' }}>
+              <div className="u-gap-8px u-mb-24px" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center' }}>
                 <input aria-label="Lineup name" placeholder={`${gender === 'X' ? 'Mixed' : gender === 'F' ? 'Girls' : 'Boys'} ${AGE_GROUP_LABELS[ageGroup]} ${distance} ${relayType === 'free' ? 'Free' : 'Medley'} Relay`} value={name} onChange={(e) => setName(e.target.value)} style={{ ...FIELD_STYLE, flex: '1 1 240px', maxWidth: '420px' }} />
                 <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void save()}>Save lineup to meet</button>
               </div>
@@ -203,28 +203,28 @@ function RelayBuilder() {
           <h2 id="saved-lineups" className="section-title" style={{ margin: '8px 0 12px' }}>
             Saved lineups for {meet?.name ?? 'this meet'}
           </h2>
-          {meet ? <p style={{ margin: '0 0 12px', fontSize: 'var(--fs-base)' }}><Link href={`/meets/${meet.id}`} style={{ color: 'var(--accent)' }}>Back to {meet.name}</Link></p> : null}
+          {meet ? <p className="u-m-0-0-12px u-fs-fs-base" ><Link href={`/meets/${meet.id}`} style={{ color: 'var(--accent-text, var(--accent))' }}>Back to {meet.name}</Link></p> : null}
           {lineups.length === 0 ? (
-            <p style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-base)' }}>No lineups saved for this meet yet.</p>
+            <p className="u-fs-fs-base" style={{ color: 'var(--text-muted)' }}>No lineups saved for this meet yet.</p>
           ) : (
-            <div style={{ display: 'grid', gap: '12px' }}>
+            <div className="u-gap-12px" style={{ display: 'grid' }}>
               {lineups.map((l) => (
-                <details key={l.id} className="card" style={{ padding: '12px 16px' }}>
-                  <summary style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', fontSize: 'var(--fs-md)' }}>
-                    <span style={{ fontWeight: 600 }}>{l.name}</span>
-                    <span style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>{l.teams.map((t) => `${t.label} ${formatSwimTime(t.total_ms)}`).join(' / ')}</span>
+                <details key={l.id} className="card u-p-12px-16px" >
+                  <summary className="u-gap-8px u-fs-fs-md" style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+                    <span className="u-fw-600" >{l.name}</span>
+                    <span className="u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>{l.teams.map((t) => `${t.label} ${formatSwimTime(t.total_ms)}`).join(' / ')}</span>
                   </summary>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 240px), 1fr))', gap: '12px', marginTop: '12px' }}>
+                  <div className="u-gap-12px u-mt-12px" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 240px), 1fr))' }}>
                     {l.teams.map((t) => (
-                      <div key={t.label} style={{ fontSize: 'var(--fs-base)' }}>
+                      <div key={t.label} className="u-fs-fs-base" >
                         <strong>{t.label}</strong>
-                        <ol style={{ margin: '4px 0 0', paddingLeft: '20px' }}>
+                        <ol className="u-m-4px-0-0 u-pl-20px" >
                           {t.legs.map((leg) => <li key={leg.leg}>{leg.swimmer_name} <span style={{ color: 'var(--text-muted)' }}>{STROKE_LABELS[leg.stroke] ?? leg.stroke} {formatSwimTime(leg.time_ms)}</span></li>)}
                         </ol>
                       </div>
                     ))}
                   </div>
-                  <button type="button" className="btn btn-sm btn-danger" style={{ marginTop: '12px' }} onClick={() => void deleteRelayLineup(api, orgId, l.id).then(loadLineups).catch((err) => setError(reportUIError('performance.relays.delete', err, 'The lineup could not be deleted.')))}>Delete lineup</button>
+                  <button type="button" className="btn btn-sm btn-danger u-mt-12px" onClick={() => void deleteRelayLineup(api, orgId, l.id).then(loadLineups).catch((err) => setError(reportUIError('performance.relays.delete', err, 'The lineup could not be deleted.')))}>Delete lineup</button>
                 </details>
               ))}
             </div>

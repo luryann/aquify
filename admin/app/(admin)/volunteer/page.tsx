@@ -24,6 +24,7 @@ import { fillPercent, formatCents, formatHours } from '@/lib/volunteer-state'
 import { ComplianceBadge, HoursMeter, InlineNotice, LoadErrorBanner } from '@/components/volunteer/VolunteerPrimitives'
 import { NewJobsForm } from '@/components/volunteer/NewJobsForm'
 import { StaffJobBoard } from '@/components/volunteer/StaffJobBoard'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 
 const th: React.CSSProperties = {
   textAlign: 'left', padding: '12px 12px', fontSize: 'var(--fs-sm)', fontWeight: 600,
@@ -113,10 +114,14 @@ export default function VolunteerAdminPage() {
     return { short, due }
   }, [ledger])
 
+  const confirm = useConfirm()
+
   async function billBuyout(row: VolunteerLedgerRow) {
-    const ok = window.confirm(
-      `Bill ${row.household_name} ${formatCents(row.buyout_due_cents)} for ${formatHours(row.remaining_hours)} short? This creates and issues an invoice.`,
-    )
+    const ok = await confirm({
+      title: `Bill ${row.household_name}?`,
+      message: `${formatCents(row.buyout_due_cents)} for ${formatHours(row.remaining_hours)} short. This creates and issues an invoice.`,
+      confirmLabel: 'Bill household',
+    })
     if (!ok) return
     setBusyRow(row.household_id)
     setActionMsg(null)
@@ -185,27 +190,27 @@ export default function VolunteerAdminPage() {
       </div>
 
       {showForm ? (
-        <div style={{ marginBottom: '24px' }}>
-          <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)', margin: '0 0 12px' }}>
+        <div className="u-mb-24px" >
+          <p className="u-fs-fs-base u-m-0-0-12px" style={{ color: 'var(--text-muted)' }}>
             For meet shifts, use the Volunteers tab on the meet so jobs stay attached to it.
           </p>
           <NewJobsForm api={api} orgId={orgId} onCreated={() => { setShowForm(false); reloadJobs() }} />
         </div>
       ) : null}
 
-      <section style={{ marginBottom: 'var(--space-8)' }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
+      <section className="u-mb-space-8" >
+        <div className="u-gap-12px u-mb-16px" style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap' }}>
           <h2 className="section-title">Upcoming shifts</h2>
           {summary && summary.total_capacity > 0 ? (
-            <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)' }}>
-              <strong style={{ color: 'var(--text)', fontFamily: 'var(--font-mono)' }}>{fillPercent(summary.filled_spots, summary.total_capacity)}%</strong> filled · {summary.open_spots} open spots
+            <span className="u-fs-fs-base" style={{ color: 'var(--text-muted)' }}>
+              <strong className="u-ff-font-mono" style={{ color: 'var(--text)' }}>{fillPercent(summary.filled_spots, summary.total_capacity)}%</strong> filled · {summary.open_spots} open spots
             </span>
           ) : null}
         </div>
         {jobsError ? <LoadErrorBanner message={jobsError} onRetry={reloadJobs} /> : null}
         {!jobsLoading && !jobsError && jobs.length === 0 ? (
-          <p className="card" style={{ fontSize: 'var(--fs-md)', color: 'var(--text-muted)', margin: 0 }}>
-            No upcoming shifts. Post jobs for a club event above, or open a <Link href="/meets" style={{ color: 'var(--accent)' }}>meet</Link> and add its standard crew.
+          <p className="card u-fs-fs-md u-m-0" style={{ color: 'var(--text-muted)' }}>
+            No upcoming shifts. Post jobs for a club event above, or open a <Link href="/meets" style={{ color: 'var(--accent-text, var(--accent))' }}>meet</Link> and add its standard crew.
           </p>
         ) : null}
         {!jobsLoading && !jobsError && jobs.length > 0 ? (
@@ -214,7 +219,7 @@ export default function VolunteerAdminPage() {
       </section>
 
       <section>
-        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
+        <div className="u-gap-12px u-mb-16px" style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap' }}>
           <h2 className="section-title">Household hours</h2>
           <select className="form-input" aria-label="Season" value={seasonId} onChange={(e) => setSeasonId(e.target.value)} style={{ width: 'auto', minWidth: '180px' }}>
             {seasons.length === 0 ? <option value="">No seasons</option> : null}
@@ -223,7 +228,7 @@ export default function VolunteerAdminPage() {
         </div>
 
         {isAdmin && seasonId ? (
-          <form onSubmit={saveRules} className="card" style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '16px' }}>
+          <form onSubmit={saveRules} className="card u-gap-12px u-mb-16px" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end' }}>
             <label className="form-field" style={{ flex: '1 1 140px' }}>
               <span className="form-label">Hours required in {seasonName}</span>
               <input className="form-input" type="number" min={0} step={0.5} value={reqHours} onChange={(e) => setReqHours(e.target.value)} />
@@ -244,14 +249,14 @@ export default function VolunteerAdminPage() {
         {actionMsg ? <InlineNotice tone={actionMsg.tone}>{actionMsg.text}</InlineNotice> : null}
         {ledgerError ? <LoadErrorBanner message={ledgerError} onRetry={reloadLedger} /> : null}
         {!ledgerLoading && !ledgerError && seasonId && ledger.length === 0 ? (
-          <p className="card" style={{ fontSize: 'var(--fs-md)', color: 'var(--text-muted)', margin: 0 }}>No active households yet.</p>
+          <p className="card u-fs-fs-md u-m-0" style={{ color: 'var(--text-muted)' }}>No active households yet.</p>
         ) : null}
         {!ledgerError && ledger.length > 0 ? (
           <>
-            <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)', margin: '0 0 12px' }}>
+            <p className="u-fs-fs-base u-m-0-0-12px" style={{ color: 'var(--text-muted)' }}>
               {totals.short} {totals.short === 1 ? 'household is' : 'households are'} short · {formatCents(totals.due)} in unbilled buyouts
             </p>
-            <div className="card" style={{ padding: 0, overflowX: 'auto', position: 'relative' }}>
+            <div className="card table-scroll u-p-0" style={{ overflowX: 'auto', position: 'relative' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '760px' }}>
                 <thead>
                   <tr>
@@ -268,8 +273,8 @@ export default function VolunteerAdminPage() {
                   {ledger.map((row) => (
                     <tr key={row.household_id}>
                       <td style={td}>
-                        <Link href={`/members/households/${row.household_id}`} style={{ color: 'var(--text)', fontWeight: 600 }}>{row.household_name}</Link>
-                        {row.requirement_source === 'household' ? <span style={{ display: 'block', fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>Custom requirement</span> : null}
+                        <Link href={`/members/households/${row.household_id}`} className="u-fw-600" style={{ color: 'var(--text)' }}>{row.household_name}</Link>
+                        {row.requirement_source === 'household' ? <span className="u-fs-fs-xs" style={{ display: 'block', color: 'var(--text-muted)' }}>Custom requirement</span> : null}
                       </td>
                       <td style={td}><HoursMeter compact required={row.required_hours} earned={row.earned_hours} scheduled={row.scheduled_hours} /></td>
                       <td style={{ ...td, fontFamily: 'var(--font-mono)' }}>{row.earned_hours} / {row.required_hours}</td>
@@ -277,19 +282,19 @@ export default function VolunteerAdminPage() {
                       <td style={td}><ComplianceBadge status={row.status} /></td>
                       <td style={{ ...td, fontFamily: 'var(--font-mono)' }}>
                         {row.buyout?.invoice_id ? (
-                          isAdmin ? <Link href={`/invoices/${row.buyout.invoice_id}`} style={{ color: 'var(--accent)' }}>{formatCents(row.buyout.amount_cents)}</Link> : formatCents(row.buyout.amount_cents)
+                          isAdmin ? <Link href={`/invoices/${row.buyout.invoice_id}`} style={{ color: 'var(--accent-text, var(--accent))' }}>{formatCents(row.buyout.amount_cents)}</Link> : formatCents(row.buyout.amount_cents)
                         ) : row.buyout_due_cents > 0 ? formatCents(row.buyout_due_cents) : '—'}
                       </td>
                       <td style={{ ...td, whiteSpace: 'nowrap', textAlign: 'right' }}>
                         {creditFor === row.household_id ? (
-                          <span style={{ display: 'inline-flex', gap: '6px', alignItems: 'center' }}>
+                          <span className="u-gap-6px" style={{ display: 'inline-flex', alignItems: 'center' }}>
                             <input className="form-input" aria-label="Hours" type="number" step={0.25} placeholder="Hrs" value={creditHours} onChange={(e) => setCreditHours(e.target.value)} style={{ width: '70px' }} />
                             <input className="form-input" aria-label="Reason" placeholder="Reason" value={creditReason} onChange={(e) => setCreditReason(e.target.value)} style={{ width: '140px' }} />
                             <button type="button" className="btn btn-primary btn-sm" disabled={busyRow !== null || !Number(creditHours) || !creditReason.trim()} onClick={() => submitCredit(row)}>Save</button>
                             <button type="button" className="btn btn-ghost btn-sm" onClick={() => setCreditFor(null)}>Cancel</button>
                           </span>
                         ) : (
-                          <span style={{ display: 'inline-flex', gap: '6px' }}>
+                          <span className="u-gap-6px" style={{ display: 'inline-flex' }}>
                             <button type="button" className="btn btn-ghost btn-sm" onClick={() => setCreditFor(row.household_id)}>Credit hours</button>
                             {isAdmin && row.buyout_due_cents > 0 && !row.buyout ? (
                               <button type="button" className="btn btn-secondary btn-sm" disabled={busyRow !== null} onClick={() => billBuyout(row)}>

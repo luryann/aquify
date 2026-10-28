@@ -3,7 +3,9 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
-import { Icon } from '@/components/ui/icons'
+import { Icon, type IconName } from '@/components/ui/icons'
+import './portal.css'
+import './PortalNav.inline.css'
 
 type PortalNavProps = {
   userName?: string
@@ -26,6 +28,13 @@ const NAV_LINKS = [
   { label: 'Records',        path: '/portal/records',        primary: false },
   { label: 'Wellness',       path: '/portal/wellness',       primary: false },
   { label: 'Communications', path: '/portal/communications', primary: false },
+]
+const TAB_LINKS: { label: string; path: string; icon: IconName }[] = [
+  { label: 'Home', path: '/portal/dashboard', icon: 'home' },
+  { label: 'Meets', path: '/portal/meets', icon: 'clipboard-list' },
+  { label: 'Calendar', path: '/portal/calendar', icon: 'calendar' },
+  { label: 'Billing', path: '/portal/billing', icon: 'credit-card' },
+  { label: 'Messages', path: '/portal/messages', icon: 'mail' },
 ]
 const PRIMARY_LINKS = NAV_LINKS.filter((link) => link.primary)
 const MORE_LINKS = NAV_LINKS.filter((link) => !link.primary)
@@ -50,40 +59,21 @@ export function PortalNav({ userName, avatarInitials, onSignOut }: PortalNavProp
         background: 'rgba(255, 255, 255, 0.88)',
         backdropFilter: 'blur(12px)',
         WebkitBackdropFilter: 'blur(12px)',
-        borderBottom: '1px solid rgba(0,0,0,0.07)',
-        boxShadow: '0 1px 0 rgba(0,0,0,0.04)',
+        borderBottom: '1px solid var(--border)',
+        boxShadow: 'var(--shadow-sm)',
       }}
     >
       <div
-        className="portal-frame portal-nav-bar"
-        style={{
-          height: '58px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0',
-        }}
+        className="portal-frame portal-nav-bar is-a98e6ad"
+        
       >
         {/* Wordmark */}
         <Link
           href="/portal/dashboard"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            textDecoration: 'none',
-            marginRight: '40px',
-            flexShrink: 0,
-          }}
+          className="is-e285dd0"
         >
           <span
-            style={{
-              fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)',
-              fontSize: 'var(--fs-xl)',
-              color: 'var(--text)',
-              letterSpacing: 'var(--display-tracking)',
-              lineHeight: 1,
-              userSelect: 'none',
-            }}
+            className="is-90da9be"
           >
             aquify
           </span>
@@ -91,13 +81,8 @@ export function PortalNav({ userName, avatarInitials, onSignOut }: PortalNavProp
 
         {/* Nav links (desktop) */}
         <nav
-          className="desktop-nav-links"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '2px',
-            flex: 1,
-          }}
+          className="desktop-nav-links is-c7a0c1e"
+          
           aria-label="Portal navigation"
         >
           {PRIMARY_LINKS.map((link) => {
@@ -119,7 +104,7 @@ export function PortalNav({ userName, avatarInitials, onSignOut }: PortalNavProp
                 }}
                 onMouseEnter={(e) => {
                   if (!active) {
-                    e.currentTarget.style.background = 'rgba(0,0,0,0.05)'
+                    e.currentTarget.style.background = 'var(--bg-wash)'
                     e.currentTarget.style.color = 'var(--text)'
                   }
                 }}
@@ -136,7 +121,7 @@ export function PortalNav({ userName, avatarInitials, onSignOut }: PortalNavProp
           })}
 
           <div style={{ position: 'relative' }}>
-            <button
+            <button type="button"
               onClick={() => setMoreOpen((v) => !v)}
               aria-expanded={moreOpen}
               aria-haspopup="menu"
@@ -156,7 +141,7 @@ export function PortalNav({ userName, avatarInitials, onSignOut }: PortalNavProp
               }}
               onMouseEnter={(e) => {
                 if (!activeMore) {
-                  e.currentTarget.style.background = 'rgba(0,0,0,0.05)'
+                  e.currentTarget.style.background = 'var(--bg-wash)'
                   e.currentTarget.style.color = 'var(--text)'
                 }
               }}
@@ -175,20 +160,8 @@ export function PortalNav({ userName, avatarInitials, onSignOut }: PortalNavProp
                 <div style={{ position: 'fixed', inset: 0, zIndex: 99 }} onClick={() => setMoreOpen(false)} />
                 <div
                   role="menu"
-                  className="card"
-                  style={{
-                    position: 'absolute',
-                    top: 'calc(100% + 8px)',
-                    left: 0,
-                    boxShadow: '0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06)',
-                    minWidth: '190px',
-                    padding: '6px',
-                    zIndex: 100,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '2px',
-                    animation: 'slideUp 0.18s ease both',
-                  }}
+                  className="card is-88ca7fc"
+                  
                 >
                   {MORE_LINKS.map((link) => {
                     const active = isActive(link.path)
@@ -218,71 +191,39 @@ export function PortalNav({ userName, avatarInitials, onSignOut }: PortalNavProp
           </div>
         </nav>
 
-        <button
-          className="mobile-nav-toggle"
+        <button type="button"
+          className="mobile-nav-toggle is-5387648"
           onClick={() => setMobileNavOpen(true)}
           aria-label="Open navigation menu"
-          style={{ marginLeft: 'auto' }}
+          
         >
           <Icon name="menu" size={16} />
         </button>
 
         {/* User area */}
-        <div style={{ position: 'relative', flexShrink: 0, marginLeft: '8px' }}>
-          <button
+        <div className="is-fed490f">
+          <button type="button"
             onClick={() => setUserMenuOpen((v) => !v)}
             aria-label="User menu"
             aria-expanded={userMenuOpen}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '4px 12px 4px 4px',
-              background: 'transparent',
-              border: '1px solid rgba(0,0,0,0.10)',
-              borderRadius: '999px',
-              cursor: 'pointer',
-              transition: 'background 120ms ease, border-color 120ms ease',
-            }}
+            className="is-8d90a6f"
             onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(0,0,0,0.04)'
-              e.currentTarget.style.borderColor = 'rgba(0,0,0,0.16)'
+              e.currentTarget.style.background = 'var(--bg-wash)'
+              e.currentTarget.style.borderColor = 'var(--border-strong)'
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.background = 'transparent'
-              e.currentTarget.style.borderColor = 'rgba(0,0,0,0.10)'
+              e.currentTarget.style.borderColor = 'var(--border)'
             }}
           >
             {/* Avatar */}
             <div
-              style={{
-                width: '28px',
-                height: '28px',
-                borderRadius: '50%',
-                background: 'linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: 'var(--bg-elevated)',
-                fontSize: 'var(--fs-xs)',
-                fontWeight: 700,
-                fontFamily: 'var(--font-body)',
-                textTransform: 'uppercase',
-                flexShrink: 0,
-              }}
+              className="is-78ae422"
             >
               {avatarInitials ?? <Icon name="user" size={14} />}
             </div>
             <span
-              style={{
-                fontSize: 'var(--fs-base)',
-                fontWeight: 500,
-                color: 'var(--text)',
-                maxWidth: '120px',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
+              className="is-117f5a5"
             >
               {userName ?? 'My Account'}
             </span>
@@ -298,62 +239,25 @@ export function PortalNav({ userName, avatarInitials, onSignOut }: PortalNavProp
                 onClick={() => setUserMenuOpen(false)}
               />
               <div
-                className="card"
-                style={{
-                  position: 'absolute',
-                  top: 'calc(100% + 6px)',
-                  right: 0,
-                  boxShadow: '0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06)',
-                  minWidth: '180px',
-                  padding: '6px',
-                  zIndex: 100,
-                  animation: 'slideUp 0.18s ease both',
-                }}
+                className="card is-bb3cf93"
+                
               >
                 <Link
                   href="/portal/household"
                   onClick={() => setUserMenuOpen(false)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    padding: '8px 12px',
-                    borderRadius: '8px',
-                    textDecoration: 'none',
-                    color: 'var(--text)',
-                    fontSize: 'var(--fs-base)',
-                    transition: 'background 100ms ease',
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(0,0,0,0.04)')}
+                  className="is-0561fd1"
+                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-wash)')}
                   onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                 >
                   <Icon name="home" size={15} style={{ color: 'var(--text-subtle)' }} />
                   Household Profile
                 </Link>
                 <div
-                  style={{
-                    height: '1px',
-                    background: 'rgba(0,0,0,0.07)',
-                    margin: '4px 0',
-                  }}
+                  className="is-aa59499"
                 />
-                <button
+                <button type="button"
                   onClick={() => { setUserMenuOpen(false); onSignOut?.() }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    padding: '8px 12px',
-                    borderRadius: '8px',
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'var(--error)',
-                    fontSize: 'var(--fs-base)',
-                    cursor: 'pointer',
-                    width: '100%',
-                    textAlign: 'left',
-                    transition: 'background 100ms ease',
-                  }}
+                  className="is-31cee2f"
                   onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(220,38,38,0.06)')}
                   onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                 >
@@ -371,19 +275,13 @@ export function PortalNav({ userName, avatarInitials, onSignOut }: PortalNavProp
       <>
         <div className="mobile-nav-overlay" onClick={() => setMobileNavOpen(false)} />
         <div
-          className="mobile-nav-drawer"
+          className="mobile-nav-drawer is-5b82ca5"
           data-theme="light"
-          style={{
-            width: 'min(280px, 84vw)',
-            background: 'var(--bg-elevated)',
-            borderRight: '1px solid rgba(0,0,0,0.08)',
-            flexDirection: 'column',
-            padding: '20px 12px',
-          }}
+          
         >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 8px 16px' }}>
-            <span style={{ fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--fs-xl)', color: 'var(--text)' }}>aquify</span>
-            <button
+          <div className="is-40001e4">
+            <span className="is-f3c1003">aquify</span>
+            <button type="button"
               className="btn-icon"
               onClick={() => setMobileNavOpen(false)}
               aria-label="Close navigation menu"
@@ -391,7 +289,7 @@ export function PortalNav({ userName, avatarInitials, onSignOut }: PortalNavProp
               <Icon name="x" size={16} />
             </button>
           </div>
-          <nav style={{ display: 'flex', flexDirection: 'column', gap: '2px' }} aria-label="Portal navigation">
+          <nav className="is-32bee05" aria-label="Portal navigation">
             {NAV_LINKS.map((link) => {
               const active = isActive(link.path)
               return (
@@ -417,6 +315,14 @@ export function PortalNav({ userName, avatarInitials, onSignOut }: PortalNavProp
         </div>
       </>
     )}
+    <nav className="portal-tabbar" aria-label="Main">
+      {TAB_LINKS.map((t) => (
+        <Link key={t.path} href={t.path} className="portal-tabbar-link" aria-current={isActive(t.path) ? 'page' : undefined}>
+          <Icon name={t.icon} size={20} />
+          <span>{t.label}</span>
+        </Link>
+      ))}
+    </nav>
     </>
   )
 }

@@ -26,16 +26,16 @@ export function SwimmerClubEvents({ api, orgId, swimmerId }: { api: ApiClient; o
 
   if (error) {
     return (
-      <p role="alert" style={{ marginBottom: 24, fontSize: 'var(--fs-sm)', color: 'var(--warning)' }}>
+      <p role="alert" className="u-mb-24px u-fs-fs-sm" style={{ color: 'var(--warning)' }}>
         {error} <button type="button" className="btn btn-ghost btn-sm" onClick={() => setReloadKey((k) => k + 1)}>Retry</button>
       </p>
     )
   }
   if (!events || events.length === 0) return null
   return (
-    <section style={{ marginBottom: 'var(--space-8)' }} aria-labelledby="club-events-heading">
-      <h2 id="club-events-heading" style={{ fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--fs-xl)', color: 'var(--text)', marginBottom: 12 }}>Club events in the next 60 days</h2>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <section className="u-mb-space-8" aria-labelledby="club-events-heading">
+      <h2 id="club-events-heading" className="u-ff-font-display u-fw-display-weight u-fs-fs-xl u-mb-12px" style={{ color: 'var(--text)' }}>Club events in the next 60 days</h2>
+      <div className="u-gap-12px" style={{ display: 'flex', flexDirection: 'column' }}>
         {events.map((e) => <ClubEventCard key={e.id} event={e} api={api} orgId={orgId} onRSVP={onRSVP} swimmerOnlyId={swimmerId || '__none__'} />)}
       </div>
     </section>

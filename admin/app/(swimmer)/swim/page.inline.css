@@ -1,0 +1,18 @@
+/* Static layout/type styles migrated from inline style props. */
+.is-d18a76e.is-d18a76e { padding: 20px 20px; display: flex; flex-direction: column; gap: 12px; }
+.is-5a15081.is-5a15081 { padding: 20px 20px; display: flex; flex-direction: column; gap: 16px; transition: border-color 150ms ease, box-shadow 150ms ease; }
+.is-99561b3.is-99561b3 { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.is-18d4ed1.is-18d4ed1 { display: flex; gap: 12px; flex-wrap: wrap; }
+.is-eba923c.is-eba923c { display: flex; gap: 8px; align-items: center; }
+.is-31a2ed9.is-31a2ed9 { margin-bottom: 40px; animation: slideUp 0.45s cubic-bezier(0.16,1,0.3,1) both; }
+.is-3e1d09b.is-3e1d09b { display: flex; align-items: center; gap: 20px; margin-bottom: 8px; }
+.is-5ee2994.is-5ee2994 { width: 56px; height: 56px; border-radius: 50%; background: var(--accent); display: flex; align-items: center; justify-content: center; color: var(--bg); font-size: var(--fs-xl); font-weight: 700; font-family: var(--font-body); box-shadow: 0 0 24px rgba(0,212,170,0.30); flex-shrink: 0; }
+.is-7d699cf.is-7d699cf { gap: 12px; margin-bottom: 40px; animation: slideUp 0.45s cubic-bezier(0.16,1,0.3,1) 0.06s both; }
+.is-493767e.is-493767e { display: flex; align-items: flex-start; gap: 12px; }
+.is-5345b20.is-5345b20 { gap: 24px; align-items: start; }
+.is-141baf8.is-141baf8 { display: flex; flex-direction: column; gap: 32px; }
+.is-abcbf74.is-abcbf74 { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.is-930d87f.is-930d87f { display: flex; flex-direction: column; gap: 12px; }
+.is-911be78.is-911be78 { padding: 32px 20px; text-align: center; }
+.is-6455ae6.is-6455ae6 { padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; }
+.is-337a55f.is-337a55f { padding: 24px 20px; text-align: center; }

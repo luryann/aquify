@@ -28,6 +28,8 @@ import {
 } from '@/lib/adminData'
 import { parseBackendDate } from '@/lib/dates'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
+import { useDialogA11y } from '@/components/ui/useDialogA11y'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -62,7 +64,7 @@ const STATUS_CFG: Record<string, { label: string; color: string; bg: string }> =
   invited:        { label: 'Awaiting',  color: 'var(--text-muted)',  bg: 'var(--bg-elevated)' },
   committed_yes:  { label: 'Going',     color: 'var(--success)',     bg: 'var(--success-bg)' },
   committed_no:   { label: 'Not going', color: 'var(--error)',       bg: 'var(--error-bg)' },
-  locked:         { label: 'Locked',    color: 'var(--accent)',      bg: 'var(--accent-subtle)' },
+  locked:         { label: 'Locked',    color: 'var(--accent-text, var(--accent))',      bg: 'var(--accent-subtle)' },
   coach_reviewed: { label: 'Reviewed',  color: 'var(--info)',        bg: 'var(--info-bg)' },
 }
 
@@ -71,7 +73,7 @@ const MEET_STATUS_CFG: Record<string, { label: string; color: string }> = {
   published:         { label: 'Published',          color: 'var(--info)' },
   commitment_open:   { label: 'Commitments open',   color: 'var(--warning)' },
   commitment_closed: { label: 'Commitments closed', color: 'var(--warning)' },
-  entry_finalized:   { label: 'Entries finalized',  color: 'var(--accent)' },
+  entry_finalized:   { label: 'Entries finalized',  color: 'var(--accent-text, var(--accent))' },
   completed:         { label: 'Completed',          color: 'var(--success)' },
   archived:          { label: 'Archived',           color: 'var(--text-muted)' },
 }
@@ -112,11 +114,16 @@ function SwimmerPanel({
   data,
   onClose,
   onRefreshTable,
+  meetCounts,
 }: {
   data: SwimmerPanelData
   onClose: () => void
   onRefreshTable: () => void
+  /** Commitment statuses for this meet, used to describe what lock-all will do. */
+  meetCounts: { total: number; lockable: number }
 }) {
+  const panelRef = useRef<HTMLDivElement>(null)
+  useDialogA11y(panelRef, onClose)
   const { row, swimmer, events, api, orgId } = data
   const commitmentId = row.id
   const meetId = row.meetId
@@ -203,8 +210,11 @@ function SwimmerPanel({
   }, [api, orgId, meetId, showFeedback])
 
   // ── Lock all commitments for this meet ───────────────────────────────────────
+  const confirm = useConfirm()
   const handleLock = useCallback(async () => {
-    if (!window.confirm(`Lock ALL commitments for "${row.meetName}"? This cannot be undone and will prevent further changes.`)) return
+    const left = meetCounts.total - meetCounts.lockable
+    const ok = await confirm({ title: `Lock commitments for ${row.meetName}?`, message: `Of ${meetCounts.total} commitment${meetCounts.total === 1 ? '' : 's'}, ${meetCounts.lockable} (committed yes or coach reviewed) will be locked and their event selections become entries. ${left} (declined or no response) will be left as they are. Locking cannot be undone; families can no longer change their answers.`, typedPhrase: 'LOCK', confirmLabel: 'Lock commitments', destructive: true })
+    if (!ok) return
     setLocking(true)
     try {
       await lockMeetCommitments(api, orgId, meetId)
@@ -215,7 +225,7 @@ function SwimmerPanel({
     } finally {
       setLocking(false)
     }
-  }, [api, orgId, meetId, row.meetName, showFeedback, onRefreshTable])
+  }, [api, orgId, meetId, row.meetName, showFeedback, onRefreshTable, confirm, meetCounts])
 
   const commitCfg = STATUS_CFG[row.status] ?? STATUS_CFG['invited']
   const meetStatusLabel = MEET_STATUS_CFG[row.meetStatus]?.label ?? row.meetStatus
@@ -238,13 +248,19 @@ function SwimmerPanel({
     <>
       {/* Backdrop */}
       <div
-        style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 200, backdropFilter: 'blur(2px)' }}
+        style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', zIndex: 200, backdropFilter: 'blur(2px)' }}
         onClick={onClose}
       />
 
       {/* Slide-over */}
       <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Swimmer commitments"
+        tabIndex={-1}
         style={{
+          outline: 'none',
           position: 'fixed',
           top: 0,
           right: 0,
@@ -261,36 +277,23 @@ function SwimmerPanel({
         }}
       >
         {/* Header */}
-        <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
+        <div className="u-p-20px-24px u-gap-12px" style={{ borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
           <div
-            style={{
-              width: '40px',
-              height: '40px',
-              borderRadius: '50%',
-              background: 'linear-gradient(135deg, var(--accent) 0%, #b84a18 100%)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#fff',
-              fontSize: 'var(--fs-md)',
-              fontWeight: 700,
-              fontFamily: 'var(--font-body)',
-              flexShrink: 0,
-            }}
+            className="u-fs-fs-md u-fw-700 u-ff-font-body" style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'linear-gradient(135deg, var(--accent) 0%, #b84a18 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', flexShrink: 0 }}
           >
             {(swimmer.first_name[0] ?? '') + (swimmer.last_name[0] ?? '')}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 'var(--fs-lg)', fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', color: 'var(--text)', lineHeight: 1.2 }}>
+            <div className="u-fs-fs-lg u-ff-font-display u-fw-display-weight u-lh-1_2" style={{ color: 'var(--text)' }}>
               {swimmer.first_name} {swimmer.last_name}
             </div>
-            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginTop: '2px' }}>
+            <div className="u-fs-fs-sm u-mt-2px" style={{ color: 'var(--text-muted)' }}>
               {row.meetName} · {row.meetDate ? formatDate(row.meetDate) : '—'}
             </div>
           </div>
-          <button
+          <button type="button"
             onClick={onClose}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '4px', borderRadius: '6px', display: 'flex', alignItems: 'center' }}
+            className="u-p-4px" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', borderRadius: '6px', display: 'flex', alignItems: 'center' }}
             title="Close"
           >
             <Icon name="x" size={18} />
@@ -299,41 +302,30 @@ function SwimmerPanel({
 
         {/* Inline feedback banner */}
         {feedback && (
-          <div style={{
-            padding: '12px 24px',
-            background: feedback.type === 'success' ? 'var(--success-bg)' : 'var(--error-bg)',
-            color: feedback.type === 'success' ? 'var(--success)' : 'var(--error)',
-            fontSize: 'var(--fs-sm)',
-            fontWeight: 600,
-            fontFamily: 'var(--font-body)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            flexShrink: 0,
-          }}>
+          <div className="u-p-12px-24px u-fs-fs-sm u-fw-600 u-ff-font-body u-gap-6px" style={{ background: feedback.type === 'success' ? 'var(--success-bg)' : 'var(--error-bg)', color: feedback.type === 'success' ? 'var(--success)' : 'var(--error)', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
             <Icon name={feedback.type === 'success' ? 'check' : 'alert-circle'} size={13} />
             {feedback.msg}
           </div>
         )}
 
         {/* Scrollable body */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
+        <div className="u-p-20px-24px" style={{ flex: 1, overflowY: 'auto' }}>
 
           {/* Status & meet info row */}
-          <div className="cols-2" style={{ gap: '12px', marginBottom: '20px' }}>
-            <div className="card" style={{ padding: '12px 16px' }}>
-              <div style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '4px' }}>
+          <div className="cols-2 u-gap-12px u-mb-20px" >
+            <div className="card u-p-12px-16px" >
+              <div className="u-fs-fs-sm u-ff-font-body u-mb-4px" style={{ color: 'var(--text-muted)' }}>
                 Commitment
               </div>
               <span className="badge" style={{ background: commitCfg.bg, color: commitCfg.color }}>
                 {commitCfg.label}
               </span>
             </div>
-            <div className="card" style={{ padding: '12px 16px' }}>
-              <div style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '4px' }}>
+            <div className="card u-p-12px-16px" >
+              <div className="u-fs-fs-sm u-ff-font-body u-mb-4px" style={{ color: 'var(--text-muted)' }}>
                 Meet status
               </div>
-              <span style={{ fontSize: 'var(--fs-sm)', color: MEET_STATUS_CFG[row.meetStatus]?.color ?? 'var(--text-muted)', fontFamily: 'var(--font-body)', fontWeight: 600 }}>
+              <span className="u-fs-fs-sm u-ff-font-body u-fw-600" style={{ color: MEET_STATUS_CFG[row.meetStatus]?.color ?? 'var(--text-muted)' }}>
                 {meetStatusLabel}
               </span>
             </div>
@@ -342,19 +334,19 @@ function SwimmerPanel({
           {/* Swimmer note */}
           {row.note && (
             <div
-              className="card"
-              style={{ padding: '12px 16px', marginBottom: '20px', borderColor: 'var(--accent-border)', background: 'var(--accent-subtle)' }}
+              className="card u-p-12px-16px u-mb-20px"
+              style={{ borderColor: 'var(--accent-border)', background: 'var(--accent-subtle)' }}
             >
-              <div style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '4px' }}>
+              <div className="u-fs-fs-sm u-ff-font-body u-mb-4px" style={{ color: 'var(--text-muted)' }}>
                 Note from family
               </div>
-              <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', lineHeight: 1.55, margin: 0 }}>{row.note}</p>
+              <p className="u-fs-fs-base u-lh-1_55 u-m-0" style={{ color: 'var(--text-subtle)' }}>{row.note}</p>
             </div>
           )}
 
           {/* Event selections */}
-          <div style={{ marginBottom: '20px' }}>
-            <div style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div className="u-mb-20px" >
+            <div className="u-fs-fs-sm u-ff-font-body u-mb-8px" style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <span>Event selections</span>
               {selectionsLoading ? (
                 <span style={{ color: 'var(--text-muted)' }}>Loading…</span>
@@ -366,46 +358,33 @@ function SwimmerPanel({
             </div>
 
             {canEditSelections && (
-              <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginBottom: '12px', lineHeight: 1.5 }}>
+              <p className="u-fs-fs-xs u-mb-12px u-lh-1_5" style={{ color: 'var(--text-muted)' }}>
                 Click events below to add or remove them from this swimmer&apos;s selection.
               </p>
             )}
 
             {events.length === 0 ? (
-              <div className="card" style={{ padding: '24px', textAlign: 'center' }}>
-                <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)', margin: 0 }}>No events for this meet yet.</p>
+              <div className="card u-p-24px" style={{ textAlign: 'center' }}>
+                <p className="u-fs-fs-base u-m-0" style={{ color: 'var(--text-muted)' }}>No events for this meet yet.</p>
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div className="u-gap-12px" style={{ display: 'flex', flexDirection: 'column' }}>
                 {sessionGroups.map((group) => (
                   <div key={group.id}>
-                    <div style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px', paddingLeft: '2px' }}>
+                    <div className="u-fs-fs-xs u-ff-font-body u-mb-6px" style={{ color: 'var(--text-muted)', paddingLeft: '2px' }}>
                       {group.id === 'main' ? 'Main Session' : 'Unscheduled'}
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <div className="u-gap-4px" style={{ display: 'flex', flexDirection: 'column' }}>
                       {group.events.map((ev) => {
                         const isSelected = selections.has(ev.id)
                         const isPending = toggling.has(ev.id)
                         return (
-                          <button
+                          <button type="button"
                             key={ev.id}
                             onClick={() => toggleSelection(ev)}
                             disabled={!canEditSelections || isPending || selectionsLoading}
                             title={canEditSelections ? (isSelected ? 'Click to deselect' : 'Click to select') : 'Selections can only be edited when commitments are open'}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '12px',
-                              padding: '12px 12px',
-                              borderRadius: '8px',
-                              border: isSelected ? '1.5px solid var(--accent)' : '1px solid var(--border)',
-                              background: isSelected ? 'var(--accent-subtle)' : 'var(--bg-surface)',
-                              transition: 'all 120ms ease',
-                              cursor: canEditSelections ? (isPending ? 'wait' : 'pointer') : 'default',
-                              width: '100%',
-                              textAlign: 'left',
-                              opacity: isPending ? 0.6 : 1,
-                            }}
+                            className="u-gap-12px u-p-12px-12px" style={{ display: 'flex', alignItems: 'center', borderRadius: '8px', border: isSelected ? '1.5px solid var(--accent)' : '1px solid var(--border)', background: isSelected ? 'var(--accent-subtle)' : 'var(--bg-surface)', transition: 'all 120ms ease', cursor: canEditSelections ? (isPending ? 'wait' : 'pointer') : 'default', width: '100%', textAlign: 'left', opacity: isPending ? 0.6 : 1 }}
                           >
                             <div
                               style={{
@@ -429,11 +408,11 @@ function SwimmerPanel({
                                 <div style={{ width: '8px', height: '8px', borderRadius: '50%', border: '1.5px solid var(--accent)', borderTopColor: 'transparent', animation: 'spin 0.6s linear infinite' }} />
                               )}
                             </div>
-                            <span style={{ fontSize: 'var(--fs-base)', color: isSelected ? 'var(--text)' : 'var(--text-subtle)', flex: 1, fontWeight: isSelected ? 600 : 400 }}>
+                            <span className="u-fs-fs-base" style={{ color: isSelected ? 'var(--text)' : 'var(--text-subtle)', flex: 1, fontWeight: isSelected ? 600 : 400 }}>
                               {eventLabel(ev)}
                             </span>
                             {ev.event_number && (
-                              <span style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>
+                              <span className="u-fs-fs-xs u-ff-font-body" style={{ color: 'var(--text-muted)' }}>
                                 #{ev.event_number}
                               </span>
                             )}
@@ -449,39 +428,28 @@ function SwimmerPanel({
 
           {/* Entry records with approve actions */}
           {localEntries.length > 0 && (
-            <div style={{ marginBottom: '20px' }}>
-              <div style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '12px' }}>
+            <div className="u-mb-20px" >
+              <div className="u-fs-fs-sm u-ff-font-body u-mb-12px" style={{ color: 'var(--text-muted)' }}>
                 Entry Records ({localEntries.length})
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div className="u-gap-6px" style={{ display: 'flex', flexDirection: 'column' }}>
                 {localEntries.map((e) => {
                   const cfg = ENTRY_STATUS_CFG[e.status] ?? { label: e.status, color: 'var(--text-muted)', bg: 'var(--bg-elevated)' }
                   const isApproving = approvingEntry.has(e.id)
                   const entryEvent = events.find((ev) => ev.id === e.meet_event_id)
                   return (
-                    <div key={e.id} className="card" style={{ padding: '8px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
-                      <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text)', fontFamily: 'var(--font-body)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <div key={e.id} className="card u-p-8px-12px u-gap-12px" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span className="u-fs-fs-sm u-ff-font-body" style={{ color: 'var(--text)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {entryEvent ? eventLabel(entryEvent) : `Entry #${e.id.slice(-6)}`}
                       </span>
-                      <span style={{ fontSize: 'var(--fs-xs)', padding: '2px 8px', borderRadius: '8px', background: cfg.bg, color: cfg.color, fontFamily: 'var(--font-body)', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                      <span className="u-fs-fs-xs u-p-2px-8px u-ff-font-body u-fw-600" style={{ borderRadius: '8px', background: cfg.bg, color: cfg.color, whiteSpace: 'nowrap' }}>
                         {cfg.label}
                       </span>
                       {e.status === 'submitted' && (
-                        <button
+                        <button type="button"
                           onClick={() => handleApproveEntry(e.id)}
                           disabled={isApproving}
-                          style={{
-                            fontSize: 'var(--fs-xs)',
-                            padding: '4px 12px',
-                            borderRadius: '6px',
-                            background: isApproving ? 'var(--bg-elevated)' : 'var(--success)',
-                            color: isApproving ? 'var(--text-muted)' : '#fff',
-                            border: 'none',
-                            cursor: isApproving ? 'wait' : 'pointer',
-                            fontWeight: 600,
-                            whiteSpace: 'nowrap',
-                            transition: 'all 150ms ease',
-                          }}
+                          className="u-fs-fs-xs u-p-4px-12px u-fw-600" style={{ borderRadius: '6px', background: isApproving ? 'var(--bg-elevated)' : 'var(--success)', color: isApproving ? 'var(--text-muted)' : '#fff', border: 'none', cursor: isApproving ? 'wait' : 'pointer', whiteSpace: 'nowrap', transition: 'all 150ms ease' }}
                         >
                           {isApproving ? '…' : 'Approve'}
                         </button>
@@ -495,42 +463,26 @@ function SwimmerPanel({
         </div>
 
         {/* Footer actions */}
-        <div style={{ padding: '16px 24px', borderTop: '1px solid var(--border)', display: 'flex', gap: '8px', flexShrink: 0, background: 'var(--bg)', flexWrap: 'wrap' }}>
+        <div className="u-p-16px-24px u-gap-8px" style={{ borderTop: '1px solid var(--border)', display: 'flex', flexShrink: 0, background: 'var(--bg)', flexWrap: 'wrap' }}>
           <Link
             href={`/meets/${row.meetId}`}
-            style={{ flex: 1, minWidth: '120px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', padding: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '8px', fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)', textDecoration: 'none', transition: 'border-color 0.15s' }}
+            className="u-gap-4px u-p-12px u-fs-fs-base u-fw-600" style={{ flex: 1, minWidth: '120px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)', textDecoration: 'none', transition: 'border-color 0.15s' }}
           >
             <Icon name="calendar" size={13} />
             Open Meet
           </Link>
           <Link
             href={`/members/swimmers/${row.swimmerId}`}
-            style={{ flex: 1, minWidth: '120px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', padding: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '8px', fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)', textDecoration: 'none', transition: 'border-color 0.15s' }}
+            className="u-gap-4px u-p-12px u-fs-fs-base u-fw-600" style={{ flex: 1, minWidth: '120px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)', textDecoration: 'none', transition: 'border-color 0.15s' }}
           >
             <Icon name="user" size={13} />
             Swimmer Profile
           </Link>
           {(row.meetStatus === 'commitment_open' || row.meetStatus === 'commitment_closed') && (
-            <button
+            <button type="button"
               onClick={handleLock}
               disabled={locking}
-              style={{
-                flex: 1,
-                minWidth: '140px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '4px',
-                padding: '12px',
-                background: locking ? 'var(--bg-elevated)' : 'var(--accent)',
-                border: 'none',
-                borderRadius: '8px',
-                fontSize: 'var(--fs-base)',
-                fontWeight: 600,
-                color: locking ? 'var(--text-muted)' : '#fff',
-                cursor: locking ? 'wait' : 'pointer',
-                transition: 'all 0.15s',
-              }}
+              className="u-gap-4px u-p-12px u-fs-fs-base u-fw-600" style={{ flex: 1, minWidth: '140px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: locking ? 'var(--bg-elevated)' : 'var(--accent)', border: 'none', borderRadius: '8px', color: locking ? 'var(--text-muted)' : '#fff', cursor: locking ? 'wait' : 'pointer', transition: 'all 0.15s' }}
             >
               <Icon name="shield-check" size={13} />
               {locking ? 'Locking…' : 'Lock All Commitments'}
@@ -637,7 +589,7 @@ function CommitmentsPageContent() {
 
         if (!cancelled) setRows(combined)
       } catch (err) {
-        if (!cancelled) setError(uiErrorMessage(err, 'Failed to load commitments'))
+        if (!cancelled) setError(uiErrorMessage(err, 'Commitments couldn’t be loaded. Check your connection and try again.'))
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -716,12 +668,12 @@ function CommitmentsPageContent() {
       sortable: true,
       render: (r) => (
         <div>
-          <button
+          <button type="button"
             onClick={() => openPanel(r)}
-            style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}
+            className="u-p-0" style={{ background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
           >
             <span
-              style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}
+              className="u-fs-fs-base u-fw-600 u-gap-4px" style={{ color: 'var(--text)', textDecoration: 'none', display: 'flex', alignItems: 'center' }}
               onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--accent)' }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--text)' }}
             >
@@ -730,7 +682,7 @@ function CommitmentsPageContent() {
             </span>
           </button>
           {r.householdId && (
-            <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: '1px' }}>
+            <div className="u-fs-fs-xs u-mt-1px" style={{ color: 'var(--text-muted)' }}>
               <Link
                 href={`/members/households/${r.householdId}`}
                 style={{ color: 'var(--text-muted)', textDecoration: 'none' }}
@@ -742,7 +694,7 @@ function CommitmentsPageContent() {
             </div>
           )}
           {r.note && (
-            <div style={{ fontSize: 'var(--fs-2xs)', color: 'var(--accent)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <div className="u-fs-fs-2xs u-mt-2px u-gap-4px" style={{ color: 'var(--accent-text, var(--accent))', display: 'flex', alignItems: 'center' }}>
               <Icon name="info" size={10} />
               has note
             </div>
@@ -758,13 +710,13 @@ function CommitmentsPageContent() {
         <div>
           <Link
             href={`/meets/${r.meetId}`}
-            style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)', textDecoration: 'none' }}
+            className="u-fs-fs-base u-fw-600" style={{ color: 'var(--text)', textDecoration: 'none' }}
             onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--accent)')}
             onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text)')}
           >
             {r.meetName}
           </Link>
-          <div style={{ fontSize: 'var(--fs-xs)', color: MEET_STATUS_CFG[r.meetStatus]?.color ?? 'var(--text-muted)', marginTop: '1px', fontFamily: 'var(--font-body)' }}>
+          <div className="u-fs-fs-xs u-mt-1px u-ff-font-body" style={{ color: MEET_STATUS_CFG[r.meetStatus]?.color ?? 'var(--text-muted)' }}>
             {MEET_STATUS_CFG[r.meetStatus]?.label ?? r.meetStatus}
           </div>
         </div>
@@ -774,7 +726,7 @@ function CommitmentsPageContent() {
       key: 'meetDate',
       label: 'Date',
       render: (r) => (
-        <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
+        <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>
           {r.meetDate ? formatDate(r.meetDate) : '—'}
         </span>
       ),
@@ -795,9 +747,9 @@ function CommitmentsPageContent() {
       key: 'id',
       label: '',
       render: (r) => (
-        <button
+        <button type="button"
           onClick={() => openPanel(r)}
-          style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 4px', borderRadius: '4px', transition: 'color 0.15s' }}
+          className="u-fs-fs-sm u-gap-4px u-p-2px-4px" style={{ color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', borderRadius: '4px', transition: 'color 0.15s' }}
           onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--accent)')}
           onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
         >
@@ -810,8 +762,11 @@ function CommitmentsPageContent() {
   if (error) {
     return (
       <div className="page">
-        <div className="card" style={{ padding: '20px', borderColor: 'var(--error-border)', background: 'var(--error-bg)' }}>
-          <p style={{ color: 'var(--error)', fontSize: 'var(--fs-base)' }}>Failed to load commitments: {error}</p>
+        <div className="card u-p-20px" style={{ borderColor: 'var(--error-border)', background: 'var(--error-bg)' }}>
+          <div className="row row-between" role="alert">
+            <p className="u-fs-fs-base" style={{ color: 'var(--error)' }}>{error}</p>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => setRefreshKey((k) => k + 1)}>Retry</button>
+          </div>
         </div>
       </div>
     )
@@ -821,7 +776,7 @@ function CommitmentsPageContent() {
     <div className="page">
 
       {lockedMeetId && (
-        <Link href={`/meets/${lockedMeetId}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', textDecoration: 'none', marginBottom: '16px' }}>
+        <Link href={`/meets/${lockedMeetId}`} className="u-gap-4px u-fs-fs-base u-mb-16px" style={{ display: 'inline-flex', alignItems: 'center', color: 'var(--text-subtle)', textDecoration: 'none' }}>
           <Icon name="chevron-left" size={14} /> Back to meet
         </Link>
       )}
@@ -836,25 +791,25 @@ function CommitmentsPageContent() {
       </div>
 
       {/* Stats strip */}
-      <div className="cols-5" style={{ gap: '12px', marginBottom: '24px' }}>
+      <div className="cols-5 u-gap-12px u-mb-24px" >
         {[
           { label: 'Total',     value: loading ? '—' : total,    color: 'var(--text)' },
           { label: 'Going',     value: loading ? '—' : going,    color: 'var(--success)' },
           { label: 'Not going', value: loading ? '—' : notGoing, color: 'var(--error)' },
           { label: 'Awaiting',  value: loading ? '—' : pending,  color: (pending > 0 && !loading) ? 'var(--warning)' : 'var(--text-muted)' },
-          { label: 'Locked',    value: loading ? '—' : locked,   color: 'var(--accent)' },
+          { label: 'Locked',    value: loading ? '—' : locked,   color: 'var(--accent-text, var(--accent))' },
         ].map((s) => (
-          <div key={s.label} className="card" style={{ padding: '16px 16px' }}>
-            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{s.label}</div>
-            <div style={{ fontSize: 'var(--fs-2xl)', fontFamily: 'var(--font-body)', fontWeight: 700, color: s.color }}>{s.value}</div>
+          <div key={s.label} className="card u-p-16px-16px" >
+            <div className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ color: 'var(--text-muted)' }}>{s.label}</div>
+            <div className="u-fs-fs-2xl u-ff-font-body u-fw-700" style={{ color: s.color }}>{s.value}</div>
           </div>
         ))}
       </div>
 
       {/* Response rate bar */}
       {!loading && total > 0 && (
-        <div className="card" style={{ padding: '16px 16px', marginBottom: '20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+        <div className="card u-p-16px-16px u-mb-20px" >
+          <div className="u-mb-8px u-fs-fs-sm u-ff-font-body" style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
             <span>Response rate</span>
             <span>{Math.round(((going + notGoing + locked) / total) * 100)}%</span>
           </div>
@@ -863,9 +818,9 @@ function CommitmentsPageContent() {
             <div style={{ height: '100%', width: `${(locked / total) * 100}%`, background: 'var(--accent)', transition: 'width 0.6s var(--ease-out)' }} />
             <div style={{ height: '100%', width: `${(notGoing / total) * 100}%`, background: 'var(--error)', transition: 'width 0.6s var(--ease-out)' }} />
           </div>
-          <div style={{ display: 'flex', gap: '16px', marginTop: '8px', fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>
+          <div className="u-gap-16px u-mt-8px u-fs-fs-xs u-ff-font-body" style={{ display: 'flex', color: 'var(--text-muted)' }}>
             <span style={{ color: 'var(--success)' }}>■ Going ({going})</span>
-            <span style={{ color: 'var(--accent)' }}>■ Locked ({locked})</span>
+            <span style={{ color: 'var(--accent-text, var(--accent))' }}>■ Locked ({locked})</span>
             <span style={{ color: 'var(--error)' }}>■ Not Going ({notGoing})</span>
             <span>■ Pending ({pending})</span>
           </div>
@@ -873,23 +828,23 @@ function CommitmentsPageContent() {
       )}
 
       {/* Filters */}
-      <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
+      <div className="u-gap-12px u-mb-16px" style={{ display: 'flex', flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', flex: '1 1 260px' }}>
           <Icon name="search" size={14} color="var(--text-muted)" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' } as CSSProperties} />
-          <input
+          <input aria-label="Search swimmer, household, or meet"
             type="text"
             placeholder="Search swimmer, household, or meet…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="input"
-            style={{ paddingLeft: '32px', width: '100%' }}
+            className="input-search input u-pl-32px"
+            style={{ width: '100%' }}
           />
         </div>
         {lockedMeetId ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg-elevated)', fontSize: 'var(--fs-base)', color: 'var(--text)' }}>
+          <div className="u-gap-8px u-p-0-12px u-fs-fs-base" style={{ display: 'flex', alignItems: 'center', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)' }}>
             <Icon name="calendar" size={13} color="var(--text-muted)" />
             {meetOptions.find((o) => o.value === lockedMeetId)?.label ?? 'This meet'}
-            <Link href="/commitments" style={{ fontSize: 'var(--fs-xs)', color: 'var(--accent)', textDecoration: 'none' }}>Clear</Link>
+            <Link href="/commitments" className="u-fs-fs-xs" style={{ color: 'var(--accent-text, var(--accent))', textDecoration: 'none' }}>Clear</Link>
           </div>
         ) : (
           <select value={meetFilter} onChange={(e) => setMeetFilter(e.target.value)} className="input" style={{ minWidth: '180px' }}>
@@ -907,14 +862,14 @@ function CommitmentsPageContent() {
 
       {/* Result count */}
       {!loading && (
-        <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginBottom: '12px' }}>
+        <div className="u-fs-fs-sm u-ff-font-body u-mb-12px" style={{ color: 'var(--text-muted)' }}>
           {filtered.length} of {total} commitments · click a swimmer name to view their entries
         </div>
       )}
 
       {/* Loading skeleton */}
       {loading && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div className="u-gap-12px" style={{ display: 'flex', flexDirection: 'column' }}>
           {[1,2,3,4,5].map((i) => (
             <div key={i} style={{ height: '44px', background: 'var(--bg-elevated)', borderRadius: '6px', animation: 'pulse 1.5s ease-in-out infinite', animationDelay: `${i * 0.1}s` }} />
           ))}
@@ -933,6 +888,10 @@ function CommitmentsPageContent() {
         <SwimmerPanel
           data={panelData}
           onClose={() => setPanelData(null)}
+          meetCounts={(() => {
+            const mine = rows.filter((r) => r.meetId === panelData.row.meetId)
+            return { total: mine.length, lockable: mine.filter((r) => r.status === 'committed_yes' || r.status === 'coach_reviewed').length }
+          })()}
           onRefreshTable={() => {
             // Re-trigger the main data load so commitment statuses update after locking
             setPanelData(null)

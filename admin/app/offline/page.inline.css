@@ -1,0 +1,5 @@
+/* Static layout/type styles migrated from inline style props. */
+.is-03c1948.is-03c1948 { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: var(--bg); color: var(--text); font-family: var(--font-body); text-align: center; }
+.is-7c3311f.is-7c3311f { font-family: var(--font-display); font-weight: var(--display-weight); font-size: var(--fs-4xl); margin: 0 0 12px; }
+.is-3cc2d04.is-3cc2d04 { color: var(--text-subtle); line-height: 1.5; margin: 0 0 24px; }
+.is-61cba8d.is-61cba8d { display: inline-block; background: var(--accent-fill, #c9460f); color: #fff; border-radius: 12px; padding: 12px 20px; font-weight: 600; text-decoration: none; }

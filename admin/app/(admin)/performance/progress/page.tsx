@@ -54,7 +54,7 @@ export default function ProgressReportPage() {
   const swimmers = useMemo(() => [...(report?.swimmers ?? [])].filter((s) => s.events_compared > 0).sort((a, b) => b.avg_percent - a.avg_percent), [report])
 
   const dateInput = (key: keyof Range, label: string) => (
-    <label style={{ display: 'grid', gap: '4px', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{label}
+    <label className="u-gap-4px u-fs-fs-sm" style={{ display: 'grid', color: 'var(--text-subtle)' }}>{label}
       <input type="date" value={range[key]} onChange={(e) => setRange({ ...range, [key]: e.target.value })} style={FIELD_STYLE} />
     </label>
   )
@@ -62,7 +62,7 @@ export default function ProgressReportPage() {
   return (
     <div className="page">
       <h1 className="page-title">Progress report</h1>
-      <p className="page-subtitle" style={{ marginBottom: 24 }}>Average percent drop in best times between two periods.</p>
+      <p className="page-subtitle u-mb-24px" >Average percent drop in best times between two periods.</p>
 
       <FilterRow>
         {seasonPairs.length > 0 ? (
@@ -83,52 +83,52 @@ export default function ProgressReportPage() {
           {COURSES.map((c) => <option key={c}>{c}</option>)}
         </select>
       </FilterRow>
-      <div style={{ display: 'flex', gap: '12px 20px', flexWrap: 'wrap', marginBottom: '24px' }}>
-        <fieldset style={{ border: 'none', padding: 0, margin: 0, display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-          <legend style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, marginBottom: '4px' }}>Baseline</legend>
+      <div className="u-mb-24px" style={{ display: 'flex', gap: '12px 20px', flexWrap: 'wrap' }}>
+        <fieldset className="u-p-0 u-m-0 u-gap-8px" style={{ border: 'none', display: 'flex', flexWrap: 'wrap' }}>
+          <legend className="u-fs-fs-sm u-fw-600 u-mb-4px" >Baseline</legend>
           {dateInput('from_a', 'From')}{dateInput('to_a', 'To')}
         </fieldset>
-        <fieldset style={{ border: 'none', padding: 0, margin: 0, display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-          <legend style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, marginBottom: '4px' }}>Compared with</legend>
+        <fieldset className="u-p-0 u-m-0 u-gap-8px" style={{ border: 'none', display: 'flex', flexWrap: 'wrap' }}>
+          <legend className="u-fs-fs-sm u-fw-600 u-mb-4px" >Compared with</legend>
           {dateInput('from_b', 'From')}{dateInput('to_b', 'To')}
         </fieldset>
       </div>
 
       {error ? <LoadErrorBanner message={error} onRetry={() => void load()} /> : null}
-      {loading ? <p style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-base)' }}>Building report…</p> : null}
+      {loading ? <p className="u-fs-fs-base" style={{ color: 'var(--text-muted)' }}>Building report…</p> : null}
 
       {!loading && report && !error ? (
         swimmers.length === 0 ? (
           <EmptyState icon="activity" title="No swimmer swam the same event in both periods" description="Widen the date ranges or pick a different group." />
         ) : (
           <>
-            <section aria-labelledby="most-improved" style={{ marginBottom: 'var(--space-8)' }}>
-              <h2 id="most-improved" style={{ fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--fs-2xl)', margin: '0 0 12px' }}>Most improved</h2>
-              <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: '8px' }}>
+            <section aria-labelledby="most-improved" className="u-mb-space-8" >
+              <h2 id="most-improved" className="u-ff-font-display u-fw-display-weight u-fs-fs-2xl u-m-0-0-12px" >Most improved</h2>
+              <ol className="u-m-0 u-p-0 u-gap-8px" style={{ listStyle: 'none', display: 'grid' }}>
                 {report.most_improved.map((s, i) => (
-                  <li key={s.swimmer_id} style={{ display: 'grid', gridTemplateColumns: '22px minmax(96px, 200px) minmax(0, 1fr) 64px', gap: '12px', alignItems: 'center', fontSize: 'var(--fs-base)' }}>
+                  <li key={s.swimmer_id} className="u-gap-12px u-fs-fs-base" style={{ display: 'grid', gridTemplateColumns: '22px minmax(96px, 200px) minmax(0, 1fr) 64px', alignItems: 'center' }}>
                     <span style={{ color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums' }}>{i + 1}</span>
                     <Link href={`/members/swimmers/${s.swimmer_id}`} style={{ color: 'var(--text)', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.swimmer_name}</Link>
                     <span title={`${s.avg_percent.toFixed(2)}% average drop across ${s.events_compared} event${s.events_compared === 1 ? '' : 's'}`} style={{ height: '10px', display: 'block' }}>
                       <span style={{ display: 'block', height: '100%', width: `${(s.avg_percent / maxPercent) * 100}%`, minWidth: '4px', background: 'var(--accent)', borderRadius: '0 4px 4px 0' }} />
                     </span>
-                    <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{s.avg_percent.toFixed(1)}%</span>
+                    <span className="u-fw-600" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{s.avg_percent.toFixed(1)}%</span>
                   </li>
                 ))}
               </ol>
             </section>
 
             <section aria-labelledby="all-swimmers">
-              <h2 id="all-swimmers" style={{ fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--fs-2xl)', margin: '0 0 12px' }}>Every swimmer with comparable swims</h2>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-base)', minWidth: '520px' }}>
+              <h2 id="all-swimmers" className="u-ff-font-display u-fw-display-weight u-fs-fs-2xl u-m-0-0-12px" >Every swimmer with comparable swims</h2>
+              <div className="table-scroll" style={{ overflowX: 'auto' }}>
+                <table className="u-fs-fs-base" style={{ width: '100%', borderCollapse: 'collapse', minWidth: '520px' }}>
                   <thead>
-                    <tr style={{ textAlign: 'left', color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>
-                      <th style={{ padding: '8px 6px', fontWeight: 500 }}>Swimmer</th>
-                      <th style={{ padding: '8px 6px', fontWeight: 500 }}>Events</th>
-                      <th style={{ padding: '8px 6px', fontWeight: 500 }}>Faster in</th>
-                      <th style={{ padding: '8px 6px', fontWeight: 500, textAlign: 'right' }}>Avg drop</th>
-                      <th style={{ padding: '8px 6px', fontWeight: 500, textAlign: 'right' }}>Total time</th>
+                    <tr className="u-fs-fs-sm" style={{ textAlign: 'left', color: 'var(--text-muted)' }}>
+                      <th className="u-p-8px-6px u-fw-500" >Swimmer</th>
+                      <th className="u-p-8px-6px u-fw-500" >Events</th>
+                      <th className="u-p-8px-6px u-fw-500" >Faster in</th>
+                      <th className="u-p-8px-6px u-fw-500" style={{ textAlign: 'right' }}>Avg drop</th>
+                      <th className="u-p-8px-6px u-fw-500" style={{ textAlign: 'right' }}>Total time</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -149,22 +149,22 @@ function SwimmerRows({ s, open, onToggle }: { s: SwimmerProgress; open: boolean;
   return (
     <>
       <tr style={{ borderTop: '1px solid var(--border)' }}>
-        <td style={{ padding: '8px 6px' }}>
-          <button type="button" onClick={onToggle} aria-expanded={open} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--text)', cursor: 'pointer', font: 'inherit', textAlign: 'left' }}>
+        <td className="u-p-8px-6px" >
+          <button type="button" onClick={onToggle} aria-expanded={open} className="u-p-0" style={{ background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer', font: 'inherit', textAlign: 'left' }}>
             {open ? '▾' : '▸'} {s.swimmer_name}
           </button>
         </td>
-        <td style={{ padding: '8px 6px' }}>{s.events_compared}{s.new_events ? <span style={{ color: 'var(--text-muted)' }}> +{s.new_events} new</span> : null}</td>
-        <td style={{ padding: '8px 6px' }}>{s.events_improved} of {s.events_compared}</td>
-        <td style={{ padding: '8px 6px', textAlign: 'right', color: tone(s.avg_percent), fontVariantNumeric: 'tabular-nums' }}>{s.avg_percent.toFixed(1)}%</td>
-        <td style={{ padding: '8px 6px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatDrop(s.total_drop_ms)}</td>
+        <td className="u-p-8px-6px" >{s.events_compared}{s.new_events ? <span style={{ color: 'var(--text-muted)' }}> +{s.new_events} new</span> : null}</td>
+        <td className="u-p-8px-6px" >{s.events_improved} of {s.events_compared}</td>
+        <td className="u-p-8px-6px" style={{ textAlign: 'right', color: tone(s.avg_percent), fontVariantNumeric: 'tabular-nums' }}>{s.avg_percent.toFixed(1)}%</td>
+        <td className="u-p-8px-6px" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatDrop(s.total_drop_ms)}</td>
       </tr>
       {open ? s.events.map((e) => (
-        <tr key={`${e.distance}-${e.stroke}-${e.course}`} style={{ color: 'var(--text-subtle)', fontSize: 'var(--fs-sm)' }}>
+        <tr key={`${e.distance}-${e.stroke}-${e.course}`} className="u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>
           <td style={{ padding: '4px 6px 4px 24px' }}>{e.distance} {STROKE_LABELS[e.stroke] ?? e.stroke} {e.course}</td>
-          <td colSpan={2} style={{ padding: '4px 6px', fontVariantNumeric: 'tabular-nums' }}>{formatSwimTime(e.before_ms)} → {formatSwimTime(e.after_ms)}</td>
-          <td style={{ padding: '4px 6px', textAlign: 'right', color: tone(e.percent), fontVariantNumeric: 'tabular-nums' }}>{e.percent.toFixed(1)}%</td>
-          <td style={{ padding: '4px 6px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatDrop(e.drop_ms)}</td>
+          <td colSpan={2} className="u-p-4px-6px" style={{ fontVariantNumeric: 'tabular-nums' }}>{formatSwimTime(e.before_ms)} → {formatSwimTime(e.after_ms)}</td>
+          <td className="u-p-4px-6px" style={{ textAlign: 'right', color: tone(e.percent), fontVariantNumeric: 'tabular-nums' }}>{e.percent.toFixed(1)}%</td>
+          <td className="u-p-4px-6px" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatDrop(e.drop_ms)}</td>
         </tr>
       )) : null}
     </>

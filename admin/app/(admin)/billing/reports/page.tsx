@@ -83,17 +83,17 @@ export default function FinanceReportsPage() {
       </div>
       {error ? <Banner tone="error" onRetry={() => void load()}>{error}</Banner> : null}
 
-      <section className="card" style={{ padding: 20 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap' }}>
+      <section className="card u-p-20px" >
+        <div className="u-gap-12px" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <div>
             <h2 style={sectionTitle}>Receivables aging</h2>
             {aging ? (
-              <p style={{ margin: 0, fontSize: 'var(--fs-base)', color: 'var(--text-subtle)' }}>
+              <p className="u-m-0 u-fs-fs-base" style={{ color: 'var(--text-subtle)' }}>
                 <Money cents={aging.totals.total_cents} strong /> open across {aging.rows.length} {aging.rows.length === 1 ? 'household' : 'households'}
               </p>
             ) : null}
           </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <div className="u-gap-8px" style={{ display: 'flex', alignItems: 'flex-end', flexWrap: 'wrap' }}>
             <Field label="Aged as of">
               <input className="form-input" type="date" value={asOf} onChange={(e) => setAsOf(e.target.value)} />
             </Field>
@@ -108,7 +108,7 @@ export default function FinanceReportsPage() {
 
         {aging && aging.totals.total_cents > 0 ? (
           <>
-            <div role="img" aria-label="Open receivables by age" style={{ display: 'flex', gap: 2, height: 28, margin: '20px 0 12px', borderRadius: 4, overflow: 'hidden' }}>
+            <div role="img" aria-label="Open receivables by age" className="u-gap-2px" style={{ display: 'flex', height: 28, margin: '20px 0 12px', borderRadius: 4, overflow: 'hidden' }}>
               {AGING_BUCKETS.map((b, i) =>
                 shares[i] > 0 ? (
                   <div
@@ -119,9 +119,9 @@ export default function FinanceReportsPage() {
                 ) : null,
               )}
             </div>
-            <ul style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 20px', listStyle: 'none', padding: 0, margin: '0 0 16px', fontSize: 'var(--fs-base)' }}>
+            <ul className="u-p-0 u-m-0-0-16px u-fs-fs-base" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 20px', listStyle: 'none' }}>
               {AGING_BUCKETS.map((b, i) => (
-                <li key={b.key} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <li key={b.key} className="u-gap-8px" style={{ display: 'flex', alignItems: 'center' }}>
                   <span aria-hidden style={{ width: 10, height: 10, borderRadius: 4, background: AGING_RAMP[i] }} />
                   <span style={{ color: 'var(--text-subtle)' }}>{b.label}</span>
                   <Money cents={aging.totals[b.key]} />
@@ -144,7 +144,7 @@ export default function FinanceReportsPage() {
                     <tr key={row.household_id || 'none'}>
                       <td style={tdStyle}>
                         {row.household_name}
-                        <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>
+                        <div className="u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>
                           {row.invoice_count} open{row.oldest_due_date ? `, oldest due ${formatDateOnly(row.oldest_due_date)}` : ''}
                         </div>
                       </td>
@@ -159,21 +159,21 @@ export default function FinanceReportsPage() {
             </ScrollTable>
           </>
         ) : !loading && aging ? (
-          <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', marginTop: 16 }}>Nothing is outstanding. Every issued invoice is paid, voided, or written off.</p>
+          <p className="u-fs-fs-base u-mt-16px" style={{ color: 'var(--text-subtle)' }}>Nothing is outstanding. Every issued invoice is paid, voided, or written off.</p>
         ) : null}
       </section>
 
-      <section className="card" style={{ padding: 20, marginTop: 20 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap' }}>
+      <section className="card u-p-20px u-mt-20px" >
+        <div className="u-gap-12px" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <div>
             <h2 style={sectionTitle}>Invoiced revenue</h2>
             {revenue ? (
-              <p style={{ margin: 0, fontSize: 'var(--fs-base)', color: 'var(--text-subtle)' }}>
+              <p className="u-m-0 u-fs-fs-base" style={{ color: 'var(--text-subtle)' }}>
                 <Money cents={revenue.total_cents} strong /> issued {formatDateOnly(revenue.from)} – {formatDateOnly(revenue.to)}, net of discounts
               </p>
             ) : null}
           </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <div className="u-gap-8px" style={{ display: 'flex', alignItems: 'flex-end', flexWrap: 'wrap' }}>
             <Field label="From">
               <input className="form-input" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
             </Field>
@@ -187,8 +187,8 @@ export default function FinanceReportsPage() {
         </div>
 
         {revenue && revenue.by_month.length > 0 ? (
-          <div style={{ position: 'relative', marginTop: 20 }}>
-            <div style={{ height: 18, fontSize: 'var(--fs-base)', color: 'var(--text-subtle)' }} aria-live="polite">
+          <div className="u-mt-20px" style={{ position: 'relative' }}>
+            <div className="u-fs-fs-base" style={{ height: 18, color: 'var(--text-subtle)' }} aria-live="polite">
               {hovered ? (
                 <>
                   {hovered.label}: <Money cents={hovered.amount_cents} strong />
@@ -197,7 +197,7 @@ export default function FinanceReportsPage() {
                 'Hover a month for its total'
               )}
             </div>
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 160, borderBottom: '1px solid var(--border-strong)', marginTop: 8 }}>
+            <div className="u-gap-2px u-mt-8px" style={{ display: 'flex', alignItems: 'flex-end', height: 160, borderBottom: '1px solid var(--border-strong)' }}>
               {revenue.by_month.map((m) => (
                 <button
                   key={m.key}
@@ -207,7 +207,7 @@ export default function FinanceReportsPage() {
                   onMouseLeave={() => setHoverMonth(null)}
                   onFocus={() => setHoverMonth(m.key)}
                   onBlur={() => setHoverMonth(null)}
-                  style={{ flex: 1, height: '100%', display: 'flex', alignItems: 'flex-end', background: 'none', border: 'none', padding: 0, cursor: 'default' }}
+                  className="u-p-0" style={{ flex: 1, height: '100%', display: 'flex', alignItems: 'flex-end', background: 'none', border: 'none', cursor: 'default' }}
                 >
                   <span
                     style={{
@@ -222,23 +222,23 @@ export default function FinanceReportsPage() {
                 </button>
               ))}
             </div>
-            <div style={{ display: 'flex', gap: 2, fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: 6 }}>
+            <div className="u-gap-2px u-fs-fs-xs u-mt-6px" style={{ display: 'flex', color: 'var(--text-muted)' }}>
               {revenue.by_month.map((m, i) => (
                 <span key={m.key} style={{ flex: 1, textAlign: 'center', overflow: 'hidden', whiteSpace: 'nowrap' }}>
                   {i % Math.ceil(revenue.by_month.length / 6) === 0 ? m.label.slice(0, 3) : ''}
                 </span>
               ))}
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: 24, marginTop: 20 }}>
+            <div className="u-gap-24px u-mt-20px" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))' }}>
               {[
                 { title: 'By category', rows: revenue.by_category },
                 { title: 'By group', rows: revenue.by_group },
               ].map((block) => (
                 <div key={block.title}>
-                  <h3 className="card-title" style={{ margin: '0 0 6px' }}>{block.title}</h3>
-                  {block.rows.length === 0 ? <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)' }}>No revenue in this range.</p> : null}
+                  <h3 className="card-title u-m-0-0-6px" >{block.title}</h3>
+                  {block.rows.length === 0 ? <p className="u-fs-fs-base" style={{ color: 'var(--text-subtle)' }}>No revenue in this range.</p> : null}
                   {block.rows.map((row) => (
-                    <div key={row.key} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 'var(--fs-base)' }}>
+                    <div key={row.key} className="u-fs-fs-base" style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
                       <span>{row.label}</span>
                       <Money cents={row.amount_cents} />
                     </div>
@@ -250,17 +250,17 @@ export default function FinanceReportsPage() {
         ) : null}
       </section>
 
-      <section className="card" style={{ padding: 20, marginTop: 20 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap' }}>
+      <section className="card u-p-20px u-mt-20px" >
+        <div className="u-gap-12px" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <div>
             <h2 style={sectionTitle}>Deposits</h2>
             {deposits ? (
-              <p style={{ margin: 0, fontSize: 'var(--fs-base)', color: 'var(--text-subtle)' }}>
+              <p className="u-m-0 u-fs-fs-base" style={{ color: 'var(--text-subtle)' }}>
                 <Money cents={deposits.net_cents} strong /> net after <Money cents={deposits.refunds_cents} muted /> in refunds
               </p>
             ) : null}
           </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <div className="u-gap-8px" style={{ display: 'flex', alignItems: 'flex-end', flexWrap: 'wrap' }}>
             <Field label="Group by">
               <select className="form-input" value={period} onChange={(e) => setPeriod(e.target.value as 'day' | 'week' | 'month')}>
                 <option value="day">Day</option>
@@ -305,7 +305,7 @@ export default function FinanceReportsPage() {
             </table>
           </ScrollTable>
         ) : !loading ? (
-          <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', marginTop: 16 }}>No payments were received in this range.</p>
+          <p className="u-fs-fs-base u-mt-16px" style={{ color: 'var(--text-subtle)' }}>No payments were received in this range.</p>
         ) : null}
       </section>
     </div>

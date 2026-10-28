@@ -1,0 +1,15 @@
+/* Static layout/type styles migrated from inline style props. */
+.is-550d8c4.is-550d8c4 { font-size: var(--fs-md); color: var(--text-muted); }
+.is-6a59054.is-6a59054 { margin-bottom: var(--space-8); }
+.is-f226448.is-f226448 { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.is-9266feb.is-9266feb { font-size: var(--fs-base); color: var(--text-muted); margin: 12px 0 0; }
+.is-1f5cef7.is-1f5cef7 { font-size: var(--fs-md); color: var(--text-muted); margin: 0; }
+.is-bcb0a0d.is-bcb0a0d { padding: 0; }
+.is-dd1df4f.is-dd1df4f { font-weight: 600; font-size: var(--fs-md); }
+.is-4f39ab0.is-4f39ab0 { font-size: var(--fs-sm); color: var(--text-muted); }
+.is-b75fad0.is-b75fad0 { margin-bottom: 20px; }
+.is-51cb2c4.is-51cb2c4 { color: var(--text-muted); margin: 0 0 8px; }
+.is-2fee94f.is-2fee94f { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.is-12e9cd9.is-12e9cd9 { font-size: var(--fs-sm); color: var(--text-subtle); margin-top: 4px; }
+.is-387ebaf.is-387ebaf { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+.is-e3238f0.is-e3238f0 { display: flex; gap: 6px; align-items: center; font-size: var(--fs-base); }

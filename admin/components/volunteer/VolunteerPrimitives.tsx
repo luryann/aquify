@@ -10,13 +10,13 @@ export function SpotPips({ filled, capacity }: { filled: number; capacity: numbe
   const label = `${filled} of ${capacity} spots filled`
   if (capacity > 24) {
     return (
-      <span title={label} style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
+      <span title={label} className="u-ff-font-mono u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>
         {filled}/{capacity}
       </span>
     )
   }
   return (
-    <span role="img" aria-label={label} title={label} style={{ display: 'inline-flex', gap: '4px', flexWrap: 'wrap', maxWidth: '180px' }}>
+    <span role="img" aria-label={label} title={label} className="u-gap-4px" style={{ display: 'inline-flex', flexWrap: 'wrap', maxWidth: '180px' }}>
       {Array.from({ length: capacity }, (_, i) => (
         <span
           key={i}
@@ -67,7 +67,7 @@ export function HoursMeter({ required, earned, scheduled, compact = false }: {
         }} />
       </div>
       {!compact ? (
-        <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginTop: '8px', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
+        <div className="u-gap-16px u-mt-8px u-fs-fs-sm" style={{ display: 'flex', flexWrap: 'wrap', color: 'var(--text-muted)' }}>
           <Legend swatch="var(--accent)">{formatHours(earned)} earned</Legend>
           {scheduled > 0 ? <Legend swatch="var(--accent-border)">{formatHours(scheduled)} signed up</Legend> : null}
           <span>{formatHours(required)} required</span>
@@ -79,7 +79,7 @@ export function HoursMeter({ required, earned, scheduled, compact = false }: {
 
 function Legend({ swatch, children }: { swatch: string; children: React.ReactNode }) {
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+    <span className="u-gap-6px" style={{ display: 'inline-flex', alignItems: 'center' }}>
       <span style={{ width: '10px', height: '10px', borderRadius: '4px', background: swatch }} />
       {children}
     </span>
@@ -100,11 +100,7 @@ export function ComplianceBadge({ status }: { status: ComplianceStatus }) {
 
 export function LoadErrorBanner({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <div role="alert" style={{
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap',
-      padding: '12px 16px', borderRadius: 'var(--r-md, 8px)', marginBottom: '16px',
-      background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: 'var(--fs-base)',
-    }}>
+    <div role="alert" className="u-gap-12px u-p-12px-16px u-mb-16px u-fs-fs-base" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', borderRadius: 'var(--r-md, 8px)', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)' }}>
       <span>{message}</span>
       <button type="button" className="btn btn-secondary btn-sm" onClick={onRetry}>Retry</button>
     </div>
@@ -113,10 +109,7 @@ export function LoadErrorBanner({ message, onRetry }: { message: string; onRetry
 
 export function InlineNotice({ tone, children }: { tone: 'error' | 'success'; children: React.ReactNode }) {
   return (
-    <div role={tone === 'error' ? 'alert' : 'status'} style={{
-      padding: '12px 12px', borderRadius: 'var(--r-md, 8px)', marginBottom: '12px', fontSize: 'var(--fs-base)',
-      background: `var(--${tone}-bg)`, border: `1px solid var(--${tone}-border)`, color: `var(--${tone})`,
-    }}>
+    <div role={tone === 'error' ? 'alert' : 'status'} className="u-p-12px-12px u-mb-12px u-fs-fs-base" style={{ borderRadius: 'var(--r-md, 8px)', background: `var(--${tone}-bg)`, border: `1px solid var(--${tone}-border)`, color: `var(--${tone})` }}>
       {children}
     </div>
   )

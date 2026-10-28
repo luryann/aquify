@@ -31,15 +31,7 @@ function formatDate(value?: string) {
 }
 
 function inputStyle(): CSSProperties {
-  return {
-    width: '100%',
-    padding: '12px 12px',
-    borderRadius: '12px',
-    border: '1px solid var(--border)',
-    background: 'var(--bg-elevated)',
-    fontSize: 'var(--fs-base)',
-    color: 'var(--text)',
-  }
+  return { width: '100%' }
 }
 
 export function AutopayPanel() {
@@ -151,33 +143,33 @@ export function AutopayPanel() {
   return (
     <div>
       {error ? (
-        <div style={{ padding: '12px 16px', marginBottom: '20px', background: 'var(--danger-bg)', border: '1px solid var(--danger-border)', borderRadius: '8px', fontSize: 'var(--fs-sm)', color: 'var(--danger)', fontFamily: 'var(--font-body)' }}>
+        <div className="u-p-12px-16px u-mb-20px u-fs-fs-sm u-ff-font-body" style={{ background: 'var(--danger-bg)', border: '1px solid var(--danger-border)', borderRadius: '8px', color: 'var(--danger)' }}>
           {error}
         </div>
       ) : null}
       {success ? (
-        <div style={{ padding: '12px 16px', marginBottom: '20px', background: 'var(--success-bg)', border: '1px solid rgba(5,150,105,0.15)', borderRadius: '8px', fontSize: 'var(--fs-sm)', color: 'var(--success)', fontFamily: 'var(--font-body)' }}>
+        <div className="u-p-12px-16px u-mb-20px u-fs-fs-sm u-ff-font-body" style={{ background: 'var(--success-bg)', border: '1px solid rgba(5,150,105,0.15)', borderRadius: '8px', color: 'var(--success)' }}>
           {success}
         </div>
       ) : null}
 
-      <div className="cols-3" style={{ gap: '12px', marginBottom: '20px' }}>
+      <div className="cols-3 u-gap-12px u-mb-20px" >
         {[
-          { label: 'Autopay enabled', value: enabledCount, sub: `${rows.length} tracked households`, color: 'var(--accent)' },
+          { label: 'Autopay enabled', value: enabledCount, sub: `${rows.length} tracked households`, color: 'var(--accent-text, var(--accent))' },
           { label: 'Next charge batch', value: scheduledCount, sub: 'households with upcoming charges', color: 'var(--success)' },
           { label: 'Manual review', value: rows.length - enabledCount, sub: 'households still on manual billing', color: 'var(--text)' },
         ].map((stat) => (
-          <div key={stat.label} className="card" style={{ padding: '16px 20px' }}>
-            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
-            <div style={{ fontSize: 'var(--fs-2xl)', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{loading ? '—' : stat.value}</div>
-            <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: '2px' }}>{stat.sub}</div>
+          <div key={stat.label} className="card u-p-16px-20px" >
+            <div className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ color: 'var(--text-muted)' }}>{stat.label}</div>
+            <div className="u-fs-fs-2xl u-ff-font-body u-fw-700" style={{ color: stat.color }}>{loading ? '—' : stat.value}</div>
+            <div className="u-fs-fs-xs u-mt-2px" style={{ color: 'var(--text-muted)' }}>{stat.sub}</div>
           </div>
         ))}
       </div>
 
-      <div className="split-pair" style={{ gap: '16px' }}>
-        <div className="card" style={{ padding: '16px', overflowX: 'auto' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr 1fr 0.8fr 0.8fr', gap: '12px', paddingBottom: '12px', borderBottom: '1px solid var(--border)', minWidth: '560px' }}>
+      <div className="split-pair u-gap-16px" >
+        <div className="card u-p-16px" style={{ overflowX: 'auto' }}>
+          <div className="u-gap-12px u-pb-12px" style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr 1fr 0.8fr 0.8fr', borderBottom: '1px solid var(--border)', minWidth: '560px' }}>
             {['Household', 'Saved Method', 'Next Scheduled Charge', 'Status', 'Actions'].map((header) => (
               <div key={header} className="col-head">
                 {header}
@@ -187,25 +179,25 @@ export function AutopayPanel() {
 
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             {loading ? (
-              <div style={{ padding: '24px', color: 'var(--text-muted)', fontSize: 'var(--fs-base)' }}>Loading households…</div>
+              <div className="u-p-24px u-fs-fs-base" style={{ color: 'var(--text-muted)' }}>Loading households…</div>
             ) : rows.length === 0 ? (
-              <div style={{ padding: '24px', color: 'var(--text-muted)', fontSize: 'var(--fs-base)' }}>No households available.</div>
+              <div className="u-p-24px u-fs-fs-base" style={{ color: 'var(--text-muted)' }}>No households available.</div>
             ) : (
               rows.map((row) => (
-                <div key={row.householdId} style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr 1fr 0.8fr 0.8fr', gap: '12px', alignItems: 'center', padding: '16px 0', borderBottom: '1px solid var(--border)', minWidth: '560px' }}>
+                <div key={row.householdId} className="u-gap-12px u-p-16px-0" style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr 1fr 0.8fr 0.8fr', alignItems: 'center', borderBottom: '1px solid var(--border)', minWidth: '560px' }}>
                   <div>
-                    <div style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)' }}>{row.householdName}</div>
+                    <div className="u-fs-fs-base u-fw-600" style={{ color: 'var(--text)' }}>{row.householdName}</div>
                   </div>
-                  <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{row.methodLabel}</div>
+                  <div className="u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{row.methodLabel}</div>
                   <div>
-                    <div style={{ fontSize: 'var(--fs-base)', color: 'var(--text)' }}>{formatDate(row.nextChargeDate)}</div>
-                    <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginTop: '4px' }}>{formatCurrencyCents(row.nextChargeAmountCents)}</div>
+                    <div className="u-fs-fs-base" style={{ color: 'var(--text)' }}>{formatDate(row.nextChargeDate)}</div>
+                    <div className="u-fs-fs-xs u-ff-font-body u-mt-4px" style={{ color: 'var(--text-muted)' }}>{formatCurrencyCents(row.nextChargeAmountCents)}</div>
                   </div>
                   <span className="badge" style={{ width: 'fit-content', background: row.enabled ? 'var(--success-bg)' : 'var(--warning-bg)', color: row.enabled ? 'var(--success)' : 'var(--warning)' }}>
                     {row.enabled ? 'Enabled' : 'Paused'}
                   </span>
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <button className="btn btn-secondary" onClick={() => handleSelect(row)}>
+                  <div className="u-gap-8px" style={{ display: 'flex', alignItems: 'center' }}>
+                    <button type="button" className="btn btn-secondary" onClick={() => handleSelect(row)}>
                       {selectedHouseholdId === row.householdId ? 'Editing' : 'Manage'}
                     </button>
                   </div>
@@ -215,25 +207,25 @@ export function AutopayPanel() {
           </div>
         </div>
 
-        <div className="card" style={{ padding: '20px' }}>
-          <h2 className="section-title" style={{ marginBottom: '4px' }}>
+        <div className="card u-p-20px" >
+          <h2 className="section-title u-mb-4px" >
             {selectedRow?.householdName ?? 'Choose a household'}
           </h2>
-          <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginBottom: '16px' }}>
+          <p className="u-fs-fs-sm u-mb-16px" style={{ color: 'var(--text-muted)' }}>
             {selectedRow ? (selectedRow.enabled ? 'Autopay enabled' : 'Manual billing') : 'Select a row to edit.'}
           </p>
 
           {selectedRow ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div style={{ padding: '12px 16px', borderRadius: '12px', background: selectedRow.enabled ? 'var(--success-bg)' : 'var(--surface-subtle)', border: '1px solid var(--border)' }}>
-                <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text)', marginBottom: '4px' }}>{formatAutopayMethod(selectedRow.status)}</div>
-                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+            <div className="u-gap-16px" style={{ display: 'flex', flexDirection: 'column' }}>
+              <div className="u-p-12px-16px" style={{ borderRadius: '12px', background: selectedRow.enabled ? 'var(--success-bg)' : 'var(--surface-subtle)', border: '1px solid var(--border)' }}>
+                <div className="u-fs-fs-sm u-fw-600 u-mb-4px" style={{ color: 'var(--text)' }}>{formatAutopayMethod(selectedRow.status)}</div>
+                <div className="u-fs-fs-xs u-lh-1_5" style={{ color: 'var(--text-muted)' }}>
                   Next charge: {formatDate(selectedRow.nextChargeDate)} · {formatCurrencyCents(selectedRow.nextChargeAmountCents)}
                 </div>
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                <label className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ display: 'block', color: 'var(--text-muted)' }}>
                   Payment type
                 </label>
                 <select value={form.paymentMethodType} onChange={(event) => setForm((current) => ({ ...current, paymentMethodType: event.target.value === 'ach' ? 'ach' : 'card' }))} style={inputStyle()}>
@@ -243,21 +235,21 @@ export function AutopayPanel() {
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                <label className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ display: 'block', color: 'var(--text-muted)' }}>
                   Saved label
                 </label>
-                <input value={form.paymentMethodLabel} onChange={(event) => setForm((current) => ({ ...current, paymentMethodLabel: event.target.value }))} style={inputStyle()} placeholder="Visa •••• 4242" />
+                <input aria-label="Visa •••• 4242" value={form.paymentMethodLabel} onChange={(event) => setForm((current) => ({ ...current, paymentMethodLabel: event.target.value }))} style={inputStyle()} placeholder="Visa •••• 4242" />
               </div>
 
-              <div className="cols-2" style={{ gap: '12px' }}>
+              <div className="cols-2 u-gap-12px" >
                 <div>
-                  <label style={{ display: 'block', fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                  <label className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ display: 'block', color: 'var(--text-muted)' }}>
                     {form.paymentMethodType === 'ach' ? 'Bank Name' : 'Brand'}
                   </label>
                   <input value={form.paymentMethodBrand} onChange={(event) => setForm((current) => ({ ...current, paymentMethodBrand: event.target.value }))} style={inputStyle()} placeholder={form.paymentMethodType === 'ach' ? 'Chase Bank' : 'Visa'} />
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                  <label className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ display: 'block', color: 'var(--text-muted)' }}>
                     {form.paymentMethodType === 'ach' ? 'Reference' : 'Last 4'}
                   </label>
                   <input
@@ -274,47 +266,39 @@ export function AutopayPanel() {
               </div>
 
               {form.paymentMethodType === 'card' ? (
-                <div className="cols-2" style={{ gap: '12px' }}>
+                <div className="cols-2 u-gap-12px" >
                   <div>
-                    <label style={{ display: 'block', fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                    <label className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ display: 'block', color: 'var(--text-muted)' }}>
                       Expiry month
                     </label>
-                    <input value={form.paymentMethodExpMonth} onChange={(event) => setForm((current) => ({ ...current, paymentMethodExpMonth: event.target.value }))} style={inputStyle()} placeholder="09" />
+                    <input aria-label="09" value={form.paymentMethodExpMonth} onChange={(event) => setForm((current) => ({ ...current, paymentMethodExpMonth: event.target.value }))} style={inputStyle()} placeholder="09" />
                   </div>
                   <div>
-                    <label style={{ display: 'block', fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                    <label className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ display: 'block', color: 'var(--text-muted)' }}>
                       Expiry year
                     </label>
-                    <input value={form.paymentMethodExpYear} onChange={(event) => setForm((current) => ({ ...current, paymentMethodExpYear: event.target.value }))} style={inputStyle()} placeholder="2028" />
+                    <input aria-label="2028" value={form.paymentMethodExpYear} onChange={(event) => setForm((current) => ({ ...current, paymentMethodExpYear: event.target.value }))} style={inputStyle()} placeholder="2028" />
                   </div>
                 </div>
               ) : null}
 
               <div>
-                <label style={{ display: 'block', fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '8px' }}>
+                <label className="u-fs-fs-sm u-ff-font-body u-mb-8px" style={{ display: 'block', color: 'var(--text-muted)' }}>
                   Charge timing
                 </label>
-                <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginBottom: '8px', lineHeight: 1.5 }}>
+                <p className="u-fs-fs-xs u-mb-8px u-lh-1_5" style={{ color: 'var(--text-muted)' }}>
                   Charging early means the family&apos;s card or bank account is billed a few days before the invoice is actually due.
                 </p>
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <div className="u-gap-8px" style={{ display: 'flex', flexWrap: 'wrap' }}>
                   {[
                     { value: 0, label: 'Due date' },
                     { value: 3, label: '3 days early' },
                     { value: 7, label: '7 days early' },
                   ].map((option) => (
-                    <button
+                    <button type="button"
                       key={option.value}
                       onClick={() => setForm((current) => ({ ...current, triggerDaysBeforeDue: option.value as 0 | 3 | 7 }))}
-                      style={{
-                        padding: '8px 12px',
-                        borderRadius: '999px',
-                        border: `1px solid ${form.triggerDaysBeforeDue === option.value ? 'var(--text)' : 'var(--border)'}`,
-                        background: form.triggerDaysBeforeDue === option.value ? 'var(--text)' : '#fff',
-                        color: form.triggerDaysBeforeDue === option.value ? '#fff' : 'var(--text-muted)',
-                        fontSize: 'var(--fs-sm)',
-                        cursor: 'pointer',
-                      }}
+                      className="u-p-8px-12px u-fs-fs-sm" style={{ borderRadius: '999px', border: `1px solid ${form.triggerDaysBeforeDue === option.value ? 'var(--text)' : 'var(--border)'}`, background: form.triggerDaysBeforeDue === option.value ? 'var(--text)' : '#fff', color: form.triggerDaysBeforeDue === option.value ? '#fff' : 'var(--text-muted)', cursor: 'pointer' }}
                     >
                       {option.label}
                     </button>
@@ -322,12 +306,12 @@ export function AutopayPanel() {
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                <button className="btn btn-primary" onClick={saveAutopay} disabled={saving}>
+              <div className="u-gap-8px" style={{ display: 'flex', flexWrap: 'wrap' }}>
+                <button type="button" className="btn btn-primary" onClick={saveAutopay} disabled={saving}>
                   {saving ? 'Saving…' : selectedRow.enabled ? 'Update Autopay' : 'Enable Autopay'}
                 </button>
                 {selectedRow.enabled ? (
-                  <button className="btn btn-secondary" onClick={disableAutopay} disabled={saving}>
+                  <button type="button" className="btn btn-secondary" onClick={disableAutopay} disabled={saving}>
                     Opt Out
                   </button>
                 ) : null}

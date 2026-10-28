@@ -1,0 +1,35 @@
+/* Static layout/type styles migrated from inline style props. */
+.is-930d87f.is-930d87f { display: flex; flex-direction: column; gap: 12px; }
+.is-4d0790f.is-4d0790f { padding: 20px 24px; display: flex; gap: 16px; }
+.is-e933947.is-e933947 { flex: 1; display: flex; flex-direction: column; gap: 12px; }
+.is-9dc000d.is-9dc000d { margin-bottom: 20px; background: var(--error-bg); border: 1px solid rgba(220,38,38,0.18); border-radius: 12px; padding: 20px 20px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.is-137a7ce.is-137a7ce { font-size: var(--fs-md); font-weight: 600; color: var(--error); margin-bottom: 4px; }
+.is-de107ca.is-de107ca { font-size: var(--fs-base); color: var(--error); }
+.is-b2368ab.is-b2368ab { padding: 8px 16px; border-radius: 8px; border: none; background: var(--error); color: var(--bg-elevated); font-size: var(--fs-base); font-weight: 600; cursor: pointer; flex-shrink: 0; }
+.is-d9d9712.is-d9d9712 { background: var(--accent-subtle); border: 1px solid rgba(235,93,30,0.2); border-radius: 12px; padding: 16px 20px; margin-bottom: 24px; display: flex; align-items: center; gap: 16px; animation: slideUp 0.35s ease both; }
+.is-fe12638.is-fe12638 { font-size: var(--fs-md); font-weight: 600; color: #8B3312; }
+.is-023517c.is-023517c { font-size: var(--fs-sm); color: #b8541e; margin-top: 2px; }
+.is-6a59054.is-6a59054 { margin-bottom: var(--space-8); }
+.is-a86d472.is-a86d472 { font-size: var(--fs-md); font-weight: 600; font-family: var(--font-body); color: var(--text); margin-bottom: 16px; animation: slideUp 0.4s ease both; }
+.is-86963eb.is-86963eb { padding: 20px 24px; display: flex; align-items: flex-start; gap: 16px; }
+.is-53214bb.is-53214bb { font-size: var(--fs-2xs); font-family: var(--font-body); color: var(--accent); font-weight: 600; }
+.is-a1e6bb6.is-a1e6bb6 { font-size: var(--fs-2xl); font-weight: var(--display-weight); color: var(--text); line-height: 1.1; font-family: var(--font-display); }
+.is-79731f1.is-79731f1 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.is-fdc9019.is-fdc9019 { font-family: var(--font-display); font-weight: var(--display-weight); font-size: var(--fs-xl); color: var(--text); line-height: 1.1; }
+.is-11fadb7.is-11fadb7 { padding: 2px 8px; background: var(--bg-wash); border-radius: 4px; font-size: var(--fs-xs); font-family: var(--font-body); color: var(--text-subtle); }
+.is-7bec0ff.is-7bec0ff { font-size: var(--fs-sm); color: var(--text-muted); margin-top: 4px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.is-7c0bd9a.is-7c0bd9a { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.is-5341e30.is-5341e30 { font-size: var(--fs-sm); color: var(--text); font-weight: 500; }
+.is-483d59c.is-483d59c { font-size: var(--fs-md); font-weight: 600; font-family: var(--font-body); color: var(--text); margin-bottom: 16px; }
+.is-21695c0.is-21695c0 { padding: 40px; text-align: center; color: var(--text-muted); font-size: var(--fs-md); }
+.is-75a6c45.is-75a6c45 { font-size: var(--fs-md); color: var(--text-subtle); font-weight: 500; }
+.is-7db2283.is-7db2283 { font-size: var(--fs-base); color: var(--text-muted); margin-left: 8px; }
+.is-e2ff0fd.is-e2ff0fd { display: flex; align-items: center; gap: 12px; }
+.is-915a8b5.is-915a8b5 { font-size: var(--fs-sm); color: var(--text-muted); font-family: var(--font-body); }
+.is-2d20fd4.is-2d20fd4 { padding: 2px 8px; background: var(--bg-wash); border-radius: 6px; font-size: var(--fs-xs); color: var(--text-muted); }
+.is-355eedd.is-355eedd { display: flex; flex-direction: column; gap: 8px; }
+.is-e9d15aa.is-e9d15aa { display: flex; align-items: center; justify-content: space-between; background: var(--bg-elevated); border-radius: 12px; border: 1px solid var(--border); padding: 16px 20px; text-decoration: none; gap: 16px; transition: box-shadow 120ms ease; }
+.is-ddcee0b.is-ddcee0b { font-size: var(--fs-md); color: var(--text); font-weight: 500; }
+.is-647d1e4.is-647d1e4 { padding: 1px 8px; background: var(--bg-wash); border-radius: 4px; font-size: var(--fs-xs); font-family: var(--font-body); color: var(--text-subtle); }
+.is-dd721e0.is-dd721e0 { font-size: var(--fs-sm); color: var(--text-muted); margin-top: 4px; }
+.is-796c8fe.is-796c8fe { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }

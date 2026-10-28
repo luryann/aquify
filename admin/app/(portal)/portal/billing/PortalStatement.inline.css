@@ -1,0 +1,13 @@
+/* Static layout/type styles migrated from inline style props. */
+.is-8dd12b4.is-8dd12b4 { margin-top: 32px; }
+.is-347f2f9.is-347f2f9 { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.is-8fb176a.is-8fb176a { font-size: var(--fs-base); color: var(--text-muted); }
+.is-67f161c.is-67f161c { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 12px; background: var(--error-bg); border: 1px solid var(--error-border); font-size: var(--fs-base); }
+.is-f27afbb.is-f27afbb { padding: 0; overflow: hidden; }
+.is-13c4a2f.is-13c4a2f { padding: 24px; color: var(--text-muted); font-size: var(--fs-md); }
+.is-3d754c5.is-3d754c5 { padding: 24px; text-align: center; color: var(--text-muted); font-size: var(--fs-md); }
+.is-98991f7.is-98991f7 { display: flex; justify-content: space-between; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--border); font-size: var(--fs-base); }
+.is-aaa1da3.is-aaa1da3 { color: var(--text); font-weight: 500; }
+.is-a4e789a.is-a4e789a { color: var(--text-muted); font-size: var(--fs-sm); }
+.is-e298452.is-e298452 { font-variant-numeric: tabular-nums; font-weight: 600; }
+.is-ecbf34d.is-ecbf34d { padding: 12px 20px; font-size: var(--fs-sm); color: var(--text-muted); }

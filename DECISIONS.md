@@ -1,6 +1,6 @@
 # DARE Platform - Locked Decisions
 
-Last updated: 2026-03-15
+Last updated: 2026-10-27
 Purpose: remove ambiguity so a new engineer/AI can execute without additional context.
 
 ## 1) Authentication Provider
@@ -56,6 +56,7 @@ Purpose: remove ambiguity so a new engineer/AI can execute without additional co
     - billing/payments
     - document/compliance actions
   - Swimmer account may be disabled globally or per household without blocking launch.
+  - The swimmer portal (`/swim`) is always available to users with the `swimmer` role; there is no feature flag. Households without swimmer accounts are simply unaffected.
   - Swimmer role is read-only by default unless specific field-level permissions are explicitly enabled.
 
 ## 9) Meet Commitments and Event Selection Policy

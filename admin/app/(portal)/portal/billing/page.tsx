@@ -26,6 +26,7 @@ import {
   formatAutopayMethod,
   type AutopayFormState,
 } from '@/lib/autopay'
+import './page.inline.css'
 
 function fmtDate(iso?: string): string {
   return formatDateOnly(iso)
@@ -42,7 +43,7 @@ function Skeleton({ w = '100%', h = 16, r = 8 }: { w?: string | number; h?: numb
         width: w,
         height: h,
         borderRadius: r,
-        background: 'linear-gradient(90deg, #f0efee 25%, #e6e5e3 50%, #f0efee 75%)',
+        background: 'linear-gradient(90deg, var(--bg-elevated) 25%, var(--border-strong) 50%, var(--bg-elevated) 75%)',
         backgroundSize: '200% 100%',
         animation: 'shimmer 1.5s infinite',
       }}
@@ -55,31 +56,22 @@ const STATUS_CONFIG: Record<string, { label: string; bg: string; color: string }
   issued: { label: 'Due', bg: 'var(--warning-bg)', color: 'var(--warning)' },
   partially_paid: { label: 'Partial', bg: 'var(--info-bg)', color: 'var(--info)' },
   paid: { label: 'Paid', bg: 'var(--success-bg)', color: 'var(--success)' },
-  refunded_partial: { label: 'Refunded', bg: '#f5f3ff', color: '#7c3aed' },
-  refunded_full: { label: 'Refunded', bg: '#f5f3ff', color: '#7c3aed' },
+  refunded_partial: { label: 'Refunded', bg: 'var(--water-subtle)', color: 'var(--water)' },
+  refunded_full: { label: 'Refunded', bg: 'var(--water-subtle)', color: 'var(--water)' },
   voided: { label: 'Voided', bg: 'var(--bg-surface)', color: 'var(--text-muted)' },
   written_off: { label: 'Written off', bg: 'var(--bg-surface)', color: 'var(--text-muted)' },
 }
 
 function fieldLabel(label: string) {
   return (
-    <label style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', display: 'block', marginBottom: '6px', fontFamily: 'var(--font-body)' }}>
+    <label className="is-4ecc633">
       {label}
     </label>
   )
 }
 
 function inputStyle(): CSSProperties {
-  return {
-    width: '100%',
-    padding: '12px 12px',
-    borderRadius: '12px',
-    border: '1px solid rgba(0,0,0,0.1)',
-    background: 'var(--bg-elevated)',
-    fontSize: 'var(--fs-base)',
-    color: 'var(--text)',
-    outline: 'none',
-  }
+  return { width: '100%' }
 }
 
 function AutopayTab(props: {
@@ -103,14 +95,14 @@ function AutopayTab(props: {
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        <div className="card" style={{ padding: '20px 24px' }}>
+      <div className="is-8ef476f">
+        <div className="card is-b516f27" >
           <Skeleton w="40%" h={18} />
-          <div style={{ marginTop: '12px' }}><Skeleton w="75%" h={12} /></div>
+          <div className="is-9c9cee2"><Skeleton w="75%" h={12} /></div>
         </div>
-        <div className="card" style={{ padding: '20px 24px' }}>
+        <div className="card is-b516f27" >
           <Skeleton w="28%" h={16} />
-          <div className="cols-2" style={{ gap: '16px', marginTop: '20px' }}>
+          <div className="cols-2 is-e31d992" >
             <Skeleton h={42} />
             <Skeleton h={42} />
             <Skeleton h={42} />
@@ -123,18 +115,18 @@ function AutopayTab(props: {
 
   if (loadError) {
     return (
-      <div style={{ background: '#fff5f5', border: '1px solid rgba(220,38,38,0.16)', borderRadius: '12px', padding: '20px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
+      <div className="is-d95d6c7">
         <div>
-          <div style={{ fontWeight: 700, fontSize: 'var(--fs-md)', color: 'var(--error)', marginBottom: '4px' }}>
+          <div className="is-4f68acd">
             Autopay settings are unavailable
           </div>
-          <div style={{ fontSize: 'var(--fs-base)', color: 'var(--error)', lineHeight: 1.6 }}>
+          <div className="is-e150e31">
             {loadError}
           </div>
         </div>
-        <button
+        <button type="button"
           onClick={onRetry}
-          style={{ padding: '12px 16px', borderRadius: '12px', border: 'none', background: 'var(--error)', color: 'var(--bg-elevated)', fontSize: 'var(--fs-base)', fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}
+          className="is-1618f1c"
         >
           Retry
         </button>
@@ -143,11 +135,11 @@ function AutopayTab(props: {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', animation: 'slideUp 0.3s ease both' }}>
+    <div className="is-4a32804">
       <div
         style={{
           background: status?.enabled ? 'var(--success-bg)' : 'var(--bg-elevated)',
-          border: `1px solid ${status?.enabled ? 'rgba(5,150,105,0.2)' : 'rgba(0,0,0,0.08)'}`,
+          border: `1px solid ${status?.enabled ? 'var(--success-border)' : 'var(--border)'}`,
           borderRadius: '12px',
           padding: '20px 24px',
           display: 'flex',
@@ -157,10 +149,10 @@ function AutopayTab(props: {
         }}
       >
         <div style={{ flex: 1 }}>
-          <div style={{ fontWeight: 700, fontSize: 'var(--fs-md)', color: 'var(--text)', marginBottom: '4px' }}>
+          <div className="is-4a62c9a">
             {status?.enabled ? 'Autopay enabled' : 'Autopay paused'}
           </div>
-          <div style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', lineHeight: 1.6 }}>
+          <div className="is-d2e2a79">
             {status?.enabled
               ? `Charges will use ${methodSummary}. Next scheduled attempt: ${nextCharge}.`
               : 'Save a payment method and select when invoices should be charged automatically.'}
@@ -175,7 +167,7 @@ function AutopayTab(props: {
             fontWeight: 700,
             fontFamily: 'var(--font-body)',
             background: status?.enabled ? 'var(--success)' : 'var(--border)',
-            color: status?.enabled ? 'var(--bg-elevated)' : '#4b5563',
+            color: status?.enabled ? 'var(--bg-elevated)' : 'var(--text-muted)',
             flexShrink: 0,
           }}
         >
@@ -184,22 +176,22 @@ function AutopayTab(props: {
       </div>
 
       {error ? (
-        <div style={{ background: 'var(--error-bg)', border: '1px solid rgba(220,38,38,0.15)', borderRadius: '12px', padding: '12px 16px', fontSize: 'var(--fs-base)', color: 'var(--error)' }}>
+        <div className="is-7774b87">
           {error}
         </div>
       ) : null}
       {success ? (
-        <div style={{ background: 'var(--success-bg)', border: '1px solid rgba(5,150,105,0.15)', borderRadius: '12px', padding: '12px 16px', fontSize: 'var(--fs-base)', color: '#065f46' }}>
+        <div className="is-b444239">
           {success}
         </div>
       ) : null}
 
-      <div className="card" style={{ padding: '20px 24px' }}>
-        <div style={{ fontWeight: 600, fontSize: 'var(--fs-md)', color: 'var(--text)', marginBottom: '16px' }}>Saved payment method</div>
-        <div className="cols-2" style={{ gap: '16px' }}>
+      <div className="card is-b516f27" >
+        <div className="is-6996b9b">Saved payment method</div>
+        <div className="cols-2 is-f192209" >
           <div>
             {fieldLabel('Payment Type')}
-            <select
+            <select aria-label="Payment type"
               value={form.paymentMethodType}
               onChange={(event) => setForm((current) => ({ ...current, paymentMethodType: event.target.value === 'ach' ? 'ach' : 'card' }))}
               style={inputStyle()}
@@ -210,7 +202,7 @@ function AutopayTab(props: {
           </div>
           <div>
             {fieldLabel('Saved Label')}
-            <input
+            <input aria-label="Saved label"
               value={form.paymentMethodLabel}
               onChange={(event) => setForm((current) => ({ ...current, paymentMethodLabel: event.target.value }))}
               placeholder={form.paymentMethodType === 'ach' ? 'Checking account' : 'Visa •••• 4242'}
@@ -219,7 +211,7 @@ function AutopayTab(props: {
           </div>
           <div>
             {fieldLabel(form.paymentMethodType === 'ach' ? 'Bank Name' : 'Card Brand')}
-            <input
+            <input aria-label="Bank name or card brand"
               value={form.paymentMethodBrand}
               onChange={(event) => setForm((current) => ({ ...current, paymentMethodBrand: event.target.value }))}
               placeholder={form.paymentMethodType === 'ach' ? 'Chase Bank' : 'Visa'}
@@ -228,7 +220,7 @@ function AutopayTab(props: {
           </div>
           <div>
             {fieldLabel(form.paymentMethodType === 'ach' ? 'Reference' : 'Last 4')}
-            <input
+            <input aria-label="Reference or last 4"
               value={form.paymentMethodType === 'ach' ? form.paymentMethodExternalRef : form.paymentMethodLast4}
               onChange={(event) => setForm((current) => (
                 form.paymentMethodType === 'ach'
@@ -243,7 +235,7 @@ function AutopayTab(props: {
             <>
               <div>
                 {fieldLabel('Expiry Month')}
-                <input
+                <input aria-label="Expiry month"
                   value={form.paymentMethodExpMonth}
                   onChange={(event) => setForm((current) => ({ ...current, paymentMethodExpMonth: event.target.value }))}
                   placeholder="09"
@@ -252,7 +244,7 @@ function AutopayTab(props: {
               </div>
               <div>
                 {fieldLabel('Expiry Year')}
-                <input
+                <input aria-label="Expiry year"
                   value={form.paymentMethodExpYear}
                   onChange={(event) => setForm((current) => ({ ...current, paymentMethodExpYear: event.target.value }))}
                   placeholder="2028"
@@ -264,22 +256,22 @@ function AutopayTab(props: {
         </div>
       </div>
 
-      <div className="card" style={{ padding: '20px 24px' }}>
-        <div style={{ fontWeight: 600, fontSize: 'var(--fs-md)', color: 'var(--text)', marginBottom: '16px' }}>Charge timing</div>
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+      <div className="card is-b516f27" >
+        <div className="is-6996b9b">Charge timing</div>
+        <div className="is-51144f2">
           {[
             { value: 0, label: 'On due date' },
             { value: 3, label: '3 days early' },
             { value: 7, label: '7 days early' },
           ].map((option) => (
-            <button
+            <button type="button"
               key={option.value}
               onClick={() => setForm((current) => ({ ...current, triggerDaysBeforeDue: option.value as 0 | 3 | 7 }))}
               style={{
                 padding: '8px 16px',
                 borderRadius: '999px',
-                border: `1px solid ${form.triggerDaysBeforeDue === option.value ? 'var(--text)' : 'rgba(0,0,0,0.08)'}`,
-                background: form.triggerDaysBeforeDue === option.value ? 'var(--text)' : '#f7f6f4',
+                border: `1px solid ${form.triggerDaysBeforeDue === option.value ? 'var(--text)' : 'var(--border)'}`,
+                background: form.triggerDaysBeforeDue === option.value ? 'var(--text)' : 'var(--bg-surface)',
                 color: form.triggerDaysBeforeDue === option.value ? 'var(--bg-elevated)' : 'var(--text-subtle)',
                 fontSize: 'var(--fs-sm)',
                 cursor: 'pointer',
@@ -289,13 +281,13 @@ function AutopayTab(props: {
             </button>
           ))}
         </div>
-        <div style={{ marginTop: '16px', padding: '12px 16px', background: 'var(--success-bg)', border: '1px solid rgba(5,150,105,0.15)', borderRadius: '8px', fontSize: 'var(--fs-sm)', color: '#065f46', lineHeight: 1.5 }}>
+        <div className="is-2a2a818">
           Next scheduled attempt: <strong>{nextCharge}</strong>
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-        <button
+      <div className="is-18d4ed1">
+        <button type="button"
           onClick={onSave}
           disabled={saving}
           style={{
@@ -313,14 +305,14 @@ function AutopayTab(props: {
           {saving ? 'Saving…' : status?.enabled ? 'Update autopay' : 'Enable autopay'}
         </button>
         {status?.enabled ? (
-          <button
+          <button type="button"
             onClick={onOptOut}
             disabled={saving}
             style={{
               padding: '12px 20px',
               borderRadius: '12px',
               border: '1px solid rgba(185,28,28,0.16)',
-              background: '#fff5f5',
+              background: 'var(--error-bg)',
               color: 'var(--error)',
               fontSize: 'var(--fs-base)',
               fontWeight: 700,
@@ -333,9 +325,9 @@ function AutopayTab(props: {
         ) : null}
       </div>
 
-      <div style={{ background: 'var(--info-bg)', border: '1px solid rgba(37,99,235,0.15)', borderRadius: '12px', padding: '16px 20px', display: 'flex', gap: '12px' }}>
+      <div className="is-be964b2">
         <Icon name="info" size={16} style={{ color: 'var(--info)', flexShrink: 0, marginTop: '1px' }} />
-        <div style={{ fontSize: 'var(--fs-base)', color: '#1e40af', lineHeight: 1.6 }}>
+        <div className="is-5120349">
           This page shows billing summary details only. Your card number is handled directly by Stripe and is never stored here.
         </div>
       </div>
@@ -368,8 +360,8 @@ export default function BillingPage() {
 
     async function load() {
       if (!orgId || !householdId) {
-        setBillingError('Billing is unavailable because household context is missing.')
-        setAutopayLoadError('Autopay is unavailable because household context is missing.')
+        setBillingError('We could not find your household details. Sign out and back in, or contact your club if this keeps happening.')
+        setAutopayLoadError('We could not find your household details. Sign out and back in, or contact your club if this keeps happening.')
         setLoading(false)
         setAutopayLoading(false)
         return
@@ -511,9 +503,9 @@ export default function BillingPage() {
         </h1>
       </div>
 
-      <div style={{ display: 'flex', gap: '2px', background: 'rgba(0,0,0,0.04)', borderRadius: '12px', padding: '4px', marginBottom: '24px', width: 'fit-content' }}>
+      <div className="is-bf3e85c">
         {[{ id: 'overview', label: 'Overview' }, { id: 'autopay', label: 'Autopay' }].map((tab) => (
-          <button
+          <button type="button"
             key={tab.id}
             onClick={() => setActiveTab(tab.id as 'overview' | 'autopay')}
             style={{
@@ -550,13 +542,13 @@ export default function BillingPage() {
       ) : (
         <div>
           {billingError ? (
-            <div style={{ background: 'var(--error-bg)', border: '1px solid rgba(220,38,38,0.15)', borderRadius: '12px', padding: '16px 16px', marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
-              <div style={{ fontSize: 'var(--fs-base)', color: 'var(--error)' }}>
+            <div className="is-487d05a">
+              <div className="is-de107ca">
                 {billingError}
               </div>
-              <button
+              <button type="button"
                 onClick={() => setRetryKey((current) => current + 1)}
-                style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: 'var(--error)', color: 'var(--bg-elevated)', fontSize: 'var(--fs-sm)', fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}
+                className="is-9ce49de"
               >
                 Retry
               </button>
@@ -565,46 +557,37 @@ export default function BillingPage() {
 
           {!loading && !billingError && openBalance > 0 && (
             <div
-              style={{
-                background: 'var(--warning-bg)',
-                border: '1px solid rgba(217,119,6,0.25)',
-                borderRadius: '12px',
-                padding: '20px 24px',
-                marginBottom: '24px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '20px',
-              }}
+              className="is-c0206d4"
             >
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 'var(--fs-base)', color: '#92400e', fontWeight: 500, marginBottom: '4px' }}>Outstanding balance</div>
-                <div style={{ fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--fs-4xl)', color: '#92400e', lineHeight: 1, marginBottom: '6px' }}>
+                <div className="is-fc1270f">Outstanding balance</div>
+                <div className="is-3e1851c">
                   ${openBalance.toFixed(2)}
                 </div>
-                {nextDueInvoice?.due_date ? <div style={{ fontSize: 'var(--fs-sm)', color: '#a16207' }}>Due by {fmtDate(nextDueInvoice.due_date)}</div> : null}
+                {nextDueInvoice?.due_date ? <div className="is-743adc2">Due by {fmtDate(nextDueInvoice.due_date)}</div> : null}
               </div>
               <Link
                 href={firstDueInvoiceId ? `/portal/billing/invoices/${firstDueInvoiceId}` : '/portal/billing'}
-                style={{ padding: '12px 24px', background: 'var(--warning)', color: 'var(--bg-elevated)', borderRadius: '12px', fontSize: 'var(--fs-md)', fontWeight: 700, textDecoration: 'none', flexShrink: 0, boxShadow: '0 4px 12px rgba(217,119,6,0.3)' }}
+                className="is-294ff90"
               >
                 Pay Now
               </Link>
             </div>
           )}
 
-          <div className="cols-3" style={{ gap: '12px', marginBottom: '24px' }}>
+          <div className="cols-3 is-7a1f33f" >
             {loading ? (
               [0, 1, 2].map((i) => (
-                <div key={i} className="card" style={{ padding: '16px 20px' }}>
+                <div key={i} className="card is-401e6d8" >
                   <Skeleton w="60%" h={22} r={4} />
-                  <div style={{ marginTop: '8px' }}><Skeleton w="80%" h={12} /></div>
+                  <div className="is-36ca0af"><Skeleton w="80%" h={12} /></div>
                 </div>
               ))
             ) : billingError ? (
               [0, 1, 2].map((i) => (
-                <div key={i} style={{ background: '#fff7f7', borderRadius: '12px', border: '1px solid rgba(220,38,38,0.08)', padding: '16px 20px' }}>
-                  <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--error)', fontWeight: 600 }}>Unavailable</div>
-                  <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--error)', marginTop: '4px' }}>Retry to load billing totals.</div>
+                <div key={i} className="is-cea1a42">
+                  <div className="is-94d1cfe">Unavailable</div>
+                  <div className="is-8b90288">Retry to load billing totals.</div>
                 </div>
               ))
             ) : (
@@ -613,21 +596,21 @@ export default function BillingPage() {
                 { label: 'Open balance', value: `$${openBalance.toFixed(2)}`, color: 'var(--warning)' },
                 { label: 'Invoices', value: String(invoices.length), color: 'var(--info)' },
               ].map((stat) => (
-                <div key={stat.label} className="card" style={{ padding: '16px 20px' }}>
+                <div key={stat.label} className="card is-401e6d8" >
                   <div style={{ fontSize: 'var(--fs-2xl)', fontWeight: 700, color: stat.color, fontFamily: 'var(--font-body)' }}>{stat.value}</div>
-                  <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginTop: '4px' }}>{stat.label}</div>
+                  <div className="is-dd721e0">{stat.label}</div>
                 </div>
               ))
             )}
           </div>
 
-          <section style={{ marginBottom: 'var(--space-8)' }}>
-            <div style={{ fontSize: 'var(--fs-md)', fontWeight: 600, fontFamily: 'var(--font-body)', color: 'var(--text)', marginBottom: '16px' }}>
+          <section className="is-6a59054">
+            <div className="is-483d59c">
               Invoices
             </div>
 
-            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-              <div className="inv-row inv-row-head" style={{ padding: '12px 20px', borderBottom: '1px solid rgba(0,0,0,0.07)', background: 'rgba(0,0,0,0.02)' }}>
+            <div className="card is-f27afbb" >
+              <div className="inv-row inv-row-head is-ec41ca3" >
                 {['Invoice', 'Amount', 'Due', 'Status', ''].map((header) => (
                   <span key={header} className="col-head">
                     {header}
@@ -637,8 +620,8 @@ export default function BillingPage() {
 
               {loading ? (
                 [0, 1, 2].map((i) => (
-                  <div key={i} className="inv-row" style={{ padding: '16px 20px', borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div key={i} className="inv-row is-541f5a9" >
+                    <div className="is-9808a21">
                       <Skeleton w="70%" h={14} />
                       <Skeleton w="40%" h={11} />
                     </div>
@@ -649,7 +632,7 @@ export default function BillingPage() {
                   </div>
                 ))
               ) : billingError ? null : invoices.length === 0 ? (
-                <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--fs-md)' }}>No invoices found.</div>
+                <div className="is-3f7bfac">No invoices found.</div>
               ) : (
                 invoices.map((inv, index) => {
                   const statusCfg = STATUS_CONFIG[inv.status] ?? STATUS_CONFIG.draft
@@ -660,23 +643,23 @@ export default function BillingPage() {
                       className="inv-row"
                       style={{
                         padding: '16px 20px',
-                        borderBottom: index < invoices.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none',
+                        borderBottom: index < invoices.length - 1 ? '1px solid var(--border)' : 'none',
                         alignItems: 'center',
                         textDecoration: 'none',
                       }}
                     >
                       <div>
-                        <div style={{ fontSize: 'var(--fs-base)', color: 'var(--text)', fontWeight: 500, lineHeight: 1.3 }}>
+                        <div className="is-632f865">
                           {inv.notes ?? `Invoice ${inv.invoice_number}`}
                         </div>
-                        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginTop: '2px' }}>
+                        <div className="is-8d70815">
                           {inv.invoice_number}
                         </div>
                       </div>
-                      <span style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-body)' }}>
+                      <span className="is-dbeeba1">
                         ${cents(inv.total_cents)}
                       </span>
-                      <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{fmtDate(inv.due_date)}</span>
+                      <span className="is-83e0368">{fmtDate(inv.due_date)}</span>
                       <span style={{ display: 'inline-block', justifySelf: 'start', padding: '4px 8px', borderRadius: '999px', fontSize: 'var(--fs-xs)', fontWeight: 600, background: statusCfg.bg, color: statusCfg.color }}>
                         {statusCfg.label}
                       </span>
@@ -689,17 +672,17 @@ export default function BillingPage() {
           </section>
 
           <section>
-            <div style={{ fontSize: 'var(--fs-md)', fontWeight: 600, fontFamily: 'var(--font-body)', color: 'var(--text)', marginBottom: '16px' }}>
+            <div className="is-483d59c">
               Recent payments
             </div>
 
             <div className="card" style={{ overflow: 'hidden' }}>
               {loading ? (
                 [0, 1, 2].map((i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: i < 2 ? '1px solid rgba(0,0,0,0.05)' : 'none', gap: '12px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: i < 2 ? '1px solid var(--border)' : 'none', gap: '12px' }}>
+                    <div className="is-e2ff0fd">
                       <Skeleton w={32} h={32} r={16} />
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <div className="is-9808a21">
                         <Skeleton w={160} h={14} />
                         <Skeleton w={120} h={12} />
                       </div>
@@ -708,25 +691,25 @@ export default function BillingPage() {
                   </div>
                 ))
               ) : billingError ? null : payments.length === 0 ? (
-                <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--fs-md)' }}>No payment history yet.</div>
+                <div className="is-3d754c5">No payment history yet.</div>
               ) : (
                 payments.map((payment, index) => (
                   <div
                     key={payment.id}
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: index < payments.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none', gap: '12px' }}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: index < payments.length - 1 ? '1px solid var(--border)' : 'none', gap: '12px' }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div className="is-e2ff0fd">
                       <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--success-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                         <Icon name="check-circle" size={15} style={{ color: 'var(--success)' }} />
                       </div>
                       <div>
-                        <div style={{ fontSize: 'var(--fs-base)', color: 'var(--text)', fontWeight: 500 }}>{payment.invoiceNumber}</div>
-                        <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginTop: '2px' }}>
+                        <div className="is-df04e21">{payment.invoiceNumber}</div>
+                        <div className="is-7536cb1">
                           {fmtDate(payment.paid_at ?? payment.created_at)} · {payment.method}
                         </div>
                       </div>
                     </div>
-                    <span style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: 'var(--success)', fontFamily: 'var(--font-body)', flexShrink: 0 }}>
+                    <span className="is-f8109cc">
                       -${cents(payment.amount_cents)}
                     </span>
                   </div>

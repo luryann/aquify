@@ -77,8 +77,8 @@ function StatusBadge({ status }: { status: string }) {
     issued: { color: 'var(--info)', bg: 'var(--info-bg)' },
     partially_paid: { color: 'var(--warning)', bg: 'var(--warning-bg)' },
     paid: { color: 'var(--success)', bg: 'var(--success-bg)' },
-    refunded_partial: { color: 'var(--accent)', bg: 'var(--accent-subtle)' },
-    refunded_full: { color: 'var(--accent)', bg: 'var(--accent-subtle)' },
+    refunded_partial: { color: 'var(--accent-text, var(--accent))', bg: 'var(--accent-subtle)' },
+    refunded_full: { color: 'var(--accent-text, var(--accent))', bg: 'var(--accent-subtle)' },
     voided: { color: 'var(--text-muted)', bg: 'var(--bg-elevated)' },
     written_off: { color: 'var(--text-muted)', bg: 'var(--bg-elevated)' },
   }
@@ -97,25 +97,25 @@ const SWIMMER_COLS: Column<SwimmerRow>[] = [
     sortable: true,
     render: (row) => (
       <div>
-        <Link href={`/members/swimmers/${row.id}`} style={{ color: 'var(--text)', fontWeight: 600, textDecoration: 'none', fontSize: 'var(--fs-base)' }}>
+        <Link href={`/members/swimmers/${row.id}`} className="u-fw-600 u-fs-fs-base" style={{ color: 'var(--text)', textDecoration: 'none' }}>
           {row.name}
         </Link>
-        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginTop: '2px' }}>{row.ussNumber || 'No external ID'}</div>
+        <div className="u-fs-fs-xs u-ff-font-body u-mt-2px" style={{ color: 'var(--text-muted)' }}>{row.ussNumber || 'No external ID'}</div>
       </div>
     ),
   },
-  { key: 'dob', label: 'DOB', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{formatDate(row.dob)}</span> },
-  { key: 'gender', label: 'Gender', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{row.gender}</span> },
+  { key: 'dob', label: 'DOB', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{formatDate(row.dob)}</span> },
+  { key: 'gender', label: 'Gender', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{row.gender}</span> },
   {
     key: 'groups',
     label: 'Groups',
     render: (row) => (
-      <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+      <div className="u-gap-4px" style={{ display: 'flex', flexWrap: 'wrap' }}>
         {row.groups.length ? row.groups.map((group) => (
-          <span key={group} style={{ fontSize: 'var(--fs-xs)', padding: '2px 8px', borderRadius: '8px', background: 'var(--accent-subtle)', color: 'var(--accent)', fontFamily: 'var(--font-body)' }}>
+          <span key={group} className="u-fs-fs-xs u-p-2px-8px u-ff-font-body" style={{ borderRadius: '8px', background: 'var(--accent-subtle)', color: 'var(--accent-text, var(--accent))' }}>
             {group}
           </span>
-        )) : <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>Unassigned</span>}
+        )) : <span className="u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>Unassigned</span>}
       </div>
     ),
   },
@@ -128,22 +128,22 @@ const CONTACT_COLS: Column<ContactRow>[] = [
     label: 'Contact',
     sortable: true,
     render: (row) => (
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-        <div style={{ width: '30px', height: '30px', borderRadius: '50%', background: 'var(--accent-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--accent)', flexShrink: 0 }}>
+      <div className="u-gap-12px" style={{ display: 'flex', alignItems: 'center' }}>
+        <div className="u-fs-fs-sm u-fw-700" style={{ width: '30px', height: '30px', borderRadius: '50%', background: 'var(--accent-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-text, var(--accent))', flexShrink: 0 }}>
           {row.name.split(' ').map((part) => part[0]).join('').slice(0, 2)}
         </div>
         <div>
-          <div style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)' }}>
+          <div className="u-fs-fs-base u-fw-600" style={{ color: 'var(--text)' }}>
             {row.name}
-            {row.isPrimary ? <span style={{ fontSize: 'var(--fs-2xs)', fontFamily: 'var(--font-body)', background: 'var(--accent-subtle)', color: 'var(--accent)', padding: '1px 6px', borderRadius: '8px', marginLeft: '6px', fontWeight: 600 }}>PRIMARY</span> : null}
+            {row.isPrimary ? <span className="u-fs-fs-2xs u-ff-font-body u-p-1px-6px u-fw-600" style={{ background: 'var(--accent-subtle)', color: 'var(--accent-text, var(--accent))', borderRadius: '8px', marginLeft: '6px' }}>PRIMARY</span> : null}
           </div>
-          <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: '2px' }}>{row.role}</div>
+          <div className="u-fs-fs-xs u-mt-2px" style={{ color: 'var(--text-muted)' }}>{row.role}</div>
         </div>
       </div>
     ),
   },
-  { key: 'email', label: 'Email', render: (row) => <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)' }}>{row.email || '—'}</span> },
-  { key: 'phone', label: 'Phone', render: (row) => <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)' }}>{row.phone || '—'}</span> },
+  { key: 'email', label: 'Email', render: (row) => <span className="u-fs-fs-base u-ff-font-body" style={{ color: 'var(--text-subtle)' }}>{row.email || '—'}</span> },
+  { key: 'phone', label: 'Phone', render: (row) => <span className="u-fs-fs-base u-ff-font-body" style={{ color: 'var(--text-subtle)' }}>{row.phone || '—'}</span> },
 ]
 
 const INVOICE_COLS: Column<InvoiceRow>[] = [
@@ -151,14 +151,14 @@ const INVOICE_COLS: Column<InvoiceRow>[] = [
     key: 'invoiceNumber',
     label: 'Invoice',
     render: (row) => (
-      <Link href={`/invoices/${row.id}`} style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text)', textDecoration: 'none', fontWeight: 600 }}>
+      <Link href={`/invoices/${row.id}`} className="u-ff-font-body u-fs-fs-sm u-fw-600" style={{ color: 'var(--text)', textDecoration: 'none' }}>
         {row.invoiceNumber}
       </Link>
     ),
   },
-  { key: 'amountCents', label: 'Amount', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)' }}>{formatCurrency(row.amountCents)}</span> },
+  { key: 'amountCents', label: 'Amount', align: 'right', render: (row) => <span className="u-ff-font-body u-fs-fs-base u-fw-600" style={{ color: 'var(--text)' }}>{formatCurrency(row.amountCents)}</span> },
   { key: 'status', label: 'Status', render: (row) => <StatusBadge status={row.status} /> },
-  { key: 'dueAt', label: 'Due', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{formatDate(row.dueAt)}</span> },
+  { key: 'dueAt', label: 'Due', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{formatDate(row.dueAt)}</span> },
 ]
 
 function buildSwimmerRows(swimmers: SwimmerRecord[], groups: GroupRecord[], links: SwimmerGroupLinkRecord[]): SwimmerRow[] {
@@ -314,35 +314,35 @@ export default function HouseholdDetailPage() {
 
   return (
     <div className="page">
-      <Link href="/members?tab=households" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', textDecoration: 'none', marginBottom: '20px' }}>
+      <Link href="/members?tab=households" className="u-gap-4px u-fs-fs-base u-mb-20px" style={{ display: 'inline-flex', alignItems: 'center', color: 'var(--text-subtle)', textDecoration: 'none' }}>
         <Icon name="chevron-left" size={14} />
         Households
       </Link>
 
       <div className="page-header">
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px 12px', marginBottom: '4px' }}>
+          <div className="u-gap-6px-12px u-mb-4px" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
             <h1 className="page-title">
               {household.household_name}
             </h1>
             <StatusBadge status={household.status || 'active'} />
           </div>
-          <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+          <div className="u-fs-fs-sm u-ff-font-body" style={{ color: 'var(--text-muted)' }}>
             {household.primary_email || household.primary_phone_e164 || 'No primary contact method'}
           </div>
         </div>
       </div>
 
-      <div className="cols-4" style={{ gap: '12px', marginBottom: '24px' }}>
+      <div className="cols-4 u-gap-12px u-mb-24px" >
         {[
           { label: 'Invoice total', value: formatCurrency(totalBalanceCents), color: 'var(--text)' },
           { label: 'Swimmers', value: swimmers.length.toString(), color: 'var(--text)' },
           { label: 'Additional contacts', value: contacts.length.toString(), color: 'var(--text)' },
           { label: 'Member since', value: formatDate(household.created_at), color: 'var(--text-subtle)' },
         ].map((stat) => (
-          <div key={stat.label} className="card" style={{ padding: '16px 16px' }}>
-            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
-            <div style={{ fontSize: 'var(--fs-xl)', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
+          <div key={stat.label} className="card u-p-16px-16px" >
+            <div className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ color: 'var(--text-muted)' }}>{stat.label}</div>
+            <div className="u-fs-fs-xl u-ff-font-body u-fw-700" style={{ color: stat.color }}>{stat.value}</div>
           </div>
         ))}
       </div>
@@ -350,29 +350,29 @@ export default function HouseholdDetailPage() {
       <Tabs tabs={tabs} active={activeTab} onChange={setActiveTab} />
 
       {activeTab === 'overview' ? (
-        <div className="cols-2" style={{ gap: '16px' }}>
-          <div className="card" style={{ padding: '20px' }}>
-            <h3 className="card-title" style={{ marginBottom: '16px' }}>
+        <div className="cols-2 u-gap-16px" >
+          <div className="card u-p-20px" >
+            <h3 className="card-title u-mb-16px" >
               Account
             </h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div className="u-gap-12px" style={{ display: 'flex', flexDirection: 'column' }}>
               {[
                 { label: 'Primary email', value: household.primary_email || '—' },
                 { label: 'Primary phone', value: household.primary_phone_e164 || '—' },
                 { label: 'Open invoices', value: `${outstandingCount}` },
                 { label: 'Created', value: formatDate(household.created_at) },
               ].map((row) => (
-                <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 'var(--fs-base)', borderBottom: '1px solid var(--border)', paddingBottom: '12px' }}>
+                <div key={row.label} className="u-fs-fs-base u-pb-12px" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)' }}>
                   <span style={{ color: 'var(--text-muted)' }}>{row.label}</span>
-                  <span style={{ fontFamily: 'var(--font-body)', color: 'var(--text)', fontWeight: 600 }}>{row.value}</span>
+                  <span className="u-ff-font-body u-fw-600" style={{ color: 'var(--text)' }}>{row.value}</span>
                 </div>
               ))}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 'var(--fs-base)' }}>
+              <div className="u-fs-fs-base" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ color: 'var(--text-muted)' }}>Household ID</span>
-                <button
+                <button type="button"
                   onClick={() => { void navigator.clipboard.writeText(household.id) }}
                   title="Copy household ID"
-                  style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'var(--font-body)', color: 'var(--text-muted)', fontWeight: 600, fontSize: 'var(--fs-base)' }}
+                  className="u-gap-4px u-p-0 u-ff-font-body u-fw-600 u-fs-fs-base" style={{ display: 'flex', alignItems: 'center', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
                 >
                   {household.id.slice(0, 8)}…
                   <Icon name="copy" size={12} style={{ color: 'var(--text-muted)' }} />
@@ -380,27 +380,27 @@ export default function HouseholdDetailPage() {
               </div>
             </div>
           </div>
-          <div className="card" style={{ padding: '20px' }}>
-            <h3 className="card-title" style={{ marginBottom: '16px' }}>
+          <div className="card u-p-20px" >
+            <h3 className="card-title u-mb-16px" >
               Notes &amp; contacts
             </h3>
-            <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', lineHeight: 1.7, marginBottom: '16px' }}>
+            <p className="u-fs-fs-base u-lh-1_7 u-mb-16px" style={{ color: 'var(--text-subtle)' }}>
               {household.notes || 'No household notes recorded yet.'}
             </p>
-            <div style={{ paddingTop: '16px', borderTop: '1px solid var(--border)' }}>
-              <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginBottom: '8px' }}>Additional contact</div>
+            <div className="u-pt-16px" style={{ borderTop: '1px solid var(--border)' }}>
+              <div className="u-fs-fs-sm u-ff-font-body u-mb-8px" style={{ color: 'var(--text-muted)' }}>Additional contact</div>
               {primaryContact ? (
                 <>
-                  <div style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--text)' }}>{primaryContact.name}</div>
-                  <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', marginTop: '4px' }}>{primaryContact.email || 'No email on file'}</div>
-                  <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{primaryContact.phone || 'No phone on file'}</div>
+                  <div className="u-fs-fs-md u-fw-600" style={{ color: 'var(--text)' }}>{primaryContact.name}</div>
+                  <div className="u-fs-fs-sm u-mt-4px" style={{ color: 'var(--text-subtle)' }}>{primaryContact.email || 'No email on file'}</div>
+                  <div className="u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{primaryContact.phone || 'No phone on file'}</div>
                 </>
               ) : (
                 <div>
-                  <div style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)' }}>No additional contacts on file. The household&apos;s primary email and phone are shown under Account Info.</div>
-                  <button
+                  <div className="u-fs-fs-base" style={{ color: 'var(--text-muted)' }}>No additional contacts on file. The household&apos;s primary email and phone are shown under Account Info.</div>
+                  <button type="button"
                     onClick={() => setActiveTab('contacts')}
-                    style={{ marginTop: '8px', fontSize: 'var(--fs-sm)', color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: '4px' }}
+                    className="u-mt-8px u-fs-fs-sm u-p-0 u-gap-4px" style={{ color: 'var(--accent-text, var(--accent))', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
                   >
                     Add a contact <Icon name="chevron-right" size={12} />
                   </button>
@@ -417,34 +417,34 @@ export default function HouseholdDetailPage() {
 
       {activeTab === 'contacts' ? (
         <div>
-          <div style={{ marginBottom: '16px' }}>
+          <div className="u-mb-16px" >
             {!showAddContact ? (
-              <button className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setShowAddContact(true)}>
-                <Icon name="plus" size={14} /> Add Contact
+              <button type="button" className="btn btn-primary u-gap-6px" style={{ display: 'flex', alignItems: 'center' }} onClick={() => setShowAddContact(true)}>
+                <Icon name="plus" size={14} /> Add contact
               </button>
             ) : (
-              <form onSubmit={handleAddContact} className="card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '480px' }}>
+              <form onSubmit={handleAddContact} className="card u-p-16px u-gap-12px" style={{ display: 'flex', flexDirection: 'column', maxWidth: '480px' }}>
                 {addContactError && (
-                  <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--error)' }}>{addContactError}</div>
+                  <div className="u-fs-fs-sm" style={{ color: 'var(--error)' }}>{addContactError}</div>
                 )}
-                <div className="cols-2" style={{ gap: '12px' }}>
-                  <input required placeholder="First name" value={contactForm.first_name} onChange={(e) => setContactForm((c) => ({ ...c, first_name: e.target.value }))} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)' }} />
-                  <input required placeholder="Last name" value={contactForm.last_name} onChange={(e) => setContactForm((c) => ({ ...c, last_name: e.target.value }))} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)' }} />
+                <div className="cols-2 u-gap-12px" >
+                  <input aria-label="First name" required placeholder="First name" value={contactForm.first_name} onChange={(e) => setContactForm((c) => ({ ...c, first_name: e.target.value }))} className="u-p-8px-12px"  />
+                  <input aria-label="Last name" required placeholder="Last name" value={contactForm.last_name} onChange={(e) => setContactForm((c) => ({ ...c, last_name: e.target.value }))} className="u-p-8px-12px"  />
                 </div>
-                <select value={contactForm.relationship} onChange={(e) => setContactForm((c) => ({ ...c, relationship: e.target.value }))} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)' }}>
+                <select value={contactForm.relationship} onChange={(e) => setContactForm((c) => ({ ...c, relationship: e.target.value }))} className="u-p-8px-12px" >
                   <option value="parent">Parent</option>
                   <option value="guardian">Guardian</option>
                   <option value="emergency">Emergency contact</option>
                   <option value="other">Other</option>
                 </select>
-                <input placeholder="Email" type="email" value={contactForm.email} onChange={(e) => setContactForm((c) => ({ ...c, email: e.target.value }))} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)' }} />
-                <input placeholder="Phone" value={contactForm.phone_e164} onChange={(e) => setContactForm((c) => ({ ...c, phone_e164: e.target.value }))} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)' }} />
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>
+                <input aria-label="Email" placeholder="Email" type="email" value={contactForm.email} onChange={(e) => setContactForm((c) => ({ ...c, email: e.target.value }))} className="u-p-8px-12px"  />
+                <input aria-label="Phone" placeholder="Phone" value={contactForm.phone_e164} onChange={(e) => setContactForm((c) => ({ ...c, phone_e164: e.target.value }))} className="u-p-8px-12px"  />
+                <label className="u-gap-8px u-fs-fs-sm" style={{ display: 'flex', alignItems: 'center', color: 'var(--text-subtle)' }}>
                   <input type="checkbox" checked={contactForm.is_primary} onChange={(e) => setContactForm((c) => ({ ...c, is_primary: e.target.checked }))} />
                   Make this the primary contact
                 </label>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button type="submit" className="btn btn-primary" disabled={addingContact}>{addingContact ? 'Adding…' : 'Add Contact'}</button>
+                <div className="u-gap-8px" style={{ display: 'flex' }}>
+                  <button type="submit" className="btn btn-primary" disabled={addingContact}>{addingContact ? 'Adding…' : 'Add contact'}</button>
                   <button type="button" className="btn" onClick={() => setShowAddContact(false)}>Cancel</button>
                 </div>
               </form>

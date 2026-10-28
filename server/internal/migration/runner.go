@@ -716,7 +716,7 @@ func (r *Runner) importOpenInvoices(ctx context.Context, path string) StepReport
 			continue
 		}
 
-		totalAmount, err := strconv.Atoi(strings.TrimSpace(row.TotalAmountCents))
+		totalAmount, err := strconv.Atoi(firstNonEmpty(row.TotalAmountCents, "0"))
 		if err != nil || totalAmount < 0 {
 			step.Errors = append(step.Errors, fmt.Sprintf("invoice %s: invalid total_amount_cents %q", key, row.TotalAmountCents))
 			continue

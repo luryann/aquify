@@ -1,11 +1,13 @@
 'use client'
 
+import { AuthBackdrop } from '@/components/auth/AuthBackdrop'
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
 import { useSession } from '@/lib/session'
 import { destinationForRole, roleRequiresMFA } from '@/lib/auth-routing'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
+import './page.inline.css'
 
 // ─── Inner component (uses useSearchParams) ───────────────────────────────────
 
@@ -96,54 +98,17 @@ function CallbackInner() {
 
   return (
     <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'var(--bg)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontFamily: 'var(--font-body)',
-      }}
+      className="is-44ea83d"
     >
-      {/* Background glow */}
-      <div
-        aria-hidden
-        style={{
-          position: 'absolute',
-          top: '20%',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          width: '600px',
-          height: '600px',
-          borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(235,93,30,0.06) 0%, transparent 65%)',
-          pointerEvents: 'none',
-        }}
-      />
+      <AuthBackdrop />
 
       {stage === 'error' ? (
         /* ── Error state ── */
         <div
-          style={{
-            maxWidth: '420px',
-            width: '100%',
-            padding: '0 24px',
-            textAlign: 'center',
-          }}
+          className="is-e924c3d"
         >
           <div
-            style={{
-              width: '56px',
-              height: '56px',
-              borderRadius: '50%',
-              background: 'var(--error-bg)',
-              border: '1px solid var(--error-border)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              margin: '0 auto 24px',
-            }}
+            className="is-c45f24a"
           >
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
               stroke="var(--error)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
@@ -153,56 +118,28 @@ function CallbackInner() {
             </svg>
           </div>
           <h2
-            style={{
-              fontFamily: 'var(--font-display)',
-              fontSize: 'var(--fs-2xl)',
-              fontWeight: 'var(--display-weight)',
-              color: 'var(--text)',
-              marginBottom: '12px',
-              letterSpacing: 'var(--display-tracking)',
-            }}
+            className="is-9efdbc1"
           >
             Authentication failed
           </h2>
           <p
-            style={{
-              fontSize: 'var(--fs-base)',
-              color: 'var(--text-subtle)',
-              lineHeight: 1.6,
-              marginBottom: '24px',
-            }}
+            className="is-3d23ab7"
           >
             {errorMsg || 'Couldn’t finish signing you in. Try again.'}
           </p>
-          <button
+          <button type="button"
             onClick={() => router.push('/login')}
-            style={{
-              padding: '12px 24px',
-              background: 'var(--accent)',
-              border: 'none',
-              borderRadius: '8px',
-              color: '#fff',
-              fontSize: 'var(--fs-base)',
-              fontWeight: 600,
-              cursor: 'pointer',
-              fontFamily: 'var(--font-body)',
-              letterSpacing: '-0.01em',
-            }}
+            className="is-e1a7018"
           >
             Return to Sign In
           </button>
         </div>
       ) : (
         /* ── Processing / redirecting state ── */
-        <div style={{ textAlign: 'center', maxWidth: '360px', padding: '0 24px' }}>
+        <div className="is-edfe90d">
           {/* Spinner ring */}
           <div
-            style={{
-              position: 'relative',
-              width: '64px',
-              height: '64px',
-              margin: '0 auto 32px',
-            }}
+            className="is-7868880"
           >
             <div
               style={{
@@ -234,31 +171,18 @@ function CallbackInner() {
                 height: '8px',
                 borderRadius: '50%',
                 background: 'var(--accent)',
-                boxShadow: '0 0 12px var(--accent)',
               }}
             />
           </div>
 
           <h2
-            style={{
-              fontFamily: 'var(--font-display)',
-              fontSize: 'var(--fs-2xl)',
-              fontWeight: 'var(--display-weight)',
-              color: 'var(--text)',
-              marginBottom: '8px',
-              letterSpacing: 'var(--display-tracking)',
-            }}
+            className="is-46136c0"
           >
             {stage === 'mfa' ? 'Redirecting to verification' : 'Completing sign-in'}
             {'...'.slice(0, dots)}
           </h2>
           <p
-            style={{
-              fontSize: 'var(--fs-sm)',
-              fontFamily: 'var(--font-body)',
-              color: 'var(--text-muted)',
-              letterSpacing: '0.04em',
-            }}
+            className="is-6c43e0d"
           >
             {stage === 'mfa'
               ? 'MFA required for your role'
@@ -267,13 +191,7 @@ function CallbackInner() {
 
           {/* Progress steps */}
           <div
-            style={{
-              marginTop: '40px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '8px',
-              textAlign: 'left',
-            }}
+            className="is-87dbcd5"
           >
             {[
               { label: 'Verifying state token', done: true },

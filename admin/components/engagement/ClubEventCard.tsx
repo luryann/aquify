@@ -26,30 +26,30 @@ export function ClubEventCard({ event, api, orgId, onRSVP, swimmerOnlyId }: {
   const s = event.rsvp_summary
   const cancelled = event.status === 'cancelled'
   return (
-    <article id={`event-${event.id}`} className="card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 12, opacity: cancelled ? 0.7 : 1 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+    <article id={`event-${event.id}`} className="card u-p-20px u-gap-12px" style={{ display: 'flex', flexDirection: 'column', opacity: cancelled ? 0.7 : 1 }}>
+      <div className="u-gap-12px" style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap' }}>
         <div style={{ minWidth: 0 }}>
           <h2 className="section-title" style={{ textDecoration: cancelled ? 'line-through' : 'none' }}>{event.title}</h2>
-          <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', marginTop: 4, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Icon name="clock" size={12} />{formatClubEventWhen(event)}</span>
-            {event.location && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Icon name="map-pin" size={12} />{event.location}</span>}
+          <p className="u-fs-fs-base u-mt-4px u-gap-12px" style={{ color: 'var(--text-subtle)', display: 'flex', flexWrap: 'wrap' }}>
+            <span className="u-gap-4px" style={{ display: 'inline-flex', alignItems: 'center' }}><Icon name="clock" size={12} />{formatClubEventWhen(event)}</span>
+            {event.location && <span className="u-gap-4px" style={{ display: 'inline-flex', alignItems: 'center' }}><Icon name="map-pin" size={12} />{event.location}</span>}
           </p>
         </div>
         <span className={cancelled ? 'badge badge-error' : 'badge badge-default'} style={{ alignSelf: 'flex-start' }}>
           {cancelled ? 'Cancelled' : CLUB_EVENT_CATEGORY_LABELS[event.category]}
         </span>
       </div>
-      {event.description && <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text)', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{event.description}</p>}
+      {event.description && <p className="u-fs-fs-base u-lh-1_55" style={{ color: 'var(--text)', whiteSpace: 'pre-wrap' }}>{event.description}</p>}
       {event.rsvp_enabled && !cancelled && (
-        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>
+        <div className="u-gap-12px" style={{ borderTop: '1px solid var(--border)', paddingTop: 12, display: 'flex', flexDirection: 'column' }}>
+          <p className="u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>
             {s.yes_headcount} going{s.spots_left !== undefined && s.spots_left !== null ? ` · ${s.spots_left} spots left` : ''}
             {event.fee_cents > 0 ? ` · ${formatFee(event.fee_cents)} per person, billed to your account` : ''}
             {event.rsvp_deadline ? ` · reply by ${new Date(event.rsvp_deadline).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : ''}
           </p>
           {event.rsvp_mode === 'household' ? (
             swimmerOnlyId ? (
-              <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
+              <p className="u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>
                 {findMyRSVP(event.my_rsvps) ? `Your family replied: ${findMyRSVP(event.my_rsvps)!.response}.` : 'A parent replies for your family.'}
               </p>
             ) : (

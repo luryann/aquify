@@ -46,25 +46,14 @@ export function EmptyState({
     >
       {icon && (
         <div
-          style={{
-            display: 'flex',
-            marginBottom: '8px',
-            color: 'var(--text-muted)',
-            flexShrink: 0,
-          }}
+          className="u-mb-8px" style={{ display: 'flex', color: 'var(--text-muted)', flexShrink: 0 }}
         >
           <Icon name={icon} size={cfg.iconSize} />
         </div>
       )}
 
       <p
-        style={{
-          fontFamily: 'var(--font-display)',
-          fontSize: cfg.titleSize,
-          color: 'var(--text)',
-          marginBottom: description ? '6px' : '0',
-          fontWeight: 'var(--display-weight)',
-        }}
+        className="u-ff-font-display u-fw-display-weight" style={{ fontSize: cfg.titleSize, color: 'var(--text)', marginBottom: description ? '6px' : '0' }}
       >
         {title}
       </p>
@@ -92,17 +81,10 @@ export function EmptyState({
 export function LoadingState({ message = 'Loading…' }: { message?: string }) {
   return (
     <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: '12px',
-        padding: '56px 32px',
-        color: 'var(--text-subtle)',
-      }}
+      className="u-gap-12px" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '56px 32px', color: 'var(--text-subtle)' }}
     >
       <div className="spinner spinner-lg" />
-      <p style={{ fontSize: 'var(--fs-base)' }}>{message}</p>
+      <p className="u-fs-fs-base" >{message}</p>
     </div>
   )
 }

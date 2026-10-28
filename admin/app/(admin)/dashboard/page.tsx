@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useSession } from '@/lib/session'
 import { parseBackendDate } from '@/lib/dates'
 import { useApiClient } from '@/lib/api'
+import { Icon } from '@/components/ui/icons'
 import {
   fetchHouseholds,
   fetchSwimmers,
@@ -15,6 +16,10 @@ import {
   fetchPerformanceBestTimes,
   fetchUsers,
   fetchSeasons,
+  fetchPractices,
+  fetchMeetEntries,
+  fetchMeetCommitments,
+  type PracticeRecord,
   type HouseholdRecord,
   type SwimmerRecord,
   type MeetRecord,
@@ -77,53 +82,22 @@ const UPCOMING_STATUSES = new Set(['published', 'commitment_open', 'commitment_c
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function StatCard({
-  label, value, delta, positive, caption, loading,
-}: {
-  label: string; value: string; delta?: string; positive?: boolean; caption?: string; loading?: boolean
-}) {
-  return (
-    <div className="card-elevated" style={{ padding: '20px 24px' }}>
-      <p style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', fontWeight: 500, color: 'var(--text-muted)', marginBottom: '12px' }}>
-        {label}
-      </p>
-      {loading ? (
-        <div style={{ height: '32px', background: 'var(--bg-elevated)', borderRadius: '4px', animation: 'pulse 1.5s ease-in-out infinite' }} />
-      ) : (
-        <p style={{ fontSize: 'var(--fs-3xl)', fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', color: 'var(--text)', lineHeight: 1.1, letterSpacing: 'var(--display-tracking)', marginBottom: '6px' }}>
-          {value}
-        </p>
-      )}
-      {delta && !loading && (
-        <p style={{ fontSize: 'var(--fs-xs)', color: positive ? 'var(--success)' : 'var(--error)', fontFamily: 'var(--font-body)' }}>
-          {positive ? '↑' : '↓'} {delta}
-        </p>
-      )}
-      {caption && !loading && (
-        <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
-          {caption}
-        </p>
-      )}
-    </div>
-  )
-}
-
 function ActivityItem({ description, time, actor }: { description: string; time: string; actor?: string }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '12px 0', borderBottom: '1px solid var(--border)' }}>
-      <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent)', flexShrink: 0, marginTop: '4px' }} />
+    <div className="u-gap-12px u-p-12px-0" style={{ display: 'flex', alignItems: 'flex-start', borderBottom: '1px solid var(--border)' }}>
+      <div className="u-mt-4px" style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text)', lineHeight: 1.4 }}>
+        <p className="u-fs-fs-base u-lh-1_4" style={{ color: 'var(--text)' }}>
           {actor && (
             <>
-              <span style={{ color: 'var(--text-subtle)', fontWeight: 500 }}>{actor}</span>
+              <span className="u-fw-500" style={{ color: 'var(--text-subtle)' }}>{actor}</span>
               {' '}
             </>
           )}
           <span style={{ color: actor ? 'var(--text-muted)' : 'var(--text)' }}>{description}</span>
         </p>
       </div>
-      <p style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', flexShrink: 0, whiteSpace: 'nowrap' }}>
+      <p className="u-fs-fs-xs u-ff-font-body" style={{ color: 'var(--text-muted)', flexShrink: 0, whiteSpace: 'nowrap' }}>
         {time}
       </p>
     </div>
@@ -157,39 +131,39 @@ function PerfSnapshot({
   maxCount: number
 }) {
   return (
-    <div className="card-elevated" style={{ padding: '20px 24px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-        <p style={{ fontSize: 'var(--fs-md)', fontWeight: 600, fontFamily: 'var(--font-body)', color: 'var(--text)' }}>
+    <div className="card-elevated u-p-20px-24px" >
+      <div className="u-mb-16px" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <p className="u-fs-fs-md u-fw-600 u-ff-font-body" style={{ color: 'var(--text)' }}>
           Performance snapshot
         </p>
-        <a href="/performance/visualization" style={{ fontSize: 'var(--fs-sm)', color: 'var(--accent)', textDecoration: 'none', fontFamily: 'var(--font-body)' }}>
+        <a href="/performance/visualization" className="u-fs-fs-sm u-ff-font-body" style={{ color: 'var(--accent-text, var(--accent))', textDecoration: 'none' }}>
           full view →
         </a>
       </div>
 
       {loading ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div className="u-gap-12px" style={{ display: 'flex', flexDirection: 'column' }}>
           {[1,2,3,4].map((i) => (
             <div key={i} style={{ height: '28px', background: 'var(--bg-elevated)', borderRadius: '4px', animation: 'pulse 1.5s ease-in-out infinite', animationDelay: `${i * 0.08}s` }} />
           ))}
         </div>
       ) : topEvents.length === 0 ? (
-        <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+        <p className="u-fs-fs-base" style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>
           No performance data yet.
         </p>
       ) : (
-        <div className="cols-2" style={{ gap: '20px' }}>
+        <div className="cols-2 u-gap-20px" >
           {/* Top events */}
           <div>
-            <p style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '12px' }}>
+            <p className="u-fs-fs-sm u-ff-font-body u-mb-12px" style={{ color: 'var(--text-muted)' }}>
               Top events
             </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div className="u-gap-8px" style={{ display: 'flex', flexDirection: 'column' }}>
               {topEvents.slice(0, 5).map((ev) => (
                 <div key={ev.event}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                    <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text)', fontWeight: 500 }}>{ev.event}</span>
-                    <span style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>
+                  <div className="u-mb-4px" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span className="u-fs-fs-sm u-fw-500" style={{ color: 'var(--text)' }}>{ev.event}</span>
+                    <span className="u-fs-fs-xs u-ff-font-body" style={{ color: 'var(--text-muted)' }}>
                       {ev.fastest ? formatSwimTime(ev.fastest) : '—'}&nbsp;<span style={{ color: 'var(--text-muted)', opacity: 0.6 }}>·</span>&nbsp;{ev.count}
                     </span>
                   </div>
@@ -210,19 +184,19 @@ function PerfSnapshot({
 
           {/* Top swimmers */}
           <div>
-            <p style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '12px' }}>
+            <p className="u-fs-fs-sm u-ff-font-body u-mb-12px" style={{ color: 'var(--text-muted)' }}>
               Most events swum
             </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div className="u-gap-8px" style={{ display: 'flex', flexDirection: 'column' }}>
               {topSwimmers.slice(0, 5).map((sw, i) => (
-                <div key={sw.name} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: 'var(--fs-2xs)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', width: '14px', textAlign: 'right', flexShrink: 0 }}>
+                <div key={sw.name} className="u-gap-8px" style={{ display: 'flex', alignItems: 'center' }}>
+                  <span className="u-fs-fs-2xs u-ff-font-body" style={{ color: 'var(--text-muted)', width: '14px', textAlign: 'right', flexShrink: 0 }}>
                     {i + 1}
                   </span>
-                  <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text)', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <span className="u-fs-fs-sm" style={{ color: 'var(--text)', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {sw.name}
                   </span>
-                  <span style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', color: 'var(--accent)', flexShrink: 0 }}>
+                  <span className="u-fs-fs-xs u-ff-font-body" style={{ color: 'var(--accent-text, var(--accent))', flexShrink: 0 }}>
                     {sw.count}
                   </span>
                 </div>
@@ -251,6 +225,11 @@ export default function DashboardPage() {
   const [bestTimes, setBestTimes] = useState<BestTimeRecord[]>([])
   const [actorNames, setActorNames] = useState<Record<string, string>>({})
   const [seasons, setSeasons] = useState<SeasonRecord[]>([])
+  const [practices, setPractices] = useState<PracticeRecord[]>([])
+  const [entriesAwaiting, setEntriesAwaiting] = useState(0)
+  const [awaitingResponses, setAwaitingResponses] = useState(0)
+  const [loadFailed, setLoadFailed] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
   // Invoices, the audit log, and the user directory are admin-only APIs; coaches
   // must not see placeholder billing totals or an empty "recent activity" feed.
   const isAdmin = (session?.user.roles ?? (session?.user.role ? [session.user.role] : [])).includes('admin')
@@ -261,10 +240,12 @@ export default function DashboardPage() {
       if (!session?.user.orgId) { setLoading(false); return }
       try {
         setLoading(true)
+        setLoadFailed(false)
+        let failures = 0
         const [sw, hh, mm, inv, gr, audit, bt, users, sn] = await Promise.all([
-          fetchSwimmers(api, session.user.orgId).catch(() => [] as SwimmerRecord[]),
-          fetchHouseholds(api, session.user.orgId).catch(() => [] as HouseholdRecord[]),
-          fetchMeets(api, session.user.orgId).catch(() => [] as MeetRecord[]),
+          fetchSwimmers(api, session.user.orgId).catch(() => { failures++; return [] as SwimmerRecord[] }),
+          fetchHouseholds(api, session.user.orgId).catch(() => { failures++; return [] as HouseholdRecord[] }),
+          fetchMeets(api, session.user.orgId).catch(() => { failures++; return [] as MeetRecord[] }),
           isAdmin ? fetchInvoices(api, session.user.orgId).catch(() => [] as InvoiceRecord[]) : Promise.resolve([] as InvoiceRecord[]),
           fetchGroups(api, session.user.orgId).catch(() => [] as GroupRecord[]),
           isAdmin ? fetchAuditEvents(api, session.user.orgId).catch(() => ({ events: [] as AuditEventRecord[] })) : Promise.resolve({ events: [] as AuditEventRecord[] }),
@@ -272,7 +253,17 @@ export default function DashboardPage() {
           isAdmin ? fetchUsers(api, session.user.orgId, { limit: 200 }).catch(() => ({ users: [] as UserRecord[] })) : Promise.resolve({ users: [] as UserRecord[] }),
           fetchSeasons(api, session.user.orgId).catch(() => [] as SeasonRecord[]),
         ])
+        const orgId = session.user.orgId
+        const pr = await fetchPractices(api, orgId).catch(() => [] as PracticeRecord[])
+        const live = mm.filter((m) => UPCOMING_STATUSES.has(m.status)).slice(0, 6)
+        const entryLists = await Promise.all(live.map((m) => fetchMeetEntries(api, orgId, m.id).catch(() => [])))
+        const openMeets = live.filter((m) => m.status === 'commitment_open')
+        const commitmentLists = await Promise.all(openMeets.map((m) => fetchMeetCommitments(api, orgId, m.id).catch(() => [])))
         if (cancelled) return
+        setPractices(pr)
+        setEntriesAwaiting(entryLists.flat().filter((e) => e.status === 'submitted').length)
+        setAwaitingResponses(commitmentLists.flat().filter((c) => c.status === 'invited').length)
+        setLoadFailed(failures >= 2)
         setSwimmers(sw)
         setHouseholds(hh)
         setMeets(mm)
@@ -288,7 +279,7 @@ export default function DashboardPage() {
     }
     run()
     return () => { cancelled = true }
-  }, [session?.user.orgId, api, isAdmin])
+  }, [session?.user.orgId, api, isAdmin, reloadKey])
 
   // Derived stats
   const activeSwimmers = swimmers.filter((s) => s.registration_status === 'active').length
@@ -297,7 +288,6 @@ export default function DashboardPage() {
     .filter((m) => UPCOMING_STATUSES.has(m.status))
     .sort((a, b) => (a.start_date ?? '').localeCompare(b.start_date ?? ''))
     .slice(0, 3)
-  const upcomingMeets = meets.filter((m) => UPCOMING_STATUSES.has(m.status)).length
   const openInvoices = invoices.filter((i) => i.status === 'issued' || i.status === 'partially_paid')
   const openInvoiceAmount = openInvoices.reduce((sum, i) => sum + i.amount_due_cents, 0)
   const overdueInvoices = openInvoices.filter((i) => i.due_date && parseBackendDate(i.due_date) < new Date())
@@ -340,94 +330,143 @@ export default function DashboardPage() {
 
   const maxCount = topEvents.reduce((m, e) => Math.max(m, e.count), 0)
 
-  const today = new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
-  // Derive the dashboard subtitle from a real Season record instead of the
-  // current calendar year — an implied season the Seasons page doesn't
-  // actually have would mislead an owner looking for "the current season."
   const activeSeason = seasons.find((s) => s.status === 'active') ?? null
   const seasonLabel = activeSeason ? activeSeason.name : 'No active season'
+
+  const todayIso = new Date().toISOString().slice(0, 10)
+  const upcomingPractice = practices
+    .filter((pr) => pr.date >= todayIso && pr.type !== 'rest')
+    .sort((x, y) => x.date.localeCompare(y.date))[0]
+  const groupName = (id?: string) => groups.find((g) => g.id === id)?.name ?? 'All groups'
+  const practiceWhen = upcomingPractice
+    ? (upcomingPractice.date === todayIso ? 'Today' : parseBackendDate(upcomingPractice.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }))
+    : ''
+  const isEmptyClub = !loading && !loadFailed && totalSwimmers === 0 && households.length === 0 && meets.length === 0 && groups.length === 0
+
+  type TodayRow = { key: string; count: string; title: string; detail: string; href: string; urgent: boolean; show: boolean }
+  const todayRows: TodayRow[] = [
+    {
+      key: 'practice', count: upcomingPractice ? practiceWhen : '0',
+      title: upcomingPractice ? `Next practice: ${groupName(upcomingPractice.group_id)}` : 'No practice scheduled',
+      detail: upcomingPractice ? (upcomingPractice.description || `${upcomingPractice.yardage_target.toLocaleString()} yards`) : 'Schedule one in Training.',
+      href: '/training', urgent: false, show: true,
+    },
+    { key: 'entries', count: String(entriesAwaiting), title: 'Entries awaiting approval', detail: entriesAwaiting > 0 ? 'Review and approve before the entry file is finalized.' : 'Nothing waiting for review.', href: '/entries', urgent: entriesAwaiting > 0, show: true },
+    {
+      key: 'commitments', count: nextCommitmentDeadlineDays != null ? `${nextCommitmentDeadlineDays}d` : String(awaitingResponses),
+      title: 'Commitments due',
+      detail: nextCommitmentDeadlineDays != null ? `${awaitingResponses} families have not responded. Deadline in ${nextCommitmentDeadlineDays} days.` : (awaitingResponses > 0 ? `${awaitingResponses} families have not responded.` : 'No open commitment deadlines.'),
+      href: '/commitments', urgent: nextCommitmentDeadlineDays != null && nextCommitmentDeadlineDays <= 3 || awaitingResponses > 0, show: true,
+    },
+    { key: 'overdue', count: String(overdueInvoices.length), title: 'Overdue invoices', detail: overdueInvoices.length > 0 ? `${formatCurrency(overdueAmount)} past due.` : 'No overdue balances.', href: '/billing?tab=invoices', urgent: overdueInvoices.length > 0, show: isAdmin },
+  ]
+  todayRows.sort((x, y) => Number(y.urgent) - Number(x.urgent))
+
+  const setupSteps = [
+    { label: 'Create a season', href: '/seasons', done: seasons.length > 0 },
+    { label: 'Add training groups', href: '/members?tab=groups', done: groups.length > 0 },
+    { label: 'Add households and swimmers', href: '/members?tab=households', done: households.length > 0 || totalSwimmers > 0 },
+    { label: 'Schedule your first meet', href: '/meets/new', done: meets.length > 0 },
+  ]
 
   return (
     <div className="page" style={{ animation: 'slideUp 0.35s var(--ease-out) both' }}>
       <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }`}</style>
 
-      {/* Page header */}
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">Dashboard</h1>
-          <p className="page-subtitle">{loading ? '\u00a0' : seasonLabel}</p>
-        </div>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <span style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: '4px 8px' }}>
-            {today}
-          </span>
-        </div>
+      <div className="page-heading">
+        <h1 className="page-title">Today</h1>
+        <p className="page-subtitle">{loading ? '\u00a0' : seasonLabel}</p>
       </div>
 
-      {/* Stat grid */}
-      <div className="cols-4" style={{ gap: '16px', marginBottom: '24px' }}>
-        <StatCard label="Active swimmers" value={activeSwimmers.toString()} delta={totalSwimmers !== activeSwimmers ? `${totalSwimmers} total` : undefined} positive loading={loading} />
-        <StatCard label="Households" value={households.length.toString()} loading={loading} />
-        <StatCard label="Upcoming meets" value={upcomingMeets.toString()} loading={loading} />
-        {isAdmin && (
-          <StatCard label="Open invoices" value={formatCurrency(openInvoiceAmount)} delta={overdueAmount > 0 ? `${formatCurrency(overdueAmount)} overdue` : undefined} loading={loading} />
-        )}
-        <StatCard label="Active groups" value={activeGroups.toString()} loading={loading} />
-        <StatCard label="New best times" value={recentBestTimes.toString()} caption="last 30 days" loading={loading} />
-        <StatCard label="Pending registrations" value={pendingRegistrations.toString()} loading={loading} />
-        <StatCard
-          label="Next commitment due"
-          value={nextCommitmentDeadlineDays != null ? `${nextCommitmentDeadlineDays}d` : '—'}
-          caption={nextCommitmentDeadlineDays != null ? 'until deadline' : 'no deadline set'}
-          loading={loading}
-        />
-      </div>
+      {loadFailed && (
+        <div role="alert" className="row row-between u-p-12px-16px u-mb-24px" style={{ border: '1px solid var(--error)', borderRadius: 'var(--r-md, 12px)', background: 'var(--error-bg)' }}>
+          <span className="u-fs-fs-base" style={{ color: 'var(--text)' }}>Some dashboard data could not be loaded. Check your connection and try again.</span>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => setReloadKey((k) => k + 1)}>Retry</button>
+        </div>
+      )}
+
+      {isEmptyClub ? (
+        <div className="card-elevated u-p-24px u-mb-24px" >
+          <h2 className="section-title">Set up your club</h2>
+          <p className="page-subtitle u-mb-16px" >Nothing is scheduled yet. Work through these to get started.</p>
+          <ol className="stack u-p-0" style={{ listStyle: 'none' }}>
+            {setupSteps.map((st) => (
+              <li key={st.href}>
+                <Link href={st.href} className="today-row">
+                  <span aria-hidden style={{ width: '20px', height: '20px', borderRadius: '50%', border: '2px solid var(--border-strong)', background: st.done ? 'var(--success)' : 'transparent', flexShrink: 0 }} />
+                  <span className="u-fs-fs-base u-fw-600" >{st.label}</span>
+                  {st.done && <span className="kbd-hint u-ml-auto" >Done</span>}
+                </Link>
+              </li>
+            ))}
+          </ol>
+        </div>
+      ) : (
+        <section aria-label="Today" className="stack u-mb-32px" >
+          {loading ? (
+            [1, 2, 3, 4].map((i) => <div key={i} style={{ height: '56px', background: 'var(--bg-elevated)', borderRadius: '12px', animation: 'pulse 1.5s ease-in-out infinite' }} />)
+          ) : (
+            todayRows.filter((row) => row.show).map((row) => (
+              <Link key={row.key} href={row.href} className={`today-row${row.urgent ? ' is-urgent' : ''}`}>
+                <span className="today-count">{row.count}</span>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span className="u-fs-fs-base u-fw-600" style={{ display: 'block' }}>{row.title}</span>
+                  <span className="u-fs-fs-sm" style={{ display: 'block', color: 'var(--text-subtle)' }}>{row.detail}</span>
+                </span>
+                <Icon name="chevron-right" size={16} />
+              </Link>
+            ))
+          )}
+        </section>
+      )}
+
+      {/* Secondary counts */}
+      {!loading && !isEmptyClub && (
+        <p className="u-fs-fs-sm u-mb-24px" style={{ color: 'var(--text-subtle)' }}>
+          {activeSwimmers} active swimmers, {households.length} households, {activeGroups} groups, {pendingRegistrations} pending registrations, {recentBestTimes} new best times in 30 days{isAdmin ? `, ${formatCurrency(openInvoiceAmount)} open` : ''}
+        </p>
+      )}
 
       {/* Upcoming Meets + Quick Actions */}
-      <div className="split-aside" style={{ gap: '16px', marginBottom: '16px', alignItems: 'stretch' }}>
+      <div className="split-aside u-gap-16px u-mb-16px" style={{ alignItems: 'stretch' }}>
         {/* Upcoming Meets list */}
-        <div className="card-elevated" style={{ padding: '20px 24px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-            <p style={{ fontSize: 'var(--fs-md)', fontWeight: 600, fontFamily: 'var(--font-body)', color: 'var(--text)' }}>
+        <div className="card-elevated u-p-20px-24px" >
+          <div className="u-mb-16px" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <p className="u-fs-fs-md u-fw-600 u-ff-font-body" style={{ color: 'var(--text)' }}>
               Upcoming meets
             </p>
-            <Link href="/meets" style={{ fontSize: 'var(--fs-sm)', color: 'var(--accent)', textDecoration: 'none', fontFamily: 'var(--font-body)' }}>
+            <Link href="/meets" className="u-fs-fs-sm u-ff-font-body" style={{ color: 'var(--accent-text, var(--accent))', textDecoration: 'none' }}>
               all meets →
             </Link>
           </div>
           {loading ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div className="u-gap-12px" style={{ display: 'flex', flexDirection: 'column' }}>
               {[1, 2, 3].map((i) => (
                 <div key={i} style={{ height: '52px', background: 'var(--bg-elevated)', borderRadius: '8px', animation: 'pulse 1.5s ease-in-out infinite', animationDelay: `${i * 0.1}s` }} />
               ))}
             </div>
           ) : upcomingMeetsList.length === 0 ? (
-            <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)', fontStyle: 'italic', padding: '8px 0' }}>
+            <p className="u-fs-fs-base u-p-8px-0" style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>
               No upcoming meets scheduled.
             </p>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div className="u-gap-8px" style={{ display: 'flex', flexDirection: 'column' }}>
               {upcomingMeetsList.map((meet) => (
                 <Link
                   key={meet.id}
                   href={`/meets/${meet.id}`}
-                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderRadius: '8px', background: 'var(--bg-surface)', border: '1px solid var(--border)', textDecoration: 'none', transition: 'border-color 0.15s' }}
+                  className="u-p-12px-16px" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderRadius: '8px', background: 'var(--bg-surface)', border: '1px solid var(--border)', textDecoration: 'none', transition: 'border-color 0.15s' }}
                   onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent)' }}
                   onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)' }}
                 >
                   <div>
-                    <p style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)', marginBottom: '2px' }}>{meet.name}</p>
-                    <p style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>
+                    <p className="u-fs-fs-base u-fw-600 u-mb-2px" style={{ color: 'var(--text)' }}>{meet.name}</p>
+                    <p className="u-fs-fs-xs u-ff-font-body" style={{ color: 'var(--text-muted)' }}>
                       {meet.start_date ? parseBackendDate(meet.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Date TBD'}
                       {meet.course && <span style={{ marginLeft: '8px', opacity: 0.7 }}>· {meet.course}</span>}
                     </p>
                   </div>
-                  <span style={{
-                    fontSize: 'var(--fs-2xs)', fontFamily: 'var(--font-body)', fontWeight: 700, letterSpacing: '0.05em',
-                    padding: '4px 8px', borderRadius: '6px', textTransform: 'uppercase',
-                    background: meet.status === 'commitment_open' ? 'var(--success-bg)' : meet.status === 'entry_finalized' ? 'var(--info-bg)' : 'var(--bg-elevated)',
-                    color: meet.status === 'commitment_open' ? 'var(--success)' : meet.status === 'entry_finalized' ? 'var(--info)' : 'var(--text-muted)',
-                  }}>
+                  <span className="u-fs-fs-2xs u-ff-font-body u-fw-700 u-ls-0_05em u-p-4px-8px" style={{ borderRadius: '6px', textTransform: 'uppercase', background: meet.status === 'commitment_open' ? 'var(--success-bg)' : meet.status === 'entry_finalized' ? 'var(--info-bg)' : 'var(--bg-elevated)', color: meet.status === 'commitment_open' ? 'var(--success)' : meet.status === 'entry_finalized' ? 'var(--info)' : 'var(--text-muted)' }}>
                     {meet.status.replace(/_/g, ' ')}
                   </span>
                 </Link>
@@ -437,8 +476,8 @@ export default function DashboardPage() {
         </div>
 
         {/* Quick Actions */}
-        <div className="card-elevated" style={{ padding: '20px 24px' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <div className="card-elevated u-p-20px-24px" >
+          <div className="u-gap-6px" style={{ display: 'flex', flexDirection: 'column' }}>
             {[
               { label: 'New meet', href: '/meets/new', icon: '＋', roles: ['admin', 'coach'] },
               { label: 'Add swimmer', href: '/members?tab=swimmers', icon: '＋', roles: ['admin', 'coach'] },
@@ -453,20 +492,14 @@ export default function DashboardPage() {
               <Link
                 key={action.href}
                 href={action.href}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '12px',
-                  padding: '8px 12px', borderRadius: '8px',
-                  background: 'var(--bg-surface)', border: '1px solid var(--border)',
-                  textDecoration: 'none', transition: 'all 0.15s',
-                  color: 'var(--text)',
-                }}
+                className="u-gap-12px u-p-8px-12px" style={{ display: 'flex', alignItems: 'center', borderRadius: '8px', background: 'var(--bg-surface)', border: '1px solid var(--border)', textDecoration: 'none', transition: 'all 0.15s', color: 'var(--text)' }}
                 onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.background = 'var(--accent-subtle)' }}
                 onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = 'var(--bg-surface)' }}
               >
-                <span style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--accent)', width: '14px', textAlign: 'center', flexShrink: 0 }}>
+                <span className="u-fs-fs-sm u-ff-font-body" style={{ color: 'var(--accent-text, var(--accent))', width: '14px', textAlign: 'center', flexShrink: 0 }}>
                   {action.icon}
                 </span>
-                <span style={{ fontSize: 'var(--fs-base)', fontWeight: 500 }}>{action.label}</span>
+                <span className="u-fs-fs-base u-fw-500" >{action.label}</span>
               </Link>
             ))}
           </div>
@@ -478,23 +511,23 @@ export default function DashboardPage() {
 
       {/* Recent activity — full width, bottom of page (admin-only audit feed) */}
       {isAdmin && (
-      <div className="card-elevated" style={{ padding: '20px 24px', marginTop: '16px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-          <p style={{ fontSize: 'var(--fs-md)', fontWeight: 600, fontFamily: 'var(--font-body)', color: 'var(--text)' }}>
+      <div className="card-elevated u-p-20px-24px u-mt-16px" >
+        <div className="u-mb-16px" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <p className="u-fs-fs-md u-fw-600 u-ff-font-body" style={{ color: 'var(--text)' }}>
             Recent activity
           </p>
-          <a href="/audit" style={{ fontSize: 'var(--fs-sm)', color: 'var(--accent)', textDecoration: 'none', fontFamily: 'var(--font-body)' }}>
+          <a href="/audit" className="u-fs-fs-sm u-ff-font-body" style={{ color: 'var(--accent-text, var(--accent))', textDecoration: 'none' }}>
             view audit log →
           </a>
         </div>
         {loading ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div className="u-gap-12px" style={{ display: 'flex', flexDirection: 'column' }}>
             {[1,2,3,4,5].map((i) => (
               <div key={i} style={{ height: '20px', background: 'var(--bg-elevated)', borderRadius: '4px', animation: 'pulse 1.5s ease-in-out infinite', animationDelay: `${i * 0.1}s` }} />
             ))}
           </div>
         ) : auditEvents.length === 0 ? (
-          <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)', fontStyle: 'italic', padding: '8px 0' }}>
+          <p className="u-fs-fs-base u-p-8px-0" style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>
             No recent activity recorded yet.
           </p>
         ) : (

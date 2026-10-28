@@ -54,20 +54,12 @@ const MEET_ENTRY_EXTS = ['.cl2', '.sd3', '.zip', '.hy3', '.hyv', '.ev3']
 
 // ── Input style helpers ─────────────────────────────────────────────────────
 
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '12px 12px',
-  background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-  borderRadius: '8px', color: 'var(--text)', fontSize: 'var(--fs-base)',
-  fontFamily: 'var(--font-body)', outline: 'none', transition: 'border-color 0.15s',
-}
+const inputStyle: React.CSSProperties = { width: '100%' }
 
 function FieldLabel({ children, required }: { children: React.ReactNode; required?: boolean }) {
   return (
-    <label style={{
-      display: 'block', fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)',
-      color: 'var(--text-muted)', marginBottom: '8px',
-    }}>
-      {children}{required && <span style={{ color: 'var(--error)', marginLeft: '4px' }}>*</span>}
+    <label className="u-fs-fs-sm u-ff-font-body u-mb-8px" style={{ display: 'block', color: 'var(--text-muted)' }}>
+      {children}{required && <span className="u-ml-4px" style={{ color: 'var(--error)' }}>*</span>}
     </label>
   )
 }
@@ -80,14 +72,12 @@ function InputField({
   return (
     <div>
       <input
-        type={type} value={value}
+        aria-label={placeholder ?? type} type={type} value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         style={inputStyle}
-        onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--border-focus)' }}
-        onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)' }}
       />
-      {hint && <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: '4px' }}>{hint}</p>}
+      {hint && <p className="u-fs-fs-xs u-mt-4px" style={{ color: 'var(--text-muted)' }}>{hint}</p>}
     </div>
   )
 }
@@ -180,21 +170,13 @@ function UploadZone({
           setDragging(false)
           handleFileList(e.dataTransfer.files)
         }}
-        style={{
-          border: `2px dashed ${borderColor}`,
-          borderRadius: '12px',
-          background: bgColor,
-          padding: '20px',
-          cursor: 'pointer',
-          transition: 'all 0.15s',
-          textAlign: 'center',
-        }}
+        className="u-p-20px" style={{ border: `2px dashed ${borderColor}`, borderRadius: '12px', background: bgColor, cursor: 'pointer', transition: 'all 0.15s', textAlign: 'center' }}
       >
         <Icon name="upload-cloud" size={22} style={{ color: accent ? 'var(--accent)' : 'var(--text-muted)', margin: '0 auto 8px', display: 'block' }} />
-        <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', marginBottom: '4px' }}>
-          Drop files or <span style={{ color: accent ? 'var(--accent)' : 'var(--info)', fontWeight: 600 }}>browse</span>
+        <p className="u-fs-fs-base u-mb-4px" style={{ color: 'var(--text-subtle)' }}>
+          Drop files or <span className="u-fw-600" style={{ color: accent ? 'var(--accent)' : 'var(--info)' }}>browse</span>
         </p>
-        <p style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>{hint}</p>
+        <p className="u-fs-fs-xs u-ff-font-body" style={{ color: 'var(--text-muted)' }}>{hint}</p>
         <input
           ref={inputRef}
           type="file"
@@ -206,20 +188,16 @@ function UploadZone({
       </div>
 
       {files.length > 0 && (
-        <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <div className="u-mt-12px u-gap-6px" style={{ display: 'flex', flexDirection: 'column' }}>
           {files.map((f, i) => (
-            <div key={i} style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '8px 12px', borderRadius: '8px',
-              background: 'var(--bg-surface)', border: '1px solid var(--border)',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+            <div key={i} className="u-p-8px-12px" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderRadius: '8px', background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
+              <div className="u-gap-8px" style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
                 <Icon name="file-text" size={13} style={{ color: accent ? 'var(--accent)' : 'var(--info)', flexShrink: 0 }} />
-                <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                <span className="u-fs-fs-sm" style={{ color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-                <span style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>{formatBytes(f.size)}</span>
-                <button
+              <div className="u-gap-8px" style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+                <span className="u-fs-fs-xs u-ff-font-body" style={{ color: 'var(--text-muted)' }}>{formatBytes(f.size)}</span>
+                <button type="button"
                   onClick={(e) => { e.stopPropagation(); onFiles(files.filter((_, j) => j !== i)) }}
                   className="btn-icon"
                   style={{ color: 'var(--text-muted)' }}
@@ -251,22 +229,17 @@ function SessionCard({
   onRemove: () => void
 }) {
   return (
-    <div style={{
-      border: '1px solid var(--border)', borderRadius: '12px',
-      padding: '16px', background: 'var(--bg-surface)',
-    }}>
+    <div className="u-p-16px" style={{ border: '1px solid var(--border)', borderRadius: '12px', background: 'var(--bg-surface)' }}>
       {/* Card header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-        <span style={{
-          fontSize: 'var(--fs-base)', fontWeight: 600, fontFamily: 'var(--font-body)', color: 'var(--accent)',
-        }}>
+      <div className="u-mb-16px" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span className="u-fs-fs-base u-fw-600 u-ff-font-body" style={{ color: 'var(--accent-text, var(--accent))' }}>
           Session {session.sessionNumber}
         </span>
         {canRemove && (
-          <button
+          <button type="button"
             onClick={onRemove}
-            className="btn btn-ghost"
-            style={{ fontSize: 'var(--fs-xs)', gap: '4px', color: 'var(--text-muted)', padding: '4px 8px' }}
+            className="btn btn-ghost u-fs-fs-xs u-gap-4px u-p-4px-8px"
+            style={{ color: 'var(--text-muted)' }}
             onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--error)' }}
             onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}
           >
@@ -276,35 +249,31 @@ function SessionCard({
       </div>
 
       {/* Top row: Day Label + Session Name */}
-      <div className="cols-2" style={{ gap: '12px', marginBottom: '12px' }}>
+      <div className="cols-2 u-gap-12px u-mb-12px" >
         <div>
           <FieldLabel>Day label</FieldLabel>
-          <input
+          <input aria-label="e.g. Day 1"
             className="input"
             value={session.section}
             onChange={(e) => onChange('section', e.target.value)}
             placeholder="e.g. Day 1"
             style={inputStyle}
-            onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--border-focus)' }}
-            onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)' }}
           />
         </div>
         <div>
           <FieldLabel>Session name</FieldLabel>
-          <input
+          <input aria-label="e.g. Morning Session"
             className="input"
             value={session.name}
             onChange={(e) => onChange('name', e.target.value)}
             placeholder="e.g. Morning Session"
             style={inputStyle}
-            onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--border-focus)' }}
-            onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)' }}
           />
         </div>
       </div>
 
       {/* Bottom row: Date + Warm-up + Start Time */}
-      <div className="cols-3" style={{ gap: '12px' }}>
+      <div className="cols-3 u-gap-12px" >
         <div>
           <FieldLabel>Date</FieldLabel>
           <input
@@ -312,19 +281,15 @@ function SessionCard({
             value={session.date}
             onChange={(e) => onChange('date', e.target.value)}
             style={inputStyle}
-            onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--border-focus)' }}
-            onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)' }}
           />
         </div>
         <div>
-          <FieldLabel>Warm-up Time</FieldLabel>
+          <FieldLabel>Warm-up time</FieldLabel>
           <input
             type="time"
             value={session.warmupTime}
             onChange={(e) => onChange('warmupTime', e.target.value)}
             style={inputStyle}
-            onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--border-focus)' }}
-            onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)' }}
           />
         </div>
         <div>
@@ -334,8 +299,6 @@ function SessionCard({
             value={session.startTime}
             onChange={(e) => onChange('startTime', e.target.value)}
             style={inputStyle}
-            onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--border-focus)' }}
-            onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)' }}
           />
         </div>
       </div>
@@ -520,10 +483,10 @@ export default function NewMeetPage() {
   return (
     <div className="page">
       {/* Header */}
-      <div style={{ marginBottom: '32px' }}>
-        <button
+      <div className="u-mb-32px" >
+        <button type="button"
           onClick={() => router.push('/meets')}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '16px', padding: 0 }}
+          className="u-fs-fs-sm u-ff-font-body u-gap-6px u-mb-16px u-p-0" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}
           onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text)' }}
           onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}
         >
@@ -531,27 +494,19 @@ export default function NewMeetPage() {
           Back to Meets
         </button>
         <h1 className="page-title">
-          Create Meet
+          Create meet
         </h1>
       </div>
 
       {/* Step indicator */}
-      <div style={{ display: 'flex', gap: '0', marginBottom: '32px' }}>
+      <div className="u-gap-0 u-mb-32px" style={{ display: 'flex' }}>
         {STEP_LABELS.map((label, idx) => (
           <div key={label} style={{ display: 'flex', alignItems: 'center', flex: idx < STEP_LABELS.length - 1 ? '1' : undefined }}>
             <div
               onClick={() => idx < step && setStep(idx)}
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: idx < step ? 'pointer' : 'default' }}
+              className="u-gap-8px" style={{ display: 'flex', alignItems: 'center', cursor: idx < step ? 'pointer' : 'default' }}
             >
-              <div style={{
-                width: '28px', height: '28px', borderRadius: '50%', flexShrink: 0,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: idx < step ? 'var(--accent)' : idx === step ? 'var(--bg-elevated)' : 'var(--bg-surface)',
-                border: `2px solid ${idx < step ? 'var(--accent)' : idx === step ? 'var(--accent-border)' : 'var(--border)'}`,
-                fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', fontWeight: 700,
-                color: idx < step ? '#fff' : idx === step ? 'var(--accent)' : 'var(--text-muted)',
-                transition: 'all 0.2s ease',
-              }}>
+              <div className="u-fs-fs-xs u-ff-font-body u-fw-700" style={{ width: '28px', height: '28px', borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: idx < step ? 'var(--accent)' : idx === step ? 'var(--bg-elevated)' : 'var(--bg-surface)', border: `2px solid ${idx < step ? 'var(--accent)' : idx === step ? 'var(--accent-border)' : 'var(--border)'}`, color: idx < step ? '#fff' : idx === step ? 'var(--accent)' : 'var(--text-muted)', transition: 'all 0.2s ease' }}>
                 {idx < step ? (
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="20 6 9 17 4 12" />
@@ -570,15 +525,15 @@ export default function NewMeetPage() {
       </div>
 
       {/* Step content */}
-      <div className="card" style={{ padding: '32px' }}>
+      <div className="card u-p-32px" >
 
         {/* ── Step 0: Basic Info ───────────────────────────────── */}
         {step === 0 && (
           <div>
-            <h2 className="section-title" style={{ marginBottom: '24px' }}>
+            <h2 className="section-title u-mb-24px" >
               Basic Information
             </h2>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <div className="u-gap-20px" style={{ display: 'flex', flexDirection: 'column' }}>
               <div>
                 <FieldLabel required>Meet name</FieldLabel>
                 <InputField
@@ -588,21 +543,16 @@ export default function NewMeetPage() {
                 />
               </div>
 
-              <div className="cols-2" style={{ gap: '16px' }}>
+              <div className="cols-2 u-gap-16px" >
                 <div>
                   <FieldLabel required>Course</FieldLabel>
-                  <div style={{ display: 'flex', gap: '4px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '8px', padding: '4px' }}>
+                  <div className="u-gap-4px u-p-4px" style={{ display: 'flex', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '8px' }}>
                     {COURSES.map((c) => (
-                      <button key={c} onClick={() => update('course', c)} title={COURSE_FULL_NAMES[c]}
-                        style={{
-                          flex: 1, padding: '8px', borderRadius: '6px', border: 'none', cursor: 'pointer',
-                          background: draft.course === c ? 'var(--accent)' : 'transparent',
-                          color: draft.course === c ? '#fff' : 'var(--text-muted)',
-                          fontSize: 'var(--fs-sm)', fontWeight: 700, fontFamily: 'var(--font-body)', transition: 'all 0.15s',
-                        }}>{c}</button>
+                      <button type="button" key={c} onClick={() => update('course', c)} title={COURSE_FULL_NAMES[c]}
+                        className="u-p-8px u-fs-fs-sm u-fw-700 u-ff-font-body" style={{ flex: 1, borderRadius: '6px', border: 'none', cursor: 'pointer', background: draft.course === c ? 'var(--accent)' : 'transparent', color: draft.course === c ? '#fff' : 'var(--text-muted)', transition: 'all 0.15s' }}>{c}</button>
                     ))}
                   </div>
-                  <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: '4px' }}>{COURSE_FULL_NAMES[draft.course as Course]}</div>
+                  <div className="u-fs-fs-xs u-mt-4px" style={{ color: 'var(--text-muted)' }}>{COURSE_FULL_NAMES[draft.course as Course]}</div>
                 </div>
                 <div>
                   <FieldLabel required>Host club</FieldLabel>
@@ -625,23 +575,21 @@ export default function NewMeetPage() {
 
               <div>
                 <FieldLabel>Description</FieldLabel>
-                <textarea
+                <textarea aria-label="Optional notes, special rules, travel info"
                   value={draft.description}
                   onChange={(e) => update('description', e.target.value)}
                   placeholder="Optional notes, special rules, travel info…"
                   rows={3}
                   style={{ ...inputStyle, resize: 'vertical' }}
-                  onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--border-focus)' }}
-                  onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)' }}
                 />
               </div>
 
               {/* Divider */}
               <div style={{ borderTop: '1px solid var(--border)', paddingTop: '20px' }}>
-                <h2 className="card-title" style={{ marginBottom: '16px' }}>
+                <h2 className="card-title u-mb-16px" >
                   Files
                 </h2>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                <div className="u-gap-20px" style={{ display: 'flex', flexDirection: 'column' }}>
                   <UploadZone
                     label="Meet package files"
                     hint="Accepts PDF, PNG, JPG"
@@ -661,21 +609,21 @@ export default function NewMeetPage() {
                       multiple={false}
                     />
                     {entryFileParsing && (
-                      <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 16px', borderRadius: '8px', background: 'var(--info-bg)', border: '1px solid var(--info-border)' }}>
+                      <div className="u-mt-12px u-gap-8px u-p-12px-16px" style={{ display: 'flex', alignItems: 'center', borderRadius: '8px', background: 'var(--info-bg)', border: '1px solid var(--info-border)' }}>
                         <div style={{ width: '12px', height: '12px', borderRadius: '50%', border: '2px solid rgba(96,165,250,0.3)', borderTopColor: 'var(--info)', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
-                        <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--info)', fontFamily: 'var(--font-body)' }}>Parsing meet file…</span>
+                        <span className="u-fs-fs-sm u-ff-font-body" style={{ color: 'var(--info)' }}>Parsing meet file…</span>
                       </div>
                     )}
                     {entryFileParseError && !entryFileParsing && (
-                      <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 16px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error)' }}>
+                      <div className="u-mt-12px u-gap-8px u-p-12px-16px" style={{ display: 'flex', alignItems: 'center', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error)' }}>
                         <Icon name="alert-circle" size={14} style={{ color: 'var(--error)', flexShrink: 0 }} />
-                        <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--error)', fontFamily: 'var(--font-body)' }}>{entryFileParseError}</span>
+                        <span className="u-fs-fs-sm u-ff-font-body" style={{ color: 'var(--error)' }}>{entryFileParseError}</span>
                       </div>
                     )}
                     {entryFileParsed && (
-                      <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 16px', borderRadius: '8px', background: 'var(--success-bg)', border: '1px solid var(--success-border)' }}>
+                      <div className="u-mt-12px u-gap-8px u-p-12px-16px" style={{ display: 'flex', alignItems: 'center', borderRadius: '8px', background: 'var(--success-bg)', border: '1px solid var(--success-border)' }}>
                         <Icon name="check-circle" size={14} style={{ color: 'var(--success)', flexShrink: 0 }} />
-                        <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--success)', fontFamily: 'var(--font-body)' }}>
+                        <span className="u-fs-fs-sm u-ff-font-body" style={{ color: 'var(--success)' }}>
                           {entryFileParseSummary ?? 'Meet setup auto-populated from meet file — review schedule and signup details before saving.'}
                         </span>
                       </div>
@@ -690,11 +638,11 @@ export default function NewMeetPage() {
         {/* ── Step 1: Schedule & Deadlines ─────────────────────── */}
         {step === 1 && (
           <div>
-            <h2 className="section-title" style={{ marginBottom: '24px' }}>
+            <h2 className="section-title u-mb-24px" >
               Schedule & Deadlines
             </h2>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              <div className="cols-2" style={{ gap: '16px' }}>
+            <div className="u-gap-20px" style={{ display: 'flex', flexDirection: 'column' }}>
+              <div className="cols-2 u-gap-16px" >
                 <div>
                   <FieldLabel required>Start date</FieldLabel>
                   <InputField type="date" value={draft.startDate} onChange={(v) => update('startDate', v)} />
@@ -704,7 +652,7 @@ export default function NewMeetPage() {
                   <InputField type="date" value={draft.endDate} onChange={(v) => update('endDate', v)} />
                 </div>
               </div>
-              <div className="cols-2" style={{ gap: '16px' }}>
+              <div className="cols-2 u-gap-16px" >
                 <div>
                   <FieldLabel>Commitment deadline</FieldLabel>
                   <InputField type="datetime-local" value={draft.commitmentDeadline} onChange={(v) => update('commitmentDeadline', v)} hint="When parents must respond yes/no by" />
@@ -717,18 +665,18 @@ export default function NewMeetPage() {
 
               {/* Session builder */}
               <div style={{ paddingTop: '8px', borderTop: '1px solid var(--border)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
+                <div className="u-mb-16px" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div>
-                    <h2 className="card-title" style={{ marginBottom: '4px' }}>
+                    <h2 className="card-title u-mb-4px" >
                       Sessions
                     </h2>
                   </div>
-                  <button className="btn btn-secondary" type="button" onClick={addSession} style={{ gap: '6px', fontSize: 'var(--fs-sm)', flexShrink: 0 }}>
-                    <Icon name="plus" size={13} /> Add Session
+                  <button className="btn btn-secondary u-gap-6px u-fs-fs-sm" type="button" onClick={addSession} style={{ flexShrink: 0 }}>
+                    <Icon name="plus" size={13} /> Add session
                   </button>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div className="u-gap-12px" style={{ display: 'flex', flexDirection: 'column' }}>
                   {draft.sessions.map((s) => (
                     <SessionCard
                       key={s.id}
@@ -747,62 +695,43 @@ export default function NewMeetPage() {
         {/* ── Step 2: Entry Rules ──────────────────────────────── */}
         {step === 2 && (
           <div>
-            <h2 className="section-title" style={{ marginBottom: '24px' }}>
+            <h2 className="section-title u-mb-24px" >
               Entry Rules
             </h2>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <div className="u-gap-20px" style={{ display: 'flex', flexDirection: 'column' }}>
               <div>
                 <FieldLabel required>Age groups</FieldLabel>
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <div className="u-gap-8px" style={{ display: 'flex', flexWrap: 'wrap' }}>
                   {DEFAULT_AGE_GROUPS.map((ag) => (
-                    <button
+                    <button type="button"
                       key={ag}
                       onClick={() => toggleAgeGroup(ag)}
-                      style={{
-                        padding: '6px 16px', borderRadius: '16px',
-                        background: draft.ageGroups.includes(ag) ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
-                        border: `1px solid ${draft.ageGroups.includes(ag) ? 'var(--accent-border)' : 'var(--border)'}`,
-                        color: draft.ageGroups.includes(ag) ? 'var(--accent)' : 'var(--text-muted)',
-                        fontSize: 'var(--fs-sm)', fontWeight: draft.ageGroups.includes(ag) ? 600 : 400,
-                        cursor: 'pointer', fontFamily: 'var(--font-body)', transition: 'all 0.15s',
-                      }}
+                      className="u-p-6px-16px u-fs-fs-sm u-ff-font-body" style={{ borderRadius: '16px', background: draft.ageGroups.includes(ag) ? 'var(--accent-subtle)' : 'var(--bg-elevated)', border: `1px solid ${draft.ageGroups.includes(ag) ? 'var(--accent-border)' : 'var(--border)'}`, color: draft.ageGroups.includes(ag) ? 'var(--accent)' : 'var(--text-muted)', fontWeight: draft.ageGroups.includes(ag) ? 600 : 400, cursor: 'pointer', transition: 'all 0.15s' }}
                     >{ag}</button>
                   ))}
                 </div>
               </div>
               <div>
-                <FieldLabel>Max Individual Events per Swimmer</FieldLabel>
-                <div style={{ display: 'flex', gap: '4px', width: 'fit-content' }}>
+                <FieldLabel>Max individual events per swimmer</FieldLabel>
+                <div className="u-gap-4px" style={{ display: 'flex', width: 'fit-content' }}>
                   {['2', '3', '4', '5', '6', 'Unlimited'].map((n) => (
-                    <button key={n} onClick={() => update('maxEntriesPerSwimmer', n)}
-                      style={{
-                        padding: '8px 16px', borderRadius: '6px', border: `1px solid ${draft.maxEntriesPerSwimmer === n ? 'var(--accent-border)' : 'var(--border)'}`,
-                        background: draft.maxEntriesPerSwimmer === n ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
-                        color: draft.maxEntriesPerSwimmer === n ? 'var(--accent)' : 'var(--text-muted)',
-                        fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', cursor: 'pointer', transition: 'all 0.15s',
-                        fontWeight: draft.maxEntriesPerSwimmer === n ? 600 : 400,
-                      }}>{n}</button>
+                    <button type="button" key={n} onClick={() => update('maxEntriesPerSwimmer', n)}
+                      className="u-p-8px-16px u-fs-fs-sm u-ff-font-body" style={{ borderRadius: '6px', border: `1px solid ${draft.maxEntriesPerSwimmer === n ? 'var(--accent-border)' : 'var(--border)'}`, background: draft.maxEntriesPerSwimmer === n ? 'var(--accent-subtle)' : 'var(--bg-elevated)', color: draft.maxEntriesPerSwimmer === n ? 'var(--accent)' : 'var(--text-muted)', cursor: 'pointer', transition: 'all 0.15s', fontWeight: draft.maxEntriesPerSwimmer === n ? 600 : 400 }}>{n}</button>
                   ))}
                 </div>
               </div>
 
               <div>
-                <FieldLabel>Swimmer Self-Signup</FieldLabel>
+                <FieldLabel>Swimmer self-signup</FieldLabel>
                 <button
                   type="button"
                   onClick={() => update('swimmerSelfSignup', !draft.swimmerSelfSignup)}
-                  style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    width: '100%', padding: '12px 16px', borderRadius: '12px',
-                    border: `1px solid ${draft.swimmerSelfSignup ? 'var(--accent-border)' : 'var(--border)'}`,
-                    background: draft.swimmerSelfSignup ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
-                    color: 'var(--text)', cursor: 'pointer',
-                  }}
+                  className="u-p-12px-16px" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', borderRadius: '12px', border: `1px solid ${draft.swimmerSelfSignup ? 'var(--accent-border)' : 'var(--border)'}`, background: draft.swimmerSelfSignup ? 'var(--accent-subtle)' : 'var(--bg-elevated)', color: 'var(--text)', cursor: 'pointer' }}
                 >
-                  <span style={{ fontSize: 'var(--fs-base)' }}>
+                  <span className="u-fs-fs-base" >
                     {draft.swimmerSelfSignup ? 'Enabled for swimmer portal event selection' : 'Disabled — parent-only commitment flow'}
                   </span>
-                  <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-xs)', color: draft.swimmerSelfSignup ? 'var(--accent)' : 'var(--text-muted)' }}>
+                  <span className="u-ff-font-body u-fs-fs-xs" style={{ color: draft.swimmerSelfSignup ? 'var(--accent)' : 'var(--text-muted)' }}>
                     {draft.swimmerSelfSignup ? 'ON' : 'OFF'}
                   </span>
                 </button>
@@ -810,26 +739,26 @@ export default function NewMeetPage() {
 
               <div>
                 <FieldLabel>Imported event catalog</FieldLabel>
-                <div style={{ padding: '12px 16px', borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
-                  <div style={{ fontSize: 'var(--fs-base)', color: 'var(--text)', fontWeight: 600, marginBottom: parsedEvents.length > 0 ? '12px' : 0 }}>
+                <div className="u-p-12px-16px" style={{ borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
+                  <div className="u-fs-fs-base u-fw-600" style={{ color: 'var(--text)', marginBottom: parsedEvents.length > 0 ? '12px' : 0 }}>
                     {parsedEvents.length > 0 ? `${parsedEvents.length} signup event${parsedEvents.length === 1 ? '' : 's'} ready to create` : 'No parsed event catalog yet'}
                   </div>
                   {parsedEvents.length > 0 ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div className="u-gap-8px" style={{ display: 'flex', flexDirection: 'column' }}>
                       {parsedEvents.slice(0, 8).map((event) => (
-                        <div key={`${event.event_number}-${event.session_number ?? 0}`} style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', fontSize: 'var(--fs-sm)' }}>
+                        <div key={`${event.event_number}-${event.session_number ?? 0}`} className="u-gap-12px u-fs-fs-sm" style={{ display: 'flex', justifyContent: 'space-between' }}>
                           <span style={{ color: 'var(--text)' }}>#{event.event_number} · {event.distance} {formatEventStroke(event.stroke)}</span>
-                          <span style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>{formatEventAgeGroup(event)}</span>
+                          <span className="u-ff-font-body" style={{ color: 'var(--text-muted)' }}>{formatEventAgeGroup(event)}</span>
                         </div>
                       ))}
                       {parsedEvents.length > 8 && (
-                        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+                        <div className="u-fs-fs-xs u-ff-font-body" style={{ color: 'var(--text-muted)' }}>
                           +{parsedEvents.length - 8} more events
                         </div>
                       )}
                     </div>
                   ) : (
-                    <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
+                    <div className="u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>
                       Upload a meet entry file to auto-build the event list used by swimmer signup.
                     </div>
                   )}
@@ -842,18 +771,18 @@ export default function NewMeetPage() {
         {/* ── Step 3: Review ───────────────────────────────────── */}
         {step === 3 && (
           <div>
-            <h2 className="section-title" style={{ marginBottom: '20px' }}>
+            <h2 className="section-title u-mb-20px" >
               Review & Create
             </h2>
             {duplicateMeet && (
-              <div style={{ marginBottom: '16px', display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '12px 16px', borderRadius: '8px', background: 'var(--warning-bg)', border: '1px solid var(--warning-border)' }}>
+              <div className="u-mb-16px u-gap-12px u-p-12px-16px" style={{ display: 'flex', alignItems: 'flex-start', borderRadius: '8px', background: 'var(--warning-bg)', border: '1px solid var(--warning-border)' }}>
                 <Icon name="alert-triangle" size={15} style={{ color: 'var(--warning)', marginTop: '1px', flexShrink: 0 }} />
-                <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--text)', lineHeight: 1.5 }}>
+                <p className="u-m-0 u-fs-fs-sm u-lh-1_5" style={{ color: 'var(--text)' }}>
                   A meet named &quot;{duplicateMeet.name}&quot; on {duplicateMeet.start_date} already exists. Check you&apos;re not creating a duplicate before continuing.
                 </p>
               </div>
             )}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div className="u-gap-16px" style={{ display: 'flex', flexDirection: 'column' }}>
               {[
                 { label: 'Name',         value: draft.name || '—' },
                 { label: 'Course',       value: draft.course },
@@ -870,42 +799,42 @@ export default function NewMeetPage() {
                 { label: 'Package files', value: packageFiles.length > 0 ? packageFiles.map((f) => f.name).join(', ') : '—' },
                 { label: 'Entry file',   value: entryFiles.length > 0 ? entryFiles.map((f) => f.name).join(', ') : '—' },
               ].map((r) => (
-                <div key={r.label} style={{ display: 'flex', gap: '16px', padding: '12px 0', borderBottom: '1px solid var(--border)' }}>
-                  <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', minWidth: '110px', flexShrink: 0, paddingTop: '1px' }}>{r.label}</span>
-                  <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text)', fontWeight: 500 }}>{r.value}</span>
+                <div key={r.label} className="u-gap-16px u-p-12px-0" style={{ display: 'flex', borderBottom: '1px solid var(--border)' }}>
+                  <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-muted)', minWidth: '110px', flexShrink: 0, paddingTop: '1px' }}>{r.label}</span>
+                  <span className="u-fs-fs-base u-fw-500" style={{ color: 'var(--text)' }}>{r.value}</span>
                 </div>
               ))}
             </div>
-            <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div className="u-mt-16px u-gap-8px" style={{ display: 'flex', flexDirection: 'column' }}>
               {draft.sessions.map((s) => (
-                <div key={s.id} style={{ padding: '12px 16px', borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
-                  <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text)' }}>{s.section} · {s.name}</div>
-                  <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginTop: '4px' }}>
+                <div key={s.id} className="u-p-12px-16px" style={{ borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
+                  <div className="u-fs-fs-sm u-fw-600" style={{ color: 'var(--text)' }}>{s.section} · {s.name}</div>
+                  <div className="u-fs-fs-xs u-ff-font-body u-mt-4px" style={{ color: 'var(--text-muted)' }}>
                     {s.date || 'Date TBD'} · Warm-up {s.warmupTime || 'TBD'} · Start {s.startTime || 'TBD'}
                   </div>
                 </div>
               ))}
             </div>
             {parsedEvents.length > 0 && (
-              <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div className="u-mt-16px u-gap-8px" style={{ display: 'flex', flexDirection: 'column' }}>
                 {parsedEvents.slice(0, 10).map((event) => (
-                  <div key={`${event.event_number}-${event.session_number ?? 0}`} style={{ padding: '12px 16px', borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
-                    <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text)' }}>
+                  <div key={`${event.event_number}-${event.session_number ?? 0}`} className="u-p-12px-16px" style={{ borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
+                    <div className="u-fs-fs-sm u-fw-600" style={{ color: 'var(--text)' }}>
                       #{event.event_number} · {event.distance} {formatEventStroke(event.stroke)}
                     </div>
-                    <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginTop: '4px' }}>
+                    <div className="u-fs-fs-xs u-ff-font-body u-mt-4px" style={{ color: 'var(--text-muted)' }}>
                       {formatEventAgeGroup(event)} · Session {event.session_number || 'Unassigned'}
                     </div>
                   </div>
                 ))}
                 {parsedEvents.length > 10 && (
-                  <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', margin: 0 }}>
+                  <p className="u-fs-fs-xs u-ff-font-body u-m-0" style={{ color: 'var(--text-muted)' }}>
                     +{parsedEvents.length - 10} additional events will also be created.
                   </p>
                 )}
               </div>
             )}
-            <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginTop: '16px' }}>
+            <p className="u-fs-fs-sm u-mt-16px" style={{ color: 'var(--text-muted)' }}>
               The meet will be created in <strong style={{ color: 'var(--text)' }}>draft</strong> state. Publish it when you&apos;re ready to open commitments.
             </p>
           </div>
@@ -913,37 +842,31 @@ export default function NewMeetPage() {
       </div>
 
       {saveError && (
-        <div style={{ marginTop: '16px', background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error-border)', borderRadius: '8px', padding: '12px 16px', fontSize: 'var(--fs-base)' }}>
+        <div className="u-mt-16px u-p-12px-16px u-fs-fs-base" style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error-border)', borderRadius: '8px' }}>
           {saveError}
         </div>
       )}
 
       {/* Nav buttons */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '20px' }}>
-        <button
+      <div className="u-mt-20px" style={{ display: 'flex', justifyContent: 'space-between' }}>
+        <button type="button"
           onClick={() => step > 0 ? setStep(step - 1) : router.push('/meets')}
-          style={{ padding: '12px 24px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text-subtle)', fontSize: 'var(--fs-base)', cursor: 'pointer', fontFamily: 'var(--font-body)', display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.15s' }}
+          className="u-p-12px-24px u-fs-fs-base u-ff-font-body u-gap-8px" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text-subtle)', cursor: 'pointer', display: 'flex', alignItems: 'center', transition: 'all 0.15s' }}
           onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--border-strong)'; e.currentTarget.style.color = 'var(--text)' }}
           onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-subtle)' }}
         >
           <Icon name="arrow-left" size={13} />
           {step === 0 ? 'Cancel' : 'Back'}
         </button>
-        <button
+        <button type="button"
           onClick={() => step < 3 ? setStep(step + 1) : handleSave()}
           disabled={!canProceed() || saving}
-          style={{
-            padding: '12px 24px', borderRadius: '8px', border: 'none',
-            background: canProceed() && !saving ? 'var(--accent)' : 'var(--bg-elevated)',
-            color: canProceed() && !saving ? '#fff' : 'var(--text-muted)',
-            fontSize: 'var(--fs-base)', fontWeight: 600, cursor: canProceed() && !saving ? 'pointer' : 'not-allowed',
-            fontFamily: 'var(--font-body)', display: 'flex', alignItems: 'center', gap: '8px', transition: 'background 0.15s',
-          }}
-          onMouseEnter={(e) => { if (canProceed() && !saving) e.currentTarget.style.background = '#d44f14' }}
+          className="u-p-12px-24px u-fs-fs-base u-fw-600 u-ff-font-body u-gap-8px" style={{ borderRadius: '8px', border: 'none', background: canProceed() && !saving ? 'var(--accent)' : 'var(--bg-elevated)', color: canProceed() && !saving ? '#fff' : 'var(--text-muted)', cursor: canProceed() && !saving ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', transition: 'background 0.15s' }}
+          onMouseEnter={(e) => { if (canProceed() && !saving) e.currentTarget.style.background = 'var(--accent-hover)' }}
           onMouseLeave={(e) => { if (canProceed() && !saving) e.currentTarget.style.background = 'var(--accent)' }}
         >
           {saving ? (
-            <><div style={{ width: '13px', height: '13px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', animation: 'spin 0.8s linear infinite' }} />Creating…</>
+            <><span className="spinner spinner-sm" aria-hidden />Creating…</>
           ) : step < 3 ? (
             <>Next <Icon name="arrow-right" size={13} /></>
           ) : (

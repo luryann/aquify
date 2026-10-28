@@ -37,6 +37,7 @@ import {
   type SwimmerRecord,
 } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 
 function formatCents(cents: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100)
@@ -57,8 +58,8 @@ function StatusBadge({ status }: { status: string }) {
     issued: { color: 'var(--info)', bg: 'var(--info-bg)' },
     partially_paid: { color: 'var(--warning)', bg: 'var(--warning-bg)' },
     paid: { color: 'var(--success)', bg: 'var(--success-bg)' },
-    refunded_partial: { color: 'var(--accent)', bg: 'var(--accent-subtle)' },
-    refunded_full: { color: 'var(--accent)', bg: 'var(--accent-subtle)' },
+    refunded_partial: { color: 'var(--accent-text, var(--accent))', bg: 'var(--accent-subtle)' },
+    refunded_full: { color: 'var(--accent-text, var(--accent))', bg: 'var(--accent-subtle)' },
     voided: { color: 'var(--text-muted)', bg: 'var(--bg-elevated)' },
     written_off: { color: 'var(--text-muted)', bg: 'var(--bg-elevated)' },
     pending: { color: 'var(--warning)', bg: 'var(--warning-bg)' },
@@ -80,8 +81,8 @@ function buildItemCols(
       label: 'Description',
       render: (row) => (
         <div>
-          <div style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)' }}>{row.description}</div>
-          <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: '2px', fontFamily: 'var(--font-body)' }}>{row.category}</div>
+          <div className="u-fs-fs-base u-fw-600" style={{ color: 'var(--text)' }}>{row.description}</div>
+          <div className="u-fs-fs-xs u-mt-2px u-ff-font-body" style={{ color: 'var(--text-muted)' }}>{row.category}</div>
         </div>
       ),
     },
@@ -89,14 +90,14 @@ function buildItemCols(
       key: 'swimmer_id',
       label: 'Swimmer',
       render: (row) => (
-        <span style={{ fontSize: 'var(--fs-sm)', color: row.swimmer_id ? 'var(--text-subtle)' : 'var(--text-muted)' }}>
+        <span className="u-fs-fs-sm" style={{ color: row.swimmer_id ? 'var(--text-subtle)' : 'var(--text-muted)' }}>
           {row.swimmer_id ? (swimmerNameById.get(row.swimmer_id) ?? 'Unknown swimmer') : 'Household-wide'}
         </span>
       ),
     },
-    { key: 'quantity', label: 'Qty', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{row.quantity}</span> },
-    { key: 'unit_amount_cents', label: 'Unit price', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{formatCents(row.unit_amount_cents)}</span> },
-    { key: 'total_cents', label: 'Total', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-base)', fontWeight: 700, color: 'var(--text)' }}>{formatCents(row.total_cents)}</span> },
+    { key: 'quantity', label: 'Qty', align: 'right', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{row.quantity}</span> },
+    { key: 'unit_amount_cents', label: 'Unit price', align: 'right', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{formatCents(row.unit_amount_cents)}</span> },
+    { key: 'total_cents', label: 'Total', align: 'right', render: (row) => <span className="u-ff-font-body u-fs-fs-base u-fw-700" style={{ color: 'var(--text)' }}>{formatCents(row.total_cents)}</span> },
   ]
   // Line items can only be removed while the invoice is still a draft.
   if (onRemove) {
@@ -115,35 +116,34 @@ function buildItemCols(
 
 function buildPaymentCols(nameFor: (id?: string | null) => string): Column<PaymentRecord>[] {
   return [
-  { key: 'method', label: 'Method', render: (row) => <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-subtle)' }}>{row.method}</span> },
-  { key: 'amount_cents', label: 'Amount', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-base)', fontWeight: 700, color: 'var(--success)' }}>{formatCents(row.amount_cents)}</span> },
+  { key: 'method', label: 'Method', render: (row) => <span className="u-fs-fs-sm u-fw-600" style={{ color: 'var(--text-subtle)' }}>{row.method}</span> },
+  { key: 'amount_cents', label: 'Amount', align: 'right', render: (row) => <span className="u-ff-font-body u-fs-fs-base u-fw-700" style={{ color: 'var(--success)' }}>{formatCents(row.amount_cents)}</span> },
   { key: 'status', label: 'Status', render: (row) => <StatusBadge status={row.status} /> },
-  { key: 'stripe_payment_intent_id', label: 'Reference', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>{row.stripe_payment_intent_id || row.external_ref || '—'}</span> },
-  { key: 'created_by', label: 'Recorded by', render: (row) => <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{nameFor(row.created_by)}</span> },
-  { key: 'created_at', label: 'Date', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>{formatDate(row.paid_at || row.created_at)}</span> },
+  { key: 'stripe_payment_intent_id', label: 'Reference', render: (row) => <span className="u-ff-font-body u-fs-fs-xs" style={{ color: 'var(--text-muted)' }}>{row.stripe_payment_intent_id || row.external_ref || '—'}</span> },
+  { key: 'created_by', label: 'Recorded by', render: (row) => <span className="u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{nameFor(row.created_by)}</span> },
+  { key: 'created_at', label: 'Date', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>{formatDate(row.paid_at || row.created_at)}</span> },
   ]
 }
 
 function buildRefundCols(nameFor: (id?: string | null) => string): Column<RefundRecord>[] {
   return [
-  { key: 'amount_cents', label: 'Amount', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-base)', fontWeight: 700, color: 'var(--accent)' }}>{formatCents(row.amount_cents)}</span> },
-  { key: 'reason', label: 'Reason', render: (row) => <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)' }}>{row.reason}</span> },
+  { key: 'amount_cents', label: 'Amount', align: 'right', render: (row) => <span className="u-ff-font-body u-fs-fs-base u-fw-700" style={{ color: 'var(--accent-text, var(--accent))' }}>{formatCents(row.amount_cents)}</span> },
+  { key: 'reason', label: 'Reason', render: (row) => <span className="u-fs-fs-base" style={{ color: 'var(--text-subtle)' }}>{row.reason}</span> },
   { key: 'status', label: 'Status', render: (row) => <StatusBadge status={row.status} /> },
-  { key: 'created_by', label: 'By', render: (row) => <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{nameFor(row.created_by)}</span> },
-  { key: 'created_at', label: 'Date', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>{formatDate(row.created_at)}</span> },
+  { key: 'created_by', label: 'By', render: (row) => <span className="u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{nameFor(row.created_by)}</span> },
+  { key: 'created_at', label: 'Date', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>{formatDate(row.created_at)}</span> },
   ]
 }
 
 const LEDGER_COLS: Column<LedgerEventRecord>[] = [
-  { key: 'event_type', label: 'Action', render: (row) => <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text)' }}>{row.event_type.replaceAll('_', ' ')}</span> },
-  { key: 'amount_cents', label: 'Amount', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: row.amount_cents < 0 ? 'var(--success)' : 'var(--text)' }}>{formatCents(row.amount_cents)}</span> },
-  { key: 'description', label: 'Memo', render: (row) => <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{row.description || '—'}</span> },
-  { key: 'actor_id', label: 'Actor', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>{row.actor_id || 'system'}</span> },
-  { key: 'created_at', label: 'Occurred', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>{formatDateTime(row.created_at)}</span> },
+  { key: 'event_type', label: 'Action', render: (row) => <span className="u-fs-fs-sm u-fw-600" style={{ color: 'var(--text)' }}>{row.event_type.replaceAll('_', ' ')}</span> },
+  { key: 'amount_cents', label: 'Amount', align: 'right', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: row.amount_cents < 0 ? 'var(--success)' : 'var(--text)' }}>{formatCents(row.amount_cents)}</span> },
+  { key: 'description', label: 'Memo', render: (row) => <span className="u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{row.description || '—'}</span> },
+  { key: 'actor_id', label: 'Actor', render: (row) => <span className="u-ff-font-body u-fs-fs-xs" style={{ color: 'var(--text-muted)' }}>{row.actor_id || 'system'}</span> },
+  { key: 'created_at', label: 'Occurred', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>{formatDateTime(row.created_at)}</span> },
 ]
 
-const INPUT_STYLE = { width: '100%', padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none', boxSizing: 'border-box' as const }
-const LABEL_STYLE = { fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }
+const INPUT_STYLE = { width: '100%' }
 
 function IssueRefundPanel({
   api, orgId, invoiceId, payments, onIssued,
@@ -221,20 +221,20 @@ function IssueRefundPanel({
   }
 
   return (
-    <div className="card" style={{ padding: '16px', marginBottom: '16px' }}>
+    <div className="card u-p-16px u-mb-16px" >
       {!open ? (
         <button type="button" className="btn btn-primary" onClick={openForm}>
           Issue refund
         </button>
       ) : (
-        <form onSubmit={(e) => void handleSubmit(e)} style={{ display: 'grid', gap: '16px' }}>
+        <form onSubmit={(e) => void handleSubmit(e)} className="u-gap-16px" style={{ display: 'grid' }}>
           {error && (
-            <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '12px 16px', fontSize: 'var(--fs-base)' }}>
+            <div className="u-p-12px-16px u-fs-fs-base" style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px' }}>
               {error}
             </div>
           )}
           <div>
-            <label style={LABEL_STYLE}>Payment to refund *</label>
+            <label className="form-label form-label-required">Payment to refund</label>
             <select
               style={INPUT_STYLE}
               value={paymentId}
@@ -252,7 +252,7 @@ function IssueRefundPanel({
             </select>
           </div>
           <div>
-            <label style={LABEL_STYLE}>Refund amount *</label>
+            <label className="form-label form-label-required">Refund amount</label>
             <input
               type="number"
               step="0.01"
@@ -264,8 +264,8 @@ function IssueRefundPanel({
             />
           </div>
           <div>
-            <label style={LABEL_STYLE}>Reason *</label>
-            <textarea
+            <label className="form-label form-label-required">Reason</label>
+            <textarea aria-label="E.g. overpayment, duplicate charge, season cancellation"
               style={{ ...INPUT_STYLE, resize: 'vertical' }}
               rows={2}
               value={reason}
@@ -273,7 +273,7 @@ function IssueRefundPanel({
               placeholder="E.g. overpayment, duplicate charge, season cancellation…"
             />
           </div>
-          <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+          <div className="u-gap-12px" style={{ display: 'flex', justifyContent: 'flex-end' }}>
             <button type="button" className="btn" onClick={() => setOpen(false)} disabled={submitting}>
               Cancel
             </button>
@@ -344,39 +344,39 @@ function AddInvoiceItemPanel({
   }
 
   return (
-    <div className="card" style={{ padding: '16px', marginBottom: '16px' }}>
+    <div className="card u-p-16px u-mb-16px" >
       {!open ? (
         <button type="button" className="btn btn-primary" onClick={() => { setOpen(true); setError(null) }}>
           Add item
         </button>
       ) : (
-        <form onSubmit={(e) => void handleSubmit(e)} style={{ display: 'grid', gap: '16px' }}>
+        <form onSubmit={(e) => void handleSubmit(e)} className="u-gap-16px" style={{ display: 'grid' }}>
           {error && (
-            <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '12px 16px', fontSize: 'var(--fs-base)' }}>
+            <div className="u-p-12px-16px u-fs-fs-base" style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px' }}>
               {error}
             </div>
           )}
           <div>
-            <label style={LABEL_STYLE}>Description *</label>
-            <input style={INPUT_STYLE} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="E.g. Fall program fee" />
+            <label className="form-label form-label-required">Description</label>
+            <input aria-label="E.g. Fall program fee" style={INPUT_STYLE} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="E.g. Fall program fee" />
           </div>
-          <div className="cols-2" style={{ gap: '16px' }}>
+          <div className="cols-2 u-gap-16px" >
             <div>
-              <label style={LABEL_STYLE}>Quantity *</label>
+              <label className="form-label form-label-required">Quantity</label>
               <input type="number" min="1" step="1" style={INPUT_STYLE} value={quantity} onChange={(e) => setQuantity(e.target.value)} />
             </div>
             <div>
-              <label style={LABEL_STYLE}>Unit price *</label>
-              <input type="number" min="0.01" step="0.01" style={INPUT_STYLE} value={unitAmount} onChange={(e) => setUnitAmount(e.target.value)} placeholder="0.00" />
+              <label className="form-label form-label-required">Unit price</label>
+              <input aria-label="0.00" type="number" min="0.01" step="0.01" style={INPUT_STYLE} value={unitAmount} onChange={(e) => setUnitAmount(e.target.value)} placeholder="0.00" />
             </div>
           </div>
           <div>
-            <label style={LABEL_STYLE}>Category *</label>
+            <label className="form-label form-label-required">Category</label>
             <select style={INPUT_STYLE} value={category} onChange={(e) => setCategory(e.target.value as (typeof ITEM_CATEGORIES)[number])}>
               {ITEM_CATEGORIES.map((c) => <option key={c} value={c}>{c.replaceAll('_', ' ')}</option>)}
             </select>
           </div>
-          <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+          <div className="u-gap-12px" style={{ display: 'flex', justifyContent: 'flex-end' }}>
             <button type="button" className="btn" onClick={() => setOpen(false)} disabled={submitting}>Cancel</button>
             <button type="submit" className="btn btn-primary" disabled={submitting}>{submitting ? 'Adding…' : 'Add item'}</button>
           </div>
@@ -433,39 +433,39 @@ function RecordPaymentPanel({
   }
 
   return (
-    <div className="card" style={{ padding: '16px', marginBottom: '16px' }}>
+    <div className="card u-p-16px u-mb-16px" >
       {!open ? (
         <button type="button" className="btn btn-primary" onClick={() => { setOpen(true); setError(null) }}>
           Record offline payment
         </button>
       ) : (
-        <form onSubmit={(e) => void handleSubmit(e)} style={{ display: 'grid', gap: '16px' }}>
+        <form onSubmit={(e) => void handleSubmit(e)} className="u-gap-16px" style={{ display: 'grid' }}>
           {error && (
-            <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '12px 16px', fontSize: 'var(--fs-base)' }}>
+            <div className="u-p-12px-16px u-fs-fs-base" style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px' }}>
               {error}
             </div>
           )}
-          <div className="cols-2" style={{ gap: '16px' }}>
+          <div className="cols-2 u-gap-16px" >
             <div>
-              <label style={LABEL_STYLE}>Amount *</label>
-              <input type="number" min="0.01" step="0.01" style={INPUT_STYLE} value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
+              <label className="form-label form-label-required">Amount</label>
+              <input aria-label="0.00" type="number" min="0.01" step="0.01" style={INPUT_STYLE} value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
             </div>
             <div>
-              <label style={LABEL_STYLE}>Method *</label>
+              <label className="form-label form-label-required">Method</label>
               <select style={INPUT_STYLE} value={method} onChange={(e) => setMethod(e.target.value as (typeof PAYMENT_METHODS)[number])}>
                 {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
               </select>
             </div>
           </div>
           <div>
-            <label style={LABEL_STYLE}>Reference</label>
-            <input style={INPUT_STYLE} value={externalRef} onChange={(e) => setExternalRef(e.target.value)} placeholder="Check #, transaction ID, etc." />
+            <label className="form-label">Reference</label>
+            <input aria-label="Check #, transaction ID, etc." style={INPUT_STYLE} value={externalRef} onChange={(e) => setExternalRef(e.target.value)} placeholder="Check #, transaction ID, etc." />
           </div>
           <div>
-            <label style={LABEL_STYLE}>Notes</label>
+            <label className="form-label">Notes</label>
             <textarea style={{ ...INPUT_STYLE, resize: 'vertical' }} rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
           </div>
-          <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+          <div className="u-gap-12px" style={{ display: 'flex', justifyContent: 'flex-end' }}>
             <button type="button" className="btn" onClick={() => setOpen(false)} disabled={submitting}>Cancel</button>
             <button type="submit" className="btn btn-primary" disabled={submitting}>{submitting ? 'Recording…' : 'Record payment'}</button>
           </div>
@@ -491,11 +491,7 @@ function CopyableId({ id }: { id: string }) {
           setTimeout(() => setCopied(false), 1500)
         })
       }}
-      style={{
-        display: 'inline-flex', alignItems: 'center', gap: '4px',
-        background: 'none', border: 'none', cursor: 'pointer', padding: 0,
-        fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'inherit',
-      }}
+      className="u-gap-4px u-p-0 u-ff-font-body u-fs-fs-sm" style={{ display: 'inline-flex', alignItems: 'center', background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}
     >
       {copied ? 'Copied!' : truncateId(id)}
       <Icon name="copy" size={11} />
@@ -527,9 +523,13 @@ export default function InvoiceDetailPage() {
   const [lifecycleBusy, setLifecycleBusy] = useState(false)
   const [lifecycleError, setLifecycleError] = useState<string | null>(null)
 
+  const confirm = useConfirm()
+
   async function handleLifecycleAction(action: 'issue' | 'void' | 'write-off', confirmMessage: string) {
     if (!session?.user.orgId || !invoiceId) return
-    if (!window.confirm(confirmMessage)) return
+    const labels = { issue: 'Issue invoice', void: 'Void invoice', 'write-off': 'Write off balance' } as const
+    const ok = await confirm({ title: `${labels[action]}?`, message: confirmMessage, confirmLabel: labels[action], destructive: action !== 'issue' })
+    if (!ok) return
     setLifecycleBusy(true)
     setLifecycleError(null)
     try {
@@ -622,12 +622,14 @@ export default function InvoiceDetailPage() {
     [swimmers],
   )
   const isDraft = invoice?.status === 'draft'
-  const itemCols = useMemo(() => buildItemCols(swimmerNameById, isDraft ? (item) => {
-    if (!session?.user.orgId || !window.confirm(`Remove "${item.description}" from this invoice?`)) return
+  const itemCols = useMemo(() => buildItemCols(swimmerNameById, isDraft ? async (item) => {
+    if (!session?.user.orgId) return
+    const ok = await confirm({ title: 'Remove line item?', message: `Remove "${item.description}" from this invoice?`, confirmLabel: 'Remove item', destructive: true })
+    if (!ok) return
     deleteInvoiceItem(api, session.user.orgId, invoiceId, item.id)
       .then(() => setReloadKey((k) => k + 1))
       .catch((err) => setError(uiErrorMessage(err, 'Couldn’t remove line item. Try again.')))
-  } : null), [swimmerNameById, isDraft, api, session?.user.orgId, invoiceId])
+  } : null), [swimmerNameById, isDraft, api, session?.user.orgId, invoiceId, confirm])
 
   if (loading) {
     return <div className="page"><EmptyState icon="credit-card" title="Loading invoice" description="Fetching live invoice detail data from the API." /></div>
@@ -639,22 +641,22 @@ export default function InvoiceDetailPage() {
 
   return (
     <div className="page">
-      <Link href="/billing?tab=invoices" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', textDecoration: 'none', marginBottom: '20px' }}>
+      <Link href="/billing?tab=invoices" className="u-gap-4px u-fs-fs-base u-mb-20px" style={{ display: 'inline-flex', alignItems: 'center', color: 'var(--text-subtle)', textDecoration: 'none' }}>
         <Icon name="chevron-left" size={14} /> Invoices
       </Link>
 
       <div className="page-header">
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px 12px', marginBottom: '4px' }}>
+          <div className="u-gap-6px-12px u-mb-4px" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
             <h1 className="page-title">{invoice.invoice_number}</h1>
             <StatusBadge status={invoice.status} />
           </div>
-          <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <CopyableId id={invoice.id} /> · {household ? <Link href={`/members/households/${household.id}`} style={{ color: 'var(--accent)', textDecoration: 'none', fontFamily: 'var(--font-body)' }}>{household.household_name}</Link> : 'Unassigned household'}
+          <div className="u-fs-fs-sm u-gap-6px" style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}>
+            <CopyableId id={invoice.id} /> · {household ? <Link href={`/members/households/${household.id}`} className="u-ff-font-body" style={{ color: 'var(--accent-text, var(--accent))', textDecoration: 'none' }}>{household.household_name}</Link> : 'Unassigned household'}
           </div>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
-          <div style={{ display: 'flex', gap: '8px' }}>
+        <div className="u-gap-6px" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+          <div className="u-gap-8px" style={{ display: 'flex' }}>
             {invoice.status === 'draft' && (
               <button type="button" className="btn btn-primary" disabled={lifecycleBusy} onClick={() => void handleLifecycleAction('issue', 'Issue this invoice? The balance will become due and it can no longer have items added.')}>
                 {lifecycleBusy ? '…' : 'Issue'}
@@ -670,26 +672,26 @@ export default function InvoiceDetailPage() {
                 {lifecycleBusy ? '…' : 'Write Off'}
               </button>
             )}
-            <button type="button" className="btn" onClick={() => void handleDownload()} disabled={downloading} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <button type="button" className="btn u-gap-6px" onClick={() => void handleDownload()} disabled={downloading} style={{ display: 'flex', alignItems: 'center' }}>
               <Icon name="download-cloud" size={14} />
               {downloading ? 'Preparing…' : 'Download CSV'}
             </button>
           </div>
-          {lifecycleError && <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--error)' }}>{lifecycleError}</span>}
-          {downloadError && <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--error)' }}>{downloadError}</span>}
+          {lifecycleError && <span className="u-fs-fs-sm" style={{ color: 'var(--error)' }}>{lifecycleError}</span>}
+          {downloadError && <span className="u-fs-fs-sm" style={{ color: 'var(--error)' }}>{downloadError}</span>}
         </div>
       </div>
 
-      <div className="cols-4" style={{ gap: '12px', marginBottom: '24px' }}>
+      <div className="cols-4 u-gap-12px u-mb-24px" >
         {[
           { label: 'Total', value: formatCents(invoice.total_cents), color: 'var(--text)' },
           { label: 'Paid', value: formatCents(invoice.amount_paid_cents), color: 'var(--success)' },
           { label: 'Balance', value: formatCents(invoice.amount_due_cents), color: invoice.amount_due_cents > 0 ? 'var(--warning)' : 'var(--success)' },
           { label: 'Due date', value: formatDate(invoice.due_date), color: 'var(--text-subtle)' },
         ].map((stat) => (
-          <div key={stat.label} className="card" style={{ padding: '16px 16px' }}>
-            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
-            <div style={{ fontSize: 'var(--fs-xl)', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
+          <div key={stat.label} className="card u-p-16px-16px" >
+            <div className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ color: 'var(--text-muted)' }}>{stat.label}</div>
+            <div className="u-fs-fs-xl u-ff-font-body u-fw-700" style={{ color: stat.color }}>{stat.value}</div>
           </div>
         ))}
       </div>

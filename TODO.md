@@ -20,6 +20,7 @@
 
 ## 29F) Parent and swimmer portal — remaining
 - [x] Add end-to-end regression coverage for parent and swimmer portal critical paths using live backend state.
+- [x] Remove the swimmer portal feature flag and "Coming Soon" screen; `/swim` is always enabled for the `swimmer` role.
 
 ---
 

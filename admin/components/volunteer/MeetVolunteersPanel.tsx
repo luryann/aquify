@@ -41,8 +41,8 @@ export function MeetVolunteersPanel({ meetId, meetStartDate }: { meetId: string;
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
-        <p style={{ margin: 0, fontSize: 'var(--fs-md)', color: 'var(--text-muted)' }}>
+      <div className="u-gap-12px u-mb-16px" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+        <p className="u-m-0 u-fs-fs-md" style={{ color: 'var(--text-muted)' }}>
           {summary && summary.total_capacity > 0
             ? `${summary.filled_spots} of ${summary.total_capacity} spots filled (${fillPercent(summary.filled_spots, summary.total_capacity)}%) across ${summary.job_count} jobs`
             : 'No volunteer jobs posted for this meet yet.'}
@@ -52,7 +52,7 @@ export function MeetVolunteersPanel({ meetId, meetStartDate }: { meetId: string;
         </button>
       </div>
       {showForm ? (
-        <div style={{ marginBottom: '20px' }}>
+        <div className="u-mb-20px" >
           <NewJobsForm api={api} orgId={orgId} meetId={meetId} defaultDate={meetStartDate} onCreated={() => { setShowForm(false); reload() }} />
         </div>
       ) : null}

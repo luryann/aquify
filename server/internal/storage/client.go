@@ -286,9 +286,12 @@ func (s *S3Storage) Delete(key string) error {
 }
 
 func (s *S3Storage) Ready(ctx context.Context) error {
-	_, err := s.client.BucketExists(ctx, s.bucket)
+	exists, err := s.client.BucketExists(ctx, s.bucket)
 	if err != nil {
 		return fmt.Errorf("bucket probe failed: %w", err)
+	}
+	if !exists {
+		return fmt.Errorf("bucket %s does not exist", s.bucket)
 	}
 	return nil
 }

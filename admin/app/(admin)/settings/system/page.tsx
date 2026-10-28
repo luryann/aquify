@@ -78,7 +78,7 @@ function SystemDiagnosticsPageContent() {
   }, [activeCategory, categories])
 
   if (!session) {
-    return <div style={{ padding: '32px' }}><EmptyState icon="shield-check" title="Sign in required" description="Authenticate to inspect live runtime settings." /></div>
+    return <div className="u-p-32px" ><EmptyState icon="shield-check" title="Sign in required" description="Authenticate to inspect live runtime settings." /></div>
   }
 
   return (
@@ -90,40 +90,27 @@ function SystemDiagnosticsPageContent() {
       </div>
 
       {error ? (
-        <div style={{ padding: '12px 16px', marginBottom: '20px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', borderRadius: '8px', color: 'var(--error)', fontSize: 'var(--fs-sm)' }}>
+        <div className="u-p-12px-16px u-mb-20px u-fs-fs-sm" style={{ background: 'var(--error-bg)', border: '1px solid var(--error-border)', borderRadius: '8px', color: 'var(--error)' }}>
           {error}
         </div>
       ) : null}
 
       {settings?.app_env && settings.app_env !== 'production' ? (
-        <div style={{ padding: '12px 16px', marginBottom: '20px', background: 'var(--warning-bg)', border: '1px solid var(--warning-border)', borderRadius: '8px', display: 'flex', gap: '12px', alignItems: 'center' }}>
+        <div className="u-p-12px-16px u-mb-20px u-gap-12px" style={{ background: 'var(--warning-bg)', border: '1px solid var(--warning-border)', borderRadius: '8px', display: 'flex', alignItems: 'center' }}>
           <Icon name="alert-triangle" size={14} style={{ color: 'var(--warning)' }} />
-          <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--warning)', fontWeight: 500 }}>
+          <span className="u-fs-fs-sm u-fw-500" style={{ color: 'var(--warning)' }}>
             Backend reports `APP_ENV={settings.app_env}`. Verify production-only hardening before cutover.
           </span>
         </div>
       ) : null}
 
-      <div className="split-nav" style={{ gap: '20px', alignItems: 'start' }}>
-        <div className="card" style={{ overflow: 'hidden', padding: '6px' }}>
+      <div className="split-nav u-gap-20px" style={{ alignItems: 'start' }}>
+        <div className="card u-p-6px" style={{ overflow: 'hidden' }}>
           {categories.map((category) => (
             <button
               key={category}
               onClick={() => setActiveCategory(category)}
-              style={{
-                width: '100%',
-                padding: '8px 12px',
-                textAlign: 'left',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                background: activeCategory === category ? 'var(--accent-subtle)' : 'transparent',
-                color: activeCategory === category ? 'var(--accent)' : 'var(--text-subtle)',
-                fontSize: 'var(--fs-base)',
-                fontWeight: activeCategory === category ? 600 : 400,
-                fontFamily: 'var(--font-body)',
-                textTransform: 'capitalize',
-              }}
+              className="u-p-8px-12px u-fs-fs-base u-ff-font-body" style={{ width: '100%', textAlign: 'left', border: 'none', borderRadius: '6px', cursor: 'pointer', background: activeCategory === category ? 'var(--accent-subtle)' : 'transparent', color: activeCategory === category ? 'var(--accent)' : 'var(--text-subtle)', fontWeight: activeCategory === category ? 600 : 400, textTransform: 'capitalize' }}
             >
               {category}
             </button>
@@ -131,31 +118,31 @@ function SystemDiagnosticsPageContent() {
         </div>
 
         <div className="card" style={{ overflow: 'hidden' }}>
-          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
+          <div className="u-p-16px-20px" style={{ borderBottom: '1px solid var(--border)' }}>
             <h2 className="card-title" style={{ textTransform: 'capitalize' }}>
               {activeCategory} Configuration
             </h2>
           </div>
           {loading ? (
-            <div style={{ padding: '24px' }}>
+            <div className="u-p-24px" >
               <EmptyState icon="settings" title="Loading settings" description="Fetching the server configuration." />
             </div>
           ) : !activeSection ? (
-            <div style={{ padding: '24px' }}>
+            <div className="u-p-24px" >
               <EmptyState icon="settings" title="No settings available" description="The server doesn’t expose settings in this category." />
             </div>
           ) : (
             <div>
               {sectionEntries(activeSection).map(([key, value], index, all) => (
-                <div key={key} style={{ padding: '16px 20px', borderBottom: index < all.length - 1 ? '1px solid var(--border)' : 'none', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px' }}>
+                <div key={key} className="u-p-16px-20px u-gap-16px" style={{ borderBottom: index < all.length - 1 ? '1px solid var(--border)' : 'none', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
                   <div>
-                    <div style={{ marginBottom: '4px' }}>
-                      <code style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text)', background: 'var(--bg-elevated)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--border)' }}>
+                    <div className="u-mb-4px" >
+                      <code className="u-fs-fs-sm u-ff-font-body u-p-2px-6px" style={{ color: 'var(--text)', background: 'var(--bg-elevated)', borderRadius: '4px', border: '1px solid var(--border)' }}>
                         {key}
                       </code>
                     </div>
                   </div>
-                  <code style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-subtle)', textAlign: 'right', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                  <code className="u-fs-fs-sm u-ff-font-body" style={{ color: 'var(--text-subtle)', textAlign: 'right', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                     {formatValue(value)}
                   </code>
                 </div>

@@ -6,7 +6,7 @@ import { useApiClient } from '@/lib/api'
 import { fetchOrgSettings, updateOrgSettings } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 
-const INPUT: React.CSSProperties = { width: '100%', padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none', boxSizing: 'border-box' }
+const INPUT: React.CSSProperties = { width: '100%' }
 const LABEL: React.CSSProperties = { fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }
 
 type Form = {
@@ -70,19 +70,19 @@ export function PublicSitePanel({ canEdit }: { canEdit: boolean }) {
   const url = form.public_slug ? `/club/${form.public_slug}` : null
 
   return (
-    <div className="card" style={{ padding: '20px', marginBottom: '20px' }}>
+    <div className="card u-p-20px u-mb-20px" >
       <h2 className="card-title">Public team website</h2>
-      <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', marginTop: '4px' }}>
+      <p className="u-fs-fs-sm u-mt-4px" style={{ color: 'var(--text-subtle)' }}>
         Shows only items marked public, upcoming meets, and team records.
       </p>
-      {msg ? <div style={{ marginTop: '12px', padding: '8px 12px', background: 'var(--success-bg)', border: '1px solid var(--success-border)', borderRadius: '8px', color: 'var(--success)', fontSize: 'var(--fs-sm)' }}>{msg}</div> : null}
-      {err ? <div style={{ marginTop: '12px', padding: '8px 12px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', borderRadius: '8px', color: 'var(--error)', fontSize: 'var(--fs-sm)' }}>{err}</div> : null}
-      <form onSubmit={save} style={{ marginTop: '16px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', alignItems: 'end' }}>
+      {msg ? <div className="u-mt-12px u-p-8px-12px u-fs-fs-sm" style={{ background: 'var(--success-bg)', border: '1px solid var(--success-border)', borderRadius: '8px', color: 'var(--success)' }}>{msg}</div> : null}
+      {err ? <div className="u-mt-12px u-p-8px-12px u-fs-fs-sm" style={{ background: 'var(--error-bg)', border: '1px solid var(--error-border)', borderRadius: '8px', color: 'var(--error)' }}>{err}</div> : null}
+      <form onSubmit={save} className="u-mt-16px u-gap-16px" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', alignItems: 'end' }}>
         <div>
           <label style={LABEL} htmlFor="ps-slug">Web address name</label>
           <input id="ps-slug" style={INPUT} value={form.public_slug} disabled={disabled} maxLength={40} onChange={(e) => setForm((f) => ({ ...f, public_slug: e.target.value.toLowerCase() }))} placeholder="dare-aquatics" />
-          <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: '4px' }}>
-            {url ? <>Your site lives at <a href={url} target="_blank" rel="noreferrer" style={{ color: 'var(--accent)' }}>{url}</a></> : 'Lowercase letters, digits and hyphens.'}
+          <div className="u-fs-fs-xs u-mt-4px" style={{ color: 'var(--text-muted)' }}>
+            {url ? <>Your site lives at <a href={url} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-text, var(--accent))' }}>{url}</a></> : 'Lowercase letters, digits and hyphens.'}
           </div>
         </div>
         <div>
@@ -97,10 +97,10 @@ export function PublicSitePanel({ canEdit }: { canEdit: boolean }) {
           <label style={LABEL} htmlFor="ps-about">About the club</label>
           <textarea id="ps-about" rows={3} style={{ ...INPUT, resize: 'vertical' }} value={form.public_about} disabled={disabled} maxLength={1000} onChange={(e) => setForm((f) => ({ ...f, public_about: e.target.value }))} />
         </div>
-        <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 'var(--fs-base)', color: 'var(--text)' }}>
+        <label className="u-gap-8px u-fs-fs-base" style={{ display: 'flex', alignItems: 'center', color: 'var(--text)' }}>
           <input type="checkbox" checked={form.public_site_enabled} disabled={disabled} onChange={(e) => setForm((f) => ({ ...f, public_site_enabled: e.target.checked }))} /> Publish the website
         </label>
-        <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 'var(--fs-base)', color: 'var(--text)' }}>
+        <label className="u-gap-8px u-fs-fs-base" style={{ display: 'flex', alignItems: 'center', color: 'var(--text)' }}>
           <input type="checkbox" checked={form.public_show_coaches} disabled={disabled} onChange={(e) => setForm((f) => ({ ...f, public_show_coaches: e.target.checked }))} /> List coaches by name
         </label>
         {canEdit ? (
@@ -108,7 +108,7 @@ export function PublicSitePanel({ canEdit }: { canEdit: boolean }) {
             <button type="submit" className="btn btn-primary" disabled={saving || !loaded}>{saving ? 'Saving…' : 'Save website settings'}</button>
           </div>
         ) : (
-          <p style={{ gridColumn: '1 / -1', fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', margin: 0 }}>Only admins can edit the public website.</p>
+          <p className="u-fs-fs-xs u-m-0" style={{ gridColumn: '1 / -1', color: 'var(--text-muted)' }}>Only admins can edit the public website.</p>
         )}
       </form>
     </div>

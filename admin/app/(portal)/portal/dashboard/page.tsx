@@ -16,6 +16,7 @@ import {
   type CommitmentRecord,
 } from '@/lib/adminData'
 import { VolunteerHoursStrip } from '@/components/volunteer/VolunteerHoursStrip'
+import './page.inline.css'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 function fmtMeetDate(iso?: string): string {
@@ -33,10 +34,10 @@ function calcAge(dob: string): number {
 }
 
 const GRADIENTS = [
-  'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)',
-  'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-  'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-  'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+  'var(--accent)',
+  'var(--info)',
+  'var(--warning)',
+  'var(--danger, #dc2626)',
 ]
 
 // ── Derived types ─────────────────────────────────────────────────────────────
@@ -99,7 +100,7 @@ const ALERT_ICON: Record<string, string> = {
 }
 
 const COMMIT_STATUS = {
-  pending:   { label: 'Response needed', color: 'var(--warning)', bg: 'var(--warning-bg)', border: '#fde68a' },
+  pending:   { label: 'Response needed', color: 'var(--warning)', bg: 'var(--warning-bg)', border: 'var(--warning-border)' },
   committed: { label: 'Committed',       color: 'var(--success)', bg: 'var(--success-bg)', border: 'var(--success-bg)' },
   open:      { label: 'Not yet open',    color: 'var(--text-muted)', bg: 'var(--bg-surface)', border: 'var(--border)' },
 }
@@ -112,7 +113,7 @@ function Skeleton({ w = '100%', h = 16, r = 8 }: { w?: string | number; h?: numb
         width: w,
         height: h,
         borderRadius: r,
-        background: 'linear-gradient(90deg, #f0efee 25%, #e6e5e3 50%, #f0efee 75%)',
+        background: 'linear-gradient(90deg, var(--bg-elevated) 25%, var(--border-strong) 50%, var(--bg-elevated) 75%)',
         backgroundSize: '200% 100%',
         animation: 'shimmer 1.5s infinite',
       }}
@@ -141,7 +142,7 @@ function AlertCard({ alert }: { alert: DashAlert }) {
       }}
       onMouseEnter={(e) => {
         const el = e.currentTarget as HTMLDivElement
-        el.style.boxShadow = '0 6px 20px rgba(0,0,0,0.10)'
+        el.style.boxShadow = 'var(--shadow-sm)'
         el.style.transform = 'translateY(-1px)'
       }}
       onMouseLeave={(e) => {
@@ -167,30 +168,17 @@ function AlertCard({ alert }: { alert: DashAlert }) {
       </div>
 
       <div style={{ flex: '1 1 240px', minWidth: 0 }}>
-        <p style={{ fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--fs-xl)', color: 'var(--text)', lineHeight: 1.2 }}>
+        <p className="is-5750ede">
           {alert.body}
         </p>
-        <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', marginTop: '2px' }}>
+        <p className="is-437f3fa">
           {alert.title} · {alert.detail}
         </p>
       </div>
 
       <Link
         href={alert.ctaPath}
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '6px',
-          padding: '8px 16px',
-          background: 'var(--text)',
-          color: 'var(--bg-elevated)',
-          borderRadius: '8px',
-          fontSize: 'var(--fs-base)',
-          fontWeight: 600,
-          textDecoration: 'none',
-          flexShrink: 0,
-          transition: 'background 120ms ease',
-        }}
+        className="is-2e4df72"
         onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--accent)')}
         onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--text)')}
       >
@@ -204,18 +192,11 @@ function AlertCard({ alert }: { alert: DashAlert }) {
 function SwimmerCard({ swimmer }: { swimmer: DashSwimmer }) {
   return (
     <div
-      className="card"
-      style={{
-        padding: '24px',
-        display: 'flex',
-        gap: '16px',
-        alignItems: 'flex-start',
-        transition: 'box-shadow 150ms ease, transform 150ms ease',
-        animation: 'slideUp 0.4s var(--ease-out) 0.1s both',
-      }}
+      className="card is-979d69e"
+      
       onMouseEnter={(e) => {
         const el = e.currentTarget as HTMLDivElement
-        el.style.boxShadow = '0 8px 24px rgba(0,0,0,0.10)'
+        el.style.boxShadow = 'var(--shadow-sm)'
         el.style.transform = 'translateY(-2px)'
       }}
       onMouseLeave={(e) => {
@@ -244,25 +225,25 @@ function SwimmerCard({ swimmer }: { swimmer: DashSwimmer }) {
       </div>
 
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
-          <p style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <div className="is-92d0f5a">
+          <p className="is-34a6cf7">
             {swimmer.name}
           </p>
-          <span style={{ fontSize: 'var(--fs-2xs)', fontFamily: 'var(--font-body)', color: 'var(--success)', background: 'var(--success-bg)', padding: '2px 8px', borderRadius: '999px', fontWeight: 500, flexShrink: 0 }}>
+          <span className="is-052ff37">
             Active
           </span>
         </div>
-        <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', marginBottom: '12px' }}>
+        <p className="is-029575d">
           Age {swimmer.age}{swimmer.group ? ` · ${swimmer.group}` : ''}
         </p>
 
         {swimmer.pendingCommits > 0 ? (
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'var(--warning-bg)', border: '1px solid #fde68a', borderRadius: '8px', padding: '4px 12px', fontSize: 'var(--fs-sm)', color: '#92400e' }}>
+          <div className="is-049b86c">
             <Icon name="alert-circle" size={13} style={{ color: 'var(--warning)' }} />
             {swimmer.pendingCommits} commitment pending
           </div>
         ) : (
-          <div className="card" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 12px', fontSize: 'var(--fs-sm)', color: '#374151' }}>
+          <div className="card is-05e6b1e" >
             <Icon name="calendar" size={13} style={{ color: 'var(--text-muted)' }} />
             {swimmer.nextMeet || 'No upcoming meets'}
           </div>
@@ -272,28 +253,13 @@ function SwimmerCard({ swimmer }: { swimmer: DashSwimmer }) {
       <Link
         href={`/portal/household/swimmers/${swimmer.id}`}
         aria-label={`View ${swimmer.name}`}
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '4px',
-          height: '32px',
-          padding: '0 12px',
-          borderRadius: '8px',
-          background: 'rgba(0,0,0,0.04)',
-          color: 'var(--text-subtle)',
-          fontSize: 'var(--fs-sm)',
-          fontWeight: 600,
-          flexShrink: 0,
-          textDecoration: 'none',
-          whiteSpace: 'nowrap',
-          transition: 'background 120ms ease, color 120ms ease',
-        }}
+        className="is-3d8302e"
         onMouseEnter={(e) => {
           e.currentTarget.style.background = 'var(--accent)'
           e.currentTarget.style.color = 'var(--bg-elevated)'
         }}
         onMouseLeave={(e) => {
-          e.currentTarget.style.background = 'rgba(0,0,0,0.04)'
+          e.currentTarget.style.background = 'var(--bg-wash)'
           e.currentTarget.style.color = 'var(--text-subtle)'
         }}
       >
@@ -308,27 +274,23 @@ function MeetRow({ meet }: { meet: DashMeet }) {
   const status = COMMIT_STATUS[meet.commitment]
   return (
     <div
-      className="meet-row"
-      style={{
-        padding: '16px 20px',
-        borderBottom: '1px solid rgba(0,0,0,0.06)',
-        transition: 'background 120ms ease',
-      }}
-      onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(0,0,0,0.02)')}
+      className="meet-row is-cedd9d7"
+      
+      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-wash)')}
       onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
     >
       <div>
-        <p style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', color: 'var(--accent)', fontWeight: 500, letterSpacing: '0.02em' }}>
+        <p className="is-f923d95">
           {meet.date}
         </p>
-        <p style={{ fontSize: 'var(--fs-2xs)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginTop: '2px' }}>
+        <p className="is-1657eba">
           {meet.course}
         </p>
       </div>
 
       <div>
-        <p style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--text)', marginBottom: '2px' }}>{meet.name}</p>
-        <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>{meet.location}</p>
+        <p className="is-e05938c">{meet.name}</p>
+        <p className="is-4f39ab0">{meet.location}</p>
       </div>
 
       <span
@@ -349,7 +311,7 @@ function MeetRow({ meet }: { meet: DashMeet }) {
       {meet.commitment === 'pending' ? (
         <Link
           href="/portal/meets"
-          className="btn btn-primary btn-sm"
+          className="btn btn-primary"
           style={{ textDecoration: 'none' }}
         >
           Respond
@@ -357,9 +319,9 @@ function MeetRow({ meet }: { meet: DashMeet }) {
       ) : (
         <Link
           href="/portal/meets"
-          style={{ padding: '6px 16px', background: 'transparent', color: 'var(--text-subtle)', border: '1px solid rgba(0,0,0,0.12)', borderRadius: '8px', fontSize: 'var(--fs-sm)', fontWeight: 500, textDecoration: 'none', whiteSpace: 'nowrap', transition: 'border-color 120ms ease, color 120ms ease' }}
-          onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text)'; e.currentTarget.style.borderColor = 'rgba(0,0,0,0.24)' }}
-          onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-subtle)'; e.currentTarget.style.borderColor = 'rgba(0,0,0,0.12)' }}
+          className="is-9192dd1"
+          onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text)'; e.currentTarget.style.borderColor = 'var(--border-strong)' }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-subtle)'; e.currentTarget.style.borderColor = 'var(--border-strong)' }}
         >
           View
         </Link>
@@ -370,16 +332,16 @@ function MeetRow({ meet }: { meet: DashMeet }) {
 
 function SectionHeader({ title, action, actionPath }: { title: string; action?: string; actionPath?: string }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+    <div className="is-abcbf74">
       <h2 className="section-title">
         {title}
       </h2>
       {action && actionPath && (
         <Link
           href={actionPath}
-          style={{ fontSize: 'var(--fs-base)', fontWeight: 500, color: 'var(--accent)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px', transition: 'color 120ms ease' }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = '#d44f14')}
-          onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--accent)')}
+          className="is-5dd0b6c"
+          onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--accent-hover)')}
+          onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--accent-text)')}
         >
           {action}
           <Icon name="chevron-right" size={14} />
@@ -390,6 +352,29 @@ function SectionHeader({ title, action, actionPath }: { title: string; action?: 
 }
 
 // ── Page ─────────────────────────────────────────────────────────────────────
+function FirstRunSteps() {
+  const steps = [
+    { n: 1, title: 'Add your swimmer', body: 'Register a swimmer so the club can place them in a group.', href: '/portal/registrations/new', cta: 'Add a swimmer' },
+    { n: 2, title: 'Sign the waivers', body: 'Required forms must be on file before practice or meets.', href: '/portal/documents', cta: 'Open documents' },
+    { n: 3, title: 'Commit to a meet', body: 'Tell the coaches which meets your swimmer will attend.', href: '/portal/meets', cta: 'See meets' },
+  ]
+  return (
+    <section className="card is-df974f5" >
+      <h2 className="section-title is-c312289" >Get started in three steps</h2>
+      <ol className="is-3fb5e8e">
+        {steps.map((st) => (
+          <li key={st.n} className="is-c8c998c">
+            <span className="is-77c4c01">{st.n}</span>
+            <strong className="is-14207b8">{st.title}</strong>
+            <span className="is-fb4f5c1">{st.body}</span>
+            <Link href={st.href} className="portal-tap is-4becda5" >{st.cta}</Link>
+          </li>
+        ))}
+      </ol>
+    </section>
+  )
+}
+
 export default function ParentDashboardPage() {
   const { session } = useSession()
   const api = useApiClient(session?.token)
@@ -407,7 +392,7 @@ export default function ParentDashboardPage() {
   useEffect(() => {
     if (!orgId || !householdId) {
       setLoading(false)
-      setLoadError('Parent dashboard is unavailable because household context is missing.')
+      setLoadError('We could not find a household linked to your account. Contact your club to get it linked, then reload this page.')
       return
     }
     setLoading(true)
@@ -534,7 +519,7 @@ export default function ParentDashboardPage() {
         setLoadError(reportUIError(
           'portal-dashboard-load',
           error,
-          'Parent dashboard data is unavailable right now.',
+          'We could not load your dashboard. Check your connection and try again.',
           { orgId, householdId },
         ))
       })
@@ -561,53 +546,37 @@ export default function ParentDashboardPage() {
 
       {loadError && (
         <div
-          style={{
-            marginBottom: '24px',
-            background: 'var(--warning-bg)',
-            border: '1px solid #fdba74',
-            borderRadius: '12px',
-            padding: '16px 16px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '16px',
-          }}
+          className="is-d737d2f"
         >
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+          <div className="is-730b6a7">
             <Icon name="alert-circle" size={16} style={{ color: 'var(--warning)', marginTop: '1px', flexShrink: 0 }} />
-            <p style={{ margin: 0, fontSize: 'var(--fs-base)', color: 'var(--warning)', lineHeight: 1.5 }}>{loadError}</p>
+            <p className="is-a1c5efd">{loadError}</p>
           </div>
           <button
             type="button"
             onClick={() => setReloadKey((key) => key + 1)}
-            style={{
-              padding: '8px 16px',
-              borderRadius: '8px',
-              border: '1px solid #fdba74',
-              background: 'var(--bg-elevated)',
-              color: 'var(--warning)',
-              fontSize: 'var(--fs-sm)',
-              fontWeight: 600,
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-            }}
+            className="is-e00c0b3"
           >
             Retry
           </button>
         </div>
       )}
 
-      <VolunteerHoursStrip />
+      {!loadError && <VolunteerHoursStrip />}
+
+      {!loadError && (<>
+      {/* First run */}
+      {!loading && dashSwimmers.length === 0 && <FirstRunSteps />}
 
       {/* Needs Attention */}
-      <section style={{ marginBottom: 'var(--space-8)' }}>
+      <section className="is-6a59054">
         <SectionHeader title="Needs your attention" />
         {loading ? (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
+          <div className="is-e680c18">
             {[0, 1].map((i) => (
-              <div key={i} className="card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div key={i} className="card is-8ef476f" >
                 <Skeleton w={38} h={38} r={10} />
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div className="is-355eedd">
                   <Skeleton w="40%" h={12} />
                   <Skeleton w="70%" h={20} />
                   <Skeleton w="60%" h={13} />
@@ -616,42 +585,15 @@ export default function ParentDashboardPage() {
               </div>
             ))}
           </div>
-        ) : loadError ? (
-          <div
-            style={{
-              background: 'var(--warning-bg)',
-              border: '1px solid #fdba74',
-              borderRadius: '12px',
-              padding: '20px 24px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              color: 'var(--warning)',
-              fontSize: 'var(--fs-md)',
-            }}
-          >
-            <Icon name="alert-circle" size={18} style={{ color: 'var(--warning)' }} />
-            Parent dashboard actions are unavailable until the latest data loads successfully.
-          </div>
         ) : shouldShowCollectionEmptyState(loading, loadError, alerts.length) ? (
           <div
-            style={{
-              background: 'var(--success-bg)',
-              border: '1px solid #bbf7d0',
-              borderRadius: '12px',
-              padding: '20px 24px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              color: '#166534',
-              fontSize: 'var(--fs-md)',
-            }}
+            className="is-0c7e963"
           >
             <Icon name="check-circle" size={18} style={{ color: 'var(--success)' }} />
             You&apos;re all caught up — no pending actions right now.
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div className="is-930d87f">
             {alerts.map((alert, i) => (
               <div key={alert.id} style={{ animationDelay: `${i * 60}ms`, animation: 'slideUp 0.35s var(--ease-out) both' }}>
                 <AlertCard alert={alert} />
@@ -662,26 +604,24 @@ export default function ParentDashboardPage() {
       </section>
 
       {/* Swimmers */}
-      <section style={{ marginBottom: 'var(--space-8)' }}>
+      <section className="is-6a59054">
         <SectionHeader title="Your swimmers" action="View all" actionPath="/portal/household" />
         {loading ? (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
+          <div className="is-50fcb73">
             {[0, 1].map((i) => (
-              <div key={i} className="card" style={{ padding: '24px', display: 'flex', gap: '16px' }}>
+              <div key={i} className="card is-9487582" >
                 <Skeleton w={52} h={52} r={26} />
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div className="is-20f80e0">
                   <Skeleton w="50%" h={15} />
                   <Skeleton w="70%" h={12} />
                 </div>
               </div>
             ))}
           </div>
-        ) : loadError ? (
-          <div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-md)' }}>Household swimmer data is unavailable right now.</div>
         ) : shouldShowCollectionEmptyState(loading, loadError, dashSwimmers.length) ? (
-          <div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-md)' }}>No swimmers found for your household.</div>
+          <div className="is-e3e0bc5">No swimmers found for your household.</div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
+          <div className="is-50fcb73">
             {dashSwimmers.map((swimmer) => (
               <SwimmerCard key={swimmer.id} swimmer={swimmer} />
             ))}
@@ -695,9 +635,9 @@ export default function ParentDashboardPage() {
         {loading ? (
           <div className="card" style={{ overflow: 'hidden' }}>
             {[0, 1, 2].map((i) => (
-              <div key={i} style={{ display: 'grid', gridTemplateColumns: '90px 1fr auto auto', gap: '16px', padding: '16px 20px', borderBottom: '1px solid rgba(0,0,0,0.06)', alignItems: 'center' }}>
+              <div key={i} className="is-2e1633b">
                 <Skeleton w={80} h={14} />
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div className="is-9808a21">
                   <Skeleton w="60%" h={14} />
                   <Skeleton w="40%" h={12} />
                 </div>
@@ -706,12 +646,8 @@ export default function ParentDashboardPage() {
               </div>
             ))}
           </div>
-        ) : loadError ? (
-          <div className="card" style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--fs-md)' }}>
-            Upcoming meet data is unavailable right now.
-          </div>
         ) : shouldShowCollectionEmptyState(loading, loadError, dashMeets.length) ? (
-          <div className="card" style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--fs-md)' }}>
+          <div className="card is-3f7bfac" >
             No upcoming meets scheduled.
           </div>
         ) : (
@@ -724,6 +660,7 @@ export default function ParentDashboardPage() {
           </div>
         )}
       </section>
+      </>)}
     </div>
   )
 }

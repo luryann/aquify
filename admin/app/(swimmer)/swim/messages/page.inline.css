@@ -1,0 +1,18 @@
+/* Static layout/type styles migrated from inline style props. */
+.is-e566a3d.is-e566a3d { flex: 1; padding: 20px; display: flex; flex-direction: column; gap: 16px; overflow-y: auto; max-height: 600px; }
+.is-de107ca.is-de107ca { font-size: var(--fs-base); color: var(--error); }
+.is-8fb176a.is-8fb176a { font-size: var(--fs-base); color: var(--text-muted); }
+.is-3be73af.is-3be73af { display: flex; gap: 6px; align-items: flex-end; }
+.is-ef385dc.is-ef385dc { min-width: 220px; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--accent-border); background: var(--bg-elevated); color: var(--text); font-size: var(--fs-base); resize: vertical; }
+.is-5ca87c9.is-5ca87c9 { display: block; margin-top: 8px; max-width: 220px; max-height: 220px; border-radius: 8px; }
+.is-c454211.is-c454211 { font-size: var(--fs-xs); color: var(--text-muted); }
+.is-8031a9d.is-8031a9d { background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 2px; display: flex; }
+.is-1236a88.is-1236a88 { display: flex; gap: 4px; margin-top: 4px; padding: 4px 6px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg-elevated); width: fit-content; }
+.is-72e22d5.is-72e22d5 { background: none; border: none; cursor: pointer; font-size: var(--fs-md); padding: 2px; }
+.is-b88ab11.is-b88ab11 { font-family: var(--font-body); }
+.is-0d40ec1.is-0d40ec1 { padding: 0 20px 8px; display: flex; align-items: center; gap: 8px; }
+.is-5d8c782.is-5d8c782 { padding: 0 20px 8px; font-size: var(--fs-sm); color: var(--error); }
+.is-78213b9.is-78213b9 { padding: 16px 20px; border-top: 1px solid var(--border); display: flex; gap: 12px; }
+.is-4a025ad.is-4a025ad { background: none; border: 1px solid var(--border); border-radius: 12px; color: var(--text-muted); cursor: pointer; padding: 12px; display: flex; }
+.is-d884681.is-d884681 { flex: 1; padding: 12px 16px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text); font-size: var(--fs-base); }
+.is-2991f33.is-2991f33 { padding: 0 20px 16px; font-size: var(--fs-sm); color: var(--error); }

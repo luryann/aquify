@@ -144,7 +144,7 @@ export default function AuditLogPage() {
   const resources = Array.from(new Set(events.map((event) => event.resource_type))).sort()
 
   if (!session) {
-    return <div style={{ padding: '32px' }}><EmptyState icon="shield-check" title="Sign in required" description="Authenticate to view the live audit log." /></div>
+    return <div className="u-p-32px" ><EmptyState icon="shield-check" title="Sign in required" description="Authenticate to view the live audit log." /></div>
   }
 
   return (
@@ -155,29 +155,29 @@ export default function AuditLogPage() {
         </h1>
       </div>
 
-      <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', flexWrap: 'wrap', alignItems: 'center' }}>
+      <div className="u-gap-12px u-mb-20px" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center' }}>
         <div style={{ position: 'relative', flex: 1, minWidth: '240px', maxWidth: '340px' }}>
           <Icon name="search" size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
-          <input
+          <input aria-label="Search actor, action, resource"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search actor, action, resource…"
-            style={{ width: '100%', padding: '8px 12px 8px 32px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)', fontSize: 'var(--fs-base)', outline: 'none' }}
+            className="u-p-8px-12px-8px-32px u-fs-fs-base" style={{ width: '100%' }}
           />
         </div>
-        <select value={actionFilter} onChange={(event) => setActionFilter(event.target.value)} style={{ padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)', fontSize: 'var(--fs-base)' }}>
+        <select value={actionFilter} onChange={(event) => setActionFilter(event.target.value)} className="u-p-8px-12px u-fs-fs-base" >
           <option value="">All categories</option>
           {families.map((item) => <option key={item} value={item}>{familyLabel(item)}</option>)}
         </select>
-        <select value={resourceFilter} onChange={(event) => setResourceFilter(event.target.value)} style={{ padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)', fontSize: 'var(--fs-base)' }}>
+        <select value={resourceFilter} onChange={(event) => setResourceFilter(event.target.value)} className="u-p-8px-12px u-fs-fs-base" >
           <option value="">All types</option>
           {resources.map((item) => <option key={item} value={item}>{resourceLabel(item)}</option>)}
         </select>
-        <span style={{ marginLeft: 'auto', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>{filtered.length} events</span>
+        <span className="u-ml-auto u-fs-fs-sm u-ff-font-body" style={{ color: 'var(--text-muted)' }}>{filtered.length} events</span>
       </div>
 
       {error ? (
-        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: 'var(--fs-sm)' }}>
+        <div className="u-mb-20px u-p-12px-16px u-fs-fs-sm" style={{ borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)' }}>
           {error}
         </div>
       ) : null}
@@ -196,29 +196,29 @@ export default function AuditLogPage() {
               <div key={event.id} style={{ borderBottom: index < filtered.length - 1 ? '1px solid var(--border)' : 'none' }}>
                 <button
                   onClick={() => setExpanded(isExpanded ? null : event.id)}
-                  style={{ width: '100%', padding: '16px 20px', background: 'transparent', border: 'none', textAlign: 'left', cursor: 'pointer' }}
+                  className="u-p-16px-20px" style={{ width: '100%', background: 'transparent', border: 'none', textAlign: 'left', cursor: 'pointer' }}
                 >
                   <div className="audit-row">
                     <div>
-                      <div style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>{formatDateTime(event.occurred_at)}</div>
-                      <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>
+                      <div className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ color: 'var(--text-muted)' }}>{formatDateTime(event.occurred_at)}</div>
+                      <div className="u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>
                         {actorNames[event.actor_user_id] ?? `${event.actor_user_id.slice(0, 8)}…`}
                       </div>
                     </div>
                     <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '6px' }}>
+                      <div className="u-gap-8px u-mb-6px" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
                         <span className="badge" style={{ color: accent, background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
                           {event.action}
                         </span>
-                        <span style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>
+                        <span className="u-fs-fs-xs u-ff-font-body" style={{ color: 'var(--text-muted)' }}>
                           {resourceLabel(event.resource_type)}
                         </span>
                       </div>
-                      <div style={{ fontSize: 'var(--fs-base)', color: 'var(--text)' }}>
-                        Resource <code style={{ fontFamily: 'var(--font-body)' }}>{event.resource_id}</code>
+                      <div className="u-fs-fs-base" style={{ color: 'var(--text)' }}>
+                        Resource <code className="u-ff-font-body" >{event.resource_id}</code>
                       </div>
                     </div>
-                    <div style={{ textAlign: 'right', color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>
+                    <div className="u-fs-fs-sm" style={{ textAlign: 'right', color: 'var(--text-muted)' }}>
                       {isExpanded ? 'Hide details' : 'View metadata'}
                     </div>
                   </div>
@@ -226,20 +226,20 @@ export default function AuditLogPage() {
 
                 {isExpanded ? (
                   <div style={{ padding: '0 20px 16px 20px', background: 'var(--bg-surface)' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
-                      <div className="card-elevated" style={{ padding: '12px 16px' }}>
-                        <div style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>Roles</div>
-                        <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text)' }}>{event.actor_roles.join(', ') || '—'}</div>
+                    <div className="u-gap-16px" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
+                      <div className="card-elevated u-p-12px-16px" >
+                        <div className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ color: 'var(--text-muted)' }}>Roles</div>
+                        <div className="u-fs-fs-sm" style={{ color: 'var(--text)' }}>{event.actor_roles.join(', ') || '—'}</div>
                       </div>
-                      <div className="card-elevated" style={{ padding: '12px 16px' }}>
-                        <div style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>Metadata</div>
-                        <pre style={{ margin: 0, fontSize: 'var(--fs-xs)', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                      <div className="card-elevated u-p-12px-16px" >
+                        <div className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ color: 'var(--text-muted)' }}>Metadata</div>
+                        <pre className="u-m-0 u-fs-fs-xs u-ff-font-body" style={{ color: 'var(--text-subtle)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                           {JSON.stringify(event.metadata ?? {}, null, 2)}
                         </pre>
                       </div>
-                      <div className="card-elevated" style={{ padding: '12px 16px' }}>
-                        <div style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>State change</div>
-                        <pre style={{ margin: 0, fontSize: 'var(--fs-xs)', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                      <div className="card-elevated u-p-12px-16px" >
+                        <div className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ color: 'var(--text-muted)' }}>State change</div>
+                        <pre className="u-m-0 u-fs-fs-xs u-ff-font-body" style={{ color: 'var(--text-subtle)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                           {JSON.stringify({ before: event.before_state ?? null, after: event.after_state ?? null }, null, 2)}
                         </pre>
                       </div>

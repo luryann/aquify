@@ -85,9 +85,9 @@ export function GoalsPanel({ swimmerId, swimmerName }: { swimmerId: string; swim
   }
 
   return (
-    <section aria-labelledby={`goals-${swimmerId}`} className="card" style={{ padding: '20px 20px' }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' }}>
-        <h2 id={`goals-${swimmerId}`} style={{ margin: 0, fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--fs-2xl)' }}>
+    <section aria-labelledby={`goals-${swimmerId}`} className="card u-p-20px-20px" >
+      <div className="u-gap-12px u-mb-12px" style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+        <h2 id={`goals-${swimmerId}`} className="u-m-0 u-ff-font-display u-fw-display-weight u-fs-fs-2xl" >
           {swimmerName ? `${swimmerName}'s goals` : 'Goals'}
         </h2>
         {!adding ? <button type="button" className="btn btn-sm btn-secondary" onClick={() => setAdding(true)}>Set a goal</button> : null}
@@ -96,32 +96,32 @@ export function GoalsPanel({ swimmerId, swimmerName }: { swimmerId: string; swim
       {error ? <LoadErrorBanner message={error} onRetry={() => void load()} /> : null}
 
       {adding ? (
-        <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '16px', marginBottom: '16px' }}>
+        <div className="u-p-16px u-mb-16px" style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
           {formError ? <LoadErrorBanner message={formError} /> : null}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '12px' }}>
-            <label style={{ display: 'grid', gap: '4px', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>Stroke
+          <div className="u-gap-12px" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))' }}>
+            <label className="u-gap-4px u-fs-fs-sm" style={{ display: 'grid', color: 'var(--text-subtle)' }}>Stroke
               <select value={stroke} onChange={(e) => { setStroke(e.target.value); setDistance(String(EVENT_DISTANCES[e.target.value as keyof typeof EVENT_DISTANCES][1] ?? 100)) }} style={FIELD_STYLE}>
                 {STROKES.map((s) => <option key={s} value={s}>{STROKE_LABELS[s]}</option>)}
               </select>
             </label>
-            <label style={{ display: 'grid', gap: '4px', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>Distance
+            <label className="u-gap-4px u-fs-fs-sm" style={{ display: 'grid', color: 'var(--text-subtle)' }}>Distance
               <select value={distance} onChange={(e) => setDistance(e.target.value)} style={FIELD_STYLE}>
                 {distances.map((d) => <option key={d} value={d}>{d}</option>)}
               </select>
             </label>
-            <label style={{ display: 'grid', gap: '4px', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>Course
+            <label className="u-gap-4px u-fs-fs-sm" style={{ display: 'grid', color: 'var(--text-subtle)' }}>Course
               <select value={course} onChange={(e) => setCourse(e.target.value)} style={FIELD_STYLE}>
                 {COURSES.map((c) => <option key={c}>{c}</option>)}
               </select>
             </label>
-            <label style={{ display: 'grid', gap: '4px', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>Target time
-              <input placeholder="1:05.00" value={target} onChange={(e) => setTarget(e.target.value)} style={FIELD_STYLE} />
+            <label className="u-gap-4px u-fs-fs-sm" style={{ display: 'grid', color: 'var(--text-subtle)' }}>Target time
+              <input aria-label="1:05.00" placeholder="1:05.00" value={target} onChange={(e) => setTarget(e.target.value)} style={FIELD_STYLE} />
             </label>
-            <label style={{ display: 'grid', gap: '4px', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>Deadline (optional)
+            <label className="u-gap-4px u-fs-fs-sm" style={{ display: 'grid', color: 'var(--text-subtle)' }}>Deadline (optional)
               <input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} style={FIELD_STYLE} />
             </label>
           </div>
-          <div style={{ display: 'flex', gap: '8px', marginTop: '12px', justifyContent: 'flex-end' }}>
+          <div className="u-gap-8px u-mt-12px" style={{ display: 'flex', justifyContent: 'flex-end' }}>
             <button type="button" className="btn btn-sm btn-ghost" onClick={() => { setAdding(false); setFormError(null) }}>Cancel</button>
             <button type="button" className="btn btn-sm btn-primary" disabled={saving} onClick={() => void submit()}>{saving ? 'Saving…' : 'Save goal'}</button>
           </div>
@@ -129,19 +129,19 @@ export function GoalsPanel({ swimmerId, swimmerName }: { swimmerId: string; swim
       ) : null}
 
       {loading ? (
-        <p style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-base)', margin: 0 }}>Loading goals…</p>
+        <p className="u-fs-fs-base u-m-0" style={{ color: 'var(--text-muted)' }}>Loading goals…</p>
       ) : !error && goals.length === 0 ? (
-        <p style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-base)', margin: 0 }}>No goals yet. Pick an event and a target time to track progress after every meet.</p>
+        <p className="u-fs-fs-base u-m-0" style={{ color: 'var(--text-muted)' }}>No goals yet. Pick an event and a target time to track progress after every meet.</p>
       ) : (
-        <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: '16px' }}>
+        <ul className="u-m-0 u-p-0 u-gap-16px" style={{ listStyle: 'none', display: 'grid' }}>
           {goals.map((g) => {
             const { fill, tone } = goalTone(g)
             const color = tone === 'success' ? 'var(--success)' : tone === 'warning' ? 'var(--warning)' : 'var(--accent)'
             const due = deadlineText(g)
             return (
               <li key={g.id}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap', fontSize: 'var(--fs-base)' }}>
-                  <span style={{ fontWeight: 600 }}>{g.distance} {STROKE_LABELS[g.stroke]} {g.course}</span>
+                <div className="u-gap-8px u-fs-fs-base" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap' }}>
+                  <span className="u-fw-600" >{g.distance} {STROKE_LABELS[g.stroke]} {g.course}</span>
                   <span style={{ fontVariantNumeric: 'tabular-nums' }}>
                     {formatSwimTime(g.best_time_ms)} <span style={{ color: 'var(--text-muted)' }}>now, goal</span> {formatSwimTime(g.target_time_ms)}
                   </span>
@@ -157,13 +157,13 @@ export function GoalsPanel({ swimmerId, swimmerName }: { swimmerId: string; swim
                 >
                   <div style={{ width: '100%', height: '100%', borderRadius: '4px', background: color, transform: `scaleX(${fill / 100})`, transformOrigin: 'left', transition: 'transform var(--dur-slow) var(--ease-out)' }} />
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
+                <div className="u-gap-8px u-fs-fs-sm" style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', color: 'var(--text-muted)' }}>
                   <span>
                     {g.achieved ? <strong style={{ color: 'var(--success)' }}>Achieved</strong>
                       : g.gap_ms != null ? `${formatSwimTime(g.gap_ms)} to go` : 'No time in this event yet'}
                     {due ? <span style={{ color: g.overdue ? 'var(--warning)' : undefined }}>{` · ${due}`}</span> : null}
                   </span>
-                  <button type="button" className="btn btn-ghost btn-sm" style={{ padding: '0 6px', fontSize: 'var(--fs-sm)' }} onClick={() => void remove(g)} aria-label={`Remove ${g.distance} ${STROKE_LABELS[g.stroke]} goal`}>Remove</button>
+                  <button type="button" className="btn btn-ghost btn-sm u-fs-fs-sm" style={{ padding: '0 6px' }} onClick={() => void remove(g)} aria-label={`Remove ${g.distance} ${STROKE_LABELS[g.stroke]} goal`}>Remove</button>
                 </div>
               </li>
             )

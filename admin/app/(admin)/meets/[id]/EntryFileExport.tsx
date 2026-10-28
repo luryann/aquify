@@ -46,20 +46,20 @@ export function EntryFileExport({ meetId, onExported }: Props) {
   }
 
   return (
-    <div className="card" style={{ padding: '16px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+    <div className="card u-p-16px u-mb-16px u-gap-16px" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
       <div style={{ flex: '1 1 260px' }}>
-        <h3 className="card-title" style={{ marginBottom: '4px' }}>Entry file for host</h3>
-        <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', lineHeight: 1.5 }}>
+        <h3 className="card-title u-mb-4px" >Entry file for host</h3>
+        <p className="u-fs-fs-sm u-lh-1_5" style={{ color: 'var(--text-subtle)' }}>
           SD3 file of approved entries for the host. Marks them exported.
         </p>
-        {error ? <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--danger)', marginTop: '6px' }}>{error}</p> : null}
-        {result ? <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--success)', marginTop: '6px' }}>{result}</p> : null}
+        {error ? <p className="u-fs-fs-sm u-mt-6px" style={{ color: 'var(--danger)' }}>{error}</p> : null}
+        {result ? <p className="u-fs-fs-sm u-mt-6px" style={{ color: 'var(--success)' }}>{result}</p> : null}
       </div>
       <select
         aria-label="SD3 variant"
         value={variant}
         onChange={(e) => setVariant(e.target.value as 'extended' | 'standard')}
-        style={{ padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)' }}
+        className="u-p-8px-12px u-fs-fs-base" 
       >
         <option value="extended">With seed times</option>
         <option value="standard">Without seed times (NT)</option>

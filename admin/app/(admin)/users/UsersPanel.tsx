@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Icon } from '@/components/ui/icons'
+import { Modal } from '@/components/ui/Modal'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
 import {
@@ -33,33 +34,13 @@ function RoleBadge({ role }: { role: string }) {
   const c = ROLE_COLORS[role] ?? { bg: 'var(--bg-elevated)', color: 'var(--text-subtle)' }
   const label = ROLE_OPTIONS.find((r) => r.value === role)?.label ?? role
   return (
-    <span style={{
-      display: 'inline-block',
-      fontSize: 'var(--fs-2xs)',
-      fontWeight: 700,
-      padding: '2px 8px',
-      borderRadius: '6px',
-      background: c.bg,
-      color: c.color,
-      fontFamily: 'var(--font-body)',
-    }}>{label}</span>
+    <span className="u-fs-fs-2xs u-fw-700 u-p-2px-8px u-ff-font-body" style={{ display: 'inline-block', borderRadius: '6px', background: c.bg, color: c.color }}>{label}</span>
   )
 }
 
 function StatusPill({ enabled }: { enabled: boolean }) {
   return (
-    <span style={{
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: '4px',
-      fontSize: 'var(--fs-xs)',
-      fontWeight: 600,
-      padding: '4px 8px',
-      borderRadius: '16px',
-      background: enabled ? 'var(--success-bg)' : 'var(--bg-elevated)',
-      color: enabled ? 'var(--success)' : 'var(--text-muted)',
-      fontFamily: 'var(--font-body)',
-    }}>
+    <span className="u-gap-4px u-fs-fs-xs u-fw-600 u-p-4px-8px u-ff-font-body" style={{ display: 'inline-flex', alignItems: 'center', borderRadius: '16px', background: enabled ? 'var(--success-bg)' : 'var(--bg-elevated)', color: enabled ? 'var(--success)' : 'var(--text-muted)' }}>
       <span style={{
         width: '5px', height: '5px', borderRadius: '50%',
         background: enabled ? 'var(--success)' : 'var(--text-disabled)',
@@ -70,25 +51,7 @@ function StatusPill({ enabled }: { enabled: boolean }) {
   )
 }
 
-const INPUT_STYLE: React.CSSProperties = {
-  width: '100%',
-  padding: '8px 12px',
-  background: 'var(--bg-elevated)',
-  border: '1px solid var(--border)',
-  borderRadius: 'var(--r-md)',
-  fontSize: 'var(--fs-base)',
-  color: 'var(--text)',
-  outline: 'none',
-  boxSizing: 'border-box',
-}
-const LABEL_STYLE: React.CSSProperties = {
-  fontSize: 'var(--fs-sm)',
-  fontWeight: 600,
-  color: 'var(--text-muted)',
-  display: 'block',
-  marginBottom: '4px',
-  fontFamily: 'var(--font-body)',
-}
+const INPUT_STYLE: React.CSSProperties = { width: '100%' }
 
 export function UsersPanel() {
   const { session } = useSession()
@@ -230,55 +193,41 @@ export function UsersPanel() {
     }
   }
 
-  const selectStyle: React.CSSProperties = {
-    padding: '8px 12px',
-    background: 'var(--bg-elevated)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--r-md)',
-    fontSize: 'var(--fs-base)',
-    color: 'var(--text)',
-    outline: 'none',
-    cursor: 'pointer',
-  }
+  const selectStyle: React.CSSProperties = {}
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginBottom: '16px' }}>
-        <button
-          className="btn"
-          style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+      <div className="u-gap-8px u-mb-16px" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <button type="button"
+          className="btn u-gap-6px"
+          style={{ display: 'flex', alignItems: 'center' }}
           onClick={() => { setShowInvite(true); setInviteError(null); setInviteSuccess(null) }}
         >
           <Icon name="mail" size={14} />
-          Invite User
+          Invite user
         </button>
-        <button
-          className="btn btn-primary"
-          style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+        <button type="button"
+          className="btn btn-primary u-gap-6px"
+          style={{ display: 'flex', alignItems: 'center' }}
           onClick={() => { setShowCreate(true); setCreateError(null); setCreateSuccess(null) }}
         >
           <Icon name="user-plus" size={14} />
-          Create User
+          Create user
         </button>
       </div>
 
       {userSource === 'stub' && (
         <div
-          className="card"
-          style={{
-            padding: '16px 16px',
-            marginBottom: '16px',
-            background: 'rgba(251,191,36,0.10)',
-            border: '1px solid rgba(251,191,36,0.24)',
-          }}
+          className="card u-p-16px-16px u-mb-16px"
+          style={{ background: 'rgba(251,191,36,0.10)', border: '1px solid rgba(251,191,36,0.24)' }}
         >
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+          <div className="u-gap-12px" style={{ display: 'flex', alignItems: 'flex-start' }}>
             <Icon name="alert-circle" size={16} style={{ color: '#fbbf24', flexShrink: 0, marginTop: '1px' }} />
             <div>
-              <div style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)', marginBottom: '4px' }}>
+              <div className="u-fs-fs-base u-fw-600 u-mb-4px" style={{ color: 'var(--text)' }}>
                 Development stub data
               </div>
-              <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', lineHeight: 1.5 }}>
+              <div className="u-fs-fs-sm u-lh-1_5" style={{ color: 'var(--text-subtle)' }}>
                 This list is coming from seeded local development accounts, not a live Keycloak admin realm.
               </div>
             </div>
@@ -287,21 +236,16 @@ export function UsersPanel() {
       )}
 
       <div
-        className="card"
-        style={{
-          padding: '16px 16px',
-          marginBottom: '20px',
-          background: 'var(--bg-elevated)',
-          border: '1px solid var(--border)',
-        }}
+        className="card u-p-16px-16px u-mb-20px"
+        style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}
       >
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-          <Icon name="info" size={16} style={{ color: 'var(--accent)', flexShrink: 0, marginTop: '1px' }} />
+        <div className="u-gap-12px" style={{ display: 'flex', alignItems: 'flex-start' }}>
+          <Icon name="info" size={16} style={{ color: 'var(--accent-text, var(--accent))', flexShrink: 0, marginTop: '1px' }} />
           <div>
-            <div style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)', marginBottom: '4px' }}>
+            <div className="u-fs-fs-base u-fw-600 u-mb-4px" style={{ color: 'var(--text)' }}>
               Swimmers and users are different records
             </div>
-            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', lineHeight: 1.5 }}>
+            <div className="u-fs-fs-sm u-lh-1_5" style={{ color: 'var(--text-subtle)' }}>
               Add swimmers from Members to attach them to a parent account&apos;s household. Create a user here only when that person needs an actual Aquify login.
             </div>
           </div>
@@ -309,29 +253,29 @@ export function UsersPanel() {
       </div>
 
       {/* Stats */}
-      <div className="cols-3" style={{ gap: '12px', marginBottom: '20px' }}>
+      <div className="cols-3 u-gap-12px u-mb-20px" >
         {[
           { label: 'Total users', value: stats.total, color: 'var(--text)' },
           { label: 'Active', value: stats.active, color: 'var(--success)' },
           { label: 'Disabled', value: stats.disabled, color: 'var(--text-muted)' },
         ].map((stat) => (
-          <div key={stat.label} className="card" style={{ padding: '16px 16px' }}>
-            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
-            <div style={{ fontSize: 'var(--fs-2xl)', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
+          <div key={stat.label} className="card u-p-16px-16px" >
+            <div className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ color: 'var(--text-muted)' }}>{stat.label}</div>
+            <div className="u-fs-fs-2xl u-ff-font-body u-fw-700" style={{ color: stat.color }}>{stat.value}</div>
           </div>
         ))}
       </div>
 
       {/* Filters */}
-      <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
+      <div className="u-gap-12px u-mb-16px" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center' }}>
         <div style={{ position: 'relative', flex: 1, minWidth: '200px', maxWidth: '320px' }}>
           <Icon name="search" size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
-          <input
+          <input aria-label="Search name or email"
             type="text"
             placeholder="Search name or email…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            style={{ width: '100%', padding: '8px 12px 8px 32px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none' }}
+            className="u-p-8px-12px-8px-32px u-fs-fs-base" style={{ width: '100%' }}
           />
         </div>
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={selectStyle}>
@@ -345,40 +289,36 @@ export function UsersPanel() {
             <option key={r.value} value={r.value}>{r.label}</option>
           ))}
         </select>
-        <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginLeft: 'auto' }}>
+        <span className="u-fs-fs-sm u-ff-font-body u-ml-auto" style={{ color: 'var(--text-muted)' }}>
           {filtered.length} of {users.length}
         </span>
       </div>
 
       {/* Table */}
       {loading ? (
-        <div className="card" style={{ padding: '48px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--fs-base)' }}>
+        <div className="card u-p-48px u-fs-fs-base" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
           <Icon name="loader" size={20} style={{ marginBottom: '12px', opacity: 0.5 }} />
           <div>Loading users…</div>
         </div>
       ) : error ? (
-        <div className="card" style={{ padding: '32px', textAlign: 'center', color: 'var(--error)', fontSize: 'var(--fs-base)' }}>
+        <div className="card u-p-32px u-fs-fs-base" style={{ textAlign: 'center', color: 'var(--error)' }}>
           <Icon name="alert-circle" size={18} style={{ marginBottom: '8px' }} />
           <div>{error}</div>
         </div>
       ) : filtered.length === 0 ? (
-        <div className="card" style={{ padding: '48px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--fs-base)' }}>
+        <div className="card u-p-48px u-fs-fs-base" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
           <Icon name="users" size={24} style={{ marginBottom: '12px', opacity: 0.3 }} />
-          <div style={{ fontWeight: 500, marginBottom: '4px' }}>No users found</div>
-          <div style={{ fontSize: 'var(--fs-sm)' }}>Adjust your filters or create a login account. Household swimmers appear in Members, not here.</div>
+          <div className="u-fw-500 u-mb-4px" >No users found</div>
+          <div className="u-fs-fs-sm" >Adjust your filters or create a login account. Household swimmers appear in Members, not here.</div>
         </div>
       ) : (
         <div className="card" style={{ overflow: 'hidden' }}>
-          <div style={{ overflowX: 'auto' }}>
+          <div className="table-scroll" style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)' }}>
                   {['User', 'Email', 'Roles', 'Status', 'Last Login', ''].map((col) => (
-                    <th key={col} className="col-head" style={{
-                      padding: '12px 16px',
-                      textAlign: 'left',
-                      background: 'var(--bg-elevated)',
-                    }}>{col}</th>
+                    <th key={col} className="col-head u-p-12px-16px" style={{ textAlign: 'left', background: 'var(--bg-elevated)' }}>{col}</th>
                   ))}
                 </tr>
               </thead>
@@ -393,54 +333,47 @@ export function UsersPanel() {
                     onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-elevated)')}
                     onMouseLeave={(e) => (e.currentTarget.style.background = '')}
                   >
-                    <td style={{ padding: '16px 16px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <div style={{
-                          width: '32px', height: '32px', borderRadius: '50%',
-                          background: 'var(--accent-subtle)',
-                          border: '1px solid var(--accent-border)',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--accent)',
-                          fontFamily: 'var(--font-body)', flexShrink: 0,
-                        }}>
+                    <td className="u-p-16px-16px" >
+                      <div className="u-gap-12px" style={{ display: 'flex', alignItems: 'center' }}>
+                        <div className="u-fs-fs-sm u-fw-700 u-ff-font-body" style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--accent-subtle)', border: '1px solid var(--accent-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-text, var(--accent))', flexShrink: 0 }}>
                           {((user.firstName?.[0] ?? '') + (user.lastName?.[0] ?? '')).toUpperCase() || (user.email?.[0] ?? '?').toUpperCase()}
                         </div>
                         <div>
-                          <div style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)' }}>
+                          <div className="u-fs-fs-base u-fw-600" style={{ color: 'var(--text)' }}>
                             {user.firstName || user.lastName
                               ? `${user.firstName} ${user.lastName}`.trim()
                               : <span style={{ color: 'var(--text-muted)' }}>No name</span>}
                           </div>
-                          <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginTop: '1px' }}>
+                          <div className="u-fs-fs-xs u-ff-font-body u-mt-1px" style={{ color: 'var(--text-muted)' }}>
                             {user.id.slice(0, 8)}…
                           </div>
                         </div>
                       </div>
                     </td>
-                    <td style={{ padding: '16px 16px', fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)' }}>
+                    <td className="u-p-16px-16px u-fs-fs-base u-ff-font-body" style={{ color: 'var(--text-subtle)' }}>
                       {user.email}
                     </td>
-                    <td style={{ padding: '16px 16px' }}>
+                    <td className="u-p-16px-16px" >
                       {user.roles && user.roles.length > 0 ? (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                        <div className="u-gap-4px" style={{ display: 'flex', flexWrap: 'wrap' }}>
                           {user.roles.map((r) => <RoleBadge key={r} role={r} />)}
                         </div>
                       ) : (
-                        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>—</span>
+                        <span className="u-fs-fs-xs" style={{ color: 'var(--text-muted)' }}>—</span>
                       )}
                     </td>
-                    <td style={{ padding: '16px 16px' }}>
+                    <td className="u-p-16px-16px" >
                       <StatusPill enabled={user.enabled} />
                     </td>
-                    <td style={{ padding: '16px 16px', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)' }}>
+                    <td className="u-p-16px-16px u-fs-fs-sm u-ff-font-body" style={{ color: 'var(--text-subtle)' }}>
                       {user.lastLoginAt
                         ? new Date(user.lastLoginAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
                         : <span style={{ color: 'var(--text-muted)' }}>—</span>}
                     </td>
-                    <td style={{ padding: '16px 16px', textAlign: 'right' }}>
+                    <td className="u-p-16px-16px" style={{ textAlign: 'right' }}>
                       <Link
                         href={`/users/${user.id}`}
-                        style={{ fontSize: 'var(--fs-sm)', color: 'var(--accent)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 500 }}
+                        className="u-fs-fs-sm u-gap-4px u-fw-500" style={{ color: 'var(--accent-text, var(--accent))', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
                       >
                         Manage <Icon name="chevron-right" size={12} />
                       </Link>
@@ -454,65 +387,39 @@ export function UsersPanel() {
       )}
 
       {/* Create User Modal */}
-      {showCreate && (
-        <div
-          style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.65)' }}
-          onClick={(e) => { if (e.target === e.currentTarget) setShowCreate(false) }}
-        >
-          <div style={{
-            background: 'var(--bg-card)',
-            border: '1px solid var(--border-strong)',
-            borderRadius: '12px',
-            padding: '24px',
-            width: '100%',
-            maxWidth: '480px',
-            boxShadow: 'var(--shadow-lg)',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-              <div>
-                <h2 className="section-title" style={{ margin: 0 }}>Create user</h2>
-                <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  Creates a Keycloak account with a directly-set password. No email sent.
-                </p>
-              </div>
-              <button onClick={() => setShowCreate(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '4px' }}>
-                <Icon name="x" size={18} />
-              </button>
-            </div>
-
-            {createSuccess && (
-              <div style={{ background: 'var(--success-bg)', border: '1px solid var(--success-border)', color: 'var(--success)', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: 'var(--fs-base)' }}>
+      <Modal open={Boolean(showCreate)} onClose={() => setShowCreate(false)} title="Create user" description="Creates a Keycloak account with a directly-set password. No email sent." width={480}>
+{createSuccess && (
+              <div className="u-p-12px-16px u-mb-16px u-fs-fs-base" style={{ background: 'var(--success-bg)', border: '1px solid var(--success-border)', color: 'var(--success)', borderRadius: '8px' }}>
                 {createSuccess}
               </div>
             )}
-            {createError && (
-              <div style={{ background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: 'var(--fs-base)' }}>
+{createError && (
+              <div className="u-p-12px-16px u-mb-16px u-fs-fs-base" style={{ background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', borderRadius: '8px' }}>
                 {createError}
               </div>
             )}
-
-            <form onSubmit={handleCreate} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div className="cols-2" style={{ gap: '12px' }}>
+<form onSubmit={handleCreate} className="u-gap-16px" style={{ display: 'flex', flexDirection: 'column' }}>
+              <div className="cols-2 u-gap-12px" >
                 <div>
-                  <label style={LABEL_STYLE}>First name</label>
-                  <input style={INPUT_STYLE} value={createForm.first_name} onChange={(e) => setCreateForm((f) => ({ ...f, first_name: e.target.value }))} placeholder="Jane" />
+                  <label className="form-label">First name</label>
+                  <input aria-label="Jane" style={INPUT_STYLE} value={createForm.first_name} onChange={(e) => setCreateForm((f) => ({ ...f, first_name: e.target.value }))} placeholder="Jane" />
                 </div>
                 <div>
-                  <label style={LABEL_STYLE}>Last name</label>
-                  <input style={INPUT_STYLE} value={createForm.last_name} onChange={(e) => setCreateForm((f) => ({ ...f, last_name: e.target.value }))} placeholder="Smith" />
+                  <label className="form-label">Last name</label>
+                  <input aria-label="Smith" style={INPUT_STYLE} value={createForm.last_name} onChange={(e) => setCreateForm((f) => ({ ...f, last_name: e.target.value }))} placeholder="Smith" />
                 </div>
               </div>
               <div>
-                <label style={LABEL_STYLE}>Email *</label>
-                <input required type="email" style={INPUT_STYLE} value={createForm.email} onChange={(e) => setCreateForm((f) => ({ ...f, email: e.target.value }))} placeholder="jane@example.com" />
+                <label className="form-label form-label-required">Email</label>
+                <input aria-label="jane@example.com" required type="email" style={INPUT_STYLE} value={createForm.email} onChange={(e) => setCreateForm((f) => ({ ...f, email: e.target.value }))} placeholder="jane@example.com" />
               </div>
               <div>
-                <label style={LABEL_STYLE}>Password *</label>
+                <label className="form-label form-label-required">Password</label>
                 <div style={{ position: 'relative' }}>
-                  <input
+                  <input aria-label="Min. 8 characters"
                     required
                     type={showCreatePwd ? 'text' : 'password'}
-                    style={{ ...INPUT_STYLE, paddingRight: '40px' }}
+                    style={{ ...INPUT_STYLE }}
                     value={createForm.password}
                     onChange={(e) => setCreateForm((f) => ({ ...f, password: e.target.value }))}
                     placeholder="Min. 8 characters"
@@ -521,7 +428,7 @@ export function UsersPanel() {
                   <button
                     type="button"
                     onClick={() => setShowCreatePwd((v) => !v)}
-                    style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '2px' }}
+                    className="u-p-2px" style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
                     aria-label={showCreatePwd ? 'Hide password' : 'Show password'}
                   >
                     {showCreatePwd ? (
@@ -539,78 +446,50 @@ export function UsersPanel() {
                 </div>
               </div>
               <div>
-                <label style={LABEL_STYLE}>Role *</label>
+                <label className="form-label form-label-required">Role</label>
                 <select required style={INPUT_STYLE} value={createForm.role} onChange={(e) => setCreateForm((f) => ({ ...f, role: e.target.value }))}>
                   {assignableRoles.map((r) => (
                     <option key={r.value} value={r.value}>{r.label}</option>
                   ))}
                 </select>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
+              <div className="u-gap-8px" style={{ display: 'flex', flexDirection: 'column' }}>
+                <div className="u-gap-12px u-p-12px-12px" style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
                   <input type="checkbox" id="create-temp-pwd" checked={createForm.temporary_password} onChange={(e) => setCreateForm((f) => ({ ...f, temporary_password: e.target.checked }))} style={{ width: '14px', height: '14px', accentColor: 'var(--accent)', cursor: 'pointer' }} />
-                  <label htmlFor="create-temp-pwd" style={{ fontSize: 'var(--fs-base)', color: 'var(--text)', cursor: 'pointer', flex: 1 }}>Require password change on first login</label>
+                  <label htmlFor="create-temp-pwd" className="u-fs-fs-base" style={{ color: 'var(--text)', cursor: 'pointer', flex: 1 }}>Require password change on first login</label>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
+                <div className="u-gap-12px u-p-12px-12px" style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
                   <input type="checkbox" id="create-household-2" checked={createForm.create_household} onChange={(e) => setCreateForm((f) => ({ ...f, create_household: e.target.checked }))} style={{ width: '14px', height: '14px', accentColor: 'var(--accent)', cursor: 'pointer' }} />
-                  <label htmlFor="create-household-2" style={{ fontSize: 'var(--fs-base)', color: 'var(--text)', cursor: 'pointer', flex: 1 }}>Create linked household</label>
-                  <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>Optional</span>
+                  <label htmlFor="create-household-2" className="u-fs-fs-base" style={{ color: 'var(--text)', cursor: 'pointer', flex: 1 }}>Create linked household</label>
+                  <span className="u-fs-fs-xs" style={{ color: 'var(--text-muted)' }}>Optional</span>
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '4px' }}>
+              <div className="form-actions">
                 <button type="button" className="btn" onClick={() => setShowCreate(false)}>Cancel</button>
                 <button type="submit" className="btn btn-primary" disabled={creating}>
                   {creating ? 'Creating…' : 'Create Account'}
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+</Modal>
 
       {/* Invite Modal */}
-      {showInvite && (
-        <div
-          style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.65)' }}
-          onClick={(e) => { if (e.target === e.currentTarget) setShowInvite(false) }}
-        >
-          <div style={{
-            background: 'var(--bg-card)',
-            border: '1px solid var(--border-strong)',
-            borderRadius: '12px',
-            padding: '24px',
-            width: '100%',
-            maxWidth: '480px',
-            boxShadow: 'var(--shadow-lg)',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-              <div>
-                <h2 className="section-title" style={{ margin: 0 }}>Invite user</h2>
-                <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  Provisions a Keycloak account and sends a welcome email.
-                </p>
-              </div>
-              <button onClick={() => setShowInvite(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '4px' }}>
-                <Icon name="x" size={18} />
-              </button>
-            </div>
-
-            {inviteSuccess && (
-              <div style={{ background: 'var(--success-bg)', border: '1px solid var(--success-border)', color: 'var(--success)', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: 'var(--fs-base)' }}>
+      <Modal open={Boolean(showInvite)} onClose={() => setShowInvite(false)} title="Invite user" description="Provisions a Keycloak account and sends a welcome email." width={480}>
+{inviteSuccess && (
+              <div className="u-p-12px-16px u-mb-16px u-fs-fs-base" style={{ background: 'var(--success-bg)', border: '1px solid var(--success-border)', color: 'var(--success)', borderRadius: '8px' }}>
                 {inviteSuccess}
               </div>
             )}
-            {inviteError && (
-              <div style={{ background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: 'var(--fs-base)' }}>
+{inviteError && (
+              <div className="u-p-12px-16px u-mb-16px u-fs-fs-base" style={{ background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', borderRadius: '8px' }}>
                 {inviteError}
               </div>
             )}
-
-            <form onSubmit={handleInvite} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div className="cols-2" style={{ gap: '12px' }}>
+<form onSubmit={handleInvite} className="u-gap-16px" style={{ display: 'flex', flexDirection: 'column' }}>
+              <div className="cols-2 u-gap-12px" >
                 <div>
-                  <label style={LABEL_STYLE}>First name</label>
-                  <input
+                  <label className="form-label">First name</label>
+                  <input aria-label="Jane"
                     style={INPUT_STYLE}
                     value={inviteForm.first_name}
                     onChange={(e) => setInviteForm((f) => ({ ...f, first_name: e.target.value }))}
@@ -618,8 +497,8 @@ export function UsersPanel() {
                   />
                 </div>
                 <div>
-                  <label style={LABEL_STYLE}>Last name</label>
-                  <input
+                  <label className="form-label">Last name</label>
+                  <input aria-label="Smith"
                     style={INPUT_STYLE}
                     value={inviteForm.last_name}
                     onChange={(e) => setInviteForm((f) => ({ ...f, last_name: e.target.value }))}
@@ -628,8 +507,8 @@ export function UsersPanel() {
                 </div>
               </div>
               <div>
-                <label style={LABEL_STYLE}>Email *</label>
-                <input
+                <label className="form-label form-label-required">Email</label>
+                <input aria-label="jane@example.com"
                   required
                   type="email"
                   style={INPUT_STYLE}
@@ -639,7 +518,7 @@ export function UsersPanel() {
                 />
               </div>
               <div>
-                <label style={LABEL_STYLE}>Role *</label>
+                <label className="form-label form-label-required">Role</label>
                 <select
                   required
                   style={INPUT_STYLE}
@@ -652,7 +531,7 @@ export function UsersPanel() {
                 </select>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
+              <div className="u-gap-12px u-p-12px-12px" style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
                 <input
                   type="checkbox"
                   id="create-household"
@@ -660,22 +539,20 @@ export function UsersPanel() {
                   onChange={(e) => setInviteForm((f) => ({ ...f, create_household: e.target.checked }))}
                   style={{ width: '14px', height: '14px', accentColor: 'var(--accent)', cursor: 'pointer' }}
                 />
-                <label htmlFor="create-household" style={{ fontSize: 'var(--fs-base)', color: 'var(--text)', cursor: 'pointer', flex: 1 }}>
+                <label htmlFor="create-household" className="u-fs-fs-base" style={{ color: 'var(--text)', cursor: 'pointer', flex: 1 }}>
                   Create linked household
                 </label>
-                <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>Optional</span>
+                <span className="u-fs-fs-xs" style={{ color: 'var(--text-muted)' }}>Optional</span>
               </div>
 
-              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '4px' }}>
+              <div className="form-actions">
                 <button type="button" className="btn" onClick={() => setShowInvite(false)}>Cancel</button>
                 <button type="submit" className="btn btn-primary" disabled={inviting}>
-                  {inviting ? 'Sending…' : 'Send Invitation'}
+                  {inviting ? 'Sending…' : 'Send invitation'}
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+</Modal>
     </div>
   )
 }

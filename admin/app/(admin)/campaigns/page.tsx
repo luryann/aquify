@@ -63,7 +63,7 @@ function CampaignsRootPageContent() {
       {tab === 'suppression' && canSeeSuppression ? (
         <SuppressionPanel />
       ) : tab === 'suppression' ? (
-        <div style={{ padding: '20px 0' }}>
+        <div className="u-p-20px-0" >
           <EmptyState icon="shield" title="Not available" description="Suppression list management requires admin access." />
         </div>
       ) : (

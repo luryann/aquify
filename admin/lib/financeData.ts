@@ -1,3 +1,4 @@
+import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { ApiError, rawRequestAuthHeaders, type ApiClient } from './api.ts'
 
 // ─── Types (mirror server/internal/app/billing finance contracts) ────────────
@@ -362,7 +363,7 @@ export function financeErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof ApiError) {
     if (error.code === 'nothing_to_bill') return 'Every eligible charge for this date is already billed. Nothing new to invoice.'
     if (error.code === 'preview_stale') return 'The roster or schedules changed since this preview. Review the refreshed preview, then commit again.'
-    return error.message
+    return uiErrorMessage(error, fallback)
   }
   return fallback
 }

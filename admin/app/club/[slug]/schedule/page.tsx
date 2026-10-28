@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { fetchPublicSite } from '@/lib/publicSiteData'
 import { COURSE_LABELS, formatEventDay, formatEventTime, formatMeetDates, groupByMonth, monthLabel } from '@/lib/club-site'
 import { parseBackendDate } from '@/lib/dates'
+import './page.inline.css'
 
 type Props = { params: Promise<{ slug: string }> }
 
@@ -28,7 +29,7 @@ export default async function ClubSchedule({ params }: Props) {
     <div className="cs-wrap">
       <div className="cs-page"><h1>Schedule</h1></div>
 
-      <h2 style={{ fontSize: 'clamp(2rem, 5vw, 3.2rem)', margin: '24px 0 16px' }}>Meets</h2>
+      <h2 className="is-4864947">Meets</h2>
       {meetMonths.length === 0 ? (
         <div className="cs-empty"><strong>No meets scheduled</strong>Published meets appear here as soon as the coaches announce them.</div>
       ) : (
@@ -54,7 +55,7 @@ export default async function ClubSchedule({ params }: Props) {
         ))
       )}
 
-      <h2 style={{ fontSize: 'clamp(2rem, 5vw, 3.2rem)', margin: '64px 0 16px' }}>Club events</h2>
+      <h2 className="is-fad8597">Club events</h2>
       {eventMonths.length === 0 ? (
         <div className="cs-empty"><strong>No events scheduled</strong>Socials, clinics and team meetings appear here once they are on the calendar.</div>
       ) : (

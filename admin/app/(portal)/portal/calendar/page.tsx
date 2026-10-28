@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
@@ -14,6 +14,7 @@ import { CalendarSubscribeCard } from '@/components/engagement/CalendarSubscribe
 import { fetchTrainingSchedule, type Workout } from '@/lib/trainingData'
 import { addDaysISO } from '@/lib/workout-format'
 import { WorkoutSheet } from '@/components/training/WorkoutSheet'
+import './page.inline.css'
 
 // ── Types ───────────────────────────────────────────────────────────────────
 type EventType = 'meet' | 'practice' | 'deadline' | 'holiday' | 'event'
@@ -178,7 +179,6 @@ function EventChip({ ev }: { ev: CalEvent }) {
   )
 }
 
-const UPCOMING_PREVIEW = 5
 const UPCOMING_MAX = 15
 
 // Rows stay two lines at most: long practice titles clamp instead of stacking
@@ -206,24 +206,16 @@ function UpcomingEventRow({ ev }: { ev: CalEvent }) {
   const content = (
     <div
       title={ev.title}
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '52px minmax(0, 1fr)',
-        gap: '12px',
-        alignItems: 'start',
-        padding: '12px 16px',
-        borderBottom: '1px solid var(--border)',
-        transition: 'background 120ms ease',
-      }}
-      onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(0,0,0,0.02)')}
+      className="is-955ade5"
+      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-wash)')}
       onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
     >
-      <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.25 }}>
-        <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text)' }}>{when.day}</span>
-        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>{when.weekday}</span>
+      <div className="is-508b578">
+        <span className="is-2dd2301">{when.day}</span>
+        <span className="is-c454211">{when.weekday}</span>
       </div>
       <div style={{ minWidth: 0 }}>
-        <p style={{ display: 'flex', gap: '8px', alignItems: 'baseline', fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.3 }}>
+        <p className="is-fdeb8cd">
           <span aria-label={s.label} style={{ width: '8px', height: '8px', borderRadius: '50%', background: s.dot, flexShrink: 0, transform: 'translateY(-1px)' }} />
           <span style={clampLines(2)}>{ev.title}</span>
         </p>
@@ -241,6 +233,33 @@ function UpcomingEventRow({ ev }: { ev: CalEvent }) {
     return <Link href={ev.linkPath} style={{ textDecoration: 'none', display: 'block' }}>{content}</Link>
   }
   return content
+}
+
+// Fixed-height list: scrolls inside the card so the sidebar never grows the page.
+// The bottom fade hints at more rows and disappears once the end is reached.
+function UpcomingScroller({ events }: { events: CalEvent[] }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [atEnd, setAtEnd] = useState(true)
+  const sync = useCallback(() => {
+    const el = ref.current
+    if (el) setAtEnd(el.scrollHeight - el.scrollTop - el.clientHeight < 4)
+  }, [])
+  useEffect(sync, [events, sync])
+  return (
+    <div
+      ref={ref}
+      onScroll={sync}
+      className="upcoming-scroll"
+      data-at-end={atEnd}
+      tabIndex={0}
+      role="region"
+      aria-label="Upcoming events"
+    >
+      {events.map((ev) => (
+        <UpcomingEventRow key={ev.id} ev={ev} />
+      ))}
+    </div>
+  )
 }
 
 // ── Page ────────────────────────────────────────────────────────────────────
@@ -269,7 +288,7 @@ export default function CalendarPage() {
 
   useEffect(() => {
     if (!orgId) {
-      setLoadError('Calendar is unavailable because no organization is selected.')
+      setLoadError('We could not find your club. Sign out and back in to try again.')
       return
     }
     setLoadError(null)
@@ -291,7 +310,7 @@ export default function CalendarPage() {
         setLoadError(reportUIError(
           'portal-calendar-load',
           error,
-          'Calendar data is unavailable right now.',
+          'We could not load this page. Check your connection and try again.',
           { orgId },
         ))
       })
@@ -301,7 +320,6 @@ export default function CalendarPage() {
   const [viewYear, setViewYear] = useState(today.getFullYear())
   const [viewMonth, setViewMonth] = useState(today.getMonth())
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
-  const [showAllUpcoming, setShowAllUpcoming] = useState(false)
   const [view, setView] = useState<'month' | 'week'>('month')
   const [typeFilter, setTypeFilter] = useState<EventType | 'all'>('all')
 
@@ -350,7 +368,6 @@ export default function CalendarPage() {
     .filter((ev) => typeFilter === 'all' || ev.type === typeFilter)
     .sort((a, b) => a.date.localeCompare(b.date))
     .slice(0, UPCOMING_MAX)
-  const visibleUpcoming = showAllUpcoming ? upcomingEvents : upcomingEvents.slice(0, UPCOMING_PREVIEW)
 
   // Selected date events
   const selectedEvents = selectedDate
@@ -387,15 +404,7 @@ export default function CalendarPage() {
     <div>
       {/* Page header */}
       <div
-        style={{
-          display: 'flex',
-          alignItems: 'flex-end',
-          justifyContent: 'space-between',
-          marginBottom: '24px',
-          flexWrap: 'wrap',
-          gap: '12px',
-          animation: 'slideUp 0.4s var(--ease-out) both',
-        }}
+        className="is-f7be90b"
       >
         <div>
           <h1 className="page-title">
@@ -405,16 +414,10 @@ export default function CalendarPage() {
 
         {/* View toggle */}
         <div
-          style={{
-            display: 'flex',
-            gap: '4px',
-            background: 'rgba(0,0,0,0.05)',
-            borderRadius: '8px',
-            padding: '4px',
-          }}
+          className="is-ec25a69"
         >
           {(['month', 'week'] as const).map((v) => (
-            <button
+            <button type="button"
               key={v}
               onClick={() => setView(v)}
               style={{
@@ -438,7 +441,7 @@ export default function CalendarPage() {
       </div>
 
       {clubError && !loadError && (
-        <p role="alert" style={{ marginBottom: '12px', fontSize: 'var(--fs-sm)', color: 'var(--warning)' }}>
+        <p role="alert" className="is-bf585c4">
           {clubError}{' '}
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => setReloadKey((key) => key + 1)}>Retry</button>
         </p>
@@ -446,26 +449,16 @@ export default function CalendarPage() {
 
       {loadError && (
         <div
-          style={{
-            marginBottom: '20px',
-            padding: '12px 16px',
-            background: 'var(--warning-bg)',
-            border: '1px solid #fdba74',
-            borderRadius: '12px',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: '12px',
-          }}
+          className="is-154e8a6"
         >
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+          <div className="is-730b6a7">
             <Icon name="alert-circle" size={15} style={{ color: 'var(--warning)', marginTop: '1px', flexShrink: 0 }} />
-            <span style={{ fontSize: 'var(--fs-base)', color: 'var(--warning)', lineHeight: 1.5 }}>{loadError}</span>
+            <span className="is-d827c78">{loadError}</span>
           </div>
           <button
             type="button"
             onClick={() => setReloadKey((key) => key + 1)}
-            style={{ background: 'var(--bg-elevated)', border: '1px solid #fdba74', borderRadius: '8px', cursor: 'pointer', color: 'var(--warning)', fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '8px 16px', whiteSpace: 'nowrap' }}
+            className="is-889d44c"
           >
             Retry
           </button>
@@ -474,20 +467,13 @@ export default function CalendarPage() {
 
       {/* Legend + type filter */}
       <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          marginBottom: '20px',
-          flexWrap: 'wrap',
-          animation: 'slideUp 0.4s var(--ease-out) 0.05s both',
-        }}
+        className="is-63beafb"
       >
         {(['all', 'meet', 'practice', 'deadline', 'event', 'holiday'] as const).map((type) => {
           const active = typeFilter === type
           const s = type !== 'all' ? EVENT_STYLE[type] : null
           return (
-            <button
+            <button type="button"
               key={type}
               onClick={() => setTypeFilter(type)}
               style={{
@@ -496,8 +482,8 @@ export default function CalendarPage() {
                 gap: '6px',
                 padding: '4px 12px',
                 borderRadius: '999px',
-                border: `1px solid ${active ? (s ? s.border : 'rgba(0,0,0,0.22)') : 'rgba(0,0,0,0.10)'}`,
-                background: active ? (s ? s.bg : 'rgba(0,0,0,0.06)') : 'transparent',
+                border: `1px solid ${active ? (s ? s.border : 'var(--border-strong)') : 'var(--border)'}`,
+                background: active ? (s ? s.bg : 'var(--bg-wash-strong)') : 'transparent',
                 color: active ? (s ? s.color : 'var(--text)') : 'var(--text-subtle)',
                 fontSize: 'var(--fs-sm)',
                 fontWeight: 500,
@@ -539,22 +525,16 @@ export default function CalendarPage() {
         >
           {/* Month nav */}
           <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '20px 20px 16px',
-              borderBottom: '1px solid rgba(0,0,0,0.07)',
-            }}
+            className="is-044825a"
           >
-            <button
+            <button type="button"
               onClick={goToPrev}
               aria-label="Previous month"
               style={{
                 width: '32px',
                 height: '32px',
                 borderRadius: '8px',
-                border: '1px solid rgba(0,0,0,0.10)',
+                border: '1px solid var(--border)',
                 background: 'transparent',
                 cursor: 'pointer',
                 display: 'flex',
@@ -563,32 +543,22 @@ export default function CalendarPage() {
                 color: 'var(--text-subtle)',
                 transition: 'background 120ms ease',
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(0,0,0,0.05)')}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-wash)')}
               onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
             >
               <Icon name="chevron-left" size={15} />
             </button>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div className="is-e2ff0fd">
               <h2 className="section-title"
               >
                 {MONTH_NAMES[viewMonth]} {viewYear}
               </h2>
-              <button
+              <button type="button"
                 onClick={goToToday}
-                style={{
-                  padding: '4px 12px',
-                  borderRadius: '6px',
-                  border: '1px solid rgba(0,0,0,0.12)',
-                  background: 'transparent',
-                  fontSize: 'var(--fs-sm)',
-                  fontWeight: 500,
-                  color: 'var(--text-subtle)',
-                  cursor: 'pointer',
-                  transition: 'all 120ms ease',
-                }}
+                className="is-68b99f7"
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(0,0,0,0.05)'
+                  e.currentTarget.style.background = 'var(--bg-wash)'
                   e.currentTarget.style.color = 'var(--text)'
                 }}
                 onMouseLeave={(e) => {
@@ -600,14 +570,14 @@ export default function CalendarPage() {
               </button>
             </div>
 
-            <button
+            <button type="button"
               onClick={goToNext}
               aria-label="Next month"
               style={{
                 width: '32px',
                 height: '32px',
                 borderRadius: '8px',
-                border: '1px solid rgba(0,0,0,0.10)',
+                border: '1px solid var(--border)',
                 background: 'transparent',
                 cursor: 'pointer',
                 display: 'flex',
@@ -616,7 +586,7 @@ export default function CalendarPage() {
                 color: 'var(--text-subtle)',
                 transition: 'background 120ms ease',
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(0,0,0,0.05)')}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-wash)')}
               onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
             >
               <Icon name="chevron-right" size={15} />
@@ -647,7 +617,7 @@ export default function CalendarPage() {
                     onClick={() => setSelectedDate(dateStr === selectedDate ? null : dateStr)}
                     style={{
                       padding: '12px 16px',
-                      borderBottom: '1px solid rgba(0,0,0,0.06)',
+                      borderBottom: '1px solid var(--border)',
                       cursor: 'pointer',
                       background: isSelected ? 'rgba(235,93,30,0.04)' : 'transparent',
                       display: 'flex',
@@ -673,13 +643,13 @@ export default function CalendarPage() {
                       {d.getDate()}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', fontWeight: 600, color: 'var(--text-subtle)', marginBottom: '6px' }}>
+                      <p className="is-f45a7a7">
                         {d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
                       </p>
                       {dayEvents.length === 0 ? (
-                        <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>No events</span>
+                        <span className="is-4f39ab0">No events</span>
                       ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <div className="is-ef1f3a5">
                           {dayEvents.map((ev) => (
                             <EventChip key={ev.id} ev={ev} />
                           ))}
@@ -697,23 +667,14 @@ export default function CalendarPage() {
                 style={{
                   display: 'grid',
                   gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
-                  borderBottom: '1px solid rgba(0,0,0,0.06)',
+                  borderBottom: '1px solid var(--border)',
                   minWidth: '560px',
                 }}
               >
                 {DAY_LABELS.map((d) => (
                   <div
                     key={d}
-                    style={{
-                      padding: '8px 4px',
-                      textAlign: 'center',
-                      fontSize: 'var(--fs-xs)',
-                      fontFamily: 'var(--font-body)',
-                      fontWeight: 600,
-                      letterSpacing: '0.05em',
-                      textTransform: 'uppercase',
-                      color: 'var(--text-muted)',
-                    }}
+                    className="is-b587c69"
                   >
                     {d}
                   </div>
@@ -734,9 +695,9 @@ export default function CalendarPage() {
                     key={`empty-${i}`}
                     style={{
                       minHeight: '172px',
-                      borderRight: '1px solid rgba(0,0,0,0.05)',
-                      borderBottom: '1px solid rgba(0,0,0,0.05)',
-                      background: 'rgba(0,0,0,0.01)',
+                      borderRight: '1px solid var(--border)',
+                      borderBottom: '1px solid var(--border)',
+                      background: 'var(--bg-wash)',
                     }}
                   />
                 ))}
@@ -758,8 +719,8 @@ export default function CalendarPage() {
                       onClick={() => setSelectedDate(dateStr === selectedDate ? null : dateStr)}
                       style={{
                         minHeight: '172px',
-                        borderRight: colIndex < 6 ? '1px solid rgba(0,0,0,0.05)' : 'none',
-                        borderBottom: '1px solid rgba(0,0,0,0.05)',
+                        borderRight: colIndex < 6 ? '1px solid var(--border)' : 'none',
+                        borderBottom: '1px solid var(--border)',
                         padding: '12px 8px 8px',
                         cursor: 'pointer',
                         background: isSelected ? 'rgba(235,93,30,0.04)' : 'transparent',
@@ -767,7 +728,7 @@ export default function CalendarPage() {
                         position: 'relative',
                       }}
                       onMouseEnter={(e) => {
-                        if (!isSelected) (e.currentTarget as HTMLDivElement).style.background = 'rgba(0,0,0,0.02)'
+                        if (!isSelected) (e.currentTarget as HTMLDivElement).style.background = 'var(--bg-wash)'
                       }}
                       onMouseLeave={(e) => {
                         if (!isSelected) (e.currentTarget as HTMLDivElement).style.background = 'transparent'
@@ -793,18 +754,13 @@ export default function CalendarPage() {
                       </div>
 
                       {/* Event dots / chips */}
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <div className="is-32bee05">
                         {dayEvents.slice(0, 3).map((ev) => (
                           <EventChip key={ev.id} ev={ev} />
                         ))}
                         {dayEvents.length > 3 && (
                           <span
-                            style={{
-                              fontSize: 'var(--fs-2xs)',
-                              color: 'var(--text-muted)',
-                              fontFamily: 'var(--font-body)',
-                              padding: '1px 4px',
-                            }}
+                            className="is-446b8e8"
                           >
                             +{dayEvents.length - 3} more
                           </span>
@@ -822,28 +778,17 @@ export default function CalendarPage() {
                 style={{
                   display: 'grid',
                   gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
-                  borderBottom: '1px solid rgba(0,0,0,0.06)',
+                  borderBottom: '1px solid var(--border)',
                   minWidth: '560px',
                 }}
               >
                 {weekDays.map((wd) => (
                   <div
                     key={wd.date}
-                    style={{
-                      padding: '12px 8px',
-                      textAlign: 'center',
-                      borderRight: '1px solid rgba(0,0,0,0.05)',
-                    }}
+                    className="is-04e0c56"
                   >
                     <p
-                      style={{
-                        fontSize: 'var(--fs-xs)',
-                        fontFamily: 'var(--font-body)',
-                        color: 'var(--text-muted)',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
-                        marginBottom: '4px',
-                      }}
+                      className="is-98a7b6f"
                     >
                       {wd.label}
                     </p>
@@ -885,7 +830,7 @@ export default function CalendarPage() {
                       key={wd.date}
                       style={{
                         padding: '12px 6px',
-                        borderRight: idx < 6 ? '1px solid rgba(0,0,0,0.05)' : 'none',
+                        borderRight: idx < 6 ? '1px solid var(--border)' : 'none',
                         display: 'flex',
                         flexDirection: 'column',
                         gap: '4px',
@@ -896,7 +841,7 @@ export default function CalendarPage() {
                         <EventChip key={ev.id} ev={ev} />
                       ))}
                       {dayEvents.length === 0 && (
-                        <span style={{ fontSize: 'var(--fs-xs)', color: '#D0CCC9', textAlign: 'center', paddingTop: '12px' }}>
+                        <span className="is-5bb4634">
                           —
                         </span>
                       )}
@@ -909,7 +854,7 @@ export default function CalendarPage() {
         </div>
 
         {/* ── SIDEBAR ──────────────────────────────────────────────── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div className="is-8ef476f">
           <CalendarSubscribeCard api={api} orgId={orgId} />
           {/* Selected day detail */}
           {selectedDate && selectedEvents.length > 0 && (
@@ -917,17 +862,10 @@ export default function CalendarPage() {
               className="card" style={{ overflow: 'hidden', animation: 'slideUp 0.2s var(--ease-out) both' }}
             >
               <div
-                style={{
-                  padding: '16px 16px 12px',
-                  borderBottom: '1px solid rgba(0,0,0,0.07)',
-                }}
+                className="is-703aadc"
               >
                 <p
-                  style={{
-                    fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)',
-                    fontSize: 'var(--fs-xl)',
-                    color: 'var(--text)',
-                  }}
+                  className="is-f3c1003"
                 >
                   {new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-US', {
                     weekday: 'long', month: 'long', day: 'numeric',
@@ -938,7 +876,7 @@ export default function CalendarPage() {
                 <div key={ev.id}>
                   <UpcomingEventRow ev={ev} />
                   {ev.workout && (
-                    <div style={{ padding: '4px 16px 16px' }}>
+                    <div className="is-4810ca8">
                       <WorkoutSheet workout={ev.workout} />
                     </div>
                   )}
@@ -949,35 +887,19 @@ export default function CalendarPage() {
 
           {/* Upcoming events */}
           <div
-            className="card" style={{ padding: 0, overflow: 'hidden' }}
+            className="card is-f27afbb" 
           >
-            <div style={{ padding: '16px 16px 12px', borderBottom: '1px solid var(--border)' }}>
+            <div className="is-703aadc">
               <h2 className="card-title">Upcoming</h2>
             </div>
 
-            {loadError ? (
-              <div style={{ padding: '32px 16px', textAlign: 'center' }}>
-                <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)' }}>Upcoming calendar events are unavailable right now.</p>
-              </div>
-            ) : shouldShowCollectionEmptyState(false, loadError, upcomingEvents.length) ? (
-              <div style={{ padding: '32px 16px', textAlign: 'center' }}>
-                <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)' }}>No upcoming events</p>
+            {loadError ? null : shouldShowCollectionEmptyState(false, loadError, upcomingEvents.length) ? (
+              <div className="is-9d9263e">
+                <p className="is-8fb176a">No upcoming events</p>
               </div>
             ) : (
               <>
-                {visibleUpcoming.map((ev) => (
-                  <UpcomingEventRow key={ev.id} ev={ev} />
-                ))}
-                {upcomingEvents.length > UPCOMING_PREVIEW && (
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => setShowAllUpcoming((v) => !v)}
-                    style={{ width: '100%', justifyContent: 'center', borderRadius: 0, minHeight: '40px' }}
-                  >
-                    {showAllUpcoming ? 'Show fewer' : `Show ${upcomingEvents.length - UPCOMING_PREVIEW} more`}
-                  </button>
-                )}
+                <UpcomingScroller events={upcomingEvents} />
               </>
             )}
           </div>

@@ -1,10 +1,11 @@
 'use client'
 
-import { Suspense, useCallback, useMemo, useState, useEffect, type CSSProperties } from 'react'
+import { Suspense, useCallback, useMemo, useRef, useState, useEffect, type CSSProperties } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { Icon } from '@/components/ui/icons'
 import { Table, type Column } from '@/components/ui/Table'
+import { Modal } from '@/components/ui/Modal'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
@@ -26,6 +27,8 @@ import { isSwimmerEligibleForEvent } from '@/lib/event-eligibility'
 import { formatEventLabel } from '@/lib/meet-events'
 import { parseBackendDate } from '@/lib/dates'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
+import { useConfirm, useConfirmReason } from '@/components/ui/ConfirmDialog'
+import { useDialogA11y } from '@/components/ui/useDialogA11y'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -109,6 +112,8 @@ function AddEntryPanel({
   onClose: () => void
   onSaved: () => void
 }) {
+  const panelRef = useRef<HTMLDivElement>(null)
+  useDialogA11y(panelRef, onClose)
   const [step, setStep] = useState<1 | 2 | 3>(1)
   const [selectedSwimmer, setSelectedSwimmer] = useState<SwimmerRecord | null>(null)
   const [selectedMeet, setSelectedMeet] = useState<MeetRecord | null>(null)
@@ -196,11 +201,17 @@ function AddEntryPanel({
   return (
     <>
       <div
-        style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 200, backdropFilter: 'blur(2px)' }}
+        style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', zIndex: 200, backdropFilter: 'blur(2px)' }}
         onClick={onClose}
       />
       <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Add entry for swimmer"
+        tabIndex={-1}
         style={{
+          outline: 'none',
           position: 'fixed',
           top: 0, right: 0, bottom: 0,
           width: '540px',
@@ -215,46 +226,33 @@ function AddEntryPanel({
         }}
       >
         {/* Header */}
-        <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+        <div className="u-p-20px-24px" style={{ borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
           <div>
-            <div style={{ fontSize: 'var(--fs-lg)', fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', color: 'var(--text)', lineHeight: 1.2 }}>
-              Add Entry for Swimmer
+            <div className="u-fs-fs-lg u-ff-font-display u-fw-display-weight u-lh-1_2" style={{ color: 'var(--text)' }}>
+              Add entry for swimmer
             </div>
-            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginTop: '2px' }}>
+            <div className="u-fs-fs-sm u-mt-2px" style={{ color: 'var(--text-muted)' }}>
               Step {step} of 3 — {step === 1 ? 'Select swimmer' : step === 2 ? 'Select meet' : 'Choose events'}
             </div>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '4px', borderRadius: '6px', display: 'flex' }}>
+          <button type="button" onClick={onClose} className="u-p-4px" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', borderRadius: '6px', display: 'flex' }}>
             <Icon name="x" size={18} />
           </button>
         </div>
 
         {/* Step progress */}
-        <div style={{ padding: '12px 24px', borderBottom: '1px solid var(--border)', display: 'flex', gap: '8px', flexShrink: 0 }}>
+        <div className="u-p-12px-24px u-gap-8px" style={{ borderBottom: '1px solid var(--border)', display: 'flex', flexShrink: 0 }}>
           {[
             { n: 1, label: selectedSwimmer ? `${selectedSwimmer.first_name} ${selectedSwimmer.last_name}` : 'Swimmer' },
             { n: 2, label: selectedMeet ? selectedMeet.name : 'Meet' },
             { n: 3, label: `Events${selectedEvents.size > 0 ? ` (${selectedEvents.size})` : ''}` },
           ].map(({ n, label }) => (
-            <button
+            <button type="button"
               key={n}
               onClick={() => { if (n < step || (n === 2 && selectedSwimmer) || (n === 3 && selectedMeet)) setStep(n as 1 | 2 | 3) }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '4px 12px',
-                borderRadius: '6px',
-                border: 'none',
-                background: step === n ? 'var(--accent-subtle)' : 'transparent',
-                color: step === n ? 'var(--accent)' : step > n ? 'var(--success)' : 'var(--text-muted)',
-                fontSize: 'var(--fs-sm)',
-                fontWeight: step === n ? 600 : 400,
-                cursor: 'pointer',
-                fontFamily: 'var(--font-body)',
-              }}
+              className="u-gap-6px u-p-4px-12px u-fs-fs-sm u-ff-font-body" style={{ display: 'flex', alignItems: 'center', borderRadius: '6px', border: 'none', background: step === n ? 'var(--accent-subtle)' : 'transparent', color: step === n ? 'var(--accent)' : step > n ? 'var(--success)' : 'var(--text-muted)', fontWeight: step === n ? 600 : 400, cursor: 'pointer' }}
             >
-              <span style={{ width: '18px', height: '18px', borderRadius: '50%', background: step > n ? 'var(--success)' : step === n ? 'var(--accent)' : 'var(--bg-elevated)', color: step >= n ? '#fff' : 'var(--text-muted)', fontSize: 'var(--fs-2xs)', fontFamily: 'var(--font-body)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, flexShrink: 0 }}>
+              <span className="u-fs-fs-2xs u-ff-font-body u-fw-700" style={{ width: '18px', height: '18px', borderRadius: '50%', background: step > n ? 'var(--success)' : step === n ? 'var(--accent)' : 'var(--bg-elevated)', color: step >= n ? '#fff' : 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 {step > n ? '✓' : n}
               </span>
               {label}
@@ -263,39 +261,27 @@ function AddEntryPanel({
         </div>
 
         {/* Body */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
+        <div className="u-p-20px-24px" style={{ flex: 1, overflowY: 'auto' }}>
 
           {/* Step 1: Swimmer */}
           {step === 1 && (
             <div>
-              <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)', marginBottom: '16px' }}>Select a swimmer to add entries for:</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <p className="u-fs-fs-base u-mb-16px" style={{ color: 'var(--text-muted)' }}>Select a swimmer to add entries for:</p>
+              <div className="u-gap-6px" style={{ display: 'flex', flexDirection: 'column' }}>
                 {swimmers.map((sw) => (
-                  <button
+                  <button type="button"
                     key={sw.id}
                     onClick={() => { setSelectedSwimmer(sw); setStep(2) }}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '12px',
-                      padding: '12px 16px',
-                      borderRadius: '8px',
-                      border: '1px solid var(--border)',
-                      background: 'var(--bg-surface)',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      fontFamily: 'var(--font-body)',
-                      transition: 'border-color 0.14s, background 0.14s',
-                    }}
+                    className="u-gap-12px u-p-12px-16px u-ff-font-body" style={{ display: 'flex', alignItems: 'center', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-surface)', cursor: 'pointer', textAlign: 'left', transition: 'border-color 0.14s, background 0.14s' }}
                     onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.background = 'var(--accent-subtle)' }}
                     onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = 'var(--bg-surface)' }}
                   >
-                    <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(135deg, var(--accent) 0%, #b84a18 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 'var(--fs-xs)', fontWeight: 700, fontFamily: 'var(--font-body)', flexShrink: 0 }}>
+                    <div className="u-fs-fs-xs u-fw-700 u-ff-font-body" style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(135deg, var(--accent) 0%, #b84a18 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', flexShrink: 0 }}>
                       {(sw.first_name[0] ?? '') + (sw.last_name[0] ?? '')}
                     </div>
                     <div>
-                      <div style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)' }}>{sw.first_name} {sw.last_name}</div>
-                      <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+                      <div className="u-fs-fs-base u-fw-600" style={{ color: 'var(--text)' }}>{sw.first_name} {sw.last_name}</div>
+                      <div className="u-fs-fs-xs u-ff-font-body" style={{ color: 'var(--text-muted)' }}>
                         {sw.gender ?? '—'} · {sw.registration_status}
                       </div>
                     </div>
@@ -303,7 +289,7 @@ function AddEntryPanel({
                   </button>
                 ))}
                 {swimmers.length === 0 && (
-                  <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)', fontStyle: 'italic' }}>No swimmers found.</p>
+                  <p className="u-fs-fs-base" style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>No swimmers found.</p>
                 )}
               </div>
             </div>
@@ -312,32 +298,20 @@ function AddEntryPanel({
           {/* Step 2: Meet */}
           {step === 2 && (
             <div>
-              <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)', marginBottom: '16px' }}>Select a meet to add entries to:</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <p className="u-fs-fs-base u-mb-16px" style={{ color: 'var(--text-muted)' }}>Select a meet to add entries to:</p>
+              <div className="u-gap-6px" style={{ display: 'flex', flexDirection: 'column' }}>
                 {eligibleMeets.map((m) => (
-                  <button
+                  <button type="button"
                     key={m.id}
                     onClick={() => handleSelectMeet(m)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '12px',
-                      padding: '12px 16px',
-                      borderRadius: '8px',
-                      border: '1px solid var(--border)',
-                      background: 'var(--bg-surface)',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      fontFamily: 'var(--font-body)',
-                      transition: 'border-color 0.14s, background 0.14s',
-                    }}
+                    className="u-gap-12px u-p-12px-16px u-ff-font-body" style={{ display: 'flex', alignItems: 'center', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-surface)', cursor: 'pointer', textAlign: 'left', transition: 'border-color 0.14s, background 0.14s' }}
                     onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.background = 'var(--accent-subtle)' }}
                     onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = 'var(--bg-surface)' }}
                   >
                     <Icon name="calendar" size={16} color="var(--text-muted)" style={{ flexShrink: 0 } as CSSProperties} />
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)' }}>{m.name}</div>
-                      <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+                      <div className="u-fs-fs-base u-fw-600" style={{ color: 'var(--text)' }}>{m.name}</div>
+                      <div className="u-fs-fs-xs u-ff-font-body" style={{ color: 'var(--text-muted)' }}>
                         {m.start_date ? formatDate(m.start_date) : '—'} · {m.status.replace(/_/g, ' ')}
                       </div>
                     </div>
@@ -345,7 +319,7 @@ function AddEntryPanel({
                   </button>
                 ))}
                 {eligibleMeets.length === 0 && (
-                  <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)', fontStyle: 'italic' }}>No meets currently accepting entries.</p>
+                  <p className="u-fs-fs-base" style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>No meets currently accepting entries.</p>
                 )}
               </div>
             </div>
@@ -355,60 +329,50 @@ function AddEntryPanel({
           {step === 3 && (
             <div>
               {loadingEvents ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div className="u-gap-8px" style={{ display: 'flex', flexDirection: 'column' }}>
                   {[1,2,3,4].map((i) => (
                     <div key={i} style={{ height: '44px', background: 'var(--bg-elevated)', borderRadius: '8px', animation: 'pulse 1.5s ease-in-out infinite', animationDelay: `${i * 0.1}s` }} />
                   ))}
                 </div>
               ) : (
                 <>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                  <div className="u-mb-16px" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <p className="page-subtitle">
                       Select events for <strong style={{ color: 'var(--text)' }}>{selectedSwimmer?.first_name} {selectedSwimmer?.last_name}</strong>:
                     </p>
                     {selectedEvents.size > 0 && (
-                      <span style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--accent)' }}>
+                      <span className="u-fs-fs-sm u-ff-font-body" style={{ color: 'var(--accent-text, var(--accent))' }}>
                         {selectedEvents.size} selected
                       </span>
                     )}
                   </div>
 
                   {eligibleSessionGroups.length === 0 ? (
-                    <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)', fontStyle: 'italic' }}>No eligible events found for this swimmer.</p>
+                    <p className="u-fs-fs-base" style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>No eligible events found for this swimmer.</p>
                   ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div className="u-gap-12px" style={{ display: 'flex', flexDirection: 'column' }}>
                       {eligibleSessionGroups.map((group) => (
                         <div key={group.id}>
-                          <div style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                          <div className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ color: 'var(--text-muted)' }}>
                             {group.id === 'main' ? 'Main session' : 'Unscheduled'}
                           </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <div className="u-gap-4px" style={{ display: 'flex', flexDirection: 'column' }}>
                             {group.events.map((ev) => {
                               const isSelected = selectedEvents.has(ev.id)
                               return (
                                 <div
                                   key={ev.id}
                                   onClick={() => toggleEvent(ev.id)}
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '12px',
-                                    padding: '12px 12px',
-                                    borderRadius: '8px',
-                                    border: isSelected ? '1.5px solid var(--accent)' : '1px solid var(--border)',
-                                    background: isSelected ? 'var(--accent-subtle)' : 'var(--bg-surface)',
-                                    cursor: 'pointer',
-                                    transition: 'all 120ms ease',
-                                  }}
+                                  className="u-gap-12px u-p-12px-12px" style={{ display: 'flex', alignItems: 'center', borderRadius: '8px', border: isSelected ? '1.5px solid var(--accent)' : '1px solid var(--border)', background: isSelected ? 'var(--accent-subtle)' : 'var(--bg-surface)', cursor: 'pointer', transition: 'all 120ms ease' }}
                                 >
                                   <div style={{ width: '16px', height: '16px', borderRadius: '4px', border: isSelected ? '2px solid var(--accent)' : '1.5px solid var(--border)', background: isSelected ? 'var(--accent)' : 'transparent', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                     {isSelected && <svg viewBox="0 0 10 8" fill="none" width="9" height="9"><path d="M1 4l3 3 5-6" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
                                   </div>
-                                  <span style={{ fontSize: 'var(--fs-base)', color: isSelected ? 'var(--text)' : 'var(--text-subtle)', flex: 1, fontWeight: isSelected ? 600 : 400 }}>
+                                  <span className="u-fs-fs-base" style={{ color: isSelected ? 'var(--text)' : 'var(--text-subtle)', flex: 1, fontWeight: isSelected ? 600 : 400 }}>
                                     {formatEvent(ev)}
                                   </span>
                                   {ev.event_number && (
-                                    <span style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>#{ev.event_number}</span>
+                                    <span className="u-fs-fs-xs u-ff-font-body" style={{ color: 'var(--text-muted)' }}>#{ev.event_number}</span>
                                   )}
                                 </div>
                               )
@@ -420,16 +384,7 @@ function AddEntryPanel({
                   )}
                   {saveError && (
                     <div
-                      style={{
-                        marginTop: '16px',
-                        padding: '12px 12px',
-                        borderRadius: '8px',
-                        border: '1px solid var(--error-border)',
-                        background: 'var(--error-bg)',
-                        color: 'var(--error)',
-                        fontSize: 'var(--fs-sm)',
-                        lineHeight: 1.45,
-                      }}
+                      className="u-mt-16px u-p-12px-12px u-fs-fs-sm" style={{ borderRadius: '8px', border: '1px solid var(--error-border)', background: 'var(--error-bg)', color: 'var(--error)', lineHeight: 1.45 }}
                     >
                       {saveError}
                     </div>
@@ -441,20 +396,20 @@ function AddEntryPanel({
         </div>
 
         {/* Footer */}
-        <div style={{ padding: '16px 24px', borderTop: '1px solid var(--border)', display: 'flex', gap: '8px', flexShrink: 0, background: 'var(--bg)' }}>
-          <button onClick={onClose} style={{ flex: 1, padding: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '8px', fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)', cursor: 'pointer' }}>
+        <div className="u-p-16px-24px u-gap-8px" style={{ borderTop: '1px solid var(--border)', display: 'flex', flexShrink: 0, background: 'var(--bg)' }}>
+          <button type="button" onClick={onClose} className="btn btn-secondary" style={{ flex: 1 }}>
             Cancel
           </button>
           {step === 3 && (
-            <button
+            <button type="button"
               onClick={handleSave}
               disabled={selectedEvents.size === 0 || saving || saved}
-              style={{ flex: 2, padding: '12px', background: saved ? 'var(--success)' : 'var(--accent)', border: 'none', borderRadius: '8px', fontSize: 'var(--fs-base)', fontWeight: 600, color: '#fff', cursor: selectedEvents.size === 0 || saving || saved ? 'not-allowed' : 'pointer', opacity: selectedEvents.size === 0 ? 0.5 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', transition: 'background 0.2s' }}
+              className={`btn ${saved ? 'btn-success' : 'btn-primary'}`} style={{ flex: 2 }}
             >
               {saved ? (
                 <><Icon name="check-circle" size={14} /> Saved!</>
               ) : saving ? (
-                <><span style={{ width: '14px', height: '14px', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.65s linear infinite', display: 'inline-block' }} /> Saving…</>
+                <><span className="spinner spinner-sm" aria-hidden /> Saving…</>
               ) : (
                 <>Save {selectedEvents.size} {selectedEvents.size === 1 ? 'Entry' : 'Entries'}</>
               )}
@@ -552,7 +507,7 @@ function EntriesPageContent() {
 
       if (!cancelled.v) setRows(combined)
     } catch (err) {
-      if (!cancelled.v) setError(uiErrorMessage(err, 'Failed to load entries'))
+      if (!cancelled.v) setError(uiErrorMessage(err, 'Entries couldn’t be loaded. Check your connection and try again.'))
     } finally {
       if (!cancelled.v) setLoading(false)
     }
@@ -583,24 +538,28 @@ function EntriesPageContent() {
     if (failed > 0) setError(`${failed} of ${pending.length} entries could not be approved. Refresh to see their current status.`)
   }, [handleApprove])
 
+  const confirm = useConfirm()
+  const confirmReason = useConfirmReason()
+  const [overrideDraft, setOverrideDraft] = useState<{ entryId: string; meetId: string; events: MeetEventRecord[]; eventId: string; reason: string } | null>(null)
   // The API has no separate "rejected" state: rejecting a submitted entry
   // scratches it (kept on record, excluded from reports and exports).
-  const handleReject = useCallback((entryId: string, meetId: string) => {
+  const handleReject = useCallback(async (entryId: string, meetId: string) => {
     if (!session?.user.orgId) return
-    if (!window.confirm('Reject this submitted entry? It will be scratched and excluded from reports and exports.')) return
+    const ok = await confirm({ title: 'Reject this entry?', message: 'It will be scratched and excluded from reports and exports. It stays on record.', confirmLabel: 'Reject entry', destructive: true, count: 1 })
+    if (!ok) return
     void scratchEntry(api, session.user.orgId, meetId, entryId, 'Rejected during coach review')
       .then(() => setRows((prev) => prev.map((e) => e.id === entryId ? { ...e, status: 'scratched' } : e)))
       .catch((err) => setError(uiErrorMessage(err, 'Couldn’t reject entry. Try again.')))
-  }, [api, session?.user.orgId])
+  }, [api, session?.user.orgId, confirm])
 
-  const handleScratch = useCallback((entryId: string, meetId: string) => {
+  const handleScratch = useCallback(async (entryId: string, meetId: string) => {
     if (!session?.user.orgId) return
-    if (!window.confirm('Scratch this entry? It stays on record but is removed from reports and exports.')) return
-    const reason = window.prompt('Reason for scratch (optional):') ?? undefined
+    const reason = await confirmReason({ title: 'Scratch this entry?', message: 'It stays on record but is removed from reports and exports.', confirmLabel: 'Scratch entry', destructive: true, count: 1, reasonLabel: 'Reason', reasonRequired: true })
+    if (reason === null) return
     void scratchEntry(api, session.user.orgId, meetId, entryId, reason)
       .then(() => setRows((prev) => prev.map((e) => e.id === entryId ? { ...e, status: 'scratched' } : e)))
       .catch((err) => setError(uiErrorMessage(err, 'Couldn’t scratch entry. Try again.')))
-  }, [api, session?.user.orgId])
+  }, [api, session?.user.orgId, confirmReason])
 
   const handleOverride = useCallback((entryId: string, meetId: string) => {
     const orgId = session?.user.orgId
@@ -611,27 +570,25 @@ function EntriesPageContent() {
           setError('This meet has no events to override into.')
           return
         }
-        const listing = meetEvents.map((ev, i) => `${i + 1}. ${formatEvent(ev)}`).join('\n')
-        const choice = window.prompt(`Change this entry to which event? Enter a number:\n${listing}`)
-        if (choice === null) return
-        const idx = Number.parseInt(choice.trim(), 10) - 1
-        const target = meetEvents[idx]
-        if (!target) {
-          setError('Invalid event selection; override cancelled.')
-          return
-        }
-        const reason = window.prompt('Reason for this override (required):')?.trim()
-        if (!reason) {
-          setError('An override reason is required.')
-          return
-        }
-        return overrideEntry(api, orgId, meetId, entryId, { new_meet_event_id: target.id, reason })
-          .then((updated) => setRows((prev) => prev.map((e) => e.id === entryId
-            ? { ...e, event: formatEvent(target), override: true, overrideNote: updated.override_reason ?? reason }
-            : e)))
+        setOverrideDraft({ entryId, meetId, events: meetEvents, eventId: meetEvents[0].id, reason: '' })
       })
       .catch((err) => setError(uiErrorMessage(err, 'Couldn’t override entry. Try again.')))
   }, [api, session?.user.orgId])
+
+  const submitOverride = useCallback(() => {
+    const orgId = session?.user.orgId
+    const d = overrideDraft
+    if (!orgId || !d || !d.reason.trim()) return
+    const target = d.events.find((ev) => ev.id === d.eventId)
+    if (!target) return
+    const reason = d.reason.trim()
+    setOverrideDraft(null)
+    void overrideEntry(api, orgId, d.meetId, d.entryId, { new_meet_event_id: target.id, reason })
+      .then((updated) => setRows((prev) => prev.map((e) => e.id === d.entryId
+        ? { ...e, event: formatEvent(target), override: true, overrideNote: updated.override_reason ?? reason }
+        : e)))
+      .catch((err) => setError(uiErrorMessage(err, 'Couldn’t override entry. Try again.')))
+  }, [api, session?.user.orgId, overrideDraft])
 
   // Stats
   const total     = rows.length
@@ -661,13 +618,37 @@ function EntriesPageContent() {
 
   const pendingVisible = filtered.filter((e) => e.status === 'submitted')
 
+  // Keyboard triage: / filter, j/k move, a approve, r reject (still asks to confirm).
+  const searchRef = useRef<HTMLInputElement>(null)
+  const [focusedId, setFocusedId] = useState<string | null>(null)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      const t = e.target as HTMLElement | null
+      if (t && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))) return
+      if (document.querySelector('[role="dialog"]')) return
+      const idx = filtered.findIndex((r) => r.id === focusedId)
+      if (e.key === '/') { e.preventDefault(); searchRef.current?.focus() }
+      else if (e.key === 'j') { setFocusedId(filtered[Math.min(idx + 1, filtered.length - 1)]?.id ?? null) }
+      else if (e.key === 'k') { setFocusedId(filtered[Math.max(idx - 1, 0)]?.id ?? null) }
+      else if ((e.key === 'a' || e.key === 'r') && idx >= 0) {
+        const row = filtered[idx]
+        if (row.status !== 'submitted') return
+        if (e.key === 'a') void handleApprove(row.id, row.meetId)
+        else void handleReject(row.id, row.meetId)
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [filtered, focusedId, handleApprove, handleReject])
+
   const columns = useMemo<Column<EntryRow>[]>(() => [
     {
       key: 'swimmer',
       label: 'Swimmer',
       sortable: true,
       render: (r) => (
-        <Link href={`/members/swimmers/${r.swimmerId}`} style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)', textDecoration: 'none' }}
+        <Link href={`/members/swimmers/${r.swimmerId}`} className="u-fs-fs-base u-fw-600" style={{ color: 'var(--text)', textDecoration: 'none' }}
           onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--accent)')}
           onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text)')}>
           {r.swimmer}
@@ -678,7 +659,7 @@ function EntriesPageContent() {
       key: 'event',
       label: 'Event',
       render: (r) => (
-        <span style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)' }}>{r.event}</span>
+        <span className="u-fs-fs-base u-fw-600" style={{ color: 'var(--text)' }}>{r.event}</span>
       ),
     },
     {
@@ -686,7 +667,7 @@ function EntriesPageContent() {
       label: 'Seed time',
       align: 'right',
       render: (r) => (
-        <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-base)', fontWeight: 700, color: r.seedTime === 'NT' ? 'var(--text-muted)' : 'var(--accent)' }}>
+        <span className="u-ff-font-body u-fs-fs-base u-fw-700" style={{ color: r.seedTime === 'NT' ? 'var(--text-muted)' : 'var(--accent)' }}>
           {r.seedTime}
         </span>
       ),
@@ -697,13 +678,13 @@ function EntriesPageContent() {
       sortable: true,
       render: (r) => (
         <div>
-          <Link href={`/meets/${r.meetId}`} style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)', textDecoration: 'none' }}
+          <Link href={`/meets/${r.meetId}`} className="u-fs-fs-base u-fw-600" style={{ color: 'var(--text)', textDecoration: 'none' }}
             onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--accent)')}
             onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text)')}>
             {r.meetName}
           </Link>
           {r.meetDate && (
-            <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginTop: '1px' }}>
+            <div className="u-fs-fs-xs u-ff-font-body u-mt-1px" style={{ color: 'var(--text-muted)' }}>
               {formatDate(r.meetDate)}
             </div>
           )}
@@ -716,14 +697,14 @@ function EntriesPageContent() {
       render: (r) => {
         const c = STATUS_CFG[r.status] ?? STATUS_CFG['draft']
         return (
-          <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className="u-gap-4px" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
             <span className="badge" style={{ background: c.bg, color: c.color }}>
               {c.label}
             </span>
             {r.override && (
               <span
                 title={r.overrideNote ? `Seed time changed by hand: ${r.overrideNote}` : 'Seed time changed by hand'}
-                style={{ fontSize: 'var(--fs-2xs)', fontWeight: 700, padding: '2px 6px', borderRadius: '8px', background: 'var(--accent-subtle)', color: 'var(--accent)', fontFamily: 'var(--font-body)' }}
+                className="u-fs-fs-2xs u-fw-700 u-p-2px-6px u-ff-font-body" style={{ borderRadius: '8px', background: 'var(--accent-subtle)', color: 'var(--accent-text, var(--accent))' }}
               >
                 CHANGED
               </span>
@@ -739,21 +720,21 @@ function EntriesPageContent() {
         // Entries can be scratched until they are exported/finalized.
         const scratchable = r.status === 'draft' || r.status === 'submitted' || r.status === 'approved'
         return (
-          <div style={{ display: 'flex', gap: '6px', alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+          <div className="u-gap-6px" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
             {r.status === 'submitted' && (
               <>
-                <button className="btn btn-sm" style={{ background: 'var(--success-bg)', color: 'var(--success)', border: '1px solid var(--success-border)', display: 'flex', alignItems: 'center', gap: '4px' }} onClick={() => { void handleApprove(r.id, r.meetId) }}>
+                <button type="button" className="btn btn-sm u-gap-4px" style={{ background: 'var(--success-bg)', color: 'var(--success)', border: '1px solid var(--success-border)', display: 'flex', alignItems: 'center' }} onClick={() => { void handleApprove(r.id, r.meetId) }}>
                   <Icon name="check-circle" size={11} /> Approve
                 </button>
-                <button className="btn btn-sm btn-secondary" style={{ color: 'var(--error)', display: 'flex', alignItems: 'center', gap: '4px' }} onClick={() => handleReject(r.id, r.meetId)}>
+                <button type="button" className="btn btn-sm btn-secondary u-gap-4px" style={{ color: 'var(--error)', display: 'flex', alignItems: 'center' }} onClick={() => handleReject(r.id, r.meetId)}>
                   <Icon name="x" size={11} /> Reject
                 </button>
               </>
             )}
             {scratchable && (
-              <button
-                className="btn btn-sm btn-secondary"
-                style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
+              <button type="button"
+                className="btn btn-sm btn-secondary u-gap-4px"
+                style={{ display: 'flex', alignItems: 'center' }}
                 onClick={() => handleOverride(r.id, r.meetId)}
                 title="Change this entry's event (coach override, reason required)"
               >
@@ -761,16 +742,16 @@ function EntriesPageContent() {
               </button>
             )}
             {scratchable && (
-              <button
-                className="btn btn-sm btn-secondary"
-                style={{ color: 'var(--error)', display: 'flex', alignItems: 'center', gap: '4px' }}
+              <button type="button"
+                className="btn btn-sm btn-secondary u-gap-4px"
+                style={{ color: 'var(--error)', display: 'flex', alignItems: 'center' }}
                 onClick={() => handleScratch(r.id, r.meetId)}
                 title="Scratch this entry"
               >
                 <Icon name="trash-2" size={11} /> Scratch
               </button>
             )}
-            <Link href={`/meets/${r.meetId}`} style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}
+            <Link href={`/meets/${r.meetId}`} className="u-fs-fs-sm u-gap-4px" style={{ color: 'var(--text-muted)', textDecoration: 'none', display: 'flex', alignItems: 'center' }}
               onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--accent)')}
               onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}>
               Meet <Icon name="chevron-right" size={12} />
@@ -784,8 +765,11 @@ function EntriesPageContent() {
   if (error) {
     return (
       <div className="page">
-        <div className="card" style={{ padding: '20px', borderColor: 'var(--error-border)', background: 'var(--error-bg)' }}>
-          <p style={{ color: 'var(--error)', fontSize: 'var(--fs-base)' }}>Failed to load entries: {error}</p>
+        <div className="card u-p-20px" style={{ borderColor: 'var(--error-border)', background: 'var(--error-bg)' }}>
+          <div className="row row-between" role="alert">
+            <p className="u-fs-fs-base" style={{ color: 'var(--error)' }}>{error}</p>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => void loadData({ v: false })}>Retry</button>
+          </div>
         </div>
       </div>
     )
@@ -796,7 +780,7 @@ function EntriesPageContent() {
       <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }`}</style>
 
       {lockedMeetId && (
-        <Link href={`/meets/${lockedMeetId}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', textDecoration: 'none', marginBottom: '16px' }}>
+        <Link href={`/meets/${lockedMeetId}`} className="u-gap-4px u-fs-fs-base u-mb-16px" style={{ display: 'inline-flex', alignItems: 'center', color: 'var(--text-subtle)', textDecoration: 'none' }}>
           <Icon name="chevron-left" size={14} /> Back to meet
         </Link>
       )}
@@ -808,52 +792,52 @@ function EntriesPageContent() {
             Entries
           </h1>
         </div>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+        <div className="u-gap-8px" style={{ display: 'flex', alignItems: 'center' }}>
           {pendingVisible.length > 0 && (
-            <button
-              className="btn btn-sm btn-secondary"
-              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+            <button type="button"
+              className="btn btn-sm btn-secondary u-gap-6px"
+              style={{ display: 'flex', alignItems: 'center' }}
               onClick={() => { void handleApproveAll(pendingVisible) }}
             >
               <Icon name="check-circle" size={13} /> Approve All ({pendingVisible.length})
             </button>
           )}
-          <button
-            className="btn btn-primary"
-            style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+          <button type="button"
+            className="btn btn-primary u-gap-6px"
+            style={{ display: 'flex', alignItems: 'center' }}
             onClick={() => setShowAddPanel(true)}
           >
-            <Icon name="plus" size={13} /> Add Entry
+            <Icon name="plus" size={13} /> Add entry
           </button>
         </div>
       </div>
 
       {/* Stats strip */}
-      <div className="cols-4" style={{ gap: '12px', marginBottom: '24px' }}>
+      <div className="cols-4 u-gap-12px u-mb-24px" >
         {[
           { label: 'Total',        value: loading ? '—' : total,     color: 'var(--text)' },
           { label: 'Needs review', value: loading ? '—' : submitted, color: (submitted > 0 && !loading) ? 'var(--warning)' : 'var(--text-muted)' },
           { label: 'Approved',     value: loading ? '—' : approved,  color: 'var(--success)' },
           { label: 'Overrides',    value: loading ? '—' : overrides, color: (overrides > 0 && !loading) ? 'var(--accent)' : 'var(--text-muted)' },
         ].map((s) => (
-          <div key={s.label} className="card" style={{ padding: '16px 16px' }}>
-            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{s.label}</div>
-            <div style={{ fontSize: 'var(--fs-2xl)', fontFamily: 'var(--font-body)', fontWeight: 700, color: s.color }}>{s.value}</div>
+          <div key={s.label} className="card u-p-16px-16px" >
+            <div className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ color: 'var(--text-muted)' }}>{s.label}</div>
+            <div className="u-fs-fs-2xl u-ff-font-body u-fw-700" style={{ color: s.color }}>{s.value}</div>
           </div>
         ))}
       </div>
 
       {/* Pending banner */}
       {!loading && submitted > 0 && (
-        <div className="card" style={{ padding: '16px 16px', marginBottom: '20px', borderColor: 'var(--warning-border)', background: 'var(--warning-bg)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div className="card u-p-16px-16px u-mb-20px u-gap-12px" style={{ borderColor: 'var(--warning-border)', background: 'var(--warning-bg)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div className="u-gap-12px" style={{ display: 'flex', alignItems: 'center' }}>
             <Icon name="alert-circle" size={16} color="var(--warning)" />
-            <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)' }}>
+            <span className="u-fs-fs-base" style={{ color: 'var(--text-subtle)' }}>
               <strong style={{ color: 'var(--warning)' }}>{submitted} entr{submitted === 1 ? 'y' : 'ies'}</strong> {submitted === 1 ? 'is' : 'are'} pending coach approval across all meets
             </span>
           </div>
           {draft > 0 && (
-            <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+            <span className="u-fs-fs-sm u-ff-font-body" style={{ color: 'var(--text-muted)' }}>
               {draft} draft{draft !== 1 ? 's' : ''} not yet submitted
             </span>
           )}
@@ -864,13 +848,13 @@ function EntriesPageContent() {
       <div className="toolbar">
         <div className="toolbar-search">
           <Icon name="search" size={14} color="var(--text-muted)" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' } as CSSProperties} />
-          <input type="text" placeholder="Search swimmer, event, or meet…" value={search} onChange={(e) => setSearch(e.target.value)} className="input" style={{ paddingLeft: '32px', width: '100%' }} />
+          <input aria-label="Search swimmer, event, or meet" ref={searchRef} type="text" placeholder="Search swimmer, event, or meet…" value={search} onChange={(e) => setSearch(e.target.value)} className="input-search input u-pl-32px" style={{ width: '100%' }} />
         </div>
         {lockedMeetId ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg-elevated)', fontSize: 'var(--fs-base)', color: 'var(--text)' }}>
+          <div className="u-gap-8px u-p-0-12px u-fs-fs-base" style={{ display: 'flex', alignItems: 'center', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)' }}>
             <Icon name="calendar" size={13} color="var(--text-muted)" />
             {meetOptions.find((o) => o.value === lockedMeetId)?.label ?? 'This meet'}
-            <Link href="/entries" style={{ fontSize: 'var(--fs-xs)', color: 'var(--accent)', textDecoration: 'none' }}>Clear</Link>
+            <Link href="/entries" className="u-fs-fs-xs" style={{ color: 'var(--accent-text, var(--accent))', textDecoration: 'none' }}>Clear</Link>
           </div>
         ) : (
           <select value={meetFilter} onChange={(e) => setMeetFilter(e.target.value)} className="input" style={{ minWidth: '180px' }}>
@@ -883,14 +867,15 @@ function EntriesPageContent() {
       </div>
 
       {!loading && (
-        <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginBottom: '12px' }}>
-          {filtered.length} of {total} entries
+        <div className="u-fs-fs-sm u-ff-font-body u-mb-12px" style={{ color: 'var(--text-muted)' }}>
+          {filtered.length} of {total} entries.{' '}
+          Keyboard shortcuts: <span className="kbd-hint">/</span> filter, <span className="kbd-hint">j</span> <span className="kbd-hint">k</span> move, <span className="kbd-hint">a</span> approve, <span className="kbd-hint">r</span> reject.
         </div>
       )}
 
       {/* Loading skeleton */}
       {loading && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div className="u-gap-12px" style={{ display: 'flex', flexDirection: 'column' }}>
           {[1,2,3,4,5].map((i) => (
             <div key={i} style={{ height: '44px', background: 'var(--bg-elevated)', borderRadius: '6px', animation: 'pulse 1.5s ease-in-out infinite', animationDelay: `${i * 0.1}s` }} />
           ))}
@@ -899,8 +884,8 @@ function EntriesPageContent() {
 
       {!loading && (
         filtered.length === 0
-          ? <EmptyState title="No entries found" description={total === 0 ? "No entries exist yet. Use 'Add Entry' to add one, or entries are created when commitments are locked." : "Try adjusting your filters."} />
-          : <Table columns={columns} data={filtered} pageSize={20} emptyTitle="No entries" emptyDescription="No entries match the current filters." />
+          ? <EmptyState title="No entries found" description={total === 0 ? "No entries exist yet. Use 'Add entry' to add one, or entries are created when commitments are locked." : "Try adjusting your filters."} />
+          : <Table columns={columns} data={filtered} keyField="id" highlightKey={focusedId ?? undefined} pageSize={20} emptyTitle="No entries" emptyDescription="No entries match the current filters." />
       )}
 
       {/* Add entry panel */}
@@ -917,6 +902,33 @@ function EntriesPageContent() {
           }}
         />
       )}
+      <Modal
+        open={!!overrideDraft}
+        onClose={() => setOverrideDraft(null)}
+        title="Override entry event"
+        width={440}
+        footer={
+          <>
+            <button type="button" className="btn btn-secondary" onClick={() => setOverrideDraft(null)}>Cancel</button>
+            <button type="button" className="btn btn-primary" disabled={!overrideDraft?.reason.trim()} onClick={submitOverride}>Override entry</button>
+          </>
+        }
+      >
+        {overrideDraft && (
+          <div className="stack">
+            <div>
+              <label htmlFor="override-event" className="form-label">Change to event</label>
+              <select id="override-event" className="form-input" style={{ width: '100%' }} value={overrideDraft.eventId} onChange={(e) => setOverrideDraft({ ...overrideDraft, eventId: e.target.value })}>
+                {overrideDraft.events.map((ev) => <option key={ev.id} value={ev.id}>{formatEvent(ev)}</option>)}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="override-reason" className="form-label">Reason</label>
+              <textarea id="override-reason" className="form-input" rows={3} style={{ width: '100%' }} data-autofocus="" value={overrideDraft.reason} onChange={(e) => setOverrideDraft({ ...overrideDraft, reason: e.target.value })} />
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }

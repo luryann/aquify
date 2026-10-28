@@ -20,6 +20,7 @@ import {
   type SwimmerActivityRecord,
 } from '@/lib/adminData'
 import { parseBackendDate } from '@/lib/dates'
+import './page.inline.css'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 function fmtDOB(iso?: string): string {
@@ -74,10 +75,10 @@ function pivotBestTimes(records: BestTimeRecord[]): TimeRow[] {
 }
 
 const GRADIENTS = [
-  'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)',
-  'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-  'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-  'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+  'var(--accent-text)',
+  'var(--accent-text)',
+  'var(--accent-text)',
+  'var(--accent-text)',
 ]
 
 function Skeleton({ w = '100%', h = 16, r = 8 }: { w?: string | number; h?: number; r?: number }) {
@@ -85,7 +86,7 @@ function Skeleton({ w = '100%', h = 16, r = 8 }: { w?: string | number; h?: numb
     <div
       style={{
         width: w, height: h, borderRadius: r,
-        background: 'linear-gradient(90deg, #f0efee 25%, #e6e5e3 50%, #f0efee 75%)',
+        background: 'linear-gradient(90deg, var(--bg-elevated) 25%, var(--border-strong) 50%, var(--bg-elevated) 75%)',
         backgroundSize: '200% 100%',
         animation: 'shimmer 1.5s infinite',
       }}
@@ -114,17 +115,17 @@ function fmtShortDate(iso?: string): string {
 function historyAccent(type: string): { bg: string; color: string } {
   switch (type) {
     case 'result':
-      return { bg: 'rgba(59,130,246,0.12)', color: 'var(--info)' }
+      return { bg: 'var(--info-bg)', color: 'var(--info)' }
     case 'registration':
-      return { bg: 'rgba(16,185,129,0.12)', color: 'var(--success)' }
+      return { bg: 'var(--success-bg)', color: 'var(--success)' }
     case 'waiver':
-      return { bg: 'rgba(245,158,11,0.15)', color: '#b45309' }
+      return { bg: 'var(--warning-bg)', color: 'var(--warning)' }
     case 'document':
-      return { bg: 'rgba(235,93,30,0.12)', color: '#c2410c' }
+      return { bg: 'var(--accent-subtle)', color: 'var(--accent-text, var(--accent))' }
     case 'commitment':
-      return { bg: 'rgba(107,114,128,0.12)', color: '#4b5563' }
+      return { bg: 'var(--bg-wash-strong)', color: 'var(--text-subtle)' }
     default:
-      return { bg: 'rgba(0,0,0,0.06)', color: 'var(--text-subtle)' }
+      return { bg: 'var(--bg-wash-strong)', color: 'var(--text-subtle)' }
   }
 }
 
@@ -159,7 +160,7 @@ export default function SwimmerProfilePage() {
   useEffect(() => {
     if (!orgId || !swimmerId) {
       setLoading(false)
-      setLoadError('Swimmer detail is unavailable because the swimmer context is missing.')
+      setLoadError('We could not find that swimmer. Go back to your household and pick a swimmer.')
       return
     }
     setLoading(true)
@@ -180,7 +181,7 @@ export default function SwimmerProfilePage() {
           setLoadError(reportUIError(
             'portal-household-swimmer-load',
             swResult.reason,
-            'Swimmer detail data is unavailable right now.',
+            'We could not load this page. Check your connection and try again.',
             { orgId, swimmerId },
           ))
           return
@@ -271,38 +272,28 @@ export default function SwimmerProfilePage() {
       `}</style>
 
       {/* Breadcrumb */}
-      <nav style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: 'var(--fs-base)', color: 'var(--text-muted)', marginBottom: '24px', animation: 'slideUp 0.3s ease both' }}>
+      <nav className="is-90f3963">
         <Link href="/portal/household" style={{ color: 'var(--text-muted)', textDecoration: 'none' }}>
           Household
         </Link>
         <span>/</span>
-        <span style={{ color: 'var(--text)', fontWeight: 500 }}>
+        <span className="is-aaa1da3">
           {loading ? 'Loading…' : fullName}
         </span>
       </nav>
 
       {loadError && (
         <div
-          style={{
-            background: 'var(--warning-bg)',
-            border: '1px solid #fdba74',
-            borderRadius: '12px',
-            padding: '12px 16px',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: '12px',
-            marginBottom: '24px',
-          }}
+          className="is-d01e931"
         >
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+          <div className="is-730b6a7">
             <Icon name="alert-circle" size={15} style={{ color: 'var(--warning)', marginTop: '1px', flexShrink: 0 }} />
-            <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--warning)', lineHeight: 1.5 }}>{loadError}</p>
+            <p className="is-51a00ce">{loadError}</p>
           </div>
           <button
             type="button"
             onClick={() => setReloadKey((key) => key + 1)}
-            style={{ background: 'var(--bg-elevated)', border: '1px solid #fdba74', borderRadius: '8px', cursor: 'pointer', color: 'var(--warning)', fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '8px 16px', whiteSpace: 'nowrap' }}
+            className="is-889d44c"
           >
             Retry
           </button>
@@ -310,11 +301,11 @@ export default function SwimmerProfilePage() {
       )}
 
       {/* Header Card */}
-      <div className="card" style={{ padding: '24px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '20px', animation: 'slideUp 0.35s ease both' }}>
+      <div className="card is-466f0ca" >
         {loading ? (
           <>
             <Skeleton w={72} h={72} r={36} />
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div className="is-e933947">
               <Skeleton w="40%" h={26} />
               <Skeleton w="65%" h={14} />
             </div>
@@ -328,19 +319,19 @@ export default function SwimmerProfilePage() {
 
             {/* Info */}
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <div className="is-c960f60">
                 <h1 className="page-title">
                   {fullName}
                 </h1>
-                <span style={{ padding: '4px 8px', borderRadius: '999px', fontSize: 'var(--fs-xs)', fontWeight: 600, background: statusCfg.bg, color: statusCfg.color, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                <span style={{ padding: '4px 8px', borderRadius: '999px', fontSize: 'var(--fs-xs)', fontWeight: 600, background: statusCfg.bg, color: statusCfg.color, }}>
                   {statusCfg.label}
                 </span>
               </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginTop: '8px', fontSize: 'var(--fs-base)', color: 'var(--text-subtle)' }}>
+              <div className="is-a62a9a1">
                 {age !== null && <span>Age {age}</span>}
                 {swimmer?.gender && <><span>·</span><span>{swimmer.gender}</span></>}
                 {groupName !== '—' && <><span>·</span><span>{groupName}</span></>}
-                {swimmer?.swimmer_external_id && <><span>·</span><span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)' }}>{swimmer.swimmer_external_id}</span></>}
+                {swimmer?.swimmer_external_id && <><span>·</span><span className="is-ad077fe">{swimmer.swimmer_external_id}</span></>}
               </div>
             </div>
 
@@ -349,12 +340,12 @@ export default function SwimmerProfilePage() {
       </div>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: '2px', marginBottom: '24px', background: 'rgba(0,0,0,0.04)', borderRadius: '12px', padding: '4px', animation: 'slideUp 0.4s ease both' }}>
+      <div className="is-fbd0fa8">
         {(['profile', 'performance', 'history'] as Tab[]).map((t) => (
-          <button
+          <button type="button"
             key={t}
             onClick={() => setTab(t)}
-            style={{ flex: 1, padding: '8px 0', borderRadius: '8px', border: 'none', background: tab === t ? 'var(--bg-elevated)' : 'transparent', color: tab === t ? 'var(--text)' : 'var(--text-subtle)', fontSize: 'var(--fs-base)', fontWeight: tab === t ? 600 : 450, cursor: 'pointer', boxShadow: tab === t ? '0 1px 4px rgba(0,0,0,0.08)' : 'none', transition: 'all 120ms ease', fontFamily: 'var(--font-body)', textTransform: 'capitalize' }}
+            style={{ flex: 1, padding: '8px 0', borderRadius: '8px', border: 'none', background: tab === t ? 'var(--bg-elevated)' : 'transparent', color: tab === t ? 'var(--text)' : 'var(--text-subtle)', fontSize: 'var(--fs-base)', fontWeight: tab === t ? 600 : 450, cursor: 'pointer', boxShadow: tab === t ? 'var(--shadow-xs)' : 'none', transition: 'all 120ms ease', fontFamily: 'var(--font-body)', textTransform: 'capitalize' }}
           >
             {t}
           </button>
@@ -365,26 +356,26 @@ export default function SwimmerProfilePage() {
       {tab === 'profile' && (
         <div style={{ animation: 'slideUp 0.3s ease both' }}>
           {/* Edit policy notice */}
-          <div style={{ background: 'rgba(235,93,30,0.06)', border: '1px solid rgba(235,93,30,0.15)', borderRadius: '12px', padding: '12px 16px', marginBottom: '20px', display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+          <div className="is-b0803c6">
             <Icon name="info" size={15} style={{ color: 'var(--accent)', flexShrink: 0, marginTop: '2px' }} />
-            <p style={{ margin: 0, fontSize: 'var(--fs-base)', color: '#7A4A28', lineHeight: 1.5 }}>
+            <p className="is-822be2a">
               {EDITABLE_FIELD_NOTE}
             </p>
           </div>
 
           {/* Read-only Fields */}
-          <div className="card" style={{ overflow: 'hidden', marginBottom: '20px' }}>
-            <div style={{ padding: '16px 20px 12px', borderBottom: '1px solid rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: 'var(--fs-md)', fontWeight: 600, fontFamily: 'var(--font-body)', color: 'var(--text)' }}>
+          <div className="card is-b25ef49" >
+            <div className="is-1d257ec">
+              <span className="is-71cd844">
                 Club-managed fields
               </span>
-              <span style={{ padding: '2px 8px', background: 'rgba(0,0,0,0.05)', borderRadius: '4px', fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)' }}>
+              <span className="is-ed524ad">
                 read-only
               </span>
             </div>
 
             {loading ? (
-              <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div className="is-824b1f4">
                 {[0, 1, 2, 3, 4].map((i) => <Skeleton key={i} w={`${60 + i * 5}%`} h={14} />)}
               </div>
             ) : (
@@ -397,8 +388,8 @@ export default function SwimmerProfilePage() {
                 { label: 'Training group',       value: groupName },
                 { label: 'Registration status',  value: swimmer?.registration_status ?? '—' },
               ].map((field, i, arr) => (
-                <div key={field.label} style={{ display: 'flex', padding: '16px 20px', borderBottom: i < arr.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none', gap: '24px', alignItems: 'center' }}>
-                  <span style={{ width: '160px', fontSize: 'var(--fs-base)', color: 'var(--text-muted)', flexShrink: 0 }}>
+                <div key={field.label} style={{ display: 'flex', padding: '16px 20px', borderBottom: i < arr.length - 1 ? '1px solid var(--border)' : 'none', gap: '24px', alignItems: 'center' }}>
+                  <span className="is-2d24824">
                     {field.label}
                   </span>
                   <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', fontFamily: field.mono ? 'var(--font-mono)' : undefined }}>
@@ -410,33 +401,33 @@ export default function SwimmerProfilePage() {
           </div>
 
           {/* Editable Fields */}
-          <div className="card" style={{ overflow: 'hidden', marginBottom: '20px' }}>
-            <div style={{ padding: '16px 20px 12px', borderBottom: '1px solid rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: 'var(--fs-md)', fontWeight: 600, fontFamily: 'var(--font-body)', color: 'var(--text)' }}>
+          <div className="card is-b25ef49" >
+            <div className="is-1d257ec">
+              <span className="is-71cd844">
                 Parent-editable fields
               </span>
               <Icon name="edit" size={12} style={{ color: 'var(--accent)' }} />
             </div>
 
             {/* Preferred Name */}
-            <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
+            <div className="is-541f5a9">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginBottom: '4px' }}>Preferred Name / Nickname</div>
+                  <div className="is-8ab28f2">Preferred Name / Nickname</div>
                   {editingName ? (
-                    <input
+                    <input aria-label="Preferred name"
                       autoFocus
                       value={preferredName}
                       onChange={(e) => setPreferredName(e.target.value)}
-                      style={{ width: '100%', maxWidth: '280px', padding: '8px 12px', border: '1.5px solid var(--accent)', borderRadius: '8px', fontSize: 'var(--fs-md)', color: 'var(--text)', fontFamily: 'var(--font-body)', outline: 'none', background: 'var(--bg-elevated)' }}
+                      className="is-1855096"
                     />
                   ) : (
-                    <div style={{ fontSize: 'var(--fs-md)', color: 'var(--text)', fontWeight: 500 }}>
+                    <div className="is-ddcee0b">
                       {preferredName || <span style={{ color: 'var(--border-strong)', fontStyle: 'italic' }}>Not set</span>}
                     </div>
                   )}
                 </div>
-                <button onClick={() => setEditingName(!editingName)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontSize: 'var(--fs-sm)', display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px', borderRadius: '6px', transition: 'background 100ms' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(235,93,30,0.06)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
+                <button type="button" onClick={() => setEditingName(!editingName)} className="is-57031ea" onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(235,93,30,0.06)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
                   <Icon name="edit" size={12} />
                   {editingName ? 'Cancel' : 'Edit'}
                 </button>
@@ -444,28 +435,28 @@ export default function SwimmerProfilePage() {
             </div>
 
             {/* Bio (swimmer notes field) */}
-            <div style={{ padding: '16px 20px' }}>
+            <div className="is-401e6d8">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginBottom: '4px' }}>Bio</div>
+                  <div className="is-8ab28f2">Bio</div>
                   {editingNotes ? (
-                    <textarea
+                    <textarea aria-label="Bio"
                       autoFocus
                       value={emergencyNotes}
                       onChange={(e) => setEmergencyNotes(e.target.value)}
                       rows={4}
-                      style={{ width: '100%', padding: '8px 12px', border: '1.5px solid var(--accent)', borderRadius: '8px', fontSize: 'var(--fs-base)', color: 'var(--text)', fontFamily: 'var(--font-body)', outline: 'none', background: 'var(--bg-elevated)', resize: 'vertical', lineHeight: 1.5 }}
+                      className="is-0bb82c5"
                     />
                   ) : (
-                    <div style={{ fontSize: 'var(--fs-base)', color: 'var(--text)', lineHeight: 1.6, maxWidth: '500px' }}>
+                    <div className="is-6600ab7">
                       {emergencyNotes || <span style={{ color: 'var(--border-strong)', fontStyle: 'italic' }}>No bio yet</span>}
                     </div>
                   )}
-                  <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--border-strong)', marginTop: '6px' }}>
+                  <div className="is-ed9977d">
                     Visible to coaches and club staff during meets and practices.
                   </div>
                 </div>
-                <button onClick={() => setEditingNotes(!editingNotes)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontSize: 'var(--fs-sm)', display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px', borderRadius: '6px', transition: 'background 100ms', flexShrink: 0 }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(235,93,30,0.06)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
+                <button type="button" onClick={() => setEditingNotes(!editingNotes)} className="is-b347197" onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(235,93,30,0.06)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
                   <Icon name="edit" size={12} />
                   {editingNotes ? 'Cancel' : 'Edit'}
                 </button>
@@ -473,46 +464,46 @@ export default function SwimmerProfilePage() {
             </div>
 
             {/* Emergency Contact + Allergies */}
-            <div style={{ padding: '16px 20px', borderTop: '1px solid rgba(0,0,0,0.05)' }}>
+            <div className="is-b47e2a5">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginBottom: '12px' }}>Emergency contact</div>
+                  <div className="is-76ed46e">Emergency contact</div>
                   {editingEmergencyContact ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '440px' }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '12px' }}>
-                        <input
+                    <div className="is-7baf057">
+                      <div className="is-6b4ef92">
+                        <input aria-label="Contact name"
                           autoFocus
                           value={emergencyContactName}
                           onChange={(e) => setEmergencyContactName(e.target.value)}
                           placeholder="Contact name"
-                          style={{ padding: '8px 12px', border: '1.5px solid var(--accent)', borderRadius: '8px', fontSize: 'var(--fs-base)', color: 'var(--text)', fontFamily: 'var(--font-body)', outline: 'none', background: 'var(--bg-elevated)' }}
+                          className="is-8b9e057"
                         />
-                        <input
+                        <input aria-label="Relationship"
                           value={emergencyContactRelationship}
                           onChange={(e) => setEmergencyContactRelationship(e.target.value)}
                           placeholder="Relationship"
-                          style={{ padding: '8px 12px', border: '1.5px solid var(--accent)', borderRadius: '8px', fontSize: 'var(--fs-base)', color: 'var(--text)', fontFamily: 'var(--font-body)', outline: 'none', background: 'var(--bg-elevated)' }}
+                          className="is-8b9e057"
                         />
                       </div>
-                      <input
+                      <input aria-label="Phone number"
                         value={emergencyContactPhone}
                         onChange={(e) => setEmergencyContactPhone(e.target.value)}
                         placeholder="Phone number"
                         type="tel"
-                        style={{ padding: '8px 12px', border: '1.5px solid var(--accent)', borderRadius: '8px', fontSize: 'var(--fs-base)', color: 'var(--text)', fontFamily: 'var(--font-body)', outline: 'none', background: 'var(--bg-elevated)' }}
+                        className="is-8b9e057"
                       />
                       <div>
-                        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginBottom: '4px' }}>Allergies</div>
-                        <input
+                        <div className="is-0bc3371">Allergies</div>
+                        <input aria-label="Allergies"
                           value={allergies}
                           onChange={(e) => setAllergies(e.target.value)}
                           placeholder="e.g. Peanuts, bee stings"
-                          style={{ width: '100%', padding: '8px 12px', border: '1.5px solid var(--accent)', borderRadius: '8px', fontSize: 'var(--fs-base)', color: 'var(--text)', fontFamily: 'var(--font-body)', outline: 'none', background: 'var(--bg-elevated)' }}
+                          className="is-18c465d"
                         />
                       </div>
                     </div>
                   ) : (
-                    <div style={{ fontSize: 'var(--fs-base)', color: 'var(--text)', lineHeight: 1.7 }}>
+                    <div className="is-de462b1">
                       {emergencyContactName || emergencyContactPhone || emergencyContactRelationship ? (
                         <>
                           {emergencyContactName || <span style={{ color: 'var(--border-strong)', fontStyle: 'italic' }}>Name not set</span>}
@@ -523,13 +514,13 @@ export default function SwimmerProfilePage() {
                       ) : (
                         <span style={{ color: 'var(--border-strong)', fontStyle: 'italic' }}>No emergency contact on file</span>
                       )}
-                      <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', marginTop: '6px' }}>
+                      <div className="is-c67b0c3">
                         Allergies: {allergies || <span style={{ color: 'var(--border-strong)', fontStyle: 'italic' }}>none noted</span>}
                       </div>
                     </div>
                   )}
                 </div>
-                <button onClick={() => setEditingEmergencyContact(!editingEmergencyContact)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontSize: 'var(--fs-sm)', display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px', borderRadius: '6px', transition: 'background 100ms', flexShrink: 0 }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(235,93,30,0.06)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
+                <button type="button" onClick={() => setEditingEmergencyContact(!editingEmergencyContact)} className="is-b347197" onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(235,93,30,0.06)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
                   <Icon name="edit" size={12} />
                   {editingEmergencyContact ? 'Cancel' : 'Edit'}
                 </button>
@@ -539,21 +530,21 @@ export default function SwimmerProfilePage() {
 
           {/* Save Button */}
           {(editingName || editingNotes || editingEmergencyContact) && (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px', animation: 'slideUp 0.2s ease both' }}>
+            <div className="is-cebe0b0">
               {saveError && (
-                <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--error)', fontFamily: 'var(--font-body)', margin: 0 }}>{saveError}</p>
+                <p className="is-194998e">{saveError}</p>
               )}
               {saveSuccess && (
-                <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--success)', fontFamily: 'var(--font-body)', margin: 0 }}>Changes saved.</p>
+                <p className="is-ace1913">Changes saved.</p>
               )}
-              <div style={{ display: 'flex', gap: '12px' }}>
-                <button
+              <div className="is-d6316a7">
+                <button type="button"
                   onClick={() => { setEditingName(false); setEditingNotes(false); setEditingEmergencyContact(false); setSaveError(null) }}
-                  style={{ padding: '12px 20px', background: 'transparent', color: 'var(--text-subtle)', border: '1px solid rgba(0,0,0,0.12)', borderRadius: '8px', fontSize: 'var(--fs-md)', fontWeight: 500, cursor: 'pointer', fontFamily: 'var(--font-body)' }}
+                  className="is-4dd21a6"
                 >
                   Cancel
                 </button>
-                <button
+                <button type="button"
                   onClick={handleSave}
                   disabled={saving}
                   style={{
@@ -580,14 +571,14 @@ export default function SwimmerProfilePage() {
       {/* ── PERFORMANCE TAB ──────────────────────────────────────────────────── */}
       {tab === 'performance' && (
         <div style={{ animation: 'slideUp 0.3s ease both' }}>
-          <div className="card" style={{ overflow: 'hidden', marginBottom: '20px' }}>
-            <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--fs-lg)', color: 'var(--text)' }}>Best times</span>
-              <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>all-time</span>
+          <div className="card is-b25ef49" >
+            <div className="is-8f43699">
+              <span className="is-d2752fc">Best times</span>
+              <span className="is-c9c6d72">all-time</span>
             </div>
 
             {/* Table header */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 90px 90px', padding: '12px 20px', borderBottom: '1px solid rgba(0,0,0,0.06)', background: 'rgba(0,0,0,0.02)' }}>
+            <div className="is-0f9b25b">
               {['Event', 'SCY', 'SCM', 'LCM'].map((h) => (
                 <span key={h} className="col-head" style={{ textAlign: h === 'Event' ? 'left' : 'center' }}>
                   {h}
@@ -596,19 +587,19 @@ export default function SwimmerProfilePage() {
             </div>
 
             {loading ? (
-              <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div className="is-6455ae6">
                 {[0, 1, 2, 3].map((i) => <Skeleton key={i} h={14} />)}
               </div>
             ) : bestTimes.length === 0 ? (
-              <div style={{ padding: '32px 20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--fs-base)' }}>
+              <div className="is-7f65358">
                 No best times on record yet.
               </div>
             ) : (
               bestTimes.map((row, i) => (
-                <div key={row.event} style={{ display: 'grid', gridTemplateColumns: '1fr 90px 90px 90px', padding: '12px 20px', borderBottom: i < bestTimes.length - 1 ? '1px solid rgba(0,0,0,0.04)' : 'none', alignItems: 'center' }}>
-                  <span style={{ fontSize: 'var(--fs-md)', color: 'var(--text)', fontWeight: 500 }}>{row.event}</span>
+                <div key={row.event} style={{ display: 'grid', gridTemplateColumns: '1fr 90px 90px 90px', padding: '12px 20px', borderBottom: i < bestTimes.length - 1 ? '1px solid var(--border)' : 'none', alignItems: 'center' }}>
+                  <span className="is-ddcee0b">{row.event}</span>
                   {[row.scy, row.scm, row.lcm].map((t, j) => (
-                    <span key={j} style={{ fontSize: 'var(--fs-base)', color: t === '—' ? 'var(--border-strong)' : '#4B7BF5', fontFamily: 'var(--font-body)', textAlign: 'center', fontWeight: t === '—' ? 400 : 600 }}>
+                    <span key={j} style={{ fontSize: 'var(--fs-base)', color: t === '—' ? 'var(--border-strong)' : 'var(--info)', fontFamily: 'var(--font-body)', textAlign: 'center', fontWeight: t === '—' ? 400 : 600 }}>
                       {t}
                     </span>
                   ))}
@@ -617,7 +608,7 @@ export default function SwimmerProfilePage() {
             )}
           </div>
 
-          <div style={{ background: 'rgba(235,93,30,0.04)', border: '1px solid rgba(235,93,30,0.12)', borderRadius: '12px', padding: '12px 16px', fontSize: 'var(--fs-sm)', color: '#7A4A28', lineHeight: 1.5 }}>
+          <div className="is-0d884ef">
             Best times are updated automatically when meet results are imported. Contact the club to dispute a time.
           </div>
         </div>
@@ -627,17 +618,17 @@ export default function SwimmerProfilePage() {
       {tab === 'history' && (
         <div style={{ animation: 'slideUp 0.3s ease both' }}>
           <div className="card" style={{ overflow: 'hidden' }}>
-            <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-              <span style={{ fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--fs-lg)', color: 'var(--text)' }}>
+            <div className="is-541f5a9">
+              <span className="is-d2752fc">
                 Activity History
               </span>
             </div>
             {loading ? (
-              <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div className="is-824b1f4">
                 {[0, 1, 2].map((i) => <Skeleton key={i} h={42} r={10} />)}
               </div>
             ) : activity.length === 0 ? (
-              <div style={{ padding: '32px 20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--fs-base)', lineHeight: 1.6 }}>
+              <div className="is-7f23ed8">
                 <Icon name="clock" size={20} style={{ display: 'block', margin: '0 auto 12px', color: 'var(--border-strong)' }} />
                 No activity has been recorded for this swimmer yet.
               </div>
@@ -645,23 +636,23 @@ export default function SwimmerProfilePage() {
               activity.map((entry, index) => {
                 const accent = historyAccent(entry.type)
                 return (
-                  <div key={entry.id} style={{ display: 'grid', gridTemplateColumns: '104px 1fr', gap: '16px', padding: '16px 20px', borderBottom: index < activity.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none', alignItems: 'start' }}>
-                    <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', paddingTop: '4px' }}>
+                  <div key={entry.id} style={{ display: 'grid', gridTemplateColumns: '104px 1fr', gap: '16px', padding: '16px 20px', borderBottom: index < activity.length - 1 ? '1px solid var(--border)' : 'none', alignItems: 'start' }}>
+                    <div className="is-7dabd43">
                       {fmtShortDate(entry.occurred_at)}
                     </div>
-                    <div style={{ display: 'flex', gap: '12px' }}>
+                    <div className="is-d6316a7">
                       <div style={{ width: '10px', height: '10px', borderRadius: '999px', background: accent.bg, border: `2px solid ${accent.color}`, marginTop: '4px', flexShrink: 0 }} />
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
-                          <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text)', fontWeight: 600 }}>{entry.title}</span>
+                        <div className="is-9717a47">
+                          <span className="is-c8e8844">{entry.title}</span>
                           {entry.status ? (
-                            <span style={{ padding: '2px 8px', borderRadius: '999px', background: accent.bg, color: accent.color, fontSize: 'var(--fs-2xs)', fontFamily: 'var(--font-body)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            <span style={{ padding: '2px 8px', borderRadius: '999px', background: accent.bg, color: accent.color, fontSize: 'var(--fs-2xs)', fontFamily: 'var(--font-body)', }}>
                               {entry.status.replaceAll('_', ' ')}
                             </span>
                           ) : null}
                         </div>
                         {entry.detail ? (
-                          <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', lineHeight: 1.55 }}>
+                          <div className="is-e1f2131">
                             {entry.detail}
                           </div>
                         ) : null}
@@ -676,7 +667,7 @@ export default function SwimmerProfilePage() {
       )}
 
       {swimmerId ? (
-        <div style={{ marginTop: '24px' }}>
+        <div className="is-ef7a9df">
           <GoalsPanel swimmerId={swimmerId} />
         </div>
       ) : null}

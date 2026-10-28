@@ -176,3 +176,60 @@ func TestParentCannotSeeDraftInvoices(t *testing.T) {
 		t.Fatalf("parent list after issue: want 1, got %d err=%v", len(list), err)
 	}
 }
+
+func TestWriteOffRemainsZeroAfterDerivingPaymentAmounts(t *testing.T) {
+	svc := NewService()
+	svc.invoices["inv"] = &Invoice{ID: "inv", Status: "written_off", TotalCents: 5000, AmountDueCents: 0}
+	svc.payments["inv"] = []*Payment{{AmountCents: 2000, Status: "succeeded"}}
+	svc.deriveAmountsPaidLocked()
+	inv := svc.invoices["inv"]
+	if inv.AmountPaidCents != 2000 || inv.AmountDueCents != 0 {
+		t.Fatalf("write-off changed on reload: paid=%d due=%d", inv.AmountPaidCents, inv.AmountDueCents)
+	}
+}
+
+func TestStripeWebhookRedeliveryPreservesPaymentAndRefund(t *testing.T) {
+	svc := NewService()
+	inv := &Invoice{ID: "inv", OrgID: "org", Status: "issued", TotalCents: 1000, AmountDueCents: 1000}
+	svc.invoices[inv.ID] = inv
+	payment, _, err := svc.HandleStripePaymentIntentSucceeded("org", "pi", "inv", 1000, "actor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.HandleStripePaymentIntentFailed("pi"); err != nil {
+		t.Fatal(err)
+	}
+	if payment.Status != "succeeded" {
+		t.Fatalf("delayed failure downgraded payment: %s", payment.Status)
+	}
+	refund, _, err := svc.HandleStripeChargeRefunded("org", "pi", "inv", 1000, "re", "", "actor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := len(svc.ledger)
+	retry, event, err := svc.HandleStripeChargeRefunded("org", "pi", "inv", 1000, "re", "", "actor")
+	if err != nil {
+		t.Fatalf("full refund retry: %v", err)
+	}
+	if retry.ID != refund.ID || event != nil || len(svc.ledger) != count {
+		t.Fatal("refund retry changed ledger")
+	}
+	if err := svc.HandleStripePaymentIntentFailed("pi"); err != nil {
+		t.Fatal(err)
+	}
+	if payment.Status != "reversed" {
+		t.Fatalf("delayed failure downgraded reversed payment: %s", payment.Status)
+	}
+}
+
+func TestStripePendingPaymentCanFail(t *testing.T) {
+	svc := NewService()
+	payment := &Payment{ID: "payment", Status: "pending"}
+	svc.stripeIntentIndex["pi"] = payment
+	if err := svc.HandleStripePaymentIntentFailed("pi"); err != nil {
+		t.Fatal(err)
+	}
+	if payment.Status != "failed" || payment.FailedAt == nil {
+		t.Fatalf("pending failure not recorded: %+v", payment)
+	}
+}

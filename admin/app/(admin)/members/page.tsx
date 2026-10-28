@@ -71,7 +71,7 @@ function MembersPageContent() {
       ) : tab === 'documents' && canSeeDocuments ? (
         <DocumentsPanel />
       ) : (
-        <div style={{ padding: '20px 0' }}>
+        <div className="u-p-20px-0" >
           <EmptyState icon="shield-check" title="Admins only" description="Only admins can view documents." />
         </div>
       )}

@@ -3,12 +3,13 @@
 import type { ReactNode } from 'react'
 import { SessionProvider } from '@/lib/session'
 import { ToastProvider } from '@/components/ui/Toast'
+import { ConfirmProvider } from '@/components/ui/ConfirmDialog'
 
 export function Providers({ children }: { children: ReactNode }) {
   return (
     <SessionProvider>
       <ToastProvider>
-        {children}
+        <ConfirmProvider>{children}</ConfirmProvider>
       </ToastProvider>
     </SessionProvider>
   )

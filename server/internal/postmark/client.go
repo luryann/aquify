@@ -272,6 +272,10 @@ func (c *HTTPClient) SendEmail(ctx context.Context, req SendEmailRequest) (SendE
 	defer resp.Body.Close()
 
 	var pmResp postmarkSendResponse
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		_ = json.NewDecoder(resp.Body).Decode(&pmResp)
+		return SendEmailResponse{}, fmt.Errorf("%w: http status %d: %s", ErrSendFailed, resp.StatusCode, pmResp.Message)
+	}
 	if err := json.NewDecoder(resp.Body).Decode(&pmResp); err != nil {
 		return SendEmailResponse{}, fmt.Errorf("%w: decode response: %v", ErrSendFailed, err)
 	}

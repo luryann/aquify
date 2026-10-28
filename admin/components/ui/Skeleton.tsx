@@ -59,13 +59,7 @@ export function SkeletonTable({ rows = 5, columns = 4, hasHeader = true }: Skele
       {/* Header */}
       {hasHeader && (
         <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: `repeat(${columns}, 1fr)`,
-            gap: '12px',
-            padding: '12px 16px',
-            borderBottom: '1px solid var(--border)',
-          }}
+          className="u-gap-12px u-p-12px-16px" style={{ display: 'grid', gridTemplateColumns: `repeat(${columns}, 1fr)`, borderBottom: '1px solid var(--border)' }}
         >
           {Array.from({ length: columns }).map((_, i) => (
             <Skeleton key={i} height="12px" width="60%" />
@@ -76,14 +70,7 @@ export function SkeletonTable({ rows = 5, columns = 4, hasHeader = true }: Skele
       {Array.from({ length: rows }).map((_, rowIdx) => (
         <div
           key={rowIdx}
-          style={{
-            display: 'grid',
-            gridTemplateColumns: `repeat(${columns}, 1fr)`,
-            gap: '12px',
-            padding: '12px 16px',
-            borderBottom: '1px solid var(--border)',
-            animationDelay: `${rowIdx * 60}ms`,
-          }}
+          className="u-gap-12px u-p-12px-16px" style={{ display: 'grid', gridTemplateColumns: `repeat(${columns}, 1fr)`, borderBottom: '1px solid var(--border)', animationDelay: `${rowIdx * 60}ms` }}
         >
           {Array.from({ length: columns }).map((_, colIdx) => (
             <Skeleton
@@ -125,11 +112,7 @@ export function SkeletonCard({ height = '120px' }: { height?: string }) {
 export function SkeletonStatGrid({ count = 4 }: { count?: number }) {
   return (
     <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
-        gap: '16px',
-      }}
+      className="u-gap-16px" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}
     >
       {Array.from({ length: count }).map((_, i) => (
         <SkeletonCard key={i} />

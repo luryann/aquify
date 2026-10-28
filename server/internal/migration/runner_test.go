@@ -310,3 +310,21 @@ func writeCSVFixture(t *testing.T, dir, name, contents string) {
 		t.Fatalf("write fixture %s: %v", name, err)
 	}
 }
+
+func TestOpenInvoicesAllowsOmittedOptionalTotal(t *testing.T) {
+	runner := NewRunner(Config{OrgID: testutil.DefaultOrgID})
+	dir := t.TempDir()
+	writeCSVFixture(t, dir, "households.csv", "legacy_household_id,household_name\nhh-1,Smith Family\n")
+	if step := runner.importHouseholds(context.Background(), filepath.Join(dir, "households.csv")); len(step.Errors) != 0 {
+		t.Fatal(step.Errors)
+	}
+	writeCSVFixture(t, dir, "open_invoices.csv", "legacy_invoice_id,invoice_number,legacy_household_id,outstanding_amount_cents,due_date\ninv-1,INV-100,hh-1,2000,2026-03-01\n")
+	step := runner.importOpenInvoices(context.Background(), filepath.Join(dir, "open_invoices.csv"))
+	if len(step.Errors) != 0 || step.Imported != 1 {
+		t.Fatalf("unexpected import: %+v", step)
+	}
+	invoices := runner.BillingService().SnapshotInvoices(testutil.DefaultOrgID)
+	if len(invoices) != 1 || invoices[0].AmountDueCents != 2000 {
+		t.Fatalf("unexpected invoices: %+v", invoices)
+	}
+}

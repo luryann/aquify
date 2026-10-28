@@ -23,6 +23,7 @@ import {
   summarizeRegistrationWaiver,
 } from '@/lib/portal-registration-status'
 import { parseBackendDate } from '@/lib/dates'
+import './page.inline.css'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 function fmtDate(iso?: string): string {
@@ -32,10 +33,10 @@ function fmtDate(iso?: string): string {
 
 
 const GRADIENTS = [
-  'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)',
-  'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-  'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-  'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+  'var(--accent-text)',
+  'var(--accent-text)',
+  'var(--accent-text)',
+  'var(--accent-text)',
 ]
 
 function Skeleton({ w = '100%', h = 16, r = 8 }: { w?: string | number; h?: number; r?: number }) {
@@ -43,7 +44,7 @@ function Skeleton({ w = '100%', h = 16, r = 8 }: { w?: string | number; h?: numb
     <div
       style={{
         width: w, height: h, borderRadius: r,
-        background: 'linear-gradient(90deg, #f0efee 25%, #e6e5e3 50%, #f0efee 75%)',
+        background: 'linear-gradient(90deg, var(--bg-elevated) 25%, var(--border-strong) 50%, var(--bg-elevated) 75%)',
         backgroundSize: '200% 100%',
         animation: 'shimmer 1.5s infinite',
       }}
@@ -150,12 +151,12 @@ export default function RegistrationsPage() {
       </div>
 
       {/* Stats strip */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px', marginBottom: '24px', animation: 'slideUp 0.4s ease both' }}>
+      <div className="is-e4383f6">
         {loading ? (
           [0, 1, 2, 3].map((i) => (
-            <div key={i} className="card" style={{ padding: '16px 20px' }}>
+            <div key={i} className="card is-401e6d8" >
               <Skeleton w="40%" h={22} r={4} />
-              <div style={{ marginTop: '8px' }}><Skeleton w="80%" h={12} /></div>
+              <div className="is-36ca0af"><Skeleton w="80%" h={12} /></div>
             </div>
           ))
         ) : (
@@ -165,27 +166,27 @@ export default function RegistrationsPage() {
             { label: 'Total swimmers',        value: String(swimmers.length),   color: 'var(--info)' },
             { label: 'Season',               value: activeRegs[0]?.season ?? pendingRegs[0]?.season ?? '—', color: 'var(--accent)' },
           ].map((stat) => (
-            <div key={stat.label} className="card" style={{ padding: '16px 20px' }}>
+            <div key={stat.label} className="card is-401e6d8" >
               <div style={{ fontSize: 'var(--fs-2xl)', fontWeight: 700, color: stat.color, fontFamily: 'var(--font-body)' }}>
                 {stat.value}
               </div>
-              <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginTop: '4px' }}>{stat.label}</div>
+              <div className="is-dd721e0">{stat.label}</div>
             </div>
           ))
         )}
       </div>
 
       {!loading && loadError && (
-        <div style={{ marginBottom: '20px', background: 'var(--error-bg)', border: '1px solid rgba(220,38,38,0.18)', borderRadius: '12px', padding: '20px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
+        <div className="is-9dc000d">
           <div>
-            <div style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--error)', marginBottom: '4px' }}>
+            <div className="is-137a7ce">
               Registration data is unavailable
             </div>
-            <div style={{ fontSize: 'var(--fs-base)', color: 'var(--error)' }}>{loadError}</div>
+            <div className="is-de107ca">{loadError}</div>
           </div>
-          <button
+          <button type="button"
             onClick={() => setRetryKey((current) => current + 1)}
-            style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: 'var(--error)', color: 'var(--bg-elevated)', fontSize: 'var(--fs-base)', fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}
+            className="is-b2368ab"
           >
             Retry
           </button>
@@ -193,19 +194,19 @@ export default function RegistrationsPage() {
       )}
 
       {/* Registration cards */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '32px' }}>
+      <div className="is-72f8178">
         {loading ? (
           [0, 1].map((i) => (
-            <div key={i} className="card" style={{ padding: '20px 24px', display: 'flex', gap: '16px', alignItems: 'center' }}>
+            <div key={i} className="card is-ebaaa90" >
               <Skeleton w={48} h={48} r={24} />
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div className="is-20f80e0">
                 <Skeleton w="40%" h={18} />
                 <Skeleton w="60%" h={13} />
               </div>
             </div>
           ))
         ) : loadError ? null : registrations.length === 0 ? (
-          <div className="card" style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--fs-md)' }}>
+          <div className="card is-21695c0" >
             No registrations found for your household.
           </div>
         ) : (
@@ -230,14 +231,14 @@ export default function RegistrationsPage() {
                 style={{
                   background: 'var(--bg-elevated)',
                   borderRadius: '12px',
-                  border: '1px solid rgba(0,0,0,0.07)',
+                  border: '1px solid var(--border)',
                   overflow: 'hidden',
                   animation: `slideUp ${0.4 + idx * 0.08}s ease both`,
                 }}
               >
                 {/* Card header */}
                 <div
-                  style={{ padding: '20px 24px', display: 'flex', alignItems: 'center', gap: '16px', cursor: 'pointer' }}
+                  className="is-a273f90"
                   onClick={() => setExpandedId(isExpanded ? null : reg.id)}
                 >
                   <div
@@ -252,15 +253,15 @@ export default function RegistrationsPage() {
                   </div>
 
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--fs-xl)', color: 'var(--text)', lineHeight: 1.1 }}>
+                    <div className="is-3088da1">
+                      <span className="is-fdc9019">
                         {swimmer ? `${swimmer.first_name} ${swimmer.last_name}` : reg.swimmer_id}
                       </span>
-                      <span style={{ padding: '2px 8px', borderRadius: '999px', fontSize: 'var(--fs-xs)', fontWeight: 600, background: statusCfg.bg, color: statusCfg.color, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      <span style={{ padding: '2px 8px', borderRadius: '999px', fontSize: 'var(--fs-xs)', fontWeight: 600, background: statusCfg.bg, color: statusCfg.color, }}>
                         {statusCfg.label}
                       </span>
                     </div>
-                    <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginTop: '4px' }}>
+                    <div className="is-dd721e0">
                       {group?.name ?? group?.code ?? 'Group TBD'} · {reg.season}
                     </div>
                   </div>
@@ -270,11 +271,11 @@ export default function RegistrationsPage() {
 
                 {/* Expanded content */}
                 {isExpanded && (
-                  <div style={{ borderTop: '1px solid rgba(0,0,0,0.06)', padding: '20px 24px' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px', marginBottom: '20px' }}>
+                  <div className="is-652cfa8">
+                    <div className="is-845d5fe">
                       {/* Enrollment details */}
                       <div>
-                        <div style={{ fontSize: 'var(--fs-md)', fontWeight: 600, fontFamily: 'var(--font-body)', color: 'var(--text)', marginBottom: '12px' }}>
+                        <div className="is-a1a186f">
                           Enrollment
                         </div>
                         {[
@@ -285,16 +286,16 @@ export default function RegistrationsPage() {
                         ].map((item) => (
                           <div
                             key={item.label}
-                            style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid rgba(0,0,0,0.04)' }}
+                            className="is-ebd7e31"
                           >
-                            <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>{item.label}</span>
-                            <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text)', fontWeight: 500 }}>{item.value}</span>
+                            <span className="is-4f39ab0">{item.label}</span>
+                            <span className="is-5341e30">{item.value}</span>
                           </div>
                         ))}
                         {swimmer && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
-                            <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>USS #</span>
-                            <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text)', fontWeight: 500, fontFamily: 'var(--font-body)' }}>
+                          <div className="is-ebd7e31">
+                            <span className="is-4f39ab0">USS #</span>
+                            <span className="is-2e21f01">
                               {swimmer.swimmer_external_id ?? '—'}
                             </span>
                           </div>
@@ -303,16 +304,16 @@ export default function RegistrationsPage() {
 
                       {/* Waivers and document status */}
                       <div>
-                        <div style={{ fontSize: 'var(--fs-md)', fontWeight: 600, fontFamily: 'var(--font-body)', color: 'var(--text)', marginBottom: '12px' }}>
+                        <div className="is-a1a186f">
                           Documents & waivers
                         </div>
-                        <div style={{ background: 'var(--bg-surface)', borderRadius: '12px', padding: '16px', color: 'var(--text-subtle)', fontSize: 'var(--fs-base)', lineHeight: 1.6 }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                        <div className="is-46f27ba">
+                          <div className="is-5fc29c3">
                             <div>
-                              <div style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)', marginBottom: '2px' }}>
+                              <div className="is-e215615">
                                 {waiverSummary.accepted ? 'Registration waiver accepted' : 'Registration waiver still pending'}
                               </div>
-                              <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
+                              <div className="is-4f39ab0">
                                 {waiverSummary.accepted
                                   ? `${waiverSummary.count} accepted waiver${waiverSummary.count === 1 ? '' : 's'}${waiverSummary.lastAcceptedAt ? ` • last accepted ${fmtDate(waiverSummary.lastAcceptedAt)}` : ''}`
                                   : 'No registration waiver acceptance is recorded yet.'}
@@ -332,26 +333,26 @@ export default function RegistrationsPage() {
                           </div>
 
                           {waiverSummary.types.length > 0 && (
-                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                            <div className="is-bd86097">
                               {waiverSummary.types.map((type) => (
-                                <span key={type} style={{ padding: '2px 8px', borderRadius: '999px', background: 'var(--bg-elevated)', border: '1px solid rgba(0,0,0,0.08)', fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', color: 'var(--text-subtle)' }}>
+                                <span key={type} className="is-a8a0256">
                                   {type}
                                 </span>
                               ))}
                             </div>
                           )}
 
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
+                          <div className="is-e1408bf">
                             {documentRows.length === 0 ? (
                               <div style={{ color: 'var(--text-muted)' }}>No waiver or registration documents are required for this registration yet.</div>
                             ) : (
                               documentRows.map((row) => {
                                 const docStatus = DOC_STATUS_CONFIG[row.effectiveStatus]
                                 return (
-                                  <div key={row.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', padding: '12px 12px' }}>
+                                  <div key={row.id} className="card is-1acdeaf" >
                                     <div>
-                                      <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text)', fontWeight: 600 }}>{row.name}</div>
-                                      <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
+                                      <div className="is-29e7ba7">{row.name}</div>
+                                      <div className="is-c454211">
                                         {row.submittedAt ? `Submitted ${fmtDate(row.submittedAt)}` : row.expiresAt ? `Expires ${fmtDate(row.expiresAt)}` : row.appliesTo === 'swimmer' ? 'Swimmer-specific requirement' : 'Household requirement'}
                                       </div>
                                     </div>
@@ -364,11 +365,11 @@ export default function RegistrationsPage() {
                             )}
                           </div>
 
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-muted)' }}>
+                          <div className="is-819dbad">
                             <Icon name="clipboard-list" size={16} style={{ color: 'var(--border-strong)' }} />
                             <span>
                               Manage supporting uploads in the{' '}
-                              <Link href="/portal/documents" style={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 500 }}>
+                              <Link href="/portal/documents" className="is-39b5e82">
                                 Documents Center
                               </Link>
                               .
@@ -380,7 +381,7 @@ export default function RegistrationsPage() {
 
                     <Link
                       href={`/portal/household/swimmers/${reg.swimmer_id}`}
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: 'var(--fs-base)', color: 'var(--accent)', textDecoration: 'none', fontWeight: 500 }}
+                      className="is-89d6566"
                     >
                       <Icon name="user" size={13} />
                       View swimmer profile
@@ -396,7 +397,7 @@ export default function RegistrationsPage() {
       {/* Past registrations */}
       {!loading && pastRegs.length > 0 && (
         <div style={{ animation: 'slideUp 0.6s ease both' }}>
-          <div style={{ fontSize: 'var(--fs-md)', fontWeight: 600, fontFamily: 'var(--font-body)', color: 'var(--text)', marginBottom: '12px' }}>
+          <div className="is-a1a186f">
             Past seasons
           </div>
           <div className="card" style={{ overflow: 'hidden' }}>
@@ -406,16 +407,16 @@ export default function RegistrationsPage() {
               return (
                 <div
                   key={reg.id}
-                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 20px', borderBottom: i < pastRegs.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none' }}
+                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 20px', borderBottom: i < pastRegs.length - 1 ? '1px solid var(--border)' : 'none' }}
                 >
                   <div>
-                    <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', fontWeight: 500 }}>
+                    <span className="is-31b72fa">
                       {sw ? `${sw.first_name} ${sw.last_name}` : '—'}
                     </span>
-                    <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)', marginLeft: '8px' }}>— {reg.season}</span>
+                    <span className="is-7db2283">— {reg.season}</span>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>{fmtDate(reg.registration_date)}</span>
+                  <div className="is-e2ff0fd">
+                    <span className="is-4f39ab0">{fmtDate(reg.registration_date)}</span>
                     <span style={{ padding: '2px 8px', borderRadius: '999px', fontSize: 'var(--fs-xs)', background: statusCfg.bg, color: statusCfg.color, fontWeight: 500 }}>
                       {statusCfg.label}
                     </span>

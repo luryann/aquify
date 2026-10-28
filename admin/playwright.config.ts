@@ -55,7 +55,6 @@ export default defineConfig({
         NEXT_PUBLIC_API_URL: 'http://localhost:8080',
         NEXT_PUBLIC_APP_ENV: 'development',
         NEXT_PUBLIC_AUTH_ENABLE_DEV_STUB_TOKENS: 'false',
-        NEXT_PUBLIC_SWIMMER_PORTAL_ENABLED: 'true',
       },
     },
   ],

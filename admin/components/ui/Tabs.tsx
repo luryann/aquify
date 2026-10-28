@@ -1,5 +1,7 @@
 'use client'
 
+import { useLayoutEffect, useRef, useState } from 'react'
+
 type Tab = {
   id: string
   label: string
@@ -13,10 +15,30 @@ type TabsProps = {
 }
 
 export function Tabs({ tabs, active, onChange }: TabsProps) {
+  const stripRef = useRef<HTMLDivElement>(null)
+  // null until measured: the active tab keeps its own underline until then,
+  // and the indicator never slides in from nowhere on first paint.
+  const [bar, setBar] = useState<{ left: number; width: number } | null>(null)
+
+  useLayoutEffect(() => {
+    const strip = stripRef.current
+    if (!strip) return
+    const measure = () => {
+      const el = strip.querySelector<HTMLElement>('[data-active="true"]')
+      setBar(el ? { left: el.offsetLeft, width: el.offsetWidth } : null)
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(strip)
+    return () => ro.disconnect()
+  }, [active, tabs])
+
   return (
     <div
+      ref={stripRef}
       className="tab-strip"
       style={{
+        position: 'relative',
         display: 'flex',
         gap: '2px',
         // Inset rule instead of a border so the strip can scroll sideways on
@@ -29,25 +51,11 @@ export function Tabs({ tabs, active, onChange }: TabsProps) {
       {tabs.map((tab) => {
         const isActive = tab.id === active
         return (
-          <button
+          <button type="button"
             key={tab.id}
+            data-active={isActive}
             onClick={() => onChange(tab.id)}
-            style={{
-              padding: '8px 16px',
-              background: 'none',
-              border: 'none',
-              borderBottom: isActive ? '2px solid var(--accent)' : '2px solid transparent',
-              flexShrink: 0,
-              cursor: 'pointer',
-              fontSize: 'var(--fs-base)',
-              fontWeight: isActive ? 600 : 400,
-              color: isActive ? 'var(--text)' : 'var(--text-subtle)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              transition: 'color var(--dur-fast)',
-              whiteSpace: 'nowrap',
-            }}
+            className="u-p-8px-16px u-fs-fs-base u-gap-6px" style={{ background: 'none', border: 'none', borderBottom: isActive && !bar ? '2px solid var(--accent)' : '2px solid transparent', flexShrink: 0, cursor: 'pointer', fontWeight: isActive ? 600 : 400, color: isActive ? 'var(--text)' : 'var(--text-subtle)', display: 'flex', alignItems: 'center', transition: 'color var(--dur-fast)', whiteSpace: 'nowrap' }}
             onMouseEnter={(e) => {
               if (!isActive) e.currentTarget.style.color = 'var(--text)'
             }}
@@ -58,17 +66,7 @@ export function Tabs({ tabs, active, onChange }: TabsProps) {
             {tab.label}
             {tab.count !== undefined && (
               <span
-                style={{
-                  fontSize: 'var(--fs-xs)',
-                  fontFamily: 'var(--font-body)',
-                  padding: '1px 6px',
-                  borderRadius: '12px',
-                  background: isActive ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
-                  color: isActive ? 'var(--accent)' : 'var(--text-muted)',
-                  fontWeight: 500,
-                  minWidth: '20px',
-                  textAlign: 'center',
-                }}
+                className="u-fs-fs-xs u-ff-font-body u-p-1px-6px u-fw-500" style={{ borderRadius: '12px', background: isActive ? 'var(--accent-subtle)' : 'var(--bg-elevated)', color: isActive ? 'var(--accent)' : 'var(--text-muted)', minWidth: '20px', textAlign: 'center' }}
               >
                 {tab.count}
               </span>
@@ -76,6 +74,13 @@ export function Tabs({ tabs, active, onChange }: TabsProps) {
           </button>
         )
       })}
+      {bar && (
+        <span
+          aria-hidden
+          className="tab-indicator"
+          style={{ transform: `translateX(${bar.left}px) scaleX(${bar.width})` }}
+        />
+      )}
     </div>
   )
 }

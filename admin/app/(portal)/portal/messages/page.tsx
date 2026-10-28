@@ -18,6 +18,7 @@ import {
   type SwimmerRecord,
   type MessageRecord,
 } from '@/lib/adminData'
+import './page.inline.css'
 
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '🎉', '😮', '😢']
 
@@ -68,7 +69,7 @@ export default function PortalMessagesPage() {
   useEffect(() => {
     if (!orgId || !householdId) {
       setSwimmersLoading(false)
-      setSwimmersError('Messages are unavailable because household context is missing.')
+      setSwimmersError('We could not find your household details. Sign out and back in, or contact your club.')
       return
     }
     setSwimmersLoading(true)
@@ -211,32 +212,32 @@ export default function PortalMessagesPage() {
       </div>
 
       {swimmersError ? (
-        <div style={{ background: 'var(--error-bg)', borderRadius: '12px', border: '1px solid rgba(220,38,38,0.18)', padding: '20px', color: 'var(--error)', fontSize: 'var(--fs-base)' }}>
+        <div className="is-c34062e">
           {swimmersError}
         </div>
       ) : swimmersLoading ? (
-        <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--fs-base)' }}>Loading your swimmers…</div>
+        <div className="is-5ce7d6b">Loading your swimmers…</div>
       ) : swimmers.length === 0 ? (
-        <div className="card" style={{ padding: '56px 32px', textAlign: 'center' }}>
-          <Icon name="users" size={32} style={{ color: '#D4D1CE', marginBottom: '16px' }} />
-          <p style={{ fontSize: 'var(--fs-md)', color: 'var(--text-muted)', fontWeight: 500 }}>No swimmers on your account yet</p>
+        <div className="card is-3c1fe43" >
+          <Icon name="users" size={32} style={{ color: 'var(--text-muted)', marginBottom: '16px' }} />
+          <p className="is-5e8f68c">No swimmers on your account yet</p>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div className="is-8ef476f">
           {/* Swimmer picker — a horizontal chip row rather than a permanent sidebar, since most
               households have only 1–3 swimmers and this reads better on a phone. */}
           {swimmers.length > 1 && (
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <div className="is-51144f2">
               {swimmers.map((s) => {
                 const active = s.id === selectedSwimmerId
                 return (
-                  <button
+                  <button type="button"
                     key={s.id}
                     onClick={() => setSelectedSwimmerId(s.id)}
                     style={{
                       padding: '8px 16px',
                       borderRadius: '999px',
-                      border: `1px solid ${active ? 'rgba(235,93,30,0.3)' : 'rgba(0,0,0,0.08)'}`,
+                      border: `1px solid ${active ? 'rgba(235,93,30,0.3)' : 'var(--border)'}`,
                       background: active ? 'rgba(235,93,30,0.08)' : 'var(--bg-elevated)',
                       color: active ? 'var(--text)' : 'var(--text-subtle)',
                       fontSize: 'var(--fs-base)',
@@ -254,19 +255,19 @@ export default function PortalMessagesPage() {
 
           {/* Thread */}
           <div className="card" style={{ display: 'flex', flexDirection: 'column', minHeight: '520px' }}>
-            <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-              <p style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--text)' }}>
+            <div className="is-541f5a9">
+              <p className="is-7ae0218">
                 {selectedSwimmer ? `${selectedSwimmer.first_name} ${selectedSwimmer.last_name}` : 'Conversation'}
               </p>
             </div>
 
-            <div style={{ flex: 1, padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', overflowY: 'auto', maxHeight: '560px' }}>
+            <div className="is-c4a895b">
               {messagesError ? (
-                <p style={{ fontSize: 'var(--fs-base)', color: 'var(--error)' }}>{messagesError}</p>
+                <p className="is-de107ca">{messagesError}</p>
               ) : messagesLoading ? (
-                <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)' }}>Loading conversation…</p>
+                <p className="is-8fb176a">Loading conversation…</p>
               ) : messages.length === 0 ? (
-                <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)' }}>
+                <p className="is-8fb176a">
                   No messages yet. Send the first one below to start the conversation with your coach.
                 </p>
               ) : (
@@ -277,20 +278,20 @@ export default function PortalMessagesPage() {
                   return (
                     <div key={m.id} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '75%' }}>
                       {isEditing ? (
-                        <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-end' }}>
-                          <textarea
+                        <div className="is-3be73af">
+                          <textarea aria-label="Edit message"
                             value={editDraft}
                             onChange={(e) => setEditDraft(e.target.value)}
                             rows={2}
-                            style={{ minWidth: '220px', padding: '8px 12px', borderRadius: '12px', border: '1px solid rgba(235,93,30,0.3)', fontSize: 'var(--fs-base)', resize: 'vertical' }}
+                            className="is-d36963f"
                           />
-                          <button className="btn btn-sm btn-primary" onClick={() => void handleEditSave(m.id)}>Save</button>
-                          <button className="btn btn-sm btn-secondary" onClick={() => setEditingId(null)}>Cancel</button>
+                          <button type="button" className="btn btn-sm btn-primary" onClick={() => void handleEditSave(m.id)}>Save</button>
+                          <button type="button" className="btn btn-sm btn-secondary" onClick={() => setEditingId(null)}>Cancel</button>
                         </div>
                       ) : (
                         <div
                           style={{
-                            background: mine ? 'var(--accent)' : 'rgba(0,0,0,0.05)',
+                            background: mine ? 'var(--accent)' : 'var(--bg-wash)',
                             color: mine ? 'var(--bg-elevated)' : 'var(--text)',
                             padding: '12px 16px',
                             borderRadius: mine ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
@@ -303,38 +304,38 @@ export default function PortalMessagesPage() {
                           {m.attachments?.map((a) => (
                             a.download_url ? (
                               // eslint-disable-next-line @next/next/no-img-element
-                              <img key={a.filename} src={a.download_url} alt={a.filename} style={{ display: 'block', marginTop: '8px', maxWidth: '220px', maxHeight: '220px', borderRadius: '8px' }} />
+                              <img key={a.filename} src={a.download_url} alt={a.filename} className="is-5ca87c9" />
                             ) : null
                           ))}
                         </div>
                       )}
 
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', justifyContent: mine ? 'flex-end' : 'flex-start' }}>
-                        <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
+                        <p className="is-c454211">
                           {senderLabel(m.sender_role)} · {fmtTime(m.created_at)}{m.edited_at ? ' · (edited)' : ''}
                         </p>
                         {canEdit && !isEditing && (
-                          <button
+                          <button type="button"
                             onClick={() => { setEditingId(m.id); setEditDraft(m.body) }}
                             title="Edit"
-                            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px', display: 'flex' }}
+                            className="is-8031a9d"
                           >
                             <Icon name="edit-2" size={11} />
                           </button>
                         )}
-                        <button
+                        <button type="button"
                           onClick={() => setReactionPickerId(reactionPickerId === m.id ? null : m.id)}
                           title="React"
-                          style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px', display: 'flex' }}
+                          className="is-8031a9d"
                         >
                           <Icon name="plus" size={11} />
                         </button>
                       </div>
 
                       {reactionPickerId === m.id && (
-                        <div style={{ display: 'flex', gap: '4px', marginTop: '4px', padding: '4px 6px', borderRadius: '12px', border: '1px solid rgba(0,0,0,0.08)', background: 'var(--bg-elevated)', width: 'fit-content' }}>
+                        <div className="is-1236a88">
                           {QUICK_REACTIONS.map((emoji) => (
-                            <button key={emoji} onClick={() => void handleToggleReaction(m, emoji)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--fs-md)', padding: '2px' }}>
+                            <button type="button" key={emoji} onClick={() => void handleToggleReaction(m, emoji)} className="is-72e22d5">
                               {emoji}
                             </button>
                           ))}
@@ -344,18 +345,18 @@ export default function PortalMessagesPage() {
                       {m.reactions && m.reactions.length > 0 && (
                         <div style={{ display: 'flex', gap: '4px', marginTop: '4px', flexWrap: 'wrap', justifyContent: mine ? 'flex-end' : 'flex-start' }}>
                           {m.reactions.map((r) => (
-                            <button
+                            <button type="button"
                               key={r.emoji}
                               onClick={() => void handleToggleReaction(m, r.emoji)}
                               style={{
                                 display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 8px', borderRadius: '999px', fontSize: 'var(--fs-xs)', cursor: 'pointer',
-                                border: r.reacted_by_me ? '1px solid rgba(235,93,30,0.3)' : '1px solid rgba(0,0,0,0.08)',
+                                border: r.reacted_by_me ? '1px solid rgba(235,93,30,0.3)' : '1px solid var(--border)',
                                 background: r.reacted_by_me ? 'rgba(235,93,30,0.08)' : 'var(--bg-elevated)',
                                 color: 'var(--text)',
                               }}
                             >
                               <span>{r.emoji}</span>
-                              <span style={{ fontFamily: 'var(--font-body)' }}>{r.count}</span>
+                              <span className="is-b88ab11">{r.count}</span>
                             </button>
                           ))}
                         </div>
@@ -367,17 +368,17 @@ export default function PortalMessagesPage() {
             </div>
 
             {pendingAttachment && (
-              <div style={{ padding: '0 20px 8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div className="is-0d40ec1">
                 <span className="badge badge-default">{pendingAttachment.file_name}</span>
-                <button onClick={() => setPendingAttachment(null)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex' }}>
+                <button type="button" onClick={() => setPendingAttachment(null)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex' }}>
                   <Icon name="x" size={12} />
                 </button>
               </div>
             )}
-            {attachError && <p style={{ padding: '0 20px 8px', fontSize: 'var(--fs-sm)', color: 'var(--error)' }}>{attachError}</p>}
+            {attachError && <p className="is-5d8c782">{attachError}</p>}
 
-            <form onSubmit={(e) => void handleSend(e)} style={{ padding: '16px 20px', borderTop: '1px solid rgba(0,0,0,0.06)', display: 'flex', gap: '12px' }}>
-              <input
+            <form onSubmit={(e) => void handleSend(e)} className="is-78213b9">
+              <input aria-label="Attach a file"
                 ref={fileInputRef}
                 type="file"
                 accept="image/*"
@@ -389,18 +390,18 @@ export default function PortalMessagesPage() {
                 onClick={() => fileInputRef.current?.click()}
                 disabled={!selectedSwimmerId || uploading}
                 title="Attach an image"
-                style={{ background: 'none', border: '1px solid rgba(0,0,0,0.12)', borderRadius: '12px', color: 'var(--text-muted)', cursor: 'pointer', padding: '12px', display: 'flex' }}
+                className="is-6c0ac09"
               >
                 <Icon name="upload-cloud" size={15} />
               </button>
-              <input
+              <input aria-label="Write a message"
                 type="text"
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 placeholder="Write a message…"
                 disabled={sending || !selectedSwimmerId}
                 maxLength={4000}
-                style={{ flex: 1, padding: '12px 16px', borderRadius: '12px', border: '1px solid rgba(0,0,0,0.12)', fontSize: 'var(--fs-base)', outline: 'none' }}
+                className="is-1163eba"
               />
               <button
                 type="submit"
@@ -419,7 +420,7 @@ export default function PortalMessagesPage() {
                 {sending ? 'Sending…' : 'Send'}
               </button>
             </form>
-            {sendError && <p style={{ padding: '0 20px 16px', fontSize: 'var(--fs-sm)', color: 'var(--error)' }}>{sendError}</p>}
+            {sendError && <p className="is-2991f33">{sendError}</p>}
           </div>
         </div>
       )}

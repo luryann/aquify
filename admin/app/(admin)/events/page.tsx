@@ -18,6 +18,7 @@ import {
   formatClubEventWhen, formatFee, type ClubEventDraft,
 } from '@/lib/club-events'
 import { parseBackendDate } from '@/lib/dates'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 
 const label: React.CSSProperties = { display: 'block', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginBottom: 6 }
 
@@ -29,12 +30,12 @@ function EventForm({ draft, setDraft, groups, rsvpModeLocked }: {
 }) {
   const u = <K extends keyof ClubEventDraft>(k: K, v: ClubEventDraft[K]) => setDraft({ ...draft, [k]: v })
   return (
-    <div style={{ display: 'grid', gap: 16 }}>
+    <div className="u-gap-16px" style={{ display: 'grid' }}>
       <div>
         <label style={label} htmlFor="ev-title">Title</label>
         <input id="ev-title" className="input" value={draft.title} onChange={(e) => u('title', e.target.value)} maxLength={200} style={{ width: '100%' }} />
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
+      <div className="u-gap-12px" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
         <div>
           <label style={label} htmlFor="ev-cat">Type</label>
           <select id="ev-cat" className="input" value={draft.category} onChange={(e) => u('category', e.target.value as ClubEventDraft['category'])} style={{ width: '100%' }}>
@@ -46,10 +47,10 @@ function EventForm({ draft, setDraft, groups, rsvpModeLocked }: {
           <input id="ev-loc" className="input" value={draft.location} onChange={(e) => u('location', e.target.value)} style={{ width: '100%' }} />
         </div>
       </div>
-      <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 'var(--fs-base)', color: 'var(--text)' }}>
+      <label className="u-gap-8px u-fs-fs-base" style={{ display: 'flex', alignItems: 'center', color: 'var(--text)' }}>
         <input type="checkbox" checked={draft.allDay} onChange={(e) => u('allDay', e.target.checked)} /> All-day event
       </label>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+      <div className="u-gap-12px" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
         {draft.allDay ? (
           <>
             <div><label style={label} htmlFor="ev-sd">Date</label><input id="ev-sd" type="date" className="input" value={draft.startDate} onChange={(e) => u('startDate', e.target.value)} style={{ width: '100%' }} /></div>
@@ -66,14 +67,14 @@ function EventForm({ draft, setDraft, groups, rsvpModeLocked }: {
         <label style={label} htmlFor="ev-desc">Details</label>
         <textarea id="ev-desc" className="form-textarea" rows={3} value={draft.description} onChange={(e) => u('description', e.target.value)} style={{ width: '100%' }} />
       </div>
-      <fieldset style={{ border: 'none', padding: 0, margin: 0 }}>
+      <fieldset className="u-p-0 u-m-0" style={{ border: 'none' }}>
         <legend style={label}>Who is invited</legend>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <div className="u-gap-8px" style={{ display: 'flex', flexWrap: 'wrap' }}>
           <button type="button" className={draft.audience === 'all' ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'} onClick={() => u('audience', 'all')}>Whole club</button>
           <button type="button" className={draft.audience === 'groups' ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'} onClick={() => u('audience', 'groups')}>Specific groups</button>
         </div>
         {draft.audience === 'groups' && (
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12 }}>
+          <div className="u-gap-6px u-mt-12px" style={{ display: 'flex', flexWrap: 'wrap' }}>
             {groups.map((g) => {
               const on = draft.groupCodes.includes(g.code)
               return (
@@ -87,22 +88,22 @@ function EventForm({ draft, setDraft, groups, rsvpModeLocked }: {
         )}
       </fieldset>
       {draft.audience === 'all' && (
-        <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 'var(--fs-base)', color: 'var(--text)' }}>
+        <label className="u-gap-8px u-fs-fs-base" style={{ display: 'flex', alignItems: 'center', color: 'var(--text)' }}>
           <input type="checkbox" checked={draft.isPublic} onChange={(e) => u('isPublic', e.target.checked)} /> Show on the public team website
         </label>
       )}
-      <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 'var(--fs-base)', color: 'var(--text)' }}>
+      <label className="u-gap-8px u-fs-fs-base" style={{ display: 'flex', alignItems: 'center', color: 'var(--text)' }}>
         <input type="checkbox" checked={draft.rsvpEnabled} onChange={(e) => u('rsvpEnabled', e.target.checked)} /> Collect RSVPs
       </label>
       {draft.rsvpEnabled && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
+        <div className="u-gap-12px" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
           <div>
             <label style={label} htmlFor="ev-mode">One reply per</label>
             <select id="ev-mode" className="input" disabled={rsvpModeLocked} value={draft.rsvpMode} onChange={(e) => u('rsvpMode', e.target.value as ClubEventDraft['rsvpMode'])} style={{ width: '100%' }}>
               <option value="household">Family</option>
               <option value="swimmer">Swimmer</option>
             </select>
-            {rsvpModeLocked && <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>Locked once families reply.</span>}
+            {rsvpModeLocked && <span className="u-fs-fs-xs" style={{ color: 'var(--text-muted)' }}>Locked once families reply.</span>}
           </div>
           <div><label style={label} htmlFor="ev-dl">Reply by (optional)</label><input id="ev-dl" type="datetime-local" className="input" value={draft.rsvpDeadline} onChange={(e) => u('rsvpDeadline', e.target.value)} style={{ width: '100%' }} /></div>
           <div><label style={label} htmlFor="ev-cap">Capacity (people)</label><input id="ev-cap" inputMode="numeric" className="input" value={draft.capacity} onChange={(e) => u('capacity', e.target.value)} placeholder="No limit" style={{ width: '100%' }} /></div>
@@ -110,7 +111,7 @@ function EventForm({ draft, setDraft, groups, rsvpModeLocked }: {
         </div>
       )}
       {draft.rsvpEnabled && Number.parseFloat(draft.fee) > 0 && (
-        <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>Each “Going” reply creates an invoice for the party size in the family’s billing account. Changing to “Not going” cancels it if unpaid.</p>
+        <p className="u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>Each “Going” reply creates an invoice for the party size in the family’s billing account. Changing to “Not going” cancels it if unpaid.</p>
       )}
     </div>
   )
@@ -118,7 +119,7 @@ function EventForm({ draft, setDraft, groups, rsvpModeLocked }: {
 
 function SummaryLine({ s, capacity }: { s: ClubEventSummary; capacity?: number | null }) {
   return (
-    <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>
+    <span className="u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>
       {s.yes_headcount}{capacity ? ` / ${capacity}` : ''} going · {s.maybe} maybe · {s.no} not going
     </span>
   )
@@ -194,8 +195,9 @@ export default function AdminEventsPage() {
     }
   }
 
+  const confirm = useConfirm()
   async function remove(e: ClubEventRecord) {
-    if (!window.confirm(`Delete “${e.title}”? RSVPs are removed and unpaid event invoices are voided.`)) return
+    if (!(await confirm({ title: `Delete ${e.title}?`, message: 'RSVPs are removed and unpaid event invoices are voided.', confirmLabel: 'Delete event', destructive: true }))) return
     try {
       await deleteClubEvent(api, orgId, e.id)
       if (selected === e.id) setSelected(null)
@@ -233,42 +235,39 @@ export default function AdminEventsPage() {
       </div>
 
       {error && (
-        <div role="alert" className="card" style={{ padding: 16, marginBottom: 16, display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', color: 'var(--warning)', fontSize: 'var(--fs-base)' }}>
+        <div role="alert" className="card u-p-16px u-mb-16px u-gap-12px u-fs-fs-base" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--warning)' }}>
           {error}
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => setReloadKey((k) => k + 1)}>Retry</button>
         </div>
       )}
 
-      <div role="tablist" style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
+      <div role="tablist" className="u-gap-6px u-mb-16px" style={{ display: 'flex' }}>
         <button role="tab" aria-selected={!showPast} type="button" className={!showPast ? 'btn btn-secondary btn-sm' : 'btn btn-ghost btn-sm'} onClick={() => setShowPast(false)}>Upcoming</button>
         <button role="tab" aria-selected={showPast} type="button" className={showPast ? 'btn btn-secondary btn-sm' : 'btn btn-ghost btn-sm'} onClick={() => setShowPast(true)}>Past</button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 380px), 1fr))', gap: 16, alignItems: 'start' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div className="u-gap-16px" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 380px), 1fr))', alignItems: 'start' }}>
+        <div className="u-gap-8px" style={{ display: 'flex', flexDirection: 'column' }}>
           {loading && <div className="skeleton" style={{ height: 120, borderRadius: 12 }} />}
           {!loading && visible.map((e) => {
             const d = parseBackendDate(clubEventDateKey(e))
             const active = selected === e.id
             return (
-              <button key={e.id} type="button" onClick={() => setSelected(e.id)} className="card"
-                style={{
-                  display: 'grid', gridTemplateColumns: '52px 1fr', gap: 16, padding: 16, textAlign: 'left', cursor: 'pointer',
-                  border: `1px solid ${active ? 'var(--accent-border)' : 'var(--border)'}`, background: active ? 'var(--accent-subtle)' : undefined,
-                }}>
+              <button key={e.id} type="button" onClick={() => setSelected(e.id)} className="card u-gap-16px u-p-16px"
+                style={{ display: 'grid', gridTemplateColumns: '52px 1fr', textAlign: 'left', cursor: 'pointer', border: `1px solid ${active ? 'var(--accent-border)' : 'var(--border)'}`, background: active ? 'var(--accent-subtle)' : undefined }}>
                 <span style={{ textAlign: 'center' }}>
-                  <span style={{ display: 'block', fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>{d.toLocaleDateString('en-US', { month: 'short' })}</span>
-                  <span style={{ display: 'block', fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--fs-3xl)', lineHeight: 1, color: 'var(--text)' }}>{d.getDate()}</span>
+                  <span className="u-fs-fs-xs" style={{ display: 'block', color: 'var(--text-muted)' }}>{d.toLocaleDateString('en-US', { month: 'short' })}</span>
+                  <span className="u-ff-font-display u-fw-display-weight u-fs-fs-3xl u-lh-1" style={{ display: 'block', color: 'var(--text)' }}>{d.getDate()}</span>
                 </span>
                 <span style={{ minWidth: 0 }}>
-                  <span style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--text)', textDecoration: e.status === 'cancelled' ? 'line-through' : 'none' }}>{e.title}</span>
+                  <span className="u-gap-8px" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <span className="u-fs-fs-md u-fw-600" style={{ color: 'var(--text)', textDecoration: e.status === 'cancelled' ? 'line-through' : 'none' }}>{e.title}</span>
                     <span className={e.status === 'cancelled' ? 'badge badge-error' : 'badge badge-default'}>{e.status === 'cancelled' ? 'Cancelled' : CLUB_EVENT_CATEGORY_LABELS[e.category]}</span>
                   </span>
-                  <span style={{ display: 'block', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', marginTop: 4 }}>
+                  <span className="u-fs-fs-sm u-mt-4px" style={{ display: 'block', color: 'var(--text-subtle)' }}>
                     {formatClubEventWhen(e)}{e.location ? ` · ${e.location}` : ''}
                   </span>
-                  <span style={{ display: 'block', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginTop: 4 }}>
+                  <span className="u-fs-fs-sm u-mt-4px" style={{ display: 'block', color: 'var(--text-muted)' }}>
                     {e.audience === 'all' ? 'Whole club' : e.group_codes.map(groupName).join(', ')}
                     {e.rsvp_enabled ? ` · ${e.rsvp_summary.yes_headcount}${e.capacity ? `/${e.capacity}` : ''} going` : ' · No RSVP'}
                     {e.fee_cents > 0 ? ` · ${formatFee(e.fee_cents)} pp` : ''}
@@ -278,52 +277,52 @@ export default function AdminEventsPage() {
             )
           })}
           {shouldShowCollectionEmptyState(loading, error, visible.length) && (
-            <div className="card" style={{ padding: 24, textAlign: 'center', fontSize: 'var(--fs-base)', color: 'var(--text-subtle)' }}>
+            <div className="card u-p-24px u-fs-fs-base" style={{ textAlign: 'center', color: 'var(--text-subtle)' }}>
               {showPast ? 'No past events.' : 'Nothing scheduled. Create the first event and families can RSVP from the portal.'}
             </div>
           )}
         </div>
 
         {selectedEvent && (
-          <section className="card" style={{ padding: 20, position: 'sticky', top: 72 }} aria-label={`${selectedEvent.title} RSVPs`}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+          <section className="card u-p-20px" style={{ position: 'sticky', top: 72 }} aria-label={`${selectedEvent.title} RSVPs`}>
+            <div className="u-gap-12px u-mb-12px" style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap' }}>
               <h2 className="section-title">{selectedEvent.title}</h2>
-              <div style={{ display: 'flex', gap: 6 }}>
+              <div className="u-gap-6px" style={{ display: 'flex' }}>
                 <button type="button" className="btn btn-secondary btn-sm" onClick={() => openEditor(selectedEvent)}><Icon name="edit-2" size={13} /> Edit</button>
                 {selectedEvent.rsvp_enabled && <button type="button" className="btn btn-secondary btn-sm" onClick={() => exportCSV(selectedEvent)}><Icon name="download" size={13} /> CSV</button>}
                 <button type="button" className="btn btn-ghost btn-sm" aria-label="Delete event" onClick={() => remove(selectedEvent)}><Icon name="trash-2" size={13} /></button>
               </div>
             </div>
-            {selectedEvent.description && <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', marginBottom: 12, whiteSpace: 'pre-wrap' }}>{selectedEvent.description}</p>}
+            {selectedEvent.description && <p className="u-fs-fs-base u-mb-12px" style={{ color: 'var(--text-subtle)', whiteSpace: 'pre-wrap' }}>{selectedEvent.description}</p>}
             {!selectedEvent.rsvp_enabled ? (
-              <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)' }}>This event does not collect RSVPs.</p>
+              <p className="u-fs-fs-base" style={{ color: 'var(--text-muted)' }}>This event does not collect RSVPs.</p>
             ) : rosterError ? (
-              <p role="alert" style={{ fontSize: 'var(--fs-base)', color: 'var(--warning)' }}>{rosterError} <button type="button" className="btn btn-ghost btn-sm" onClick={() => loadRoster(selectedEvent.id)}>Retry</button></p>
+              <p role="alert" className="u-fs-fs-base" style={{ color: 'var(--warning)' }}>{rosterError} <button type="button" className="btn btn-ghost btn-sm" onClick={() => loadRoster(selectedEvent.id)}>Retry</button></p>
             ) : !roster ? (
               <div className="skeleton" style={{ height: 100, borderRadius: 8 }} />
             ) : (
               <>
                 <SummaryLine s={roster.summary} capacity={selectedEvent.capacity} />
                 {roster.rsvps.length === 0 ? (
-                  <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)', marginTop: 12 }}>No replies yet.</p>
+                  <p className="u-fs-fs-base u-mt-12px" style={{ color: 'var(--text-muted)' }}>No replies yet.</p>
                 ) : (
-                  <div style={{ overflowX: 'auto', marginTop: 12 }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-base)' }}>
+                  <div className="table-scroll u-mt-12px" style={{ overflowX: 'auto' }}>
+                    <table className="u-fs-fs-base" style={{ width: '100%', borderCollapse: 'collapse' }}>
                       <thead>
-                        <tr style={{ textAlign: 'left', color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>
-                          <th style={{ padding: '6px 8px' }}>{selectedEvent.rsvp_mode === 'swimmer' ? 'Swimmer' : 'Family'}</th>
-                          <th style={{ padding: '6px 8px' }}>Reply</th>
-                          <th style={{ padding: '6px 8px' }}>People</th>
-                          <th style={{ padding: '6px 8px' }}>Note</th>
+                        <tr className="u-fs-fs-sm" style={{ textAlign: 'left', color: 'var(--text-muted)' }}>
+                          <th className="u-p-6px-8px" >{selectedEvent.rsvp_mode === 'swimmer' ? 'Swimmer' : 'Family'}</th>
+                          <th className="u-p-6px-8px" >Reply</th>
+                          <th className="u-p-6px-8px" >People</th>
+                          <th className="u-p-6px-8px" >Note</th>
                         </tr>
                       </thead>
                       <tbody>
                         {roster.rsvps.map((r) => (
                           <tr key={r.id} style={{ borderTop: '1px solid var(--border)' }}>
-                            <td style={{ padding: '8px', color: 'var(--text)' }}>{r.swimmer_name || r.household_name || 'Family'}{r.swimmer_name && r.household_name ? <span style={{ color: 'var(--text-muted)' }}> · {r.household_name}</span> : null}</td>
-                            <td style={{ padding: '8px' }}><span className={r.response === 'yes' ? 'badge badge-success' : r.response === 'maybe' ? 'badge badge-warning' : 'badge badge-default'}>{RSVP_LABELS[r.response]}</span></td>
-                            <td style={{ padding: '8px', color: 'var(--text-subtle)' }}>{r.response === 'no' ? '—' : 1 + r.guest_count}{r.invoice_id ? <Icon name="dollar-sign" size={12} style={{ marginLeft: 4, color: 'var(--text-muted)' }} aria-label="Invoiced" /> : null}</td>
-                            <td style={{ padding: '8px', color: 'var(--text-subtle)' }}>{r.note || ''}</td>
+                            <td className="u-p-8px" style={{ color: 'var(--text)' }}>{r.swimmer_name || r.household_name || 'Family'}{r.swimmer_name && r.household_name ? <span style={{ color: 'var(--text-muted)' }}> · {r.household_name}</span> : null}</td>
+                            <td className="u-p-8px" ><span className={r.response === 'yes' ? 'badge badge-success' : r.response === 'maybe' ? 'badge badge-warning' : 'badge badge-default'}>{RSVP_LABELS[r.response]}</span></td>
+                            <td className="u-p-8px" style={{ color: 'var(--text-subtle)' }}>{r.response === 'no' ? '—' : 1 + r.guest_count}{r.invoice_id ? <Icon name="dollar-sign" size={12} style={{ marginLeft: 4, color: 'var(--text-muted)' }} aria-label="Invoiced" /> : null}</td>
+                            <td className="u-p-8px" style={{ color: 'var(--text-subtle)' }}>{r.note || ''}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -342,13 +341,13 @@ export default function AdminEventsPage() {
         title={editing === 'new' ? 'New club event' : 'Edit event'}
         width={620}
         footer={
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, width: '100%', flexWrap: 'wrap' }}>
+          <div className="u-gap-8px" style={{ display: 'flex', justifyContent: 'space-between', width: '100%', flexWrap: 'wrap' }}>
             {editing && editing !== 'new' ? (
               <button type="button" className="btn btn-ghost btn-sm" onClick={() => setDraft({ ...draft, status: draft.status === 'cancelled' ? 'scheduled' : 'cancelled' })}>
                 {draft.status === 'cancelled' ? 'Reinstate event' : 'Mark as cancelled'}
               </button>
             ) : <span />}
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div className="u-gap-8px" style={{ display: 'flex' }}>
               <button type="button" className="btn btn-secondary" onClick={() => setEditing(null)}>Close</button>
               <button type="button" className="btn btn-primary" disabled={saving} onClick={save}>{saving ? 'Saving…' : editing === 'new' ? 'Create event' : 'Save changes'}</button>
             </div>
@@ -357,8 +356,8 @@ export default function AdminEventsPage() {
       >
         <EventForm draft={draft} setDraft={setDraft} groups={groups}
           rsvpModeLocked={editing !== null && editing !== 'new' && (editing.rsvp_summary.yes + editing.rsvp_summary.no + editing.rsvp_summary.maybe) > 0} />
-        {draft.status === 'cancelled' && <p style={{ marginTop: 12, fontSize: 'var(--fs-sm)', color: 'var(--warning)' }}>Saving will cancel this event and void unpaid RSVP invoices.</p>}
-        {formError && <p role="alert" style={{ marginTop: 12, fontSize: 'var(--fs-base)', color: 'var(--error)' }}>{formError}</p>}
+        {draft.status === 'cancelled' && <p className="u-mt-12px u-fs-fs-sm" style={{ color: 'var(--warning)' }}>Saving will cancel this event and void unpaid RSVP invoices.</p>}
+        {formError && <p role="alert" className="u-mt-12px u-fs-fs-base" style={{ color: 'var(--error)' }}>{formError}</p>}
       </Modal>
     </div>
   )

@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import { fetchPublicSite } from '@/lib/publicSiteData'
 import { COURSE_LABELS, excerpt, formatEventDay, formatEventTime, formatMeetDates } from '@/lib/club-site'
 import { formatDateOnly } from '@/lib/dates'
+import './page.inline.css'
 
 type Props = { params: Promise<{ slug: string }> }
 
@@ -106,7 +107,7 @@ export default async function ClubHome({ params }: Props) {
       {coaches.length > 0 ? (
         <section className="cs-section">
           <div className="cs-wrap">
-            <h2 style={{ fontSize: 'clamp(2rem, 5vw, 3.2rem)' }}>Coaches</h2>
+            <h2 className="is-6c3fad3">Coaches</h2>
             <ul className="cs-coaches">
               {coaches.map((c) => (
                 <li key={`${c.name}-${c.role}`}>{c.name}<small>{c.role}</small></li>

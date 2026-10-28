@@ -20,16 +20,13 @@ export function WellnessPromptCard({ api, orgId, swimmerId }: { api: ApiClient; 
   }, [api, orgId, swimmerId])
   if (!show) return null
   return (
-    <Link href="/swim/wellness" className="card" style={{
-      display: 'flex', alignItems: 'center', gap: 16, padding: '16px 20px', marginBottom: 20, textDecoration: 'none',
-      border: '1px solid var(--accent-border)', background: 'var(--accent-subtle)',
-    }}>
-      <Icon name="activity" size={20} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+    <Link href="/swim/wellness" className="card u-gap-16px u-p-16px-20px u-mb-20px" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none', border: '1px solid var(--accent-border)', background: 'var(--accent-subtle)' }}>
+      <Icon name="activity" size={20} style={{ color: 'var(--accent-text, var(--accent))', flexShrink: 0 }} />
       <span style={{ flex: 1, minWidth: 0 }}>
-        <span style={{ display: 'block', fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--text)' }}>You haven’t checked in today</span>
-        <span style={{ display: 'block', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>Sleep, soreness, energy, stress and mood — about 20 seconds.</span>
+        <span className="u-fs-fs-md u-fw-600" style={{ display: 'block', color: 'var(--text)' }}>You haven’t checked in today</span>
+        <span className="u-fs-fs-sm" style={{ display: 'block', color: 'var(--text-subtle)' }}>Sleep, soreness, energy, stress and mood — about 20 seconds.</span>
       </span>
-      <Icon name="chevron-right" size={16} style={{ color: 'var(--accent)' }} />
+      <Icon name="chevron-right" size={16} style={{ color: 'var(--accent-text, var(--accent))' }} />
     </Link>
   )
 }

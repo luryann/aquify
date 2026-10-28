@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Modal } from '@/components/ui/Modal'
 import { Icon } from '@/components/ui/icons'
+import { useToast } from '@/components/ui/Toast'
 import { useSession } from '@/lib/session'
 import { setAnnouncementPublic } from '@/lib/publicSiteData'
 import { useApiClient } from '@/lib/api'
@@ -28,12 +29,10 @@ function formatDateTime(value?: string) {
   })
 }
 
-const FIELD_INPUT_STYLE: React.CSSProperties = {
-  width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)',
-  background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: 'var(--fs-base)', boxSizing: 'border-box',
-}
+const FIELD_INPUT_STYLE: React.CSSProperties = { width: '100%' }
 
 export default function AnnouncementsPage() {
+  const toast = useToast()
   const { session } = useSession()
   const api = useApiClient(session?.token)
   const [announcements, setAnnouncements] = useState<AnnouncementRecord[]>([])
@@ -139,8 +138,15 @@ export default function AnnouncementsPage() {
     setActionId(id)
     setError(null)
     try {
-      await setAnnouncementPublic(api, session.user.orgId, id, next)
+      const orgId = session.user.orgId
+      await setAnnouncementPublic(api, orgId, id, next)
       await loadAnnouncements()
+      toast.successWithAction(next ? 'Shown on the public website' : 'Hidden from the public website', {
+        label: 'Undo',
+        onClick: () => {
+          void setAnnouncementPublic(api, orgId, id, !next).then(() => loadAnnouncements()).catch((err) => setError(uiErrorMessage(err, 'Couldn’t undo. Try again.')))
+        },
+      })
     } catch (err) {
       setError(uiErrorMessage(err, 'Couldn’t update website visibility. Try again.'))
     } finally {
@@ -163,37 +169,37 @@ export default function AnnouncementsPage() {
   }
 
   if (!session) {
-    return <div style={{ padding: '32px' }}><EmptyState icon="megaphone" title="Sign in required" description="Authenticate to manage live announcements." /></div>
+    return <div className="u-p-32px" ><EmptyState icon="megaphone" title="Sign in required" description="Authenticate to manage live announcements." /></div>
   }
 
   return (
     <div className="page">
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px', marginBottom: '24px', flexWrap: 'wrap' }}>
+      <div className="u-gap-16px u-mb-24px" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap' }}>
         <div>
           <h1 className="page-title">Announcements</h1>
         </div>
         <button onClick={() => setModalOpen(true)} className="btn btn-primary">
           <Icon name="plus" size={14} />
-          New Announcement
+          New announcement
         </button>
       </div>
 
       {error ? (
-        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: 'var(--fs-sm)' }}>
+        <div className="u-mb-20px u-p-12px-16px u-fs-fs-sm" style={{ borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)' }}>
           {error}
         </div>
       ) : null}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px', flexWrap: 'wrap' }}>
+      <div className="u-gap-12px u-mb-20px" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', flex: '1 1 220px', maxWidth: '320px' }}>
           <span style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}>
             <Icon name="search" size={14} />
           </span>
-          <input
+          <input aria-label="Search announcements" className="input-search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search announcements…"
-            style={{ ...FIELD_INPUT_STYLE, paddingLeft: '32px' }}
+            style={{ ...FIELD_INPUT_STYLE }}
           />
         </div>
         <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} style={{ ...FIELD_INPUT_STYLE, width: 'auto' }}>
@@ -202,7 +208,7 @@ export default function AnnouncementsPage() {
           <option value="published">Published</option>
           <option value="archived">Archived</option>
         </select>
-        <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto', flexWrap: 'wrap' }}>
+        <div className="u-gap-8px u-ml-auto" style={{ display: 'flex', flexWrap: 'wrap' }}>
           <span className="badge badge-default">{stats.total} total</span>
           <span className="badge badge-success">{stats.published} published</span>
           <span className="badge badge-warning">{stats.draft} draft</span>
@@ -212,9 +218,9 @@ export default function AnnouncementsPage() {
 
       <div className="card" style={{ overflow: 'hidden' }}>
         {loading ? (
-          <div style={{ padding: '20px' }}><EmptyState icon="megaphone" title="Loading announcements" description="Fetching the club's announcement feed." /></div>
+          <div className="u-p-20px" ><EmptyState icon="megaphone" title="Loading announcements" description="Fetching the club's announcement feed." /></div>
         ) : visibleAnnouncements.length === 0 ? (
-          <div style={{ padding: '20px' }}>
+          <div className="u-p-20px" >
             <EmptyState
               icon="megaphone"
               title={announcements.length === 0 ? 'No announcements yet' : 'No matches'}
@@ -224,11 +230,11 @@ export default function AnnouncementsPage() {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             {visibleAnnouncements.map((announcement, index) => (
-              <div key={announcement.id} style={{ padding: '16px 20px', borderBottom: index < visibleAnnouncements.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px 12px', alignItems: 'flex-start', marginBottom: '8px' }}>
+              <div key={announcement.id} className="u-p-16px-20px" style={{ borderBottom: index < visibleAnnouncements.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                <div className="u-mb-8px" style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px 12px', alignItems: 'flex-start' }}>
                   <div style={{ flex: '1 1 260px', minWidth: 0 }}>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '4px' }}>
-                      <Link href={`/announcements/${announcement.id}`} style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--text)', textDecoration: 'none' }}>
+                    <div className="u-gap-8px u-mb-4px" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <Link href={`/announcements/${announcement.id}`} className="u-fs-fs-md u-fw-600" style={{ color: 'var(--text)', textDecoration: 'none' }}>
                         {announcement.title}
                       </Link>
                       <span className={`badge ${announcement.status === 'published' ? 'badge-success' : announcement.status === 'draft' ? 'badge-warning' : 'badge-default'}`}>
@@ -236,11 +242,11 @@ export default function AnnouncementsPage() {
                       </span>
                       {announcement.public ? <span className="badge badge-info">On website</span> : null}
                     </div>
-                    <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
+                    <div className="u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>
                       Audience: {announcement.audience} · Created {formatDateTime(announcement.created_at)} · Updated {formatDateTime(announcement.updated_at)}
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <div className="u-gap-8px" style={{ display: 'flex', flexWrap: 'wrap' }}>
                     {announcement.status === 'draft' ? (
                       <button
                         onClick={() => void handlePublish(announcement.id)}
@@ -270,7 +276,7 @@ export default function AnnouncementsPage() {
                     ) : null}
                   </div>
                 </div>
-                <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', lineHeight: 1.6, margin: 0 }}>
+                <p className="u-fs-fs-base u-lh-1_6 u-m-0" style={{ color: 'var(--text-subtle)' }}>
                   {announcement.body}
                 </p>
               </div>
@@ -297,8 +303,8 @@ export default function AnnouncementsPage() {
           </>
         }
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <input
+        <div className="u-gap-12px" style={{ display: 'flex', flexDirection: 'column' }}>
+          <input aria-label="Title"
             value={form.title}
             onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
             placeholder="Title"
@@ -313,12 +319,12 @@ export default function AnnouncementsPage() {
             <option value="group">Specific group</option>
           </select>
           {form.audience === 'all' ? (
-            <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 'var(--fs-base)', color: 'var(--text)' }}>
+            <label className="u-gap-8px u-fs-fs-base" style={{ display: 'flex', alignItems: 'center', color: 'var(--text)' }}>
               <input type="checkbox" checked={form.public} onChange={(event) => setForm((current) => ({ ...current, public: event.target.checked }))} />
               Show on the public team website once published
             </label>
           ) : null}
-          <textarea
+          <textarea aria-label="Write the announcement body."
             value={form.body}
             onChange={(event) => setForm((current) => ({ ...current, body: event.target.value }))}
             rows={8}

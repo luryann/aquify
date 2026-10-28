@@ -78,7 +78,7 @@ type Server struct {
 	completedIDs   []string                 // bounded FIFO of recently completed/failed task IDs
 	metrics        *JobMetrics
 	wg             sync.WaitGroup
-	ctx            context.Context    // server lifecycle context
+	ctx            context.Context // server lifecycle context
 	cancel         context.CancelFunc
 	concurrency    int // goroutines per queue
 }
@@ -167,7 +167,7 @@ func (s *Server) Stop() {
 // Enqueue implements Queue. It dispatches the task to the appropriate queue
 // channel for immediate processing.
 func (s *Server) Enqueue(ctx context.Context, task *Task, opts ...Option) (*TaskInfo, error) {
-	return s.enqueueAt(ctx, time.Now(), task, opts...)
+	return s.enqueueAt(ctx, time.Time{}, task, opts...)
 }
 
 // EnqueueIn implements Queue. It dispatches the task after the given delay.
@@ -176,9 +176,17 @@ func (s *Server) EnqueueIn(ctx context.Context, delay time.Duration, task *Task,
 }
 
 func (s *Server) enqueueAt(ctx context.Context, processAt time.Time, task *Task, opts ...Option) (*TaskInfo, error) {
+	if task == nil {
+		return nil, fmt.Errorf("task is required")
+	}
 	o := &EnqueueOptions{Queue: QueueDefault}
 	for _, opt := range opts {
 		opt(o)
+	}
+	// EnqueueIn supplies an explicit schedule; otherwise honor WithDelay,
+	// matching the durable backend's option semantics.
+	if processAt.IsZero() {
+		processAt = time.Now().Add(o.ProcessIn)
 	}
 
 	policy := s.policyFor(o.Queue)

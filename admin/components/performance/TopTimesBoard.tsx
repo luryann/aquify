@@ -80,25 +80,25 @@ export function TopTimesBoard({ canUseSeasons = false }: { canUseSeasons?: boole
       {error ? <LoadErrorBanner message={error} onRetry={() => void load()} /> : null}
 
       {loading ? (
-        <div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-base)', padding: '24px 0' }}>Loading top times…</div>
+        <div className="u-fs-fs-base u-p-24px-0" style={{ color: 'var(--text-muted)' }}>Loading top times…</div>
       ) : !error && lists.length === 0 ? (
         <EmptyState icon="bar-chart-2" title="No swims match these filters" description="Try another age group, course or time window." />
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 300px), 1fr))', gap: '24px 24px' }}>
           {lists.map((list) => (
             <section key={`${list.distance}-${list.stroke}`} aria-label={list.label}>
-              <h2 className="card-title" style={{ margin: '0 0 6px' }}>
-                {list.distance} {STROKE_LABELS[list.stroke]} <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>{genderLabel(list.gender, list.age_group)} {AGE_GROUP_LABELS[list.age_group]}</span>
+              <h2 className="card-title u-m-0-0-6px" >
+                {list.distance} {STROKE_LABELS[list.stroke]} <span className="u-fw-400" style={{ color: 'var(--text-muted)' }}>{genderLabel(list.gender, list.age_group)} {AGE_GROUP_LABELS[list.age_group]}</span>
               </h2>
-              <ol style={{ listStyle: 'none', margin: 0, padding: 0, borderTop: '1px solid var(--border)' }}>
+              <ol className="u-m-0 u-p-0" style={{ listStyle: 'none', borderTop: '1px solid var(--border)' }}>
                 {list.entries.map((e) => (
-                  <li key={e.result_id} style={{ display: 'grid', gridTemplateColumns: '24px minmax(0, 1fr) auto', gap: '12px', alignItems: 'baseline', padding: '8px 0', borderBottom: '1px solid var(--border)', fontSize: 'var(--fs-base)' }}>
+                  <li key={e.result_id} className="u-gap-12px u-p-8px-0 u-fs-fs-base" style={{ display: 'grid', gridTemplateColumns: '24px minmax(0, 1fr) auto', alignItems: 'baseline', borderBottom: '1px solid var(--border)' }}>
                     <span style={{ color: e.rank === 1 ? 'var(--accent)' : 'var(--text-muted)', fontWeight: e.rank === 1 ? 600 : 400, fontVariantNumeric: 'tabular-nums' }}>{e.rank}</span>
                     <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={e.meet_name ? `${e.meet_name}, ${e.swim_date}` : e.swim_date}>
                       {e.swimmer_name}{e.age != null ? <span style={{ color: 'var(--text-muted)' }}> {e.age}</span> : null}
-                      <span style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}> · {parseBackendDate(e.swim_date)?.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) ?? e.swim_date}</span>
+                      <span className="u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}> · {parseBackendDate(e.swim_date)?.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) ?? e.swim_date}</span>
                     </span>
-                    <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{formatSwimTime(e.time_ms)}</span>
+                    <span className="u-fw-600" style={{ fontVariantNumeric: 'tabular-nums' }}>{formatSwimTime(e.time_ms)}</span>
                   </li>
                 ))}
               </ol>

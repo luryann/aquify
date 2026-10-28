@@ -9,6 +9,7 @@ import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
 import { fetchGroups, fetchRegistrations, fetchStaff, createGroup, type GroupRecord, type RegistrationRecord, type StaffRecord } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
+import { Modal } from '@/components/ui/Modal'
 
 function formatAgeRange(minAge: number | null | undefined, maxAge: number | null | undefined) {
   if (minAge == null && maxAge == null) return 'All ages'
@@ -32,7 +33,7 @@ type GroupRow = {
 }
 
 const TYPE_CONFIG: Record<GroupType, { label: string; color: string; bg: string }> = {
-  competitive: { label: 'Competitive', color: 'var(--accent)', bg: 'var(--accent-subtle)' },
+  competitive: { label: 'Competitive', color: 'var(--accent-text, var(--accent))', bg: 'var(--accent-subtle)' },
   recreational: { label: 'Recreational', color: 'var(--info)', bg: 'var(--info-bg)' },
   developmental: { label: 'Developmental', color: 'var(--warning)', bg: 'var(--warning-bg)' },
   masters: { label: 'Masters', color: 'var(--success)', bg: 'var(--success-bg)' },
@@ -51,7 +52,7 @@ const COLUMNS: Column<GroupRow>[] = [
     sortable: true,
     render: (row) => (
       <div>
-        <Link href={`/members/groups/${row.id}`} style={{ color: 'var(--text)', fontWeight: 600, textDecoration: 'none', fontSize: 'var(--fs-base)' }}>{row.name}</Link>
+        <Link href={`/members/groups/${row.id}`} className="u-fw-600 u-fs-fs-base" style={{ color: 'var(--text)', textDecoration: 'none' }}>{row.name}</Link>
       </div>
     ),
   },
@@ -65,17 +66,17 @@ const COLUMNS: Column<GroupRow>[] = [
     label: 'Swimmers',
     sortable: true,
     align: 'right',
-    render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)' }}>{row.swimmerCount}</span>,
+    render: (row) => <span className="u-ff-font-body u-fs-fs-base u-fw-600" style={{ color: 'var(--text)' }}>{row.swimmerCount}</span>,
   },
   {
     key: 'coachName',
     label: 'Coach',
-    render: (row) => <span style={{ fontSize: 'var(--fs-base)', color: row.coachName ? 'var(--text-subtle)' : 'var(--text-muted)' }}>{row.coachName ?? 'Unassigned'}</span>,
+    render: (row) => <span className="u-fs-fs-base" style={{ color: row.coachName ? 'var(--text-subtle)' : 'var(--text-muted)' }}>{row.coachName ?? 'Unassigned'}</span>,
   },
   {
     key: 'minAge',
     label: 'Age range',
-    render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{formatAgeRange(row.minAge, row.maxAge)}</span>,
+    render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{formatAgeRange(row.minAge, row.maxAge)}</span>,
   },
   {
     key: 'status',
@@ -107,8 +108,7 @@ function deriveRows(groups: GroupRecord[], registrations: RegistrationRecord[], 
     .sort((a, b) => a.name.localeCompare(b.name))
 }
 
-const INPUT_STYLE: React.CSSProperties = { width: '100%', padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none', boxSizing: 'border-box' }
-const LABEL_STYLE: React.CSSProperties = { fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }
+const INPUT_STYLE: React.CSSProperties = { width: '100%' }
 
 export function GroupsPanel() {
   const { session } = useSession()
@@ -176,7 +176,7 @@ export function GroupsPanel() {
 
   const totalRegistrations = rows.filter((row) => row.status === 'active').reduce((acc, row) => acc + row.swimmerCount, 0)
 
-  const selectStyle: React.CSSProperties = { padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none', cursor: 'pointer' }
+  const selectStyle: React.CSSProperties = {}
 
   async function handleCreateGroup(e: React.FormEvent) {
     e.preventDefault()
@@ -206,22 +206,22 @@ export function GroupsPanel() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
-        <button className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setShowNew(true)}>
-          <Icon name="plus" size={14} /> New Group
+      <div className="u-mb-16px" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <button type="button" className="btn btn-primary u-gap-6px" style={{ display: 'flex', alignItems: 'center' }} onClick={() => setShowNew(true)}>
+          <Icon name="plus" size={14} /> New group
         </button>
       </div>
 
-      <div className="cols-4" style={{ gap: '12px', marginBottom: '20px' }}>
+      <div className="cols-4 u-gap-12px u-mb-20px" >
         {[
           { label: 'Active groups', value: rows.filter((row) => row.status === 'active').length, color: 'var(--text)' },
-          { label: 'Competitive', value: rows.filter((row) => row.type === 'competitive').length, color: 'var(--accent)' },
+          { label: 'Competitive', value: rows.filter((row) => row.type === 'competitive').length, color: 'var(--accent-text, var(--accent))' },
           { label: 'Developmental', value: rows.filter((row) => row.type === 'developmental').length, color: 'var(--warning)' },
           { label: 'Total enrolled', value: totalRegistrations, color: 'var(--success)' },
         ].map((stat) => (
-          <div key={stat.label} className="card" style={{ padding: '16px 16px' }}>
-            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
-            <div style={{ fontSize: 'var(--fs-2xl)', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
+          <div key={stat.label} className="card u-p-16px-16px" >
+            <div className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ color: 'var(--text-muted)' }}>{stat.label}</div>
+            <div className="u-fs-fs-2xl u-ff-font-body u-fw-700" style={{ color: stat.color }}>{stat.value}</div>
           </div>
         ))}
       </div>
@@ -229,7 +229,7 @@ export function GroupsPanel() {
       <div className="toolbar">
         <div className="toolbar-search">
           <Icon name="search" size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
-          <input type="text" placeholder="Search groups..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: '100%', padding: '8px 12px 8px 32px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none' }} />
+          <input aria-label="Search groups..." type="text" placeholder="Search groups..." value={search} onChange={(e) => setSearch(e.target.value)} className="u-p-8px-12px-8px-32px u-fs-fs-base" style={{ width: '100%' }} />
         </div>
         <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} style={selectStyle}>
           <option value="all">All types</option>
@@ -244,7 +244,7 @@ export function GroupsPanel() {
           <option value="archived">Archived</option>
           <option value="all">All</option>
         </select>
-        <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginLeft: 'auto' }}>{filtered.length} groups</span>
+        <span className="u-fs-fs-sm u-ff-font-body u-ml-auto" style={{ color: 'var(--text-muted)' }}>{filtered.length} groups</span>
       </div>
 
       {loading ? (
@@ -256,28 +256,22 @@ export function GroupsPanel() {
       )}
 
       {/* New Group Modal */}
-      {showNew && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)' }} onClick={(e) => { if (e.target === e.currentTarget) setShowNew(false) }}>
-          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '480px', boxShadow: '0 24px 80px rgba(0,0,0,0.4)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-              <h2 className="section-title" style={{ margin: 0 }}>New group</h2>
-              <button onClick={() => setShowNew(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><Icon name="x" size={18} /></button>
-            </div>
-            {formError && <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: 'var(--fs-base)' }}>{formError}</div>}
-            <form onSubmit={handleCreateGroup} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div className="cols-2" style={{ gap: '12px' }}>
+      <Modal open={Boolean(showNew)} onClose={() => setShowNew(false)} title="New group" width={480}>
+            {formError && <div role="alert" className="form-banner-error u-mb-16px">{formError}</div>}
+            <form onSubmit={handleCreateGroup} className="u-gap-16px" style={{ display: 'flex', flexDirection: 'column' }}>
+              <div className="cols-2 u-gap-12px" >
                 <div>
-                  <label style={LABEL_STYLE}>Code *</label>
-                  <input required style={INPUT_STYLE} value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value.toUpperCase() }))} placeholder="COMP-A" />
+                  <label className="form-label form-label-required">Code</label>
+                  <input aria-label="COMP-A" required style={INPUT_STYLE} value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value.toUpperCase() }))} placeholder="COMP-A" />
                 </div>
                 <div>
-                  <label style={LABEL_STYLE}>Name *</label>
-                  <input required style={INPUT_STYLE} value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="Competitive A" />
+                  <label className="form-label form-label-required">Name</label>
+                  <input aria-label="Competitive A" required style={INPUT_STYLE} value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="Competitive A" />
                 </div>
               </div>
-              <div className="cols-2" style={{ gap: '12px' }}>
+              <div className="cols-2 u-gap-12px" >
                 <div>
-                  <label style={LABEL_STYLE}>Type</label>
+                  <label className="form-label">Type</label>
                   <select style={INPUT_STYLE} value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}>
                     <option value="competitive">Competitive</option>
                     <option value="recreational">Recreational</option>
@@ -287,7 +281,7 @@ export function GroupsPanel() {
                   </select>
                 </div>
                 <div>
-                  <label style={LABEL_STYLE}>Coach</label>
+                  <label className="form-label">Coach</label>
                   <select style={INPUT_STYLE} value={form.coach_user_id} onChange={(e) => setForm((f) => ({ ...f, coach_user_id: e.target.value }))}>
                     <option value="">Unassigned</option>
                     {staff.map((member) => (
@@ -296,28 +290,26 @@ export function GroupsPanel() {
                   </select>
                 </div>
               </div>
-              <div className="cols-2" style={{ gap: '12px' }}>
+              <div className="cols-2 u-gap-12px" >
                 <div>
-                  <label style={LABEL_STYLE}>Min age</label>
-                  <input type="number" min="0" max="99" style={INPUT_STYLE} value={form.min_age} onChange={(e) => setForm((f) => ({ ...f, min_age: e.target.value }))} placeholder="9" />
+                  <label className="form-label">Min age</label>
+                  <input aria-label="9" type="number" min="0" max="99" style={INPUT_STYLE} value={form.min_age} onChange={(e) => setForm((f) => ({ ...f, min_age: e.target.value }))} placeholder="9" />
                 </div>
                 <div>
-                  <label style={LABEL_STYLE}>Max age</label>
-                  <input type="number" min="0" max="99" style={INPUT_STYLE} value={form.max_age} onChange={(e) => setForm((f) => ({ ...f, max_age: e.target.value }))} placeholder="14" />
+                  <label className="form-label">Max age</label>
+                  <input aria-label="14" type="number" min="0" max="99" style={INPUT_STYLE} value={form.max_age} onChange={(e) => setForm((f) => ({ ...f, max_age: e.target.value }))} placeholder="14" />
                 </div>
               </div>
               <div>
-                <label style={LABEL_STYLE}>Description</label>
-                <textarea style={{ ...INPUT_STYLE, resize: 'vertical' }} rows={2} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="Optional description..." />
+                <label className="form-label">Description</label>
+                <textarea aria-label="Optional description..." style={{ ...INPUT_STYLE, resize: 'vertical' }} rows={2} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="Optional description..." />
               </div>
-              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '4px' }}>
+              <div className="form-actions">
                 <button type="button" className="btn" onClick={() => setShowNew(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary" disabled={submitting}>{submitting ? 'Creating…' : 'Create Group'}</button>
+                <button type="submit" className="btn btn-primary" disabled={submitting}>{submitting ? 'Creating…' : 'Create group'}</button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+      </Modal>
     </div>
   )
 }

@@ -21,15 +21,15 @@ export function SwimmerEngagementCard({ api, orgId, swimmerId }: { api: ApiClien
 
   const stat = (value: string, caption: string) => (
     <div style={{ minWidth: 120 }}>
-      <div style={{ fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--fs-3xl)', lineHeight: 1, color: 'var(--text)' }}>{value}</div>
-      <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', marginTop: 4 }}>{caption}</div>
+      <div className="u-ff-font-display u-fw-display-weight u-fs-fs-3xl u-lh-1" style={{ color: 'var(--text)' }}>{value}</div>
+      <div className="u-fs-fs-sm u-mt-4px" style={{ color: 'var(--text-subtle)' }}>{caption}</div>
     </div>
   )
 
   return (
-    <div className="card" style={{ padding: '16px 20px', margin: '0 0 16px', display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'center' }}>
+    <div className="card u-p-16px-20px u-m-0-0-16px u-gap-24px" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center' }}>
       {failed ? (
-        <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)' }}>Attendance is unavailable right now.</span>
+        <span className="u-fs-fs-base" style={{ color: 'var(--text-muted)' }}>Attendance is unavailable right now.</span>
       ) : !att ? (
         <div className="skeleton" style={{ height: 40, width: 160, borderRadius: 8 }} />
       ) : stat(
@@ -40,7 +40,7 @@ export function SwimmerEngagementCard({ api, orgId, swimmerId }: { api: ApiClien
         well.averages.count ? well.averages.readiness.toFixed(1) : '–',
         well.averages.count ? `Readiness, 14 days · ${well.averages.count} check-ins${well.flags.length ? ` · ${well.flags.length} flag${well.flags.length > 1 ? 's' : ''}` : ''}` : 'Readiness · no check-ins in 14 days',
       )}
-      <Link href="/wellness" style={{ marginLeft: 'auto', fontSize: 'var(--fs-sm)', color: 'var(--accent)', textDecoration: 'none' }}>Team wellness</Link>
+      <Link href="/wellness" className="u-ml-auto u-fs-fs-sm" style={{ color: 'var(--accent-text, var(--accent))', textDecoration: 'none' }}>Team wellness</Link>
     </div>
   )
 }

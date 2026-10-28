@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { Icon } from './icons'
 
 type ModalProps = {
@@ -14,15 +14,46 @@ type ModalProps = {
 }
 
 export function Modal({ open, onClose, title, description, children, footer, width = 480 }: ModalProps) {
+  const panelRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!open) return
+    const returnTo = document.activeElement as HTMLElement | null
+    const focusables = () =>
+      Array.from(
+        panelRef.current?.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      )
+    const t = window.setTimeout(() => {
+      const auto = panelRef.current?.querySelector<HTMLElement>('[data-autofocus]')
+      ;(auto ?? focusables().find((el) => el.getAttribute('aria-label') !== 'Close') ?? panelRef.current)?.focus()
+    }, 0)
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        onClose()
+        return
+      }
+      if (e.key !== 'Tab') return
+      const els = focusables()
+      if (els.length === 0) return
+      const first = els[0]
+      const last = els[els.length - 1]
+      const active = document.activeElement
+      if (e.shiftKey && (active === first || !panelRef.current?.contains(active))) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && (active === last || !panelRef.current?.contains(active))) {
+        e.preventDefault()
+        first.focus()
+      }
     }
     document.addEventListener('keydown', onKeyDown)
     const prevOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     return () => {
+      window.clearTimeout(t)
+      returnTo?.focus?.()
       document.removeEventListener('keydown', onKeyDown)
       document.body.style.overflow = prevOverflow
     }
@@ -49,6 +80,8 @@ export function Modal({ open, onClose, title, description, children, footer, wid
       }}
     >
       <div
+        ref={panelRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
@@ -66,64 +99,37 @@ export function Modal({ open, onClose, title, description, children, footer, wid
         }}
       >
         <div
-          style={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            justifyContent: 'space-between',
-            gap: '12px',
-            padding: '20px 24px 16px',
-            borderBottom: '1px solid var(--border)',
-          }}
+          className="u-gap-12px" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: '20px 24px 16px', borderBottom: '1px solid var(--border)' }}
         >
           <div>
             <h2
               id="modal-title"
-              style={{
-                fontFamily: 'var(--font-display)',
-                fontSize: 'var(--fs-xl)',
-                fontWeight: 'var(--display-weight)',
-                color: 'var(--text)',
-              }}
+              className="u-ff-font-display u-fs-fs-xl u-fw-display-weight" style={{ color: 'var(--text)' }}
             >
               {title}
             </h2>
             {description && (
-              <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', marginTop: '4px', lineHeight: 1.5 }}>
+              <p className="u-fs-fs-base u-mt-4px u-lh-1_5" style={{ color: 'var(--text-subtle)' }}>
                 {description}
               </p>
             )}
           </div>
           <button
+            type="button"
             onClick={onClose}
             aria-label="Close"
-            className="btn-icon"
-            style={{
-              flexShrink: 0,
-              background: 'none',
-              border: 'none',
-              padding: '4px',
-              color: 'var(--text-muted)',
-              cursor: 'pointer',
-              borderRadius: 'var(--r-sm)',
-              display: 'flex',
-            }}
+            className="btn-icon u-p-4px"
+            style={{ flexShrink: 0, background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', borderRadius: 'var(--r-sm)', display: 'flex' }}
           >
             <Icon name="x" size={18} />
           </button>
         </div>
 
-        <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>{children}</div>
+        <div className="u-p-20px-24px" style={{ overflowY: 'auto', flex: 1 }}>{children}</div>
 
         {footer && (
           <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'flex-end',
-              gap: '12px',
-              padding: '16px 24px',
-              borderTop: '1px solid var(--border)',
-            }}
+            className="u-gap-12px u-p-16px-24px" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', borderTop: '1px solid var(--border)' }}
           >
             {footer}
           </div>
@@ -138,6 +144,12 @@ export function Modal({ open, onClose, title, description, children, footer, wid
         @keyframes modalPanelIn {
           from { opacity: 0; transform: translateY(-10px) scale(0.98); }
           to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          @keyframes modalPanelIn {
+            from { opacity: 0; }
+            to   { opacity: 1; }
+          }
         }
       `}</style>
     </div>

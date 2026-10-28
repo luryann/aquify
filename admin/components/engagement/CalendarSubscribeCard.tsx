@@ -48,26 +48,26 @@ export function CalendarSubscribeCard({ api, orgId }: { api: ApiClient; orgId: s
   }
 
   return (
-    <div className="card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <p style={{ fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--fs-lg)', color: 'var(--text)' }}>Add to your phone’s calendar</p>
-      <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', lineHeight: 1.5 }}>
+    <div className="card u-p-16px u-gap-12px" style={{ display: 'flex', flexDirection: 'column' }}>
+      <p className="u-ff-font-display u-fw-display-weight u-fs-fs-lg" style={{ color: 'var(--text)' }}>Add to your phone’s calendar</p>
+      <p className="u-fs-fs-sm u-lh-1_5" style={{ color: 'var(--text-subtle)' }}>
         Meets, your swimmers’ practices and club events stay in sync in Google, Apple or Outlook calendar.
       </p>
       {link ? (
         <>
-          <input readOnly value={link} className="input" onFocus={(e) => e.currentTarget.select()} aria-label="Calendar subscription link" style={{ fontSize: 'var(--fs-sm)' }} />
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <input readOnly value={link} className="input u-fs-fs-sm" onFocus={(e) => e.currentTarget.select()} aria-label="Calendar subscription link" />
+          <div className="u-gap-8px" style={{ display: 'flex', flexWrap: 'wrap' }}>
             <button type="button" className="btn btn-primary btn-sm" onClick={copy}>{copied ? 'Copied' : 'Copy link'}</button>
             <a className="btn btn-secondary btn-sm" href={link.replace(/^https?:/, 'webcal:')}>Open in calendar app</a>
           </div>
-          <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>Keep this link private — anyone with it can see your family’s schedule. It won’t be shown again.</p>
+          <p className="u-fs-fs-xs" style={{ color: 'var(--text-muted)' }}>Keep this link private — anyone with it can see your family’s schedule. It won’t be shown again.</p>
         </>
       ) : status?.active ? (
-        <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>
+        <p className="u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>
           Your calendar link is on{status.feed?.last_used_at ? `; last synced ${new Date(status.feed.last_used_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : ''}.
         </p>
       ) : null}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      <div className="u-gap-8px" style={{ display: 'flex', flexWrap: 'wrap' }}>
         {!link && (
           <button type="button" className={status?.active ? 'btn btn-secondary btn-sm' : 'btn btn-primary btn-sm'} disabled={busy} onClick={create}>
             {status?.active ? 'Reset link' : 'Create calendar link'}
@@ -75,7 +75,7 @@ export function CalendarSubscribeCard({ api, orgId }: { api: ApiClient; orgId: s
         )}
         {status?.active && <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={turnOff}>Turn off</button>}
       </div>
-      {error && <p role="alert" style={{ fontSize: 'var(--fs-sm)', color: 'var(--error)' }}>{error}</p>}
+      {error && <p role="alert" className="u-fs-fs-sm" style={{ color: 'var(--error)' }}>{error}</p>}
     </div>
   )
 }

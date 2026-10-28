@@ -39,7 +39,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
           right: 0,
           height: '340px',
           background:
-            'linear-gradient(180deg, rgba(235,93,30,0.06) 0%, rgba(247,244,240,0) 100%)',
+            'radial-gradient(720px 260px at 100% 0, var(--water-subtle), transparent 70%), linear-gradient(180deg, rgba(235,93,30,0.09) 0%, rgba(249,243,234,0) 100%)',
           pointerEvents: 'none',
           zIndex: 0,
         }}

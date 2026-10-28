@@ -1,0 +1,12 @@
+/* Static layout/type styles migrated from inline style props. */
+.is-44ea83d.is-44ea83d { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; font-family: var(--font-body); }
+.is-e924c3d.is-e924c3d { max-width: 420px; width: 100%; padding: 0 24px; text-align: center; }
+.is-c45f24a.is-c45f24a { width: 56px; height: 56px; border-radius: 50%; background: var(--error-bg); border: 1px solid var(--error-border); display: flex; align-items: center; justify-content: center; margin: 0 auto 24px; }
+.is-9efdbc1.is-9efdbc1 { font-family: var(--font-display); font-size: var(--fs-2xl); font-weight: var(--display-weight); color: var(--text); margin-bottom: 12px; letter-spacing: var(--display-tracking); }
+.is-3d23ab7.is-3d23ab7 { font-size: var(--fs-base); color: var(--text-subtle); line-height: 1.6; margin-bottom: 24px; }
+.is-e1a7018.is-e1a7018 { padding: 12px 24px; background: var(--accent-fill, #c9460f); border: none; border-radius: 8px; color: #fff; font-size: var(--fs-base); font-weight: 600; cursor: pointer; font-family: var(--font-body); letter-spacing: -0.01em; }
+.is-edfe90d.is-edfe90d { text-align: center; max-width: 360px; padding: 0 24px; }
+.is-7868880.is-7868880 { position: relative; width: 64px; height: 64px; margin: 0 auto 32px; }
+.is-46136c0.is-46136c0 { font-family: var(--font-display); font-size: var(--fs-2xl); font-weight: var(--display-weight); color: var(--text); margin-bottom: 8px; letter-spacing: var(--display-tracking); }
+.is-6c43e0d.is-6c43e0d { font-size: var(--fs-sm); font-family: var(--font-body); color: var(--text-muted); letter-spacing: 0.04em; }
+.is-87dbcd5.is-87dbcd5 { margin-top: 40px; display: flex; flex-direction: column; gap: 8px; text-align: left; }

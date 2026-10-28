@@ -1,0 +1,10 @@
+/* Static layout/type styles migrated from inline style props. */
+.is-37e75c2.is-37e75c2 { min-height: 100vh; background: var(--bg); color: var(--text); padding: clamp(16px, 4vw, 48px); }
+.is-a14160d.is-a14160d { font-size: var(--fs-xl); color: var(--error); display: flex; gap: 12px; align-items: center; }
+.is-33f2b95.is-33f2b95 { font-size: var(--fs-xl); color: var(--text-muted); }
+.is-bca94cc.is-bca94cc { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; flex-wrap: wrap; margin-bottom: 32px; border-bottom: 3px solid var(--accent); padding-bottom: 20px; }
+.is-73c31ca.is-73c31ca { font-family: var(--font-display); font-weight: var(--display-weight); font-size: clamp(40px, 7vw, 76px); line-height: 1; margin: 0; overflow-wrap: anywhere; }
+.is-3d2f320.is-3d2f320 { text-align: right; margin-left: auto; }
+.is-1cab63f.is-1cab63f { font-family: var(--font-mono); font-size: clamp(26px, 4vw, 40px); font-weight: 600; margin: 0; }
+.is-cac0e17.is-cac0e17 { font-size: var(--fs-xl); color: var(--text-subtle); margin: 4px 0 0; }
+.is-ffa21d3.is-ffa21d3 { margin-top: 40px; font-size: var(--fs-lg); }

@@ -41,10 +41,7 @@ function msFromParts(minutes: string, seconds: string, hundredths: string): numb
 const FIELD_LABEL_STYLE: React.CSSProperties = {
   display: 'block', fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '4px',
 }
-const FIELD_INPUT_STYLE: React.CSSProperties = {
-  width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)',
-  background: 'var(--bg-elevated)', color: 'var(--text)', boxSizing: 'border-box',
-}
+const FIELD_INPUT_STYLE: React.CSSProperties = { width: '100%' }
 
 const STROKE_OPTIONS = ['free', 'back', 'breast', 'fly', 'im']
 const COURSE_OPTIONS = ['SCY', 'SCM', 'LCM']
@@ -177,7 +174,7 @@ export default function TimeStandardsPage() {
   }
 
   if (!session) {
-    return <div style={{ padding: '32px' }}><EmptyState icon="check-circle" title="Sign in required" description="Authenticate to manage live time standards." /></div>
+    return <div className="u-p-32px" ><EmptyState icon="check-circle" title="Sign in required" description="Authenticate to manage live time standards." /></div>
   }
 
   const columns = [
@@ -201,7 +198,7 @@ export default function TimeStandardsPage() {
       key: 'time_ms',
       label: 'Cut time',
       sortable: true,
-      render: (row) => <span style={{ fontFamily: 'var(--font-body)' }} title="Time a swimmer must beat to qualify">{formatSwimTime(row.time_ms)}</span>,
+      render: (row) => <span className="u-ff-font-body" title="Time a swimmer must beat to qualify">{formatSwimTime(row.time_ms)}</span>,
     }),
     col<TimeStandardRecord>({ key: 'season_year', label: 'Season', sortable: true }),
     col<TimeStandardRecord>({
@@ -220,7 +217,7 @@ export default function TimeStandardsPage() {
       sortable: false,
       align: 'right',
       render: (row) => (
-        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+        <div className="u-gap-8px" style={{ display: 'flex', justifyContent: 'flex-end' }}>
           <button
             onClick={(e) => { e.stopPropagation(); void handleToggle(row) }}
             disabled={workingId === row.id}
@@ -242,32 +239,32 @@ export default function TimeStandardsPage() {
 
   return (
     <div className="page">
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px', marginBottom: '24px', flexWrap: 'wrap' }}>
+      <div className="u-gap-16px u-mb-24px" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap' }}>
         <div>
           <h1 className="page-title">Time standards</h1>
         </div>
         <button onClick={() => setModalOpen(true)} className="btn btn-primary">
           <Icon name="plus" size={14} />
-          New Standard
+          New standard
         </button>
       </div>
 
       {error ? (
-        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: 'var(--fs-sm)' }}>
+        <div className="u-mb-20px u-p-12px-16px u-fs-fs-sm" style={{ borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)' }}>
           {error}
         </div>
       ) : null}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
+      <div className="u-gap-12px u-mb-16px" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', flex: '1 1 220px', maxWidth: '320px' }}>
           <span style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}>
             <Icon name="search" size={14} />
           </span>
-          <input
+          <input aria-label="Search by name or code" className="input-search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by name or code…"
-            style={{ ...FIELD_INPUT_STYLE, paddingLeft: '32px' }}
+            style={{ ...FIELD_INPUT_STYLE }}
           />
         </div>
         <select value={strokeFilter} onChange={(e) => setStrokeFilter(e.target.value)} style={{ ...FIELD_INPUT_STYLE, width: 'auto' }}>
@@ -278,7 +275,7 @@ export default function TimeStandardsPage() {
           <option value="">All courses</option>
           {COURSE_OPTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
-        <span style={{ marginLeft: 'auto', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap' }}>
+        <span className="u-ml-auto u-fs-fs-sm u-ff-font-body" style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
           {standards.length} total · {activeCount} active
         </span>
       </div>
@@ -303,76 +300,76 @@ export default function TimeStandardsPage() {
           <>
             <button onClick={() => setModalOpen(false)} className="btn btn-secondary">Cancel</button>
             <button onClick={() => void handleCreate()} disabled={submitting} className="btn btn-primary">
-              {submitting ? 'Creating…' : 'Create Standard'}
+              {submitting ? 'Creating…' : 'Create standard'}
             </button>
           </>
         }
       >
-        <div style={{ display: 'grid', gap: '16px' }}>
+        <div className="u-gap-16px" style={{ display: 'grid' }}>
           <div>
-            <label style={FIELD_LABEL_STYLE}>Standard name</label>
-            <input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder="e.g. 2026 Senior Cuts" style={FIELD_INPUT_STYLE} />
+            <label className="form-label">Standard name</label>
+            <input aria-label="e.g. 2026 Senior Cuts" value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder="e.g. 2026 Senior Cuts" style={FIELD_INPUT_STYLE} />
           </div>
-          <div className="cols-2" style={{ gap: '12px' }}>
+          <div className="cols-2 u-gap-12px" >
             <div>
-              <label style={FIELD_LABEL_STYLE}>Season</label>
-              <input value={form.season_year} onChange={(event) => setForm((current) => ({ ...current, season_year: event.target.value }))} placeholder="2026" style={FIELD_INPUT_STYLE} />
+              <label className="form-label">Season</label>
+              <input aria-label="2026" value={form.season_year} onChange={(event) => setForm((current) => ({ ...current, season_year: event.target.value }))} placeholder="2026" style={FIELD_INPUT_STYLE} />
             </div>
             <div>
-              <label style={FIELD_LABEL_STYLE}>Standard code</label>
-              <input value={form.standard_code} onChange={(event) => setForm((current) => ({ ...current, standard_code: event.target.value }))} placeholder="A / AA / AAA" style={FIELD_INPUT_STYLE} />
+              <label className="form-label">Standard code</label>
+              <input aria-label="A / AA / AAA" value={form.standard_code} onChange={(event) => setForm((current) => ({ ...current, standard_code: event.target.value }))} placeholder="A / AA / AAA" style={FIELD_INPUT_STYLE} />
             </div>
           </div>
           <div>
             <label style={FIELD_LABEL_STYLE}>Distance ({form.course === 'LCM' || form.course === 'SCM' ? 'm' : 'yd'})</label>
-            <input value={form.event_distance} onChange={(event) => setForm((current) => ({ ...current, event_distance: event.target.value }))} placeholder="100" style={FIELD_INPUT_STYLE} />
+            <input aria-label="100" value={form.event_distance} onChange={(event) => setForm((current) => ({ ...current, event_distance: event.target.value }))} placeholder="100" style={FIELD_INPUT_STYLE} />
           </div>
           <div>
-            <label style={FIELD_LABEL_STYLE}>Cut Time (min : sec . hundredths)</label>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr auto 1fr', gap: '6px', alignItems: 'center' }}>
-              <input
+            <label className="form-label">Cut time (min:sec.hundredths)</label>
+            <div className="u-gap-6px" style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr auto 1fr', alignItems: 'center' }}>
+              <input aria-label="0"
                 value={cutTime.minutes}
                 onChange={(event) => setCutTime((current) => ({ ...current, minutes: event.target.value.replace(/\D/g, '') }))}
                 placeholder="0"
                 inputMode="numeric"
-                style={{ ...FIELD_INPUT_STYLE, textAlign: 'center', fontFamily: 'var(--font-body)' }}
+                style={{ ...FIELD_INPUT_STYLE, textAlign: 'center' }}
               />
               <span style={{ color: 'var(--text-muted)' }}>:</span>
-              <input
+              <input aria-label="58"
                 value={cutTime.seconds}
                 onChange={(event) => setCutTime((current) => ({ ...current, seconds: event.target.value.replace(/\D/g, '').slice(0, 2) }))}
                 placeholder="58"
                 inputMode="numeric"
-                style={{ ...FIELD_INPUT_STYLE, textAlign: 'center', fontFamily: 'var(--font-body)' }}
+                style={{ ...FIELD_INPUT_STYLE, textAlign: 'center' }}
               />
               <span style={{ color: 'var(--text-muted)' }}>.</span>
-              <input
+              <input aria-label="00"
                 value={cutTime.hundredths}
                 onChange={(event) => setCutTime((current) => ({ ...current, hundredths: event.target.value.replace(/\D/g, '').slice(0, 2) }))}
                 placeholder="00"
                 inputMode="numeric"
-                style={{ ...FIELD_INPUT_STYLE, textAlign: 'center', fontFamily: 'var(--font-body)' }}
+                style={{ ...FIELD_INPUT_STYLE, textAlign: 'center' }}
               />
             </div>
-            <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: '4px', fontFamily: 'var(--font-body)' }}>
+            <p className="u-fs-fs-xs u-mt-4px u-ff-font-body" style={{ color: 'var(--text-muted)' }}>
               = {formatSwimTime(msFromParts(cutTime.minutes, cutTime.seconds, cutTime.hundredths))}
             </p>
           </div>
-          <div className="cols-3" style={{ gap: '12px' }}>
+          <div className="cols-3 u-gap-12px" >
             <div>
-              <label style={FIELD_LABEL_STYLE}>Stroke</label>
+              <label className="form-label">Stroke</label>
               <select value={form.stroke} onChange={(event) => setForm((current) => ({ ...current, stroke: event.target.value }))} style={FIELD_INPUT_STYLE}>
                 {STROKE_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
             <div>
-              <label style={FIELD_LABEL_STYLE}>Course</label>
+              <label className="form-label">Course</label>
               <select value={form.course} onChange={(event) => setForm((current) => ({ ...current, course: event.target.value }))} style={FIELD_INPUT_STYLE}>
                 {COURSE_OPTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div>
-              <label style={FIELD_LABEL_STYLE}>Gender</label>
+              <label className="form-label">Gender</label>
               <select value={form.gender} onChange={(event) => setForm((current) => ({ ...current, gender: event.target.value }))} style={FIELD_INPUT_STYLE}>
                 <option value="F">Girls</option>
                 <option value="M">Boys</option>

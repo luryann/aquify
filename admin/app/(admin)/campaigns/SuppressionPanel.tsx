@@ -20,10 +20,7 @@ function formatDateTime(value: string) {
   })
 }
 
-const FIELD_INPUT_STYLE: React.CSSProperties = {
-  width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)',
-  background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: 'var(--fs-base)', boxSizing: 'border-box',
-}
+const FIELD_INPUT_STYLE: React.CSSProperties = { width: '100%' }
 
 export function SuppressionPanel() {
   const { session } = useSession()
@@ -121,7 +118,7 @@ export function SuppressionPanel() {
   }
 
   if (!session) {
-    return <div style={{ padding: '32px 0' }}><EmptyState icon="mail" title="Sign in required" description="Authenticate to manage suppressed addresses." /></div>
+    return <div className="u-p-32px-0" ><EmptyState icon="mail" title="Sign in required" description="Authenticate to manage suppressed addresses." /></div>
   }
 
   const columns = [
@@ -157,37 +154,37 @@ export function SuppressionPanel() {
 
   return (
     <div>
-      <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', marginBottom: '20px', lineHeight: 1.5, maxWidth: '640px' }}>
+      <p className="u-fs-fs-sm u-mb-20px u-lh-1_5" style={{ color: 'var(--text-subtle)', maxWidth: '640px' }}>
         Addresses here are never emailed again, whether they bounced, complained about a past send, or were added by hand.
       </p>
 
       {error ? (
-        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: 'var(--fs-sm)' }}>
+        <div className="u-mb-20px u-p-12px-16px u-fs-fs-sm" style={{ borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)' }}>
           {error}
         </div>
       ) : null}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
+      <div className="u-gap-12px u-mb-16px" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', flex: '1 1 220px', maxWidth: '320px' }}>
           <span style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}>
             <Icon name="search" size={14} />
           </span>
-          <input
+          <input aria-label="Search addresses" className="input-search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search addresses…"
-            style={{ ...FIELD_INPUT_STYLE, paddingLeft: '32px' }}
+            style={{ ...FIELD_INPUT_STYLE }}
           />
         </div>
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+        <div className="u-gap-8px" style={{ display: 'flex', flexWrap: 'wrap' }}>
           <span className="badge badge-default">{stats.total} total</span>
           <span className="badge badge-warning">{stats.bounce} bounce</span>
           <span className="badge badge-error">{stats.complaint} complaint</span>
           <span className="badge badge-default">{stats.manual} manual</span>
         </div>
-        <button onClick={() => setModalOpen(true)} className="btn btn-primary" style={{ marginLeft: 'auto' }}>
+        <button onClick={() => setModalOpen(true)} className="btn btn-primary u-ml-auto" >
           <Icon name="plus" size={14} />
-          Add Suppression
+          Add suppression
         </button>
       </div>
 
@@ -211,13 +208,13 @@ export function SuppressionPanel() {
           <>
             <button onClick={() => setModalOpen(false)} className="btn btn-secondary">Cancel</button>
             <button onClick={() => void handleAdd()} disabled={submitting || !email.trim()} className="btn btn-primary">
-              {submitting ? 'Adding…' : 'Add Suppression'}
+              {submitting ? 'Adding…' : 'Add suppression'}
             </button>
           </>
         }
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="parent@example.com" style={FIELD_INPUT_STYLE} />
+        <div className="u-gap-12px" style={{ display: 'flex', flexDirection: 'column' }}>
+          <input aria-label="parent@example.com" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="parent@example.com" style={FIELD_INPUT_STYLE} />
           <select value={reason} onChange={(event) => setReason(event.target.value)} style={FIELD_INPUT_STYLE}>
             <option value="manual">Manual</option>
             <option value="bounce">Bounce</option>

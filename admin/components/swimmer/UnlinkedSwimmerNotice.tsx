@@ -6,6 +6,7 @@ import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
 import { createSwimmerLinkRequest } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
+import './UnlinkedSwimmerNotice.inline.css'
 
 // Swimmer portal colours — resolved from the [data-portal="swim"] token overrides in globals.css
 const C = {
@@ -85,7 +86,7 @@ export function UnlinkedSwimmerNotice() {
         gap: '12px',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+      <div className="is-493767e">
         <Icon name="alert-circle" size={16} style={{ color: C.warn, marginTop: '1px', flexShrink: 0 }} />
         <p style={{ margin: 0, fontSize: 'var(--fs-base)', color: C.text, lineHeight: 1.5 }}>
           Your account isn&apos;t linked to a swimmer profile yet, so times and meet commitments can&apos;t be shown.
@@ -93,27 +94,23 @@ export function UnlinkedSwimmerNotice() {
         </p>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginLeft: '24px', maxWidth: '360px' }}>
+      <div className="is-7d74039">
         <input
+          aria-label="Your full name"
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Your full name"
-          style={{
-            padding: '8px 12px', background: C.inputBg, border: `1px solid ${C.inputBorder}`,
-            borderRadius: '8px', color: C.text, fontSize: 'var(--fs-sm)', outline: 'none',
-          }}
+          
         />
         <input
+          aria-label="Note for your admin"
           value={note}
           onChange={(e) => setNote(e.target.value)}
           placeholder="Anything else your admin should know? (optional)"
-          style={{
-            padding: '8px 12px', background: C.inputBg, border: `1px solid ${C.inputBorder}`,
-            borderRadius: '8px', color: C.text, fontSize: 'var(--fs-sm)', outline: 'none',
-          }}
+          
         />
-        {error && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--error)' }}>{error}</p>}
-        <button
+        {error && <p className="is-d8318c5">{error}</p>}
+        <button type="button"
           onClick={handleSubmit}
           disabled={submitting || !name.trim()}
           className="btn btn-primary"

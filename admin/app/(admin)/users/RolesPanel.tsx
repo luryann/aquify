@@ -133,49 +133,49 @@ export function RolesPanel() {
   }
 
   if (!session) {
-    return <div style={{ padding: '32px 0' }}><EmptyState icon="shield-check" title="Sign in required" description="Authenticate to manage live role assignments." /></div>
+    return <div className="u-p-32px-0" ><EmptyState icon="shield-check" title="Sign in required" description="Authenticate to manage live role assignments." /></div>
   }
 
   return (
     <div>
       {error ? (
-        <div style={{ padding: '12px 16px', marginBottom: '20px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', borderRadius: '8px', color: 'var(--error)', fontSize: 'var(--fs-sm)' }}>
+        <div className="u-p-12px-16px u-mb-20px u-fs-fs-sm" style={{ background: 'var(--error-bg)', border: '1px solid var(--error-border)', borderRadius: '8px', color: 'var(--error)' }}>
           {error}
         </div>
       ) : null}
 
-      <div className="cols-4" style={{ gap: '12px', marginBottom: '24px' }}>
+      <div className="cols-4 u-gap-12px u-mb-24px" >
         {[
           { label: 'Assignments', value: assignments.length.toString() },
           { label: 'Role types', value: roleCounts.size.toString() },
           { label: 'Your role', value: session.user.role },
           { label: 'Your MFA', value: mfaSummary(mfaFactors) },
         ].map((stat) => (
-          <div key={stat.label} className="card-elevated" style={{ padding: '16px 16px' }}>
-            <p style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>{stat.label}</p>
-            <p style={{ fontSize: 'var(--fs-xl)', fontFamily: 'var(--font-body)', color: 'var(--text)' }}>{stat.value}</p>
+          <div key={stat.label} className="card-elevated u-p-16px-16px" >
+            <p className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ color: 'var(--text-muted)' }}>{stat.label}</p>
+            <p className="u-fs-fs-xl u-ff-font-body" style={{ color: 'var(--text)' }}>{stat.value}</p>
           </div>
         ))}
       </div>
 
-      <div className="split-list" style={{ gap: '20px', alignItems: 'start' }}>
-        <div className="card" style={{ padding: '20px' }}>
-          <h2 className="card-title" style={{ marginBottom: '16px' }}>Assign role</h2>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <div className="split-list u-gap-20px" style={{ alignItems: 'start' }}>
+        <div className="card u-p-20px" >
+          <h2 className="card-title u-mb-16px" >Assign role</h2>
+          <div className="u-gap-16px" style={{ display: 'flex', flexDirection: 'column' }}>
             <div>
-              <label style={{ display: 'block', fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>
+              <label className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ display: 'block', color: 'var(--text-muted)' }}>
                 Target user
               </label>
-              <input
+              <input aria-label="Search users by name or email"
                 value={userQuery}
                 onChange={(event) => setUserQuery(event.target.value)}
                 placeholder="Search users by name or email…"
-                style={{ width: '100%', padding: '8px 12px', marginBottom: '8px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)', fontSize: 'var(--fs-base)', fontFamily: 'var(--font-body)', outline: 'none' }}
+                className="input-search u-p-8px-12px u-mb-8px u-fs-fs-base u-ff-font-body" style={{ width: '100%' }}
               />
               <select
                 value={form.target_user_id}
                 onChange={(event) => setForm((current) => ({ ...current, target_user_id: event.target.value }))}
-                style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)', fontSize: 'var(--fs-base)', fontFamily: 'var(--font-body)', outline: 'none' }}
+                className="u-p-8px-12px u-fs-fs-base u-ff-font-body" style={{ width: '100%' }}
               >
                 <option value="">{filteredUsers.length === 0 ? 'No matching users' : 'Select user…'}</option>
                 {filteredUsers.map((u) => (
@@ -186,43 +186,33 @@ export function RolesPanel() {
               </select>
             </div>
             <div>
-              <label style={{ display: 'block', fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>
+              <label className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ display: 'block', color: 'var(--text-muted)' }}>
                 Role
               </label>
               <select
                 value={form.role}
                 onChange={(event) => setForm((current) => ({ ...current, role: event.target.value as RoleOption }))}
-                style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)', fontSize: 'var(--fs-base)', fontFamily: 'var(--font-body)', outline: 'none' }}
+                className="u-p-8px-12px u-fs-fs-base u-ff-font-body" style={{ width: '100%' }}
               >
                 {ROLE_OPTIONS.map((role) => <option key={role} value={role}>{role}</option>)}
               </select>
             </div>
             <div>
-              <label style={{ display: 'block', fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>
+              <label className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ display: 'block', color: 'var(--text-muted)' }}>
                 Reason
               </label>
-              <textarea
+              <textarea aria-label="Document why this access is required."
                 value={form.reason}
                 onChange={(event) => setForm((current) => ({ ...current, reason: event.target.value }))}
                 rows={4}
                 placeholder="Document why this access is required."
-                style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)', fontSize: 'var(--fs-base)', fontFamily: 'var(--font-body)', outline: 'none', resize: 'vertical' }}
+                className="u-p-8px-12px u-fs-fs-base u-ff-font-body" style={{ width: '100%', resize: 'vertical' }}
               />
             </div>
-            <button
+            <button type="button"
               onClick={handleAssignRole}
               disabled={submitting || !form.target_user_id.trim() || !form.reason.trim()}
-              style={{
-                padding: '8px 16px',
-                background: submitting || !form.target_user_id.trim() || !form.reason.trim() ? 'var(--bg-elevated)' : 'var(--accent)',
-                border: submitting || !form.target_user_id.trim() || !form.reason.trim() ? '1px solid var(--border)' : 'none',
-                borderRadius: '8px',
-                color: submitting || !form.target_user_id.trim() || !form.reason.trim() ? 'var(--text-muted)' : '#fff',
-                fontSize: 'var(--fs-base)',
-                fontWeight: 600,
-                cursor: submitting || !form.target_user_id.trim() || !form.reason.trim() ? 'not-allowed' : 'pointer',
-                fontFamily: 'var(--font-body)',
-              }}
+              className="u-p-8px-16px u-fs-fs-base u-fw-600 u-ff-font-body" style={{ background: submitting || !form.target_user_id.trim() || !form.reason.trim() ? 'var(--bg-elevated)' : 'var(--accent)', border: submitting || !form.target_user_id.trim() || !form.reason.trim() ? '1px solid var(--border)' : 'none', borderRadius: '8px', color: submitting || !form.target_user_id.trim() || !form.reason.trim() ? 'var(--text-muted)' : '#fff', cursor: submitting || !form.target_user_id.trim() || !form.reason.trim() ? 'not-allowed' : 'pointer' }}
             >
               {submitting ? 'Assigning…' : 'Assign Role'}
             </button>
@@ -230,24 +220,24 @@ export function RolesPanel() {
         </div>
 
         <div className="card" style={{ overflow: 'hidden' }}>
-          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
+          <div className="u-p-16px-20px" style={{ borderBottom: '1px solid var(--border)' }}>
             <h2 className="card-title">Assignment history</h2>
           </div>
           {loading ? (
-            <div style={{ padding: '24px' }}>
+            <div className="u-p-24px" >
               <EmptyState icon="shield-check" title="Loading assignments" description="Fetching live role assignments from the API." />
             </div>
           ) : assignments.length === 0 ? (
-            <div style={{ padding: '24px' }}>
+            <div className="u-p-24px" >
               <EmptyState icon="shield-check" title="No role assignments yet" description="New assignments will appear here as they are created." />
             </div>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
+            <div className="table-scroll" style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--border)' }}>
                     {['Target User', 'Role', 'Reason', 'Actor', 'Assigned'].map((header) => (
-                      <th key={header} className="col-head" style={{ padding: '12px 16px', textAlign: 'left' }}>
+                      <th key={header} className="col-head u-p-12px-16px" style={{ textAlign: 'left' }}>
                         {header}
                       </th>
                     ))}
@@ -258,15 +248,15 @@ export function RolesPanel() {
                     const colors = ROLE_COLORS[assignment.role] ?? ROLE_COLORS.parent
                     return (
                       <tr key={`${assignment.target_user_id}-${assignment.assigned_at}-${assignment.role}`} style={{ borderBottom: '1px solid var(--border)' }}>
-                        <td style={{ padding: '12px 16px', fontSize: 'var(--fs-sm)', color: 'var(--text)' }}>{userNameById.get(assignment.target_user_id) ?? assignment.target_user_id}</td>
-                        <td style={{ padding: '12px 16px' }}>
-                          <span style={{ fontSize: 'var(--fs-xs)', padding: '2px 8px', borderRadius: '16px', fontFamily: 'var(--font-body)', fontWeight: 700, background: colors.bg, color: colors.color, border: `1px solid ${colors.border}` }}>
+                        <td className="u-p-12px-16px u-fs-fs-sm" style={{ color: 'var(--text)' }}>{userNameById.get(assignment.target_user_id) ?? assignment.target_user_id}</td>
+                        <td className="u-p-12px-16px" >
+                          <span className="u-fs-fs-xs u-p-2px-8px u-ff-font-body u-fw-700" style={{ borderRadius: '16px', background: colors.bg, color: colors.color, border: `1px solid ${colors.border}` }}>
                             {assignment.role.toUpperCase()}
                           </span>
                         </td>
-                        <td style={{ padding: '12px 16px', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{assignment.reason}</td>
-                        <td style={{ padding: '12px 16px', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>{userNameById.get(assignment.actor_user_id) ?? assignment.actor_user_id}</td>
-                        <td style={{ padding: '12px 16px', fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>{formatDateTime(assignment.assigned_at)}</td>
+                        <td className="u-p-12px-16px u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{assignment.reason}</td>
+                        <td className="u-p-12px-16px u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>{userNameById.get(assignment.actor_user_id) ?? assignment.actor_user_id}</td>
+                        <td className="u-p-12px-16px u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>{formatDateTime(assignment.assigned_at)}</td>
                       </tr>
                     )
                   })}
@@ -275,8 +265,8 @@ export function RolesPanel() {
             </div>
           )}
 
-          <div style={{ padding: '16px 20px', borderTop: '1px solid var(--border)', background: 'var(--bg-surface)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-subtle)', fontSize: 'var(--fs-sm)' }}>
+          <div className="u-p-16px-20px" style={{ borderTop: '1px solid var(--border)', background: 'var(--bg-surface)' }}>
+            <div className="u-gap-8px u-fs-fs-sm" style={{ display: 'flex', alignItems: 'center', color: 'var(--text-subtle)' }}>
               <Icon name="shield-check" size={12} />
               Current session MFA status: {mfaSummary(mfaFactors)}
             </div>

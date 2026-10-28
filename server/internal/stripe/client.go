@@ -11,13 +11,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	stripeapi "github.com/stripe/stripe-go/v84"
-	"github.com/stripe/stripe-go/v84/account"
 	"github.com/stripe/stripe-go/v84/balancetransaction"
 	"github.com/stripe/stripe-go/v84/checkout/session"
 	"github.com/stripe/stripe-go/v84/paymentintent"
@@ -443,6 +443,7 @@ func (c *StubClient) CreateRefund(_ context.Context, params RefundParams) (*Refu
 // SDKClient is a production Stripe client backed by stripe-go.
 type SDKClient struct {
 	secretKey string
+	backend   stripeapi.Backend
 }
 
 // NewSDKClient returns a Stripe SDK-backed client.
@@ -450,23 +451,16 @@ func NewSDKClient(secretKey string) (*SDKClient, error) {
 	if strings.TrimSpace(secretKey) == "" {
 		return nil, ErrInvalidConfig
 	}
-	return &SDKClient{secretKey: strings.TrimSpace(secretKey)}, nil
-}
-
-func (c *SDKClient) withKey() {
-	stripeapi.Key = c.secretKey
+	return &SDKClient{secretKey: strings.TrimSpace(secretKey), backend: stripeapi.GetBackend(stripeapi.APIBackend)}, nil
 }
 
 // Ready performs a cheap authenticated read against the Stripe account API.
-func (c *SDKClient) Ready(_ context.Context) error {
-	c.withKey()
-	_, err := account.Get()
-	return err
+func (c *SDKClient) Ready(ctx context.Context) error {
+	return c.backend.Call(http.MethodGet, "/v1/account", c.secretKey, &stripeapi.Params{Context: ctx}, &stripeapi.Account{})
 }
 
 // CreatePaymentIntent creates a Stripe PaymentIntent via stripe-go.
-func (c *SDKClient) CreatePaymentIntent(_ context.Context, params PaymentIntentParams) (*PaymentIntentResult, error) {
-	c.withKey()
+func (c *SDKClient) CreatePaymentIntent(ctx context.Context, params PaymentIntentParams) (*PaymentIntentResult, error) {
 
 	req := &stripeapi.PaymentIntentParams{
 		Amount:      stripeapi.Int64(int64(params.AmountCents)),
@@ -477,7 +471,8 @@ func (c *SDKClient) CreatePaymentIntent(_ context.Context, params PaymentIntentP
 	if strings.TrimSpace(params.IdempotencyKey) != "" {
 		req.SetIdempotencyKey(strings.TrimSpace(params.IdempotencyKey))
 	}
-	intent, err := paymentintent.New(req)
+	req.Context = ctx
+	intent, err := (paymentintent.Client{B: c.backend, Key: c.secretKey}).New(req)
 	if err != nil {
 		return nil, err
 	}
@@ -491,8 +486,7 @@ func (c *SDKClient) CreatePaymentIntent(_ context.Context, params PaymentIntentP
 }
 
 // CreateCheckoutSession creates a hosted Stripe Checkout session via stripe-go.
-func (c *SDKClient) CreateCheckoutSession(_ context.Context, params CheckoutSessionParams) (*CheckoutSessionResult, error) {
-	c.withKey()
+func (c *SDKClient) CreateCheckoutSession(ctx context.Context, params CheckoutSessionParams) (*CheckoutSessionResult, error) {
 
 	req := &stripeapi.CheckoutSessionParams{
 		Mode:       stripeapi.String(string(stripeapi.CheckoutSessionModePayment)),
@@ -515,7 +509,8 @@ func (c *SDKClient) CreateCheckoutSession(_ context.Context, params CheckoutSess
 	if strings.TrimSpace(params.IdempotencyKey) != "" {
 		req.SetIdempotencyKey(strings.TrimSpace(params.IdempotencyKey))
 	}
-	cs, err := session.New(req)
+	req.Context = ctx
+	cs, err := (session.Client{B: c.backend, Key: c.secretKey}).New(req)
 	if err != nil {
 		return nil, err
 	}
@@ -532,13 +527,13 @@ func (c *SDKClient) ParseWebhookEvent(payload []byte, sigHeader, webhookSecret s
 
 // FetchBalanceCents returns the summed gross amount for successful charge-type
 // balance transactions currently visible to the Stripe account.
-func (c *SDKClient) FetchBalanceCents(_ context.Context) (int, error) {
-	c.withKey()
+func (c *SDKClient) FetchBalanceCents(ctx context.Context) (int, error) {
 
 	total := 0
 	params := &stripeapi.BalanceTransactionListParams{}
 	params.Filters.AddFilter("type", "", "charge")
-	iter := balancetransaction.List(params)
+	params.Context = ctx
+	iter := (balancetransaction.Client{B: c.backend, Key: c.secretKey}).List(params)
 	for iter.Next() {
 		tx := iter.BalanceTransaction()
 		if tx == nil {
@@ -553,8 +548,7 @@ func (c *SDKClient) FetchBalanceCents(_ context.Context) (int, error) {
 }
 
 // CreateRefund creates a refund against a Stripe payment intent.
-func (c *SDKClient) CreateRefund(_ context.Context, params RefundParams) (*RefundResult, error) {
-	c.withKey()
+func (c *SDKClient) CreateRefund(ctx context.Context, params RefundParams) (*RefundResult, error) {
 
 	req := &stripeapi.RefundParams{
 		PaymentIntent: stripeapi.String(params.PaymentIntentID),
@@ -571,7 +565,8 @@ func (c *SDKClient) CreateRefund(_ context.Context, params RefundParams) (*Refun
 	default:
 		req.Reason = stripeapi.String(string(stripeapi.RefundReasonRequestedByCustomer))
 	}
-	refund, err := striperefund.New(req)
+	req.Context = ctx
+	refund, err := (striperefund.Client{B: c.backend, Key: c.secretKey}).New(req)
 	if err != nil {
 		return nil, err
 	}

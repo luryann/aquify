@@ -48,54 +48,49 @@ export function WellnessCheckInForm({
   }
 
   return (
-    <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <form onSubmit={submit} className="u-gap-20px" style={{ display: 'flex', flexDirection: 'column' }}>
       <div>
-        <label htmlFor="sleep-hours" style={{ display: 'block', fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)', marginBottom: 8 }}>
+        <label htmlFor="sleep-hours" className="u-fs-fs-base u-fw-600 u-mb-8px" style={{ display: 'block', color: 'var(--text)' }}>
           Hours of sleep last night{forName ? ` (${forName})` : ''}
         </label>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div className="u-gap-12px" style={{ display: 'flex', alignItems: 'center' }}>
           <input id="sleep-hours" type="range" min={3} max={12} step={0.5} value={m.sleep_hours}
             onChange={(e) => { setM((p) => ({ ...p, sleep_hours: Number(e.target.value) })); setSaved(false) }}
             style={{ flex: 1, accentColor: 'var(--accent)' }} />
-          <span style={{ fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--fs-3xl)', minWidth: 64, textAlign: 'right', color: 'var(--text)' }}>{m.sleep_hours}h</span>
+          <span className="u-ff-font-display u-fw-display-weight u-fs-fs-3xl" style={{ minWidth: 64, textAlign: 'right', color: 'var(--text)' }}>{m.sleep_hours}h</span>
         </div>
       </div>
       {SCALE_QUESTIONS.map((q) => (
-        <fieldset key={q.field} style={{ border: 'none', padding: 0, margin: 0 }}>
-          <legend style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)', marginBottom: 8 }}>{q.label}</legend>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6 }}>
+        <fieldset key={q.field} className="u-p-0 u-m-0" style={{ border: 'none' }}>
+          <legend className="u-fs-fs-base u-fw-600 u-mb-8px" style={{ color: 'var(--text)' }}>{q.label}</legend>
+          <div className="u-gap-6px" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)' }}>
             {[1, 2, 3, 4, 5].map((v) => {
               const active = m[q.field] === v
               return (
                 <button key={v} type="button" aria-pressed={active} onClick={() => set(q.field, v)}
-                  style={{
-                    minHeight: 44, borderRadius: 8, cursor: 'pointer', fontSize: 'var(--fs-md)', fontWeight: 600,
-                    border: `1px solid ${active ? 'var(--accent)' : 'var(--border-strong)'}`,
-                    background: active ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
-                    color: active ? 'var(--accent)' : 'var(--text-subtle)',
-                  }}>{v}</button>
+                  className="u-fs-fs-md u-fw-600" style={{ minHeight: 44, borderRadius: 8, cursor: 'pointer', border: `1px solid ${active ? 'var(--accent)' : 'var(--border-strong)'}`, background: active ? 'var(--accent-subtle)' : 'var(--bg-elevated)', color: active ? 'var(--accent)' : 'var(--text-subtle)' }}>{v}</button>
               )
             })}
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: 4 }}>
+          <div className="u-fs-fs-xs u-mt-4px" style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
             <span>{q.low}</span><span>{q.high}</span>
           </div>
         </fieldset>
       ))}
       <div>
-        <label htmlFor="wellness-note" style={{ display: 'block', fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)', marginBottom: 6 }}>Anything your coach should know? (optional)</label>
+        <label htmlFor="wellness-note" className="u-fs-fs-base u-fw-600 u-mb-6px" style={{ display: 'block', color: 'var(--text)' }}>Anything your coach should know? (optional)</label>
         <textarea id="wellness-note" className="form-textarea" maxLength={500} rows={2} value={note}
           onChange={(e) => { setNote(e.target.value); setSaved(false) }}
           placeholder="Only your coaches and your family can read this." style={{ width: '100%' }} />
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+      <div className="u-gap-16px" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
         <button type="submit" className="btn btn-primary" disabled={saving}>
           {saving ? 'Saving…' : existing ? 'Update check-in' : 'Save check-in'}
         </button>
-        <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)' }}>Readiness {readiness(m).toFixed(1)} / 5</span>
-        {saved && <span role="status" style={{ fontSize: 'var(--fs-base)', color: 'var(--success)' }}>Saved for today.</span>}
+        <span className="u-fs-fs-base" style={{ color: 'var(--text-subtle)' }}>Readiness {readiness(m).toFixed(1)} / 5</span>
+        {saved && <span role="status" className="u-fs-fs-base" style={{ color: 'var(--success)' }}>Saved for today.</span>}
       </div>
-      {error && <p role="alert" style={{ fontSize: 'var(--fs-base)', color: 'var(--error)' }}>{error}</p>}
+      {error && <p role="alert" className="u-fs-fs-base" style={{ color: 'var(--error)' }}>{error}</p>}
     </form>
   )
 }

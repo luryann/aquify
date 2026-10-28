@@ -1,5 +1,6 @@
 'use client'
 
+import { AuthBackdrop } from '@/components/auth/AuthBackdrop'
 import { Suspense, useState, useCallback, type FormEvent } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { resolvePublicOrg } from '@/lib/public-org'
@@ -127,12 +128,11 @@ function RegisterPageContent() {
     return (
       <>
         <div className="rp-root rp-success-root">
-          <div className="rp-success-bg" />
-          <div className="rp-success-glow" />
+          <AuthBackdrop />
           <div className="rp-success-card">
             <div className="rp-success-icon">
               <svg viewBox="0 0 24 24" fill="none" width="28" height="28" aria-hidden="true">
-                <path d="M4 12l5 5L20 7" stroke="#eb5d1e" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M4 12l5 5L20 7" stroke="var(--accent)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </div>
             <h2 className="rp-success-title">Request received.</h2>
@@ -148,7 +148,7 @@ function RegisterPageContent() {
               )}
             </p>
             <div className="rp-success-actions">
-              <button className="rp-btn-ghost" onClick={() => router.push('/login')}>
+              <button type="button" className="rp-btn-ghost" onClick={() => router.push('/login')}>
                 ← Back to sign in
               </button>
             </div>
@@ -164,10 +164,7 @@ function RegisterPageContent() {
     <>
       <div className="rp-root">
         {/* Atmospheric background */}
-        <div className="rp-bg" />
-        <div className="rp-glow-teal" />
-        <div className="rp-glow-orange" />
-        <div className="rp-lanes" />
+        <AuthBackdrop />
 
         {/* Back link */}
         <a href="/login" className="rp-back">
@@ -183,7 +180,7 @@ function RegisterPageContent() {
           <div className="rp-brand">
             <svg width="30" height="30" viewBox="0 0 30 30" fill="none" aria-hidden="true">
               <rect width="30" height="30" rx="8" fill="rgba(235,93,30,0.12)" />
-              <path d="M7 22V8h6.5c3.87 0 7 3.13 7 7s-3.13 7-7 7H7z" fill="#eb5d1e" />
+              <path d="M7 22V8h6.5c3.87 0 7 3.13 7 7s-3.13 7-7 7H7z" fill="var(--accent)" />
               <path d="M11 18v-6h2.5c1.66 0 3 1.34 3 3s-1.34 3-3 3H11z" fill="#040C16" />
             </svg>
             <span className="rp-brandname">aquify</span>
@@ -366,6 +363,7 @@ function RegisterPageContent() {
 const SHARED_CSS = `
   /* ── Root ── */
   .rp-root {
+          isolation: isolate;
     min-height: 100vh;
     display: flex;
     flex-direction: column;
@@ -377,45 +375,6 @@ const SHARED_CSS = `
   }
   .rp-success-root { justify-content: center; }
 
-  /* Atmospheric bg */
-  .rp-bg {
-    position: fixed;
-    inset: 0;
-    background: #040C16;
-    pointer-events: none;
-  }
-  .rp-glow-teal {
-    position: fixed;
-    width: 600px; height: 600px;
-    top: -200px; right: -100px;
-    background: radial-gradient(circle, rgba(0,190,215,0.14) 0%, transparent 65%);
-    filter: blur(70px);
-    pointer-events: none;
-    animation: rpGlow 10s ease-in-out infinite;
-  }
-  .rp-glow-orange {
-    position: fixed;
-    width: 500px; height: 500px;
-    bottom: -150px; left: -80px;
-    background: radial-gradient(circle, rgba(235,93,30,0.1) 0%, transparent 68%);
-    filter: blur(60px);
-    pointer-events: none;
-    animation: rpGlow 13s ease-in-out infinite reverse;
-  }
-  .rp-lanes {
-    position: fixed;
-    inset: 0;
-    background-image: repeating-linear-gradient(
-      -55deg,
-      transparent 0px, transparent 52px,
-      rgba(255,255,255,0.013) 52px, rgba(255,255,255,0.013) 54px
-    );
-    pointer-events: none;
-  }
-  @keyframes rpGlow {
-    0%,100% { opacity: .65; transform: scale(1); }
-    50%      { opacity: 1; transform: scale(1.06); }
-  }
 
   /* Back link */
   .rp-back {
@@ -426,9 +385,10 @@ const SHARED_CSS = `
     gap: 6px;
     font-family: var(--font-body);
     font-size: var(--fs-base);
-    color: rgba(237,233,227,0.4);
+    color: rgba(237,233,227,0.7);
+    min-height: 44px;
     text-decoration: none;
-    margin-bottom: 28px;
+    margin-bottom: 16px;
     align-self: flex-start;
     max-width: 540px;
     width: 100%;
@@ -448,12 +408,12 @@ const SHARED_CSS = `
     border-radius: 18px;
     padding: 48px;
     box-shadow:
-      0 32px 80px rgba(0,0,0,0.5),
+      0 32px 80px var(--border-strong),
       0 1px 0 rgba(255,255,255,0.04) inset;
     backdrop-filter: blur(12px);
     animation: rpReveal .55s var(--ease-out) .06s both;
   }
-  @media (max-width: 580px) {
+  @media (max-width: 640px) {
     .rp-card { padding: 36px 28px; }
   }
 
@@ -502,7 +462,7 @@ const SHARED_CSS = `
     grid-template-columns: 1fr 1fr;
     gap: 14px;
   }
-  @media (max-width: 440px) {
+  @media (max-width: 640px) {
     .rp-row { grid-template-columns: 1fr; }
   }
   .rp-field {
@@ -532,7 +492,7 @@ const SHARED_CSS = `
     font-family: var(--font-body);
     font-size: var(--fs-md);
     padding: 12px 15px;
-    outline: none;
+    outline: 2px solid transparent;
     transition: border-color .2s, background .2s, box-shadow .2s;
     -webkit-font-smoothing: antialiased;
     resize: none;
@@ -544,6 +504,7 @@ const SHARED_CSS = `
     border-color: rgba(235,93,30,0.55);
     background: rgba(235,93,30,0.04);
     box-shadow: 0 0 0 3px rgba(235,93,30,0.09);
+    outline-color: var(--accent);
   }
   .rp-input:disabled, .rp-textarea:disabled {
     opacity: .45;
@@ -611,7 +572,7 @@ const SHARED_CSS = `
     gap: 9px;
     width: 100%;
     padding: 14px 20px;
-    background: #eb5d1e;
+    background: var(--accent-fill, #c9460f);
     border: none;
     border-radius: 10px;
     color: #fff;
@@ -625,18 +586,9 @@ const SHARED_CSS = `
     overflow: hidden;
     transition: background .2s, transform .15s, box-shadow .2s;
   }
-  .rp-btn::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.1) 50%, transparent 100%);
-    transform: translateX(-100%);
-    transition: transform .55s;
-  }
-  .rp-btn:hover:not(:disabled)::after { transform: translateX(100%); }
   .rp-btn:hover:not(:disabled) {
-    background: #d44f14;
-    box-shadow: 0 8px 28px rgba(235,93,30,0.32);
+    background: var(--accent-fill-hover, #b53f0d);
+    
     transform: translateY(-1px);
   }
   .rp-btn:active:not(:disabled) { transform: translateY(0); box-shadow: none; }
@@ -662,7 +614,10 @@ const SHARED_CSS = `
     text-align: center;
   }
   .rp-link {
-    color: #eb5d1e;
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    color: var(--accent-text, #eb5d1e);
     text-decoration: none;
     font-weight: 500;
     transition: color .2s;
@@ -670,31 +625,17 @@ const SHARED_CSS = `
   .rp-link:hover { color: #f5764a; }
 
   /* ── Success state ── */
-  .rp-success-bg {
-    position: fixed;
-    inset: 0;
-    background: #040C16;
-  }
-  .rp-success-glow {
-    position: fixed;
-    width: 600px; height: 600px;
-    top: 50%; left: 50%;
-    transform: translate(-50%,-50%);
-    background: radial-gradient(circle, rgba(235,93,30,0.08) 0%, transparent 65%);
-    filter: blur(60px);
-    animation: rpGlow 8s ease-in-out infinite;
-  }
   .rp-success-card {
     position: relative;
     z-index: 1;
     width: 100%;
-    max-width: 440px;
+    max-width: 640px;
     background: rgba(7,18,29,0.95);
     border: 1px solid rgba(255,255,255,0.07);
     border-radius: 18px;
     padding: 52px 44px;
     text-align: center;
-    box-shadow: 0 32px 80px rgba(0,0,0,0.5);
+    box-shadow: 0 32px 80px var(--border-strong);
     animation: rpReveal .6s var(--ease-out) both;
   }
   .rp-success-icon {

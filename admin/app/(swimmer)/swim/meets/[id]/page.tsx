@@ -34,6 +34,7 @@ import {
   withAddedSwimmerMeetSelection,
   withRemovedSwimmerMeetSelection,
 } from '@/lib/swimmer-meet-detail-state'
+import './page.inline.css'
 
 const C = {
   bg: 'var(--bg)',
@@ -430,7 +431,7 @@ export default function SwimmerMeetDetailPage() {
           <Icon name="chevron-left" size={14} />
           Schedule
         </Link>
-        <div className="card" style={{ padding: '24px 24px' }}>
+        <div className="card is-653b4fd" >
           <h1 className="page-title">Meet not found</h1>
           <p style={{ fontSize: 'var(--fs-base)', color: C.subtle, lineHeight: 1.7 }}>
             No meet was found for <span style={{ fontFamily: 'var(--font-body)', color: C.text }}>{meetId || 'this route'}</span>.
@@ -448,14 +449,14 @@ export default function SwimmerMeetDetailPage() {
           <Icon name="chevron-left" size={14} />
           Schedule
         </Link>
-        <div className="card" style={{ padding: '24px 24px' }}>
+        <div className="card is-653b4fd" >
           <h1 className="page-title">
-            Meet details are unavailable right now.
+            We could not load this page.
           </h1>
           <p style={{ fontSize: 'var(--fs-base)', color: C.subtle, lineHeight: 1.7, marginBottom: '20px' }}>
             {loadError}
           </p>
-          <button
+          <button type="button"
             onClick={() => setRetryKey((current) => current + 1)}
             className="btn"
             style={{ background: 'var(--error)', color: '#fff', border: 'none' }}
@@ -477,27 +478,27 @@ export default function SwimmerMeetDetailPage() {
       </Link>
 
       {/* Meet header */}
-      <div className="card" style={{ padding: '24px 24px', marginBottom: '20px' }}>
+      <div className="card is-657abde" >
         {loading ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div className="is-930d87f">
             <Skeleton w="55%" h={32} r={6} />
             <Skeleton w="70%" h={14} />
           </div>
         ) : (
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
+          <div className="is-7602e17">
             <div>
               <h1 className="page-title">
                 {meet?.name ?? '—'}
               </h1>
               <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', fontSize: 'var(--fs-base)', color: C.subtle }}>
                 {meet?.start_date && (
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span className="is-df7e073">
                     <Icon name="calendar" size={12} />
                     {fmtDateLabel(meet.start_date)}
                   </span>
                 )}
                 {meet?.location && (
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span className="is-df7e073">
                     <Icon name="map-pin" size={12} />
                     {meet.location}
                   </span>
@@ -509,11 +510,11 @@ export default function SwimmerMeetDetailPage() {
             </div>
 
             {deadlineDate && (
-              <div style={{ padding: '12px 16px', borderRadius: '12px', background: 'var(--warning-bg)', border: '1px solid rgba(245,158,11,0.22)', minWidth: '180px' }}>
+              <div className="is-29f8506">
                 <div style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: C.warning, marginBottom: '4px' }}>
                   Commitment deadline
                 </div>
-                <div style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: 'var(--warning)' }}>
+                <div className="is-f9b35ea">
                   {deadlineDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                 </div>
               </div>
@@ -525,22 +526,22 @@ export default function SwimmerMeetDetailPage() {
       {!loading && noLinkedSwimmer && <UnlinkedSwimmerNotice />}
 
       {!noLinkedSwimmer && (
-      <div className="split-aside" style={{ gap: '20px' }}>
+      <div className="split-aside is-ac2cd18" >
         {/* Left: commitment + event signup */}
         <div className="card" style={{ overflow: 'hidden' }}>
           {/* Swimmer identity */}
           <div style={{ padding: '20px 20px', borderBottom: `1px solid ${C.border}` }}>
             {loading ? (
-              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+              <div className="is-bc6560f">
                 <Skeleton w={42} h={42} r={21} />
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div className="is-20f80e0">
                   <Skeleton w="45%" h={18} />
                   <Skeleton w="60%" h={12} />
                 </div>
               </div>
             ) : (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <div style={{ width: '42px', height: '42px', borderRadius: '50%', background: 'linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--bg)', fontFamily: 'var(--font-body)', fontWeight: 700 }}>
+              <div className="is-e2ff0fd">
+                <div className="is-1b340d2">
                   {swimmerInitials}
                 </div>
                 <div style={{ flex: 1 }}>
@@ -553,7 +554,7 @@ export default function SwimmerMeetDetailPage() {
 
           {/* Commitment buttons */}
           <div style={{ padding: '20px 20px', borderBottom: `1px solid ${C.border}` }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '12px' }}>
+            <div className="is-15297e7">
               <div style={{ fontSize: 'var(--fs-md)', fontWeight: 600, fontFamily: 'var(--font-body)', color: C.text }}>
                 Commitment
               </div>
@@ -566,12 +567,12 @@ export default function SwimmerMeetDetailPage() {
                 {commitment === 'yes' ? 'Going' : commitment === 'no' ? 'Not going' : 'Waiting for your answer'}
               </span>
             </div>
-            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+            <div className="is-18d4ed1">
               {[
                 { id: 'yes', label: 'I am going', color: C.accent, bg: C.accentDim, border: C.accentBorder },
                 { id: 'no', label: 'Not this meet', color: 'var(--error)', bg: 'var(--error-bg)', border: 'var(--error-border)' },
               ].map((option) => (
-                <button
+                <button type="button"
                   key={option.id}
                   onClick={() => void toggleCommitment(option.id as 'yes' | 'no')}
                   style={{ borderRadius: '12px', border: `1px solid ${commitment === option.id ? option.border : C.border}`, background: commitment === option.id ? option.bg : 'transparent', color: commitment === option.id ? option.color : C.text, padding: '12px 16px', fontSize: 'var(--fs-base)', fontWeight: 600, cursor: commitmentOpen && !submittingCommitment ? 'pointer' : 'not-allowed', opacity: commitmentOpen && !submittingCommitment ? 1 : 0.6, fontFamily: 'var(--font-body)' }}
@@ -582,12 +583,12 @@ export default function SwimmerMeetDetailPage() {
               ))}
             </div>
             {commitError && (
-              <div style={{ marginTop: '12px', fontSize: 'var(--fs-sm)', color: 'var(--error)', lineHeight: 1.6 }}>
+              <div className="is-f9d2ce8">
                 {commitError}
               </div>
             )}
             {!commitmentOpen && (
-              <div style={{ marginTop: '12px', fontSize: 'var(--fs-sm)', color: '#93c5fd', lineHeight: 1.6 }}>
+              <div className="is-8b5fc35">
                 {meet?.status === 'published'
                   ? 'This meet is visible now, but self-signup stays read-only until the commitment window opens.'
                   : 'The commitment window for this meet is closed.'}
@@ -597,7 +598,7 @@ export default function SwimmerMeetDetailPage() {
 
           {/* Event signup */}
           {commitmentOpen && commitment !== 'no' && (
-            <div style={{ padding: '20px 20px' }}>
+            <div className="is-e58c8a9">
               <div style={{ fontSize: 'var(--fs-md)', fontWeight: 600, fontFamily: 'var(--font-body)', color: C.text, marginBottom: '6px' }}>
                 Events
               </div>
@@ -605,13 +606,13 @@ export default function SwimmerMeetDetailPage() {
                 &ldquo;Cut&rdquo; is the qualifying time for an event — your best time shows whether you&rsquo;ve met it.
               </div>
               {selectionError && (
-                <div style={{ marginBottom: '12px', fontSize: 'var(--fs-sm)', color: 'var(--error)', lineHeight: 1.6 }}>
+                <div className="is-645d85e">
                   {selectionError}
                 </div>
               )}
 
               {loading ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div className="is-930d87f">
                   <Skeleton h={80} r={12} />
                   <Skeleton h={80} r={12} />
                 </div>
@@ -620,11 +621,11 @@ export default function SwimmerMeetDetailPage() {
                   No events available for this meet yet.
                 </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div className="is-930d87f">
                   {/* Sessioned events */}
                   {sessionedEvents.map((session) => (
                     <div key={session.id} style={{ borderRadius: '12px', border: `1px solid ${C.border}`, background: 'rgba(255,255,255,0.02)', padding: '16px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
+                      <div className="is-2b01013">
                         <div>
                           <div style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: C.text }}>{session.name}</div>
                           <div style={{ fontSize: 'var(--fs-sm)', color: C.subtle }}>
@@ -636,7 +637,7 @@ export default function SwimmerMeetDetailPage() {
                           {session.events.length} choices
                         </span>
                       </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div className="is-355eedd">
                         {session.events.map((ev) => <EventButton key={ev.id} ev={ev} meet={meet} bestTimes={bestTimes} selectedEvents={selectedEvents} toggleEvent={toggleEvent} selectionSubmitting={selectionSubmitting === ev.id} />)}
                       </div>
                     </div>
@@ -646,7 +647,7 @@ export default function SwimmerMeetDetailPage() {
                   {unsessionedEvents.length > 0 && (
                     <div style={{ borderRadius: '12px', border: `1px solid ${C.border}`, background: 'rgba(255,255,255,0.02)', padding: '16px' }}>
                     <div style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: C.text, marginBottom: '12px' }}>Events</div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div className="is-355eedd">
                         {unsessionedEvents.map((ev) => <EventButton key={ev.id} ev={ev} meet={meet} bestTimes={bestTimes} selectedEvents={selectedEvents} toggleEvent={toggleEvent} selectionSubmitting={selectionSubmitting === ev.id} />)}
                     </div>
                   </div>
@@ -658,19 +659,19 @@ export default function SwimmerMeetDetailPage() {
         </div>
 
         {/* Right: summary */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div className="is-8ef476f">
           {/* Meet files */}
-          <div className="card" style={{ padding: '20px' }}>
+          <div className="card is-f8d354e" >
             <div style={{ fontSize: 'var(--fs-md)', fontWeight: 600, fontFamily: 'var(--font-body)', color: C.text, marginBottom: '12px' }}>
               Meet files
             </div>
             {filesLoading ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '12px 0' }}>
+              <div className="is-457efd7">
                 <Skeleton h={14} r={999} />
                 <Skeleton w="72%" h={14} r={999} />
               </div>
             ) : filesError ? (
-              <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--warning)', lineHeight: 1.6 }}>
+              <div className="is-aaece7c">
                 {filesError}
               </div>
             ) : meetFiles.length === 0 ? (
@@ -679,7 +680,7 @@ export default function SwimmerMeetDetailPage() {
                 No meet files available yet.
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div className="is-930d87f">
                 {meetFiles.map((file) => (
                   <div
                     key={file.id}
@@ -690,7 +691,7 @@ export default function SwimmerMeetDetailPage() {
                       padding: '12px',
                     }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start' }}>
+                    <div className="is-ef3773e">
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: C.text, wordBreak: 'break-word' }}>{file.filename}</div>
                         <div style={{ marginTop: '4px', fontSize: 'var(--fs-xs)', color: C.subtle, lineHeight: 1.5 }}>
@@ -719,7 +720,7 @@ export default function SwimmerMeetDetailPage() {
           </div>
 
           {/* Summary */}
-          <div className="card" style={{ padding: '20px' }}>
+          <div className="card is-f8d354e" >
             <div style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: C.text, marginBottom: '6px' }}>
               {selectedEvents.length} selected event{selectedEvents.length !== 1 ? 's' : ''}
             </div>
@@ -760,14 +761,14 @@ function EventButton({
   const cutMet = btMs !== null && qualMs !== null ? btMs <= qualMs : null
 
   return (
-    <button
+    <button type="button"
       onClick={() => toggleEvent(ev.id)}
       disabled={selectionSubmitting}
       style={{ textAlign: 'left', borderRadius: '12px', border: `1px solid ${selected ? C.accentBorder : C.border}`, background: selected ? C.accentDim : 'rgba(255,255,255,0.03)', padding: '12px 16px', cursor: selectionSubmitting ? 'progress' : 'pointer', opacity: selectionSubmitting ? 0.65 : 1, color: C.text, fontFamily: 'var(--font-body)' }}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center' }}>
+      <div className="is-9fcafc6">
         <div>
-          <div style={{ fontWeight: 600, fontSize: 'var(--fs-md)' }}>
+          <div className="is-dd1df4f">
             {ev.event_number ? `#${ev.event_number} ` : ''}{eventName(ev)}
           </div>
           <div style={{ fontSize: 'var(--fs-xs)', color: C.subtle }}>

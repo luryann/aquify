@@ -1,0 +1,8 @@
+/* Static layout/type styles migrated from inline style props. */
+.is-66f6a69.is-66f6a69 { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; font-family: var(--font-body); overflow: hidden; }
+.is-1c1d443.is-1c1d443 { margin-bottom: 24px; display: flex; justify-content: center; }
+.is-1ae45f5.is-1ae45f5 { font-family: var(--font-display); font-size: var(--fs-3xl); font-weight: var(--display-weight); color: var(--text); margin-bottom: 12px; letter-spacing: var(--display-tracking); }
+.is-cbd6755.is-cbd6755 { font-size: var(--fs-md); color: var(--text-subtle); line-height: 1.7; margin-bottom: 40px; }
+.is-c2dfd00.is-c2dfd00 { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+.is-2da28a3.is-2da28a3 { padding: 12px 24px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; color: var(--text-subtle); font-size: var(--fs-base); font-weight: 500; font-family: var(--font-body); cursor: pointer; display: flex; align-items: center; gap: 8px; transition: all 0.15s ease; }
+.is-2858c5e.is-2858c5e { padding: 12px 24px; background: var(--accent-fill, #c9460f); border: none; border-radius: 8px; color: #fff; font-size: var(--fs-base); font-weight: 600; font-family: var(--font-body); cursor: pointer; display: flex; align-items: center; gap: 8px; transition: background 0.15s ease; }

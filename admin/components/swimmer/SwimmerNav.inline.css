@@ -1,0 +1,10 @@
+/* Static layout/type styles migrated from inline style props. */
+.is-a98e6ad.is-a98e6ad { height: 58px; display: flex; align-items: center; gap: 0; }
+.is-e285dd0.is-e285dd0 { display: flex; align-items: center; gap: 8px; text-decoration: none; margin-right: 40px; flex-shrink: 0; }
+.is-c7a0c1e.is-c7a0c1e { display: flex; align-items: center; gap: 2px; flex: 1; }
+.is-5387648.is-5387648 { margin-left: auto; }
+.is-fed490f.is-fed490f { position: relative; flex-shrink: 0; margin-left: 8px; }
+.is-36100be.is-36100be { width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%); display: flex; align-items: center; justify-content: center; color: var(--text-on-accent); font-size: var(--fs-xs); font-weight: 700; font-family: var(--font-body); flex-shrink: 0; }
+.is-31cee2f.is-31cee2f { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 8px; background: transparent; border: none; color: var(--error); font-size: var(--fs-base); cursor: pointer; width: 100%; text-align: left; transition: background 100ms ease; }
+.is-40001e4.is-40001e4 { display: flex; align-items: center; justify-content: space-between; padding: 0 8px 16px; }
+.is-32bee05.is-32bee05 { display: flex; flex-direction: column; gap: 2px; }

@@ -12,14 +12,14 @@ test('multi-role access checks use the full backend role set', () => {
 test('navigation filtering preserves items for secondary privileged roles', () => {
   const items = filterNavItems(['parent', 'admin'])
   const billingItem = items.find((item) => item.path === '/billing')
-  assert.equal(billingItem?.locked, false)
+  assert.ok(billingItem)
   assert.equal(items.some((item) => item.path === '/portal/dashboard'), false)
 })
 
-test('navigation filtering marks inaccessible items as locked instead of dropping them', () => {
+test('navigation filtering hides items the role cannot access', () => {
   const items = filterNavItems(['coach'])
-  const billingItem = items.find((item) => item.path === '/billing')
-  assert.equal(billingItem?.locked, true)
-  const meetsItem = items.find((item) => item.path === '/meets')
-  assert.equal(meetsItem?.locked, false)
+  assert.equal(items.some((item) => item.path === '/billing'), false)
+  assert.equal(items.some((item) => item.path === '/settings'), false)
+  assert.equal(items.some((item) => item.path === '/meets'), true)
+  assert.equal(items.every((item) => item.allowedRoles.includes('coach')), true)
 })

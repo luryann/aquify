@@ -21,10 +21,7 @@ function formatDateTime(value?: string) {
   })
 }
 
-const FIELD_INPUT_STYLE: React.CSSProperties = {
-  width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)',
-  background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: 'var(--fs-base)', boxSizing: 'border-box',
-}
+const FIELD_INPUT_STYLE: React.CSSProperties = { width: '100%' }
 
 type ExportRow = DataExportRequestRecord & { householdName: string }
 
@@ -115,7 +112,7 @@ export default function DataExportsPage() {
   }
 
   if (!session) {
-    return <div style={{ padding: '32px' }}><EmptyState icon="download" title="Sign in required" description="Authenticate to manage export requests." /></div>
+    return <div className="u-p-32px" ><EmptyState icon="download" title="Sign in required" description="Authenticate to manage export requests." /></div>
   }
 
   const columns = [
@@ -136,29 +133,29 @@ export default function DataExportsPage() {
       sortable: false,
       render: (row) =>
         row.download_url ? (
-          <a href={row.download_url} target="_blank" rel="noreferrer" style={{ fontSize: 'var(--fs-sm)', color: 'var(--accent)', textDecoration: 'none' }}>
+          <a href={row.download_url} target="_blank" rel="noreferrer" className="u-fs-fs-sm" style={{ color: 'var(--accent-text, var(--accent))', textDecoration: 'none' }}>
             Open artifact
           </a>
         ) : (
-          <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>Pending</span>
+          <span className="u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>Pending</span>
         ),
     }),
   ]
 
   return (
     <div className="page">
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px', marginBottom: '24px', flexWrap: 'wrap' }}>
+      <div className="u-gap-16px u-mb-24px" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap' }}>
         <div>
           <h1 className="page-title">Data export requests</h1>
         </div>
-        <button onClick={() => setModalOpen(true)} className="btn btn-primary">
+        <button type="button" onClick={() => setModalOpen(true)} className="btn btn-primary">
           <Icon name="plus" size={14} />
-          New Request
+          New request
         </button>
       </div>
 
       {error ? (
-        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: 'var(--fs-sm)' }}>
+        <div className="u-mb-20px u-p-12px-16px u-fs-fs-sm" style={{ borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)' }}>
           {error}
         </div>
       ) : null}
@@ -181,15 +178,15 @@ export default function DataExportsPage() {
         description="Generates a downloadable file of everything on file for this household."
         footer={
           <>
-            <button onClick={() => setModalOpen(false)} className="btn btn-secondary">Cancel</button>
-            <button onClick={() => void handleCreate()} disabled={submitting || !selectedHouseholdId} className="btn btn-primary">
+            <button type="button" onClick={() => setModalOpen(false)} className="btn btn-secondary">Cancel</button>
+            <button type="button" onClick={() => void handleCreate()} disabled={submitting || !selectedHouseholdId} className="btn btn-primary">
               {submitting ? 'Creating…' : 'Create Request'}
             </button>
           </>
         }
       >
         <div>
-          <label style={{ display: 'block', fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '4px' }}>Household</label>
+          <label className="u-fs-fs-sm u-ff-font-body u-mb-4px" style={{ display: 'block', color: 'var(--text-muted)' }}>Household</label>
           <select value={selectedHouseholdId} onChange={(event) => setSelectedHouseholdId(event.target.value)} style={FIELD_INPUT_STYLE}>
             {households.map((household) => <option key={household.id} value={household.id}>{household.household_name}</option>)}
           </select>

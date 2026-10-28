@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import { fetchPublicSite, formatSwimTime } from '@/lib/publicSiteData'
 import { COURSE_LABELS, GENDER_LABELS, eventName, groupRecordsByAge, resolveRecordFilter } from '@/lib/club-site'
 import { formatDateOnly } from '@/lib/dates'
+import './page.inline.css'
 
 type Props = { params: Promise<{ slug: string }>; searchParams: Promise<{ course?: string; gender?: string }> }
 
@@ -41,7 +42,7 @@ export default async function ClubRecords({ params, searchParams }: Props) {
               <Link key={c} href={`${base}?course=${c}&gender=${filter.gender}`} aria-current={c === filter.course}>{COURSE_LABELS[c] ?? c}</Link>
             ))}
           </div>
-          <div className="cs-tabs" role="group" aria-label="Gender" style={{ marginTop: 0 }}>
+          <div className="cs-tabs is-c312289" role="group" aria-label="Gender" >
             {genders.map((g) => (
               <Link key={g} href={`${base}?course=${filter.course}&gender=${g}`} aria-current={g === filter.gender}>{GENDER_LABELS[g] ?? g}</Link>
             ))}

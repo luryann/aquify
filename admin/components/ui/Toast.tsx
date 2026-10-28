@@ -24,6 +24,8 @@ export type Toast = {
   title: string
   description?: string
   duration?: number  // ms, 0 = persistent
+  /** Optional inline action (e.g. Undo). Extends the default timeout. */
+  action?: { label: string; onClick: () => void }
 }
 
 export type ToastOptions = Omit<Toast, 'id'>
@@ -36,6 +38,8 @@ type ToastContextValue = {
   error: (title: string, description?: string) => void
   warning: (title: string, description?: string) => void
   info: (title: string, description?: string) => void
+  /** Success toast with an Undo-style action button (8s timeout). */
+  successWithAction: (title: string, action: { label: string; onClick: () => void }, description?: string) => void
 }
 
 // ─────────────────────────────────────────────
@@ -56,7 +60,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const addToast = useCallback(
     (opts: ToastOptions): string => {
       const id = `toast-${++toastIdCounter}`
-      const toast: Toast = { id, duration: 4500, ...opts }
+      const toast: Toast = { id, duration: opts.action ? 8000 : 4500, ...opts }
       setToasts((prev) => [...prev.slice(-4), toast]) // max 5 at once
       return id
     },
@@ -79,6 +83,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       error:   shorthand('error'),
       warning: shorthand('warning'),
       info:    shorthand('info'),
+      successWithAction: (title, action, description) =>
+        addToast({ variant: 'success', title, description, action }),
     }),
     [toasts, addToast, removeToast, shorthand],
   )
@@ -109,7 +115,7 @@ const VARIANT_CONFIG = {
 }
 
 function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) => void }) {
-  const { variant, title, description, duration = 4500, id } = toast
+  const { variant, title, description, duration = 4500, id, action } = toast
   const cfg = VARIANT_CONFIG[variant]
   const [exiting, setExiting] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -127,58 +133,43 @@ function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) =
 
   return (
     <div
-      style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: '12px',
-        background: 'var(--bg-elevated)',
-        border: `1px solid ${cfg.border}`,
-        borderRadius: 'var(--r-lg)',
-        padding: '12px 16px',
-        boxShadow: 'var(--shadow-toast)',
-        width: '320px',
-        maxWidth: '90vw',
-        position: 'relative',
-        overflow: 'hidden',
-        animation: exiting
+      className="u-gap-12px u-p-12px-16px" style={{ display: 'flex', alignItems: 'flex-start', background: 'var(--bg-elevated)', border: `1px solid ${cfg.border}`, borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-toast)', width: '320px', maxWidth: '90vw', position: 'relative', overflow: 'hidden', animation: exiting
           ? 'toastSlideOut 0.3s var(--ease-in) forwards'
-          : 'toastSlideIn 0.35s var(--ease-out) forwards',
-      }}
+          : 'toastSlideIn 0.35s var(--ease-out) forwards' }}
     >
       {/* Icon */}
-      <div style={{ color: cfg.color, flexShrink: 0, marginTop: '1px' }}>
+      <div className="u-mt-1px" style={{ color: cfg.color, flexShrink: 0 }}>
         <Icon name={cfg.icon} size={16} />
       </div>
 
       {/* Content */}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.4 }}>
+        <p className="u-fs-fs-base u-fw-600 u-lh-1_4" style={{ color: 'var(--text)' }}>
           {title}
         </p>
         {description && (
-          <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', marginTop: '2px', lineHeight: 1.5 }}>
+          <p className="u-fs-fs-sm u-mt-2px u-lh-1_5" style={{ color: 'var(--text-subtle)' }}>
             {description}
           </p>
         )}
       </div>
 
+      {action && (
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm u-fw-600"
+          onClick={() => { action.onClick(); dismiss() }}
+          style={{ flexShrink: 0, color: 'var(--accent-text, var(--accent))' }}
+        >
+          {action.label}
+        </button>
+      )}
+
       {/* Dismiss */}
       <button
         onClick={dismiss}
         aria-label="Dismiss"
-        style={{
-          flexShrink: 0,
-          background: 'none',
-          border: 'none',
-          padding: '2px',
-          color: 'var(--text-muted)',
-          cursor: 'pointer',
-          borderRadius: 'var(--r-xs)',
-          display: 'flex',
-          alignItems: 'center',
-          transition: 'color var(--dur-fast)',
-          marginTop: '1px',
-        }}
+        className="u-p-2px u-mt-1px" style={{ flexShrink: 0, background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', borderRadius: 'var(--r-xs)', display: 'flex', alignItems: 'center', transition: 'color var(--dur-fast)' }}
         onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text)')}
         onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
       >
@@ -237,16 +228,7 @@ function ToastContainer({
     <div
       aria-live="polite"
       aria-label="Notifications"
-      style={{
-        position: 'fixed',
-        bottom: '24px',
-        right: '24px',
-        zIndex: 9999,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '8px',
-        pointerEvents: 'none',
-      }}
+      className="u-gap-8px" style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 9999, display: 'flex', flexDirection: 'column', pointerEvents: 'none' }}
     >
       {toasts.map((t) => (
         <div key={t.id} style={{ pointerEvents: 'auto' }}>

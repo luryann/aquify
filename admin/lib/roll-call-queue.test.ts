@@ -25,6 +25,25 @@ test('failures back off and are not due until the retry time', () => {
   assert.ok(!isRetryable(403) && !isRetryable(422))
 })
 
+test('same-tick taps and clock rollback cannot settle or delay a newer mark', () => {
+  for (const now of [100, 90]) {
+    const initial = enqueueMark({}, 'p', 's', 'present', 100)
+    const sent = dueMarks(initial, 100)[0]
+    const updated = enqueueMark(initial, 'p', 's', 'absent', now)
+    assert.equal(dueMarks(updated, now).length, 1)
+    assert.deepEqual(settleMark(updated, sent), updated)
+    assert.deepEqual(failMark(updated, sent, 'offline', 200), updated)
+  }
+})
+
+test('invalid stored records cannot crash roll call or block valid queued writes', () => {
+  const valid = enqueueMark({}, 'p', 's', 'present', 10)
+  const storage = { getItem: () => JSON.stringify({ ...valid, broken: null, invalid: { status: 'other' } }) }
+  assert.deepEqual(loadQueue(storage), valid)
+  assert.deepEqual(loadQueue({ getItem: () => '[]' }), {})
+  assert.deepEqual(dueMarks(loadQueue(storage), 10), Object.values(valid))
+})
+
 test('queue persists through storage and tolerates garbage', () => {
   const store = new Map<string, string>()
   const storage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) }

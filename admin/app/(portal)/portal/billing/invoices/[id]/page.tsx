@@ -21,6 +21,7 @@ import {
   launchPortalInvoiceCheckout,
   portalInvoiceCheckoutErrorMessage,
 } from '@/lib/portal-invoice-checkout'
+import './page.inline.css'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 const STATUS_CONFIG: Record<string, { label: string; bg: string; color: string }> = {
@@ -28,8 +29,8 @@ const STATUS_CONFIG: Record<string, { label: string; bg: string; color: string }
   issued:           { label: 'Payment due',  bg: 'var(--warning-bg)', color: 'var(--warning)' },
   partially_paid:   { label: 'Partially paid',bg: 'var(--info-bg)', color: 'var(--info)' },
   paid:             { label: 'Paid',         bg: 'var(--success-bg)', color: 'var(--success)' },
-  refunded_partial: { label: 'Refunded',     bg: '#f5f3ff', color: '#7c3aed' },
-  refunded_full:    { label: 'Refunded',     bg: '#f5f3ff', color: '#7c3aed' },
+  refunded_partial: { label: 'Refunded',     bg: 'var(--water-subtle)', color: 'var(--water)' },
+  refunded_full:    { label: 'Refunded',     bg: 'var(--water-subtle)', color: 'var(--water)' },
   voided:           { label: 'Voided',       bg: 'var(--bg-surface)', color: 'var(--text-muted)' },
   written_off:      { label: 'Written off',  bg: 'var(--bg-surface)', color: 'var(--text-muted)' },
 }
@@ -48,23 +49,23 @@ type Tab = 'summary' | 'payments' | 'receipts'
 function LoadingSkeleton() {
   return (
     <div className="page">
-      <div style={{ height: '20px', width: '180px', background: 'rgba(0,0,0,0.06)', borderRadius: '6px', marginBottom: '24px' }} />
+      <div className="is-3256332" />
       <div
-        className="card" style={{ padding: '24px', marginBottom: '20px' }}
+        className="card is-bb717d2" 
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <div style={{ height: '14px', width: '160px', background: 'rgba(0,0,0,0.06)', borderRadius: '4px' }} />
-            <div style={{ height: '24px', width: '300px', background: 'rgba(0,0,0,0.06)', borderRadius: '6px' }} />
-            <div style={{ height: '14px', width: '240px', background: 'rgba(0,0,0,0.04)', borderRadius: '4px' }} />
+        <div className="is-dfe8511">
+          <div className="is-930d87f">
+            <div style={{ height: '14px', width: '160px', background: 'var(--bg-wash-strong)', borderRadius: '4px' }} />
+            <div style={{ height: '24px', width: '300px', background: 'var(--bg-wash-strong)', borderRadius: '6px' }} />
+            <div style={{ height: '14px', width: '240px', background: 'var(--bg-wash)', borderRadius: '4px' }} />
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'flex-end' }}>
-            <div style={{ height: '12px', width: '80px', background: 'rgba(0,0,0,0.04)', borderRadius: '4px' }} />
-            <div style={{ height: '36px', width: '100px', background: 'rgba(0,0,0,0.06)', borderRadius: '6px' }} />
+          <div className="is-8d95465">
+            <div style={{ height: '12px', width: '80px', background: 'var(--bg-wash)', borderRadius: '4px' }} />
+            <div style={{ height: '36px', width: '100px', background: 'var(--bg-wash-strong)', borderRadius: '6px' }} />
           </div>
         </div>
-        <div style={{ height: '6px', background: 'rgba(0,0,0,0.06)', borderRadius: '999px', marginBottom: '20px' }} />
-        <div style={{ height: '52px', background: 'rgba(0,0,0,0.05)', borderRadius: '12px' }} />
+        <div className="is-592a9d2" />
+        <div style={{ height: '52px', background: 'var(--bg-wash)', borderRadius: '12px' }} />
       </div>
       <style>{`
         @keyframes slideUp {
@@ -107,7 +108,7 @@ function InvoiceDetailPageContent() {
   useEffect(() => {
     if (!orgId || !invoiceId) {
       setLoading(false)
-      setLoadError('Invoice detail is unavailable because invoice context is missing.')
+      setLoadError('We could not find your household details. Sign out and back in, or contact your club if this keeps happening.')
       return
     }
     setLoading(true)
@@ -129,7 +130,7 @@ function InvoiceDetailPageContent() {
         setLoadError(reportUIError(
           'portal-invoice-detail-load',
           error,
-          'Invoice detail data is unavailable right now.',
+          'We could not load this page. Check your connection and try again.',
           { orgId, invoiceId },
         ))
       })
@@ -141,42 +142,32 @@ function InvoiceDetailPageContent() {
   if (!invoice) {
     return (
       <div className="page">
-        <nav style={{ marginBottom: '20px', fontSize: 'var(--fs-base)' }}>
+        <nav className="is-781ef11">
           <Link href="/portal/billing" style={{ color: 'var(--text-muted)', textDecoration: 'none' }}>
             Billing
           </Link>
         </nav>
         {loadError && (
           <div
-            style={{
-              background: 'var(--warning-bg)',
-              border: '1px solid #fdba74',
-              borderRadius: '12px',
-              padding: '12px 16px',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              gap: '12px',
-              marginBottom: '20px',
-            }}
+            className="is-469b891"
           >
-            <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+            <div className="is-730b6a7">
               <Icon name="alert-circle" size={15} style={{ color: 'var(--warning)', marginTop: '1px', flexShrink: 0 }} />
-              <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--warning)', lineHeight: 1.5 }}>{loadError}</p>
+              <p className="is-51a00ce">{loadError}</p>
             </div>
             <button
               type="button"
               onClick={() => setReloadKey((key) => key + 1)}
-              style={{ background: 'var(--bg-elevated)', border: '1px solid #fdba74', borderRadius: '8px', cursor: 'pointer', color: 'var(--warning)', fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '8px 16px', whiteSpace: 'nowrap' }}
+              className="is-889d44c"
             >
               Retry
             </button>
           </div>
         )}
         <div
-          className="card" style={{ padding: '48px', textAlign: 'center' }}
+          className="card is-52b05e3" 
         >
-          <div style={{ fontSize: 'var(--fs-md)', color: 'var(--text-muted)', fontWeight: 500 }}>
+          <div className="is-5e8f68c">
             {loadError ? 'Invoice details are unavailable right now.' : 'Invoice not found'}
           </div>
         </div>
@@ -214,80 +205,45 @@ function InvoiceDetailPageContent() {
     <div className="page">
       {/* Breadcrumb */}
       <nav
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '6px',
-          fontSize: 'var(--fs-base)',
-          color: 'var(--text-muted)',
-          marginBottom: '24px',
-          animation: 'slideUp 0.3s ease both',
-        }}
+        className="is-90f3963"
       >
         <Link href="/portal/billing" style={{ color: 'var(--text-muted)', textDecoration: 'none' }}>
           Billing
         </Link>
         <span>/</span>
-        <span style={{ color: 'var(--text)', fontWeight: 500, fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)' }}>
+        <span className="is-7604dc9">
           {invoice.invoice_number}
         </span>
       </nav>
 
       {/* Invoice header */}
       <div
-        className="card" style={{ padding: '24px', marginBottom: '20px', animation: 'slideUp 0.35s ease both' }}
+        className="card is-e878bde" 
       >
         {checkoutState === 'success' && (
           <div
-            style={{
-              marginBottom: '16px',
-              padding: '12px 16px',
-              borderRadius: '12px',
-              background: 'var(--info-bg)',
-              border: '1px solid rgba(37,99,235,0.15)',
-              color: '#1d4ed8',
-              fontSize: 'var(--fs-base)',
-              lineHeight: 1.5,
-            }}
+            className="is-72a24ef"
           >
             Stripe returned successfully. If payment confirmation is still in flight, refresh this invoice in a moment to see the updated status.
           </div>
         )}
         {checkoutState === 'cancelled' && (
           <div
-            style={{
-              marginBottom: '16px',
-              padding: '12px 16px',
-              borderRadius: '12px',
-              background: 'var(--warning-bg)',
-              border: '1px solid rgba(217,119,6,0.15)',
-              color: '#c2410c',
-              fontSize: 'var(--fs-base)',
-              lineHeight: 1.5,
-            }}
+            className="is-bfa258f"
           >
             Checkout was cancelled before payment completed. Your invoice is still open.
           </div>
         )}
         {checkoutError && (
           <div
-            style={{
-              marginBottom: '16px',
-              padding: '12px 16px',
-              borderRadius: '12px',
-              background: 'var(--error-bg)',
-              border: '1px solid rgba(220,38,38,0.15)',
-              color: 'var(--error)',
-              fontSize: 'var(--fs-base)',
-              lineHeight: 1.5,
-            }}
+            className="is-a85471b"
           >
             {checkoutError}
           </div>
         )}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap', marginBottom: '20px' }}>
+        <div className="is-5324aad">
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <div className="is-c960f60">
               <h1 className="page-title">
                 {invoice.notes ?? invoice.invoice_number}
               </h1>
@@ -299,15 +255,13 @@ function InvoiceDetailPageContent() {
                   fontWeight: 600,
                   background: statusCfg.bg,
                   color: statusCfg.color,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
                 }}
               >
                 {statusCfg.label}
               </span>
             </div>
-            <div style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)', marginTop: '4px' }}>
-              <span style={{ fontFamily: 'var(--font-mono)' }}>{invoice.invoice_number}</span>
+            <div className="is-b2d8026">
+              <span className="is-d5bdeb0">{invoice.invoice_number}</span>
               {invoice.issued_at ? ` · Issued ${formatDate(invoice.issued_at)}` : ''}
               {invoice.due_date ? ` · Due ${formatDate(invoice.due_date)}` : ''}
             </div>
@@ -315,7 +269,7 @@ function InvoiceDetailPageContent() {
 
           {/* Amount due */}
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginBottom: '4px' }}>Amount due</div>
+            <div className="is-8ab28f2">Amount due</div>
             <div
               style={{
                 fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)',
@@ -331,17 +285,17 @@ function InvoiceDetailPageContent() {
 
         {/* Payment progress bar */}
         {total > 0 && (
-          <div style={{ marginBottom: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-              <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
+          <div className="is-b75fad0">
+            <div className="is-0c50af4">
+              <span className="is-4f39ab0">
                 ${amountPaid.toFixed(2)} paid of ${total.toFixed(2)}
               </span>
-              <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>{paidPct}%</span>
+              <span className="is-4f39ab0">{paidPct}%</span>
             </div>
             <div
               style={{
                 height: '6px',
-                background: 'rgba(0,0,0,0.06)',
+                background: 'var(--bg-wash-strong)',
                 borderRadius: '999px',
                 overflow: 'hidden',
               }}
@@ -361,7 +315,7 @@ function InvoiceDetailPageContent() {
 
         {/* Pay button */}
         {(invoice.status === 'issued' || invoice.status === 'partially_paid') && (
-          <button
+          <button type="button"
             onClick={handlePay}
             disabled={checkoutDisabled}
             className="btn btn-primary"
@@ -380,7 +334,7 @@ function InvoiceDetailPageContent() {
           >
             {checkingOut ? (
               <>
-                <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-base)', opacity: 0.8 }}>⟳</span>
+                <span className="is-7604705">⟳</span>
                 Redirecting to Checkout…
               </>
             ) : (
@@ -395,18 +349,10 @@ function InvoiceDetailPageContent() {
 
       {/* Tabs */}
       <div
-        style={{
-          display: 'flex',
-          gap: '2px',
-          marginBottom: '20px',
-          background: 'rgba(0,0,0,0.04)',
-          borderRadius: '12px',
-          padding: '4px',
-          animation: 'slideUp 0.4s ease both',
-        }}
+        className="is-1a3aa72"
       >
         {(['summary', 'payments', 'receipts'] as Tab[]).map((t) => (
-          <button
+          <button type="button"
             key={t}
             onClick={() => setTab(t)}
             style={{
@@ -437,13 +383,7 @@ function InvoiceDetailPageContent() {
         >
           {/* Header row */}
           <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 60px 90px 90px',
-              padding: '12px 20px',
-              borderBottom: '1px solid rgba(0,0,0,0.07)',
-              background: 'rgba(0,0,0,0.02)',
-            }}
+            className="is-e9d91ee"
           >
             {['Description', 'Qty', 'Unit', 'Total'].map((h) => (
               <span
@@ -452,8 +392,6 @@ function InvoiceDetailPageContent() {
                   fontSize: 'var(--fs-xs)',
                   fontFamily: 'var(--font-body)',
                   color: 'var(--text-muted)',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.06em',
                   textAlign: h === 'Description' ? 'left' : 'right',
                 }}
               >
@@ -464,7 +402,7 @@ function InvoiceDetailPageContent() {
 
           {/* Items */}
           {items.length === 0 ? (
-            <div style={{ padding: '32px 20px', textAlign: 'center', fontSize: 'var(--fs-base)', color: 'var(--text-muted)' }}>
+            <div className="is-e20bace">
               No line items found.
             </div>
           ) : (
@@ -475,18 +413,18 @@ function InvoiceDetailPageContent() {
                   display: 'grid',
                   gridTemplateColumns: '1fr 60px 90px 90px',
                   padding: '16px 20px',
-                  borderBottom: i < items.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none',
+                  borderBottom: i < items.length - 1 ? '1px solid var(--border)' : 'none',
                   alignItems: 'center',
                 }}
               >
-                <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text)' }}>{item.description}</span>
-                <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', textAlign: 'right', fontFamily: 'var(--font-body)' }}>
+                <span className="is-302d13d">{item.description}</span>
+                <span className="is-8c28f85">
                   {item.quantity}
                 </span>
-                <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', textAlign: 'right', fontFamily: 'var(--font-body)' }}>
+                <span className="is-8c28f85">
                   ${centsToDisplay(item.unit_amount_cents)}
                 </span>
-                <span style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--text)', textAlign: 'right', fontFamily: 'var(--font-body)' }}>
+                <span className="is-b9b90e9">
                   ${centsToDisplay(item.total_cents)}
                 </span>
               </div>
@@ -495,23 +433,17 @@ function InvoiceDetailPageContent() {
 
           {/* Totals */}
           <div
-            style={{
-              padding: '16px 20px',
-              borderTop: '2px solid rgba(0,0,0,0.07)',
-              display: 'flex',
-              justifyContent: 'flex-end',
-              gap: '32px',
-            }}
+            className="is-2c597dc"
           >
             <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginBottom: '2px' }}>Subtotal</div>
-              <div style={{ fontSize: 'var(--fs-md)', fontFamily: 'var(--font-body)', color: 'var(--text)' }}>
+              <div className="is-c8f1267">Subtotal</div>
+              <div className="is-3b18e73">
                 ${total.toFixed(2)}
               </div>
             </div>
             <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginBottom: '2px' }}>Amount due</div>
-              <div style={{ fontSize: 'var(--fs-xl)', fontWeight: 700, fontFamily: 'var(--font-body)', color: 'var(--warning)' }}>
+              <div className="is-c8f1267">Amount due</div>
+              <div className="is-5348860">
                 ${amountDue.toFixed(2)}
               </div>
             </div>
@@ -524,24 +456,15 @@ function InvoiceDetailPageContent() {
         <div style={{ animation: 'slideUp 0.3s ease both' }}>
           {payments.length === 0 ? (
             <div
-              className="card" style={{ padding: '48px', textAlign: 'center' }}
+              className="card is-52b05e3" 
             >
               <div
-                style={{
-                  width: '48px',
-                  height: '48px',
-                  borderRadius: '50%',
-                  background: 'rgba(0,0,0,0.04)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  margin: '0 auto 16px',
-                }}
+                className="is-af12721"
               >
                 <Icon name="credit-card" size={22} style={{ color: 'var(--border-strong)' }} />
               </div>
-              <div style={{ fontSize: 'var(--fs-md)', color: 'var(--text-muted)', fontWeight: 500 }}>No payments recorded yet</div>
-              <div style={{ fontSize: 'var(--fs-base)', color: 'var(--border-strong)', marginTop: '6px' }}>
+              <div className="is-5e8f68c">No payments recorded yet</div>
+              <div className="is-87e0fe4">
                 Payments will appear here once processed.
               </div>
             </div>
@@ -555,18 +478,18 @@ function InvoiceDetailPageContent() {
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     padding: '16px 20px',
-                    borderBottom: i < payments.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none',
+                    borderBottom: i < payments.length - 1 ? '1px solid var(--border)' : 'none',
                   }}
                 >
                   <div>
-                    <div style={{ fontSize: 'var(--fs-base)', color: 'var(--text)', fontWeight: 500 }}>
+                    <div className="is-df04e21">
                       {p.method}
                     </div>
-                    <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginTop: '2px' }}>
+                    <div className="is-7536cb1">
                       {p.paid_at ? formatDate(p.paid_at) : formatDate(p.created_at)}
                     </div>
                   </div>
-                  <span style={{ fontSize: 'var(--fs-md)', fontWeight: 700, fontFamily: 'var(--font-body)', color: 'var(--success)' }}>
+                  <span className="is-c3600c0">
                     −${centsToDisplay(p.amount_cents)}
                   </span>
                 </div>
@@ -582,9 +505,9 @@ function InvoiceDetailPageContent() {
           className="card" style={{ overflow: 'hidden', animation: 'slideUp 0.3s ease both' }}
         >
           {payments.length === 0 ? (
-            <div style={{ padding: '48px', textAlign: 'center' }}>
-              <div style={{ fontSize: 'var(--fs-md)', color: 'var(--text-muted)', fontWeight: 500 }}>No receipts available</div>
-              <div style={{ fontSize: 'var(--fs-base)', color: 'var(--border-strong)', marginTop: '6px' }}>
+            <div className="is-52b05e3">
+              <div className="is-5e8f68c">No receipts available</div>
+              <div className="is-87e0fe4">
                 Receipts will appear here after payments are processed.
               </div>
             </div>
@@ -597,7 +520,7 @@ function InvoiceDetailPageContent() {
                   alignItems: 'center',
                   gap: '16px',
                   padding: '16px 20px',
-                  borderBottom: i < arr.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none',
+                  borderBottom: i < arr.length - 1 ? '1px solid var(--border)' : 'none',
                 }}
               >
                 <div
@@ -615,18 +538,13 @@ function InvoiceDetailPageContent() {
                   <Icon name="file-text" size={15} style={{ color: 'var(--success)' }} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 'var(--fs-base)', color: 'var(--text)', fontWeight: 500 }}>
+                  <div className="is-df04e21">
                     Payment — {rec.method}
                   </div>
-                  <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  <div className="is-7536cb1">
                     {rec.paid_at ? formatDate(rec.paid_at) : formatDate(rec.created_at)} · {rec.method}
                     <span
-                      style={{
-                        marginLeft: '8px',
-                        fontFamily: 'var(--font-body)',
-                        fontSize: 'var(--fs-2xs)',
-                        color: 'var(--border-strong)',
-                      }}
+                      className="is-abbb76c"
                     >
                       #{rec.id.slice(-6)}
                     </span>
@@ -634,27 +552,12 @@ function InvoiceDetailPageContent() {
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
                   <div
-                    style={{
-                      fontSize: 'var(--fs-md)',
-                      fontWeight: 700,
-                      fontFamily: 'var(--font-body)',
-                      color: 'var(--success)',
-                    }}
+                    className="is-c3600c0"
                   >
                     ${centsToDisplay(rec.amount_cents)}
                   </div>
-                  <button
-                    style={{
-                      marginTop: '4px',
-                      background: 'none',
-                      border: 'none',
-                      cursor: 'pointer',
-                      fontSize: 'var(--fs-xs)',
-                      color: 'var(--accent)',
-                      fontWeight: 500,
-                      padding: '0',
-                      fontFamily: 'var(--font-body)',
-                    }}
+                  <button type="button"
+                    className="is-0eb0eac"
                   >
                     Download PDF
                   </button>

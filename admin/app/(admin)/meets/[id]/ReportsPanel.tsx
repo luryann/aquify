@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Icon } from '@/components/ui/icons'
+import { Modal } from '@/components/ui/Modal'
 import { Table, type Column } from '@/components/ui/Table'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
@@ -59,8 +60,8 @@ function reportLabel(reportType: string): string {
 }
 
 const COLUMNS: Column<ReportRow>[] = [
-  { key: 'reportType', label: 'Report', render: (row) => <span style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)' }}>{reportLabel(row.reportType)}</span> },
-  { key: 'filename', label: 'File', render: (row) => <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)' }}>{row.filename}</span> },
+  { key: 'reportType', label: 'Report', render: (row) => <span className="u-fs-fs-base u-fw-600" style={{ color: 'var(--text)' }}>{reportLabel(row.reportType)}</span> },
+  { key: 'filename', label: 'File', render: (row) => <span className="u-fs-fs-sm u-ff-font-body" style={{ color: 'var(--text-subtle)' }}>{row.filename}</span> },
   {
     key: 'status',
     label: 'Status',
@@ -69,25 +70,24 @@ const COLUMNS: Column<ReportRow>[] = [
       return <span className="badge" style={{ background: c.bg, color: c.color }}>{c.label}</span>
     },
   },
-  { key: 'fileSizeKb', label: 'Size', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>{row.fileSizeKb != null ? `${row.fileSizeKb} KB` : '—'}</span> },
-  { key: 'createdAt', label: 'Created', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>{new Date(row.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span> },
+  { key: 'fileSizeKb', label: 'Size', align: 'right', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>{row.fileSizeKb != null ? `${row.fileSizeKb} KB` : '—'}</span> },
+  { key: 'createdAt', label: 'Created', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>{new Date(row.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span> },
   {
     key: 'id',
     label: '',
     align: 'right',
     render: (row) =>
       row.status === 'ready' && row.downloadUrl ? (
-        <a href={row.downloadUrl} target="_blank" rel="noreferrer" className="btn" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: 'var(--fs-sm)', padding: '4px 12px' }}>
+        <a href={row.downloadUrl} target="_blank" rel="noreferrer" className="btn u-gap-6px u-fs-fs-sm u-p-4px-12px" style={{ display: 'inline-flex', alignItems: 'center' }}>
           <Icon name="download" size={13} /> PDF
         </a>
       ) : (
-        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>—</span>
+        <span className="u-fs-fs-xs" style={{ color: 'var(--text-muted)' }}>—</span>
       ),
   },
 ]
 
-const INPUT_STYLE: React.CSSProperties = { width: '100%', padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none', boxSizing: 'border-box' }
-const LABEL_STYLE: React.CSSProperties = { fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }
+const INPUT_STYLE: React.CSSProperties = { width: '100%' }
 
 export function ReportsPanel({ meetId }: { meetId: string }) {
   const { session } = useSession()
@@ -176,8 +176,8 @@ export function ReportsPanel({ meetId }: { meetId: string }) {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
-        <button className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setShowNew(true)}>
+      <div className="u-mb-16px" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <button className="btn btn-primary u-gap-6px" style={{ display: 'flex', alignItems: 'center' }} onClick={() => setShowNew(true)}>
           <Icon name="download" size={14} /> Generate Report
         </button>
       </div>
@@ -190,26 +190,20 @@ export function ReportsPanel({ meetId }: { meetId: string }) {
         <Table columns={COLUMNS} data={rows} pageSize={10} emptyTitle="No reports yet" emptyDescription="Generate a report to see it here." />
       )}
 
-      {showNew && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)' }} onClick={(e) => { if (e.target === e.currentTarget) setShowNew(false) }}>
-          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '440px', boxShadow: '0 24px 80px rgba(0,0,0,0.4)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-              <h2 className="section-title" style={{ margin: 0 }}>Generate report</h2>
-              <button onClick={() => setShowNew(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><Icon name="x" size={18} /></button>
-            </div>
-            {genError && <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: 'var(--fs-base)' }}>{genError}</div>}
-            <form onSubmit={handleGenerate} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <Modal open={Boolean(showNew)} onClose={() => setShowNew(false)} title="Generate report" width={440}>
+            {genError && <div role="alert" className="form-banner-error u-mb-16px">{genError}</div>}
+            <form onSubmit={handleGenerate} className="u-gap-16px" style={{ display: 'flex', flexDirection: 'column' }}>
               <div>
-                <label style={LABEL_STYLE}>Report Type *</label>
+                <label className="form-label form-label-required">Report type</label>
                 <select style={INPUT_STYLE} value={genForm.report_type} onChange={(e) => setGenForm((f) => ({ ...f, report_type: e.target.value as ReportType }))}>
                   {REPORT_TYPE_OPTIONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
                 </select>
-                {activeReport && <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', margin: '6px 2px 0' }}>{activeReport.hint}</p>}
+                {activeReport && <p className="u-fs-fs-xs" style={{ color: 'var(--text-muted)', margin: '6px 2px 0' }}>{activeReport.hint}</p>}
               </div>
               {genForm.report_type === 'entry_report' && (
                 <div>
-                  <label style={LABEL_STYLE}>Group entries by</label>
-                  <div style={{ display: 'flex', gap: '6px' }}>
+                  <label className="form-label">Group entries by</label>
+                  <div className="u-gap-6px" style={{ display: 'flex' }}>
                     {GROUPING_OPTIONS.map((g) => {
                       const active = genForm.grouping === g.value
                       return (
@@ -217,17 +211,7 @@ export function ReportsPanel({ meetId }: { meetId: string }) {
                           key={g.value}
                           type="button"
                           onClick={() => setGenForm((f) => ({ ...f, grouping: g.value }))}
-                          style={{
-                            flex: 1,
-                            padding: '8px 6px',
-                            fontSize: 'var(--fs-sm)',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            borderRadius: 'var(--r-md)',
-                            border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
-                            background: active ? 'var(--accent-bg, rgba(235,93,30,0.12))' : 'var(--bg-elevated)',
-                            color: active ? 'var(--accent)' : 'var(--text-subtle)',
-                          }}
+                          className="u-p-8px-6px u-fs-fs-sm u-fw-600" style={{ flex: 1, cursor: 'pointer', borderRadius: 'var(--r-md)', border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`, background: active ? 'var(--accent-bg, rgba(235,93,30,0.12))' : 'var(--bg-elevated)', color: active ? 'var(--accent)' : 'var(--text-subtle)' }}
                         >
                           {g.label}
                         </button>
@@ -236,14 +220,12 @@ export function ReportsPanel({ meetId }: { meetId: string }) {
                   </div>
                 </div>
               )}
-              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '4px' }}>
+              <div className="form-actions" style={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <button type="button" className="btn" onClick={() => setShowNew(false)}>Cancel</button>
                 <button type="submit" className="btn btn-primary" disabled={generating}>{generating ? 'Generating…' : 'Generate'}</button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+      </Modal>
     </div>
   )
 }

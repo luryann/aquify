@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useSession } from '@/lib/session'
+import './page.inline.css'
 
 type LogoutResponse = {
   status?: string
@@ -89,19 +90,14 @@ export default function LogoutPage() {
 
   return (
     <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'var(--bg)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontFamily: 'var(--font-body)',
-      }}
+      className="is-44ea83d"
     >
       <style>{`
         @keyframes logoutSpin { to { transform: rotate(360deg); } }
         @keyframes logoutFade { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+        @media (prefers-reduced-motion: reduce) {
+          @keyframes logoutFade { from { opacity: 0; } to { opacity: 1; } }
+        }
       `}</style>
 
       <div
@@ -115,7 +111,7 @@ export default function LogoutPage() {
         {stage === 'revoking' ? (
           <>
             {/* Spinner */}
-            <div style={{ position: 'relative', width: '56px', height: '56px', margin: '0 auto 24px' }}>
+            <div className="is-4e4a1e4">
               <div style={{
                 position: 'absolute', inset: 0, borderRadius: '50%',
                 border: '2px solid var(--border)',
@@ -126,41 +122,30 @@ export default function LogoutPage() {
                 animation: 'logoutSpin 0.9s linear infinite',
               }} />
             </div>
-            <h2 style={{
-              fontFamily: 'var(--font-display)', fontSize: 'var(--fs-2xl)', fontWeight: 'var(--display-weight)',
-              color: 'var(--text)', marginBottom: '8px', letterSpacing: 'var(--display-tracking)',
-            }}>
+            <h2 className="is-46136c0">
               Signing you out…
             </h2>
-            <p style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
+            <p className="is-6c43e0d">
               Revoking session and clearing credentials
             </p>
           </>
         ) : stage === 'done' ? (
           <div style={{ animation: 'logoutFade 0.4s ease' }}>
             {/* Checkmark */}
-            <div style={{
-              width: '56px', height: '56px', borderRadius: '50%',
-              background: 'var(--success-bg)', border: '1px solid var(--success-border)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              margin: '0 auto 24px',
-            }}>
+            <div className="is-1291541">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
                 stroke="var(--success)" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="20 6 9 17 4 12" />
               </svg>
             </div>
-            <h2 style={{
-              fontFamily: 'var(--font-display)', fontSize: 'var(--fs-2xl)', fontWeight: 'var(--display-weight)',
-              color: 'var(--text)', marginBottom: '8px', letterSpacing: 'var(--display-tracking)',
-            }}>
+            <h2 className="is-46136c0">
               Signed out
             </h2>
-            <p style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
+            <p className="is-6c43e0d">
               Redirecting to sign-in…
             </p>
 
-            <button
+            <button type="button"
               onClick={() => {
                 if (topLevelRedirect) {
                   window.location.assign(redirectTarget)
@@ -168,13 +153,7 @@ export default function LogoutPage() {
                 }
                 router.push(redirectTarget)
               }}
-              style={{
-                marginTop: '24px', padding: '8px 24px',
-                background: 'var(--bg-surface)', border: '1px solid var(--border)',
-                borderRadius: '8px', color: 'var(--text-subtle)', fontSize: 'var(--fs-sm)',
-                fontFamily: 'var(--font-body)', cursor: 'pointer',
-                transition: 'border-color 0.15s, color 0.15s',
-              }}
+              className="is-a7494a5"
               onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--border-strong)'; e.currentTarget.style.color = 'var(--text)' }}
               onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-subtle)' }}
             >
@@ -183,12 +162,7 @@ export default function LogoutPage() {
           </div>
         ) : (
           <div style={{ animation: 'logoutFade 0.4s ease' }}>
-            <div style={{
-              width: '56px', height: '56px', borderRadius: '50%',
-              background: 'var(--error-bg)', border: '1px solid var(--error-border)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              margin: '0 auto 24px',
-            }}>
+            <div className="is-c45f24a">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
                 stroke="var(--error)" strokeWidth={2.25} strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="10" />
@@ -196,23 +170,15 @@ export default function LogoutPage() {
                 <line x1="12" y1="16" x2="12.01" y2="16" />
               </svg>
             </div>
-            <h2 style={{
-              fontFamily: 'var(--font-display)', fontSize: 'var(--fs-2xl)', fontWeight: 'var(--display-weight)',
-              color: 'var(--text)', marginBottom: '8px', letterSpacing: 'var(--display-tracking)',
-            }}>
+            <h2 className="is-46136c0">
               Sign-out needs attention
             </h2>
-            <p style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', letterSpacing: '0.04em', maxWidth: '320px' }}>
+            <p className="is-a32f9ad">
               {error}
             </p>
-            <button
+            <button type="button"
               onClick={() => window.location.reload()}
-              style={{
-                marginTop: '24px', padding: '8px 24px',
-                background: 'var(--bg-surface)', border: '1px solid var(--border)',
-                borderRadius: '8px', color: 'var(--text-subtle)', fontSize: 'var(--fs-sm)',
-                fontFamily: 'var(--font-body)', cursor: 'pointer',
-              }}
+              className="is-d6e9bd3"
             >
               Retry sign-out
             </button>

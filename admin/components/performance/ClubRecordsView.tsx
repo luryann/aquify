@@ -9,9 +9,9 @@ import { TopTimesBoard } from './TopTimesBoard'
 export function ClubRecordsView() {
   const [tab, setTab] = useState('records')
   return (
-    <div>
+    <div className="page">
       <h1 className="page-title">Team records &amp; top times</h1>
-      <p style={{ margin: '0 0 20px', color: 'var(--text-subtle)', fontSize: 'var(--fs-md)', maxWidth: '64ch' }}>
+      <p className="u-fs-fs-md" style={{ margin: '0 0 20px', color: 'var(--text-subtle)', maxWidth: '64ch' }}>
         Age groups use each swimmer’s age on the day of the swim.
       </p>
       <Tabs tabs={[{ id: 'records', label: 'Team records' }, { id: 'top', label: 'Top times' }]} active={tab} onChange={setTab} />

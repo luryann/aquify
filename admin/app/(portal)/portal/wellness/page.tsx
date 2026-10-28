@@ -6,6 +6,7 @@ import { useApiClient } from '@/lib/api'
 import { fetchSwimmers, type SwimmerRecord } from '@/lib/adminData'
 import { reportUIError } from '@/lib/frontend-telemetry'
 import { WellnessPanel } from '@/components/engagement/WellnessPanel'
+import './page.inline.css'
 
 export default function PortalWellnessPage() {
   const { session } = useSession()
@@ -36,16 +37,16 @@ export default function PortalWellnessPage() {
         </div>
       </div>
       {error && (
-        <div role="alert" className="card" style={{ padding: 16, marginBottom: 16, display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', color: 'var(--warning)', fontSize: 'var(--fs-base)' }}>
+        <div role="alert" className="card is-9b78534" >
           {error}
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => setReloadKey((k) => k + 1)}>Retry</button>
         </div>
       )}
       {swimmers && swimmers.length === 0 && !error && (
-        <div className="card" style={{ padding: 24, color: 'var(--text-subtle)', fontSize: 'var(--fs-md)' }}>No swimmers are linked to your household yet.</div>
+        <div className="card is-ef1427e" >No swimmers are linked to your household yet.</div>
       )}
       {swimmers && swimmers.length > 1 && (
-        <div role="tablist" aria-label="Swimmer" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+        <div role="tablist" aria-label="Swimmer" className="is-00afff9">
           {swimmers.map((s) => (
             <button key={s.id} role="tab" aria-selected={s.id === selected} type="button" onClick={() => setSelected(s.id)}
               className={s.id === selected ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}>{name(s)}</button>

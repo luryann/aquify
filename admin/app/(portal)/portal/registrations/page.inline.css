@@ -1,0 +1,38 @@
+/* Static layout/type styles migrated from inline style props. */
+.is-e4383f6.is-e4383f6 { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 24px; animation: slideUp 0.4s ease both; }
+.is-401e6d8.is-401e6d8 { padding: 16px 20px; }
+.is-36ca0af.is-36ca0af { margin-top: 8px; }
+.is-dd721e0.is-dd721e0 { font-size: var(--fs-sm); color: var(--text-muted); margin-top: 4px; }
+.is-9dc000d.is-9dc000d { margin-bottom: 20px; background: var(--error-bg); border: 1px solid rgba(220,38,38,0.18); border-radius: 12px; padding: 20px 20px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.is-137a7ce.is-137a7ce { font-size: var(--fs-md); font-weight: 600; color: var(--error); margin-bottom: 4px; }
+.is-de107ca.is-de107ca { font-size: var(--fs-base); color: var(--error); }
+.is-b2368ab.is-b2368ab { padding: 8px 16px; border-radius: 8px; border: none; background: var(--error); color: var(--bg-elevated); font-size: var(--fs-base); font-weight: 600; cursor: pointer; flex-shrink: 0; }
+.is-72f8178.is-72f8178 { display: flex; flex-direction: column; gap: 16px; margin-bottom: 32px; }
+.is-ebaaa90.is-ebaaa90 { padding: 20px 24px; display: flex; gap: 16px; align-items: center; }
+.is-20f80e0.is-20f80e0 { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+.is-21695c0.is-21695c0 { padding: 40px; text-align: center; color: var(--text-muted); font-size: var(--fs-md); }
+.is-a273f90.is-a273f90 { padding: 20px 24px; display: flex; align-items: center; gap: 16px; cursor: pointer; }
+.is-3088da1.is-3088da1 { display: flex; align-items: center; gap: 8px; }
+.is-fdc9019.is-fdc9019 { font-family: var(--font-display); font-weight: var(--display-weight); font-size: var(--fs-xl); color: var(--text); line-height: 1.1; }
+.is-652cfa8.is-652cfa8 { border-top: 1px solid var(--border); padding: 20px 24px; }
+.is-845d5fe.is-845d5fe { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-bottom: 20px; }
+.is-a1a186f.is-a1a186f { font-size: var(--fs-md); font-weight: 600; font-family: var(--font-body); color: var(--text); margin-bottom: 12px; }
+.is-ebd7e31.is-ebd7e31 { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.is-4f39ab0.is-4f39ab0 { font-size: var(--fs-sm); color: var(--text-muted); }
+.is-5341e30.is-5341e30 { font-size: var(--fs-sm); color: var(--text); font-weight: 500; }
+.is-2e21f01.is-2e21f01 { font-size: var(--fs-sm); color: var(--text); font-weight: 500; font-family: var(--font-body); }
+.is-46f27ba.is-46f27ba { background: var(--bg-surface); border-radius: 12px; padding: 16px; color: var(--text-subtle); font-size: var(--fs-base); line-height: 1.6; }
+.is-5fc29c3.is-5fc29c3 { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
+.is-e215615.is-e215615 { font-size: var(--fs-base); font-weight: 600; color: var(--text); margin-bottom: 2px; }
+.is-bd86097.is-bd86097 { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.is-a8a0256.is-a8a0256 { padding: 2px 8px; border-radius: 999px; background: var(--bg-elevated); border: 1px solid var(--border); font-size: var(--fs-xs); font-family: var(--font-body); color: var(--text-subtle); }
+.is-e1408bf.is-e1408bf { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.is-1acdeaf.is-1acdeaf { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 12px; }
+.is-29e7ba7.is-29e7ba7 { font-size: var(--fs-sm); color: var(--text); font-weight: 600; }
+.is-c454211.is-c454211 { font-size: var(--fs-xs); color: var(--text-muted); }
+.is-819dbad.is-819dbad { display: flex; align-items: center; gap: 8px; color: var(--text-muted); }
+.is-39b5e82.is-39b5e82 { color: var(--accent); text-decoration: none; font-weight: 500; }
+.is-89d6566.is-89d6566 { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-base); color: var(--accent); text-decoration: none; font-weight: 500; }
+.is-31b72fa.is-31b72fa { font-size: var(--fs-base); color: var(--text-subtle); font-weight: 500; }
+.is-7db2283.is-7db2283 { font-size: var(--fs-base); color: var(--text-muted); margin-left: 8px; }
+.is-e2ff0fd.is-e2ff0fd { display: flex; align-items: center; gap: 12px; }

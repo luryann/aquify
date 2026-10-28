@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Icon } from '@/components/ui/icons'
+import { Modal } from '@/components/ui/Modal'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
 import {
@@ -51,27 +52,12 @@ function RoleChip({ roleName, onRemove, canRemove }: { roleName: string; onRemov
   const c = ROLE_COLORS[roleName] ?? { bg: 'var(--bg-elevated)', color: 'var(--text-subtle)' }
   const label = ROLE_OPTIONS.find((r) => r.value === roleName)?.label ?? roleName
   return (
-    <span style={{
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: '4px',
-      fontSize: 'var(--fs-xs)',
-      fontWeight: 700,
-      padding: '4px 8px',
-      borderRadius: '6px',
-      background: c.bg,
-      color: c.color,
-      fontFamily: 'var(--font-body)',
-    }}>
+    <span className="u-gap-4px u-fs-fs-xs u-fw-700 u-p-4px-8px u-ff-font-body" style={{ display: 'inline-flex', alignItems: 'center', borderRadius: '6px', background: c.bg, color: c.color }}>
       {label}
       {canRemove && onRemove && (
-        <button
+        <button type="button"
           onClick={onRemove}
-          style={{
-            background: 'none', border: 'none', cursor: 'pointer',
-            color: c.color, opacity: 0.7, padding: '0', lineHeight: 1,
-            display: 'flex', alignItems: 'center',
-          }}
+          className="u-p-0 u-lh-1" style={{ background: 'none', border: 'none', cursor: 'pointer', color: c.color, opacity: 0.7, display: 'flex', alignItems: 'center' }}
           title={`Remove ${label} role`}
         >
           <Icon name="x" size={11} />
@@ -83,8 +69,8 @@ function RoleChip({ roleName, onRemove, canRemove }: { roleName: string; onRemov
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="card" style={{ padding: '20px 24px', marginBottom: '16px' }}>
-      <h3 className="card-title" style={{ marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid var(--border)' }}>{title}</h3>
+    <div className="card u-p-20px-24px u-mb-16px" >
+      <h3 className="card-title u-mb-16px u-pb-12px" style={{ borderBottom: '1px solid var(--border)' }}>{title}</h3>
       {children}
     </div>
   )
@@ -92,24 +78,14 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div style={{ marginBottom: '16px' }}>
-      <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginBottom: '4px' }}>{label}</div>
-      <div style={{ fontSize: 'var(--fs-md)', color: 'var(--text)' }}>{value}</div>
+    <div className="u-mb-16px" >
+      <div className="u-fs-fs-sm u-ff-font-body u-mb-4px" style={{ color: 'var(--text-muted)' }}>{label}</div>
+      <div className="u-fs-fs-md" style={{ color: 'var(--text)' }}>{value}</div>
     </div>
   )
 }
 
-const INPUT_STYLE: React.CSSProperties = {
-  width: '100%',
-  padding: '8px 12px',
-  background: 'var(--bg-elevated)',
-  border: '1px solid var(--border)',
-  borderRadius: 'var(--r-md)',
-  fontSize: 'var(--fs-base)',
-  color: 'var(--text)',
-  outline: 'none',
-  boxSizing: 'border-box',
-}
+const INPUT_STYLE: React.CSSProperties = { width: '100%' }
 
 export default function UserDetailPage() {
   const params = useParams()
@@ -375,7 +351,7 @@ export default function UserDetailPage() {
 
   if (loading) {
     return (
-      <div style={{ padding: '24px', display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--text-muted)', fontSize: 'var(--fs-base)' }}>
+      <div className="u-p-24px u-gap-12px u-fs-fs-base" style={{ display: 'flex', alignItems: 'center', color: 'var(--text-muted)' }}>
         <Icon name="loader" size={16} />
         Loading user…
       </div>
@@ -384,11 +360,11 @@ export default function UserDetailPage() {
 
   if (error || !user) {
     return (
-      <div style={{ padding: '24px' }}>
-        <div className="card" style={{ padding: '32px', textAlign: 'center', color: 'var(--error)', fontSize: 'var(--fs-base)' }}>
+      <div className="u-p-24px" >
+        <div className="card u-p-32px u-fs-fs-base" style={{ textAlign: 'center', color: 'var(--error)' }}>
           <Icon name="alert-circle" size={20} style={{ marginBottom: '8px' }} />
           <div>{error ?? 'User not found.'}</div>
-          <Link href="/users" style={{ color: 'var(--accent)', textDecoration: 'none', fontSize: 'var(--fs-sm)', marginTop: '12px', display: 'inline-block' }}>
+          <Link href="/users" className="u-fs-fs-sm u-mt-12px" style={{ color: 'var(--accent-text, var(--accent))', textDecoration: 'none', display: 'inline-block' }}>
             ← Back to Users
           </Link>
         </div>
@@ -404,42 +380,29 @@ export default function UserDetailPage() {
   return (
     <div className="page">
       {/* Breadcrumb */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '20px', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
+      <div className="u-gap-6px u-mb-20px u-fs-fs-sm" style={{ display: 'flex', alignItems: 'center', color: 'var(--text-muted)' }}>
         <Link href="/users" style={{ color: 'var(--text-muted)', textDecoration: 'none' }}>Users</Link>
         <Icon name="chevron-right" size={12} />
         <span style={{ color: 'var(--text)' }}>{user.firstName || user.lastName ? `${user.firstName} ${user.lastName}`.trim() : user.email}</span>
       </div>
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px', marginBottom: '24px' }}>
-        <div style={{
-          width: '48px', height: '48px', borderRadius: '50%',
-          background: 'var(--accent-subtle)',
-          border: '2px solid var(--accent-border)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 'var(--fs-xl)', fontWeight: 700, color: 'var(--accent)',
-          fontFamily: 'var(--font-body)', flexShrink: 0,
-        }}>
+      <div className="u-gap-16px u-mb-24px" style={{ display: 'flex', alignItems: 'flex-start' }}>
+        <div className="u-fs-fs-xl u-fw-700 u-ff-font-body" style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'var(--accent-subtle)', border: '2px solid var(--accent-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-text, var(--accent))', flexShrink: 0 }}>
           {((user.firstName?.[0] ?? '') + (user.lastName?.[0] ?? '')).toUpperCase() || user.email[0].toUpperCase()}
         </div>
         <div style={{ flex: 1 }}>
           <h1 className="page-title">
             {user.firstName || user.lastName ? `${user.firstName} ${user.lastName}`.trim() : <span style={{ color: 'var(--text-muted)' }}>Unnamed user</span>}
           </h1>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)' }}>{user.email}</span>
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', gap: '4px',
-              fontSize: 'var(--fs-xs)', fontWeight: 600, padding: '2px 8px', borderRadius: '16px',
-              background: user.enabled ? 'var(--success-bg)' : 'var(--bg-elevated)',
-              color: user.enabled ? 'var(--success)' : 'var(--text-muted)',
-              fontFamily: 'var(--font-body)',
-            }}>
+          <div className="u-gap-12px" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
+            <span className="u-fs-fs-base u-ff-font-body" style={{ color: 'var(--text-subtle)' }}>{user.email}</span>
+            <span className="u-gap-4px u-fs-fs-xs u-fw-600 u-p-2px-8px u-ff-font-body" style={{ display: 'inline-flex', alignItems: 'center', borderRadius: '16px', background: user.enabled ? 'var(--success-bg)' : 'var(--bg-elevated)', color: user.enabled ? 'var(--success)' : 'var(--text-muted)' }}>
               <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: user.enabled ? 'var(--success)' : 'var(--text-disabled)' }} />
               {user.enabled ? 'Active' : 'Disabled'}
             </span>
             {!user.emailVerified && (
-              <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--warning)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span className="u-fs-fs-xs u-gap-4px" style={{ color: 'var(--warning)', display: 'flex', alignItems: 'center' }}>
                 <Icon name="alert-triangle" size={11} /> Email not verified
               </span>
             )}
@@ -449,17 +412,17 @@ export default function UserDetailPage() {
 
       {/* Action feedback */}
       {actionSuccess && (
-        <div style={{ background: 'var(--success-bg)', border: '1px solid var(--success-border)', color: 'var(--success)', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: 'var(--fs-base)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div className="u-p-12px-16px u-mb-16px u-fs-fs-base u-gap-8px" style={{ background: 'var(--success-bg)', border: '1px solid var(--success-border)', color: 'var(--success)', borderRadius: '8px', display: 'flex', alignItems: 'center' }}>
           <Icon name="check-circle" size={14} /> {actionSuccess}
         </div>
       )}
       {actionError && (
-        <div style={{ background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: 'var(--fs-base)' }}>
+        <div className="u-p-12px-16px u-mb-16px u-fs-fs-base" style={{ background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', borderRadius: '8px' }}>
           {actionError}
         </div>
       )}
       {saveSuccess && (
-        <div style={{ background: 'var(--success-bg)', border: '1px solid var(--success-border)', color: 'var(--success)', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: 'var(--fs-base)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div className="u-p-12px-16px u-mb-16px u-fs-fs-base u-gap-8px" style={{ background: 'var(--success-bg)', border: '1px solid var(--success-border)', color: 'var(--success)', borderRadius: '8px', display: 'flex', alignItems: 'center' }}>
           <Icon name="check-circle" size={14} /> Profile updated.
         </div>
       )}
@@ -467,56 +430,56 @@ export default function UserDetailPage() {
       {/* Profile */}
       <Section title="Profile">
         {editMode ? (
-          <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <form onSubmit={handleSave} className="u-gap-16px" style={{ display: 'flex', flexDirection: 'column' }}>
             {saveError && (
-              <div style={{ background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', borderRadius: '8px', padding: '12px 16px', fontSize: 'var(--fs-base)' }}>
+              <div className="u-p-12px-16px u-fs-fs-base" style={{ background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', borderRadius: '8px' }}>
                 {saveError}
               </div>
             )}
-            <div className="cols-2" style={{ gap: '12px' }}>
+            <div className="cols-2 u-gap-12px" >
               <div>
-                <label style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '4px', fontFamily: 'var(--font-body)' }}>
+                <label className="u-fs-fs-sm u-fw-600 u-mb-4px u-ff-font-body" style={{ color: 'var(--text-muted)', display: 'block' }}>
                   First name
                 </label>
                 <input style={INPUT_STYLE} value={editForm.first_name} onChange={(e) => setEditForm((f) => ({ ...f, first_name: e.target.value }))} />
               </div>
               <div>
-                <label style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '4px', fontFamily: 'var(--font-body)' }}>
+                <label className="u-fs-fs-sm u-fw-600 u-mb-4px u-ff-font-body" style={{ color: 'var(--text-muted)', display: 'block' }}>
                   Last name
                 </label>
                 <input style={INPUT_STYLE} value={editForm.last_name} onChange={(e) => setEditForm((f) => ({ ...f, last_name: e.target.value }))} />
               </div>
             </div>
             <div>
-              <label style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '4px', fontFamily: 'var(--font-body)' }}>
+              <label className="u-fs-fs-sm u-fw-600 u-mb-4px u-ff-font-body" style={{ color: 'var(--text-muted)', display: 'block' }}>
                 Email
               </label>
               <input type="email" style={INPUT_STYLE} value={editForm.email} onChange={(e) => setEditForm((f) => ({ ...f, email: e.target.value }))} />
             </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button type="submit" className="btn btn-primary" style={{ fontSize: 'var(--fs-sm)', padding: '8px 16px' }} disabled={saving}>
+            <div className="u-gap-8px" style={{ display: 'flex' }}>
+              <button type="submit" className="btn btn-primary u-fs-fs-sm u-p-8px-16px" disabled={saving}>
                 {saving ? 'Saving…' : 'Save Changes'}
               </button>
-              <button type="button" className="btn" style={{ fontSize: 'var(--fs-sm)', padding: '8px 16px' }} onClick={() => { setEditMode(false); setSaveError(null) }}>
+              <button type="button" className="btn u-fs-fs-sm u-p-8px-16px" onClick={() => { setEditMode(false); setSaveError(null) }}>
                 Cancel
               </button>
             </div>
           </form>
         ) : (
           <div>
-            <div className="cols-2" style={{ gap: '0' }}>
+            <div className="cols-2 u-gap-0" >
               <Field label="First name" value={user.firstName || <span style={{ color: 'var(--text-muted)' }}>—</span>} />
               <Field label="Last name" value={user.lastName || <span style={{ color: 'var(--text-muted)' }}>—</span>} />
-              <Field label="Email" value={<span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-base)' }}>{user.email}</span>} />
-              <Field label="Username" value={<span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-base)', color: 'var(--text-subtle)' }}>{user.username}</span>} />
+              <Field label="Email" value={<span className="u-ff-font-body u-fs-fs-base" >{user.email}</span>} />
+              <Field label="Username" value={<span className="u-ff-font-body u-fs-fs-base" style={{ color: 'var(--text-subtle)' }}>{user.username}</span>} />
               <Field label="Email verified" value={
                 user.emailVerified
-                  ? <span style={{ color: 'var(--success)', fontSize: 'var(--fs-base)' }}>Verified</span>
-                  : <span style={{ color: 'var(--warning)', fontSize: 'var(--fs-base)' }}>Not verified</span>
+                  ? <span className="u-fs-fs-base" style={{ color: 'var(--success)' }}>Verified</span>
+                  : <span className="u-fs-fs-base" style={{ color: 'var(--warning)' }}>Not verified</span>
               } />
-              <Field label="User ID" value={<span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>{user.id}</span>} />
+              <Field label="User ID" value={<span className="u-ff-font-body u-fs-fs-xs" style={{ color: 'var(--text-muted)' }}>{user.id}</span>} />
             </div>
-            <button className="btn" style={{ fontSize: 'var(--fs-sm)', padding: '6px 12px', marginTop: '4px' }} onClick={() => { setEditMode(true); setSaveSuccess(false) }}>
+            <button type="button" className="btn u-fs-fs-sm u-p-6px-12px u-mt-4px" onClick={() => { setEditMode(true); setSaveSuccess(false) }}>
               <Icon name="edit-2" size={12} style={{ marginRight: '4px' }} />
               Edit Profile
             </button>
@@ -527,13 +490,13 @@ export default function UserDetailPage() {
       {/* Roles */}
       <Section title="Roles">
         {roleError && (
-          <div style={{ background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', borderRadius: '8px', padding: '8px 12px', marginBottom: '12px', fontSize: 'var(--fs-sm)' }}>
+          <div className="u-p-8px-12px u-mb-12px u-fs-fs-sm" style={{ background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', borderRadius: '8px' }}>
             {roleError}
           </div>
         )}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px', alignItems: 'center' }}>
+        <div className="u-gap-8px u-mb-12px" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center' }}>
           {roles.length === 0 ? (
-            <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)' }}>No roles assigned.</span>
+            <span className="u-fs-fs-base" style={{ color: 'var(--text-muted)' }}>No roles assigned.</span>
           ) : (
             roles.map((r) => (
               <RoleChip
@@ -545,39 +508,39 @@ export default function UserDetailPage() {
             ))
           )}
           {!addingRole && availableRolesToAdd.length > 0 && (
-            <button
-              className="btn"
-              style={{ fontSize: 'var(--fs-xs)', padding: '4px 12px', display: 'flex', alignItems: 'center', gap: '4px' }}
+            <button type="button"
+              className="btn u-fs-fs-xs u-p-4px-12px u-gap-4px"
+              style={{ display: 'flex', alignItems: 'center' }}
               onClick={() => { setAddingRole(true); setRoleError(null) }}
               disabled={roleLoading}
             >
-              <Icon name="plus" size={11} /> Add Role
+              <Icon name="plus" size={11} /> Add role
             </button>
           )}
         </div>
         {addingRole && (
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <div className="u-gap-8px" style={{ display: 'flex', alignItems: 'center' }}>
             <select
               value={newRole}
               onChange={(e) => setNewRole(e.target.value)}
-              style={{ padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none' }}
+              className="u-p-8px-12px u-fs-fs-base" 
             >
               <option value="">Select role…</option>
               {availableRolesToAdd.map((r) => (
                 <option key={r.value} value={r.value}>{r.label}</option>
               ))}
             </select>
-            <button
-              className="btn btn-primary"
-              style={{ fontSize: 'var(--fs-sm)', padding: '8px 12px' }}
+            <button type="button"
+              className="btn btn-primary u-fs-fs-sm u-p-8px-12px"
+              
               onClick={() => { void handleAddRole() }}
               disabled={!newRole || roleLoading}
             >
               {roleLoading ? 'Adding…' : 'Assign'}
             </button>
-            <button
-              className="btn"
-              style={{ fontSize: 'var(--fs-sm)', padding: '8px 12px' }}
+            <button type="button"
+              className="btn u-fs-fs-sm u-p-8px-12px"
+              
               onClick={() => { setAddingRole(false); setNewRole('') }}
             >
               Cancel
@@ -589,48 +552,48 @@ export default function UserDetailPage() {
       {/* Linked Household */}
       <Section title="Linked household">
         {householdLinkError && (
-          <div style={{ background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', borderRadius: '8px', padding: '8px 12px', marginBottom: '12px', fontSize: 'var(--fs-sm)' }}>
+          <div className="u-p-8px-12px u-mb-12px u-fs-fs-sm" style={{ background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', borderRadius: '8px' }}>
             {householdLinkError}
           </div>
         )}
         {linkedHousehold ? (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '12px 16px', background: 'var(--bg-elevated)', borderRadius: 'var(--r-md)', border: '1px solid var(--border)' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-              <Icon name="home" size={16} style={{ color: 'var(--accent)', flexShrink: 0, marginTop: '1px' }} />
+          <div className="u-gap-12px u-p-12px-16px" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg-elevated)', borderRadius: 'var(--r-md)', border: '1px solid var(--border)' }}>
+            <div className="u-gap-12px" style={{ display: 'flex', alignItems: 'flex-start' }}>
+              <Icon name="home" size={16} style={{ color: 'var(--accent-text, var(--accent))', flexShrink: 0, marginTop: '1px' }} />
               <div>
-                <div style={{ fontSize: 'var(--fs-base)', fontWeight: 500, color: 'var(--text)' }}>{linkedHousehold.household_name}</div>
-                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>{linkedHousehold.primary_email || linkedHousehold.id}</div>
-                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-disabled)', marginTop: '4px', lineHeight: 1.5, maxWidth: '440px' }}>
+                <div className="u-fs-fs-base u-fw-500" style={{ color: 'var(--text)' }}>{linkedHousehold.household_name}</div>
+                <div className="u-fs-fs-xs u-ff-font-body" style={{ color: 'var(--text-muted)' }}>{linkedHousehold.primary_email || linkedHousehold.id}</div>
+                <div className="u-fs-fs-xs u-mt-4px u-lh-1_5" style={{ color: 'var(--text-muted)', maxWidth: '440px' }}>
                   When this user signs in as a parent, the portal shows this household&apos;s swimmers, invoices, documents, and meet commitments.
                 </div>
               </div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <button
-                className="btn"
-                style={{ fontSize: 'var(--fs-sm)', padding: '6px 12px', color: 'var(--error)', borderColor: 'var(--error-border)' }}
+            <div className="u-gap-12px" style={{ display: 'flex', alignItems: 'center' }}>
+              <button type="button"
+                className="btn u-fs-fs-sm u-p-6px-12px"
+                style={{ color: 'var(--error)', borderColor: 'var(--error-border)' }}
                 onClick={() => { void handleUnlinkHousehold() }}
                 disabled={householdLinkLoading}
               >
                 {householdLinkLoading ? 'Unlinking…' : 'Unlink'}
               </button>
-              <Link href={`/members/households/${linkedHousehold.id}`} style={{ fontSize: 'var(--fs-sm)', color: 'var(--accent)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <Link href={`/members/households/${linkedHousehold.id}`} className="u-fs-fs-sm u-gap-4px" style={{ color: 'var(--accent-text, var(--accent))', textDecoration: 'none', display: 'flex', alignItems: 'center' }}>
                 View <Icon name="chevron-right" size={12} />
               </Link>
             </div>
           </div>
         ) : (
-          <div style={{ padding: '12px', background: 'var(--bg-elevated)', borderRadius: 'var(--r-md)', border: '1px solid var(--border)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+          <div className="u-p-12px" style={{ background: 'var(--bg-elevated)', borderRadius: 'var(--r-md)', border: '1px solid var(--border)' }}>
+            <div className="u-gap-12px u-mb-12px" style={{ display: 'flex', alignItems: 'center' }}>
               <Icon name="home" size={16} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
               <div>
-                <div style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)' }}>No household linked</div>
-                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-disabled)', marginTop: '2px' }}>
+                <div className="u-fs-fs-base" style={{ color: 'var(--text-muted)' }}>No household linked</div>
+                <div className="u-fs-fs-xs u-mt-2px" style={{ color: 'var(--text-muted)' }}>
                   Link a household to give this parent portal access to that family&apos;s swimmers.
                 </div>
               </div>
             </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
+            <div className="u-gap-8px" style={{ display: 'flex' }}>
               <select
                 aria-label="Household to link"
                 value={householdIdInput}
@@ -646,9 +609,9 @@ export default function UserDetailPage() {
                     </option>
                   ))}
               </select>
-              <button
-                className="btn btn-primary"
-                style={{ fontSize: 'var(--fs-sm)', padding: '8px 16px', whiteSpace: 'nowrap' }}
+              <button type="button"
+                className="btn btn-primary u-fs-fs-sm u-p-8px-16px"
+                style={{ whiteSpace: 'nowrap' }}
                 onClick={() => { void handleLinkHousehold() }}
                 disabled={!householdIdInput || householdLinkLoading}
               >
@@ -662,50 +625,50 @@ export default function UserDetailPage() {
       {/* Linked Swimmer */}
       <Section title="Linked swimmer">
         {swimmerLinkError && (
-          <div style={{ background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', borderRadius: '8px', padding: '8px 12px', marginBottom: '12px', fontSize: 'var(--fs-sm)' }}>
+          <div className="u-p-8px-12px u-mb-12px u-fs-fs-sm" style={{ background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', borderRadius: '8px' }}>
             {swimmerLinkError}
           </div>
         )}
         {linkedSwimmer ? (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '12px 16px', background: 'var(--bg-elevated)', borderRadius: 'var(--r-md)', border: '1px solid var(--border)' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-              <Icon name="user" size={16} style={{ color: 'var(--accent)', flexShrink: 0, marginTop: '1px' }} />
+          <div className="u-gap-12px u-p-12px-16px" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg-elevated)', borderRadius: 'var(--r-md)', border: '1px solid var(--border)' }}>
+            <div className="u-gap-12px" style={{ display: 'flex', alignItems: 'flex-start' }}>
+              <Icon name="user" size={16} style={{ color: 'var(--accent-text, var(--accent))', flexShrink: 0, marginTop: '1px' }} />
               <div>
-                <div style={{ fontSize: 'var(--fs-base)', fontWeight: 500, color: 'var(--text)' }}>
+                <div className="u-fs-fs-base u-fw-500" style={{ color: 'var(--text)' }}>
                   {linkedSwimmer.first_name} {linkedSwimmer.last_name}
                 </div>
-                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>{linkedSwimmer.id}</div>
-                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-disabled)', marginTop: '4px', lineHeight: 1.5, maxWidth: '440px' }}>
+                <div className="u-fs-fs-xs u-ff-font-body" style={{ color: 'var(--text-muted)' }}>{linkedSwimmer.id}</div>
+                <div className="u-fs-fs-xs u-mt-4px u-lh-1_5" style={{ color: 'var(--text-muted)', maxWidth: '440px' }}>
                   When this user logs in with the swimmer role, their portal session resolves to this exact swimmer record — never a guess from the household roster.
                 </div>
               </div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <button
-                className="btn"
-                style={{ fontSize: 'var(--fs-sm)', padding: '6px 12px', color: 'var(--error)', borderColor: 'var(--error-border)' }}
+            <div className="u-gap-12px" style={{ display: 'flex', alignItems: 'center' }}>
+              <button type="button"
+                className="btn u-fs-fs-sm u-p-6px-12px"
+                style={{ color: 'var(--error)', borderColor: 'var(--error-border)' }}
                 onClick={() => { void handleUnlinkSwimmer() }}
                 disabled={swimmerLinkLoading}
               >
                 {swimmerLinkLoading ? 'Unlinking…' : 'Unlink'}
               </button>
-              <Link href={`/members/swimmers/${linkedSwimmer.id}`} style={{ fontSize: 'var(--fs-sm)', color: 'var(--accent)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <Link href={`/members/swimmers/${linkedSwimmer.id}`} className="u-fs-fs-sm u-gap-4px" style={{ color: 'var(--accent-text, var(--accent))', textDecoration: 'none', display: 'flex', alignItems: 'center' }}>
                 View <Icon name="chevron-right" size={12} />
               </Link>
             </div>
           </div>
         ) : (
-          <div style={{ padding: '12px', background: 'var(--bg-elevated)', borderRadius: 'var(--r-md)', border: '1px solid var(--border)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+          <div className="u-p-12px" style={{ background: 'var(--bg-elevated)', borderRadius: 'var(--r-md)', border: '1px solid var(--border)' }}>
+            <div className="u-gap-12px u-mb-12px" style={{ display: 'flex', alignItems: 'center' }}>
               <Icon name="user" size={16} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
               <div>
-                <div style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)' }}>No swimmer linked</div>
-                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-disabled)', marginTop: '2px' }}>
+                <div className="u-fs-fs-base" style={{ color: 'var(--text-muted)' }}>No swimmer linked</div>
+                <div className="u-fs-fs-xs u-mt-2px" style={{ color: 'var(--text-muted)' }}>
                   Required for this user&apos;s swim portal session to know which swimmer is &quot;them&quot; when the household has more than one.
                 </div>
               </div>
             </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
+            <div className="u-gap-8px" style={{ display: 'flex' }}>
               <select
                 aria-label="Swimmer to link"
                 value={swimmerIdInput}
@@ -721,9 +684,9 @@ export default function UserDetailPage() {
                     </option>
                   ))}
               </select>
-              <button
-                className="btn btn-primary"
-                style={{ fontSize: 'var(--fs-sm)', padding: '8px 16px', whiteSpace: 'nowrap' }}
+              <button type="button"
+                className="btn btn-primary u-fs-fs-sm u-p-8px-16px"
+                style={{ whiteSpace: 'nowrap' }}
                 onClick={() => { void handleLinkSwimmer() }}
                 disabled={!swimmerIdInput.trim() || swimmerLinkLoading}
               >
@@ -736,10 +699,10 @@ export default function UserDetailPage() {
 
       {/* Actions */}
       <Section title="Account access">
-        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-          <button
-            className="btn"
-            style={{ fontSize: 'var(--fs-sm)', padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '6px' }}
+        <div className="u-gap-12px" style={{ display: 'flex', flexWrap: 'wrap' }}>
+          <button type="button"
+            className="btn u-fs-fs-sm u-p-8px-16px u-gap-6px"
+            style={{ display: 'flex', alignItems: 'center' }}
             onClick={() => { void handlePasswordReset() }}
             disabled={actionLoading}
           >
@@ -748,9 +711,9 @@ export default function UserDetailPage() {
           </button>
 
           {user.enabled ? (
-            <button
-              className="btn"
-              style={{ fontSize: 'var(--fs-sm)', padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--warning)', borderColor: 'var(--warning-border)' }}
+            <button type="button"
+              className="btn u-fs-fs-sm u-p-8px-16px u-gap-6px"
+              style={{ display: 'flex', alignItems: 'center', color: 'var(--warning)', borderColor: 'var(--warning-border)' }}
               onClick={() => setShowDisableConfirm(true)}
               disabled={actionLoading}
             >
@@ -758,9 +721,9 @@ export default function UserDetailPage() {
               Disable Account
             </button>
           ) : (
-            <button
-              className="btn"
-              style={{ fontSize: 'var(--fs-sm)', padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--success)', borderColor: 'var(--success-border)' }}
+            <button type="button"
+              className="btn u-fs-fs-sm u-p-8px-16px u-gap-6px"
+              style={{ display: 'flex', alignItems: 'center', color: 'var(--success)', borderColor: 'var(--success-border)' }}
               onClick={() => setShowEnableConfirm(true)}
               disabled={actionLoading}
             >
@@ -770,9 +733,9 @@ export default function UserDetailPage() {
           )}
 
           {isAdmin && (
-            <button
-              className="btn"
-              style={{ fontSize: 'var(--fs-sm)', padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--error)', borderColor: 'var(--error-border)', marginLeft: 'auto' }}
+            <button type="button"
+              className="btn u-fs-fs-sm u-p-8px-16px u-gap-6px u-ml-auto"
+              style={{ display: 'flex', alignItems: 'center', color: 'var(--error)', borderColor: 'var(--error-border)' }}
               onClick={() => { setShowDeleteConfirm(true); setDeleteEmailConfirm('') }}
               disabled={actionLoading}
             >
@@ -786,17 +749,11 @@ export default function UserDetailPage() {
       {/* Audit Trail */}
       <Section title="Audit trail">
         {auditEvents.length === 0 ? (
-          <div style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)', padding: '8px 0' }}>No audit events recorded for this user.</div>
+          <div className="u-fs-fs-base u-p-8px-0" style={{ color: 'var(--text-muted)' }}>No audit events recorded for this user.</div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
+          <div className="u-gap-0" style={{ display: 'flex', flexDirection: 'column' }}>
             {auditEvents.slice(0, 20).map((event, i) => (
-              <div key={event.id} style={{
-                display: 'flex',
-                alignItems: 'flex-start',
-                gap: '12px',
-                padding: '12px 0',
-                borderBottom: i < Math.min(auditEvents.length, 20) - 1 ? '1px solid var(--border)' : 'none',
-              }}>
+              <div key={event.id} className="u-gap-12px u-p-12px-0" style={{ display: 'flex', alignItems: 'flex-start', borderBottom: i < Math.min(auditEvents.length, 20) - 1 ? '1px solid var(--border)' : 'none' }}>
                 <div style={{
                   width: '28px', height: '28px', borderRadius: '50%',
                   background: 'var(--bg-elevated)',
@@ -807,8 +764,8 @@ export default function UserDetailPage() {
                   <Icon name="shield" size={12} style={{ color: 'var(--text-muted)' }} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text)', fontFamily: 'var(--font-body)' }}>{event.action}</div>
-                  <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  <div className="u-fs-fs-sm u-ff-font-body" style={{ color: 'var(--text)' }}>{event.action}</div>
+                  <div className="u-fs-fs-xs u-mt-2px" style={{ color: 'var(--text-muted)' }}>
                     by <span style={{ color: 'var(--text-subtle)' }}>{event.actor_user_id.slice(0, 8)}…</span>
                     {' · '}
                     {new Date(event.occurred_at).toLocaleString('en-US', {
@@ -848,45 +805,32 @@ export default function UserDetailPage() {
       )}
 
       {/* Delete Confirmation */}
-      {showDeleteConfirm && (
-        <div
-          style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.7)' }}
-          onClick={(e) => { if (e.target === e.currentTarget) setShowDeleteConfirm(false) }}
-        >
-          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--error-border)', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '460px', boxShadow: 'var(--shadow-lg)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
-              <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'var(--error-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <Icon name="trash-2" size={16} style={{ color: 'var(--error)' }} />
-              </div>
-              <h2 className="section-title" style={{ margin: 0 }}>Permanently delete user</h2>
-            </div>
-            <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', marginBottom: '8px', lineHeight: 1.5 }}>
+      <Modal open={Boolean(showDeleteConfirm)} onClose={() => setShowDeleteConfirm(false)} title="Permanently delete user" width={460}>
+<p className="u-fs-fs-base u-mb-8px u-lh-1_5" style={{ color: 'var(--text-subtle)' }}>
               This will permanently delete <strong style={{ color: 'var(--text)' }}>{user.email}</strong> from the identity provider and anonymize all associated DARE records. This action <strong style={{ color: 'var(--error)' }}>cannot be undone</strong>.
             </p>
-            <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginBottom: '16px' }}>
+<p className="u-fs-fs-sm u-mb-16px" style={{ color: 'var(--text-muted)' }}>
               Type the user&apos;s email address to confirm:
             </p>
-            <input
+<input
               type="text"
-              style={{ ...INPUT_STYLE, borderColor: deleteEmailConfirm === user.email ? 'var(--error)' : 'var(--border)', marginBottom: '16px' }}
+              style={{ ...INPUT_STYLE, marginBottom: '16px' }}
               placeholder={user.email}
               value={deleteEmailConfirm}
               onChange={(e) => setDeleteEmailConfirm(e.target.value)}
             />
-            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-              <button className="btn" style={{ fontSize: 'var(--fs-base)' }} onClick={() => setShowDeleteConfirm(false)}>Cancel</button>
-              <button
-                className="btn"
-                style={{ fontSize: 'var(--fs-base)', background: 'var(--error)', color: '#fff', border: 'none' }}
+<div className="u-gap-8px" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button type="button" className="btn u-fs-fs-base" onClick={() => setShowDeleteConfirm(false)}>Cancel</button>
+              <button type="button"
+                className="btn u-fs-fs-base"
+                style={{ background: 'var(--error)', color: '#fff', border: 'none' }}
                 disabled={deleteEmailConfirm !== user.email || actionLoading}
                 onClick={() => { void handleDelete() }}
               >
-                {actionLoading ? 'Deleting…' : 'Delete Permanently'}
+                {actionLoading ? 'Deleting…' : 'Delete permanently'}
               </button>
             </div>
-          </div>
-        </div>
-      )}
+</Modal>
     </div>
   )
 }
@@ -907,16 +851,11 @@ function ConfirmModal({
   onCancel: () => void
 }) {
   return (
-    <div
-      style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.65)' }}
-      onClick={(e) => { if (e.target === e.currentTarget) onCancel() }}
-    >
-      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-strong)', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '400px', boxShadow: 'var(--shadow-lg)' }}>
-        <h2 className="section-title" style={{ marginBottom: '12px' }}>{title}</h2>
-        <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', lineHeight: 1.5, marginBottom: '20px' }}>{message}</p>
-        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-          <button className="btn" style={{ fontSize: 'var(--fs-base)' }} onClick={onCancel}>Cancel</button>
-          <button
+    <Modal open={true} onClose={onCancel} title={title} width={400}>
+<p className="u-fs-fs-base u-lh-1_5 u-mb-20px" style={{ color: 'var(--text-subtle)' }}>{message}</p>
+<div className="u-gap-8px" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button type="button" className="btn u-fs-fs-base" onClick={onCancel}>Cancel</button>
+          <button type="button"
             className="btn btn-primary"
             style={danger ? { background: 'var(--error)', border: 'none', fontSize: 'var(--fs-base)' } : { fontSize: 'var(--fs-base)' }}
             onClick={onConfirm}
@@ -924,7 +863,6 @@ function ConfirmModal({
             {confirmLabel}
           </button>
         </div>
-      </div>
-    </div>
+</Modal>
   )
 }

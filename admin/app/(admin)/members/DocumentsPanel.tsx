@@ -16,6 +16,7 @@ import {
 } from '@/lib/adminData'
 import { parseBackendDate } from '@/lib/dates'
 import { Icon } from '@/components/ui/icons'
+import { Modal } from '@/components/ui/Modal'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -45,14 +46,9 @@ const STATUS_COLORS: Record<string, { bg: string; text: string; dot: string }> =
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 function Pill({ value, map }: { value: string; map: Record<string, { bg: string; text: string }> }) {
-  const colors = map[value] ?? { bg: 'rgba(0,0,0,0.06)', text: '#555' }
+  const colors = map[value] ?? { bg: 'var(--border)', text: '#555' }
   return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: '4px',
-      padding: '2px 8px', borderRadius: '999px', fontSize: 'var(--fs-xs)', fontWeight: 600,
-      background: colors.bg, color: colors.text, fontFamily: 'var(--font-body)',
-      letterSpacing: '0.02em', textTransform: 'capitalize',
-    }}>
+    <span className="u-gap-4px u-p-2px-8px u-fs-fs-xs u-fw-600 u-ff-font-body u-ls-0_02em" style={{ display: 'inline-flex', alignItems: 'center', borderRadius: '999px', background: colors.bg, color: colors.text, textTransform: 'capitalize' }}>
       {value}
     </span>
   )
@@ -61,12 +57,7 @@ function Pill({ value, map }: { value: string; map: Record<string, { bg: string;
 function StatusPill({ status }: { status: string }) {
   const s = STATUS_COLORS[status] ?? STATUS_COLORS.pending
   return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: '6px',
-      padding: '4px 12px', borderRadius: '999px', fontSize: 'var(--fs-xs)', fontWeight: 600,
-      background: s.bg, color: s.text, fontFamily: 'var(--font-body)',
-      textTransform: 'capitalize',
-    }}>
+    <span className="u-gap-6px u-p-4px-12px u-fs-fs-xs u-fw-600 u-ff-font-body" style={{ display: 'inline-flex', alignItems: 'center', borderRadius: '999px', background: s.bg, color: s.text, textTransform: 'capitalize' }}>
       <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: s.dot, flexShrink: 0 }} />
       {status}
     </span>
@@ -123,95 +114,75 @@ function TypeModal({ initial, onSave, onClose }: {
   }
 
   return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 1000,
-      background: 'rgba(10,8,6,0.55)', backdropFilter: 'blur(4px)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px',
-    }}>
-      <div style={{
-        background: 'var(--bg-elevated)', borderRadius: '16px',
-        border: '1px solid var(--border)', boxShadow: '0 24px 80px rgba(0,0,0,0.28)',
-        width: '100%', maxWidth: '520px',
-        animation: 'modalIn 0.22s cubic-bezier(0.22,1,0.36,1) both',
-      }}>
-        <div style={{ padding: '24px 24px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <h2 className="section-title">
-              {initial ? `Edit ${initial.name}` : 'New document type'}
-            </h2>
-          </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 'var(--fs-xl)', lineHeight: 1 }}>✕</button>
-        </div>
-
-        <form onSubmit={handleSubmit} style={{ padding: '24px 24px 24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {err && <div style={{ padding: '12px 16px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', borderRadius: '8px', color: 'var(--error)', fontSize: 'var(--fs-sm)' }}>{err}</div>}
+    <Modal open onClose={onClose} title={initial ? `Edit ${initial.name}` : 'New document type'} width={520}>
+        <form onSubmit={handleSubmit} className="u-gap-16px" style={{ display: 'flex', flexDirection: 'column' }}>
+          {err && <div role="alert" className="form-banner-error">{err}</div>}
 
           <div>
-            <label style={{ display: 'block', fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>Name *</label>
-            <input
+            <label className="form-label form-label-required">Name</label>
+            <input aria-label="e.g. Season Liability Waiver"
               value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
               required placeholder="e.g. Season Liability Waiver"
-              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 'var(--fs-base)', boxSizing: 'border-box', outline: 'none' }}
+              className="u-p-8px-12px u-fs-fs-base" style={{ width: '100%' }}
             />
           </div>
 
-          <div className="cols-2" style={{ gap: '12px' }}>
+          <div className="cols-2 u-gap-12px" >
             <div>
-              <label style={{ display: 'block', fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>Category</label>
+              <label className="form-label">Category</label>
               <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
-                style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 'var(--fs-base)' }}>
+                className="u-p-8px-12px u-fs-fs-base" style={{ width: '100%' }}>
                 {['waiver','medical','insurance','release','registration','other'].map(c => <option key={c} value={c}>{c.charAt(0).toUpperCase()+c.slice(1)}</option>)}
               </select>
             </div>
             <div>
-              <label style={{ display: 'block', fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>Applies to</label>
+              <label className="form-label">Applies to</label>
               <select value={form.applies_to} onChange={e => setForm(f => ({ ...f, applies_to: e.target.value }))}
-                style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 'var(--fs-base)' }}>
+                className="u-p-8px-12px u-fs-fs-base" style={{ width: '100%' }}>
                 {['swimmer','household','all'].map(a => <option key={a} value={a}>{a.charAt(0).toUpperCase()+a.slice(1)}</option>)}
               </select>
             </div>
           </div>
 
           <div>
-            <label style={{ display: 'block', fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>Description</label>
-            <textarea
+            <label className="form-label">Description</label>
+            <textarea aria-label="Brief description for members"
               value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
               rows={2} placeholder="Brief description for members…"
-              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 'var(--fs-base)', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'var(--font-body)' }}
+              className="u-p-8px-12px u-fs-fs-base u-ff-font-body" style={{ width: '100%', resize: 'vertical' }}
             />
           </div>
 
-          <div className="cols-2" style={{ gap: '12px' }}>
+          <div className="cols-2 u-gap-12px" >
             <div>
-              <label style={{ display: 'block', fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>Expiry (months)</label>
-              <input
+              <label className="form-label">Expiry (months)</label>
+              <input aria-label="Never expires"
                 type="number" min="1" value={form.expiry_months}
                 onChange={e => setForm(f => ({ ...f, expiry_months: e.target.value }))}
-                placeholder="Leave blank = never"
-                style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 'var(--fs-base)', boxSizing: 'border-box' }}
+                placeholder="Never expires"
+                className="u-p-8px-12px u-fs-fs-base" style={{ width: '100%' }}
               />
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', gap: '12px' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                <input type="checkbox" checked={form.is_required} onChange={e => setForm(f => ({ ...f, is_required: e.target.checked }))} style={{ width: '15px', height: '15px', accentColor: 'var(--accent)' }} />
-                <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text)' }}>Required</span>
+            <div className="u-gap-12px" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+              <label className="u-gap-8px" style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                <input type="checkbox" checked={form.is_required} onChange={e => setForm(f => ({ ...f, is_required: e.target.checked }))} />
+                <span className="u-fs-fs-base" style={{ color: 'var(--text)' }}>Required</span>
               </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                <input type="checkbox" checked={form.is_active} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} style={{ width: '15px', height: '15px', accentColor: 'var(--accent)' }} />
-                <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text)' }}>Active</span>
+              <label className="u-gap-8px" style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                <input type="checkbox" checked={form.is_active} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} />
+                <span className="u-fs-fs-base" style={{ color: 'var(--text)' }}>Active</span>
               </label>
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '4px' }}>
-            <button type="button" onClick={onClose} style={{ padding: '8px 20px', borderRadius: '8px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-subtle)', fontSize: 'var(--fs-base)', cursor: 'pointer' }}>Cancel</button>
+          <div className="form-actions">
+            <button type="button" onClick={onClose} className="btn">Cancel</button>
             <button type="submit" disabled={saving} className="btn btn-primary">
-              {saving ? 'Saving…' : (initial ? 'Save Changes' : 'Create Type')}
+              {saving ? 'Saving…' : (initial ? 'Save changes' : 'Create type')}
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -240,33 +211,20 @@ function ReviewDialog({ action, onConfirm, onClose }: {
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(10,8,6,0.55)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
-      <div style={{ background: 'var(--bg-elevated)', borderRadius: '12px', border: '1px solid var(--border)', boxShadow: '0 20px 60px rgba(0,0,0,0.24)', width: '100%', maxWidth: '400px', padding: '24px', animation: 'modalIn 0.2s ease both' }}>
-        <h3 className="section-title" style={{ marginBottom: '12px' }}>
-          {action === 'verify' ? '✓ Verify Document' : '✗ Reject Document'}
-        </h3>
-        {error && (
-          <p style={{ color: 'var(--error, #dc2626)', fontSize: 'var(--fs-sm)', marginBottom: '12px', padding: '8px 12px', background: 'var(--error-bg, rgba(220,38,38,0.07))', borderRadius: '6px', border: '1px solid var(--error-border, rgba(220,38,38,0.2))' }}>
-            {error}
-          </p>
-        )}
-        <textarea
+    <Modal open onClose={onClose} title={action === 'verify' ? 'Verify document' : 'Reject document'} width={420}>
+        {error && <div role="alert" className="form-banner-error u-mb-12px">{error}</div>}
+        <textarea aria-label="Optional review notes for the household"
           value={notes} onChange={e => setNotes(e.target.value)}
           rows={3} placeholder="Optional review notes for the household…"
-          style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 'var(--fs-base)', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'var(--font-body)', marginBottom: '16px' }}
+          className="u-p-8px-12px u-fs-fs-base u-ff-font-body u-mb-16px" style={{ width: '100%', resize: 'vertical' }}
         />
-        <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-          <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-subtle)', fontSize: 'var(--fs-base)', cursor: 'pointer' }}>Cancel</button>
-          <button onClick={() => void handle()} disabled={loading} style={{
-            padding: '8px 20px', borderRadius: '8px', border: 'none',
-            background: action === 'verify' ? '#059669' : '#dc2626',
-            color: '#fff', fontSize: 'var(--fs-base)', fontWeight: 600, cursor: loading ? 'wait' : 'pointer',
-          }}>
+        <div className="form-actions">
+          <button type="button" onClick={onClose} className="btn">Cancel</button>
+          <button type="button" onClick={() => void handle()} disabled={loading} className="u-p-8px-20px u-fs-fs-base u-fw-600" style={{ borderRadius: '8px', border: 'none', background: action === 'verify' ? '#059669' : '#dc2626', color: '#fff', cursor: loading ? 'wait' : 'pointer' }}>
             {loading ? '…' : (action === 'verify' ? 'Verify' : 'Reject')}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -372,22 +330,22 @@ export function DocumentsPanel() {
       `}</style>
 
       {pendingCount > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '12px', background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.25)', marginBottom: '20px', width: 'fit-content', animation: 'fadeUp 0.3s ease both' }}>
+        <div className="u-gap-8px u-p-8px-16px u-mb-20px" style={{ display: 'flex', alignItems: 'center', borderRadius: '12px', background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.25)', width: 'fit-content', animation: 'fadeUp 0.3s ease both' }}>
           <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#f59e0b', flexShrink: 0 }} />
-          <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: '#92400e' }}>
+          <span className="u-fs-fs-sm u-fw-600" style={{ color: '#92400e' }}>
             {pendingCount} submission{pendingCount !== 1 ? 's' : ''} need review
           </span>
         </div>
       )}
 
       {error && (
-        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: 'var(--fs-sm)' }}>
+        <div className="u-mb-20px u-p-12px-16px u-fs-fs-sm" style={{ borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)' }}>
           {error}
         </div>
       )}
 
       {/* Tabs */}
-      <div className="seg" role="tablist" style={{ marginBottom: '24px', animation: 'fadeUp 0.35s ease both' }}>
+      <div className="seg u-mb-24px" role="tablist" style={{ animation: 'fadeUp 0.35s ease both' }}>
         {([['types', 'Document Types'], ['submissions', 'Submissions']] as const).map(([key, label]) => (
           <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)} className="seg-item">
             {label}
@@ -399,7 +357,7 @@ export function DocumentsPanel() {
       </div>
 
       {loading ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', animation: 'fadeUp 0.4s ease both' }}>
+        <div className="u-gap-8px" style={{ display: 'flex', flexDirection: 'column', animation: 'fadeUp 0.4s ease both' }}>
           {[1, 2, 3, 4].map(i => (
             <div key={i} style={{ height: '52px', borderRadius: '12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', opacity: 1 - i * 0.15 }} />
           ))}
@@ -407,27 +365,27 @@ export function DocumentsPanel() {
       ) : tab === 'types' ? (
         /* ── Document Types Tab ─────────────────────────────────────────────── */
         <div style={{ animation: 'fadeUp 0.35s ease both' }}>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
-            <button
+          <div className="u-mb-16px" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <button type="button"
               onClick={() => setEditingType('new')}
               className="btn btn-primary"
             >
-              <Icon name="plus" size={14} /> New Document Type
+              <Icon name="plus" size={14} /> New document type
             </button>
           </div>
 
           {docTypes.length === 0 ? (
-            <div className="card" style={{ padding: '40px', textAlign: 'center' }}>
-              <p style={{ fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--fs-xl)', color: 'var(--text-subtle)', marginBottom: '8px' }}>No document types defined yet</p>
+            <div className="card u-p-40px" style={{ textAlign: 'center' }}>
+              <p className="u-ff-font-display u-fw-display-weight u-fs-fs-xl u-mb-8px" style={{ color: 'var(--text-subtle)' }}>No document types defined yet</p>
             </div>
           ) : (
             <div className="card" style={{ overflow: 'hidden' }}>
-              <div style={{ overflowX: 'auto' }}>
+              <div className="table-scroll" style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
                       {['Name', 'Category', 'Applies To', 'Expiry', 'Required', 'Status', ''].map(h => (
-                        <th key={h} className="col-head" style={{ padding: '12px 16px', textAlign: 'left', whiteSpace: 'nowrap' }}>{h}</th>
+                        <th key={h} className="col-head u-p-12px-16px" style={{ textAlign: 'left', whiteSpace: 'nowrap' }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -436,21 +394,21 @@ export function DocumentsPanel() {
                       <tr key={dt.id} style={{ borderBottom: i < docTypes.length - 1 ? '1px solid var(--border)' : 'none', transition: 'background 120ms' }}
                         onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-elevated)')}
                         onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                        <td style={{ padding: '12px 16px' }}>
-                          <div style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--text)' }}>{dt.name}</div>
-                          {dt.description && <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: '2px' }}>{dt.description}</div>}
+                        <td className="u-p-12px-16px" >
+                          <div className="u-fs-fs-md u-fw-600" style={{ color: 'var(--text)' }}>{dt.name}</div>
+                          {dt.description && <div className="u-fs-fs-xs u-mt-2px" style={{ color: 'var(--text-muted)' }}>{dt.description}</div>}
                         </td>
-                        <td style={{ padding: '12px 16px' }}><Pill value={dt.category} map={CATEGORY_COLORS} /></td>
-                        <td style={{ padding: '12px 16px', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)' }}>{dt.applies_to}</td>
-                        <td style={{ padding: '12px 16px', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)' }}>
+                        <td className="u-p-12px-16px" ><Pill value={dt.category} map={CATEGORY_COLORS} /></td>
+                        <td className="u-p-12px-16px u-fs-fs-sm u-ff-font-body" style={{ color: 'var(--text-subtle)' }}>{dt.applies_to}</td>
+                        <td className="u-p-12px-16px u-fs-fs-sm u-ff-font-body" style={{ color: 'var(--text-subtle)' }}>
                           {dt.expiry_months ? `${dt.expiry_months}mo` : 'Never'}
                         </td>
-                        <td style={{ padding: '12px 16px' }}>
-                          <span style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', color: dt.is_required ? '#059669' : 'var(--text-muted)' }}>
+                        <td className="u-p-12px-16px" >
+                          <span className="u-fs-fs-xs u-ff-font-body" style={{ color: dt.is_required ? '#059669' : 'var(--text-muted)' }}>
                             {dt.is_required ? 'yes' : 'no'}
                           </span>
                         </td>
-                        <td style={{ padding: '12px 16px' }}>
+                        <td className="u-p-12px-16px" >
                           <span className="badge" style={{
                             background: dt.is_active ? 'var(--success-bg)' : 'var(--bg-elevated)',
                             color: dt.is_active ? 'var(--success)' : 'var(--text-muted)',
@@ -458,14 +416,14 @@ export function DocumentsPanel() {
                             {dt.is_active ? 'active' : 'inactive'}
                           </span>
                         </td>
-                        <td style={{ padding: '12px 16px', textAlign: 'right' }}>
-                          <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                            <button onClick={() => setEditingType(dt)} style={{ padding: '4px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-subtle)', fontSize: 'var(--fs-sm)', cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
+                        <td className="u-p-12px-16px" style={{ textAlign: 'right' }}>
+                          <div className="u-gap-6px" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                            <button type="button" onClick={() => setEditingType(dt)} className="u-p-4px-12px u-fs-fs-sm u-ff-font-body" style={{ borderRadius: '8px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-subtle)', cursor: 'pointer' }}>
                               Edit
                             </button>
-                            <button
+                            <button type="button"
                               onClick={() => setDeletingTypeId(dt.id)}
-                              style={{ padding: '4px 12px', borderRadius: '8px', border: '1px solid rgba(239,68,68,0.3)', background: 'transparent', color: '#dc2626', fontSize: 'var(--fs-sm)', cursor: 'pointer', fontFamily: 'var(--font-body)' }}
+                              className="u-p-4px-12px u-fs-fs-sm u-ff-font-body" style={{ borderRadius: '8px', border: '1px solid rgba(239,68,68,0.3)', background: 'transparent', color: '#dc2626', cursor: 'pointer' }}
                             >
                               Delete
                             </button>
@@ -483,36 +441,29 @@ export function DocumentsPanel() {
         /* ── Submissions Tab ────────────────────────────────────────────────── */
         <div style={{ animation: 'fadeUp 0.35s ease both' }}>
           {/* Status filter */}
-          <div style={{ display: 'flex', gap: '6px', marginBottom: '16px', flexWrap: 'wrap' }}>
+          <div className="u-gap-6px u-mb-16px" style={{ display: 'flex', flexWrap: 'wrap' }}>
             {STATUS_FILTERS.map(sf => (
-              <button key={sf} onClick={() => setStatusFilter(sf)} style={{
-                padding: '4px 16px', borderRadius: '999px', border: `1px solid ${statusFilter === sf ? 'var(--accent)' : 'var(--border)'}`,
-                background: statusFilter === sf ? 'var(--accent)' : 'transparent',
-                color: statusFilter === sf ? '#fff' : 'var(--text-subtle)',
-                fontSize: 'var(--fs-sm)', fontWeight: statusFilter === sf ? 600 : 400,
-                cursor: 'pointer', fontFamily: 'var(--font-body)', transition: 'all 120ms ease',
-                textTransform: 'capitalize',
-              }}>
+              <button type="button" key={sf} onClick={() => setStatusFilter(sf)} className="u-fs-fs-sm u-ff-font-body" style={{ padding: '4px 16px', borderRadius: '999px', border: `1px solid ${statusFilter === sf ? 'var(--accent)' : 'var(--border)'}`, background: statusFilter === sf ? 'var(--accent)' : 'transparent', color: statusFilter === sf ? '#fff' : 'var(--text-subtle)', fontWeight: statusFilter === sf ? 600 : 400, cursor: 'pointer', transition: 'all 120ms ease', textTransform: 'capitalize' }}>
                 {sf === 'all' ? `All (${submissions.length})` : sf}
               </button>
             ))}
           </div>
 
           {filteredSubs.length === 0 ? (
-            <div className="card" style={{ padding: '40px', textAlign: 'center' }}>
-              <p style={{ fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--fs-xl)', color: 'var(--text-subtle)', marginBottom: '8px' }}>No submissions</p>
+            <div className="card u-p-40px" style={{ textAlign: 'center' }}>
+              <p className="u-ff-font-display u-fw-display-weight u-fs-fs-xl u-mb-8px" style={{ color: 'var(--text-subtle)' }}>No submissions</p>
               <p className="page-subtitle">
                 {statusFilter === 'all' ? 'Households have not submitted any documents yet.' : `No ${statusFilter} submissions found.`}
               </p>
             </div>
           ) : (
             <div className="card" style={{ overflow: 'hidden' }}>
-              <div style={{ overflowX: 'auto' }}>
+              <div className="table-scroll" style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
                       {['Document Type', 'Household', 'Swimmer', 'Status', 'Submitted', 'Expires', 'Actions'].map(h => (
-                        <th key={h} className="col-head" style={{ padding: '12px 16px', textAlign: 'left', whiteSpace: 'nowrap' }}>{h}</th>
+                        <th key={h} className="col-head u-p-12px-16px" style={{ textAlign: 'left', whiteSpace: 'nowrap' }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -524,44 +475,44 @@ export function DocumentsPanel() {
                         <tr key={sub.id} style={{ borderBottom: i < filteredSubs.length - 1 ? '1px solid var(--border)' : 'none', transition: 'background 120ms' }}
                           onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-elevated)')}
                           onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                          <td style={{ padding: '12px 16px' }}>
-                            <div style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)' }}>{typeName}</div>
-                            {sub.file_name && <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: '2px', fontFamily: 'var(--font-body)' }}>{sub.file_name}</div>}
+                          <td className="u-p-12px-16px" >
+                            <div className="u-fs-fs-base u-fw-600" style={{ color: 'var(--text)' }}>{typeName}</div>
+                            {sub.file_name && <div className="u-fs-fs-xs u-mt-2px u-ff-font-body" style={{ color: 'var(--text-muted)' }}>{sub.file_name}</div>}
                           </td>
-                          <td style={{ padding: '12px 16px', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)' }}>
+                          <td className="u-p-12px-16px u-fs-fs-sm u-ff-font-body" style={{ color: 'var(--text-subtle)' }}>
                             {sub.household_id.slice(0, 8)}…
                           </td>
-                          <td style={{ padding: '12px 16px', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)' }}>
+                          <td className="u-p-12px-16px u-fs-fs-sm u-ff-font-body" style={{ color: 'var(--text-subtle)' }}>
                             {sub.swimmer_id ? sub.swimmer_id.slice(0, 8) + '…' : '—'}
                           </td>
-                          <td style={{ padding: '12px 16px' }}><StatusPill status={sub.status} /></td>
-                          <td style={{ padding: '12px 16px', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{fmt(sub.submitted_at)}</td>
-                          <td style={{ padding: '12px 16px', fontSize: 'var(--fs-sm)', color: sub.expires_at && new Date(sub.expires_at) < new Date() ? '#dc2626' : 'var(--text-subtle)' }}>
+                          <td className="u-p-12px-16px" ><StatusPill status={sub.status} /></td>
+                          <td className="u-p-12px-16px u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{fmt(sub.submitted_at)}</td>
+                          <td className="u-p-12px-16px u-fs-fs-sm" style={{ color: sub.expires_at && new Date(sub.expires_at) < new Date() ? '#dc2626' : 'var(--text-subtle)' }}>
                             {fmt(sub.expires_at)}
                           </td>
-                          <td style={{ padding: '12px 16px' }}>
+                          <td className="u-p-12px-16px" >
                             {canReview ? (
-                              <div style={{ display: 'flex', gap: '6px' }}>
-                                <button
+                              <div className="u-gap-6px" style={{ display: 'flex' }}>
+                                <button type="button"
                                   onClick={() => setReviewing({ id: sub.id, action: 'verify' })}
-                                  style={{ padding: '4px 12px', borderRadius: '6px', border: '1px solid rgba(16,185,129,0.4)', background: 'rgba(16,185,129,0.06)', color: '#059669', fontSize: 'var(--fs-xs)', fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)' }}
+                                  className="u-p-4px-12px u-fs-fs-xs u-fw-600 u-ff-font-body" style={{ borderRadius: '6px', border: '1px solid rgba(16,185,129,0.4)', background: 'rgba(16,185,129,0.06)', color: '#059669', cursor: 'pointer' }}
                                 >
                                   ✓ Verify
                                 </button>
-                                <button
+                                <button type="button"
                                   onClick={() => setReviewing({ id: sub.id, action: 'reject' })}
-                                  style={{ padding: '4px 12px', borderRadius: '6px', border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.05)', color: '#dc2626', fontSize: 'var(--fs-xs)', fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)' }}
+                                  className="u-p-4px-12px u-fs-fs-xs u-fw-600 u-ff-font-body" style={{ borderRadius: '6px', border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.05)', color: '#dc2626', cursor: 'pointer' }}
                                 >
                                   ✗ Reject
                                 </button>
                               </div>
                             ) : (
                               sub.review_notes ? (
-                                <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontStyle: 'italic' }} title={sub.review_notes}>
+                                <span className="u-fs-fs-xs" style={{ color: 'var(--text-muted)', fontStyle: 'italic' }} title={sub.review_notes}>
                                   {sub.review_notes.slice(0, 30)}{sub.review_notes.length > 30 ? '…' : ''}
                                 </span>
                               ) : (
-                                <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>—</span>
+                                <span className="u-fs-fs-xs" style={{ color: 'var(--text-muted)' }}>—</span>
                               )
                             )}
                           </td>
@@ -577,18 +528,13 @@ export function DocumentsPanel() {
       )}
 
       {/* Delete confirm */}
-      {deletingTypeId && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(10,8,6,0.55)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
-          <div style={{ background: 'var(--bg-elevated)', borderRadius: '12px', border: '1px solid var(--border)', boxShadow: '0 20px 60px rgba(0,0,0,0.24)', padding: '24px', maxWidth: '380px', width: '100%', animation: 'modalIn 0.2s ease both' }}>
-            <h3 className="section-title" style={{ marginBottom: '12px' }}>Delete document type?</h3>
-            <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', marginBottom: '24px' }}>This will soft-delete the type. Existing submissions will be unaffected.</p>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-              <button onClick={() => setDeletingTypeId(null)} style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-subtle)', fontSize: 'var(--fs-base)', cursor: 'pointer' }}>Cancel</button>
-              <button onClick={() => void handleDeleteType(deletingTypeId)} style={{ padding: '8px 20px', borderRadius: '8px', border: 'none', background: '#dc2626', color: '#fff', fontSize: 'var(--fs-base)', fontWeight: 600, cursor: 'pointer' }}>Delete</button>
-            </div>
-          </div>
+      <Modal open={Boolean(deletingTypeId)} onClose={() => setDeletingTypeId(null)} title="Delete document type?" width={400}>
+        <p className="u-fs-fs-base u-mb-20px u-lh-1_5" style={{ color: 'var(--text-subtle)' }}>This soft-deletes the type. Existing submissions are unaffected.</p>
+        <div className="form-actions">
+          <button type="button" onClick={() => setDeletingTypeId(null)} className="btn">Cancel</button>
+          <button type="button" onClick={() => { if (deletingTypeId) void handleDeleteType(deletingTypeId) }} className="btn" style={{ background: 'var(--error)', color: '#fff', border: 'none' }}>Delete type</button>
         </div>
-      )}
+      </Modal>
 
       {/* Type create/edit modal */}
       {editingType !== undefined && (

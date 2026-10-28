@@ -1,11 +1,13 @@
 'use client'
 
+import { AuthBackdrop } from '@/components/auth/AuthBackdrop'
 import { Suspense, useEffect, useState, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useSession, DEV_SESSIONS } from '@/lib/session'
 import { destinationForRole } from '@/lib/auth-routing'
 import { DEV_STUB_TOKENS_ENABLED } from '@/lib/featureFlags'
 import { resolvePublicOrg } from '@/lib/public-org'
+import './page.inline.css'
 
 const STUB_ROLES = [
   { id: 'stub-admin', label: 'Admin', color: '#60a5fa', rgb: '96,165,250', desc: 'Full administrative access' },
@@ -73,8 +75,8 @@ function LoginPageContent() {
       }}>
         <div style={{
           width: 8, height: 8, borderRadius: '50%',
-          background: '#eb5d1e',
-          boxShadow: '0 0 16px rgba(235,93,30,0.6)',
+          background: 'var(--accent)',
+          
           animation: 'lpDot 1.4s ease-in-out infinite',
         }} />
         <style>{`@keyframes lpDot{0%,100%{opacity:.35;transform:scale(.85)}50%{opacity:1;transform:scale(1.2)}}`}</style>
@@ -87,14 +89,14 @@ function LoginPageContent() {
   return (
     <>
       <div className="sl-root">
-        <div className="sl-bg-grain" />
+        <AuthBackdrop />
 
         <div className="sl-card">
           {/* Logo mark */}
           <div className="sl-logo">
             <svg width="32" height="32" viewBox="0 0 34 34" fill="none" aria-hidden="true">
               <rect width="34" height="34" rx="8" fill="rgba(235,93,30,0.14)" />
-              <path d="M9 25V9h7c4.4 0 8 3.58 8 8s-3.6 8-8 8H9z" fill="#eb5d1e" />
+              <path d="M9 25V9h7c4.4 0 8 3.58 8 8s-3.6 8-8 8H9z" fill="var(--accent)" />
               <path d="M13 21v-8h3c2.2 0 4 1.79 4 4s-1.8 4-4 4h-3z" fill="#06101A" />
             </svg>
             <span className="sl-logo-text">aquify</span>
@@ -108,16 +110,7 @@ function LoginPageContent() {
           {/* Form */}
           <div className="sl-fields">
             {orgError && (
-              <div style={{
-                padding: '12px 12px',
-                borderRadius: '8px',
-                background: 'rgba(248,113,113,0.1)',
-                border: '1px solid rgba(248,113,113,0.25)',
-                color: '#fca5a5',
-                fontFamily: 'var(--font-body)',
-                fontSize: 'var(--fs-sm)',
-                lineHeight: 1.5,
-              }}>
+              <div className="is-6c79662">
                 {orgError}
               </div>
             )}
@@ -137,7 +130,7 @@ function LoginPageContent() {
               />
             </div>
 
-            <button
+            <button type="button"
               className={`sl-btn${submitting ? ' sl-btn--loading' : ''}`}
               onClick={handleSSO}
               disabled={submitting}
@@ -171,7 +164,7 @@ function LoginPageContent() {
           {/* Dev stub login */}
           {DEV_STUB_TOKENS_ENABLED && (
             <div className="sl-dev">
-              <button className="sl-dev-toggle" onClick={() => setDevOpen(v => !v)}>
+              <button type="button" className="sl-dev-toggle" onClick={() => setDevOpen(v => !v)}>
                 <span className="sl-dev-badge">DEV</span>
                 <span className="sl-dev-label">Development stub login</span>
                 <svg viewBox="0 0 16 16" fill="none" width="12" height="12" aria-hidden="true"
@@ -184,7 +177,7 @@ function LoginPageContent() {
                   <p className="sl-dev-note">Bypasses OIDC. Requires <code>AUTH_ENABLE_DEV_STUB_TOKENS=true</code>.</p>
                   <div className="sl-dev-grid">
                     {STUB_ROLES.map(r => (
-                      <button key={r.id} className="sl-dev-role" onClick={() => handleStub(r.id)} style={{ '--rc': r.rgb } as React.CSSProperties}>
+                      <button type="button" key={r.id} className="sl-dev-role" onClick={() => handleStub(r.id)} style={{ '--rc': r.rgb } as React.CSSProperties}>
                         <span className="sl-dev-dot" style={{ background: r.color }} />
                         <div className="sl-dev-info">
                           <span className="sl-dev-name">{r.label}</span>
@@ -206,24 +199,14 @@ function LoginPageContent() {
 
       <style>{`
         .sl-root {
+          isolation: isolate;
           min-height: 100vh;
           display: flex;
           align-items: center;
           justify-content: center;
-          background: #06101A;
+          background: transparent;
           padding: 24px;
           position: relative;
-        }
-
-        /* Subtle grain overlay */
-        .sl-bg-grain {
-          position: fixed;
-          inset: 0;
-          pointer-events: none;
-          background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E");
-          background-size: 200px 200px;
-          opacity: 0.4;
-          z-index: 0;
         }
 
         .sl-card {
@@ -235,10 +218,10 @@ function LoginPageContent() {
           border: 1px solid rgba(255,255,255,0.07);
           border-radius: 16px;
           padding: 36px 40px 28px;
-          box-shadow: 0 24px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(235,93,30,0.04);
+          box-shadow: 0 8px 24px var(--border-strong);
           animation: slReveal 0.45s cubic-bezier(0.16,1,0.3,1) both;
         }
-        @media (max-width: 480px) {
+        @media (max-width: 640px) {
           .sl-card { padding: 28px 24px 22px; }
         }
 
@@ -309,7 +292,7 @@ function LoginPageContent() {
           font-family: var(--font-body);
           font-size: var(--fs-md);
           padding: 12px 14px;
-          outline: none;
+          outline: 2px solid transparent;
           transition: border-color 0.18s, background 0.18s, box-shadow 0.18s;
           box-sizing: border-box;
         }
@@ -318,6 +301,7 @@ function LoginPageContent() {
           border-color: rgba(235,93,30,0.5);
           background: rgba(235,93,30,0.04);
           box-shadow: 0 0 0 3px rgba(235,93,30,0.08);
+          outline-color: var(--accent);
         }
         .sl-input:disabled { opacity: 0.45; cursor: not-allowed; }
 
@@ -329,7 +313,7 @@ function LoginPageContent() {
           gap: 8px;
           width: 100%;
           padding: 13px 20px;
-          background: #eb5d1e;
+          background: var(--accent-fill, #c9460f);
           border: none;
           border-radius: 9px;
           color: #fff;
@@ -341,9 +325,9 @@ function LoginPageContent() {
           transition: background 0.18s, transform 0.12s, box-shadow 0.18s;
         }
         .sl-btn:hover:not(:disabled) {
-          background: #d44f14;
+          background: var(--accent-fill-hover, #b53f0d);
           transform: translateY(-1px);
-          box-shadow: 0 6px 20px rgba(235,93,30,0.3);
+          
         }
         .sl-btn:active:not(:disabled) { transform: translateY(0); box-shadow: none; }
         .sl-btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -395,7 +379,10 @@ function LoginPageContent() {
         }
         .sl-access-text { color: rgba(237,233,227,0.32); }
         .sl-access-link {
-          color: #eb5d1e;
+          display: inline-flex;
+          align-items: center;
+          min-height: 44px;
+          color: var(--accent-text, #eb5d1e);
           text-decoration: none;
           font-weight: 500;
           transition: color 0.18s;
@@ -431,7 +418,7 @@ function LoginPageContent() {
           background: rgba(235,93,30,0.12);
           border: 1px solid rgba(235,93,30,0.28);
           border-radius: 4px;
-          color: #eb5d1e;
+          color: var(--accent);
           letter-spacing: 0.1em;
         }
         .sl-dev-label {

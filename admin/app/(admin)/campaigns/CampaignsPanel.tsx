@@ -27,10 +27,7 @@ function formatDateTime(value?: string) {
   })
 }
 
-const FIELD_INPUT_STYLE: React.CSSProperties = {
-  width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)',
-  background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: 'var(--fs-base)', boxSizing: 'border-box',
-}
+const FIELD_INPUT_STYLE: React.CSSProperties = { width: '100%' }
 
 export function CampaignsPanel() {
   const { session } = useSession()
@@ -137,7 +134,7 @@ export function CampaignsPanel() {
   }
 
   if (!session) {
-    return <div style={{ padding: '32px 0' }}><EmptyState icon="mail" title="Sign in required" description="Authenticate to inspect email campaigns." /></div>
+    return <div className="u-p-32px-0" ><EmptyState icon="mail" title="Sign in required" description="Authenticate to inspect email campaigns." /></div>
   }
 
   const columns = [
@@ -174,32 +171,32 @@ export function CampaignsPanel() {
   return (
     <div>
       {error ? (
-        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: 'var(--fs-sm)' }}>
+        <div className="u-mb-20px u-p-12px-16px u-fs-fs-sm" style={{ borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)' }}>
           {error}
         </div>
       ) : null}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
+      <div className="u-gap-12px u-mb-16px" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', flex: '1 1 220px', maxWidth: '320px' }}>
           <span style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}>
             <Icon name="search" size={14} />
           </span>
-          <input
+          <input aria-label="Search campaigns" className="input-search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search campaigns…"
-            style={{ ...FIELD_INPUT_STYLE, paddingLeft: '32px' }}
+            style={{ ...FIELD_INPUT_STYLE }}
           />
         </div>
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+        <div className="u-gap-8px" style={{ display: 'flex', flexWrap: 'wrap' }}>
           <span className="badge badge-default">{stats.total} campaigns</span>
           <span className="badge badge-success">{stats.sent} sent</span>
           <span className="badge badge-warning">{stats.draft} draft</span>
           <span className="badge badge-default">{stats.recipients} recipients</span>
         </div>
-        <button onClick={() => setModalOpen(true)} className="btn btn-primary" style={{ marginLeft: 'auto' }}>
+        <button onClick={() => setModalOpen(true)} className="btn btn-primary u-ml-auto" >
           <Icon name="plus" size={14} />
-          New Campaign
+          New campaign
         </button>
       </div>
 
@@ -230,12 +227,12 @@ export function CampaignsPanel() {
           </>
         }
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder="Campaign name" style={FIELD_INPUT_STYLE} />
-          <input value={form.subject} onChange={(event) => setForm((current) => ({ ...current, subject: event.target.value }))} placeholder="Subject line" style={FIELD_INPUT_STYLE} />
-          <div className="cols-2" style={{ gap: '12px' }}>
-            <input value={form.from_name} onChange={(event) => setForm((current) => ({ ...current, from_name: event.target.value }))} placeholder="From name" style={FIELD_INPUT_STYLE} />
-            <input value={form.from_email} onChange={(event) => setForm((current) => ({ ...current, from_email: event.target.value }))} placeholder="From address" type="email" style={FIELD_INPUT_STYLE} />
+        <div className="u-gap-12px" style={{ display: 'flex', flexDirection: 'column' }}>
+          <input aria-label="Campaign name" value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder="Campaign name" style={FIELD_INPUT_STYLE} />
+          <input aria-label="Subject line" value={form.subject} onChange={(event) => setForm((current) => ({ ...current, subject: event.target.value }))} placeholder="Subject line" style={FIELD_INPUT_STYLE} />
+          <div className="cols-2 u-gap-12px" >
+            <input aria-label="From name" value={form.from_name} onChange={(event) => setForm((current) => ({ ...current, from_name: event.target.value }))} placeholder="From name" style={FIELD_INPUT_STYLE} />
+            <input aria-label="From address" value={form.from_email} onChange={(event) => setForm((current) => ({ ...current, from_email: event.target.value }))} placeholder="From address" type="email" style={FIELD_INPUT_STYLE} />
           </div>
           <select
             value={form.audience}
@@ -245,9 +242,9 @@ export function CampaignsPanel() {
             <option value="all">All members</option>
             <option value="group">Specific group</option>
           </select>
-          <textarea value={form.body_html} onChange={(event) => setForm((current) => ({ ...current, body_html: event.target.value }))} rows={7} placeholder="Email body (HTML)" style={{ ...FIELD_INPUT_STYLE, fontFamily: 'var(--font-body)', resize: 'vertical' }} />
-          <textarea value={form.body_text} onChange={(event) => setForm((current) => ({ ...current, body_text: event.target.value }))} rows={3} placeholder="Optional plain text fallback" style={{ ...FIELD_INPUT_STYLE, resize: 'vertical' }} />
-          <p style={{ margin: 0, fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+          <textarea aria-label="Email body (HTML)" value={form.body_html} onChange={(event) => setForm((current) => ({ ...current, body_html: event.target.value }))} rows={7} placeholder="Email body (HTML)" style={{ ...FIELD_INPUT_STYLE, resize: 'vertical' }} />
+          <textarea aria-label="Optional plain text fallback" value={form.body_text} onChange={(event) => setForm((current) => ({ ...current, body_text: event.target.value }))} rows={3} placeholder="Optional plain text fallback" style={{ ...FIELD_INPUT_STYLE, resize: 'vertical' }} />
+          <p className="u-m-0 u-fs-fs-xs u-lh-1_5" style={{ color: 'var(--text-muted)' }}>
             Recipients are resolved automatically from the audience you choose once you send.
           </p>
         </div>

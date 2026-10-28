@@ -189,8 +189,8 @@ export default function FeeSchedulesPage() {
       {loadError ? <Banner tone="error" onRetry={() => void load()}>{loadError}</Banner> : null}
       {message ? <Banner tone={message.tone}>{message.text}</Banner> : null}
 
-      <section className="card" style={{ padding: 20, marginBottom: 'var(--space-8)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+      <section className="card u-p-20px u-mb-space-8" >
+        <div className="u-gap-12px" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap' }}>
           <h2 style={sectionTitle}>Dues and registration fees</h2>
           {!draft ? (
             <button type="button" className="btn btn-primary btn-sm" onClick={() => setDraft(EMPTY_SCHEDULE)}>
@@ -200,10 +200,10 @@ export default function FeeSchedulesPage() {
         </div>
 
         {draft ? (
-          <div style={{ border: '1px solid var(--border-strong)', borderRadius: 12, padding: 16, margin: '16px 0' }}>
+          <div className="u-p-16px u-m-16px-0" style={{ border: '1px solid var(--border-strong)', borderRadius: 12 }}>
             <div style={formGrid}>
               <Field label="Name">
-                <input className="form-input" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="Silver monthly dues" />
+                <input aria-label="Silver monthly dues" className="form-input" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="Silver monthly dues" />
               </Field>
               <Field label="Type">
                 <select className="form-input" value={draft.kind} onChange={(e) => setDraft({ ...draft, kind: e.target.value as ScheduleDraft['kind'] })}>
@@ -242,7 +242,7 @@ export default function FeeSchedulesPage() {
                 </Field>
               )}
               <Field label="Amount (USD)">
-                <input className="form-input" inputMode="decimal" value={draft.amount} onChange={(e) => setDraft({ ...draft, amount: e.target.value })} placeholder="150.00" />
+                <input aria-label="150.00" className="form-input" inputMode="decimal" value={draft.amount} onChange={(e) => setDraft({ ...draft, amount: e.target.value })} placeholder="150.00" />
               </Field>
               <Field label="Starts">
                 <input className="form-input" type="date" value={draft.start_date} onChange={(e) => setDraft({ ...draft, start_date: e.target.value })} />
@@ -262,11 +262,11 @@ export default function FeeSchedulesPage() {
                 </Field>
               ) : null}
             </div>
-            <label style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '16px 0', fontSize: 'var(--fs-base)' }}>
+            <label className="u-gap-8px u-m-16px-0 u-fs-fs-base" style={{ display: 'flex', alignItems: 'center' }}>
               <input type="checkbox" checked={draft.auto_bill} onChange={(e) => setDraft({ ...draft, auto_bill: e.target.checked })} />
               Include in automatic monthly billing
             </label>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div className="u-gap-8px" style={{ display: 'flex' }}>
               <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => void submitSchedule()}>
                 {draft.id ? 'Save schedule' : 'Create schedule'}
               </button>
@@ -278,9 +278,9 @@ export default function FeeSchedulesPage() {
         ) : null}
 
         {loading ? (
-          <p style={{ color: 'var(--text-subtle)', fontSize: 'var(--fs-base)' }}>Loading schedules…</p>
+          <p className="u-fs-fs-base" style={{ color: 'var(--text-subtle)' }}>Loading schedules…</p>
         ) : !loadError && activeSchedules.length === 0 ? (
-          <p style={{ color: 'var(--text-subtle)', fontSize: 'var(--fs-base)', marginTop: 12 }}>No active schedules. Create one per roster group to start billing dues.</p>
+          <p className="u-fs-fs-base u-mt-12px" style={{ color: 'var(--text-subtle)' }}>No active schedules. Create one per roster group to start billing dues.</p>
         ) : activeSchedules.length > 0 ? (
           <ScrollTable>
             <table style={{ ...tableStyle, marginTop: 12 }}>
@@ -298,13 +298,13 @@ export default function FeeSchedulesPage() {
                 {activeSchedules.map((s) => (
                   <tr key={s.id}>
                     <td style={tdStyle}>
-                      <div style={{ fontWeight: 600 }}>{s.name}</div>
-                      {s.auto_bill ? <span className="badge badge-accent" style={{ marginTop: 4 }}>Auto-billed</span> : null}
+                      <div className="u-fw-600" >{s.name}</div>
+                      {s.auto_bill ? <span className="badge badge-accent u-mt-4px" >Auto-billed</span> : null}
                     </td>
                     <td style={tdStyle}>{s.kind === 'dues' ? `${s.group_code} roster` : `${s.season} registrations${s.group_code ? ` · ${s.group_code}` : ''}`}</td>
                     <td style={tdStyle}>
                       {FREQUENCY_LABEL[s.frequency]}
-                      {s.kind === 'dues' && s.frequency !== 'one_time' ? <div style={{ color: 'var(--text-subtle)', fontSize: 'var(--fs-sm)' }}>{PRORATION_LABEL[s.proration]}</div> : null}
+                      {s.kind === 'dues' && s.frequency !== 'one_time' ? <div className="u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{PRORATION_LABEL[s.proration]}</div> : null}
                     </td>
                     <td style={numStyle}>
                       <Money cents={s.amount_cents} strong />
@@ -337,23 +337,23 @@ export default function FeeSchedulesPage() {
           </ScrollTable>
         ) : null}
         {archivedSchedules.length > 0 ? (
-          <p style={{ color: 'var(--text-subtle)', fontSize: 'var(--fs-sm)', marginTop: 12 }}>
+          <p className="u-fs-fs-sm u-mt-12px" style={{ color: 'var(--text-subtle)' }}>
             {archivedSchedules.length} archived {archivedSchedules.length === 1 ? 'schedule keeps' : 'schedules keep'} their billing history.
           </p>
         ) : null}
       </section>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 460px), 1fr))', gap: 20 }}>
-        <section className="card" style={{ padding: 20 }}>
+      <div className="u-gap-20px" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 460px), 1fr))' }}>
+        <section className="card u-p-20px" >
           <h2 style={sectionTitle}>Sibling discounts</h2>
-          <p style={{ color: 'var(--text-subtle)', fontSize: 'var(--fs-base)', margin: '0 0 12px' }}>
+          <p className="u-fs-fs-base u-m-0-0-12px" style={{ color: 'var(--text-subtle)' }}>
             Highest-fee swimmer pays full price; later siblings get the best tier. No stacking.
           </p>
           {rules.filter((r) => r.active).map((r) => (
-            <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: '1px solid var(--border)' }}>
+            <div key={r.id} className="u-gap-12px u-p-12px-0" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)' }}>
               <div>
-                <div style={{ fontWeight: 600, fontSize: 'var(--fs-md)' }}>{describeTier(r)}: {describeDiscount(r)}</div>
-                <div style={{ color: 'var(--text-subtle)', fontSize: 'var(--fs-sm)' }}>
+                <div className="u-fw-600 u-fs-fs-md" >{describeTier(r)}: {describeDiscount(r)}</div>
+                <div className="u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>
                   {r.name} · {r.applies_to === 'all' ? 'dues and registration' : r.applies_to}
                 </div>
               </div>
@@ -364,7 +364,7 @@ export default function FeeSchedulesPage() {
           ))}
           <div style={{ ...formGrid, gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', marginTop: 16 }}>
             <Field label="Name">
-              <input className="form-input" value={ruleDraft.name} onChange={(e) => setRuleDraft({ ...ruleDraft, name: e.target.value })} placeholder="2nd sibling" />
+              <input aria-label="2nd sibling" className="form-input" value={ruleDraft.name} onChange={(e) => setRuleDraft({ ...ruleDraft, name: e.target.value })} placeholder="2nd sibling" />
             </Field>
             <Field label="From swimmer #">
               <input className="form-input" type="number" min={2} value={ruleDraft.min} onChange={(e) => setRuleDraft({ ...ruleDraft, min: e.target.value })} />
@@ -389,21 +389,21 @@ export default function FeeSchedulesPage() {
               </select>
             </Field>
           </div>
-          <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 12 }} disabled={busy || !ruleDraft.name} onClick={() => void submitRule()}>
+          <button type="button" className="btn btn-secondary btn-sm u-mt-12px" disabled={busy || !ruleDraft.name} onClick={() => void submitRule()}>
             Add tier
           </button>
         </section>
 
-        <section className="card" style={{ padding: 20 }}>
+        <section className="card u-p-20px" >
           <h2 style={sectionTitle}>One-off adjustments</h2>
-          <p style={{ color: 'var(--text-subtle)', fontSize: 'var(--fs-base)', margin: '0 0 12px' }}>Applied once, on the household&apos;s next billing run.</p>
+          <p className="u-fs-fs-base u-m-0-0-12px" style={{ color: 'var(--text-subtle)' }}>Applied once, on the household&apos;s next billing run.</p>
           {adjustments.map((a) => (
-            <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: '1px solid var(--border)' }}>
+            <div key={a.id} className="u-gap-12px u-p-12px-0" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)' }}>
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontWeight: 600, fontSize: 'var(--fs-md)' }}>{householdName(a.household_id)}</div>
-                <div style={{ color: 'var(--text-subtle)', fontSize: 'var(--fs-sm)' }}>{a.reason}</div>
+                <div className="u-fw-600 u-fs-fs-md" >{householdName(a.household_id)}</div>
+                <div className="u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{a.reason}</div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div className="u-gap-8px" style={{ display: 'flex', alignItems: 'center' }}>
                 <Money cents={a.amount_cents} strong />
                 <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void run(() => voidAdjustment(api, orgId, a.id), 'Adjustment voided.')}>
                   Void
@@ -423,23 +423,23 @@ export default function FeeSchedulesPage() {
               </select>
             </Field>
             <Field label="Amount (negative = discount)">
-              <input className="form-input" inputMode="decimal" value={adjDraft.amount} onChange={(e) => setAdjDraft({ ...adjDraft, amount: e.target.value })} placeholder="-20.00" />
+              <input aria-label="-20.00" className="form-input" inputMode="decimal" value={adjDraft.amount} onChange={(e) => setAdjDraft({ ...adjDraft, amount: e.target.value })} placeholder="-20.00" />
             </Field>
           </div>
           <Field label="Reason">
-            <input className="form-input" value={adjDraft.reason} onChange={(e) => setAdjDraft({ ...adjDraft, reason: e.target.value })} placeholder="Volunteer hours credit" />
+            <input aria-label="Volunteer hours credit" className="form-input" value={adjDraft.reason} onChange={(e) => setAdjDraft({ ...adjDraft, reason: e.target.value })} placeholder="Volunteer hours credit" />
           </Field>
-          <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 12 }} disabled={busy || !adjDraft.household_id || !adjDraft.reason.trim()} onClick={() => void submitAdjustment()}>
+          <button type="button" className="btn btn-secondary btn-sm u-mt-12px" disabled={busy || !adjDraft.household_id || !adjDraft.reason.trim()} onClick={() => void submitAdjustment()}>
             Queue adjustment
           </button>
         </section>
       </div>
 
       {settings ? (
-        <section className="card" style={{ padding: 20, marginTop: 20 }}>
+        <section className="card u-p-20px u-mt-20px" >
           <h2 style={sectionTitle}>Late fees and automatic billing</h2>
           <div style={{ ...formGrid, marginTop: 12 }}>
-            <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 'var(--fs-base)' }}>
+            <label className="u-gap-8px u-fs-fs-base" style={{ display: 'flex', alignItems: 'center' }}>
               <input type="checkbox" checked={settings.late_fee_enabled} onChange={(e) => setSettings({ ...settings, late_fee_enabled: e.target.checked })} />
               Charge a late fee
             </label>
@@ -466,7 +466,7 @@ export default function FeeSchedulesPage() {
             </Field>
           </div>
           <div style={{ ...formGrid, marginTop: 16 }}>
-            <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 'var(--fs-base)' }}>
+            <label className="u-gap-8px u-fs-fs-base" style={{ display: 'flex', alignItems: 'center' }}>
               <input type="checkbox" checked={settings.auto_run_enabled} onChange={(e) => setSettings({ ...settings, auto_run_enabled: e.target.checked })} />
               Bill auto-billed schedules monthly
             </label>
@@ -483,7 +483,7 @@ export default function FeeSchedulesPage() {
               <input className="form-input" type="number" min={0} value={settings.auto_run_due_days} onChange={(e) => setSettings({ ...settings, auto_run_due_days: Number(e.target.value) })} />
             </Field>
           </div>
-          <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
+          <div className="u-gap-8px u-mt-16px" style={{ display: 'flex', flexWrap: 'wrap' }}>
             <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => void run(() => saveBillingSettings(api, orgId, settings), 'Billing settings saved.')}>
               Save settings
             </button>

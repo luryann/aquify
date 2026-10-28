@@ -23,6 +23,7 @@ import {
 import { getPortalDocumentAction, selectLatestSubmission } from '@/lib/document-submissions'
 import { summarizeRegistrationWaiver } from '@/lib/portal-registration-status'
 import { parseBackendDate } from '@/lib/dates'
+import './page.inline.css'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -191,7 +192,7 @@ export default function DocumentsPage() {
   useEffect(() => {
     if (!orgId || !householdId) {
       setLoading(false)
-      setLoadError('Document portal is unavailable because household context is missing.')
+      setLoadError('We could not find your household details. Sign out and back in, or contact your club if this keeps happening.')
       return
     }
     let cancelled = false
@@ -221,7 +222,7 @@ export default function DocumentsPage() {
           setLoadError(reportUIError(
             'portal-documents-load',
             error,
-            'Document data is unavailable right now.',
+            'We could not load this page. Check your connection and try again.',
             { orgId, householdId },
           ))
         }
@@ -332,9 +333,9 @@ export default function DocumentsPage() {
         <div className="page-heading">
           <h1 className="page-title">Documents</h1>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div className="is-930d87f">
           {[1, 2, 3].map(i => (
-            <div key={i} style={{ height: '68px', borderRadius: '12px', background: '#f5f4f3', border: '1px solid rgba(0,0,0,0.06)' }} />
+            <div key={i} style={{ height: '68px', borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border)' }} />
           ))}
         </div>
       </div>
@@ -351,15 +352,15 @@ export default function DocumentsPage() {
       </div>
 
       {loadError && (
-        <div style={{ padding: '12px 16px', background: 'var(--warning-bg)', border: '1px solid #fdba74', borderRadius: '12px', marginBottom: '16px', fontSize: 'var(--fs-base)', color: 'var(--warning)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+        <div className="is-6fe8896">
+          <div className="is-730b6a7">
             <Icon name="alert-circle" size={15} style={{ color: 'var(--warning)', marginTop: '1px', flexShrink: 0 }} />
             <span>{loadError}</span>
           </div>
           <button
             type="button"
             onClick={() => setReloadKey((key) => key + 1)}
-            style={{ background: 'var(--bg-elevated)', border: '1px solid #fdba74', borderRadius: '8px', cursor: 'pointer', color: 'var(--warning)', fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '8px 16px', whiteSpace: 'nowrap' }}
+            className="is-889d44c"
           >
             Retry
           </button>
@@ -368,13 +369,13 @@ export default function DocumentsPage() {
 
       {/* Upload error */}
       {uploadError && (
-        <div style={{ padding: '12px 16px', background: 'rgba(220,38,38,0.07)', border: '1px solid rgba(220,38,38,0.18)', borderRadius: '12px', marginBottom: '16px', fontSize: 'var(--fs-base)', color: 'var(--error)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="is-78da8de">
           <span>{uploadError}</span>
-          <button onClick={() => setUploadError(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--error)', fontSize: 'var(--fs-lg)', lineHeight: 1, padding: 0 }}>✕</button>
+          <button type="button" onClick={() => setUploadError(null)} className="is-3e74408">✕</button>
         </div>
       )}
 
-      <input
+      <input aria-label="Upload document file"
         ref={uploadInputRef}
         type="file"
         accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
@@ -388,16 +389,16 @@ export default function DocumentsPage() {
 
       {/* Action needed alert */}
       {!loadError && totalPendingCount > 0 && (
-        <div style={{ background: 'var(--error-bg)', border: '1px solid rgba(220,38,38,0.18)', borderRadius: '12px', padding: '20px 24px', marginBottom: '24px', animation: 'slideUp 0.35s ease both' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
+        <div className="is-fe04bf3">
+          <div className="is-005cdcc">
             <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(220,38,38,0.10)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <Icon name="alert-circle" size={20} style={{ color: 'var(--error)' }} />
             </div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: 'var(--error)', marginBottom: '4px' }}>
+              <div className="is-417d5c5">
                 {totalPendingCount} item{totalPendingCount !== 1 ? 's' : ''} require immediate action
               </div>
-              <ul style={{ margin: 0, padding: '0 0 0 16px', fontSize: 'var(--fs-base)', color: 'var(--error)', lineHeight: 1.7 }}>
+              <ul className="is-092ffa9">
                 {pendingDocs.map(doc => (
                   <li key={doc.typeId}>
                     <strong>{doc.typeName}</strong>
@@ -418,25 +419,25 @@ export default function DocumentsPage() {
       )}
 
       {/* Stats strip */}
-      <div className="cols-3" style={{ gap: '12px', marginBottom: '24px', animation: 'slideUp 0.4s ease both' }}>
+      <div className="cols-3 is-ce77c34" >
         {[
           { label: 'Complete',      value: completedCount,     total: totalItemCount, color: 'var(--success)' },
           { label: 'Action needed', value: totalPendingCount,  total: totalItemCount, color: 'var(--error)' },
           { label: 'Expiring soon', value: expiringCount,       total: totalItemCount, color: 'var(--warning)' },
         ].map(stat => (
-          <div key={stat.label} className="card" style={{ padding: '16px 20px' }}>
+          <div key={stat.label} className="card is-401e6d8" >
             <div style={{ fontSize: 'var(--fs-2xl)', fontWeight: 700, color: stat.color, fontFamily: 'var(--font-body)' }}>
-              {stat.value}<span style={{ fontSize: 'var(--fs-md)', color: 'var(--border-strong)', fontWeight: 400 }}>/{stat.total}</span>
+              {stat.value}<span className="is-f57b355">/{stat.total}</span>
             </div>
-            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginTop: '4px' }}>{stat.label}</div>
+            <div className="is-dd721e0">{stat.label}</div>
           </div>
         ))}
       </div>
 
       {/* Filter tabs */}
-      <div style={{ display: 'flex', gap: '2px', marginBottom: '20px', background: 'rgba(0,0,0,0.04)', borderRadius: '12px', padding: '4px', maxWidth: '320px', animation: 'slideUp 0.42s ease both' }}>
+      <div className="is-7c2ea4b">
         {[{ key: 'all', label: 'All documents' }, { key: 'pending', label: `Needs Action (${totalPendingCount})` }].map(({ key, label }) => (
-          <button key={key} onClick={() => setFilter(key as 'all' | 'pending')} style={{ flex: 1, padding: '8px 12px', borderRadius: '8px', border: 'none', background: filter === key ? 'var(--bg-elevated)' : 'transparent', color: filter === key ? 'var(--text)' : 'var(--text-subtle)', fontSize: 'var(--fs-base)', fontWeight: filter === key ? 600 : 450, cursor: 'pointer', boxShadow: filter === key ? '0 1px 4px rgba(0,0,0,0.08)' : 'none', transition: 'all 120ms ease', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap' }}>
+          <button type="button" key={key} onClick={() => setFilter(key as 'all' | 'pending')} style={{ flex: 1, padding: '8px 12px', borderRadius: '8px', border: 'none', background: filter === key ? 'var(--bg-elevated)' : 'transparent', color: filter === key ? 'var(--text)' : 'var(--text-subtle)', fontSize: 'var(--fs-base)', fontWeight: filter === key ? 600 : 450, cursor: 'pointer', boxShadow: filter === key ? 'var(--shadow-xs)' : 'none', transition: 'all 120ms ease', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap' }}>
             {label}
           </button>
         ))}
@@ -444,32 +445,31 @@ export default function DocumentsPage() {
 
       {/* Empty state */}
       {shouldShowCollectionEmptyState(loading, loadError, totalItemCount) && (
-        <div className="card" style={{ textAlign: 'center', padding: '64px 20px' }}>
-          <div style={{ fontSize: 'var(--fs-4xl)', marginBottom: '12px' }}>📄</div>
-          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--fs-xl)', color: 'var(--text)', marginBottom: '6px' }}>No documents required yet</div>
-          <div style={{ fontSize: 'var(--fs-md)', color: 'var(--text-muted)' }}>Your coach will request documents when needed.</div>
+        <div className="card is-4d5e0fe" >
+          <div className="is-ed44472">No documents required yet</div>
+          <div className="is-550d8c4">Your coach will request documents when needed.</div>
         </div>
       )}
 
       {/* Registration waivers */}
       {!loadError && visibleWaivers.length > 0 && (
-        <section style={{ marginBottom: 'var(--space-8)', animation: 'slideUp 0.45s ease both' }}>
-          <div style={{ fontSize: 'var(--fs-md)', fontWeight: 600, fontFamily: 'var(--font-body)', color: 'var(--text)', marginBottom: '12px' }}>
+        <section className="is-c3e1920">
+          <div className="is-a1a186f">
             Registration waivers
           </div>
           <div className="card" style={{ overflow: 'hidden' }}>
             {visibleWaivers.map((w, i) => {
               const statusCfg = w.accepted ? STATUS_CONFIG.verified : STATUS_CONFIG.pending
               return (
-                <div key={w.id} style={{ display: 'flex', gap: '16px', padding: '20px 20px', borderBottom: i < visibleWaivers.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none', alignItems: 'flex-start', background: w.accepted ? 'transparent' : 'rgba(220,38,38,0.01)' }}>
+                <div key={w.id} style={{ display: 'flex', gap: '16px', padding: '20px 20px', borderBottom: i < visibleWaivers.length - 1 ? '1px solid var(--border)' : 'none', alignItems: 'flex-start', background: w.accepted ? 'transparent' : 'rgba(220,38,38,0.01)' }}>
                   <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: statusCfg.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                     <Icon name={statusCfg.icon} size={18} style={{ color: statusCfg.color }} />
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--text)', marginBottom: '4px' }}>
+                    <div className="is-ff14055">
                       Registration waiver — {w.swimmerLabel}
                     </div>
-                    <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                    <div className="is-1042204">
                       {w.accepted
                         ? `${w.count} accepted waiver${w.count === 1 ? '' : 's'}${w.lastAcceptedAt ? ` • last accepted ${fmtDate(w.lastAcceptedAt)}` : ''} (${w.season})`
                         : `No registration waiver acceptance is recorded yet (${w.season}).`}
@@ -487,12 +487,12 @@ export default function DocumentsPage() {
 
       {/* Documents by category */}
       {!loadError ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+        <div className="is-4ac1208">
         {categories.map((cat, catIdx) => {
           const catDocs = visibleDocs.filter(d => d.typeCategory === cat)
           return (
             <section key={cat} style={{ animation: `slideUp ${0.45 + catIdx * 0.06}s ease both` }}>
-              <div style={{ fontSize: 'var(--fs-md)', fontWeight: 600, fontFamily: 'var(--font-body)', color: 'var(--text)', marginBottom: '12px' }}>
+              <div className="is-a1a186f">
                 {CATEGORY_LABELS[cat] ?? cat}
               </div>
 
@@ -509,7 +509,7 @@ export default function DocumentsPage() {
                   const expiringUrgent = days !== null && days >= 0 && days <= 14
 
                   return (
-                    <div key={doc.typeId} style={{ display: 'flex', gap: '16px', padding: '20px 20px', borderBottom: i < catDocs.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none', alignItems: 'flex-start', background: needsAction ? 'rgba(220,38,38,0.01)' : 'transparent' }}>
+                    <div key={doc.typeId} style={{ display: 'flex', gap: '16px', padding: '20px 20px', borderBottom: i < catDocs.length - 1 ? '1px solid var(--border)' : 'none', alignItems: 'flex-start', background: needsAction ? 'rgba(220,38,38,0.01)' : 'transparent' }}>
                       {/* Status icon */}
                       <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: statusCfg.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                         <Icon name={statusCfg.icon} size={18} style={{ color: statusCfg.color }} />
@@ -517,21 +517,21 @@ export default function DocumentsPage() {
 
                       {/* Content */}
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
-                          <span style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.3 }}>{doc.typeName}</span>
+                        <div className="is-02c4154">
+                          <span className="is-c13e111">{doc.typeName}</span>
                           {doc.isRequired && (
-                            <span style={{ padding: '1px 6px', background: 'rgba(0,0,0,0.05)', borderRadius: '4px', fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', fontWeight: 500, whiteSpace: 'nowrap' }}>Required</span>
+                            <span className="is-b09e6ca">Required</span>
                           )}
                           {doc.submission?.review_notes && (doc.effectiveStatus === 'rejected') && (
-                            <span style={{ padding: '1px 8px', background: 'rgba(220,38,38,0.08)', borderRadius: '4px', fontSize: 'var(--fs-2xs)', color: 'var(--error)', fontWeight: 500 }}>
+                            <span className="is-4b6d077">
                               {doc.submission.review_notes.slice(0, 60)}
                             </span>
                           )}
                         </div>
                         {doc.typeDescription && (
-                          <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', lineHeight: 1.4, marginBottom: '6px' }}>{doc.typeDescription}</div>
+                          <div className="is-888a004">{doc.typeDescription}</div>
                         )}
-                        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', fontSize: 'var(--fs-xs)', color: 'var(--border-strong)' }}>
+                        <div className="is-9b73712">
                           <span>For: <span style={{ color: 'var(--text-subtle)' }}>{doc.swimmerLabel}</span></span>
                           {doc.submittedAt && <span>Submitted: <span style={{ color: 'var(--text-subtle)' }}>{fmtDate(doc.submittedAt)}</span></span>}
                           {doc.expiresAt && (
@@ -540,7 +540,7 @@ export default function DocumentsPage() {
                               <span style={{ color: expiringUrgent ? 'var(--warning)' : 'var(--text-subtle)', fontWeight: expiringUrgent ? 600 : 400 }}>
                                 {fmtDate(doc.expiresAt)}
                                 {expiringUrgent && days !== null && (
-                                  <span style={{ marginLeft: '4px', color: 'var(--warning)' }}>({days}d)</span>
+                                  <span className="is-3ef9660">({days}d)</span>
                                 )}
                               </span>
                             </span>
@@ -549,13 +549,13 @@ export default function DocumentsPage() {
                       </div>
 
                       {/* Action area */}
-                      <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
+                      <div className="is-0da4d5a">
                         <span style={{ padding: '4px 8px', borderRadius: '999px', fontSize: 'var(--fs-xs)', fontWeight: 600, background: statusCfg.bg, color: statusCfg.color, whiteSpace: 'nowrap' }}>
                           {statusCfg.label}
                         </span>
 
                         {actionKind === 'upload' && needsAction && (
-                          <button
+                          <button type="button"
                             onClick={() => handleUploadClick(doc.rawTypeId, doc.swimmerId || undefined)}
                             disabled={isUploading}
                             style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 16px', background: isUploading ? 'rgba(235,93,30,0.5)' : 'var(--accent)', color: 'var(--bg-elevated)', border: 'none', borderRadius: '8px', fontSize: 'var(--fs-sm)', fontWeight: 600, cursor: isUploading ? 'wait' : 'pointer', fontFamily: 'var(--font-body)' }}
@@ -566,7 +566,7 @@ export default function DocumentsPage() {
                         )}
 
                         {(doc.effectiveStatus === 'verified' || doc.effectiveStatus === 'submitted') && doc.submission?.file_name && (
-                          <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+                          <span className="is-915a8b5">
                             Uploaded: {doc.submission.file_name}
                           </span>
                         )}
@@ -580,17 +580,17 @@ export default function DocumentsPage() {
         })}
         </div>
       ) : (
-        <div className="card" style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)', fontSize: 'var(--fs-md)' }}>
+        <div className="card is-a0babcf" >
           Document requirements will appear here after a successful reload.
         </div>
       )}
 
       {/* Help notice */}
-      <div style={{ marginTop: '24px', padding: '16px 20px', background: 'rgba(0,0,0,0.03)', borderRadius: '12px', fontSize: 'var(--fs-base)', color: 'var(--text-muted)', lineHeight: 1.5, animation: 'slideUp 0.7s ease both', display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+      <div className="is-a8080b5">
         <Icon name="info" size={14} style={{ color: 'var(--border-strong)', marginTop: '2px', flexShrink: 0 }} />
         <span>
           Missing or expired documents may affect meet participation eligibility. Questions about a document?{' '}
-          <Link href="/portal/messages" style={{ color: 'var(--accent)', fontWeight: 500, textDecoration: 'none' }}>Message the club staff</Link>.
+          <Link href="/portal/messages" className="is-bc2c7b1">Message the club staff</Link>.
         </span>
       </div>
 

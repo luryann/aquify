@@ -23,10 +23,7 @@ const COURSE_OPTIONS = ['SCY', 'SCM', 'LCM']
 const STROKE_OPTIONS = ['free', 'back', 'breast', 'fly', 'im']
 const DISTANCE_OPTIONS = [25, 50, 100, 200, 400, 500, 800, 1000, 1500, 1650]
 
-const FIELD_INPUT_STYLE: React.CSSProperties = {
-  padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)',
-  background: 'var(--bg-elevated)', color: 'var(--text)', boxSizing: 'border-box',
-}
+const FIELD_INPUT_STYLE: React.CSSProperties = { width: '100%' }
 
 type LeaderboardRow = BestTimeRecord & { swimmerName: string }
 
@@ -99,7 +96,7 @@ export default function BestTimesPage() {
   const manualOverrides = useMemo(() => bestTimes.filter((record) => record.is_manual_override).length, [bestTimes])
 
   if (!session) {
-    return <div style={{ padding: '32px' }}><EmptyState icon="bar-chart-2" title="Sign in required" description="Authenticate to inspect live best times." /></div>
+    return <div className="u-p-32px" ><EmptyState icon="bar-chart-2" title="Sign in required" description="Authenticate to inspect live best times." /></div>
   }
 
   const columns = [
@@ -108,7 +105,7 @@ export default function BestTimesPage() {
       label: '#',
       sortable: false,
       width: '48px',
-      render: (_row, index) => <span style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>{index + 1}</span>,
+      render: (_row, index) => <span className="u-ff-font-body" style={{ color: 'var(--text-muted)' }}>{index + 1}</span>,
     }),
     col<LeaderboardRow>({
       key: 'swimmerName',
@@ -130,7 +127,7 @@ export default function BestTimesPage() {
       key: 'best_time_ms',
       label: 'Time',
       sortable: true,
-      render: (row) => <span style={{ fontFamily: 'var(--font-body)', color: 'var(--accent)' }}>{formatSwimTime(row.best_time_ms)}</span>,
+      render: (row) => <span className="u-ff-font-body" style={{ color: 'var(--accent-text, var(--accent))' }}>{formatSwimTime(row.best_time_ms)}</span>,
     }),
     col<LeaderboardRow>({
       key: 'recorded_at',
@@ -161,21 +158,21 @@ export default function BestTimesPage() {
       </div>
 
       {error ? (
-        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: 'var(--fs-sm)' }}>
+        <div className="u-mb-20px u-p-12px-16px u-fs-fs-sm" style={{ borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)' }}>
           {error}
         </div>
       ) : null}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
+      <div className="u-gap-12px u-mb-16px" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', flex: '1 1 200px', maxWidth: '280px' }}>
           <span style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}>
             <Icon name="search" size={14} />
           </span>
-          <input
+          <input aria-label="Find a swimmer"
             value={swimmerSearch}
             onChange={(e) => setSwimmerSearch(e.target.value)}
             placeholder="Find a swimmer…"
-            style={{ ...FIELD_INPUT_STYLE, width: '100%', paddingLeft: '32px' }}
+            style={{ ...FIELD_INPUT_STYLE, width: '100%' }}
           />
         </div>
         <select value={distanceFilter} onChange={(e) => setDistanceFilter(e.target.value)} style={{ ...FIELD_INPUT_STYLE }}>
@@ -188,24 +185,16 @@ export default function BestTimesPage() {
         </select>
         <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }} title="Course: Short Course Yards / Short Course Meters / Long Course Meters">
           {COURSE_OPTIONS.map((c) => (
-            <button
+            <button type="button"
               key={c}
               onClick={() => setCourseFilter(c)}
-              style={{
-                padding: '8px 12px',
-                border: 'none',
-                background: courseFilter === c ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
-                color: courseFilter === c ? 'var(--accent)' : 'var(--text-subtle)',
-                fontSize: 'var(--fs-sm)',
-                fontWeight: courseFilter === c ? 600 : 400,
-                cursor: 'pointer',
-              }}
+              className="u-p-8px-12px u-fs-fs-sm" style={{ border: 'none', background: courseFilter === c ? 'var(--accent-subtle)' : 'var(--bg-elevated)', color: courseFilter === c ? 'var(--accent)' : 'var(--text-subtle)', fontWeight: courseFilter === c ? 600 : 400, cursor: 'pointer' }}
             >
               {c}
             </button>
           ))}
         </div>
-        <span style={{ marginLeft: 'auto', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap' }}>
+        <span className="u-ml-auto u-fs-fs-sm u-ff-font-body" style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
           {rows.length} records · {manualOverrides} manual overrides
         </span>
       </div>

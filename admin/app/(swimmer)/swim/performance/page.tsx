@@ -23,6 +23,7 @@ import {
   buildSwimmerCutsViewModel,
   describeCutQualification,
 } from '@/lib/swimmer-performance-cuts'
+import './page.inline.css'
 
 // ── Design tokens ──────────────────────────────────────────────────────────
 const C = {
@@ -38,10 +39,10 @@ const C = {
 
 const STANDARD_COLOR: Record<string, string> = {
   AAA: 'var(--accent)',
-  AA:  '#3b82f6',
-  A:   '#8b5cf6',
+  AA:  'var(--info)',
+  A:   'var(--water)',
   BB:  'var(--warning)',
-  B:   '#9ca3af',
+  B:   'var(--text-muted)',
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -179,7 +180,7 @@ function CourseCell({ entry }: { entry?: PivotEntry }) {
   }
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
+      <div className="is-92d0f5a">
         <span style={{ fontSize: 'var(--fs-md)', fontFamily: 'var(--font-body)', fontWeight: 700, color: C.accent }}>
           {entry.time}
         </span>
@@ -228,7 +229,7 @@ export default function PerformancePage() {
 
   useEffect(() => {
     if (!orgId || !householdId) {
-      setLoadError('Swimmer performance is unavailable because household context is missing.')
+      setLoadError('We could not find your household details. Sign out and back in, or contact your club if this keeps happening.')
       setLoading(false)
       setCutLoading(false)
       return
@@ -257,7 +258,7 @@ export default function PerformancePage() {
 
         const mySwimmer = swimmers.find((swimmer) => swimmer.id === swimmerId) ?? null
         if (!mySwimmer) {
-          setLoadError('Swimmer performance is unavailable because your linked swimmer record could not be loaded.')
+          setLoadError('We could not load this page. Check your connection and try again.')
           return
         }
 
@@ -366,7 +367,7 @@ export default function PerformancePage() {
         <style>{`
           @keyframes slideUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
         `}</style>
-        <div style={{ marginBottom: '32px', animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both' }}>
+        <div className="is-bb27019">
           <h1 className="page-title">
             Performance
           </h1>
@@ -383,21 +384,21 @@ export default function PerformancePage() {
           @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.45} }
           @keyframes slideUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
         `}</style>
-        <div style={{ marginBottom: '32px', animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both' }}>
+        <div className="is-bb27019">
           <h1 className="page-title">
             Performance
           </h1>
         </div>
-        <div className="card" style={{ padding: '24px 24px' }}>
+        <div className="card is-653b4fd" >
           <p style={{ fontSize: 'var(--fs-xl)', color: C.text, fontWeight: 600, marginBottom: '8px' }}>
-            Performance data is unavailable right now.
+            We could not load this page.
           </p>
           <p style={{ fontSize: 'var(--fs-base)', color: C.subtle, lineHeight: 1.6, marginBottom: '16px' }}>
             {loadError}
           </p>
-          <button
+          <button type="button"
             onClick={() => setRetryKey((current) => current + 1)}
-            style={{ padding: '12px 16px', borderRadius: '8px', border: 'none', background: 'var(--error)', color: '#fff', fontSize: 'var(--fs-base)', fontWeight: 600, cursor: 'pointer' }}
+            className="is-b241e34"
           >
             Retry
           </button>
@@ -414,7 +415,7 @@ export default function PerformancePage() {
       `}</style>
 
       {/* Page header */}
-      <div style={{ marginBottom: '32px', animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both' }}>
+      <div className="is-bb27019">
         <h1 className="page-title"
         >
           Performance
@@ -423,26 +424,15 @@ export default function PerformancePage() {
 
       {/* Tabs */}
       <div
-        className="tab-strip"
-        style={{
-          display: 'flex',
-          gap: '4px',
-          background: 'rgba(0,0,0,0.30)',
-          borderRadius: '12px',
-          padding: '4px',
-          marginBottom: '24px',
-          width: 'fit-content',
-          maxWidth: '100%',
-          overflowX: 'auto',
-          animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) 0.05s both',
-        }}
+        className="tab-strip is-7eb09d9"
+        
       >
         {[
           { key: 'times',       label: 'Best times' },
           { key: 'cuts',        label: 'Cut qualification' },
           { key: 'progression', label: 'Progression' },
         ].map(({ key, label }) => (
-          <button
+          <button type="button"
             key={key}
             onClick={() => setTab(key as typeof tab)}
             style={{
@@ -469,9 +459,9 @@ export default function PerformancePage() {
       {tab === 'times' && (
         <div style={{ animation: 'slideUp 0.25s cubic-bezier(0.16,1,0.3,1) both' }}>
           {/* Course filter */}
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+          <div className="is-7785aac">
             {(['SCY', 'SCM', 'LCM'] as Course[]).map((course) => (
-              <button
+              <button type="button"
                 key={course}
                 onClick={() => setCourseFilter(course)}
                 style={{
@@ -484,7 +474,6 @@ export default function PerformancePage() {
                   fontWeight: 600,
                   fontFamily: 'var(--font-body)',
                   cursor: 'pointer',
-                  letterSpacing: '0.04em',
                   transition: 'all 120ms ease',
                 }}
               >
@@ -498,7 +487,7 @@ export default function PerformancePage() {
             {/* Header */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', padding: '12px 20px', borderBottom: `1px solid ${C.border}` }}>
               {['Event', 'SCY', 'SCM', 'LCM'].map((h) => (
-                <span key={h} style={{ fontSize: 'var(--fs-2xs)', fontFamily: 'var(--font-body)', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                <span key={h} style={{ fontSize: 'var(--fs-2xs)', fontFamily: 'var(--font-body)', color: C.muted, }}>
                   {h}
                 </span>
               ))}
@@ -506,11 +495,11 @@ export default function PerformancePage() {
 
             {/* Rows */}
             {loading ? (
-              <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div className="is-824b1f4">
                 {[1,2,3,4].map(i => <SkeletonLine key={i} />)}
               </div>
             ) : pivotedRows.length === 0 ? (
-              <div style={{ padding: '40px 20px', textAlign: 'center' }}>
+              <div className="is-91ef90a">
                 <p style={{ fontSize: 'var(--fs-md)', color: C.muted }}>No best times recorded yet.</p>
               </div>
             ) : (
@@ -540,9 +529,9 @@ export default function PerformancePage() {
           </div>
 
           {/* Standard legend */}
-          <div style={{ display: 'flex', gap: '16px', marginTop: '16px', flexWrap: 'wrap' }}>
+          <div className="is-656ccfc">
             {Object.entries(STANDARD_COLOR).map(([std, color]) => (
-              <div key={std} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <div key={std} className="is-df7e073">
                 <span style={{ fontSize: 'var(--fs-2xs)', fontFamily: 'var(--font-body)', fontWeight: 700, color, background: `${color}18`, padding: '2px 8px', borderRadius: '4px' }}>
                   {std}
                 </span>
@@ -559,7 +548,7 @@ export default function PerformancePage() {
       {tab === 'cuts' && (
         <div style={{ animation: 'slideUp 0.25s cubic-bezier(0.16,1,0.3,1) both' }}>
           {(cutsView.state === 'loading' || cutsView.state === 'error' || cutsView.state === 'empty') && (
-            <div className="card" style={{ padding: '32px 20px', textAlign: 'center' }}>
+            <div className="card is-911be78" >
               <Icon name={cutsView.state === 'error' ? 'alert-circle' : 'zap'} size={28} style={{ color: cutsView.state === 'error' ? 'var(--warning)' : C.muted, marginBottom: '12px' }} />
               <p style={{ fontSize: 'var(--fs-md)', color: C.subtle, fontWeight: 500, marginBottom: '6px' }}>{cutsView.title}</p>
               <p style={{ fontSize: 'var(--fs-base)', color: C.muted, lineHeight: 1.5 }}>
@@ -570,13 +559,13 @@ export default function PerformancePage() {
 
           {cutsView.state === 'ready' && (
             <>
-              <div className="cols-3" style={{ gap: '12px', marginBottom: '20px' }}>
+              <div className="cols-3 is-7e7f577" >
                 {[
                   { label: 'Qualified', value: String(cutsView.qualifiedCount), accent: C.accent },
                   { label: 'Active standards', value: String(cutsView.totalCount), accent: C.text },
                   { label: 'Still chasing', value: String(cutsView.totalCount - cutsView.qualifiedCount), accent: 'var(--warning)' },
                 ].map((stat) => (
-                  <div key={stat.label} className="card" style={{ padding: '16px 16px' }}>
+                  <div key={stat.label} className="card is-e402fee" >
                     <div style={{ fontSize: 'var(--fs-sm)', color: C.muted, fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
                     <div style={{ fontSize: 'var(--fs-xl)', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.accent }}>{stat.value}</div>
                   </div>
@@ -588,7 +577,7 @@ export default function PerformancePage() {
                 <p style={{ fontSize: 'var(--fs-sm)', color: C.muted, lineHeight: 1.5 }}>{cutsView.message}</p>
               </div>
 
-              <div style={{ display: 'grid', gap: '12px' }}>
+              <div className="is-13fb4cd">
                 {cutCards.map((card) => {
                   const status = describeCutQualification(card)
                   const colors = toneColors(status.tone)
@@ -596,9 +585,9 @@ export default function PerformancePage() {
                   const qualification = card.qualification
                   return (
                     <div key={standard.id} style={{ background: C.card, border: `1px solid ${colors.border}`, borderRadius: '12px', padding: '16px 20px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: '12px' }}>
+                      <div className="is-a3c9e1b">
                         <div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '6px' }}>
+                          <div className="is-ebe0de7">
                             <span style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', fontWeight: 700, color: colors.text, background: colors.bg, border: `1px solid ${colors.border}`, padding: '4px 8px', borderRadius: '999px' }}>
                               {status.badge}
                             </span>
@@ -637,20 +626,20 @@ export default function PerformancePage() {
       {tab === 'progression' && (
         <div style={{ animation: 'slideUp 0.25s cubic-bezier(0.16,1,0.3,1) both' }}>
           {loading ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div className="is-930d87f">
               {[1,2,3].map(i => <SkeletonLine key={i} />)}
             </div>
           ) : progressionKeys.length === 0 ? (
-            <div className="card" style={{ padding: '40px 20px', textAlign: 'center' }}>
+            <div className="card is-91ef90a" >
               <p style={{ fontSize: 'var(--fs-md)', color: C.muted }}>No progression data available yet.</p>
             </div>
           ) : (
             <>
               {/* Event picker + view mode */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
-                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+              <div className="is-4cb2bc7">
+                <div className="is-1a1daae">
                   {progressionKeys.map((ev) => (
-                    <button
+                    <button type="button"
                       key={ev}
                       onClick={() => setProgressEvent(ev)}
                       style={{
@@ -664,9 +653,9 @@ export default function PerformancePage() {
                     >{ev}</button>
                   ))}
                 </div>
-                <div style={{ display: 'flex', gap: '4px' }}>
+                <div className="is-d2f87c7">
                   {(['chart', 'table', 'monthly'] as const).map((m) => (
-                    <button
+                    <button type="button"
                       key={m}
                       onClick={() => setViewMode(m)}
                       style={{
@@ -682,14 +671,14 @@ export default function PerformancePage() {
               </div>
 
               {/* Stats strip */}
-              <div className="cols-4" style={{ gap: '12px', marginBottom: '20px' }}>
+              <div className="cols-4 is-7e7f577" >
                 {[
                   { label: 'Current best', value: latestTime ? fmtSec(latestTime) : '—', color: C.accent, sub: eventData[eventData.length - 1]?.meet ?? '' },
                   { label: 'Total drop', value: improvement > 0 ? `-${improvement.toFixed(2)}s` : '—', color: improvement > 0 ? C.accent : C.muted, sub: `over ${eventData.length} data points` },
                   { label: 'My goal', value: goalSec ? fmtSec(goalSec) : 'Not set', color: goalSec ? 'var(--warning)' : C.muted, sub: toGoal !== null ? (toGoal > 0 ? `${toGoal.toFixed(2)}s to go` : `Beat by ${Math.abs(toGoal).toFixed(2)}s!`) : 'Tap to set a goal' },
                   { label: 'Data points', value: String(eventData.length), color: C.subtle, sub: 'recorded swims' },
                 ].map((s) => (
-                  <div key={s.label} className="card" style={{ padding: '16px 16px' }}>
+                  <div key={s.label} className="card is-e402fee" >
                     <div style={{ fontSize: 'var(--fs-sm)', color: C.muted, fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{s.label}</div>
                     <div style={{ fontSize: 'var(--fs-xl)', fontFamily: 'var(--font-body)', fontWeight: 700, color: s.color, marginBottom: '2px' }}>{s.value}</div>
                     <div style={{ fontSize: 'var(--fs-2xs)', color: C.muted }}>{s.sub}</div>
@@ -698,22 +687,22 @@ export default function PerformancePage() {
               </div>
 
               {/* Goal editor */}
-              <div style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.22)', borderRadius: '12px', padding: '16px 16px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div className="is-ea42ac4">
                 <Icon name="zap" size={16} style={{ color: 'var(--warning)', flexShrink: 0 }} />
                 <div style={{ flex: 1 }}>
                   <p style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: C.text, marginBottom: '2px' }}>Goal for {progressEvent}</p>
                   {editingGoal ? (
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '6px' }}>
-                      <input
+                    <div className="is-53b81f5">
+                      <input aria-label="Target time"
                         value={goalInput[progressEvent] ?? ''}
                         onChange={(e) => {
                           setGoalInput({ ...goalInput, [progressEvent]: e.target.value })
                           setGoalError(null)
                         }}
                         placeholder="e.g. 58.50 or 1:58.00"
-                        style={{ background: 'var(--border)', border: `1px solid ${C.border}`, borderRadius: '8px', padding: '4px 12px', fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: C.text, width: '160px' }}
+                        style={{ width: '160px' }}
                       />
-                      <button
+                      <button type="button"
                         onClick={() => {
                           const parsed = parseGoalTimeInput(goalInput[progressEvent] ?? '')
                           if (parsed === null || Number.isNaN(parsed)) { setGoalError('Enter goal time as SS.ss or M:SS.ss.'); return }
@@ -727,12 +716,12 @@ export default function PerformancePage() {
                   ) : (
                     <p style={{ fontSize: 'var(--fs-xs)', color: C.muted }}>{goalTime[progressEvent] ? `Target: ${goalTime[progressEvent]}` : 'No goal set for this event.'}</p>
                   )}
-                  {goalError && <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--error)', marginTop: '6px' }}>{goalError}</p>}
+                  {goalError && <p className="is-fd8fe04">{goalError}</p>}
                 </div>
                 {!editingGoal && (
-                  <button
+                  <button type="button"
                     onClick={() => { setGoalInput({ ...goalInput, [progressEvent]: goalTime[progressEvent] ?? '' }); setGoalError(null); setEditingGoal(true) }}
-                    style={{ fontSize: 'var(--fs-xs)', padding: '4px 12px', background: 'rgba(245,158,11,0.15)', color: 'var(--warning)', border: '1px solid rgba(245,158,11,0.30)', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 }}
+                    className="is-57f178a"
                   >
                     {goalTime[progressEvent] ? 'Edit Goal' : 'Set Goal'}
                   </button>
@@ -740,15 +729,15 @@ export default function PerformancePage() {
               </div>
 
               {eventData.length === 0 ? (
-                <div className="card" style={{ padding: '32px 20px', textAlign: 'center' }}>
+                <div className="card is-911be78" >
                   <p style={{ fontSize: 'var(--fs-base)', color: C.muted }}>No data points for this event yet.</p>
                 </div>
               ) : (
                 <>
                   {/* Chart view */}
                   {viewMode === 'chart' && (
-                    <div className="card" style={{ padding: '24px', marginBottom: '20px' }}>
-                      <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px', height: '140px', position: 'relative' }}>
+                    <div className="card is-bb717d2" >
+                      <div className="is-bbd2fae">
                         {goalSec && (
                           <div style={{
                             position: 'absolute',
@@ -763,7 +752,7 @@ export default function PerformancePage() {
                           const barH = Math.max(20, normalized * 130)
                           const isLatest = i === eventData.length - 1
                           return (
-                            <div key={`${d.date}-${i}`} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                            <div key={`${d.date}-${i}`} className="is-472283d">
                               <p style={{ fontSize: 'var(--fs-2xs)', fontFamily: 'var(--font-body)', color: isLatest ? C.accent : C.muted, fontWeight: isLatest ? 700 : 400, whiteSpace: 'nowrap' }}>
                                 {fmtSec(d.time)}
                               </p>
@@ -802,7 +791,7 @@ export default function PerformancePage() {
                     <div className="card" style={{ overflow: 'hidden' }}>
                       <div style={{ display: 'grid', gridTemplateColumns: '100px 100px 1fr 1fr', padding: '12px 20px', borderBottom: `1px solid ${C.border}` }}>
                         {['Period', 'Time', 'Drop', 'Meet'].map((h) => (
-                          <span key={h} style={{ fontSize: 'var(--fs-2xs)', fontFamily: 'var(--font-body)', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</span>
+                          <span key={h} style={{ fontSize: 'var(--fs-2xs)', fontFamily: 'var(--font-body)', color: C.muted, }}>{h}</span>
                         ))}
                       </div>
                       {[...eventData].reverse().map((d, i) => {
@@ -825,12 +814,12 @@ export default function PerformancePage() {
 
                   {/* Monthly view */}
                   {viewMode === 'monthly' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div className="is-930d87f">
                       {Object.entries(monthMap).map(([month, times]) => {
                         const best = Math.min(...times)
                         const worst = Math.max(...times)
                         return (
-                          <div key={month} className="card" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '16px' }}>
+                          <div key={month} className="card is-5c576af" >
                             <div style={{ width: '72px', flexShrink: 0 }}>
                               <span style={{ fontSize: 'var(--fs-base)', fontFamily: 'var(--font-body)', fontWeight: 700, color: C.subtle }}>{month}</span>
                             </div>
@@ -855,7 +844,7 @@ export default function PerformancePage() {
       )}
 
       {swimmerId ? (
-        <div style={{ marginTop: '32px' }}>
+        <div className="is-8dd12b4">
           <GoalsPanel swimmerId={swimmerId} />
         </div>
       ) : null}

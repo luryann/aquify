@@ -228,13 +228,12 @@ export function canAccess(userRoles: Role | Role[], allowedRoles: Role[]): boole
   return normalizeRoles(userRoles).some((userRole) => allowedRoles.includes(userRole))
 }
 
-export type NavItemWithAccess = NavItem & { locked: boolean }
+export type NavItemWithAccess = NavItem
 
-// Returns every nav item annotated with whether the current role can access it, rather than
-// dropping inaccessible items — callers render locked items grayed-out with an explanation
-// instead of silently omitting them, so a role can see what it doesn't have access to.
+// Returns only the items the role set can open. Inaccessible items are hidden rather than
+// shown disabled, so a coach never sees billing/settings/etc.; sections left empty vanish too.
 export function filterNavItems(userRoles: Role | Role[]): NavItemWithAccess[] {
-  return NAV_ITEMS.map((item) => ({ ...item, locked: !canAccess(userRoles, item.allowedRoles) }))
+  return NAV_ITEMS.filter((item) => canAccess(userRoles, item.allowedRoles))
 }
 
 export function groupNavItems(items: NavItemWithAccess[]): Record<string, NavItemWithAccess[]> {

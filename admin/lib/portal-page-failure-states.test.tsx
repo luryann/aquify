@@ -1,4 +1,4 @@
-import test from 'node:test'
+import test, { before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import React, { act } from 'react'
@@ -8,6 +8,14 @@ import { JSDOM } from 'jsdom'
 import { SessionProvider } from './session.tsx'
 
 const require = createRequire(import.meta.url)
+const previousCSSLoader = require.extensions['.css']
+// Next loads global CSS in the browser. These DOM tests exercise page behavior
+// in Node, where extracted stylesheets need no execution.
+before(() => { require.extensions['.css'] = () => {} })
+after(() => {
+  if (previousCSSLoader) require.extensions['.css'] = previousCSSLoader
+  else delete require.extensions['.css']
+})
 
 type FetchHandler = (input: string, init?: RequestInit) => Response | Promise<Response>
 
@@ -98,6 +106,7 @@ async function renderPortalPage(
             name: 'Test Parent',
             org_id: '00000000-0000-0000-0000-00000000a001',
             household_id: 'household_123',
+            swimmer_id: 'swimmer_123',
             roles: ['parent'],
           },
         }))
@@ -187,7 +196,7 @@ test('calendar page shows a load failure instead of a fake empty upcoming state'
   try {
     await waitFor(() => {
       const text = container.textContent ?? ''
-      assert.match(text, /Upcoming calendar events are unavailable right now\./)
+      assert.match(text, /We could not load this page\./)
       assert.match(text, /Retry/)
       assert.doesNotMatch(text, /No upcoming events/)
     })
@@ -215,7 +224,7 @@ test('communications page shows a load failure instead of a fake empty announcem
     await waitFor(() => {
       const text = container.textContent ?? ''
       assert.match(text, /Announcements are unavailable/)
-      assert.match(text, /Unable to load announcements right now\. Please try again\./)
+      assert.match(text, /Couldn’t load announcements\. Try again\./)
       assert.match(text, /Retry/)
       assert.doesNotMatch(text, /No announcements/)
     })
@@ -312,7 +321,7 @@ test('registrations page shows a load failure instead of a fake empty household 
     await waitFor(() => {
       const text = container.textContent ?? ''
       assert.match(text, /Registration data is unavailable/)
-      assert.match(text, /Unable to load registrations right now\. Please try again\./)
+      assert.match(text, /Couldn’t load registrations\. Try again\./)
       assert.match(text, /Retry/)
       assert.doesNotMatch(text, /No registrations found for your household\./)
     })
@@ -340,7 +349,7 @@ test('portal meets page shows a load failure instead of a fake empty meet list',
     await waitFor(() => {
       const text = container.textContent ?? ''
       assert.match(text, /Meet data is unavailable/)
-      assert.match(text, /Unable to load meet schedules right now\. Please try again\./)
+      assert.match(text, /Couldn’t load meet schedules\. Try again\./)
       assert.match(text, /Retry/)
       assert.doesNotMatch(text, /No meets scheduled yet\./)
     })
@@ -367,8 +376,8 @@ test('swimmer meet detail page shows a load failure instead of a fake not-found 
   try {
     await waitFor(() => {
       const text = container.textContent ?? ''
-      assert.match(text, /Meet details are unavailable right now\./)
-      assert.match(text, /Unable to load meet details right now\. Please try again\./)
+      assert.match(text, /We could not load this page\./)
+      assert.match(text, /Couldn’t load meet details\. Try again\./)
       assert.match(text, /Retry/)
       assert.doesNotMatch(text, /Meet not found/)
     })
@@ -396,7 +405,7 @@ test('billing page shows a load failure instead of fake empty invoice or payment
   try {
     await waitFor(() => {
       const text = container.textContent ?? ''
-      assert.match(text, /Unable to load billing activity right now\./)
+      assert.match(text, /Couldn’t load billing activity\. Try again\./)
       assert.match(text, /Retry/)
       assert.doesNotMatch(text, /No invoices found\./)
       assert.doesNotMatch(text, /No payment history yet\./)
@@ -435,8 +444,8 @@ test('performance page shows a load failure instead of fake empty best-time stat
   try {
     await waitFor(() => {
       const text = container.textContent ?? ''
-      assert.match(text, /Performance data is unavailable right now\./)
-      assert.match(text, /Unable to load swimmer performance right now\. Please try again\./)
+      assert.match(text, /We could not load this page\./)
+      assert.match(text, /Couldn’t load swimmer performance\. Try again\./)
       assert.match(text, /Retry/)
       assert.doesNotMatch(text, /No best times recorded yet\./)
     })

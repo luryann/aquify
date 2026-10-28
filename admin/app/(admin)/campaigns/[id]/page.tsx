@@ -125,66 +125,66 @@ export default function CampaignDetailPage() {
   }), [deliveries])
 
   if (!session) {
-    return <div style={{ padding: '32px' }}><EmptyState icon="mail" title="Sign in required" description="Authenticate to inspect live campaign details." /></div>
+    return <div className="u-p-32px" ><EmptyState icon="mail" title="Sign in required" description="Authenticate to inspect live campaign details." /></div>
   }
 
   if (loading) {
-    return <div style={{ padding: '32px' }}><EmptyState icon="mail" title="Loading campaign" description="Fetching the live campaign and delivery rows." /></div>
+    return <div className="u-p-32px" ><EmptyState icon="mail" title="Loading campaign" description="Fetching the live campaign and delivery rows." /></div>
   }
 
   if (!campaign) {
-    return <div style={{ padding: '32px' }}><EmptyState icon="mail" title="Campaign not found" description={error ?? 'The requested campaign could not be loaded.'} /></div>
+    return <div className="u-p-32px" ><EmptyState icon="mail" title="Campaign not found" description={error ?? 'The requested campaign could not be loaded.'} /></div>
   }
 
   return (
     <div className="page">
-      <div style={{ marginBottom: '20px' }}>
-        <Link href="/campaigns" style={{ fontSize: 'var(--fs-sm)', color: 'var(--accent)', textDecoration: 'none' }}>← Back to campaigns</Link>
+      <div className="u-mb-20px" >
+        <Link href="/campaigns" className="u-fs-fs-sm" style={{ color: 'var(--accent-text, var(--accent))', textDecoration: 'none' }}>← Back to campaigns</Link>
       </div>
 
       {error ? (
-        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: 'var(--fs-sm)' }}>
+        <div className="u-mb-20px u-p-12px-16px u-fs-fs-sm" style={{ borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)' }}>
           {error}
         </div>
       ) : null}
 
       {notice ? (
-        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--success-bg)', border: '1px solid var(--success-border)', color: 'var(--success)', fontSize: 'var(--fs-sm)' }}>
+        <div className="u-mb-20px u-p-12px-16px u-fs-fs-sm" style={{ borderRadius: '8px', background: 'var(--success-bg)', border: '1px solid var(--success-border)', color: 'var(--success)' }}>
           {notice}
         </div>
       ) : null}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      <div className="u-gap-20px" style={{ display: 'flex', flexDirection: 'column' }}>
         <section>
-          <div style={{ marginBottom: '20px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '4px' }}>
+          <div className="u-mb-20px" >
+            <div className="u-gap-12px u-mb-4px" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
               <h1 className="page-title">
                 {campaign.name}
               </h1>
               <span className="badge badge-default">{campaign.status}</span>
             </div>
-            <div style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', marginBottom: '4px' }}>{campaign.subject}</div>
-            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
+            <div className="u-fs-fs-base u-mb-4px" style={{ color: 'var(--text-subtle)' }}>{campaign.subject}</div>
+            <div className="u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>
               Audience: {campaign.audience} · Created {formatDateTime(campaign.created_at)} by {staffName(campaign.created_by)} · Sent {formatDateTime(campaign.sent_at)}
             </div>
           </div>
 
-          <div className="cols-4" style={{ gap: '12px', marginBottom: '20px' }}>
+          <div className="cols-4 u-gap-12px u-mb-20px" >
             {[
               { label: 'Recipients', value: String(campaign.total_recipients) },
               { label: 'Sent', value: String(campaign.sent_count) },
               { label: 'Failed', value: String(campaign.failed_count) },
               { label: 'Suppressed', value: String(campaign.suppressed_count) },
             ].map((stat) => (
-              <div key={stat.label} className="card-elevated" style={{ padding: '16px 16px' }}>
-                <div style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>{stat.label}</div>
-                <div style={{ fontSize: 'var(--fs-2xl)', fontFamily: 'var(--font-body)', color: 'var(--text)' }}>{stat.value}</div>
+              <div key={stat.label} className="card-elevated u-p-16px-16px" >
+                <div className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ color: 'var(--text-muted)' }}>{stat.label}</div>
+                <div className="u-fs-fs-2xl u-ff-font-body" style={{ color: 'var(--text)' }}>{stat.value}</div>
               </div>
             ))}
           </div>
 
-          <div style={{ padding: '16px 20px', borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
-            <div style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '8px' }}>HTML preview</div>
+          <div className="u-p-16px-20px" style={{ borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
+            <div className="u-fs-fs-sm u-ff-font-body u-mb-8px" style={{ color: 'var(--text-muted)' }}>HTML preview</div>
             <iframe
               title={`${campaign.name} HTML preview`}
               sandbox=""
@@ -194,12 +194,12 @@ export default function CampaignDetailPage() {
           </div>
 
           {campaign.status === 'draft' ? (
-            <div style={{ padding: '16px 20px', borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+            <div className="u-p-16px-20px" style={{ borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
+              <div className="u-gap-12px" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
+                <span className="u-fs-fs-xs u-lh-1_5" style={{ color: 'var(--text-muted)' }}>
                   Recipients are resolved server-side from the campaign audience and current org membership records.
                 </span>
-                <button
+                <button type="button"
                   onClick={() => void handleSend()}
                   disabled={sending}
                   className="btn btn-primary"
@@ -212,32 +212,32 @@ export default function CampaignDetailPage() {
         </section>
 
         <section className="card" style={{ overflow: 'hidden' }}>
-          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+          <div className="u-p-16px-20px u-gap-12px" style={{ borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap' }}>
             <h2 className="card-title">Deliveries</h2>
-            <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+            <span className="u-fs-fs-sm u-ff-font-body" style={{ color: 'var(--text-muted)' }}>
               Delivered {deliverySummary.delivered} · Failed {deliverySummary.failed} · Suppressed {deliverySummary.suppressed}
             </span>
           </div>
           {deliveries.length === 0 ? (
-            <div style={{ padding: '20px' }}><EmptyState icon="mail" title="No deliveries recorded" description="This campaign has not produced delivery rows yet." /></div>
+            <div className="u-p-20px" ><EmptyState icon="mail" title="No deliveries recorded" description="This campaign has not produced delivery rows yet." /></div>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
+            <div className="table-scroll" style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--border)' }}>
                     {['Recipient', 'Status', 'Sent', 'Delivered', 'Message'].map((header) => (
-                      <th key={header} className="col-head" style={{ padding: '12px 16px', textAlign: 'left' }}>{header}</th>
+                      <th key={header} className="col-head u-p-12px-16px" style={{ textAlign: 'left' }}>{header}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {deliveries.map((delivery) => (
                     <tr key={delivery.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                      <td style={{ padding: '12px 16px', fontSize: 'var(--fs-base)', color: 'var(--text)' }}>{delivery.recipient_email}</td>
-                      <td style={{ padding: '12px 16px', fontFamily: 'var(--font-body)', fontSize: 'var(--fs-xs)', color: delivery.status === 'delivered' ? 'var(--success)' : delivery.status === 'failed' ? 'var(--error)' : 'var(--text-subtle)' }}>{delivery.status}</td>
-                      <td style={{ padding: '12px 16px', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{formatDateTime(delivery.sent_at)}</td>
-                      <td style={{ padding: '12px 16px', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{formatDateTime(delivery.delivered_at)}</td>
-                      <td style={{ padding: '12px 16px', fontSize: 'var(--fs-sm)', color: delivery.error_message ? 'var(--error)' : 'var(--text-muted)' }}>{delivery.provider_message_id || delivery.error_message || '—'}</td>
+                      <td className="u-p-12px-16px u-fs-fs-base" style={{ color: 'var(--text)' }}>{delivery.recipient_email}</td>
+                      <td className="u-p-12px-16px u-ff-font-body u-fs-fs-xs" style={{ color: delivery.status === 'delivered' ? 'var(--success)' : delivery.status === 'failed' ? 'var(--error)' : 'var(--text-subtle)' }}>{delivery.status}</td>
+                      <td className="u-p-12px-16px u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{formatDateTime(delivery.sent_at)}</td>
+                      <td className="u-p-12px-16px u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{formatDateTime(delivery.delivered_at)}</td>
+                      <td className="u-p-12px-16px u-fs-fs-sm" style={{ color: delivery.error_message ? 'var(--error)' : 'var(--text-muted)' }}>{delivery.provider_message_id || delivery.error_message || '—'}</td>
                     </tr>
                   ))}
                 </tbody>

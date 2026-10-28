@@ -42,22 +42,13 @@ export function ServiceWorkerRegistrar() {
   return (
     <div
       role="status"
-      style={{
-        position: 'fixed', left: 16, right: 16, bottom: 16, zIndex: 1000,
-        maxWidth: 420, margin: '0 auto', display: 'flex', alignItems: 'center', gap: 12,
-        padding: '12px 16px', borderRadius: 12, background: 'var(--bg-elevated, #242426)',
-        color: 'var(--text, #fff)', border: '1px solid var(--border, rgba(255,255,255,.12))',
-        boxShadow: '0 8px 30px rgba(0,0,0,.35)', fontFamily: 'var(--font-body)', fontSize: 'var(--fs-md)',
-      }}
+      className="u-m-0-auto u-gap-12px u-p-12px-16px u-ff-font-body u-fs-fs-md" style={{ position: 'fixed', left: 16, right: 16, bottom: 16, zIndex: 1000, maxWidth: 420, display: 'flex', alignItems: 'center', borderRadius: 12, background: 'var(--bg-elevated, #242426)', color: 'var(--text, #fff)', border: '1px solid var(--border, rgba(255,255,255,.12))', boxShadow: 'var(--shadow)' }}
     >
       <span style={{ flex: 1 }}>New version available.</span>
       <button
         type="button"
         onClick={() => waiting.postMessage({ type: 'SKIP_WAITING' })}
-        style={{
-          background: 'var(--accent, #eb5d1e)', color: '#fff', border: 0, borderRadius: 8,
-          padding: '8px 16px', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
-        }}
+        className="u-p-8px-16px u-fw-600 u-ff-inherit" style={{ background: 'var(--accent, #eb5d1e)', color: '#fff', border: 0, borderRadius: 8, cursor: 'pointer' }}
       >
         Reload
       </button>

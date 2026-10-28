@@ -30,6 +30,7 @@ import {
   type MeetRecord,
 } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 
 type SessionRow = {
   id: string
@@ -99,13 +100,13 @@ function StatusBadge({ status }: { status: string }) {
     published: { label: 'Published', color: 'var(--info)', bg: 'var(--info-bg)' },
     commitment_open: { label: 'Commitments open', color: 'var(--warning)', bg: 'var(--warning-bg)' },
     commitment_closed: { label: 'Commitments closed', color: 'var(--warning)', bg: 'var(--warning-bg)' },
-    entry_finalized: { label: 'Entries finalized', color: 'var(--accent)', bg: 'var(--accent-subtle)' },
+    entry_finalized: { label: 'Entries finalized', color: 'var(--accent-text, var(--accent))', bg: 'var(--accent-subtle)' },
     completed: { label: 'Completed', color: 'var(--success)', bg: 'var(--success-bg)' },
     archived: { label: 'Archived', color: 'var(--text-muted)', bg: 'var(--bg-elevated)' },
     invited: { label: 'Invited', color: 'var(--text-muted)', bg: 'var(--bg-elevated)' },
     committed_yes: { label: 'Committed yes', color: 'var(--success)', bg: 'var(--success-bg)' },
     committed_no: { label: 'Committed no', color: 'var(--error)', bg: 'var(--error-bg)' },
-    locked: { label: 'Locked', color: 'var(--accent)', bg: 'var(--accent-subtle)' },
+    locked: { label: 'Locked', color: 'var(--accent-text, var(--accent))', bg: 'var(--accent-subtle)' },
     submitted: { label: 'Submitted', color: 'var(--info)', bg: 'var(--info-bg)' },
     approved: { label: 'Approved', color: 'var(--success)', bg: 'var(--success-bg)' },
   }
@@ -114,31 +115,31 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 const SESSION_COLS: Column<SessionRow>[] = [
-  { key: 'name', label: 'Session', render: (row) => <span style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)' }}>{row.name}</span> },
-  { key: 'date', label: 'Date', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{formatDate(row.date)}</span> },
-  { key: 'warmupTime', label: 'Warm-up', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>{formatTime(row.warmupTime)}</span> },
-  { key: 'startTime', label: 'Start', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text)' }}>{formatTime(row.startTime)}</span> },
-  { key: 'eventCount', label: 'Events', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text)' }}>{row.eventCount}</span> },
+  { key: 'name', label: 'Session', render: (row) => <span className="u-fs-fs-base u-fw-600" style={{ color: 'var(--text)' }}>{row.name}</span> },
+  { key: 'date', label: 'Date', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{formatDate(row.date)}</span> },
+  { key: 'warmupTime', label: 'Warm-up', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>{formatTime(row.warmupTime)}</span> },
+  { key: 'startTime', label: 'Start', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text)' }}>{formatTime(row.startTime)}</span> },
+  { key: 'eventCount', label: 'Events', align: 'right', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text)' }}>{row.eventCount}</span> },
 ]
 
 const EVENT_COLS: Column<EventRow>[] = [
-  { key: 'eventNumber', label: 'Event', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text)' }}>{row.eventNumber}</span> },
-  { key: 'name', label: 'Name', render: (row) => <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text)' }}>{row.name}</span> },
-  { key: 'sessionName', label: 'Session', render: (row) => <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{row.sessionName}</span> },
-  { key: 'ageGroup', label: 'Age/Gender', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>{row.gender} {row.ageGroup}</span> },
-  { key: 'entries', label: 'Entries', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--accent)' }}>{row.entries}</span> },
+  { key: 'eventNumber', label: 'Event', render: (row) => <span className="u-ff-font-body u-fs-fs-sm u-fw-600" style={{ color: 'var(--text)' }}>{row.eventNumber}</span> },
+  { key: 'name', label: 'Name', render: (row) => <span className="u-fs-fs-base" style={{ color: 'var(--text)' }}>{row.name}</span> },
+  { key: 'sessionName', label: 'Session', render: (row) => <span className="u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{row.sessionName}</span> },
+  { key: 'ageGroup', label: 'Age/Gender', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>{row.gender} {row.ageGroup}</span> },
+  { key: 'entries', label: 'Entries', align: 'right', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--accent-text, var(--accent))' }}>{row.entries}</span> },
 ]
 
 const COMMITMENT_COLS: Column<CommitmentRow>[] = [
-  { key: 'swimmer', label: 'Swimmer', render: (row) => <span style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)' }}>{row.swimmer}</span> },
-  { key: 'household', label: 'Household', render: (row) => <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{row.household}</span> },
+  { key: 'swimmer', label: 'Swimmer', render: (row) => <span className="u-fs-fs-base u-fw-600" style={{ color: 'var(--text)' }}>{row.swimmer}</span> },
+  { key: 'household', label: 'Household', render: (row) => <span className="u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{row.household}</span> },
   { key: 'status', label: 'Status', render: (row) => <StatusBadge status={row.status} /> },
 ]
 
 const ENTRY_COLS: Column<EntryRow>[] = [
-  { key: 'swimmer', label: 'Swimmer', render: (row) => <span style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)' }}>{row.swimmer}</span> },
-  { key: 'event', label: 'Event', render: (row) => <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{row.event}</span> },
-  { key: 'seedTime', label: 'Seed', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--accent)' }}>{row.seedTime}</span> },
+  { key: 'swimmer', label: 'Swimmer', render: (row) => <span className="u-fs-fs-base u-fw-600" style={{ color: 'var(--text)' }}>{row.swimmer}</span> },
+  { key: 'event', label: 'Event', render: (row) => <span className="u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{row.event}</span> },
+  { key: 'seedTime', label: 'Seed', align: 'right', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--accent-text, var(--accent))' }}>{row.seedTime}</span> },
   { key: 'status', label: 'Status', render: (row) => <StatusBadge status={row.status} /> },
 ]
 
@@ -192,25 +193,16 @@ function MeetLifecycleBar({
   onTransition: (toStatus: string) => void
   transitioning: boolean
 }) {
+  const confirm = useConfirm()
   const stageIndex = LIFECYCLE_STAGES.findIndex((s) => s.key === meet.status)
   const actions = getLifecycleActions(meet.status)
 
   if (meet.status === 'archived') return null
 
   return (
-    <div style={{
-      background: 'var(--bg-elevated)',
-      border: '1px solid var(--border)',
-      borderRadius: '12px',
-      padding: '16px 20px',
-      marginBottom: '24px',
-      display: 'flex',
-      alignItems: 'center',
-      gap: '20px',
-      flexWrap: 'wrap',
-    }}>
+    <div className="u-p-16px-20px u-mb-24px u-gap-20px" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '12px', display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
       {/* Progress track */}
-      <div style={{ flex: 1, minWidth: '260px', display: 'flex', alignItems: 'center', gap: 0 }}>
+      <div className="u-gap-0" style={{ flex: 1, minWidth: '260px', display: 'flex', alignItems: 'center' }}>
         {LIFECYCLE_STAGES.filter((s) => s.key !== 'archived').map((stage, i, arr) => {
           const idx = LIFECYCLE_STAGES.findIndex((s2) => s2.key === stage.key)
           const isPast = idx < stageIndex
@@ -239,44 +231,33 @@ function MeetLifecycleBar({
       </div>
 
       {/* Current label */}
-      <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+      <div className="u-fs-fs-sm u-ff-font-body" style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap', flexShrink: 0 }}>
         {LIFECYCLE_STAGES[stageIndex]?.label ?? meet.status}
       </div>
 
       {/* Action buttons */}
       {actions.length > 0 && (
-        <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+        <div className="u-gap-8px" style={{ display: 'flex', flexShrink: 0 }}>
           {actions.map((action) => (
-            <button
+            <button type="button"
               key={action.toStatus}
               disabled={transitioning}
-              onClick={() => {
+              onClick={async () => {
                 if (action.confirm) {
-                  if (!window.confirm(action.confirm)) return
+                  const ok = await confirm({ title: `${action.label}?`, message: action.confirm, confirmLabel: action.label, destructive: action.variant === 'danger' })
+                  if (!ok) return
                 }
                 onTransition(action.toStatus)
               }}
-              style={{
-                padding: '8px 16px',
-                borderRadius: '6px',
-                fontSize: 'var(--fs-sm)',
-                fontWeight: 600,
-                fontFamily: 'var(--font-body)',
-                cursor: transitioning ? 'not-allowed' : 'pointer',
-                opacity: transitioning ? 0.6 : 1,
-                transition: 'all 0.15s',
-                border: action.variant === 'ghost' ? '1px solid var(--border)' : 'none',
-                background: action.variant === 'primary'
+              className="u-p-8px-16px u-fs-fs-sm u-fw-600 u-ff-font-body" style={{ borderRadius: '6px', cursor: transitioning ? 'not-allowed' : 'pointer', opacity: transitioning ? 0.6 : 1, transition: 'all 0.15s', border: action.variant === 'ghost' ? '1px solid var(--border)' : 'none', background: action.variant === 'primary'
                   ? 'var(--accent)'
                   : action.variant === 'danger'
                   ? 'var(--error-bg)'
-                  : 'transparent',
-                color: action.variant === 'primary'
+                  : 'transparent', color: action.variant === 'primary'
                   ? '#fff'
                   : action.variant === 'danger'
                   ? 'var(--error)'
-                  : 'var(--text-subtle)',
-              }}
+                  : 'var(--text-subtle)' }}
             >
               {transitioning ? '…' : action.label}
             </button>
@@ -415,11 +396,15 @@ function MeetDetailPageContent() {
     }
   }, [api, meetId, session?.user.orgId, reloadKey])
 
+  const confirm = useConfirm()
   async function handleTransition(toStatus: string) {
     if (!session?.user.orgId || !meetId) return
     if (toStatus === 'entry_finalized') {
       const pending = entries.filter((entry) => entry.status === 'submitted').length
-      if (pending > 0 && !window.confirm(`${pending} entr${pending === 1 ? 'y is' : 'ies are'} still awaiting approval and will not be in the SD3 entry file. Finalize anyway?`)) return
+      if (pending > 0) {
+        const ok = await confirm({ title: 'Finalize with pending entries?', message: 'Entries still awaiting approval will not be in the SD3 entry file.', count: pending, countNoun: 'pending entr', confirmLabel: 'Finalize anyway' })
+        if (!ok) return
+      }
     }
     setTransitioning(true)
     setTransitionError(null)
@@ -464,17 +449,17 @@ function MeetDetailPageContent() {
 
   return (
     <div className="page">
-      <Link href="/meets" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', textDecoration: 'none', marginBottom: '20px' }}>
+      <Link href="/meets" className="u-gap-4px u-fs-fs-base u-mb-20px" style={{ display: 'inline-flex', alignItems: 'center', color: 'var(--text-subtle)', textDecoration: 'none' }}>
         <Icon name="chevron-left" size={14} /> Meets
       </Link>
 
       <div className="page-header">
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px 12px', marginBottom: '4px' }}>
+          <div className="u-gap-6px-12px u-mb-4px" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
             <h1 className="page-title">{meet.name}</h1>
             <StatusBadge status={meet.status} />
           </div>
-          <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+          <div className="u-fs-fs-sm u-ff-font-body" style={{ color: 'var(--text-muted)' }}>
             {meet.host_org || 'Host TBD'} · {meet.location || 'Location TBD'}
           </div>
         </div>
@@ -483,21 +468,21 @@ function MeetDetailPageContent() {
       <MeetLifecycleBar meet={meet} onTransition={handleTransition} transitioning={transitioning} />
 
       {transitionError && (
-        <div style={{ marginBottom: '16px', padding: '12px 16px', borderRadius: '6px', background: 'var(--error-bg)', color: 'var(--error)', fontSize: 'var(--fs-base)', fontFamily: 'var(--font-body)', border: '1px solid var(--error)' }}>
+        <div className="u-mb-16px u-p-12px-16px u-fs-fs-base u-ff-font-body" style={{ borderRadius: '6px', background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)' }}>
           {transitionError}
         </div>
       )}
 
-      <div className="cols-4" style={{ gap: '12px', marginBottom: '24px' }}>
+      <div className="cols-4 u-gap-12px u-mb-24px" >
         {[
           { label: 'Course', value: meet.course, color: 'var(--text)' },
           { label: 'Sessions', value: sessions.length.toString(), color: 'var(--text)' },
-          { label: 'Events', value: events.length.toString(), color: 'var(--accent)' },
+          { label: 'Events', value: events.length.toString(), color: 'var(--accent-text, var(--accent))' },
           { label: 'Entries', value: entries.length.toString(), color: 'var(--success)' },
         ].map((stat) => (
-          <div key={stat.label} className="card" style={{ padding: '16px 16px' }}>
-            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
-            <div style={{ fontSize: 'var(--fs-xl)', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
+          <div key={stat.label} className="card u-p-16px-16px" >
+            <div className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ color: 'var(--text-muted)' }}>{stat.label}</div>
+            <div className="u-fs-fs-xl u-ff-font-body u-fw-700" style={{ color: stat.color }}>{stat.value}</div>
           </div>
         ))}
       </div>
@@ -505,13 +490,13 @@ function MeetDetailPageContent() {
       <Tabs tabs={tabs} active={activeTab} onChange={setActiveTab} />
 
       {activeTab === 'overview' ? (
-        <div className="cols-2" style={{ gap: '16px' }}>
+        <div className="cols-2 u-gap-16px" >
           {meet.status === 'entry_finalized' || meet.status === 'completed' || meet.status === 'archived' ? (
             <ResultsImport meetId={meetId} />
           ) : null}
-          <div className="card" style={{ padding: '20px' }}>
-            <h3 className="card-title" style={{ marginBottom: '16px' }}>Dates &amp; host</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div className="card u-p-20px" >
+            <h3 className="card-title u-mb-16px" >Dates &amp; host</h3>
+            <div className="u-gap-12px" style={{ display: 'flex', flexDirection: 'column' }}>
               {[
                 { label: 'Start date', value: formatDate(meet.start_date) },
                 { label: 'End date', value: formatDate(meet.end_date || meet.start_date) },
@@ -519,29 +504,29 @@ function MeetDetailPageContent() {
                 { label: 'Entry deadline', value: formatDate(meet.entry_deadline) },
                 { label: 'Host', value: meet.host_org || '—' },
               ].map((row) => (
-                <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 'var(--fs-base)', borderBottom: '1px solid var(--border)', paddingBottom: '12px' }}>
+                <div key={row.label} className="u-fs-fs-base u-pb-12px" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)' }}>
                   <span style={{ color: 'var(--text-muted)' }}>{row.label}</span>
-                  <span style={{ fontFamily: 'var(--font-body)', color: 'var(--text)', fontWeight: 600 }}>{row.value}</span>
+                  <span className="u-ff-font-body u-fw-600" style={{ color: 'var(--text)' }}>{row.value}</span>
                 </div>
               ))}
             </div>
           </div>
-          <div className="card" style={{ padding: '20px' }}>
-            <h3 className="card-title" style={{ marginBottom: '16px' }}>Open items</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 'var(--fs-base)' }}>
+          <div className="card u-p-20px" >
+            <h3 className="card-title u-mb-16px" >Open items</h3>
+            <div className="u-gap-12px" style={{ display: 'flex', flexDirection: 'column' }}>
+              <div className="u-fs-fs-base" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ color: 'var(--text-muted)' }}>Households yet to respond</span>
-                <span style={{ fontFamily: 'var(--font-body)', fontWeight: 600, color: commitments.filter((c) => c.status === 'invited').length > 0 ? 'var(--warning)' : 'var(--text)' }}>
+                <span className="u-ff-font-body u-fw-600" style={{ color: commitments.filter((c) => c.status === 'invited').length > 0 ? 'var(--warning)' : 'var(--text)' }}>
                   {commitments.filter((c) => c.status === 'invited').length}
                 </span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 'var(--fs-base)' }}>
+              <div className="u-fs-fs-base" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ color: 'var(--text-muted)' }}>Entries awaiting approval</span>
-                <span style={{ fontFamily: 'var(--font-body)', fontWeight: 600, color: entries.filter((e) => e.status === 'submitted').length > 0 ? 'var(--warning)' : 'var(--text)' }}>
+                <span className="u-ff-font-body u-fw-600" style={{ color: entries.filter((e) => e.status === 'submitted').length > 0 ? 'var(--warning)' : 'var(--text)' }}>
                   {entries.filter((e) => e.status === 'submitted').length}
                 </span>
               </div>
-              <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginTop: '4px' }}>
+              <p className="u-fs-fs-xs u-ff-font-body u-mt-4px" style={{ color: 'var(--text-muted)' }}>
                 {lastRefreshedAt ? `Updated ${lastRefreshedAt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : 'Waiting for first refresh…'}
               </p>
             </div>
@@ -566,8 +551,8 @@ function MeetDetailPageContent() {
       ) : null}
       {activeTab === 'commitments' ? (
         <div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
-            <Link href={`/commitments?meet=${meetId}`} style={{ fontSize: 'var(--fs-sm)', color: 'var(--accent)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+          <div className="u-mb-12px" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <Link href={`/commitments?meet=${meetId}`} className="u-fs-fs-sm u-gap-4px" style={{ color: 'var(--accent-text, var(--accent))', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
               Manage commitments (selections, approvals, lock) <Icon name="chevron-right" size={12} />
             </Link>
           </div>
@@ -579,11 +564,11 @@ function MeetDetailPageContent() {
           {meet && (meet.status === 'entry_finalized' || meet.status === 'completed') && entries.length > 0 ? (
             <EntryFileExport meetId={meetId} onExported={() => setReloadKey((k) => k + 1)} />
           ) : null}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '16px', flexWrap: 'wrap', marginBottom: '12px' }}>
-            <Link href={`/performance/relays?meet_id=${meetId}`} style={{ fontSize: 'var(--fs-sm)', color: 'var(--accent)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+          <div className="u-gap-16px u-mb-12px" style={{ display: 'flex', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+            <Link href={`/performance/relays?meet_id=${meetId}`} className="u-fs-fs-sm u-gap-4px" style={{ color: 'var(--accent-text, var(--accent))', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
               Build relays <Icon name="chevron-right" size={12} />
             </Link>
-            <Link href={`/entries?meet=${meetId}`} style={{ fontSize: 'var(--fs-sm)', color: 'var(--accent)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+            <Link href={`/entries?meet=${meetId}`} className="u-fs-fs-sm u-gap-4px" style={{ color: 'var(--accent-text, var(--accent))', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
               Manage entries (approve, scratch, add) <Icon name="chevron-right" size={12} />
             </Link>
           </div>

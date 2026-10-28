@@ -33,28 +33,13 @@ export function DevRoleSwitcher() {
 
   return (
     <div
-      style={{
-        position: 'fixed',
-        bottom: '16px',
-        left: '16px',
-        zIndex: 10000,
-        fontFamily: 'var(--font-body)',
-        fontSize: 'var(--fs-xs)',
-      }}
+      className="u-ff-font-body u-fs-fs-xs" style={{ position: 'fixed', bottom: '16px', left: '16px', zIndex: 10000 }}
     >
       {open && (
         <div
-          style={{
-            background: 'var(--bg-elevated)',
-            border: '1px solid var(--border-strong)',
-            borderRadius: 'var(--r-lg)',
-            padding: '8px',
-            marginBottom: '6px',
-            boxShadow: 'var(--shadow-lg)',
-            minWidth: '160px',
-          }}
+          className="u-p-8px u-mb-6px" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-strong)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)', minWidth: '160px' }}
         >
-          <div style={{ color: 'var(--text-muted)', padding: '4px 8px 8px', borderBottom: '1px solid var(--border)', marginBottom: '4px' }}>
+          <div className="u-mb-4px" style={{ color: 'var(--text-muted)', padding: '4px 8px 8px', borderBottom: '1px solid var(--border)' }}>
             Dev Role
           </div>
           {STUB_ORDER.map((stub) => {
@@ -62,25 +47,10 @@ export function DevRoleSwitcher() {
             if (!s) return null
             const isActive = currentStub === stub
             return (
-              <button
+              <button type="button"
                 key={stub}
                 onClick={() => switchTo(stub)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  width: '100%',
-                  padding: '6px 8px',
-                  background: isActive ? 'var(--accent-subtle)' : 'transparent',
-                  border: 'none',
-                  borderRadius: 'var(--r-md)',
-                  cursor: 'pointer',
-                  color: isActive ? 'var(--accent)' : 'var(--text-subtle)',
-                  textAlign: 'left',
-                  fontFamily: 'var(--font-body)',
-                  fontSize: 'var(--fs-sm)',
-                  fontWeight: isActive ? 600 : 400,
-                }}
+                className="u-gap-8px u-p-6px-8px u-ff-font-body u-fs-fs-sm" style={{ display: 'flex', alignItems: 'center', width: '100%', background: isActive ? 'var(--accent-subtle)' : 'transparent', border: 'none', borderRadius: 'var(--r-md)', cursor: 'pointer', color: isActive ? 'var(--accent)' : 'var(--text-subtle)', textAlign: 'left', fontWeight: isActive ? 600 : 400 }}
                 onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = 'rgba(255,255,255,0.04)' }}
                 onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = 'transparent' }}
               >
@@ -97,24 +67,9 @@ export function DevRoleSwitcher() {
         </div>
       )}
 
-      <button
+      <button type="button"
         onClick={() => setOpen((v) => !v)}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '6px',
-          padding: '4px 12px',
-          background: 'var(--bg-elevated)',
-          border: '1px solid var(--border-strong)',
-          borderRadius: 'var(--r-md)',
-          cursor: 'pointer',
-          color: 'var(--accent)',
-          fontFamily: 'var(--font-body)',
-          fontSize: 'var(--fs-xs)',
-          fontWeight: 600,
-          boxShadow: 'var(--shadow-md)',
-          letterSpacing: '0.02em',
-        }}
+        className="u-gap-6px u-p-4px-12px u-ff-font-body u-fs-fs-xs u-fw-600 u-ls-0_02em" style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-elevated)', border: '1px solid var(--border-strong)', borderRadius: 'var(--r-md)', cursor: 'pointer', color: 'var(--accent-text, var(--accent))', boxShadow: 'var(--shadow-md)' }}
       >
         <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent)' }} />
         DEV · {ROLE_LABELS[currentRole as keyof typeof ROLE_LABELS] ?? currentRole}

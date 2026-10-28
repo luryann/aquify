@@ -6,6 +6,7 @@ import type { ReactNode } from 'react'
 import { useState, useEffect } from 'react'
 import { Icon } from '@/components/ui/icons'
 import { NAV_ITEMS } from '@/lib/roles'
+import { OPEN_COMMAND_PALETTE_EVENT } from '@/components/layout/CommandPalette'
 
 type TopbarProps = {
   actions?: ReactNode
@@ -69,7 +70,7 @@ function ThemeToggle() {
   }
 
   return (
-    <button
+    <button type="button"
       onClick={toggle}
       title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
       style={{
@@ -118,18 +119,10 @@ export function Topbar({ actions, onOpenMobileNav }: TopbarProps) {
 
   return (
     <header
-      style={{
-        height: 'var(--topbar-h)',
-        borderBottom: '1px solid var(--border)',
-        background: 'var(--bg)',
-        display: 'flex',
-        alignItems: 'center',
-        padding: '0 var(--page-gutter)',
-        gap: '12px',
-        flexShrink: 0,
-      }}
+      className="u-gap-12px" style={{ height: 'var(--topbar-h)', borderBottom: '1px solid var(--border)', background: 'var(--bg)', display: 'flex', alignItems: 'center', padding: '0 var(--page-gutter)', flexShrink: 0 }}
     >
       <button
+        type="button"
         className="mobile-nav-toggle"
         onClick={onOpenMobileNav}
         aria-label="Open navigation menu"
@@ -138,15 +131,8 @@ export function Topbar({ actions, onOpenMobileNav }: TopbarProps) {
       </button>
 
       <span
-        className="mobile-only"
-        style={{
-          fontFamily: 'var(--font-display)',
-          fontWeight: 'var(--display-weight)',
-          fontSize: 'var(--fs-lg)',
-          color: 'var(--text)',
-          letterSpacing: 'var(--display-tracking)',
-          flexShrink: 0,
-        }}
+        className="mobile-only u-ff-font-display u-fw-display-weight u-fs-fs-lg u-ls-display-tracking"
+        style={{ color: 'var(--text)', flexShrink: 0 }}
       >
         aquify
       </span>
@@ -154,7 +140,7 @@ export function Topbar({ actions, onOpenMobileNav }: TopbarProps) {
       {/* Breadcrumb */}
       <nav
         aria-label="Breadcrumb"
-        style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0 }}
+        className="u-gap-4px" style={{ flex: 1, display: 'flex', alignItems: 'center', minWidth: 0 }}
       >
         {crumbs.map((crumb, i) => {
           const isLast = i === crumbs.length - 1
@@ -174,37 +160,20 @@ export function Topbar({ actions, onOpenMobileNav }: TopbarProps) {
               )}
               {isLast ? (
                 <span
-                  style={{
-                    fontSize: 'var(--fs-base)',
-                    fontWeight: 600,
-                    color: 'var(--text)',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
+                  className="u-fs-fs-base u-fw-600" style={{ color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                 >
                   {crumb.label}
                 </span>
               ) : crumb.path === '#' ? (
                 <span
-                  style={{
-                    fontSize: 'var(--fs-base)',
-                    color: 'var(--text-muted)',
-                    whiteSpace: 'nowrap',
-                  }}
+                  className="u-fs-fs-base" style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap' }}
                 >
                   {crumb.label}
                 </span>
               ) : (
                 <Link
                   href={crumb.path}
-                  style={{
-                    fontSize: 'var(--fs-base)',
-                    color: 'var(--text-subtle)',
-                    whiteSpace: 'nowrap',
-                    textDecoration: 'none',
-                    transition: 'color var(--dur-fast)',
-                  }}
+                  className="u-fs-fs-base" style={{ color: 'var(--text-subtle)', whiteSpace: 'nowrap', textDecoration: 'none', transition: 'color var(--dur-fast)' }}
                   onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text)')}
                   onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-subtle)')}
                 >
@@ -217,8 +186,20 @@ export function Topbar({ actions, onOpenMobileNav }: TopbarProps) {
       </nav>
 
       {/* Right-side actions */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+      <div className="u-gap-8px" style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
         {actions}
+
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          onClick={() => window.dispatchEvent(new Event(OPEN_COMMAND_PALETTE_EVENT))}
+          aria-label="Open command palette"
+          aria-keyshortcuts="Control+K Meta+K"
+        >
+          <Icon name="search" size={14} />
+          <span className="mobile-hide">Search</span>
+          <span className="kbd-hint topbar-kbd" aria-hidden>Ctrl K</span>
+        </button>
 
         <ThemeToggle />
       </div>

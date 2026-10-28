@@ -109,7 +109,7 @@ export function RecordsBoard({ canManage = false }: Props) {
           {AGE_GROUPS.map((g) => <option key={g} value={g}>{AGE_GROUP_LABELS[g]}</option>)}
         </select>
         {canManage ? (
-          <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto', flexWrap: 'wrap' }}>
+          <div className="u-gap-8px u-ml-auto" style={{ display: 'flex', flexWrap: 'wrap' }}>
             <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void rebuild()}>Rebuild from results</button>
             <button type="button" className="btn btn-primary btn-sm" onClick={() => setAdding(true)}>Add historical record</button>
           </div>
@@ -120,12 +120,12 @@ export function RecordsBoard({ canManage = false }: Props) {
       {notice ? <Notice tone="success">{notice}</Notice> : null}
 
       {canManage && pending.length > 0 ? (
-        <section aria-labelledby="pending-records" style={{ marginBottom: 'var(--space-8)', border: '1px solid var(--warning-border)', borderRadius: 'var(--r-md)', background: 'var(--warning-bg)', padding: '16px 16px' }}>
-          <h2 id="pending-records" style={{ margin: '0 0 4px', fontSize: 'var(--fs-md)', fontWeight: 600 }}>{pending.length} faster {pending.length === 1 ? 'swim beats a locked record' : 'swims beat locked records'}</h2>
-          <p style={{ margin: '0 0 12px', fontSize: 'var(--fs-base)', color: 'var(--text-subtle)' }}>Approve a swim to make it the record, or reject it if the result is wrong.</p>
-          <div style={{ display: 'grid', gap: '8px' }}>
+        <section aria-labelledby="pending-records" className="u-mb-space-8 u-p-16px-16px" style={{ border: '1px solid var(--warning-border)', borderRadius: 'var(--r-md)', background: 'var(--warning-bg)' }}>
+          <h2 id="pending-records" className="u-m-0-0-4px u-fs-fs-md u-fw-600" >{pending.length} faster {pending.length === 1 ? 'swim beats a locked record' : 'swims beat locked records'}</h2>
+          <p className="u-m-0-0-12px u-fs-fs-base" style={{ color: 'var(--text-subtle)' }}>Approve a swim to make it the record, or reject it if the result is wrong.</p>
+          <div className="u-gap-8px" style={{ display: 'grid' }}>
             {pending.map((e) => (
-              <div key={e.id} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '12px', fontSize: 'var(--fs-base)' }}>
+              <div key={e.id} className="u-gap-12px u-fs-fs-base" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center' }}>
                 <span style={{ flex: '1 1 240px' }}>
                   <strong>{e.swimmer_name}</strong> {formatSwimTime(e.time_ms)} in {genderLabel(e.gender, e.age_group)} {AGE_GROUP_LABELS[e.age_group]} {e.distance} {e.course} {STROKE_LABELS[e.stroke]}
                   <span style={{ color: 'var(--text-muted)' }}> · {formatDate(e.swim_date)}</span>
@@ -139,7 +139,7 @@ export function RecordsBoard({ canManage = false }: Props) {
       ) : null}
 
       {loading ? (
-        <div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-base)', padding: '24px 0' }}>Loading records…</div>
+        <div className="u-fs-fs-base u-p-24px-0" style={{ color: 'var(--text-muted)' }}>Loading records…</div>
       ) : !error && byStroke.length === 0 ? (
         <EmptyState
           icon="clock"
@@ -147,7 +147,7 @@ export function RecordsBoard({ canManage = false }: Props) {
           description={canManage ? 'Records appear as official results are imported. Add pre-platform records with "Add historical record".' : 'Records appear here as official meet results come in.'}
         />
       ) : (
-        <div style={{ display: 'grid', gap: '24px' }}>
+        <div className="u-gap-24px" style={{ display: 'grid' }}>
           {byStroke.map(({ stroke, rows }) => (
             <section key={stroke} aria-label={`${STROKE_LABELS[stroke]} records`}>
               <h2 className="section-title" style={{ margin: '0 0 8px' }}>{STROKE_TITLES[stroke]}</h2>
@@ -196,16 +196,16 @@ function RecordRow({ row, canManage, onOpen }: { row: TeamRecord; canManage: boo
       }}
       aria-label={`${row.label}: ${formatSwimTime(r.time_ms)} by ${r.swimmer_name}. Show record history.`}
     >
-      <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)' }}>{row.distance}</span>
-      <span style={{ fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--fs-3xl)', lineHeight: 1, color: 'var(--accent)', fontVariantNumeric: 'tabular-nums' }}>{formatSwimTime(r.time_ms)}</span>
+      <span className="u-fs-fs-base" style={{ color: 'var(--text-subtle)' }}>{row.distance}</span>
+      <span className="u-ff-font-display u-fw-display-weight u-fs-fs-3xl u-lh-1" style={{ color: 'var(--accent-text, var(--accent))', fontVariantNumeric: 'tabular-nums' }}>{formatSwimTime(r.time_ms)}</span>
       <span style={{ minWidth: 0 }}>
-        <span style={{ display: 'block', fontWeight: 600, fontSize: 'var(--fs-md)' }}>{r.swimmer_name}{r.swimmer_age != null ? <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}> ({r.swimmer_age})</span> : null}</span>
-        <span style={{ display: 'block', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
+        <span className="u-fw-600 u-fs-fs-md" style={{ display: 'block' }}>{r.swimmer_name}{r.swimmer_age != null ? <span className="u-fw-400" style={{ color: 'var(--text-muted)' }}> ({r.swimmer_age})</span> : null}</span>
+        <span className="u-fs-fs-sm" style={{ display: 'block', color: 'var(--text-muted)' }}>
           {formatDate(r.swim_date)}{r.meet_name ? `, ${r.meet_name}` : ''}
           {row.previous ? `. Previously ${row.previous.swimmer_name}, ${formatSwimTime(row.previous.time_ms)}` : ''}
         </span>
         {r.locked || r.verified || (canManage && row.pending_count > 0) ? (
-          <span style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '6px' }}>
+          <span className="u-gap-6px u-mt-6px" style={{ display: 'flex', flexWrap: 'wrap' }}>
             {r.locked ? <span className="badge badge-default">Locked</span> : null}
             {r.verified ? <span className="badge badge-success">Verified</span> : null}
             {canManage && row.pending_count > 0 ? <span className="badge badge-warning">{row.pending_count} pending</span> : null}
@@ -250,22 +250,22 @@ function HistoryModal({ record, canManage, onClose, onChanged }: { record: TeamR
   return (
     <Modal open onClose={onClose} title={record.label} description="Every swim that has held this record, newest first." width={560}>
       {error ? <LoadErrorBanner message={error} onRetry={() => void load()} /> : null}
-      {!history ? <div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-base)' }}>Loading history…</div> : (
-        <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: '12px' }}>
+      {!history ? <div className="u-fs-fs-base" style={{ color: 'var(--text-muted)' }}>Loading history…</div> : (
+        <ol className="u-m-0 u-p-0 u-gap-12px" style={{ listStyle: 'none', display: 'grid' }}>
           {history.progression.map((e, i) => (
-            <li key={e.id} style={{ padding: '12px 12px', borderRadius: 'var(--r-sm)', border: '1px solid var(--border)', background: i === 0 ? 'var(--accent-subtle)' : 'transparent' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', alignItems: 'baseline' }}>
-                <span style={{ fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--fs-2xl)', color: i === 0 ? 'var(--accent)' : 'var(--text)' }}>{formatSwimTime(e.time_ms)}</span>
-                <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>{formatDate(e.swim_date)}</span>
+            <li key={e.id} className="u-p-12px-12px" style={{ borderRadius: 'var(--r-sm)', border: '1px solid var(--border)', background: i === 0 ? 'var(--accent-subtle)' : 'transparent' }}>
+              <div className="u-gap-8px" style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', alignItems: 'baseline' }}>
+                <span className="u-ff-font-display u-fw-display-weight u-fs-fs-2xl" style={{ color: i === 0 ? 'var(--accent)' : 'var(--text)' }}>{formatSwimTime(e.time_ms)}</span>
+                <span className="u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>{formatDate(e.swim_date)}</span>
               </div>
-              <div style={{ fontSize: 'var(--fs-base)' }}>{e.swimmer_name}{e.meet_name ? <span style={{ color: 'var(--text-muted)' }}>, {e.meet_name}</span> : null}</div>
-              <div style={{ display: 'flex', gap: '6px', marginTop: '6px', flexWrap: 'wrap' }}>
+              <div className="u-fs-fs-base" >{e.swimmer_name}{e.meet_name ? <span style={{ color: 'var(--text-muted)' }}>, {e.meet_name}</span> : null}</div>
+              <div className="u-gap-6px u-mt-6px" style={{ display: 'flex', flexWrap: 'wrap' }}>
                 {e.source === 'manual' ? <span className="badge badge-default">Historical</span> : null}
                 {e.locked ? <span className="badge badge-default">Locked</span> : null}
                 {e.verified ? <span className="badge badge-success">Verified</span> : null}
               </div>
               {canManage ? (
-                <div style={{ display: 'flex', gap: '6px', marginTop: '8px', flexWrap: 'wrap' }}>
+                <div className="u-gap-6px u-mt-8px" style={{ display: 'flex', flexWrap: 'wrap' }}>
                   <button type="button" className="btn btn-sm btn-secondary" disabled={busy} onClick={() => void act(() => updateRecordEntry(api, orgId, e.id, { locked: !e.locked }), e.locked ? 'Record unlocked.' : 'Record locked. Faster swims now need approval.')}>{e.locked ? 'Unlock' : 'Lock'}</button>
                   <button type="button" className="btn btn-sm btn-secondary" disabled={busy} onClick={() => void act(() => updateRecordEntry(api, orgId, e.id, { verified: !e.verified }), e.verified ? 'Verification removed.' : 'Record verified.')}>{e.verified ? 'Unverify' : 'Verify'}</button>
                   {i === 0 ? <button type="button" className="btn btn-sm btn-ghost" disabled={busy} onClick={() => void act(() => draftRecordAnnouncement(api, orgId, e.id), 'Announcement draft created. Review and publish it from Announcements.')}>Draft announcement</button> : null}
@@ -279,7 +279,7 @@ function HistoryModal({ record, canManage, onClose, onChanged }: { record: TeamR
         </ol>
       )}
       {canManage && history && history.pending.length > 0 ? (
-        <p style={{ fontSize: 'var(--fs-base)', color: 'var(--warning)', marginTop: '12px' }}>{history.pending.length} faster swim{history.pending.length === 1 ? '' : 's'} awaiting approval in the queue above.</p>
+        <p className="u-fs-fs-base u-mt-12px" style={{ color: 'var(--warning)' }}>{history.pending.length} faster swim{history.pending.length === 1 ? '' : 's'} awaiting approval in the queue above.</p>
       ) : null}
     </Modal>
   )
@@ -319,7 +319,7 @@ function AddRecordModal({ defaults, onClose, onSave }: {
   }
 
   const label = (text: string, control: React.ReactNode) => (
-    <label style={{ display: 'grid', gap: '4px', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{text}{control}</label>
+    <label className="u-gap-4px u-fs-fs-sm" style={{ display: 'grid', color: 'var(--text-subtle)' }}>{text}{control}</label>
   )
 
   return (
@@ -335,18 +335,18 @@ function AddRecordModal({ defaults, onClose, onSave }: {
       </>}
     >
       {error ? <LoadErrorBanner message={error} /> : null}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
+      <div className="u-gap-12px" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))' }}>
         {label('Course', <select value={course} onChange={(e) => setCourse(e.target.value)} style={FIELD_STYLE}>{COURSES.map((c) => <option key={c}>{c}</option>)}</select>)}
         {label('Gender', <select value={gender} onChange={(e) => setGender(e.target.value)} style={FIELD_STYLE}><option value="F">Girls / Women</option><option value="M">Boys / Men</option></select>)}
         {label('Age group', <select value={ageGroup} onChange={(e) => setAgeGroup(e.target.value)} style={FIELD_STYLE}>{AGE_GROUPS.map((g) => <option key={g} value={g}>{AGE_GROUP_LABELS[g]}</option>)}</select>)}
         {label('Stroke', <select value={stroke} onChange={(e) => setStroke(e.target.value)} style={FIELD_STYLE}>{STROKES.map((s) => <option key={s} value={s}>{STROKE_LABELS[s]}</option>)}</select>)}
         {label('Distance', <input inputMode="numeric" value={distance} onChange={(e) => setDistance(e.target.value.replace(/\D/g, ''))} style={FIELD_STYLE} />)}
-        {label('Time', <input placeholder="58.12" value={time} onChange={(e) => setTime(e.target.value)} style={FIELD_STYLE} />)}
+        {label('Time', <input aria-label="58.12" placeholder="58.12" value={time} onChange={(e) => setTime(e.target.value)} style={FIELD_STYLE} />)}
         {label('Swimmer', <input value={name} onChange={(e) => setName(e.target.value)} style={FIELD_STYLE} />)}
         {label('Date set', <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={FIELD_STYLE} />)}
         {label('Meet (optional)', <input value={meet} onChange={(e) => setMeet(e.target.value)} style={FIELD_STYLE} />)}
       </div>
-      <label style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: 'var(--fs-base)', marginTop: '16px' }}>
+      <label className="u-gap-8px u-fs-fs-base u-mt-16px" style={{ display: 'flex', alignItems: 'center' }}>
         <input type="checkbox" checked={locked} onChange={(e) => setLocked(e.target.checked)} />
         Lock this record so faster swims need admin approval
       </label>

@@ -75,28 +75,28 @@ export function NewJobsForm({ api, orgId, meetId, defaultDate, onCreated }: {
   const visibleShifts = mode === 'single' ? shifts.slice(0, 1) : shifts
 
   return (
-    <form onSubmit={submit} className="card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-      <div role="radiogroup" aria-label="What to create" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+    <form onSubmit={submit} className="card u-gap-16px" style={{ display: 'flex', flexDirection: 'column' }}>
+      <div role="radiogroup" aria-label="What to create" className="u-gap-6px" style={{ display: 'flex', flexWrap: 'wrap' }}>
         {(['template', 'single'] as const).map((m) => (
           <button key={m} type="button" role="radio" aria-checked={mode === m} onClick={() => setMode(m)}
             className={mode === m ? 'btn btn-secondary btn-sm' : 'btn btn-ghost btn-sm'}
-            style={mode === m ? { borderColor: 'var(--accent-border)', color: 'var(--accent)' } : undefined}>
+            style={mode === m ? { borderColor: 'var(--accent-border)', color: 'var(--accent-text, var(--accent))' } : undefined}>
             {m === 'template' ? (meetId ? 'Standard meet crew' : 'Event crew template') : 'Single job'}
           </button>
         ))}
       </div>
       {mode === 'template' ? (
-        <p style={{ margin: 0, fontSize: 'var(--fs-base)', color: 'var(--text-muted)' }}>
+        <p className="u-m-0 u-fs-fs-base" style={{ color: 'var(--text-muted)' }}>
           {meetId
             ? 'Creates timers (16), stroke & turn officials (4), marshals, clerks, concessions, hospitality, and setup crew for each session below.'
             : 'Creates setup, check-in, helper, and cleanup crews for each shift below.'}
         </p>
       ) : null}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
+      <div className="u-gap-12px" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
         {!meetId ? (
           <label className="form-field">
             <span className="form-label">Event name</span>
-            <input className="form-input" required value={eventName} onChange={(e) => setEventName(e.target.value)} placeholder="Fall fundraiser" />
+            <input aria-label="Fall fundraiser" className="form-input" required value={eventName} onChange={(e) => setEventName(e.target.value)} placeholder="Fall fundraiser" />
           </label>
         ) : null}
         {mode === 'single' ? (
@@ -119,17 +119,17 @@ export function NewJobsForm({ api, orgId, meetId, defaultDate, onCreated }: {
         ) : null}
         <label className="form-field">
           <span className="form-label">Location</span>
-          <input className="form-input" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Optional" />
+          <input aria-label="Optional" className="form-input" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Optional" />
         </label>
       </div>
       {mode === 'single' ? (
-        <label style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: 'var(--fs-base)' }}>
+        <label className="u-gap-8px u-fs-fs-base" style={{ display: 'flex', alignItems: 'center' }}>
           <input type="checkbox" checked={certified} onChange={(e) => setCertified(e.target.checked)} />
           Certified volunteers only (e.g. officials)
         </label>
       ) : null}
       {visibleShifts.map((s, i) => (
-        <div key={i} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '12px', alignItems: 'end' }}>
+        <div key={i} className="u-gap-12px" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', alignItems: 'end' }}>
           <label className="form-field">
             <span className="form-label">Date</span>
             <input className="form-input" type="date" required value={s.date} onChange={(e) => patchShift(i, { date: e.target.value })} />
@@ -145,7 +145,7 @@ export function NewJobsForm({ api, orgId, meetId, defaultDate, onCreated }: {
           {mode === 'template' ? (
             <label className="form-field">
               <span className="form-label">Shift name</span>
-              <input className="form-input" value={s.label} onChange={(e) => patchShift(i, { label: e.target.value })} placeholder="Session 1" />
+              <input aria-label="Session 1" className="form-input" value={s.label} onChange={(e) => patchShift(i, { label: e.target.value })} placeholder="Session 1" />
             </label>
           ) : null}
           {mode === 'template' && shifts.length > 1 ? (
@@ -154,7 +154,7 @@ export function NewJobsForm({ api, orgId, meetId, defaultDate, onCreated }: {
         </div>
       ))}
       {error ? <InlineNotice tone="error">{error}</InlineNotice> : null}
-      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+      <div className="u-gap-8px" style={{ display: 'flex', flexWrap: 'wrap' }}>
         {mode === 'template' ? (
           <button type="button" className="btn btn-secondary btn-sm"
             onClick={() => setShifts((l) => [...l, { ...l[l.length - 1], label: meetId ? `Session ${l.length + 1}` : '' }])}>

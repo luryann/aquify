@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '@/components/ui/icons'
+import { useToast } from '@/components/ui/Toast'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
 import {
@@ -30,13 +31,7 @@ const STATUS_COLORS: Record<SeasonStatus, { bg: string; border: string; text: st
 function StatusBadge({ status }: { status: SeasonStatus }) {
   const c = STATUS_COLORS[status]
   return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: '4px',
-      padding: '4px 12px', borderRadius: '16px',
-      background: c.bg, border: `1px solid ${c.border}`,
-      fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', fontWeight: 600,
-      color: c.text, textTransform: 'uppercase', letterSpacing: '0.06em',
-    }}>
+    <span className="u-gap-4px u-p-4px-12px u-fs-fs-xs u-ff-font-body u-fw-600" style={{ display: 'inline-flex', alignItems: 'center', borderRadius: '16px', background: c.bg, border: `1px solid ${c.border}`, color: c.text, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
       <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: c.text, display: 'inline-block' }} />
       {STATUS_LABELS[status]}
     </span>
@@ -45,22 +40,13 @@ function StatusBadge({ status }: { status: SeasonStatus }) {
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
-    <label style={{
-      display: 'block', fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)',
-      color: 'var(--text-muted)', marginBottom: '8px',
-    }}>
+    <label className="u-fs-fs-sm u-ff-font-body u-mb-8px" style={{ display: 'block', color: 'var(--text-muted)' }}>
       {children}
     </label>
   )
 }
 
-const inputStyle = {
-  width: '100%', padding: '12px 12px',
-  background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-  borderRadius: '8px', color: 'var(--text)', fontSize: 'var(--fs-base)',
-  fontFamily: 'var(--font-body)', outline: 'none',
-  transition: 'border-color 0.15s',
-} as React.CSSProperties
+const inputStyle: React.CSSProperties = { width: '100%' }
 
 type SeasonDraft = {
   name: string
@@ -85,19 +71,12 @@ function formatSeasonDate(value: string) {
 
 function StatusPicker({ value, onChange }: { value: SeasonStatus; onChange: (s: SeasonStatus) => void }) {
   return (
-    <div style={{ display: 'flex', gap: '6px' }}>
+    <div className="u-gap-6px" style={{ display: 'flex' }}>
       {(['active', 'upcoming', 'completed'] as SeasonStatus[]).map((s) => (
-        <button
+        <button type="button"
           key={s}
           onClick={() => onChange(s)}
-          style={{
-            padding: '6px 16px', borderRadius: '6px', border: `1px solid ${value === s ? 'var(--accent-border)' : 'var(--border)'}`,
-            background: value === s ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
-            color: value === s ? 'var(--accent)' : 'var(--text-muted)',
-            fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', cursor: 'pointer',
-            fontWeight: value === s ? 600 : 400, transition: 'all 0.15s',
-            textTransform: 'uppercase', letterSpacing: '0.05em',
-          }}
+          aria-pressed={value === s} className="u-p-6px-16px u-fs-fs-sm u-ff-font-body" style={{ minHeight: '36px', borderRadius: '8px', border: `1px solid ${value === s ? 'var(--accent-border)' : 'var(--border)'}`, background: value === s ? 'var(--accent-subtle)' : 'var(--bg-elevated)', color: value === s ? 'var(--accent)' : 'var(--text-muted)', cursor: 'pointer', fontWeight: value === s ? 600 : 400, transition: 'all 0.15s' }}
         >{STATUS_LABELS[s]}</button>
       ))}
     </div>
@@ -140,22 +119,15 @@ function SeasonCard({
   const status = editing ? draft.status : season.status
 
   return (
-    <div className="card" style={{
-      padding: '24px',
-      border: accent ? '1px solid var(--accent-border)' : '1px solid var(--border)',
-      background: accent ? 'rgba(235,93,30,0.03)' : undefined,
-      position: 'relative',
-    }}>
+    <div className="card u-p-24px" style={{ border: accent ? '1px solid var(--accent-border)' : '1px solid var(--border)', background: accent ? 'rgba(235,93,30,0.03)' : undefined, position: 'relative' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '20px' }}>
+      <div className="u-mb-20px" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <div>
           {editing ? (
             <input
               value={draft.name}
               onChange={(e) => u('name', e.target.value)}
-              style={{ ...inputStyle, fontSize: 'var(--fs-xl)', fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', padding: '6px 12px', width: '240px' }}
-              onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--border-focus)' }}
-              onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)' }}
+              style={{ ...inputStyle, fontWeight: 'var(--display-weight)', width: '240px' }}
             />
           ) : (
             <h2 className="section-title">
@@ -163,12 +135,12 @@ function SeasonCard({
             </h2>
           )}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div className="u-gap-12px" style={{ display: 'flex', alignItems: 'center' }}>
           {!editing && <StatusBadge status={status} />}
-          <button
+          <button type="button"
             onClick={() => editing ? setEditing(false) : startEditing()}
-            className="btn btn-ghost"
-            style={{ gap: '4px', fontSize: 'var(--fs-sm)' }}
+            className="btn btn-ghost u-gap-4px u-fs-fs-sm"
+            
           >
             <Icon name={editing ? 'x' : 'edit-2'} size={12} />
             {editing ? 'Cancel' : 'Edit'}
@@ -177,17 +149,15 @@ function SeasonCard({
       </div>
 
       {/* Fields */}
-      <div className="cols-2" style={{ gap: '16px', marginBottom: '16px' }}>
+      <div className="cols-2 u-gap-16px u-mb-16px" >
         <div>
           <FieldLabel>Start date</FieldLabel>
           {editing ? (
             <input type="date" value={draft.startDate} onChange={(e) => u('startDate', e.target.value)}
               style={inputStyle}
-              onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--border-focus)' }}
-              onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)' }}
             />
           ) : (
-            <p style={{ fontSize: 'var(--fs-md)', color: startDate ? 'var(--text)' : 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+            <p className="u-fs-fs-md u-ff-font-body" style={{ color: startDate ? 'var(--text)' : 'var(--text-muted)' }}>
               {formatSeasonDate(startDate)}
             </p>
           )}
@@ -197,11 +167,9 @@ function SeasonCard({
           {editing ? (
             <input type="date" value={draft.endDate} onChange={(e) => u('endDate', e.target.value)}
               style={inputStyle}
-              onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--border-focus)' }}
-              onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)' }}
             />
           ) : (
-            <p style={{ fontSize: 'var(--fs-md)', color: endDate ? 'var(--text)' : 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+            <p className="u-fs-fs-md u-ff-font-body" style={{ color: endDate ? 'var(--text)' : 'var(--text-muted)' }}>
               {formatSeasonDate(endDate)}
             </p>
           )}
@@ -209,7 +177,7 @@ function SeasonCard({
       </div>
 
       {editing && (
-        <div style={{ marginBottom: '16px' }}>
+        <div className="u-mb-16px" >
           <FieldLabel>Status</FieldLabel>
           <StatusPicker value={draft.status} onChange={(s) => u('status', s)} />
         </div>
@@ -217,9 +185,9 @@ function SeasonCard({
 
       {/* Duration bar (display mode) */}
       {!editing && startDate && endDate && (
-        <div style={{ marginBottom: '16px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-            <span style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>
+        <div className="u-mb-16px" >
+          <div className="u-mb-4px" style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span className="u-fs-fs-xs u-ff-font-body" style={{ color: 'var(--text-muted)' }}>
               {Math.round((new Date(endDate + 'T00:00:00').getTime() - new Date(startDate + 'T00:00:00').getTime()) / (1000 * 60 * 60 * 24 * 7))} weeks
             </span>
             {status === 'active' && (() => {
@@ -228,7 +196,7 @@ function SeasonCard({
               const end = new Date(endDate + 'T00:00:00').getTime()
               const pct = Math.min(100, Math.max(0, Math.round((now - start) / (end - start) * 100)))
               return (
-                <span style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', color: 'var(--accent)' }}>
+                <span className="u-fs-fs-xs u-ff-font-body" style={{ color: 'var(--accent-text, var(--accent))' }}>
                   {pct}% complete
                 </span>
               )
@@ -250,11 +218,11 @@ function SeasonCard({
 
       {/* Save / delete actions */}
       {editing && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px' }}>
-          <button onClick={() => { void onDelete() }} className="btn btn-ghost" disabled={saving} style={{ fontSize: 'var(--fs-sm)', color: 'var(--danger, #dc2626)', gap: '4px' }}>
+        <div className="u-mt-8px" style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <button type="button" onClick={() => { void onDelete() }} className="btn btn-ghost u-fs-fs-sm u-gap-4px" disabled={saving} style={{ color: 'var(--danger, #dc2626)' }}>
             <Icon name="trash-2" size={12} /> Delete
           </button>
-          <button onClick={() => { void handleSave() }} className="btn btn-primary" disabled={saving} style={{ fontSize: 'var(--fs-base)' }}>
+          <button type="button" onClick={() => { void handleSave() }} className="btn btn-primary u-fs-fs-base" disabled={saving} >
             <Icon name="check" size={13} /> {saving ? 'Saving…' : 'Save Changes'}
           </button>
         </div>
@@ -266,6 +234,7 @@ function SeasonCard({
 const EMPTY_DRAFT: SeasonDraft = { name: '', startDate: '', endDate: '', status: 'upcoming' }
 
 export default function SeasonsPage() {
+  const toast = useToast()
   const { session } = useSession()
   const api = useApiClient(session?.token)
   const orgId = session?.user.orgId ?? ''
@@ -340,6 +309,14 @@ export default function SeasonsPage() {
         status: draft.status,
       })
       replaceSeason(updated)
+      toast.successWithAction('Season saved', {
+        label: 'Undo',
+        onClick: () => {
+          void updateSeason(api, orgId, season.id, { name: season.name, start_date: season.start_date, end_date: season.end_date, status: season.status })
+            .then(replaceSeason)
+            .catch((err) => setActionError(uiErrorMessage(err, 'Couldn’t undo. Try again.')))
+        },
+      })
       return true
     } catch (err) {
       setActionError(uiErrorMessage(err, 'Couldn’t save season. Try again.'))
@@ -414,17 +391,17 @@ export default function SeasonsPage() {
             Seasons
           </h1>
         </div>
-        <button onClick={() => { setCreating((c) => !c); setActionError('') }} className="btn btn-primary" style={{ fontSize: 'var(--fs-base)', gap: '6px' }}>
-          <Icon name={creating ? 'x' : 'plus'} size={13} /> {creating ? 'Cancel' : 'New Season'}
+        <button type="button" onClick={() => { setCreating((c) => !c); setActionError('') }} className={`btn ${creating ? 'btn-secondary' : 'btn-primary'} u-fs-fs-base u-gap-6px`}>
+          <Icon name={creating ? 'x' : 'plus'} size={13} /> {creating ? 'Cancel' : 'New season'}
         </button>
       </div>
 
       {/* Errors */}
       {(loadError || actionError) && (
-        <div className="card" style={{ padding: '16px 20px', marginBottom: '20px', border: '1px solid var(--danger-border, #fecaca)', background: 'var(--danger-bg, #fef2f2)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
-          <p style={{ fontSize: 'var(--fs-base)', color: 'var(--danger, #dc2626)' }}>{loadError || actionError}</p>
+        <div className="card u-p-16px-20px u-mb-20px u-gap-12px" style={{ border: '1px solid var(--danger-border, #fecaca)', background: 'var(--danger-bg, #fef2f2)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <p className="u-fs-fs-base" style={{ color: 'var(--danger, #dc2626)' }}>{loadError || actionError}</p>
           {loadError && (
-            <button onClick={() => setReloadKey((k) => k + 1)} className="btn btn-secondary" style={{ fontSize: 'var(--fs-sm)', flexShrink: 0 }}>
+            <button type="button" onClick={() => setReloadKey((k) => k + 1)} className="btn btn-secondary u-fs-fs-sm" style={{ flexShrink: 0 }}>
               Retry
             </button>
           )}
@@ -433,11 +410,11 @@ export default function SeasonsPage() {
 
       {/* Create form */}
       {creating && (
-        <div className="card" style={{ padding: '24px', marginBottom: '24px', border: '1px solid var(--accent-border)' }}>
-          <div className="cols-2" style={{ gap: '16px', marginBottom: '16px' }}>
+        <div className="card u-p-24px u-mb-24px" style={{ border: '1px solid var(--accent-border)' }}>
+          <div className="cols-2 u-gap-16px u-mb-16px" >
             <div style={{ gridColumn: '1 / -1' }}>
               <FieldLabel>Name</FieldLabel>
-              <input value={createDraft.name} onChange={(e) => setCreateDraft((d) => ({ ...d, name: e.target.value }))} placeholder="2026–2027 Season" style={inputStyle} />
+              <input aria-label="2026–2027 Season" value={createDraft.name} onChange={(e) => setCreateDraft((d) => ({ ...d, name: e.target.value }))} placeholder="2026–2027 Season" style={inputStyle} />
             </div>
             <div>
               <FieldLabel>Start date</FieldLabel>
@@ -448,13 +425,13 @@ export default function SeasonsPage() {
               <input type="date" value={createDraft.endDate} onChange={(e) => setCreateDraft((d) => ({ ...d, endDate: e.target.value }))} style={inputStyle} />
             </div>
           </div>
-          <div style={{ marginBottom: '16px' }}>
+          <div className="u-mb-16px" >
             <FieldLabel>Status</FieldLabel>
             <StatusPicker value={createDraft.status} onChange={(s) => setCreateDraft((d) => ({ ...d, status: s }))} />
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <button onClick={() => { void handleCreateSeason() }} className="btn btn-primary" disabled={saving} style={{ fontSize: 'var(--fs-base)' }}>
-              <Icon name="check" size={13} /> {saving ? 'Creating…' : 'Create Season'}
+            <button type="button" onClick={() => { void handleCreateSeason() }} className="btn btn-primary u-fs-fs-base" disabled={saving} >
+              <Icon name="check" size={13} /> {saving ? 'Creating…' : 'Create season'}
             </button>
           </div>
         </div>
@@ -462,22 +439,22 @@ export default function SeasonsPage() {
 
       {/* Loading */}
       {loading && (
-        <div className="card" style={{ padding: '40px', textAlign: 'center', marginBottom: '24px' }}>
+        <div className="card u-p-40px u-mb-24px" style={{ textAlign: 'center' }}>
           <p className="page-subtitle">Loading seasons…</p>
         </div>
       )}
 
       {/* Empty state */}
       {!loading && !loadError && seasons.length === 0 && !creating && (
-        <div className="card" style={{ padding: '40px', textAlign: 'center', marginBottom: '24px' }}>
-          <p style={{ fontSize: 'var(--fs-md)', color: 'var(--text)', marginBottom: '6px' }}>No seasons yet</p>
+        <div className="card u-p-40px u-mb-24px" style={{ textAlign: 'center' }}>
+          <p className="u-fs-fs-md u-mb-6px" style={{ color: 'var(--text)' }}>No seasons yet</p>
           <p className="page-subtitle">Create your first season to start planning dates and goals.</p>
         </div>
       )}
 
       {/* Season cards */}
       {!loading && seasons.length > 0 && (
-        <div className="cols-2" style={{ gap: '20px', marginBottom: '24px' }}>
+        <div className="cols-2 u-gap-20px u-mb-24px" >
           {seasons.map((season) => (
             <SeasonCard
               key={season.id}
@@ -493,18 +470,18 @@ export default function SeasonsPage() {
 
       {/* Season Goals */}
       {!loading && activeSeason && (
-        <div className="card" style={{ padding: '24px', marginBottom: '24px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+        <div className="card u-p-24px u-mb-24px" >
+          <div className="u-mb-16px" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
               <h2 className="card-title">
                 {activeSeason.name} goals
               </h2>
             </div>
-            <button
+            <button type="button"
               onClick={() => { void handleSaveGoals() }}
-              className="btn btn-secondary"
+              className="btn btn-secondary u-fs-fs-sm u-gap-6px"
               disabled={saving}
-              style={{ fontSize: 'var(--fs-sm)', gap: '6px', flexShrink: 0 }}
+              style={{ flexShrink: 0 }}
             >
               {goalsSaved ? (
                 <><Icon name="check" size={12} /> Saved</>
@@ -518,23 +495,15 @@ export default function SeasonsPage() {
             onChange={(e) => setGoals(e.target.value)}
             placeholder={'e.g.\n• Qualify 10+ swimmers for sectionals\n• Improve team average in 200 fly by 3%\n• Launch new age group development track\n• Increase meet participation rate to 85%'}
             rows={8}
-            style={{
-              width: '100%', padding: '12px 16px',
-              background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-              borderRadius: '8px', color: 'var(--text)', fontSize: 'var(--fs-base)',
-              fontFamily: 'var(--font-body)', outline: 'none', resize: 'vertical',
-              lineHeight: '1.6', transition: 'border-color 0.15s',
-            }}
-            onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--border-focus)' }}
-            onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)' }}
+            className="u-p-12px-16px u-fs-fs-base u-ff-font-body u-lh-1_6" style={{ width: '100%', resize: 'vertical' }}
           />
         </div>
       )}
 
       {/* Timeline overview */}
       {!loading && timelineSeasons.length > 0 && (
-        <div className="card" style={{ padding: '24px' }}>
-          <h2 className="card-title" style={{ marginBottom: '20px' }}>
+        <div className="card u-p-24px" >
+          <h2 className="card-title u-mb-20px" >
             Timeline
           </h2>
 
@@ -548,7 +517,7 @@ export default function SeasonsPage() {
 
             return (
               <div key={s.id} style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px 16px', marginBottom: i === timelineSeasons.length - 1 ? '0' : '14px' }}>
-                <div style={{ width: '120px', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', fontFamily: 'var(--font-body)', flexShrink: 0 }}>
+                <div className="u-fs-fs-sm u-ff-font-body" style={{ width: '120px', color: 'var(--text-subtle)', flexShrink: 0 }}>
                   {startYear} – {endYear}
                 </div>
                 <div style={{ flex: '1 1 140px', height: '8px', borderRadius: '4px', background: 'var(--bg-elevated)', overflow: 'hidden' }}>
@@ -563,9 +532,9 @@ export default function SeasonsPage() {
                     transition: 'width 0.6s ease',
                   }} />
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '160px', flexShrink: 0 }}>
-                  <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text)', fontWeight: 500 }}>{s.name}</span>
-                  <span style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>
+                <div className="u-gap-8px" style={{ display: 'flex', alignItems: 'center', width: '160px', flexShrink: 0 }}>
+                  <span className="u-fs-fs-sm u-fw-500" style={{ color: 'var(--text)' }}>{s.name}</span>
+                  <span className="u-fs-fs-xs u-ff-font-body" style={{ color: 'var(--text-muted)' }}>
                     {months}mo
                   </span>
                 </div>

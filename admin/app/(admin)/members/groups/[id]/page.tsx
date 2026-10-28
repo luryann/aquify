@@ -7,6 +7,7 @@ import { Icon } from '@/components/ui/icons'
 import { Tabs } from '@/components/ui/Tabs'
 import { Table, type Column } from '@/components/ui/Table'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { useToast } from '@/components/ui/Toast'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
 import {
@@ -27,7 +28,7 @@ import {
 import { parseBackendDate } from '@/lib/dates'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 
-const FIELD_STYLE: React.CSSProperties = { width: '100%', padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none' }
+const FIELD_STYLE: React.CSSProperties = { width: '100%' }
 const FIELD_LABEL_STYLE: React.CSSProperties = { display: 'block', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginBottom: '6px', fontFamily: 'var(--font-body)' }
 
 const GROUP_TYPES = ['competitive', 'recreational', 'developmental', 'masters', 'other'] as const
@@ -130,24 +131,24 @@ const SWIMMER_COLS: Column<SwimmerRow>[] = [
     sortable: true,
     render: (row) => (
       <div>
-        <Link href={`/members/swimmers/${row.id}`} style={{ color: 'var(--text)', fontWeight: 600, textDecoration: 'none', fontSize: 'var(--fs-base)' }}>
+        <Link href={`/members/swimmers/${row.id}`} className="u-fw-600 u-fs-fs-base" style={{ color: 'var(--text)', textDecoration: 'none' }}>
           {row.name}
         </Link>
-        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginTop: '2px' }}>{row.ussNumber || 'No external ID'}</div>
+        <div className="u-fs-fs-xs u-ff-font-body u-mt-2px" style={{ color: 'var(--text-muted)' }}>{row.ussNumber || 'No external ID'}</div>
       </div>
     ),
   },
-  { key: 'age', label: 'Age', align: 'right', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-base)', color: 'var(--text)' }}>{row.age}</span> },
-  { key: 'gender', label: 'Gender', render: (row) => <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)' }}>{row.gender}</span> },
+  { key: 'age', label: 'Age', align: 'right', render: (row) => <span className="u-ff-font-body u-fs-fs-base" style={{ color: 'var(--text)' }}>{row.age}</span> },
+  { key: 'gender', label: 'Gender', render: (row) => <span className="u-fs-fs-base" style={{ color: 'var(--text-subtle)' }}>{row.gender}</span> },
   { key: 'isPrimary', label: 'Primary group?', render: (row) => <span className="badge" style={{ background: row.isPrimary ? 'var(--accent-subtle)' : 'var(--bg-elevated)', color: row.isPrimary ? 'var(--accent)' : 'var(--text-muted)' }}>{row.isPrimary ? 'Yes' : 'No'}</span> },
   { key: 'status', label: 'Status', render: (row) => <span className="badge" style={{ background: row.status === 'active' ? 'var(--success-bg)' : 'var(--bg-elevated)', color: row.status === 'active' ? 'var(--success)' : 'var(--text-muted)' }}>{row.status}</span> },
-  { key: 'joinedGroup', label: 'Since', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>{formatDate(row.joinedGroup)}</span> },
+  { key: 'joinedGroup', label: 'Since', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>{formatDate(row.joinedGroup)}</span> },
 ]
 
 const RULE_COLS: Column<RuleRow>[] = [
-  { key: 'ruleType', label: 'Type', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', padding: '2px 8px', borderRadius: '8px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-subtle)' }}>{row.ruleType}</span> },
-  { key: 'description', label: 'Description', render: (row) => <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)' }}>{row.description}</span> },
-  { key: 'createdAt', label: 'Created', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>{formatDate(row.createdAt)}</span> },
+  { key: 'ruleType', label: 'Type', render: (row) => <span className="u-ff-font-body u-fs-fs-sm u-p-2px-8px" style={{ borderRadius: '8px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-subtle)' }}>{row.ruleType}</span> },
+  { key: 'description', label: 'Description', render: (row) => <span className="u-fs-fs-base" style={{ color: 'var(--text-subtle)' }}>{row.description}</span> },
+  { key: 'createdAt', label: 'Created', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>{formatDate(row.createdAt)}</span> },
   { key: 'active', label: 'Status', render: (row) => <span className="badge" style={{ background: row.active ? 'var(--success-bg)' : 'var(--bg-elevated)', color: row.active ? 'var(--success)' : 'var(--text-muted)' }}>{row.active ? 'active' : 'disabled'}</span> },
 ]
 
@@ -186,6 +187,7 @@ function buildRuleRows(rules: EligibilityRuleRecord[]): RuleRow[] {
 }
 
 export default function GroupDetailPage() {
+  const toast = useToast()
   const params = useParams<{ id: string }>()
   const groupId = typeof params?.id === 'string' ? params.id : ''
   const { session } = useSession()
@@ -299,7 +301,9 @@ export default function GroupDetailPage() {
     setSettingsError(null)
     setSettingsSuccess(null)
     try {
-      const updated = await updateGroup(api, session.user.orgId, group.id, {
+      const prev = group
+      const orgId = session.user.orgId
+      const updated = await updateGroup(api, orgId, group.id, {
         name,
         type: settingsForm.type,
         description: settingsForm.description.trim(),
@@ -312,6 +316,20 @@ export default function GroupDetailPage() {
       setSettingsForm(settingsFormFromGroup(updated))
       setCoachName(coachLabel(updated, staff))
       setSettingsSuccess('Group settings saved.')
+      toast.successWithAction('Group settings saved', {
+        label: 'Undo',
+        onClick: () => {
+          void updateGroup(api, orgId, prev.id, {
+            name: prev.name, type: prev.type, description: prev.description ?? '',
+            min_age: prev.min_age, max_age: prev.max_age,
+            coach_user_id: prev.coach_user_id, is_active: prev.is_active,
+          }).then((g) => {
+            setGroup(g)
+            setSettingsForm(settingsFormFromGroup(g))
+            setCoachName(coachLabel(g, staff))
+          }).catch((err) => setSettingsError(uiErrorMessage(err, 'Couldn’t undo. Try again.')))
+        },
+      })
     } catch (err) {
       setSettingsError(uiErrorMessage(err, 'Couldn’t save group settings. Try again.'))
     } finally {
@@ -391,37 +409,37 @@ export default function GroupDetailPage() {
 
   return (
     <div className="page">
-      <Link href="/members?tab=groups" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', textDecoration: 'none', marginBottom: '20px' }}>
+      <Link href="/members?tab=groups" className="u-gap-4px u-fs-fs-base u-mb-20px" style={{ display: 'inline-flex', alignItems: 'center', color: 'var(--text-subtle)', textDecoration: 'none' }}>
         <Icon name="chevron-left" size={14} /> Groups
       </Link>
 
       <div className="page-header">
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px 12px', marginBottom: '4px' }}>
+          <div className="u-gap-6px-12px u-mb-4px" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
             <h1 className="page-title">{group.name}</h1>
-            <span className="badge" style={{ background: 'var(--accent-subtle)', color: 'var(--accent)' }}>
+            <span className="badge" style={{ background: 'var(--accent-subtle)', color: 'var(--accent-text, var(--accent))' }}>
               {group.type}
             </span>
             <span className="badge" style={{ background: group.is_active ? 'var(--success-bg)' : 'var(--bg-elevated)', color: group.is_active ? 'var(--success)' : 'var(--text-muted)' }}>
               {group.is_active ? 'active' : 'archived'}
             </span>
           </div>
-          <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+          <div className="u-fs-fs-sm u-ff-font-body" style={{ color: 'var(--text-muted)' }}>
             {group.code}
           </div>
         </div>
       </div>
 
-      <div className="cols-4" style={{ gap: '12px', marginBottom: '24px' }}>
+      <div className="cols-4 u-gap-12px u-mb-24px" >
         {[
           { label: 'Swimmers', value: members.length.toString(), color: 'var(--text)' },
           { label: 'Coach', value: coachName || 'Unassigned', color: 'var(--text-subtle)' },
           { label: 'Age range', value: formatAgeRange(group.min_age, group.max_age), color: 'var(--text)' },
-          { label: 'Rules', value: rules.length.toString(), color: 'var(--accent)' },
+          { label: 'Rules', value: rules.length.toString(), color: 'var(--accent-text, var(--accent))' },
         ].map((stat) => (
-          <div key={stat.label} className="card" style={{ padding: '16px 16px' }}>
-            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
-            <div style={{ fontSize: 'var(--fs-lg)', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
+          <div key={stat.label} className="card u-p-16px-16px" >
+            <div className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ color: 'var(--text-muted)' }}>{stat.label}</div>
+            <div className="u-fs-fs-lg u-ff-font-body u-fw-700" style={{ color: stat.color }}>{stat.value}</div>
           </div>
         ))}
       </div>
@@ -430,19 +448,19 @@ export default function GroupDetailPage() {
 
       {activeTab === 'members' ? (
         <div>
-          <div className="split-aside" style={{ gap: '16px', marginBottom: '16px' }}>
-            <div style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)' }}>
+          <div className="split-aside u-gap-16px u-mb-16px" >
+            <div className="u-fs-fs-base" style={{ color: 'var(--text-subtle)' }}>
               {group.description || 'No group description recorded yet.'}
             </div>
-            <form className="card" onSubmit={handleAssignSwimmer} style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <form className="card u-p-16px u-gap-12px" onSubmit={handleAssignSwimmer} style={{ display: 'flex', flexDirection: 'column' }}>
                 <div>
-                  <h3 className="card-title" style={{ marginBottom: '4px' }}>Add swimmer to group</h3>
-                  <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', lineHeight: 1.5 }}>Assign a swimmer to this training group so they appear on the roster immediately.</p>
+                  <h3 className="card-title u-mb-4px" >Add swimmer to group</h3>
+                  <p className="u-fs-fs-sm u-lh-1_5" style={{ color: 'var(--text-subtle)' }}>Assign a swimmer to this training group so they appear on the roster immediately.</p>
                 </div>
                 <select
                   value={assignForm.swimmerId}
                   onChange={(e) => setAssignForm((current) => ({ ...current, swimmerId: e.target.value }))}
-                  style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none' }}
+                  className="u-p-8px-12px u-fs-fs-base" style={{ width: '100%' }}
                   disabled={assigning || assignableSwimmers.length === 0}
                 >
                   <option value="">{assignableSwimmers.length === 0 ? 'All swimmers already assigned' : 'Select swimmer'}</option>
@@ -452,7 +470,7 @@ export default function GroupDetailPage() {
                     </option>
                   ))}
                 </select>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>
+                <label className="u-gap-8px u-fs-fs-sm" style={{ display: 'flex', alignItems: 'center', color: 'var(--text-subtle)' }}>
                   <input
                     type="checkbox"
                     checked={assignForm.isPrimary}
@@ -461,10 +479,10 @@ export default function GroupDetailPage() {
                   />
                   Make this the swimmer&apos;s primary group
                 </label>
-                {assignError ? <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--danger)' }}>{assignError}</div> : null}
-                {assignSuccess ? <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--success)' }}>{assignSuccess}</div> : null}
+                {assignError ? <div className="u-fs-fs-sm" style={{ color: 'var(--danger)' }}>{assignError}</div> : null}
+                {assignSuccess ? <div className="u-fs-fs-sm" style={{ color: 'var(--success)' }}>{assignSuccess}</div> : null}
                 <button className="btn btn-primary" type="submit" disabled={assigning || !assignForm.swimmerId}>
-                  {assigning ? 'Adding...' : 'Add Swimmer'}
+                  {assigning ? 'Adding...' : 'Add swimmer'}
                 </button>
             </form>
           </div>
@@ -477,10 +495,10 @@ export default function GroupDetailPage() {
           <div className={isAdmin ? 'split-aside' : undefined} style={{ display: 'grid', gap: '16px', alignItems: 'start' }}>
             <Table columns={RULE_COLS} data={rules} emptyTitle="No rules" emptyDescription="No eligibility rules are configured for this group." />
             {isAdmin ? (
-              <form className="card" onSubmit={handleAddRule} style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <form className="card u-p-16px u-gap-12px" onSubmit={handleAddRule} style={{ display: 'flex', flexDirection: 'column' }}>
                 <div>
-                  <h3 className="card-title" style={{ marginBottom: '4px' }}>Add eligibility rule</h3>
-                  <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', lineHeight: 1.5 }}>Rules are checked when swimmers are evaluated for this group.</p>
+                  <h3 className="card-title u-mb-4px" >Add eligibility rule</h3>
+                  <p className="u-fs-fs-sm u-lh-1_5" style={{ color: 'var(--text-subtle)' }}>Rules are checked when swimmers are evaluated for this group.</p>
                 </div>
                 <select
                   aria-label="Rule type"
@@ -494,17 +512,17 @@ export default function GroupDetailPage() {
                   <option value="registration_status">Registration status</option>
                 </select>
                 {ruleForm.ruleType === 'age_range' ? (
-                  <div className="cols-2" style={{ gap: '8px' }}>
+                  <div className="cols-2 u-gap-8px" >
                     <input aria-label="Rule minimum age" type="number" min="0" max="99" placeholder="Min age" value={ruleForm.minAge} onChange={(e) => setRuleForm((f) => ({ ...f, minAge: e.target.value }))} style={FIELD_STYLE} />
                     <input aria-label="Rule maximum age" type="number" min="0" max="99" placeholder="Max age" value={ruleForm.maxAge} onChange={(e) => setRuleForm((f) => ({ ...f, maxAge: e.target.value }))} style={FIELD_STYLE} />
                   </div>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div className="u-gap-6px" style={{ display: 'flex', flexDirection: 'column' }}>
                     {(ruleForm.ruleType === 'gender'
                       ? RULE_GENDERS
                       : RULE_REGISTRATION_STATUSES.map((value) => ({ value, label: value.charAt(0).toUpperCase() + value.slice(1) }))
                     ).map((option) => (
-                      <label key={option.value} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>
+                      <label key={option.value} className="u-gap-8px u-fs-fs-sm" style={{ display: 'flex', alignItems: 'center', color: 'var(--text-subtle)' }}>
                         <input
                           type="checkbox"
                           checked={ruleForm.allowed.includes(option.value)}
@@ -518,7 +536,7 @@ export default function GroupDetailPage() {
                     ))}
                   </div>
                 )}
-                {ruleError ? <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--danger)' }}>{ruleError}</div> : null}
+                {ruleError ? <div className="u-fs-fs-sm" style={{ color: 'var(--danger)' }}>{ruleError}</div> : null}
                 <button className="btn btn-primary" type="submit" disabled={addingRule}>
                   {addingRule ? 'Adding...' : 'Add Rule'}
                 </button>
@@ -529,10 +547,10 @@ export default function GroupDetailPage() {
       ) : null}
 
       {activeTab === 'settings' && settingsForm ? (
-        <div className="split-pair" style={{ gap: '16px' }}>
-          <form className="card" onSubmit={handleSaveSettings} style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div className="split-pair u-gap-16px" >
+          <form className="card u-p-20px u-gap-16px" onSubmit={handleSaveSettings} style={{ display: 'flex', flexDirection: 'column' }}>
             <h3 className="card-title">Edit group</h3>
-            <div className="cols-2" style={{ gap: '12px' }}>
+            <div className="cols-2 u-gap-12px" >
               <div>
                 <label htmlFor="group-name" style={FIELD_LABEL_STYLE}>Name</label>
                 <input id="group-name" required value={settingsForm.name} onChange={(e) => setSettingsForm((f) => f && ({ ...f, name: e.target.value }))} style={FIELD_STYLE} />
@@ -567,7 +585,7 @@ export default function GroupDetailPage() {
               </div>
               <div>
                 <span style={FIELD_LABEL_STYLE}>Status</span>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', padding: '8px 0' }}>
+                <label className="u-gap-8px u-fs-fs-base u-p-8px-0" style={{ display: 'flex', alignItems: 'center', color: 'var(--text-subtle)' }}>
                   <input type="checkbox" checked={settingsForm.isActive} onChange={(e) => setSettingsForm((f) => f && ({ ...f, isActive: e.target.checked }))} />
                   Active (uncheck to archive)
                 </label>
@@ -577,24 +595,24 @@ export default function GroupDetailPage() {
               <label htmlFor="group-description" style={FIELD_LABEL_STYLE}>Description</label>
               <textarea id="group-description" rows={3} value={settingsForm.description} onChange={(e) => setSettingsForm((f) => f && ({ ...f, description: e.target.value }))} style={{ ...FIELD_STYLE, resize: 'vertical' }} />
             </div>
-            {settingsError ? <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--danger)' }}>{settingsError}</div> : null}
-            {settingsSuccess ? <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--success)' }}>{settingsSuccess}</div> : null}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+            {settingsError ? <div className="u-fs-fs-sm" style={{ color: 'var(--danger)' }}>{settingsError}</div> : null}
+            {settingsSuccess ? <div className="u-fs-fs-sm" style={{ color: 'var(--success)' }}>{settingsSuccess}</div> : null}
+            <div className="u-gap-12px" style={{ display: 'flex', justifyContent: 'flex-end' }}>
               <button type="button" className="btn" disabled={savingSettings} onClick={() => { setSettingsForm(settingsFormFromGroup(group)); setSettingsError(null); setSettingsSuccess(null) }}>Reset</button>
               <button type="submit" className="btn btn-primary" disabled={savingSettings}>{savingSettings ? 'Saving…' : 'Save Changes'}</button>
             </div>
           </form>
-          <div className="card" style={{ padding: '20px' }}>
-            <h3 className="card-title" style={{ marginBottom: '16px' }}>Identifiers</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div className="card u-p-20px" >
+            <h3 className="card-title u-mb-16px" >Identifiers</h3>
+            <div className="u-gap-12px" style={{ display: 'flex', flexDirection: 'column' }}>
               {[
                 { label: 'Code', value: group.code },
                 { label: 'Group ID', value: group.id },
                 { label: 'Created', value: formatDate(group.created_at) },
               ].map((row) => (
-                <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', fontSize: 'var(--fs-base)', borderBottom: '1px solid var(--border)', paddingBottom: '12px' }}>
+                <div key={row.label} className="u-gap-12px u-fs-fs-base u-pb-12px" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)' }}>
                   <span style={{ color: 'var(--text-muted)' }}>{row.label}</span>
-                  <span style={{ fontFamily: 'var(--font-body)', color: 'var(--text)', fontWeight: 600, overflowWrap: 'anywhere', textAlign: 'right' }}>{row.value}</span>
+                  <span className="u-ff-font-body u-fw-600" style={{ color: 'var(--text)', overflowWrap: 'anywhere', textAlign: 'right' }}>{row.value}</span>
                 </div>
               ))}
             </div>

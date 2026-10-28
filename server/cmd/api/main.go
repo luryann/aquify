@@ -81,15 +81,23 @@ func loadDotEnv(path string) {
 		}
 		key := strings.TrimSpace(line[:idx])
 		val := strings.TrimSpace(line[idx+1:])
-		// Strip inline comments
-		if ci := strings.Index(val, " #"); ci >= 0 {
+		// A comment marker inside a quoted value is part of the value.
+		if len(val) > 0 && (val[0] == '"' || val[0] == '\'') {
+			quote := val[0]
+			for end := 1; end < len(val); end++ {
+				if quote == '"' && val[end] == '\\' {
+					end++
+					continue
+				}
+				if val[end] == quote {
+					val = val[1:end]
+					break
+				}
+			}
+		} else if ci := strings.Index(val, " #"); ci >= 0 {
 			val = strings.TrimSpace(val[:ci])
 		}
-		// Strip surrounding quotes
-		if len(val) >= 2 && ((val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'')) {
-			val = val[1 : len(val)-1]
-		}
-		if key != "" && os.Getenv(key) == "" {
+		if _, exists := os.LookupEnv(key); key != "" && !exists {
 			_ = os.Setenv(key, val)
 		}
 	}

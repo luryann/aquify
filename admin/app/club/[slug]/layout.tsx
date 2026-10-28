@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import { ClubNav } from '@/components/club/ClubNav'
 import { fetchPublicSite } from '@/lib/publicSiteData'
 import '../club.css'
+import './layout.inline.css'
 
 type Props = { children: React.ReactNode; params: Promise<{ slug: string }> }
 
@@ -39,7 +40,7 @@ export default async function ClubLayout({ children, params }: Props) {
       <footer className="cs-footer">
         <div className="cs-wrap cs-footer-in">
           <span>{club.name}</span>
-          <span style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+          <span className="is-5b301e8">
             {club.contact_email ? <a href={`mailto:${club.contact_email}`}>{club.contact_email}</a> : null}
             {club.contact_phone ? <a href={`tel:${club.contact_phone.replace(/[^+\d]/g, '')}`}>{club.contact_phone}</a> : null}
             <Link href="/login">Member sign in</Link>

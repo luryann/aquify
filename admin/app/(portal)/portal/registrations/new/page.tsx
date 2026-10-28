@@ -25,6 +25,7 @@ import {
 import { useSession } from '@/lib/session'
 import { parseBackendDate } from '@/lib/dates'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
+import './page.inline.css'
 
 const STEP_LABELS = ['Select Program', 'Select Swimmers', 'Review Waivers', 'Confirm']
 
@@ -210,20 +211,20 @@ export default function NewRegistrationPage() {
 
   if (submitted) {
     return (
-      <div style={{ padding: '48px 24px', maxWidth: '560px', margin: '0 auto', textAlign: 'center' }}>
-        <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'var(--success-bg)', border: '1px solid var(--success-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px' }}>
+      <div className="is-2ca52bf">
+        <div className="is-997c999">
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
             <polyline points="20 6 9 17 4 12" />
           </svg>
         </div>
-        <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--fs-3xl)', color: 'var(--text)', marginBottom: '12px' }}>Registration submitted</h2>
-        <p style={{ fontSize: 'var(--fs-md)', color: 'var(--text-subtle)', lineHeight: 1.7, marginBottom: '24px' }}>
+        <h2 className="is-8edcabb">Registration submitted</h2>
+        <p className="is-07d54ce">
           Your {selectedSeasonLabel} registration for <strong style={{ color: 'var(--text)' }}>{selectedProgram?.name ?? 'the selected program'}</strong> is now pending review.
         </p>
-        <button
+        <button type="button"
           onClick={() => router.push('/portal/registrations')}
-          className="btn btn-primary"
-          style={{ padding: '12px 24px', fontSize: 'var(--fs-md)' }}
+          className="btn btn-primary is-a2d7fde"
+          
         >
           Back to Registrations
         </button>
@@ -233,9 +234,9 @@ export default function NewRegistrationPage() {
 
   return (
     <div className="page">
-      <button
+      <button type="button"
         onClick={() => step > 0 ? setStep(step - 1) : router.push('/portal/registrations')}
-        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 'var(--fs-base)', fontFamily: 'var(--font-body)', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '20px', padding: 0 }}
+        className="is-05b71a8"
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
           <line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" />
@@ -244,14 +245,14 @@ export default function NewRegistrationPage() {
       </button>
 
       <h1 className="page-title">
-        New Registration
+        New registration
       </h1>
 
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '24px' }}>
+      <div className="is-107b010">
         {STEP_LABELS.map((label, idx) => (
-          <div key={label} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <div key={label} className="is-ffdac66">
             <div style={{ height: '3px', borderRadius: '2px', background: idx <= step ? 'var(--accent)' : 'var(--border)', transition: 'background 0.3s ease' }} />
-            <span style={{ fontSize: 'var(--fs-2xs)', fontFamily: 'var(--font-body)', color: idx === step ? 'var(--text)' : 'var(--text-muted)', fontWeight: idx === step ? 600 : 400, letterSpacing: '0.02em' }}>
+            <span style={{ fontSize: 'var(--fs-2xs)', fontFamily: 'var(--font-body)', color: idx === step ? 'var(--text)' : 'var(--text-muted)', fontWeight: idx === step ? 600 : 400, }}>
               {label}
             </span>
           </div>
@@ -259,23 +260,23 @@ export default function NewRegistrationPage() {
       </div>
 
       {error && (
-        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '12px', background: 'var(--error-bg)', border: '1px solid rgba(220,38,38,0.15)', color: 'var(--error)', fontSize: 'var(--fs-base)', lineHeight: 1.5 }}>
+        <div className="is-b602fb5">
           {error}
         </div>
       )}
 
       {loading ? (
-        <div style={{ padding: '24px 0', color: 'var(--text-subtle)', fontSize: 'var(--fs-md)' }}>Loading registration options…</div>
+        <div className="is-03ed17c">Loading registration options…</div>
       ) : (
         <>
           {step === 0 && (
             <div>
 
-              <div style={{ marginBottom: '20px' }}>
-                <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '12px' }}>Season</div>
-                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+              <div className="is-b75fad0">
+                <div className="is-906dc5d">Season</div>
+                <div className="is-18d4ed1">
                   {seasonOptions.map((season) => (
-                    <button
+                    <button type="button"
                       key={season.id}
                       onClick={() => setSelectedSeason(season.id)}
                       style={{
@@ -283,7 +284,7 @@ export default function NewRegistrationPage() {
                         borderRadius: '999px',
                         border: `1px solid ${selectedSeason === season.id ? 'var(--accent)' : 'var(--border)'}`,
                         background: selectedSeason === season.id ? 'rgba(235,93,30,0.08)' : 'var(--bg-elevated)',
-                        color: selectedSeason === season.id ? '#c2410c' : 'var(--text-subtle)',
+                        color: selectedSeason === season.id ? 'var(--accent-text, var(--accent))' : 'var(--text-subtle)',
                         cursor: 'pointer',
                         fontSize: 'var(--fs-base)',
                         fontWeight: 600,
@@ -295,9 +296,9 @@ export default function NewRegistrationPage() {
                 </div>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div className="is-930d87f">
                 {programOptions.map((program) => (
-                  <button
+                  <button type="button"
                     key={program.id}
                     onClick={() => setSelectedProgramId(program.id)}
                     style={{
@@ -305,27 +306,27 @@ export default function NewRegistrationPage() {
                       textAlign: 'left',
                       borderRadius: '12px',
                       cursor: 'pointer',
-                      background: selectedProgramId === program.id ? 'rgba(235,93,30,0.06)' : 'var(--bg-elevated)',
+                      background: selectedProgramId === program.id ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
                       border: `2px solid ${selectedProgramId === program.id ? 'var(--accent)' : 'var(--border)'}`,
                       transition: 'all 0.2s ease',
                       width: '100%',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
+                    <div className="is-ece61a4">
                       <div>
-                        <p style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--text)', marginBottom: '4px', fontFamily: 'var(--font-body)' }}>{program.name}</p>
-                        <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+                        <p className="is-6fb5cb4">{program.name}</p>
+                        <p className="is-915a8b5">
                           {program.group.code.toUpperCase()} · {program.type}
                         </p>
                       </div>
-                      <div style={{ textAlign: 'right', flexShrink: 0, color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>
+                      <div className="is-3457e2a">
                         {program.group.min_age != null || program.group.max_age != null
                           ? `Ages ${program.group.min_age ?? '—'}-${program.group.max_age ?? '—'}`
                           : 'All ages'}
                       </div>
                     </div>
                     {program.description && (
-                      <p style={{ marginTop: '12px', marginBottom: 0, color: 'var(--text-subtle)', fontSize: 'var(--fs-base)', lineHeight: 1.55 }}>
+                      <p className="is-0791cd0">
                         {program.description}
                       </p>
                     )}
@@ -340,11 +341,11 @@ export default function NewRegistrationPage() {
               <p className="page-subtitle">
                 Choose swimmers for <strong style={{ color: 'var(--text)' }}>{selectedProgram?.name}</strong>, {selectedSeasonLabel}.
               </p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div className="is-930d87f">
                 {swimmerOptions.map((swimmer) => {
                   const age = calculateAge(swimmer.date_of_birth)
                   return (
-                    <button
+                    <button type="button"
                       key={swimmer.id}
                       onClick={() => !swimmer.alreadyRegistered && toggleSwimmer(swimmer.id)}
                       disabled={swimmer.alreadyRegistered}
@@ -353,14 +354,14 @@ export default function NewRegistrationPage() {
                         textAlign: 'left',
                         borderRadius: '12px',
                         cursor: swimmer.alreadyRegistered ? 'not-allowed' : 'pointer',
-                        background: swimmer.alreadyRegistered ? '#F5F3F0' : selectedSwimmers.has(swimmer.id) ? 'rgba(235,93,30,0.06)' : 'var(--bg-elevated)',
+                        background: swimmer.alreadyRegistered ? 'var(--bg-surface)' : selectedSwimmers.has(swimmer.id) ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
                         border: `2px solid ${swimmer.alreadyRegistered ? 'var(--border)' : selectedSwimmers.has(swimmer.id) ? 'var(--accent)' : 'var(--border)'}`,
                         width: '100%',
                         transition: 'all 0.2s ease',
                         opacity: swimmer.alreadyRegistered ? 0.7 : 1,
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                      <div className="is-c9a7335">
                         <div style={{
                           width: '36px', height: '36px', borderRadius: '50%', flexShrink: 0,
                           background: selectedSwimmers.has(swimmer.id) && !swimmer.alreadyRegistered ? 'var(--accent)' : 'var(--border)',
@@ -371,15 +372,15 @@ export default function NewRegistrationPage() {
                           {`${swimmer.first_name[0] ?? ''}${swimmer.last_name[0] ?? ''}`.toUpperCase()}
                         </div>
                         <div style={{ flex: 1 }}>
-                          <p style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--text)', marginBottom: '2px', fontFamily: 'var(--font-body)' }}>
+                          <p className="is-2776d14">
                             {swimmer.first_name} {swimmer.last_name}
                           </p>
-                          <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+                          <p className="is-915a8b5">
                             {age != null ? `Age ${age}` : 'Age unavailable'} · {swimmer.registration_status}
                           </p>
                         </div>
                         {swimmer.alreadyRegistered && (
-                          <span style={{ fontSize: 'var(--fs-2xs)', padding: '2px 8px', background: 'var(--border)', color: 'var(--text-muted)', borderRadius: '16px', fontFamily: 'var(--font-body)', fontWeight: 600, flexShrink: 0 }}>
+                          <span className="is-2b57a88">
                             ALREADY REGISTERED
                           </span>
                         )}
@@ -396,7 +397,7 @@ export default function NewRegistrationPage() {
               <p className="page-subtitle">
                 Review and accept to continue.
               </p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div className="is-930d87f">
                 {waiverOptions.map((waiver) => (
                   <div
                     key={waiver.id}
@@ -407,13 +408,14 @@ export default function NewRegistrationPage() {
                       background: waiverAccepted[waiver.id] ? 'rgba(22,163,74,0.04)' : 'var(--bg-elevated)',
                     }}
                   >
-                    <button
+                    <button type="button"
+                      aria-expanded={expandedWaiver === waiver.id}
                       onClick={() => setExpandedWaiver(expandedWaiver === waiver.id ? null : waiver.id)}
-                      style={{ width: '100%', padding: '16px 16px', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px', textAlign: 'left' }}
+                      className="is-60a388a"
                     >
                       <div style={{
                         width: '20px', height: '20px', borderRadius: '50%', flexShrink: 0,
-                        background: waiverAccepted[waiver.id] ? 'var(--success)' : '#F0EDEA',
+                        background: waiverAccepted[waiver.id] ? 'var(--success)' : 'var(--bg-wash-strong)',
                         border: `2px solid ${waiverAccepted[waiver.id] ? 'var(--success)' : 'var(--border)'}`,
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                       }}>
@@ -424,28 +426,28 @@ export default function NewRegistrationPage() {
                         )}
                       </div>
                       <div style={{ flex: 1 }}>
-                        <p style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--text)', fontFamily: 'var(--font-body)' }}>
+                        <p className="is-d7b1039">
                           {waiver.title} {waiver.required && <span style={{ color: 'var(--error)' }}>*</span>}
                         </p>
-                        <p style={{ margin: '4px 0 0', fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+                        <p className="is-f36bffb">
                           {waiver.appliesTo}
                         </p>
                       </div>
                     </button>
 
                     {expandedWaiver === waiver.id && (
-                      <div style={{ padding: '0 16px 16px' }}>
-                        <div style={{ padding: '12px', background: 'var(--bg)', borderRadius: '8px', marginBottom: '12px' }}>
-                          <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', lineHeight: 1.7, margin: 0 }}>{waiver.body}</p>
+                      <div className="is-1586e86">
+                        <div className="is-690e2d2">
+                          <p className="is-87a56b3">{waiver.body}</p>
                         </div>
-                        <label style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', cursor: 'pointer' }}>
+                        <label className="is-68cd3d9">
                           <input
                             type="checkbox"
                             checked={!!waiverAccepted[waiver.id]}
                             onChange={(event) => setWaiverAccepted((prev) => ({ ...prev, [waiver.id]: event.target.checked }))}
-                            style={{ marginTop: '2px', accentColor: 'var(--accent)', width: '16px', height: '16px', cursor: 'pointer' }}
+                            className="is-67c1d5d"
                           />
-                          <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text)', lineHeight: 1.5 }}>
+                          <span className="is-71a6eb4">
                             I have read and agree to the <strong>{waiver.title}</strong>
                             {!waiver.required && <span style={{ color: 'var(--text-muted)' }}> (optional)</span>}
                           </span>
@@ -460,26 +462,26 @@ export default function NewRegistrationPage() {
 
           {step === 3 && (
             <div>
-              <div className="card" style={{ overflow: 'hidden', marginBottom: '20px' }}>
-                <div style={{ padding: '16px 20px', borderBottom: '1px solid #E5E1DC', background: 'var(--bg)' }}>
-                  <p style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)' }}>Program</p>
-                  <p style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--text)', marginTop: '2px' }}>{selectedProgram?.name}</p>
-                  <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', margin: '4px 0 0' }}>{selectedSeasonLabel}</p>
+              <div className="card is-b25ef49" >
+                <div className="is-9b28c7d">
+                  <p className="is-703129f">Program</p>
+                  <p className="is-0bf6ab9">{selectedProgram?.name}</p>
+                  <p className="is-47d4bd3">{selectedSeasonLabel}</p>
                 </div>
-                <div style={{ padding: '16px 20px', borderBottom: '1px solid #E5E1DC' }}>
-                  <p style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '8px' }}>Swimmers</p>
+                <div className="is-296acb1">
+                  <p className="is-dd4d726">Swimmers</p>
                   {selectedSwimmerRecords.map((swimmer) => (
-                    <div key={swimmer.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                      <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text)' }}>{swimmer.first_name} {swimmer.last_name}</span>
-                      <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{swimmer.registration_status}</span>
+                    <div key={swimmer.id} className="is-3893aaf">
+                      <span className="is-302d13d">{swimmer.first_name} {swimmer.last_name}</span>
+                      <span className="is-cee8ee9">{swimmer.registration_status}</span>
                     </div>
                   ))}
                 </div>
-                <div style={{ padding: '16px 20px' }}>
-                  <p style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '8px' }}>Accepted requirements</p>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <div className="is-401e6d8">
+                  <p className="is-dd4d726">Accepted requirements</p>
+                  <div className="is-51144f2">
                     {waiverOptions.filter((waiver) => waiverAccepted[waiver.id]).map((waiver) => (
-                      <span key={waiver.id} style={{ padding: '4px 8px', borderRadius: '999px', background: 'var(--warning-bg)', color: '#c2410c', fontSize: 'var(--fs-xs)', fontWeight: 600 }}>
+                      <span key={waiver.id} className="is-b6ac006">
                         {waiver.title}
                       </span>
                     ))}
@@ -491,19 +493,19 @@ export default function NewRegistrationPage() {
         </>
       )}
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '24px' }}>
-        <button
+      <div className="is-1584c56">
+        <button type="button"
           onClick={() => step > 0 ? setStep(step - 1) : router.push('/portal/registrations')}
-          className="btn btn-secondary"
-          style={{ padding: '12px 24px' }}
+          className="btn btn-secondary is-ab97eba"
+          
         >
           {step === 0 ? 'Cancel' : '← Back'}
         </button>
-        <button
+        <button type="button"
           onClick={() => step < 3 ? setStep(step + 1) : void handleSubmit()}
           disabled={loading || !canProceed() || submitting}
-          className="btn btn-primary"
-          style={{ padding: '12px 24px' }}
+          className="btn btn-primary is-ab97eba"
+          
         >
           {submitting ? 'Submitting…' : step < 3 ? 'Continue →' : 'Submit Registration'}
         </button>

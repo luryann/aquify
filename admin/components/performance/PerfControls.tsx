@@ -2,17 +2,7 @@
 
 import type { CSSProperties, ReactNode } from 'react'
 
-export const FIELD_STYLE: CSSProperties = {
-  padding: '8px 12px',
-  borderRadius: 'var(--r-sm)',
-  border: '1px solid var(--border)',
-  background: 'var(--bg-elevated)',
-  color: 'var(--text)',
-  fontSize: 'var(--fs-base)',
-  fontFamily: 'var(--font-body)',
-  boxSizing: 'border-box',
-  minWidth: 0,
-}
+export const FIELD_STYLE: CSSProperties = { width: '100%' }
 
 type Option<T extends string> = { value: T; label: string }
 
@@ -31,17 +21,7 @@ export function Segmented<T extends string>({
             role="radio"
             aria-checked={active}
             onClick={() => onChange(o.value)}
-            style={{
-              padding: '8px 12px',
-              border: 'none',
-              borderRight: '1px solid var(--border)',
-              background: active ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
-              color: active ? 'var(--accent)' : 'var(--text-subtle)',
-              fontSize: 'var(--fs-sm)',
-              fontWeight: active ? 600 : 400,
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-            }}
+            className="u-p-8px-12px u-fs-fs-sm" style={{ border: 'none', borderRight: '1px solid var(--border)', background: active ? 'var(--accent-subtle)' : 'var(--bg-elevated)', color: active ? 'var(--accent)' : 'var(--text-subtle)', fontWeight: active ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap' }}
           >
             {o.label}
           </button>
@@ -53,7 +33,7 @@ export function Segmented<T extends string>({
 
 export function LoadErrorBanner({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
-    <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', margin: '0 0 16px', padding: '12px 16px', borderRadius: 'var(--r-sm)', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: 'var(--fs-base)' }}>
+    <div role="alert" className="u-gap-12px u-m-0-0-16px u-p-12px-16px u-fs-fs-base" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', borderRadius: 'var(--r-sm)', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)' }}>
       <span style={{ flex: '1 1 200px' }}>{message}</span>
       {onRetry ? <button type="button" className="btn btn-sm btn-secondary" onClick={onRetry}>Try again</button> : null}
     </div>
@@ -62,12 +42,12 @@ export function LoadErrorBanner({ message, onRetry }: { message: string; onRetry
 
 export function Notice({ tone = 'info', children }: { tone?: 'info' | 'success' | 'warning'; children: ReactNode }) {
   return (
-    <div role="status" style={{ margin: '0 0 16px', padding: '12px 16px', borderRadius: 'var(--r-sm)', background: `var(--${tone}-bg)`, border: `1px solid var(--${tone}-border)`, color: `var(--${tone})`, fontSize: 'var(--fs-base)' }}>
+    <div role="status" className="u-m-0-0-16px u-p-12px-16px u-fs-fs-base" style={{ borderRadius: 'var(--r-sm)', background: `var(--${tone}-bg)`, border: `1px solid var(--${tone}-border)`, color: `var(--${tone})` }}>
       {children}
     </div>
   )
 }
 
 export function FilterRow({ children }: { children: ReactNode }) {
-  return <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', marginBottom: '20px' }}>{children}</div>
+  return <div className="u-gap-12px u-mb-20px" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center' }}>{children}</div>
 }

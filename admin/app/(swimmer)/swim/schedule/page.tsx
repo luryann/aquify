@@ -17,6 +17,7 @@ import { fetchTrainingSchedule, type ScheduleItem, type Workout } from '@/lib/tr
 import { formatDistance, formatDuration } from '@/lib/workout-format'
 import { WorkoutSheet } from '@/components/training/WorkoutSheet'
 import { SwimmerClubEvents } from '@/components/engagement/SwimmerClubEvents'
+import './page.inline.css'
 
 // Convert raw commitment status to a plain-language answer, mirroring the
 // dashboard's own commitment badge so the swimmer sees the same wording
@@ -198,13 +199,13 @@ function EventCard({ ev }: { ev: ScheduleEvent }) {
     >
       <div style={{ flex: 1, minWidth: 0 }}>
         {/* Title row */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
+        <div className="is-ece61a4">
           <p style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: C.text, lineHeight: 1.3, marginBottom: '6px' }}>
             {ev.title}
           </p>
-          <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexShrink: 0 }}>
+          <div className="is-99659b5">
             {ev.course && (
-              <span style={{ fontSize: 'var(--fs-2xs)', fontFamily: 'var(--font-body)', fontWeight: 600, color: 'var(--bg-surface)', background: C.accent, padding: '2px 6px', borderRadius: '4px', letterSpacing: '0.04em' }}>
+              <span style={{ fontSize: 'var(--fs-2xs)', fontFamily: 'var(--font-body)', fontWeight: 600, color: 'var(--bg-surface)', background: C.accent, padding: '2px 6px', borderRadius: '4px', }}>
                 {ev.course}
               </span>
             )}
@@ -213,8 +214,6 @@ function EventCard({ ev }: { ev: ScheduleEvent }) {
                 fontSize: 'var(--fs-2xs)',
                 fontFamily: 'var(--font-body)',
                 fontWeight: 600,
-                letterSpacing: '0.04em',
-                textTransform: 'uppercase',
                 color: s.color,
                 background: s.bg,
                 border: `1px solid ${s.border}`,
@@ -228,7 +227,7 @@ function EventCard({ ev }: { ev: ScheduleEvent }) {
         </div>
 
         {/* Meta row */}
-        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+        <div className="is-b7f7d3c">
           {ev.location && (
             <span style={{ fontSize: 'var(--fs-sm)', color: C.subtle, display: 'flex', alignItems: 'center', gap: '4px' }}>
               <Icon name="map-pin" size={11} />
@@ -250,7 +249,7 @@ function EventCard({ ev }: { ev: ScheduleEvent }) {
         {/* Expandable content */}
         {(ev.detail || ev.meetPath) && (
           <div>
-            <button
+            <button type="button"
               onClick={() => setExpanded(!expanded)}
               style={{
                 background: 'transparent',
@@ -270,7 +269,7 @@ function EventCard({ ev }: { ev: ScheduleEvent }) {
             </button>
 
             {expanded && (
-              <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div className="is-5231bff">
                 {ev.detail && (
                   <p style={{ fontSize: 'var(--fs-sm)', color: C.muted, lineHeight: 1.55 }}>
                     {ev.detail}
@@ -321,7 +320,7 @@ export default function SwimmerSchedulePage() {
   useEffect(() => {
     if (!orgId) {
       setLoading(false)
-      setLoadError('Swimmer schedule is unavailable because no organization is selected.')
+      setLoadError('We could not find your club. Sign out and back in to try again.')
       return
     }
     const now = new Date()
@@ -363,7 +362,7 @@ export default function SwimmerSchedulePage() {
         setLoadError(reportUIError(
           'swimmer-schedule-load',
           error,
-          'Swimmer schedule data is unavailable right now.',
+          'We could not load this page. Check your connection and try again.',
           { orgId },
         ))
       })
@@ -384,7 +383,7 @@ export default function SwimmerSchedulePage() {
       `}</style>
 
       {/* Header */}
-      <div style={{ marginBottom: '24px', animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both' }}>
+      <div className="is-88ea830">
         <h1 className="page-title"
         >
           Schedule
@@ -393,19 +392,9 @@ export default function SwimmerSchedulePage() {
 
       {loadError && (
         <div
-          style={{
-            marginBottom: '24px',
-            background: 'var(--warning-bg)',
-            border: '1px solid rgba(245,158,11,0.25)',
-            borderRadius: '12px',
-            padding: '12px 16px',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: '12px',
-          }}
+          className="is-ee77e17"
         >
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+          <div className="is-730b6a7">
             <Icon name="alert-circle" size={15} style={{ color: 'var(--warning)', marginTop: '1px', flexShrink: 0 }} />
             <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: C.text, lineHeight: 1.5 }}>{loadError}</p>
           </div>
@@ -421,19 +410,13 @@ export default function SwimmerSchedulePage() {
 
       {/* Type filter */}
       <div
-        style={{
-          display: 'flex',
-          gap: '8px',
-          marginBottom: '24px',
-          flexWrap: 'wrap',
-          animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) 0.05s both',
-        }}
+        className="is-bb0f973"
       >
         {(['all', 'meet', 'practice', 'deadline'] as const).map((type) => {
           const active = typeFilter === type
           const s = type !== 'all' ? EVENT_STYLE[type] : null
           return (
-            <button
+            <button type="button"
               key={type}
               onClick={() => setTypeFilter(type)}
               style={{
@@ -466,11 +449,11 @@ export default function SwimmerSchedulePage() {
 
       {/* Schedule sections */}
       {loading ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div className="is-efd85b9">
           {[1, 2].map(i => (
-            <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div key={i} className="is-930d87f">
               <div style={{ height: '18px', width: '140px', background: 'var(--border)', borderRadius: '6px', animation: 'pulse 1.5s ease-in-out infinite' }} />
-              <div className="card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div className="card is-824b1f4" >
                 <SkeletonLine width="60%" />
                 <SkeletonLine width="40%" height="12px" />
               </div>
@@ -478,14 +461,14 @@ export default function SwimmerSchedulePage() {
           ))}
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '40px' }}>
+        <div className="is-8ceab81">
           {sections.map((section, si) => (
             <section
               key={section.heading}
               style={{ animation: `slideUp 0.35s cubic-bezier(0.16,1,0.3,1) ${si * 60}ms both` }}
             >
               {/* Section heading */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+              <div className="is-7f15173">
                 <h2 className="section-title" style={{ whiteSpace: 'nowrap' }}
                 >
                   {section.heading}
@@ -497,7 +480,7 @@ export default function SwimmerSchedulePage() {
               </div>
 
               {/* Events in section */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div className="is-355eedd">
                 {section.events.map((ev, i) => (
                   <div
                     key={ev.id}
@@ -510,7 +493,7 @@ export default function SwimmerSchedulePage() {
                     }}
                   >
                     {/* Date column */}
-                    <div style={{ paddingTop: '16px' }}>
+                    <div className="is-36493dc">
                       <p style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: C.text, lineHeight: 1.3 }}>
                         {ev.dateLabel.split(', ')[0]}
                       </p>
@@ -527,25 +510,9 @@ export default function SwimmerSchedulePage() {
             </section>
           ))}
 
-          {loadError ? (
-            <div className="card"
-              style={{
-                padding: '64px 20px',
-                textAlign: 'center',
-              }}
-            >
-              <Icon name="calendar" size={32} style={{ color: C.muted, marginBottom: '16px' }} />
-              <p style={{ fontSize: 'var(--fs-md)', color: C.subtle, fontWeight: 500 }}>Schedule data is unavailable right now.</p>
-              <p style={{ fontSize: 'var(--fs-base)', color: C.muted, marginTop: '4px' }}>
-                Reload to see upcoming meets, practices, and deadlines.
-              </p>
-            </div>
-          ) : shouldShowCollectionEmptyState(loading, loadError, sections.length) && (
-            <div className="card"
-              style={{
-                padding: '64px 20px',
-                textAlign: 'center',
-              }}
+          {loadError ? null : shouldShowCollectionEmptyState(loading, loadError, sections.length) && (
+            <div className="card is-16a78cd"
+              
             >
               <Icon name="calendar" size={32} style={{ color: C.muted, marginBottom: '16px' }} />
               <p style={{ fontSize: 'var(--fs-md)', color: C.subtle, fontWeight: 500 }}>No upcoming events</p>

@@ -117,7 +117,7 @@ export default function BillingRunsPage() {
       </div>
       {loadError ? <Banner tone="error" onRetry={() => void load()}>{loadError}</Banner> : null}
 
-      <section className="card" style={{ padding: 20 }}>
+      <section className="card u-p-20px" >
         <div style={formGrid}>
           <Field label="Bill the period containing">
             <input className="form-input" type="date" value={asOf} onChange={(e) => setAsOf(e.target.value)} />
@@ -132,29 +132,29 @@ export default function BillingRunsPage() {
             <input className="form-input" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
           </Field>
         </div>
-        <fieldset style={{ border: 'none', padding: 0, margin: '16px 0 0' }}>
-          <legend className="form-label" style={{ marginBottom: 8 }}>
+        <fieldset className="u-p-0" style={{ border: 'none', margin: '16px 0 0' }}>
+          <legend className="form-label u-mb-8px" >
             Schedules {selected.length === 0 ? '(all active)' : `(${selected.length} selected)`}
           </legend>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          <div className="u-gap-8px" style={{ display: 'flex', flexWrap: 'wrap' }}>
             {schedules.map((s) => (
               <label key={s.id} className={selected.includes(s.id) ? 'badge badge-accent' : 'badge badge-default'} style={{ cursor: 'pointer', padding: '6px 12px', display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-                <input type="checkbox" checked={selected.includes(s.id)} onChange={() => toggleSchedule(s.id)} style={{ margin: 0 }} />
+                <input type="checkbox" checked={selected.includes(s.id)} onChange={() => toggleSchedule(s.id)} className="u-m-0" />
                 {s.name}
               </label>
             ))}
             {!loading && schedules.length === 0 ? (
-              <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)' }}>
+              <span className="u-fs-fs-base" style={{ color: 'var(--text-subtle)' }}>
                 No active schedules yet. <Link href="/billing/schedules">Create a fee schedule</Link> first.
               </span>
             ) : null}
           </div>
         </fieldset>
-        <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 'var(--fs-base)', marginTop: 16 }}>
+        <label className="u-gap-8px u-fs-fs-base u-mt-16px" style={{ display: 'flex', alignItems: 'center' }}>
           <input type="checkbox" checked={includeAdjustments} onChange={(e) => setIncludeAdjustments(e.target.checked)} />
           Include queued one-off adjustments
         </label>
-        <button type="button" className="btn btn-primary" style={{ marginTop: 16 }} disabled={busy || !asOf || schedules.length === 0} onClick={() => void runPreview()}>
+        <button type="button" className="btn btn-primary u-mt-16px" disabled={busy || !asOf || schedules.length === 0} onClick={() => void runPreview()}>
           {busy && !preview ? 'Building preview…' : 'Preview run'}
         </button>
       </section>
@@ -168,30 +168,30 @@ export default function BillingRunsPage() {
       ) : null}
 
       {preview ? (
-        <section className="card" style={{ padding: 20, marginTop: 20 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <section className="card u-p-20px u-mt-20px" >
+          <div className="u-gap-16px" style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', alignItems: 'flex-end' }}>
             <div>
               <h2 style={sectionTitle}>
                 {preview.household_count} {preview.household_count === 1 ? 'invoice' : 'invoices'} for {formatDateOnly(preview.as_of)}
               </h2>
-              <p style={{ margin: 0, fontSize: 'var(--fs-base)', color: 'var(--text-subtle)' }}>
+              <p className="u-m-0 u-fs-fs-base" style={{ color: 'var(--text-subtle)' }}>
                 {preview.swimmer_count} swimmers, {preview.charge_count} charges, due {formatDateOnly(preview.due_date)}
               </p>
             </div>
-            <dl style={{ display: 'grid', gridTemplateColumns: 'repeat(4, auto)', gap: '2px 20px', margin: 0, fontSize: 'var(--fs-base)' }}>
+            <dl className="u-m-0 u-fs-fs-base" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, auto)', gap: '2px 20px' }}>
               <dt style={{ color: 'var(--text-subtle)' }}>Gross</dt>
               <dt style={{ color: 'var(--text-subtle)' }}>Discounts</dt>
               <dt style={{ color: 'var(--text-subtle)' }}>Adjustments</dt>
               <dt style={{ color: 'var(--text-subtle)' }}>Invoiced</dt>
-              <dd style={{ margin: 0 }}><Money cents={preview.gross_cents} /></dd>
-              <dd style={{ margin: 0 }}><Money cents={-preview.discount_cents} /></dd>
-              <dd style={{ margin: 0 }}><Money cents={preview.adjustment_cents} /></dd>
-              <dd style={{ margin: 0, fontSize: 'var(--fs-xl)' }}><Money cents={preview.net_cents} strong /></dd>
+              <dd className="u-m-0" ><Money cents={preview.gross_cents} /></dd>
+              <dd className="u-m-0" ><Money cents={-preview.discount_cents} /></dd>
+              <dd className="u-m-0" ><Money cents={preview.adjustment_cents} /></dd>
+              <dd className="u-m-0 u-fs-fs-xl" ><Money cents={preview.net_cents} strong /></dd>
             </dl>
           </div>
 
           {preview.households.length === 0 ? (
-            <p style={{ fontSize: 'var(--fs-md)', color: 'var(--text-subtle)', marginTop: 16 }}>{preview.skipped.length > 0 ? 'Nothing new to bill for this period. See the swimmers not billed below.' : 'Nothing new to bill for this period. Every eligible charge is already on an invoice.'}</p>
+            <p className="u-fs-fs-md u-mt-16px" style={{ color: 'var(--text-subtle)' }}>{preview.skipped.length > 0 ? 'Nothing new to bill for this period. See the swimmers not billed below.' : 'Nothing new to bill for this period. Every eligible charge is already on an invoice.'}</p>
           ) : (
             <ScrollTable>
               <table style={{ ...tableStyle, marginTop: 16 }}>
@@ -213,11 +213,11 @@ export default function BillingRunsPage() {
                             type="button"
                             aria-expanded={expanded === h.household_id}
                             onClick={() => setExpanded(expanded === h.household_id ? null : h.household_id)}
-                            style={{ background: 'none', border: 'none', padding: 0, color: 'var(--text)', fontWeight: 600, cursor: 'pointer', textAlign: 'left', font: 'inherit' }}
+                            className="u-p-0 u-fw-600" style={{ background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer', textAlign: 'left', font: 'inherit' }}
                           >
                             {expanded === h.household_id ? '▾' : '▸'} {h.household_name}
                           </button>
-                          <div style={{ color: 'var(--text-subtle)', fontSize: 'var(--fs-sm)' }}>{h.swimmer_count} {h.swimmer_count === 1 ? 'swimmer' : 'swimmers'}</div>
+                          <div className="u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{h.swimmer_count} {h.swimmer_count === 1 ? 'swimmer' : 'swimmers'}</div>
                         </td>
                         <td style={numStyle}><Money cents={h.gross_cents + h.adjustment_cents} /></td>
                         <td style={numStyle}>{h.discount_cents ? <Money cents={-h.discount_cents} /> : '—'}</td>
@@ -241,9 +241,9 @@ export default function BillingRunsPage() {
           )}
 
           {preview.skipped.length > 0 ? (
-            <details style={{ marginTop: 16, fontSize: 'var(--fs-base)' }}>
+            <details className="u-mt-16px u-fs-fs-base" >
               <summary style={{ cursor: 'pointer', color: 'var(--text-subtle)' }}>{preview.skipped.length} not billed, with reasons</summary>
-              <ul style={{ margin: '8px 0 0', paddingLeft: 20, color: 'var(--text-subtle)' }}>
+              <ul className="u-pl-20px" style={{ margin: '8px 0 0', color: 'var(--text-subtle)' }}>
                 {preview.skipped.map((s, i) => (
                   <li key={i}>
                     {s.household_name || 'Unknown household'}
@@ -256,22 +256,22 @@ export default function BillingRunsPage() {
           ) : null}
 
           {preview.households.length > 0 ? (
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 20, flexWrap: 'wrap' }}>
+            <div className="u-gap-12px u-mt-20px" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
               <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void commit()}>
                 {busy ? 'Committing…' : `Create ${preview.household_count} ${status === 'issued' ? 'issued' : 'draft'} ${preview.household_count === 1 ? 'invoice' : 'invoices'}`}
               </button>
-              <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>If anything changed since this preview, nothing is billed and you get a fresh preview.</span>
+              <span className="u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>If anything changed since this preview, nothing is billed and you get a fresh preview.</span>
             </div>
           ) : null}
         </section>
       ) : null}
 
-      <section style={{ marginTop: 32 }}>
+      <section className="u-mt-32px" >
         <h2 style={sectionTitle}>History</h2>
         {loading ? (
-          <p style={{ color: 'var(--text-subtle)', fontSize: 'var(--fs-base)' }}>Loading runs…</p>
+          <p className="u-fs-fs-base" style={{ color: 'var(--text-subtle)' }}>Loading runs…</p>
         ) : !loadError && runs.length === 0 ? (
-          <p style={{ color: 'var(--text-subtle)', fontSize: 'var(--fs-base)' }}>No billing runs yet. Your first committed run will appear here.</p>
+          <p className="u-fs-fs-base" style={{ color: 'var(--text-subtle)' }}>No billing runs yet. Your first committed run will appear here.</p>
         ) : runs.length > 0 ? (
           <ScrollTable>
             <table style={tableStyle}>
@@ -291,11 +291,11 @@ export default function BillingRunsPage() {
                   <tr key={r.id}>
                     <td style={tdStyle}>
                       {formatDateOnly(r.as_of)}
-                      <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{r.invoice_status === 'issued' ? 'Issued' : 'Drafts'}</div>
+                      <div className="u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{r.invoice_status === 'issued' ? 'Issued' : 'Drafts'}</div>
                     </td>
                     <td style={tdStyle}>{new Date(r.created_at).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}</td>
                     <td style={tdStyle}>{r.trigger === 'scheduler' ? 'Automatic' : staffName(r.created_by)}</td>
-                    <td style={numStyle}>{r.invoice_count}{r.skipped_count ? <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{r.skipped_count} skipped</div> : null}</td>
+                    <td style={numStyle}>{r.invoice_count}{r.skipped_count ? <div className="u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{r.skipped_count} skipped</div> : null}</td>
                     <td style={numStyle}><Money cents={-r.discount_cents} muted /></td>
                     <td style={numStyle}><Money cents={r.credit_applied_cents} muted /></td>
                     <td style={numStyle}><Money cents={r.net_cents} strong /></td>

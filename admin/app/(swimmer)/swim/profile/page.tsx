@@ -16,6 +16,7 @@ import {
   type GroupRecord,
 } from '@/lib/adminData'
 import { SWIMMER_BIO_MAX_LENGTH, normalizeSwimmerBio, validateSwimmerBio } from '@/lib/swimmer-bio'
+import './page.inline.css'
 
 // ── Design tokens ──────────────────────────────────────────────────────────
 const C = {
@@ -27,7 +28,7 @@ const C = {
   muted:        'var(--text-muted)',
   card:         'var(--bg-surface)',
   border:       'var(--border)',
-  inputBg:      'rgba(0,0,0,0.25)',
+  inputBg:      'var(--border-strong)',
   inputBorder:  'rgba(0,212,170,0.18)',
 }
 
@@ -75,13 +76,8 @@ function ReadOnlyField({ label, value }: { label: string; value: string }) {
 
 function FieldGroup({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="card"
-      style={{
-        padding: '24px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '20px',
-      }}
+    <div className="card is-f4ffd4e"
+      
     >
       <h3 className="section-title" style={{ paddingBottom: '16px', borderBottom: `1px solid ${C.border}`, margin: '-4px 0 0' }}
       >
@@ -114,7 +110,7 @@ export default function SwimmerProfilePage() {
   useEffect(() => {
     if (!orgId) {
       setLoading(false)
-      setLoadError('Swimmer profile is unavailable because no organization is selected.')
+      setLoadError('We could not find your club. Sign out and back in to try again.')
       return
     }
 
@@ -151,7 +147,7 @@ export default function SwimmerProfilePage() {
       setLoadError(reportUIError(
         'swimmer-profile-load',
         error,
-        'Swimmer profile data is unavailable right now.',
+        'We could not load this page. Check your connection and try again.',
         { orgId, householdId },
       ))
     }).finally(() => setLoading(false))
@@ -200,38 +196,18 @@ export default function SwimmerProfilePage() {
 
       {/* Header */}
       <div
-        style={{
-          display: 'flex',
-          alignItems: 'flex-start',
-          gap: '20px',
-          marginBottom: '40px',
-          animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both',
-        }}
+        className="is-ce0e9fe"
       >
         {/* Avatar */}
         <div
-          style={{
-            width: '72px',
-            height: '72px',
-            borderRadius: '50%',
-            background: 'linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'var(--bg)',
-            fontSize: 'var(--fs-2xl)',
-            fontWeight: 700,
-            fontFamily: 'var(--font-body)',
-            boxShadow: '0 0 32px rgba(0,212,170,0.28)',
-            flexShrink: 0,
-          }}
+          className="is-81e81d8"
         >
           {loading ? '…' : initials}
         </div>
 
         <div style={{ flex: 1 }}>
           {loading ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '4px' }}>
+            <div className="is-c284387">
               <SkeletonLine width="200px" height="28px" />
               <SkeletonLine width="140px" height="14px" />
             </div>
@@ -245,19 +221,9 @@ export default function SwimmerProfilePage() {
                 {group ? group.name : 'No group assigned'}
                 {swimmer?.swimmer_external_id ? ` · USS# ${swimmer.swimmer_external_id}` : ''}
               </p>
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <div className="is-51144f2">
                 <span
-                  style={{
-                    fontSize: 'var(--fs-xs)',
-                    fontFamily: 'var(--font-body)',
-                    color: 'var(--accent)',
-                    background: 'var(--accent-subtle)',
-                    border: '1px solid rgba(0,212,170,0.25)',
-                    padding: '4px 12px',
-                    borderRadius: '999px',
-                    fontWeight: 600,
-                    textTransform: 'capitalize',
-                  }}
+                  className="is-74e24b2"
                 >
                   {swimmer?.registration_status ?? 'Not set'}
                 </span>
@@ -289,19 +255,9 @@ export default function SwimmerProfilePage() {
 
       {loadError && (
         <div
-          style={{
-            background: 'var(--warning-bg)',
-            border: '1px solid rgba(245,158,11,0.25)',
-            borderRadius: '12px',
-            padding: '12px 16px',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: '12px',
-            marginBottom: '24px',
-          }}
+          className="is-ef8d534"
         >
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+          <div className="is-730b6a7">
             <Icon name="alert-circle" size={15} style={{ color: 'var(--warning)', marginTop: '1px', flexShrink: 0 }} />
             <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: C.text, lineHeight: 1.5 }}>{loadError}</p>
           </div>
@@ -328,26 +284,23 @@ export default function SwimmerProfilePage() {
       {!loading && !loadError && noLinkedSwimmer && <UnlinkedSwimmerNotice />}
 
       <div
-        className="split-aside"
-        style={{
-          gap: '20px',
-          alignItems: 'start',
-        }}
+        className="split-aside is-15cde2f"
+        
       >
         {/* Main column */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div className="is-8ef476f">
           {/* Club info */}
           <div style={{ animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) 0.08s both' }}>
             {loading ? (
-              <div className="card" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div className="card is-c9491b0" >
                 <SkeletonLine width="120px" height="18px" />
-                <div className="cols-2" style={{ gap: '20px' }}>
+                <div className="cols-2 is-ac2cd18" >
                   {[1,2,3,4].map(i => <SkeletonLine key={i} height="40px" />)}
                 </div>
               </div>
             ) : (
               <FieldGroup label="Club information">
-                <div className="cols-2" style={{ gap: '20px' }}>
+                <div className="cols-2 is-ac2cd18" >
                   <ReadOnlyField label="Group" value={group?.name ?? '—'} />
                   <ReadOnlyField label="Group code" value={group?.code ?? '—'} />
                   <ReadOnlyField label="Registration" value={swimmer?.registration_status ?? '—'} />
@@ -360,15 +313,15 @@ export default function SwimmerProfilePage() {
           {/* Personal info */}
           <div style={{ animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) 0.12s both' }}>
             {loading ? (
-              <div className="card" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div className="card is-c9491b0" >
                 <SkeletonLine width="160px" height="18px" />
-                <div className="cols-2" style={{ gap: '20px' }}>
+                <div className="cols-2 is-ac2cd18" >
                   {[1,2,3,4,5,6].map(i => <SkeletonLine key={i} height="40px" />)}
                 </div>
               </div>
             ) : swimmer ? (
               <FieldGroup label="Personal information">
-                <div className="cols-2" style={{ gap: '20px' }}>
+                <div className="cols-2 is-ac2cd18" >
                   <ReadOnlyField label="First name" value={swimmer.first_name} />
                   <ReadOnlyField label="Last name" value={swimmer.last_name} />
                   {swimmer.preferred_name && (
@@ -400,7 +353,7 @@ export default function SwimmerProfilePage() {
                   </div>
                 )}
                 {(swimmer.emergency_contact_name || swimmer.emergency_contact_phone) && (
-                  <div className="cols-2" style={{ gap: '20px' }}>
+                  <div className="cols-2 is-ac2cd18" >
                     <ReadOnlyField label="Emergency contact" value={swimmer.emergency_contact_name || '—'} />
                     <ReadOnlyField label="Emergency phone" value={swimmer.emergency_contact_phone || '—'} />
                     {swimmer.emergency_contact_relationship && (
@@ -411,23 +364,17 @@ export default function SwimmerProfilePage() {
               </FieldGroup>
             ) : shouldShowCollectionEmptyState(loading, loadError, swimmer ? 1 : 0) ? (
               noLinkedSwimmer ? null : (
-                <div className="card" style={{ padding: '24px', textAlign: 'center' }}>
+                <div className="card is-0830bd2" >
                   <p style={{ fontSize: 'var(--fs-md)', color: C.muted }}>No swimmer profile found for your account.</p>
                 </div>
               )
-            ) : (
-              <div className="card" style={{ padding: '24px', textAlign: 'center' }}>
-                <p style={{ fontSize: 'var(--fs-md)', color: C.muted }}>Profile details are unavailable until the latest data loads successfully.</p>
-              </div>
-            )}
+            ) : null}
           </div>
 
           {/* Bio — editable */}
           <div style={{ animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) 0.16s both' }}>
-            <div className="card"
-              style={{
-                padding: '24px',
-              }}
+            <div className="card is-0acd099"
+              
             >
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', paddingBottom: '16px', borderBottom: `1px solid ${C.border}` }}>
                 <h3 className="section-title">
@@ -452,7 +399,7 @@ export default function SwimmerProfilePage() {
                 Share a little about yourself — this appears on your team profile.
               </p>
 
-              <textarea
+              <textarea aria-label="Bio"
                 value={bio}
                 onChange={(e) => {
                   setBio(e.target.value)
@@ -462,42 +409,28 @@ export default function SwimmerProfilePage() {
                 placeholder="Tell your team about yourself. Your goals, favorite events, or anything you'd like to share..."
                 maxLength={SWIMMER_BIO_MAX_LENGTH}
                 rows={4}
-                style={{
-                  width: '100%',
-                  background: C.inputBg,
-                  border: `1px solid ${C.inputBorder}`,
-                  borderRadius: '8px',
-                  padding: '12px 16px',
-                  fontSize: 'var(--fs-base)',
-                  color: C.text,
-                  fontFamily: 'var(--font-body)',
+                style={{ width: '100%',
                   lineHeight: 1.6,
-                  resize: 'vertical',
-                  outline: 'none',
-                  boxSizing: 'border-box',
-                  transition: 'border-color 150ms ease',
-                }}
-                onFocus={(e) => (e.currentTarget.style.borderColor = C.accent)}
-                onBlur={(e) => (e.currentTarget.style.borderColor = C.inputBorder)}
+                  resize: 'vertical' }}
               />
 
               {bioError && (
-                <div style={{ marginTop: '12px', fontSize: 'var(--fs-sm)', color: 'var(--error)', lineHeight: 1.5 }}>
+                <div className="is-e53b553">
                   {bioError}
                 </div>
               )}
 
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '12px' }}>
+              <div className="is-7d1aea8">
                 <span style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', color: C.muted }}>
                   {bio.length}/{SWIMMER_BIO_MAX_LENGTH}
                 </span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div className="is-e2ff0fd">
                   {bioSaved && (
                     <span style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', color: C.accent }}>
                       Saved
                     </span>
                   )}
-                  <button
+                  <button type="button"
                     onClick={() => void saveBio()}
                     disabled={loading || !swimmer || bioSaving}
                     style={{
@@ -524,13 +457,10 @@ export default function SwimmerProfilePage() {
         </div>
 
         {/* Sidebar */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div className="is-8ef476f">
           {/* Group card */}
-          <div className="card"
-            style={{
-              padding: '20px',
-              animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) 0.10s both',
-            }}
+          <div className="card is-b67ba5f"
+            
           >
             <h3 className="section-title" style={{ marginBottom: '16px', paddingBottom: '12px', borderBottom: `1px solid ${C.border}` }}
             >
@@ -539,7 +469,7 @@ export default function SwimmerProfilePage() {
             {loading ? (
               <SkeletonLine />
             ) : group ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div className="is-930d87f">
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 12px', background: C.accentDim, border: `1px solid ${C.accentBorder}`, borderRadius: '8px' }}>
                   <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: C.accent, flexShrink: 0 }} />
                   <div>
@@ -568,8 +498,8 @@ export default function SwimmerProfilePage() {
               animation: 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1) 0.14s both',
             }}
           >
-            <h3 className="section-title" style={{ marginBottom: '12px' }}>
-              Saved Bio
+            <h3 className="section-title is-72d6c38" >
+              Saved bio
             </h3>
             {loading ? (
               <SkeletonLine />

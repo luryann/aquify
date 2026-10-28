@@ -16,8 +16,8 @@ const shortDate = (iso: string) => parseBackendDate(iso).toLocaleDateString('en-
 function Stat({ value, label }: { value: string; label: string }) {
   return (
     <div style={{ minWidth: 0 }}>
-      <p style={{ fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--fs-3xl)', lineHeight: 1, color: 'var(--text)', margin: 0 }}>{value}</p>
-      <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginTop: '6px' }}>{label}</p>
+      <p className="u-ff-font-display u-fw-display-weight u-fs-fs-3xl u-lh-1 u-m-0" style={{ color: 'var(--text)' }}>{value}</p>
+      <p className="u-fs-fs-sm u-mt-6px" style={{ color: 'var(--text-muted)' }}>{label}</p>
     </div>
   )
 }
@@ -64,26 +64,26 @@ export function TrainingAnalyticsPanel({ api, orgId, groups }: { api: ApiClient;
 
   return (
     <div>
-      <div role="group" aria-label="Date range" style={{ display: 'flex', gap: '4px', marginBottom: '20px', background: 'var(--bg-surface)', padding: '4px', borderRadius: '8px', width: 'fit-content' }}>
+      <div role="group" aria-label="Date range" className="u-gap-4px u-mb-20px u-p-4px" style={{ display: 'flex', background: 'var(--bg-surface)', borderRadius: '8px', width: 'fit-content' }}>
         {RANGES.map((r) => (
           <button key={r} type="button" aria-pressed={weeks === r} onClick={() => setWeeks(r)}
-            style={{ padding: '6px 16px', fontSize: 'var(--fs-base)', borderRadius: '8px', cursor: 'pointer', border: weeks === r ? '1px solid var(--border)' : '1px solid transparent', background: weeks === r ? 'var(--bg-elevated)' : 'transparent', color: weeks === r ? 'var(--text)' : 'var(--text-muted)', fontWeight: weeks === r ? 600 : 400 }}>
+            className="u-p-6px-16px u-fs-fs-base" style={{ borderRadius: '8px', cursor: 'pointer', border: weeks === r ? '1px solid var(--border)' : '1px solid transparent', background: weeks === r ? 'var(--bg-elevated)' : 'transparent', color: weeks === r ? 'var(--text)' : 'var(--text-muted)', fontWeight: weeks === r ? 600 : 400 }}>
             {r} weeks
           </button>
         ))}
       </div>
 
       {error && (
-        <div role="alert" style={{ marginBottom: '16px', padding: '12px 16px', borderRadius: '8px', border: '1px solid var(--error-border)', background: 'var(--error-bg)', color: 'var(--error)', fontSize: 'var(--fs-base)', display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center' }}>
+        <div role="alert" className="u-mb-16px u-p-12px-16px u-fs-fs-base u-gap-12px" style={{ borderRadius: '8px', border: '1px solid var(--error-border)', background: 'var(--error-bg)', color: 'var(--error)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span>{error}</span>
-          <button type="button" className="btn btn-secondary" onClick={load} style={{ fontSize: 'var(--fs-sm)', padding: '6px 12px' }}>Retry</button>
+          <button type="button" className="btn btn-secondary u-fs-fs-sm u-p-6px-12px" onClick={load} >Retry</button>
         </div>
       )}
-      {loading && !data && <p style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-base)' }}>Loading analytics…</p>}
+      {loading && !data && <p className="u-fs-fs-base" style={{ color: 'var(--text-muted)' }}>Loading analytics…</p>}
 
       {data && totals && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', opacity: loading ? 0.6 : 1, transition: 'opacity var(--dur)' }}>
-          <div className="card" style={{ padding: '20px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '20px' }}>
+        <div className="u-gap-20px" style={{ display: 'flex', flexDirection: 'column', opacity: loading ? 0.6 : 1, transition: 'opacity var(--dur)' }}>
+          <div className="card u-p-20px u-gap-20px" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}>
             <Stat value={`${(totals.planned / 1000).toFixed(1)}k yd`} label={`planned since ${shortDate(data.from)}`} />
             <Stat value={`${(totals.swimmer / 1000).toFixed(0)}k yd`} label="swum by swimmers marked present" />
             <Stat value={totals.pct == null ? 'Not taken' : `${totals.pct}%`} label="attendance, excused excluded" />
@@ -91,16 +91,16 @@ export function TrainingAnalyticsPanel({ api, orgId, groups }: { api: ApiClient;
           </div>
 
           {data.groups.length === 0 ? (
-            <div className="card" style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--fs-base)' }}>
+            <div className="card u-p-24px u-fs-fs-base" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
               No practices in this range. Schedule practices or assign library workouts to see weekly volume.
             </div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 340px), 1fr))', gap: '16px' }}>
+            <div className="u-gap-16px" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 340px), 1fr))' }}>
               {data.groups.map((g) => (
-                <section key={g.group_id || 'team'} className="card" style={{ padding: '16px 20px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'baseline', marginBottom: '12px' }}>
-                    <h3 className="section-title" style={{ margin: 0 }}>{groupName(g.group_id)} weekly volume</h3>
-                    <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', whiteSpace: 'nowrap' }}>
+                <section key={g.group_id || 'team'} className="card u-p-16px-20px" >
+                  <div className="u-gap-12px u-mb-12px" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                    <h3 className="section-title u-m-0" >{groupName(g.group_id)} weekly volume</h3>
+                    <span className="u-fs-fs-sm" style={{ color: 'var(--text-subtle)', whiteSpace: 'nowrap' }}>
                       {g.attendance_pct == null ? 'no attendance' : `${Math.round(g.attendance_pct)}% present`}
                     </span>
                   </div>
@@ -117,22 +117,22 @@ export function TrainingAnalyticsPanel({ api, orgId, groups }: { api: ApiClient;
             </div>
           )}
 
-          <section className="card" style={{ padding: '16px 20px' }}>
-            <h3 className="section-title" style={{ margin: '0 0 4px' }}>Intensity mix</h3>
+          <section className="card u-p-16px-20px" >
+            <h3 className="section-title u-m-0-0-4px" >Intensity mix</h3>
             {zoneTotal === 0 ? (
-              <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)' }}>No zoned sets yet. Add EN1–SP3 to sets to track intensity.</p>
+              <p className="u-fs-fs-base" style={{ color: 'var(--text-muted)' }}>No zoned sets yet. Add EN1–SP3 to sets to track intensity.</p>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div className="u-gap-8px" style={{ display: 'flex', flexDirection: 'column' }}>
                 {ZONES.map((z) => {
                   const v = data.zone_yards[z] ?? 0
                   const share = v / zoneTotal
                   return (
-                    <div key={z} title={`${z} ${ZONE_LABELS[z]}: ${v.toLocaleString('en-US')} yd`} style={{ display: 'grid', gridTemplateColumns: '110px minmax(0,1fr) 64px', gap: '12px', alignItems: 'center', fontSize: 'var(--fs-sm)' }}>
-                      <span style={{ color: 'var(--text)' }}><span style={{ fontFamily: 'var(--font-mono)' }}>{z}</span> <span style={{ color: 'var(--text-muted)' }}>{ZONE_LABELS[z]}</span></span>
+                    <div key={z} title={`${z} ${ZONE_LABELS[z]}: ${v.toLocaleString('en-US')} yd`} className="u-gap-12px u-fs-fs-sm" style={{ display: 'grid', gridTemplateColumns: '110px minmax(0,1fr) 64px', alignItems: 'center' }}>
+                      <span style={{ color: 'var(--text)' }}><span className="u-ff-font-mono" >{z}</span> <span style={{ color: 'var(--text-muted)' }}>{ZONE_LABELS[z]}</span></span>
                       <span style={{ height: 10, background: 'var(--bg-elevated)', borderRadius: 4, overflow: 'hidden' }}>
                         <span style={{ display: 'block', height: '100%', width: `${share * 100}%`, background: zoneColor(z), borderRadius: 4 }} />
                       </span>
-                      <span style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--text-subtle)' }}>{Math.round(share * 100)}%</span>
+                      <span className="u-ff-font-mono" style={{ textAlign: 'right', color: 'var(--text-subtle)' }}>{Math.round(share * 100)}%</span>
                     </div>
                   )
                 })}
@@ -140,26 +140,26 @@ export function TrainingAnalyticsPanel({ api, orgId, groups }: { api: ApiClient;
             )}
           </section>
 
-          <section className="card" style={{ padding: 0, overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-base)', minWidth: 520 }}>
-              <caption style={{ textAlign: 'left', padding: '16px 20px 6px', fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--fs-xl)', color: 'var(--text)' }}>Group totals</caption>
+          <section className="card table-scroll u-p-0" style={{ overflowX: 'auto' }}>
+            <table className="u-fs-fs-base" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
+              <caption className="u-ff-font-display u-fw-display-weight u-fs-fs-xl" style={{ textAlign: 'left', padding: '16px 20px 6px', color: 'var(--text)' }}>Group totals</caption>
               <thead>
-                <tr style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-xs)', textAlign: 'right' }}>
-                  <th style={{ textAlign: 'left', padding: '8px 20px', fontWeight: 500 }}>Group</th>
-                  <th style={{ padding: '8px', fontWeight: 500 }}>Practices</th>
-                  <th style={{ padding: '8px', fontWeight: 500 }}>Planned yd</th>
-                  <th style={{ padding: '8px', fontWeight: 500 }}>Swimmer yd</th>
-                  <th style={{ padding: '8px 20px', fontWeight: 500 }}>Present</th>
+                <tr className="u-fs-fs-xs" style={{ color: 'var(--text-muted)', textAlign: 'right' }}>
+                  <th className="u-p-8px-20px u-fw-500" style={{ textAlign: 'left' }}>Group</th>
+                  <th className="u-p-8px u-fw-500" >Practices</th>
+                  <th className="u-p-8px u-fw-500" >Planned yd</th>
+                  <th className="u-p-8px u-fw-500" >Swimmer yd</th>
+                  <th className="u-p-8px-20px u-fw-500" >Present</th>
                 </tr>
               </thead>
               <tbody>
                 {data.groups.map((g) => (
-                  <tr key={g.group_id || 'team'} style={{ borderTop: '1px solid var(--border)', textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-sm)' }}>
-                    <td style={{ textAlign: 'left', padding: '8px 20px', fontFamily: 'var(--font-body)', fontSize: 'var(--fs-base)' }}>{groupName(g.group_id)}</td>
-                    <td style={{ padding: '8px 8px' }}>{g.practices}</td>
-                    <td style={{ padding: '8px 8px' }}>{g.planned_yards.toLocaleString('en-US')}</td>
-                    <td style={{ padding: '8px 8px' }}>{g.swimmer_yards.toLocaleString('en-US')}</td>
-                    <td style={{ padding: '8px 20px' }}>{g.attendance_pct == null ? '—' : `${Math.round(g.attendance_pct)}% (${g.present}/${g.present + g.absent})`}</td>
+                  <tr key={g.group_id || 'team'} className="u-ff-font-mono u-fs-fs-sm" style={{ borderTop: '1px solid var(--border)', textAlign: 'right' }}>
+                    <td className="u-p-8px-20px u-ff-font-body u-fs-fs-base" style={{ textAlign: 'left' }}>{groupName(g.group_id)}</td>
+                    <td className="u-p-8px-8px" >{g.practices}</td>
+                    <td className="u-p-8px-8px" >{g.planned_yards.toLocaleString('en-US')}</td>
+                    <td className="u-p-8px-8px" >{g.swimmer_yards.toLocaleString('en-US')}</td>
+                    <td className="u-p-8px-20px" >{g.attendance_pct == null ? '—' : `${Math.round(g.attendance_pct)}% (${g.present}/${g.present + g.absent})`}</td>
                   </tr>
                 ))}
               </tbody>

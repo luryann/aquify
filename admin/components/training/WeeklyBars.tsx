@@ -44,18 +44,18 @@ export function WeeklyBars({
   const hovered = hover != null ? data[hover] : null
 
   return (
-    <figure style={{ margin: 0, position: 'relative' }}>
+    <figure className="u-m-0" style={{ position: 'relative' }}>
       {hasTarget && (
-        <div style={{ display: 'flex', gap: '16px', fontSize: 'var(--fs-xs)', color: 'var(--text-subtle)', marginBottom: '6px' }}>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+        <div className="u-gap-16px u-fs-fs-xs u-mb-6px" style={{ display: 'flex', color: 'var(--text-subtle)' }}>
+          <span className="u-gap-4px" style={{ display: 'inline-flex', alignItems: 'center' }}>
             <span aria-hidden style={{ width: 10, height: 10, borderRadius: 2, background: 'var(--accent)' }} />{valueLabel}
           </span>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          <span className="u-gap-4px" style={{ display: 'inline-flex', alignItems: 'center' }}>
             <span aria-hidden style={{ width: 14, height: 0, borderTop: '2px solid var(--text)' }} />{targetLabel}
           </span>
         </div>
       )}
-      <div style={{ display: 'flex', gap: '6px' }}>
+      <div className="u-gap-6px" style={{ display: 'flex' }}>
         <div aria-hidden style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height, fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', textAlign: 'right', minWidth: 28 }}>
           <span>{compact(peak)}</span>
           <span>0</span>
@@ -82,17 +82,13 @@ export function WeeklyBars({
           {path && <path d={path.trim()} fill="none" stroke="var(--text)" strokeWidth={2} vectorEffect="non-scaling-stroke" pointerEvents="none" />}
         </svg>
       </div>
-      <div aria-hidden style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', marginTop: 4, paddingLeft: 32 }}>
+      <div aria-hidden className="u-fs-fs-2xs u-mt-4px u-pl-32px" style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
         <span>{data[0]?.label}</span>
         <span>{data[data.length - 1]?.label}</span>
       </div>
       {hovered && (
-        <div role="tooltip" style={{
-          position: 'absolute', top: 0, left: `min(calc(34px + ${((hover! + 0.5) / n) * 100}% ), calc(100% - 170px))`,
-          background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '8px', padding: '8px 12px',
-          fontSize: 'var(--fs-sm)', color: 'var(--text)', boxShadow: 'var(--shadow-sm)', pointerEvents: 'none', minWidth: 140, zIndex: 2,
-        }}>
-          <div style={{ color: 'var(--text-subtle)', marginBottom: 2 }}>Week of {hovered.label}</div>
+        <div role="tooltip" className="u-p-8px-12px u-fs-fs-sm" style={{ position: 'absolute', top: 0, left: `min(calc(34px + ${((hover! + 0.5) / n) * 100}% ), calc(100% - 170px))`, background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)', boxShadow: 'var(--shadow-sm)', pointerEvents: 'none', minWidth: 140, zIndex: 2 }}>
+          <div className="u-mb-2px" style={{ color: 'var(--text-subtle)' }}>Week of {hovered.label}</div>
           <div>{valueLabel}: {hovered.value.toLocaleString('en-US')} {unit}</div>
           {hovered.target ? <div>{targetLabel}: {hovered.target.toLocaleString('en-US')} {unit}</div> : null}
           {hovered.detail && <div style={{ color: 'var(--text-subtle)' }}>{hovered.detail}</div>}

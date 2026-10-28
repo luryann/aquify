@@ -58,6 +58,8 @@ export type TableProps<T extends Record<string, unknown>> = {
 
   // Row actions
   onRowClick?: (row: T) => void
+  /** Key (per keyField) of the row showing the keyboard-focus ring. */
+  highlightKey?: string
 
   // Style
   compact?: boolean
@@ -105,7 +107,7 @@ function Pagination({ page, totalPages, onPageChange }: PaginationProps) {
     borderRadius: 'var(--r-sm)',
     border: active ? '1px solid var(--accent-border)' : '1px solid transparent',
     background: active ? 'var(--accent-subtle)' : 'transparent',
-    color: active ? 'var(--accent)' : disabled ? 'var(--text-disabled)' : 'var(--text-subtle)',
+    color: active ? 'var(--accent)' : disabled ? 'var(--text-muted)' : 'var(--text-subtle)',
     fontSize: 'var(--fs-sm)',
     fontFamily: 'var(--font-body)',
     fontWeight: active ? 600 : 400,
@@ -116,22 +118,14 @@ function Pagination({ page, totalPages, onPageChange }: PaginationProps) {
 
   return (
     <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '12px 16px',
-        borderTop: '1px solid var(--border)',
-        gap: '8px',
-        flexWrap: 'wrap',
-      }}
+      className="u-p-12px-16px u-gap-8px" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}
     >
-      <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+      <span className="u-fs-fs-sm u-ff-font-body" style={{ color: 'var(--text-muted)' }}>
         Page {page} of {totalPages}
       </span>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-        <button
+      <div className="u-gap-4px" style={{ display: 'flex', alignItems: 'center' }}>
+        <button type="button"
           onClick={() => onPageChange(page - 1)}
           disabled={page <= 1}
           style={btnStyle(false, page <= 1)}
@@ -144,7 +138,7 @@ function Pagination({ page, totalPages, onPageChange }: PaginationProps) {
           p === '…' ? (
             <span key={`ellipsis-${i}`} style={{ ...btnStyle(), cursor: 'default' }}>…</span>
           ) : (
-            <button
+            <button type="button"
               key={p}
               onClick={() => onPageChange(p as number)}
               style={btnStyle(p === page)}
@@ -154,7 +148,7 @@ function Pagination({ page, totalPages, onPageChange }: PaginationProps) {
           ),
         )}
 
-        <button
+        <button type="button"
           onClick={() => onPageChange(page + 1)}
           disabled={page >= totalPages}
           style={btnStyle(false, page >= totalPages)}
@@ -245,6 +239,7 @@ export function Table<T extends Record<string, unknown>>({
   onSelectionChange,
 
   onRowClick,
+  highlightKey,
 
   compact = false,
   stickyHeader = false,
@@ -369,12 +364,12 @@ export function Table<T extends Record<string, unknown>>({
       className={className}
     >
       {/* Table scroll wrapper */}
-      <div style={{ overflowX: 'auto', flex: 1 }}>
+      <div className="table-scroll" style={{ flex: 1 }}>
         <table
           style={{
             width: '100%',
             borderCollapse: 'collapse',
-            minWidth: '400px',
+            minWidth: '480px',
           }}
         >
           <thead
@@ -429,6 +424,8 @@ export function Table<T extends Record<string, unknown>>({
                 return (
                   <tr
                     key={rowKey}
+                    className={highlightKey !== undefined && rowKey === highlightKey ? 'row-focus' : undefined}
+                    ref={highlightKey !== undefined && rowKey === highlightKey ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}
                     onClick={onRowClick ? () => onRowClick(row) : undefined}
                     style={{
                       borderBottom: rowIdx < displayData.length - 1 ? '1px solid var(--border)' : 'none',

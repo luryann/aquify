@@ -259,8 +259,8 @@ export default function MessagesInboxPage() {
 
   return (
     <div className="page-fill">
-      <div style={{ marginBottom: '20px', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
+      <div className="u-mb-20px" style={{ flexShrink: 0 }}>
+        <div className="u-gap-16px" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap' }}>
           <div>
             <h1 className="page-title">Messages</h1>
           </div>
@@ -269,7 +269,7 @@ export default function MessagesInboxPage() {
               aria-label="Start a conversation"
               value=""
               onChange={(e) => { if (e.target.value) startConversation(e.target.value) }}
-              style={{ padding: '8px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: 'var(--fs-base)', maxWidth: '280px' }}
+              className="u-p-8px-12px u-fs-fs-base" style={{ maxWidth: '280px' }}
             >
               <option value="">New message to a family…</option>
               {[...swimmers]
@@ -291,22 +291,22 @@ export default function MessagesInboxPage() {
       ) : threads.length === 0 ? (
         <EmptyState icon="mail" title="No conversations yet" description="Messages from families appear here. Use “New message to a family” to start one." />
       ) : (
-        <div className="split-list" style={{ gap: '16px', flex: 1, minHeight: 0, alignItems: 'stretch' }}>
+        <div className="split-list u-gap-16px" style={{ flex: 1, minHeight: 0, alignItems: 'stretch' }}>
           <div className="card" style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-            <div style={{ padding: '12px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+            <div className="u-p-12px" style={{ borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
               <div style={{ position: 'relative' }}>
                 <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}>
                   <Icon name="search" size={13} />
                 </span>
-                <input
+                <input aria-label="Search conversations"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search conversations…"
-                  style={{ width: '100%', padding: '8px 12px 8px 32px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: 'var(--fs-sm)', boxSizing: 'border-box' }}
+                  className="u-p-8px-12px-8px-32px u-fs-fs-sm" style={{ width: '100%' }}
                 />
               </div>
             </div>
-            <div style={{ overflowY: 'auto', flex: 1, padding: '6px' }}>
+            <div className="u-p-6px" style={{ overflowY: 'auto', flex: 1 }}>
               {visibleThreads.map((t) => {
                 const active = selected?.householdId === t.household_id && selected?.swimmerId === t.swimmer_id
                 const swimmerName = swimmerNameById.get(t.swimmer_id) ?? 'Unknown swimmer'
@@ -314,46 +314,31 @@ export default function MessagesInboxPage() {
                   <button
                     key={`${t.household_id}-${t.swimmer_id}`}
                     onClick={() => setSelected({ householdId: t.household_id, swimmerId: t.swimmer_id })}
-                    style={{
-                      width: '100%',
-                      textAlign: 'left',
-                      display: 'flex',
-                      gap: '12px',
-                      padding: '12px',
-                      borderRadius: 'var(--r-md)',
-                      border: active ? '1px solid var(--accent-border)' : '1px solid transparent',
-                      background: active ? 'var(--accent-subtle)' : 'transparent',
-                      cursor: 'pointer',
-                      marginBottom: '2px',
-                    }}
+                    className="u-gap-12px u-p-12px u-mb-2px" style={{ width: '100%', textAlign: 'left', display: 'flex', borderRadius: 'var(--r-md)', border: active ? '1px solid var(--accent-border)' : '1px solid transparent', background: active ? 'var(--accent-subtle)' : 'transparent', cursor: 'pointer' }}
                   >
                     <div style={{ position: 'relative', flexShrink: 0 }}>
-                      <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--bg-elevated)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--text-subtle)' }}>
+                      <div className="u-fs-fs-xs u-fw-600" style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--bg-elevated)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-subtle)' }}>
                         {initials(swimmerName)}
                       </div>
                       {t.unread_count > 0 && (
-                        <span style={{
-                          position: 'absolute', top: '-4px', right: '-4px', minWidth: '16px', height: '16px', padding: '0 4px',
-                          borderRadius: '999px', background: 'var(--accent)', color: '#fff', fontSize: 'var(--fs-2xs)', fontWeight: 700,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-body)',
-                        }}>
+                        <span className="u-p-0-4px u-fs-fs-2xs u-fw-700 u-ff-font-body" style={{ position: 'absolute', top: '-4px', right: '-4px', minWidth: '16px', height: '16px', borderRadius: '999px', background: 'var(--accent)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           {t.unread_count > 9 ? '9+' : t.unread_count}
                         </span>
                       )}
                     </div>
                     <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
-                        <span style={{ fontSize: 'var(--fs-base)', fontWeight: t.unread_count > 0 ? 700 : 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <div className="u-gap-8px" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span className="u-fs-fs-base" style={{ fontWeight: t.unread_count > 0 ? 700 : 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {swimmerName}
                         </span>
-                        <span style={{ fontSize: 'var(--fs-2xs)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', flexShrink: 0 }}>
+                        <span className="u-fs-fs-2xs u-ff-font-body" style={{ color: 'var(--text-muted)', flexShrink: 0 }}>
                           {formatDateTime(t.last_message_at)}
                         </span>
                       </div>
-                      <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginBottom: '2px' }}>
+                      <div className="u-fs-fs-xs u-mb-2px" style={{ color: 'var(--text-muted)' }}>
                         {householdNameById.get(t.household_id) ?? 'Unknown household'}
                       </div>
-                      <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <div className="u-fs-fs-sm" style={{ color: 'var(--text-subtle)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {t.last_body}
                       </div>
                     </div>
@@ -364,20 +349,20 @@ export default function MessagesInboxPage() {
           </div>
 
           <div className="card" style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-              <p style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--text)' }}>
+            <div className="u-p-16px-20px" style={{ borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+              <p className="u-fs-fs-md u-fw-600" style={{ color: 'var(--text)' }}>
                 {selected ? (swimmerNameById.get(selected.swimmerId) ?? 'Conversation') : 'Select a conversation'}
               </p>
               {selected && (
-                <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
+                <p className="u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>
                   {householdNameById.get(selected.householdId) ?? ''}
                 </p>
               )}
             </div>
 
-            <div style={{ flex: 1, padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', overflowY: 'auto', minHeight: 0 }}>
+            <div className="u-p-20px u-gap-16px" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', minHeight: 0 }}>
               {threadError ? (
-                <p style={{ fontSize: 'var(--fs-base)', color: 'var(--error)' }}>{threadError}</p>
+                <p className="u-fs-fs-base" style={{ color: 'var(--error)' }}>{threadError}</p>
               ) : threadLoading ? (
                 <p className="page-subtitle">Loading conversation…</p>
               ) : messages.length === 0 ? (
@@ -392,47 +377,39 @@ export default function MessagesInboxPage() {
                   return (
                     <div key={m.id} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '75%', position: 'relative' }} className="message-bubble-group">
                       {isEditing ? (
-                        <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-end' }}>
+                        <div className="u-gap-6px" style={{ display: 'flex', alignItems: 'flex-end' }}>
                           <textarea
                             value={editDraft}
                             onChange={(e) => setEditDraft(e.target.value)}
                             rows={2}
-                            style={{ minWidth: '220px', padding: '8px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--accent-border)', background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: 'var(--fs-base)', resize: 'vertical' }}
+                            className="u-p-8px-12px u-fs-fs-base" style={{ minWidth: '220px', resize: 'vertical' }}
                           />
                           <button className="btn btn-sm btn-primary" onClick={() => void handleEditSave(m.id)}>Save</button>
                           <button className="btn btn-sm btn-secondary" onClick={() => setEditingId(null)}>Cancel</button>
                         </div>
                       ) : (
                         <div
-                          style={{
-                            background: mine ? 'var(--accent)' : 'var(--bg-elevated)',
-                            color: mine ? '#fff' : 'var(--text)',
-                            padding: '12px 16px',
-                            borderRadius: mine ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
-                            fontSize: 'var(--fs-base)',
-                            lineHeight: 1.5,
-                            whiteSpace: 'pre-wrap',
-                          }}
+                          className="u-p-12px-16px u-fs-fs-base u-lh-1_5" style={{ background: mine ? 'var(--accent)' : 'var(--bg-elevated)', color: mine ? '#fff' : 'var(--text)', borderRadius: mine ? '12px 12px 2px 12px' : '12px 12px 12px 2px', whiteSpace: 'pre-wrap' }}
                         >
                           {m.body}
                           {m.attachments?.map((a) => (
                             a.download_url ? (
                               // eslint-disable-next-line @next/next/no-img-element
-                              <img key={a.filename} src={a.download_url} alt={a.filename} style={{ display: 'block', marginTop: '8px', maxWidth: '220px', maxHeight: '220px', borderRadius: '8px' }} />
+                              <img key={a.filename} src={a.download_url} alt={a.filename} className="u-mt-8px" style={{ display: 'block', maxWidth: '220px', maxHeight: '220px', borderRadius: '8px' }} />
                             ) : null
                           ))}
                         </div>
                       )}
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', justifyContent: mine ? 'flex-end' : 'flex-start' }}>
-                        <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
+                      <div className="u-gap-8px u-mt-4px" style={{ display: 'flex', alignItems: 'center', justifyContent: mine ? 'flex-end' : 'flex-start' }}>
+                        <p className="u-fs-fs-xs" style={{ color: 'var(--text-muted)' }}>
                           {senderLabel(m.sender_role)} · {formatDateTime(m.created_at)}{m.edited_at ? ' · (edited)' : ''}
                         </p>
                         {canEdit && !isEditing && (
                           <button
                             onClick={() => { setEditingId(m.id); setEditDraft(m.body) }}
                             title="Edit"
-                            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px', display: 'flex' }}
+                            className="u-p-2px" style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex' }}
                           >
                             <Icon name="edit-2" size={11} />
                           </button>
@@ -440,16 +417,16 @@ export default function MessagesInboxPage() {
                         <button
                           onClick={() => setReactionPickerId(reactionPickerId === m.id ? null : m.id)}
                           title="React"
-                          style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px', display: 'flex' }}
+                          className="u-p-2px" style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex' }}
                         >
                           <Icon name="plus" size={11} />
                         </button>
                       </div>
 
                       {reactionPickerId === m.id && (
-                        <div style={{ display: 'flex', gap: '4px', marginTop: '4px', padding: '4px 6px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg-elevated)', width: 'fit-content' }}>
+                        <div className="u-gap-4px u-mt-4px u-p-4px-6px" style={{ display: 'flex', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg-elevated)', width: 'fit-content' }}>
                           {QUICK_REACTIONS.map((emoji) => (
-                            <button key={emoji} onClick={() => void handleToggleReaction(m, emoji)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--fs-md)', padding: '2px' }}>
+                            <button key={emoji} onClick={() => void handleToggleReaction(m, emoji)} className="u-fs-fs-md u-p-2px" style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
                               {emoji}
                             </button>
                           ))}
@@ -457,20 +434,15 @@ export default function MessagesInboxPage() {
                       )}
 
                       {m.reactions && m.reactions.length > 0 && (
-                        <div style={{ display: 'flex', gap: '4px', marginTop: '4px', flexWrap: 'wrap', justifyContent: mine ? 'flex-end' : 'flex-start' }}>
+                        <div className="u-gap-4px u-mt-4px" style={{ display: 'flex', flexWrap: 'wrap', justifyContent: mine ? 'flex-end' : 'flex-start' }}>
                           {m.reactions.map((r) => (
                             <button
                               key={r.emoji}
                               onClick={() => void handleToggleReaction(m, r.emoji)}
-                              style={{
-                                display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 8px', borderRadius: '999px', fontSize: 'var(--fs-xs)', cursor: 'pointer',
-                                border: r.reacted_by_me ? '1px solid var(--accent-border)' : '1px solid var(--border)',
-                                background: r.reacted_by_me ? 'var(--accent-subtle)' : 'var(--bg-surface)',
-                                color: 'var(--text)',
-                              }}
+                              className="u-gap-4px u-p-2px-8px u-fs-fs-xs" style={{ display: 'flex', alignItems: 'center', borderRadius: '999px', cursor: 'pointer', border: r.reacted_by_me ? '1px solid var(--accent-border)' : '1px solid var(--border)', background: r.reacted_by_me ? 'var(--accent-subtle)' : 'var(--bg-surface)', color: 'var(--text)' }}
                             >
                               <span>{r.emoji}</span>
-                              <span style={{ fontFamily: 'var(--font-body)' }}>{r.count}</span>
+                              <span className="u-ff-font-body" >{r.count}</span>
                             </button>
                           ))}
                         </div>
@@ -482,16 +454,16 @@ export default function MessagesInboxPage() {
             </div>
 
             {pendingAttachment && (
-              <div style={{ padding: '0 20px 8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div className="u-p-0-20px-8px u-gap-8px" style={{ display: 'flex', alignItems: 'center' }}>
                 <span className="badge badge-default">{pendingAttachment.file_name}</span>
                 <button onClick={() => setPendingAttachment(null)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex' }}>
                   <Icon name="x" size={12} />
                 </button>
               </div>
             )}
-            {attachError && <p style={{ padding: '0 20px 8px', fontSize: 'var(--fs-sm)', color: 'var(--error)' }}>{attachError}</p>}
+            {attachError && <p className="u-p-0-20px-8px u-fs-fs-sm" style={{ color: 'var(--error)' }}>{attachError}</p>}
 
-            <form onSubmit={(e) => void handleSend(e)} style={{ padding: '16px 20px', borderTop: '1px solid var(--border)', display: 'flex', gap: '12px', flexShrink: 0 }}>
+            <form onSubmit={(e) => void handleSend(e)} className="u-p-16px-20px u-gap-12px" style={{ borderTop: '1px solid var(--border)', display: 'flex', flexShrink: 0 }}>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -504,25 +476,25 @@ export default function MessagesInboxPage() {
                 onClick={() => fileInputRef.current?.click()}
                 disabled={!selected || uploading}
                 title="Attach an image"
-                className="btn-icon"
-                style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', color: 'var(--text-muted)', cursor: 'pointer', padding: '8px', display: 'flex' }}
+                className="btn-icon u-p-8px"
+                style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex' }}
               >
                 <Icon name="upload-cloud" size={15} />
               </button>
-              <input
+              <input aria-label="Reply to this family"
                 type="text"
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 placeholder="Reply to this family…"
                 disabled={!selected || sending}
                 maxLength={4000}
-                style={{ flex: 1, padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none' }}
+                className="u-p-8px-12px u-fs-fs-base" style={{ flex: 1 }}
               />
               <button type="submit" className="btn btn-primary" disabled={!selected || sending || (!draft.trim() && !pendingAttachment)}>
                 {sending ? 'Sending…' : 'Send'}
               </button>
             </form>
-            {sendError && <p style={{ padding: '0 20px 16px', fontSize: 'var(--fs-sm)', color: 'var(--error)' }}>{sendError}</p>}
+            {sendError && <p className="u-fs-fs-sm" style={{ padding: '0 20px 16px', color: 'var(--error)' }}>{sendError}</p>}
           </div>
         </div>
       )}

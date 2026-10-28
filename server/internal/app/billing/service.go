@@ -453,7 +453,7 @@ func (s *Service) deriveAmountsPaidLocked() {
 		}
 		inv.AmountPaidCents = paid
 		inv.AmountDueCents = inv.TotalCents - paid
-		if inv.AmountDueCents < 0 {
+		if inv.AmountDueCents < 0 || inv.Status == "written_off" {
 			inv.AmountDueCents = 0
 		}
 	}
@@ -1894,8 +1894,9 @@ func (s *Service) HandleStripePaymentIntentFailed(paymentIntentID string) error 
 	defer s.mu.Unlock()
 
 	payment, ok := s.stripeIntentIndex[paymentIntentID]
-	if !ok {
-		// No matching payment — treat as no-op.
+	if !ok || payment.Status != "pending" {
+		// Only pending attempts can fail. Delayed events must not downgrade
+		// a succeeded or refunded payment.
 		return nil
 	}
 
@@ -1936,18 +1937,19 @@ func (s *Service) HandleStripeChargeRefunded(
 		return nil, nil, ErrPaymentNotFound
 	}
 
+	// Check retries before invoice status: a full refund makes the invoice
+	// terminal, but redelivery must still succeed without another ledger entry.
+	for _, r := range s.refunds[invoiceID] {
+		if r.StripeRefundID == stripeRefundID {
+			return r, nil, nil
+		}
+	}
+
 	validRefundStatuses := map[string]bool{
 		"paid": true, "partially_paid": true, "refunded_partial": true,
 	}
 	if !validRefundStatuses[inv.Status] {
 		return nil, nil, ErrInvalidTransition
-	}
-
-	// Dedup: if a refund with this stripeRefundID already exists, return it.
-	for _, r := range s.refunds[invoiceID] {
-		if r.StripeRefundID == stripeRefundID {
-			return r, nil, nil
-		}
 	}
 
 	// Sum existing refunds for this payment.

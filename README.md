@@ -18,6 +18,8 @@ aquify is the team's operational system of record: memberships, meets, money, me
 - **Performance tracking** — results, best times, time standards, and swimmer progression
 - **Billing & payments** — invoices, payments, refunds, append-only ledger, and Stripe integration
 - **Communications** — announcements and Postmark email campaigns with delivery/suppression tracking
+- **Training & engagement** — structured workouts, attendance, training analytics, volunteer jobs and service hours, club events, calendar feeds, and wellness check-ins
+- **Portals** — admin/coach dashboard, parent portal, swimmer portal (`/swim`, always on), a public team website, and an installable PWA
 - **Admin reporting** — membership status, meet fees, invoice aging, payment reconciliation, and registration status in JSON or CSV
 - **Audit & compliance** — audit events, GDPR-style deletion/export requests, and RBAC across all routes
 - **Background jobs** — Asynq + Redis queues for imports, billing, email, and reconciliation with DLQ visibility

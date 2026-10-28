@@ -1,0 +1,29 @@
+/* Shared backdrop for sign-in, register, MFA and callback screens.
+   Flat deep-water surface with one lane-rope strip along the bottom edge. */
+.auth-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--auth-bg, #06101a);
+}
+.auth-backdrop::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 6px;
+  background: repeating-linear-gradient(90deg, var(--accent) 0 40px, rgba(255, 255, 255, 0.85) 40px 80px, var(--water, #3dbbcb) 80px 120px, rgba(255, 255, 255, 0.85) 120px 160px);
+  opacity: 0.55;
+}
+/* Links sit in a 44px hit area while keeping their visual size. */
+.auth-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+/* White label on orange: use the darker AA fill. */
+.auth-btn-accent {
+  background: var(--accent-fill, #c9460f);
+  color: #fff;
+}
+.auth-btn-accent:hover:not(:disabled) { background: var(--accent-fill-hover, #b53f0d); }

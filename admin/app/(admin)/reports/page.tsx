@@ -140,7 +140,7 @@ export default function ReportsPage() {
   }
 
   if (!session) {
-    return <div style={{ padding: '32px' }}><EmptyState icon="bar-chart-2" title="Sign in required" description="Sign in to run reports." /></div>
+    return <div className="u-p-32px" ><EmptyState icon="bar-chart-2" title="Sign in required" description="Sign in to run reports." /></div>
   }
 
   return (
@@ -152,7 +152,7 @@ export default function ReportsPage() {
       </div>
 
       {error ? (
-        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: 'var(--fs-sm)' }}>
+        <div className="u-mb-20px u-p-12px-16px u-fs-fs-sm" style={{ borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)' }}>
           {error}
         </div>
       ) : null}
@@ -165,8 +165,8 @@ export default function ReportsPage() {
         <div className="stack">
           {grouped.map(([category, items]) => (
             <section key={category}>
-              <h2 className="section-title" style={{ marginBottom: '12px' }}>{category}</h2>
-              <div className="card" style={{ padding: 0 }}>
+              <h2 className="section-title u-mb-12px" >{category}</h2>
+              <div className="card u-p-0" >
                 {items.map((report, i) => {
                   const artifact = artifacts[report.key]
                   return (
@@ -177,13 +177,13 @@ export default function ReportsPage() {
                     >
                       <div style={{ minWidth: 0 }}>
                         <h3 className="card-title">{report.title}</h3>
-                        <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', marginTop: '2px' }}>{report.description}</p>
+                        <p className="u-fs-fs-sm u-mt-2px" style={{ color: 'var(--text-subtle)' }}>{report.description}</p>
                         {artifact ? (
                           <a
                             href={artifact.download_url}
                             target="_blank"
                             rel="noreferrer"
-                            style={{ display: 'inline-block', marginTop: '4px', fontSize: 'var(--fs-sm)' }}
+                            className="u-mt-4px u-fs-fs-sm" style={{ display: 'inline-block' }}
                           >
                             {artifact.filename} · {formatBytes(artifact.size_bytes)}
                           </a>

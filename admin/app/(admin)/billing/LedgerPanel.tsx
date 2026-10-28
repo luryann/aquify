@@ -28,13 +28,13 @@ function formatCents(cents: number) {
 }
 
 const COLUMNS: Column<LedgerEventRow>[] = [
-  { key: 'createdAt', label: 'Timestamp', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{new Date(row.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}</span> },
-  { key: 'eventType', label: 'Event', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-xs)', color: 'var(--accent)' }}>{row.eventType}</span> },
-  { key: 'invoiceNumber', label: 'Invoice', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text)' }}>{row.invoiceNumber || row.invoiceId || '—'}</span> },
-  { key: 'householdName', label: 'Household', render: (row) => <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text)' }}>{row.householdName || '—'}</span> },
-  { key: 'description', label: 'Description', render: (row) => <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', maxWidth: 320, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.description || '—'}</span> },
-  { key: 'creditCents', label: 'Billed', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-base)', fontWeight: 600, color: row.creditCents > 0 ? 'var(--success)' : 'var(--text-disabled)', textAlign: 'right', display: 'block' }}>{row.creditCents > 0 ? formatCents(row.creditCents) : '—'}</span> },
-  { key: 'debitCents', label: 'Paid or Removed', render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-base)', fontWeight: 600, color: row.debitCents > 0 ? 'var(--error)' : 'var(--text-disabled)', textAlign: 'right', display: 'block' }}>{row.debitCents > 0 ? formatCents(row.debitCents) : '—'}</span> },
+  { key: 'createdAt', label: 'Timestamp', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{new Date(row.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}</span> },
+  { key: 'eventType', label: 'Event', render: (row) => <span className="u-ff-font-body u-fs-fs-xs" style={{ color: 'var(--accent-text, var(--accent))' }}>{row.eventType}</span> },
+  { key: 'invoiceNumber', label: 'Invoice', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text)' }}>{row.invoiceNumber || row.invoiceId || '—'}</span> },
+  { key: 'householdName', label: 'Household', render: (row) => <span className="u-fs-fs-base" style={{ color: 'var(--text)' }}>{row.householdName || '—'}</span> },
+  { key: 'description', label: 'Description', render: (row) => <span className="u-fs-fs-sm" style={{ color: 'var(--text-subtle)', maxWidth: 320, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.description || '—'}</span> },
+  { key: 'creditCents', label: 'Billed', render: (row) => <span className="u-ff-font-body u-fs-fs-base u-fw-600" style={{ color: row.creditCents > 0 ? 'var(--success)' : 'var(--text-muted)', textAlign: 'right', display: 'block' }}>{row.creditCents > 0 ? formatCents(row.creditCents) : '—'}</span> },
+  { key: 'debitCents', label: 'Paid or Removed', render: (row) => <span className="u-ff-font-body u-fs-fs-base u-fw-600" style={{ color: row.debitCents > 0 ? 'var(--error)' : 'var(--text-muted)', textAlign: 'right', display: 'block' }}>{row.debitCents > 0 ? formatCents(row.debitCents) : '—'}</span> },
 ]
 
 async function loadLedgerRows(api: ReturnType<typeof useApiClient>, orgId: string): Promise<LedgerEventRow[]> {
@@ -124,16 +124,16 @@ export function LedgerPanel() {
 
   return (
     <div>
-      <div className="cols-3" style={{ gap: 12, marginBottom: 20 }}>
+      <div className="cols-3 u-gap-12px u-mb-20px" >
         {[
           { label: 'Transactions', value: rows.length.toString(), sub: 'For your club' },
           { label: 'Money billed', value: formatCents(totalCredits), sub: 'Invoices and refunds', accent: true },
           { label: 'Payments and write-offs', value: formatCents(totalDebits), sub: 'Payments, voided charges, and write-offs' },
         ].map((stat) => (
-          <div key={stat.label} style={{ padding: '20px 24px', borderRadius: 12, background: 'var(--bg-elevated)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-muted)' }}>{stat.label}</span>
-            <span style={{ fontSize: 'var(--fs-3xl)', fontWeight: 700, letterSpacing: '-0.02em', fontFamily: 'var(--font-body)', color: stat.accent ? 'var(--accent)' : 'var(--text)' }}>{stat.value}</span>
-            <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>{stat.sub}</span>
+          <div key={stat.label} className="u-p-20px-24px u-gap-6px" style={{ borderRadius: 12, background: 'var(--bg-elevated)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column' }}>
+            <span className="u-fs-fs-sm u-fw-600" style={{ color: 'var(--text-muted)' }}>{stat.label}</span>
+            <span className="u-fs-fs-3xl u-fw-700 u-ff-font-body" style={{ letterSpacing: '-0.02em', color: stat.accent ? 'var(--accent)' : 'var(--text)' }}>{stat.value}</span>
+            <span className="u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>{stat.sub}</span>
           </div>
         ))}
       </div>
@@ -141,11 +141,11 @@ export function LedgerPanel() {
       <div className="toolbar">
         <div className="toolbar-search">
           <Icon name="search" size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
-          <input type="text" placeholder="Search household, invoice, description…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: '100%', padding: '8px 12px 8px 32px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none' }} />
+          <input aria-label="Search household, invoice, description" type="text" placeholder="Search household, invoice, description…" value={search} onChange={(e) => setSearch(e.target.value)} className="u-p-8px-12px-8px-32px u-fs-fs-base" style={{ width: '100%' }} />
         </div>
-        <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} style={{ padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none' }} />
-        <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} style={{ padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none' }} />
-        <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginLeft: 'auto' }}>{filtered.length} events</span>
+        <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="u-p-8px-12px u-fs-fs-base"  />
+        <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="u-p-8px-12px u-fs-fs-base"  />
+        <span className="u-fs-fs-sm u-ff-font-body u-ml-auto" style={{ color: 'var(--text-muted)' }}>{filtered.length} events</span>
       </div>
 
       {loading ? (

@@ -1,0 +1,27 @@
+/* Parent portal extras: 44px hit areas and the phone tab bar. Breakpoints: 640 / 1024. */
+.portal-tap {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  text-decoration: none;
+}
+.portal-tabbar { display: none; }
+@media (max-width: 640px) {
+  .portal-tabbar {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    z-index: 90;
+    background: var(--bg-card);
+    border-top: 1px solid var(--border-strong);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .portal-tabbar-link {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 2px; min-height: 56px; padding: var(--space-1) 0;
+    font-size: var(--fs-2xs); color: var(--text-subtle); text-decoration: none;
+  }
+  .portal-tabbar-link[aria-current='page'] { color: var(--accent-text); font-weight: 600; }
+  .portal-main { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
+}

@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { useSession } from '@/lib/session'
 import { destinationForRole } from '@/lib/auth-routing'
+import './page.inline.css'
 
 export default function UnauthorizedPage() {
   const router = useRouter()
@@ -17,21 +18,15 @@ export default function UnauthorizedPage() {
 
   return (
     <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'var(--bg)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontFamily: 'var(--font-body)',
-        overflow: 'hidden',
-      }}
+      className="is-66f6a69"
     >
       <style>{`
         @keyframes unauthFade {
           from { opacity: 0; transform: translateY(20px); }
           to   { opacity: 1; transform: translateY(0); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          @keyframes unauthFade { from { opacity: 0; } to { opacity: 1; } }
         }
       `}</style>
 
@@ -46,7 +41,7 @@ export default function UnauthorizedPage() {
           transition: 'opacity 0.5s var(--ease-out), transform 0.5s var(--ease-out)',
         }}
       >
-        <div aria-hidden style={{ marginBottom: '24px', display: 'flex', justifyContent: 'center' }}>
+        <div aria-hidden className="is-1c1d443">
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none"
             stroke="var(--error)" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
@@ -55,47 +50,21 @@ export default function UnauthorizedPage() {
         </div>
 
         <h1
-          style={{
-            fontFamily: 'var(--font-display)',
-            fontSize: 'var(--fs-3xl)',
-            fontWeight: 'var(--display-weight)',
-            color: 'var(--text)',
-            marginBottom: '12px',
-            letterSpacing: 'var(--display-tracking)',
-          }}
+          className="is-1ae45f5"
         >
           Access Denied
         </h1>
         <p
-          style={{
-            fontSize: 'var(--fs-md)',
-            color: 'var(--text-subtle)',
-            lineHeight: 1.7,
-            marginBottom: '40px',
-          }}
+          className="is-cbd6755"
         >
           You don&apos;t have permission to view this page. If this is a mistake, contact your club administrator.
         </p>
 
         {/* Actions */}
-        <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
-          <button
+        <div className="is-c2dfd00">
+          <button type="button"
             onClick={() => router.back()}
-            style={{
-              padding: '12px 24px',
-              background: 'var(--bg-surface)',
-              border: '1px solid var(--border)',
-              borderRadius: '8px',
-              color: 'var(--text-subtle)',
-              fontSize: 'var(--fs-base)',
-              fontWeight: 500,
-              fontFamily: 'var(--font-body)',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              transition: 'all 0.15s ease',
-            }}
+            className="is-2da28a3"
             onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--border-strong)'; e.currentTarget.style.color = 'var(--text)' }}
             onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-subtle)' }}
           >
@@ -105,24 +74,10 @@ export default function UnauthorizedPage() {
             </svg>
             Go back
           </button>
-          <button
+          <button type="button"
             onClick={() => router.push(dashboardDestination)}
-            style={{
-              padding: '12px 24px',
-              background: 'var(--accent)',
-              border: 'none',
-              borderRadius: '8px',
-              color: '#fff',
-              fontSize: 'var(--fs-base)',
-              fontWeight: 600,
-              fontFamily: 'var(--font-body)',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              transition: 'background 0.15s ease',
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = '#d44f14' }}
+            className="is-2858c5e"
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--accent-hover)' }}
             onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--accent)' }}
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"

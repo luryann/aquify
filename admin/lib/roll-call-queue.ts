@@ -24,7 +24,11 @@ export function markKey(practiceId: string, swimmerId: string): string {
 
 /** Adds or replaces a mark; a newer tap resets its retry state. */
 export function enqueueMark(queue: RollCallQueue, practiceId: string, swimmerId: string, status: AttendanceStatus, now: number): RollCallQueue {
-  return { ...queue, [markKey(practiceId, swimmerId)]: { practiceId, swimmerId, status, queuedAt: now, attempts: 0, nextAttemptAt: now } }
+  const key = markKey(practiceId, swimmerId)
+  // queuedAt also identifies the version sent to the server. Rapid taps (or a
+  // clock adjustment) must not let an older response settle a newer mark.
+  const queuedAt = Math.max(now, (queue[key]?.queuedAt ?? -Infinity) + 1)
+  return { ...queue, [key]: { practiceId, swimmerId, status, queuedAt, attempts: 0, nextAttemptAt: now } }
 }
 
 export function dueMarks(queue: RollCallQueue, now: number): QueuedMark[] {
@@ -62,8 +66,21 @@ export function loadQueue(storage: Pick<Storage, 'getItem'> | undefined): RollCa
   try {
     const raw = storage?.getItem(ROLL_CALL_STORAGE_KEY)
     if (!raw) return {}
-    const parsed = JSON.parse(raw) as RollCallQueue
-    return parsed && typeof parsed === 'object' ? parsed : {}
+    const parsed: unknown = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    const queue: RollCallQueue = {}
+    for (const [key, value] of Object.entries(parsed)) {
+      if (!value || typeof value !== 'object') continue
+      const mark = value as QueuedMark
+      if (typeof mark.practiceId !== 'string' || !mark.practiceId ||
+          typeof mark.swimmerId !== 'string' || !mark.swimmerId ||
+          key !== markKey(mark.practiceId, mark.swimmerId) ||
+          !['present', 'absent', 'excused'].includes(mark.status) ||
+          !Number.isFinite(mark.queuedAt) || !Number.isFinite(mark.nextAttemptAt) ||
+          !Number.isInteger(mark.attempts) || mark.attempts < 0) continue
+      queue[key] = mark
+    }
+    return queue
   } catch {
     return {}
   }

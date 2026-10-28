@@ -247,8 +247,7 @@ export function SelectField<T extends FieldValues>({
           {...fieldProps}
           disabled={disabled}
           className={`form-input${error ? ' error' : ''}`}
-          style={{ height: '36px', paddingRight: '24px', appearance: 'none' }}
-        >
+          >
           {placeholder && (
             <option value="" disabled>
               {placeholder}
@@ -289,12 +288,7 @@ export function CheckboxField<T extends FieldValues>({
   return (
     <div className="form-field">
       <label
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          cursor: disabled ? 'not-allowed' : 'pointer',
-        }}
+        className="u-gap-8px" style={{ display: 'flex', alignItems: 'center', cursor: disabled ? 'not-allowed' : 'pointer' }}
       >
         <input
           {...register(name)}
@@ -303,7 +297,7 @@ export function CheckboxField<T extends FieldValues>({
           disabled={disabled}
           style={{ accentColor: 'var(--accent)', width: '14px', height: '14px' }}
         />
-        <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text)' }}>{label}</span>
+        <span className="u-fs-fs-base" style={{ color: 'var(--text)' }}>{label}</span>
       </label>
       {hint && !errorMsg && <p className="form-hint">{hint}</p>}
       {errorMsg && (
@@ -355,11 +349,7 @@ export function SubmitButton({
 export function FormRow({ children, columns = 2 }: { children: ReactNode; columns?: number }) {
   return (
     <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: `repeat(${columns}, 1fr)`,
-        gap: '12px',
-      }}
+      className="u-gap-12px" style={{ display: 'grid', gridTemplateColumns: `repeat(${columns}, 1fr)` }}
     >
       {children}
     </div>
@@ -380,14 +370,14 @@ export function FormSection({
   children: ReactNode
 }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+    <div className="u-gap-16px" style={{ display: 'flex', flexDirection: 'column' }}>
       {(title || description) && (
-        <div style={{ paddingBottom: '12px', borderBottom: '1px solid var(--border)' }}>
+        <div className="u-pb-12px" style={{ borderBottom: '1px solid var(--border)' }}>
           {title && (
-            <p style={{ fontWeight: 600, fontSize: 'var(--fs-base)', color: 'var(--text)' }}>{title}</p>
+            <p className="u-fw-600 u-fs-fs-base" style={{ color: 'var(--text)' }}>{title}</p>
           )}
           {description && (
-            <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', marginTop: '4px' }}>
+            <p className="u-fs-fs-sm u-mt-4px" style={{ color: 'var(--text-subtle)' }}>
               {description}
             </p>
           )}

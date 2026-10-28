@@ -191,25 +191,25 @@ export default function RollCallPage() {
           <h1 className="page-title">Roll call</h1>
           <p className="page-subtitle">Tap swimmers as they arrive. Marks sync when wifi returns.</p>
         </div>
-        <input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} aria-label="Practice date" style={{ minHeight: 44 }} />
+        <input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} aria-label="Practice date"  />
       </div>
 
-      <div role="status" aria-live="polite" className={`badge badge-${syncTone}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px', borderRadius: 12, marginBottom: 16, fontSize: 'var(--fs-base)', textTransform: 'none', letterSpacing: 0 }}>
+      <div role="status" aria-live="polite" className={`u-gap-8px u-p-12px-16px u-mb-16px u-fs-fs-base u-ls-0 badge badge-${syncTone}`} style={{ display: 'flex', alignItems: 'center', borderRadius: 12, textTransform: 'none' }}>
         <Icon name={allPending === 0 ? 'check-circle' : online ? 'refresh-cw' : 'alert-triangle'} size={16} />
         <span style={{ flex: 1 }}>{syncText}</span>
         {allPending > 0 && <button type="button" className="btn btn-secondary btn-sm" onClick={() => { updateQueue((q) => Object.fromEntries(Object.entries(q).map(([k, m]) => [k, { ...m, nextAttemptAt: 0 }]))); void flush() }}>Retry now</button>}
       </div>
-      {permanentError && <p role="alert" style={{ fontSize: 'var(--fs-base)', color: 'var(--error)', marginBottom: 12 }}>{permanentError}</p>}
+      {permanentError && <p role="alert" className="u-fs-fs-base u-mb-12px" style={{ color: 'var(--error)' }}>{permanentError}</p>}
       {loadError && (
-        <p role="alert" style={{ fontSize: 'var(--fs-base)', color: 'var(--warning)', marginBottom: 12 }}>
+        <p role="alert" className="u-fs-fs-base u-mb-12px" style={{ color: 'var(--warning)' }}>
           {loadError} <button type="button" className="btn btn-ghost btn-sm" onClick={() => setReloadKey((k) => k + 1)}>Retry</button>
         </p>
       )}
 
       {dayPractices.length === 0 ? (
-        <div className="card" style={{ padding: 24, fontSize: 'var(--fs-md)', color: 'var(--text-subtle)' }}>No practices on this date. Schedule one in Training, or pick another day.</div>
+        <div className="card u-p-24px u-fs-fs-md" style={{ color: 'var(--text-subtle)' }}>No practices on this date. Schedule one in Training, or pick another day.</div>
       ) : (
-        <div role="tablist" aria-label="Practice" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+        <div role="tablist" aria-label="Practice" className="u-gap-8px u-mb-16px" style={{ display: 'flex', flexWrap: 'wrap' }}>
           {dayPractices.map((p) => (
             <button key={p.id} role="tab" aria-selected={p.id === practiceId} type="button" onClick={() => setPracticeId(p.id)}
               className={p.id === practiceId ? 'btn btn-primary' : 'btn btn-secondary'} style={{ minHeight: 48, fontSize: 'var(--fs-md)' }}>
@@ -221,37 +221,39 @@ export default function RollCallPage() {
 
       {practiceId && roster && (
         <>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
-            <p style={{ fontSize: 'var(--fs-md)', color: 'var(--text-subtle)' }}>
+          <div className="u-gap-12px u-mb-12px" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
+            <p className="u-fs-fs-md" style={{ color: 'var(--text-subtle)' }}>
               <strong style={{ color: 'var(--text)' }}>{counts.present ?? 0}</strong> present · {counts.absent ?? 0} absent · {counts.excused ?? 0} excused · {counts.unmarked ?? 0} not marked
               {rosterFromCache ? ' · roster from this device' : ''}
             </p>
             {(counts.unmarked ?? 0) > 0 && <button type="button" className="btn btn-secondary" style={{ minHeight: 44 }} onClick={markAllUnmarkedPresent}>Mark the rest present</button>}
           </div>
+          {roster.length > 0 && (counts.unmarked ?? 0) === 0 && (
+            <p className="done-note u-mb-12px" role="status" >
+              <svg className="wave-rule" viewBox="0 0 56 12" aria-hidden="true"><path d="M2 8C8 2 14 2 20 6s12 4 18 0 12-4 16 0" /></svg>
+              Everyone is accounted for.
+            </p>
+          )}
           {roster.length === 0 ? (
-            <div className="card" style={{ padding: 24, fontSize: 'var(--fs-md)', color: 'var(--text-subtle)' }}>No swimmers are assigned to this group yet.</div>
+            <div className="card u-p-24px u-fs-fs-md" style={{ color: 'var(--text-subtle)' }}>No swimmers are assigned to this group yet.</div>
           ) : (
-            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <ul className="u-p-0 u-m-0 u-gap-8px" style={{ listStyle: 'none', display: 'flex', flexDirection: 'column' }}>
               {roster.map((r) => {
                 const status = effectiveStatus(queue, practiceId, r.swimmer_id, r.status)
                 const isPending = pending.some((m) => m.swimmerId === r.swimmer_id)
                 return (
-                  <li key={r.swimmer_id} className="card" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 12px', flexWrap: 'wrap' }}>
-                    <span style={{ flex: '1 1 160px', minWidth: 0, fontSize: 'var(--fs-lg)', fontWeight: 600, color: 'var(--text)' }}>
+                  <li key={r.swimmer_id} className="card u-gap-12px u-p-12px-12px" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <span className="u-fs-fs-lg u-fw-600" style={{ flex: '1 1 160px', minWidth: 0, color: 'var(--text)' }}>
                       {r.swimmer_name}
-                      {isPending && <span style={{ display: 'block', fontSize: 'var(--fs-xs)', fontWeight: 500, color: 'var(--text-muted)' }}>Saving…</span>}
+                      {isPending && <span className="u-fs-fs-xs u-fw-500" style={{ display: 'block', color: 'var(--text-muted)' }}>Saving…</span>}
                     </span>
-                    <span role="group" aria-label={`Attendance for ${r.swimmer_name}`} style={{ display: 'flex', gap: 6 }}>
+                    <span role="group" aria-label={`Attendance for ${r.swimmer_name}`} className="u-gap-6px" style={{ display: 'flex' }}>
                       {(Object.keys(STATUS_UI) as AttendanceStatus[]).map((s) => {
                         const ui = STATUS_UI[s]
                         const on = status === s
                         return (
                           <button key={s} type="button" aria-pressed={on} aria-label={ui.label} onClick={() => mark(r.swimmer_id, s)}
-                            style={{
-                              width: 64, height: 56, borderRadius: 12, cursor: 'pointer', fontSize: 'var(--fs-xl)', fontWeight: 700,
-                              border: `2px solid ${on ? ui.color : 'var(--border-strong)'}`, background: on ? ui.bg : 'var(--bg-elevated)',
-                              color: on ? ui.color : 'var(--text-muted)', touchAction: 'manipulation',
-                            }}>
+                            className="u-fs-fs-xl u-fw-700" style={{ width: 64, height: 56, borderRadius: 12, cursor: 'pointer', border: `2px solid ${on ? ui.color : 'var(--border-strong)'}`, background: on ? ui.bg : 'var(--bg-elevated)', color: on ? ui.color : 'var(--text-muted)', touchAction: 'manipulation' }}>
                             {ui.key}
                           </button>
                         )

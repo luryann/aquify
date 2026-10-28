@@ -169,18 +169,9 @@ export function Sidebar({ role, roles, userName, onSignOut, orgId, token }: Side
         }}
       >
         {!collapsed && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, overflow: 'hidden' }}>
+          <div className="u-gap-8px" style={{ display: 'flex', alignItems: 'center', minWidth: 0, overflow: 'hidden' }}>
             <span
-              style={{
-                fontFamily: 'var(--font-display)',
-                fontWeight: 'var(--display-weight)',
-                fontSize: 'var(--fs-xl)',
-                color: 'var(--text)',
-                letterSpacing: 'var(--display-tracking)',
-                lineHeight: 1,
-                userSelect: 'none',
-                whiteSpace: 'nowrap',
-              }}
+              className="u-ff-font-display u-fw-display-weight u-fs-fs-xl u-ls-display-tracking u-lh-1" style={{ color: 'var(--text)', userSelect: 'none', whiteSpace: 'nowrap' }}
             >
               aquify
             </span>
@@ -200,6 +191,7 @@ export function Sidebar({ role, roles, userName, onSignOut, orgId, token }: Side
         )}
 
         <button
+          type="button"
           onClick={() => setCollapsed((c) => !c)}
           className="btn-icon"
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
@@ -211,57 +203,39 @@ export function Sidebar({ role, roles, userName, onSignOut, orgId, token }: Side
 
       {/* Nav */}
       <nav
-        style={{
-          flex: 1,
-          overflowY: 'auto',
-          overflowX: 'hidden',
-          padding: '8px 0',
-        }}
+        className="u-p-8px-0" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}
         aria-label="Main navigation"
       >
-        {SECTION_ORDER.filter((s) => grouped[s]?.length).map((section, sectionIdx) => (
+        {SECTION_ORDER.filter((s) => grouped[s]?.length).map((section) => (
           <div
             key={section}
-            style={{
-              marginBottom: '2px',
-              animation: `slideUp 0.35s var(--ease-out) ${sectionIdx * 40}ms both`,
-            }}
+            className="u-mb-2px" 
           >
             {!collapsed && (
               <div
-                style={{
-                  padding: '12px 20px 4px',
-                  fontSize: 'var(--fs-2xs)',
-                  fontFamily: 'var(--font-body)',
-                  fontWeight: 500,
-                  color: 'var(--text-muted)',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                }}
+                className="u-fs-fs-xs u-ff-font-body u-fw-600" style={{ padding: '12px 20px 4px', color: 'var(--text-subtle)', whiteSpace: 'nowrap', overflow: 'hidden' }}
               >
                 {section}
               </div>
             )}
 
-            {grouped[section]!.map((item, itemIdx) => {
+            {grouped[section]!.map((item) => {
               const active = isActive(item.path)
               const baseStyle: CSSProperties = {
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
-                padding: collapsed ? '8px 0' : '8px 16px 8px 20px',
+                padding: collapsed ? '8px 0' : '8px 12px',
                 justifyContent: collapsed ? 'center' : 'flex-start',
                 textDecoration: 'none',
                 color: active ? 'var(--text)' : 'var(--text-subtle)',
                 background: active ? 'var(--accent-subtle)' : 'transparent',
-                borderLeft: active ? '2px solid var(--accent)' : '2px solid transparent',
-                borderRadius: collapsed ? '0' : '0 var(--r-sm) var(--r-sm) 0',
-                marginRight: collapsed ? '0' : '8px',
+                borderRadius: collapsed ? '0' : 'var(--r-sm)',
+                margin: collapsed ? '0' : '0 8px',
                 fontSize: 'var(--fs-base)',
-                fontWeight: active ? 600 : 400,
+                fontWeight: active ? 700 : 400,
                 transition:
-                  'background var(--dur-fast), color var(--dur-fast), border-color var(--dur-fast)',
-                animation: `slideUp 0.3s var(--ease-out) ${(sectionIdx * 3 + itemIdx) * 30 + 50}ms both`,
+                  'background var(--dur-fast), color var(--dur-fast)',
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
               }
@@ -271,7 +245,7 @@ export function Sidebar({ role, roles, userName, onSignOut, orgId, token }: Side
                   <Icon
                     name={item.icon as IconName}
                     size={15}
-                    style={{ flexShrink: 0, opacity: active ? 1 : item.locked ? 0.4 : 0.7 }}
+                    style={{ flexShrink: 0, opacity: active ? 1 : 0.7 }}
                   />
                   {!collapsed && (
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>
@@ -279,46 +253,12 @@ export function Sidebar({ role, roles, userName, onSignOut, orgId, token }: Side
                     </span>
                   )}
                   {!collapsed && item.id === 'approvals' && pendingCount > 0 && (
-                    <span style={{
-                      flexShrink: 0,
-                      minWidth: '18px',
-                      height: '18px',
-                      borderRadius: '8px',
-                      background: 'var(--accent)',
-                      color: '#fff',
-                      fontSize: 'var(--fs-2xs)',
-                      fontWeight: 700,
-                      fontFamily: 'var(--font-body)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      padding: '0 4px',
-                      lineHeight: 1,
-                    }}>
+                    <span className="u-fs-fs-2xs u-fw-700 u-ff-font-body u-p-0-4px u-lh-1" style={{ flexShrink: 0, minWidth: '18px', height: '18px', borderRadius: '8px', background: 'var(--accent)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       {pendingCount > 99 ? '99+' : pendingCount}
                     </span>
                   )}
                 </>
               )
-
-              if (item.locked) {
-                return (
-                  <div
-                    key={item.id}
-                    title={collapsed ? `${item.label} — requires a higher permission level` : 'Requires a higher permission level'}
-                    aria-disabled="true"
-                    style={{
-                      ...baseStyle,
-                      color: 'var(--text-muted)',
-                      opacity: 0.45,
-                      cursor: 'not-allowed',
-                      pointerEvents: 'auto',
-                    }}
-                  >
-                    {iconAndLabel}
-                  </div>
-                )
-              }
 
               return (
                 <Link
@@ -328,7 +268,7 @@ export function Sidebar({ role, roles, userName, onSignOut, orgId, token }: Side
                   style={baseStyle}
                   onMouseEnter={(e) => {
                     if (!active) {
-                      e.currentTarget.style.background = 'rgba(255,255,255,0.04)'
+                      e.currentTarget.style.background = 'var(--bg-surface)'
                       e.currentTarget.style.color = 'var(--text)'
                     }
                   }}
@@ -349,34 +289,10 @@ export function Sidebar({ role, roles, userName, onSignOut, orgId, token }: Side
 
       {/* Bottom user strip */}
       <div
-        style={{
-          borderTop: '1px solid var(--border)',
-          padding: collapsed ? '12px 0' : '12px 16px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          flexShrink: 0,
-          justifyContent: collapsed ? 'center' : 'flex-start',
-          overflow: 'hidden',
-        }}
+        className="u-gap-8px" style={{ borderTop: '1px solid var(--border)', padding: collapsed ? '12px 0' : '12px 16px', display: 'flex', alignItems: 'center', flexShrink: 0, justifyContent: collapsed ? 'center' : 'flex-start', overflow: 'hidden' }}
       >
         <div
-          style={{
-            width: '28px',
-            height: '28px',
-            borderRadius: '50%',
-            background: 'var(--accent-subtle)',
-            border: '1px solid var(--accent-border)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-            color: 'var(--accent)',
-            fontSize: 'var(--fs-xs)',
-            fontWeight: 700,
-            fontFamily: 'var(--font-body)',
-            textTransform: 'uppercase',
-          }}
+          className="u-fs-fs-xs u-fw-700 u-ff-font-body" style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--accent-subtle)', border: '1px solid var(--accent-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'var(--accent-text, var(--accent))', textTransform: 'uppercase' }}
         >
           {userName ? userName.slice(0, 2) : <Icon name="user" size={14} />}
         </div>
@@ -385,18 +301,19 @@ export function Sidebar({ role, roles, userName, onSignOut, orgId, token }: Side
           <>
             <div style={{ flex: 1, minWidth: 0 }}>
               <p
-                className="truncate"
-                style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.3 }}
+                className="truncate u-fs-fs-sm u-fw-600"
+                style={{ color: 'var(--text)', lineHeight: 1.3 }}
               >
                 {userName ?? 'User'}
               </p>
-              <p style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+              <p className="u-fs-fs-2xs u-ff-font-body" style={{ color: 'var(--text-muted)' }}>
                 {ROLE_LABELS[role]}
               </p>
             </div>
 
             {onSignOut && (
               <button
+                type="button"
                 onClick={onSignOut}
                 className="btn-icon"
                 title="Sign out"

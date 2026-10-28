@@ -20,6 +20,7 @@ import {
   type GroupRecord,
 } from '@/lib/adminData'
 import { parseBackendDate } from '@/lib/dates'
+import './page.inline.css'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 function fmtPhone(e164?: string): string {
@@ -55,16 +56,16 @@ function initials(first: string, last: string): string {
 }
 
 const GRADIENTS = [
-  'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)',
-  'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-  'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-  'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-  'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)',
+  'var(--accent-text)',
+  'var(--accent-text)',
+  'var(--accent-text)',
+  'var(--accent-text)',
+  'var(--accent-text)',
 ]
 
 const REG_STATUS_CONFIG = {
   active:   { label: 'Registered', color: 'var(--success)', bg: 'var(--success-bg)', border: 'var(--success-bg)' },
-  pending:  { label: 'Pending',    color: 'var(--warning)', bg: 'var(--warning-bg)', border: '#fde68a' },
+  pending:  { label: 'Pending',    color: 'var(--warning)', bg: 'var(--warning-bg)', border: 'var(--warning-border)' },
   default:  { label: 'Not enrolled', color: 'var(--text-muted)', bg: 'var(--bg-surface)', border: 'var(--border)' },
 }
 
@@ -78,7 +79,7 @@ function Skeleton({ w = '100%', h = 16, r = 8 }: { w?: string | number; h?: numb
         width: w,
         height: h,
         borderRadius: r,
-        background: 'linear-gradient(90deg, #f0efee 25%, #e6e5e3 50%, #f0efee 75%)',
+        background: 'linear-gradient(90deg, var(--bg-elevated) 25%, var(--border-strong) 50%, var(--bg-elevated) 75%)',
         backgroundSize: '200% 100%',
         animation: 'shimmer 1.5s infinite',
       }}
@@ -90,26 +91,14 @@ function Skeleton({ w = '100%', h = 16, r = 8 }: { w?: string | number; h?: numb
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '140px 1fr',
-        gap: '12px',
-        padding: '12px 0',
-        borderBottom: '1px solid rgba(0,0,0,0.05)',
-        alignItems: 'baseline',
-      }}
+      className="is-54e0865"
     >
       <dt
-        style={{
-          fontSize: 'var(--fs-sm)',
-          fontFamily: 'var(--font-body)',
-          color: 'var(--text-muted)',
-          fontWeight: 500,
-        }}
+        className="is-c686ed6"
       >
         {label}
       </dt>
-      <dd style={{ fontSize: 'var(--fs-md)', color: 'var(--text)', fontWeight: 450 }}>
+      <dd className="is-5a91e9a">
         {value}
       </dd>
     </div>
@@ -122,7 +111,7 @@ function ContactCard({ contact }: { contact: ContactRecord }) {
     <div
       style={{
         background: 'var(--bg-elevated)',
-        border: contact.is_primary ? '1.5px solid rgba(235,93,30,0.25)' : '1px solid rgba(0,0,0,0.08)',
+        border: contact.is_primary ? '1.5px solid rgba(235,93,30,0.25)' : '1px solid var(--border)',
         borderRadius: '12px',
         padding: '20px',
         display: 'flex',
@@ -152,62 +141,38 @@ function ContactCard({ contact }: { contact: ContactRecord }) {
       </div>
 
       <div style={{ flex: 1 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
-          <p style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--text)' }}>
+        <div className="is-92d0f5a">
+          <p className="is-7ae0218">
             {name}
           </p>
           {contact.is_primary && (
             <span
-              style={{
-                fontSize: 'var(--fs-2xs)',
-                fontFamily: 'var(--font-body)',
-                fontWeight: 600,
-                color: 'var(--accent)',
-                background: 'rgba(235,93,30,0.10)',
-                padding: '2px 8px',
-                borderRadius: '999px',
-                letterSpacing: '0.04em',
-                textTransform: 'uppercase',
-              }}
+              className="is-5239d01"
             >
               Primary
             </span>
           )}
         </div>
-        <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginBottom: '12px' }}>
+        <p className="is-76ed46e">
           {contact.relationship}
         </p>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        <div className="is-ef1f3a5">
           {contact.phone_e164 && (
             <a
               href={`tel:${contact.phone_e164}`}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                fontSize: 'var(--fs-base)',
-                color: '#374151',
-                textDecoration: 'none',
-              }}
+              className="is-9e21610"
             >
-              <Icon name="users" size={13} style={{ color: '#9ca3af' }} />
+              <Icon name="users" size={13} style={{ color: 'var(--text-muted)' }} />
               {fmtPhone(contact.phone_e164)}
             </a>
           )}
           {contact.email && (
             <a
               href={`mailto:${contact.email}`}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                fontSize: 'var(--fs-base)',
-                color: '#374151',
-                textDecoration: 'none',
-              }}
+              className="is-9e21610"
             >
-              <Icon name="mail" size={13} style={{ color: '#9ca3af' }} />
+              <Icon name="mail" size={13} style={{ color: 'var(--text-muted)' }} />
               {contact.email}
             </a>
           )}
@@ -237,13 +202,7 @@ function SwimmerProfileCard({
       className="card" style={{ overflow: 'hidden' }}
     >
       <div
-        style={{
-          padding: '20px 24px',
-          display: 'flex',
-          gap: '16px',
-          alignItems: 'center',
-          borderBottom: '1px solid rgba(0,0,0,0.06)',
-        }}
+        className="is-9aded49"
       >
         <div
           style={{
@@ -264,10 +223,10 @@ function SwimmerProfileCard({
           {ini}
         </div>
         <div style={{ flex: 1 }}>
-          <p style={{ fontSize: 'var(--fs-lg)', fontWeight: 700, color: 'var(--text)', marginBottom: '4px' }}>
+          <p className="is-3f474c1">
             {swimmer.first_name} {swimmer.last_name}
           </p>
-          <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>
+          <p className="is-83e0368">
             Age {age} · {swimmer.gender}{groupName ? ` · ${groupName}` : ''}
           </p>
         </div>
@@ -281,64 +240,34 @@ function SwimmerProfileCard({
             padding: '4px 12px',
             borderRadius: '999px',
             fontFamily: 'var(--font-body)',
-            letterSpacing: '0.03em',
           }}
         >
           {regCfg.label}
         </span>
       </div>
 
-      <dl style={{ padding: '4px 24px 12px' }}>
+      <dl className="is-8e2cdea">
         <InfoRow label="Date of birth" value={fmtDOB(swimmer.date_of_birth)} />
         <InfoRow label="External ID"    value={swimmer.swimmer_external_id ?? '—'} />
       </dl>
 
       <div
-        style={{
-          padding: '12px 24px',
-          borderTop: '1px solid rgba(0,0,0,0.05)',
-          background: '#fafaf9',
-          display: 'flex',
-          gap: '8px',
-        }}
+        className="is-7fd66e1"
       >
         <Link
           href={`/portal/household/swimmers/${swimmer.id}`}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '6px',
-            fontSize: 'var(--fs-sm)',
-            fontWeight: 600,
-            color: 'var(--text)',
-            background: 'rgba(0,0,0,0.06)',
-            padding: '6px 12px',
-            borderRadius: '8px',
-            textDecoration: 'none',
-            transition: 'background 120ms ease',
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(0,0,0,0.10)')}
-          onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(0,0,0,0.06)')}
+          className="is-f312e03"
+          onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-wash-strong)')}
+          onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--bg-wash-strong)')}
         >
           <Icon name="user" size={13} />
           View Profile
         </Link>
         <Link
           href="/portal/meets"
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '6px',
-            fontSize: 'var(--fs-sm)',
-            fontWeight: 600,
-            color: 'var(--text-subtle)',
-            padding: '6px 12px',
-            borderRadius: '8px',
-            textDecoration: 'none',
-            transition: 'background 120ms ease, color 120ms ease',
-          }}
+          className="is-b60a01e"
           onMouseEnter={(e) => {
-            e.currentTarget.style.background = 'rgba(0,0,0,0.04)'
+            e.currentTarget.style.background = 'var(--bg-wash)'
             e.currentTarget.style.color = 'var(--text)'
           }}
           onMouseLeave={(e) => {
@@ -374,7 +303,7 @@ export default function HouseholdProfilePage() {
   useEffect(() => {
     if (!orgId || !householdId) {
       setLoading(false)
-      setLoadError('Household profile is unavailable because household context is missing.')
+      setLoadError('We could not find your household details. Sign out and back in, or contact your club if this keeps happening.')
       return
     }
     setLoading(true)
@@ -402,7 +331,7 @@ export default function HouseholdProfilePage() {
         setLoadError(reportUIError(
           'portal-household-load',
           error,
-          'Household profile data is unavailable right now.',
+          'We could not load this page. Check your connection and try again.',
           { orgId, householdId },
         ))
       })
@@ -435,29 +364,16 @@ export default function HouseholdProfilePage() {
       `}</style>
 
       {/* Page header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px 20px', marginBottom: '32px' }}>
+      <div className="is-aa82eef">
         <div
-          style={{
-            width: '64px',
-            height: '64px',
-            borderRadius: '16px',
-            background: 'var(--accent)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'var(--bg-elevated)',
-            fontSize: 'var(--fs-2xl)',
-            fontWeight: 700,
-            fontFamily: 'var(--font-body)',
-            flexShrink: 0,
-          }}
+          className="is-2d51e9a"
         >
           {firstLetter}
         </div>
 
         <div style={{ flex: '1 1 200px', minWidth: 0 }}>
           {loading ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div className="is-930d87f">
               <Skeleton w="200px" h={28} />
               <Skeleton w="120px" h={18} />
             </div>
@@ -466,24 +382,13 @@ export default function HouseholdProfilePage() {
               <h1 className="page-title">
                 {hhName}
               </h1>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <div className="is-c960f60">
                 <span
-                  style={{
-                    fontSize: 'var(--fs-xs)',
-                    fontFamily: 'var(--font-body)',
-                    fontWeight: 600,
-                    color: 'var(--success)',
-                    background: 'var(--success-bg)',
-                    border: '1px solid #bbf7d0',
-                    padding: '4px 8px',
-                    borderRadius: '999px',
-                    letterSpacing: '0.03em',
-                    textTransform: 'uppercase',
-                  }}
+                  className="is-54b1dfb"
                 >
                   {household?.status ?? 'Active'}
                 </span>
-                <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
+                <span className="is-4f39ab0">
                   Member since {fmtMonthYear(household?.created_at)}
                 </span>
               </div>
@@ -491,24 +396,10 @@ export default function HouseholdProfilePage() {
           )}
         </div>
 
-        <button
+        <button type="button"
           disabled
           title="Editing household profile details isn't available yet"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: '8px 16px',
-            background: 'var(--bg-elevated)',
-            border: '1px solid rgba(0,0,0,0.12)',
-            borderRadius: '8px',
-            fontSize: 'var(--fs-base)',
-            fontWeight: 600,
-            color: 'var(--text-muted)',
-            cursor: 'not-allowed',
-            flexShrink: 0,
-            opacity: 0.55,
-          }}
+          className="is-b1aebc7"
         >
           <Icon name="edit-2" size={14} />
           Edit Profile
@@ -517,26 +408,16 @@ export default function HouseholdProfilePage() {
 
       {loadError && (
         <div
-          style={{
-            background: 'var(--warning-bg)',
-            border: '1px solid #fdba74',
-            borderRadius: '12px',
-            padding: '12px 16px',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: '12px',
-            marginBottom: '24px',
-          }}
+          className="is-d01e931"
         >
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+          <div className="is-730b6a7">
             <Icon name="alert-circle" size={15} style={{ color: 'var(--warning)', marginTop: '1px', flexShrink: 0 }} />
-            <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--warning)', lineHeight: 1.5 }}>{loadError}</p>
+            <p className="is-51a00ce">{loadError}</p>
           </div>
           <button
             type="button"
             onClick={() => setReloadKey((key) => key + 1)}
-            style={{ background: 'var(--bg-elevated)', border: '1px solid #fdba74', borderRadius: '8px', cursor: 'pointer', color: 'var(--warning)', fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '8px 16px', whiteSpace: 'nowrap' }}
+            className="is-889d44c"
           >
             Retry
           </button>
@@ -545,19 +426,12 @@ export default function HouseholdProfilePage() {
 
       {/* Tabs */}
       <div
-        style={{
-          display: 'flex',
-          gap: '2px',
-          borderBottom: '1px solid rgba(0,0,0,0.08)',
-          marginBottom: '24px',
-          overflowX: 'auto',
-          scrollbarWidth: 'none',
-        }}
+        className="is-c0a6bbd"
       >
         {tabs.map((tab) => {
           const active = activeTab === tab.id
           return (
-            <button
+            <button type="button"
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               style={{
@@ -585,7 +459,7 @@ export default function HouseholdProfilePage() {
                     fontSize: 'var(--fs-xs)',
                     fontFamily: 'var(--font-body)',
                     color: active ? 'var(--accent)' : 'var(--text-muted)',
-                    background: active ? 'rgba(235,93,30,0.08)' : 'rgba(0,0,0,0.06)',
+                    background: active ? 'rgba(235,93,30,0.08)' : 'var(--bg-wash-strong)',
                     padding: '1px 8px',
                     borderRadius: '999px',
                     fontWeight: 600,
@@ -602,23 +476,18 @@ export default function HouseholdProfilePage() {
       {/* Tab content */}
       {activeTab === 'overview' && (
         <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))',
-            gap: '20px',
-            animation: 'slideUp 0.25s var(--ease-out) both',
-          }}
+          className="is-b9bd260"
         >
           {/* Contact info card */}
           <div
-            className="card" style={{ padding: '24px' }}
+            className="card is-0acd099" 
           >
-            <h3 className="card-title" style={{ marginBottom: '12px' }}
+            <h3 className="card-title is-72d6c38" 
             >
               Contact
             </h3>
             {loading ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div className="is-930d87f">
                 <Skeleton h={14} />
                 <Skeleton h={14} />
               </div>
@@ -632,21 +501,21 @@ export default function HouseholdProfilePage() {
 
           {/* Membership card */}
           <div
-            className="card" style={{ padding: '24px' }}
+            className="card is-0acd099" 
           >
-            <h3 className="card-title" style={{ marginBottom: '12px' }}
+            <h3 className="card-title is-72d6c38" 
             >
               Membership
             </h3>
             {loading ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div className="is-930d87f">
                 <Skeleton h={14} />
                 <Skeleton h={14} />
               </div>
             ) : (
-              <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+              <div className="is-529a823">
                 <div>
-                  <p style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                  <p className="is-45e49ab">
                     Status
                   </p>
                   <span className="badge" style={{ color: 'var(--success)', background: 'var(--success-bg)', border: '1px solid var(--success-border)' }}>
@@ -654,18 +523,18 @@ export default function HouseholdProfilePage() {
                   </span>
                 </div>
                 <div>
-                  <p style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                  <p className="is-45e49ab">
                     Member Since
                   </p>
-                  <p style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--text)' }}>
+                  <p className="is-7ae0218">
                     {fmtMonthYear(household?.created_at)}
                   </p>
                 </div>
                 <div>
-                  <p style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                  <p className="is-45e49ab">
                     Swimmers
                   </p>
-                  <p style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--text)' }}>{swimmers.length}</p>
+                  <p className="is-7ae0218">{swimmers.length}</p>
                 </div>
               </div>
             )}
@@ -675,81 +544,53 @@ export default function HouseholdProfilePage() {
 
       {activeTab === 'contacts' && (
         <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(min(320px, 100%), 1fr))',
-            gap: '16px',
-            animation: 'slideUp 0.25s var(--ease-out) both',
-          }}
+          className="is-b98395c"
         >
           {loading ? (
             [0, 1, 2].map((i) => (
-              <div key={i} className="card" style={{ display: 'flex', gap: '16px' }}>
+              <div key={i} className="card is-cb387ac" >
                 <Skeleton w={44} h={44} r={22} />
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div className="is-20f80e0">
                   <Skeleton w="60%" h={15} />
                   <Skeleton w="40%" h={12} />
                 </div>
               </div>
             ))
-          ) : loadError ? (
-            <div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-md)', padding: '20px 0' }}>Contact data is unavailable right now.</div>
-          ) : shouldShowCollectionEmptyState(loading, loadError, contacts.length) ? (
-            <div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-md)', padding: '20px 0' }}>No additional contacts on file. Your primary email and phone are shown under Overview.</div>
+          ) : loadError ? null : shouldShowCollectionEmptyState(loading, loadError, contacts.length) ? (
+            <div className="is-e37262b">No additional contacts on file. Your primary email and phone are shown under Overview.</div>
           ) : (
             contacts.map((contact) => (
               <ContactCard key={contact.id} contact={contact} />
             ))
           )}
 
-          <button
+          <button type="button"
             disabled
             title="Adding a new contact isn't available yet"
-            style={{
-              background: 'transparent',
-              border: '1.5px dashed rgba(0,0,0,0.15)',
-              borderRadius: '12px',
-              padding: '24px',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
-              cursor: 'not-allowed',
-              color: 'var(--text-muted)',
-              opacity: 0.55,
-              minHeight: '120px',
-            }}
+            className="is-d36ce82"
           >
             <Icon name="plus" size={22} />
-            <span style={{ fontSize: 'var(--fs-base)', fontWeight: 500 }}>Add contact</span>
+            <span className="is-33a9c28">Add contact</span>
           </button>
         </div>
       )}
 
       {activeTab === 'swimmers' && (
         <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(min(360px, 100%), 1fr))',
-            gap: '16px',
-            animation: 'slideUp 0.25s var(--ease-out) both',
-          }}
+          className="is-828bf30"
         >
           {loading ? (
             [0, 1].map((i) => (
-              <div key={i} className="card" style={{ padding: '20px 24px', display: 'flex', gap: '16px', alignItems: 'center' }}>
+              <div key={i} className="card is-ebaaa90" >
                 <Skeleton w={52} h={52} r={26} />
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div className="is-20f80e0">
                   <Skeleton w="50%" h={16} />
                   <Skeleton w="70%" h={12} />
                 </div>
               </div>
             ))
-          ) : loadError ? (
-            <div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-md)', padding: '20px 0' }}>Swimmer data is unavailable right now.</div>
-          ) : shouldShowCollectionEmptyState(loading, loadError, swimmers.length) ? (
-            <div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-md)', padding: '20px 0' }}>No swimmers found for this household.</div>
+          ) : loadError ? null : shouldShowCollectionEmptyState(loading, loadError, swimmers.length) ? (
+            <div className="is-e37262b">No swimmers found for this household.</div>
           ) : (
             swimmers.map((swimmer, idx) => (
               <SwimmerProfileCard

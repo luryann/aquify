@@ -119,13 +119,13 @@ export function OverviewPanel({ onNavigateTab }: { onNavigateTab: (tab: 'invoice
     .slice(0, 8), [payments])
 
   if (!session) {
-    return <div style={{ padding: '32px 0' }}><EmptyState icon="credit-card" title="Sign in required" description="Sign in to view the billing overview." /></div>
+    return <div className="u-p-32px-0" ><EmptyState icon="credit-card" title="Sign in required" description="Sign in to view the billing overview." /></div>
   }
 
   return (
     <div>
       {error ? (
-        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: 'var(--fs-sm)' }}>
+        <div className="u-mb-20px u-p-12px-16px u-fs-fs-sm" style={{ borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)' }}>
           {error}
         </div>
       ) : null}
@@ -133,49 +133,49 @@ export function OverviewPanel({ onNavigateTab }: { onNavigateTab: (tab: 'invoice
       {loading ? (
         <EmptyState icon="credit-card" title="Loading billing summary" description="Aggregating invoice and payment data." />
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          <div className="cols-4" style={{ gap: '12px' }}>
+        <div className="u-gap-24px" style={{ display: 'flex', flexDirection: 'column' }}>
+          <div className="cols-4 u-gap-12px" >
             {[
               { label: 'Households', value: String(households.length) },
               { label: 'Receivables', value: formatCurrency(metrics.totalReceivables) },
               { label: 'Outstanding', value: formatCurrency(metrics.outstanding) },
               { label: 'Collected (30d)', value: formatCurrency(metrics.collected30d) },
             ].map((stat) => (
-              <div key={stat.label} className="card-elevated" style={{ padding: '16px 16px' }}>
-                <div style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '6px' }}>{stat.label}</div>
-                <div style={{ fontSize: 'var(--fs-2xl)', fontFamily: 'var(--font-body)', color: 'var(--text)' }}>{stat.value}</div>
+              <div key={stat.label} className="card-elevated u-p-16px-16px" >
+                <div className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ color: 'var(--text-muted)' }}>{stat.label}</div>
+                <div className="u-fs-fs-2xl u-ff-font-body" style={{ color: 'var(--text)' }}>{stat.value}</div>
               </div>
             ))}
           </div>
 
           {reconciliation ? (
-            <div style={{ padding: '16px 16px', borderRadius: '12px', background: reconciliation.unreconciled_row_count > 0 ? 'var(--warning-bg)' : 'var(--success-bg)', border: `1px solid ${reconciliation.unreconciled_row_count > 0 ? 'var(--warning-border)' : 'var(--success-border)'}` }}>
-              <div style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: reconciliation.unreconciled_row_count > 0 ? 'var(--warning)' : 'var(--success)', marginBottom: '4px' }}>
+            <div className="u-p-16px-16px" style={{ borderRadius: '12px', background: reconciliation.unreconciled_row_count > 0 ? 'var(--warning-bg)' : 'var(--success-bg)', border: `1px solid ${reconciliation.unreconciled_row_count > 0 ? 'var(--warning-border)' : 'var(--success-border)'}` }}>
+              <div className="u-fs-fs-base u-fw-600 u-mb-4px" style={{ color: reconciliation.unreconciled_row_count > 0 ? 'var(--warning)' : 'var(--success)' }}>
                 {reconciliation.unreconciled_row_count > 0 ? 'Some payments need review' : 'All payments are accounted for'}
               </div>
-              <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>
+              <div className="u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>
                 {formatCurrency(reconciliation.net_collected_cents)} collected across {reconciliation.row_count} payment{reconciliation.row_count === 1 ? '' : 's'} in the last 30 days. {reconciliation.unreconciled_row_count} payment{reconciliation.unreconciled_row_count === 1 ? '' : 's'} still need matching to an invoice.
               </div>
             </div>
           ) : null}
 
-          <div className="cols-2" style={{ gap: '20px' }}>
+          <div className="cols-2 u-gap-20px" >
             <section className="card" style={{ overflow: 'hidden' }}>
-              <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+              <div className="u-p-16px-20px u-gap-12px" style={{ borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap' }}>
                 <h2 className="card-title">Recent payments</h2>
-                <button onClick={() => onNavigateTab('ledger')} style={{ fontSize: 'var(--fs-sm)', color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Open ledger</button>
+                <button type="button" onClick={() => onNavigateTab('ledger')} className="u-fs-fs-sm u-p-0" style={{ color: 'var(--accent-text, var(--accent))', background: 'none', border: 'none', cursor: 'pointer' }}>Open ledger</button>
               </div>
               {recentPayments.length === 0 ? (
-                <div style={{ padding: '20px' }}><EmptyState icon="credit-card" title="No payments yet" description="Successful payments will appear here." /></div>
+                <div className="u-p-20px" ><EmptyState icon="credit-card" title="No payments yet" description="Successful payments will appear here." /></div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column' }}>
                   {recentPayments.map((payment, index) => (
-                    <div key={payment.id} style={{ padding: '16px 20px', borderBottom: index < recentPayments.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '4px' }}>
-                        <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text)' }}>{payment.household_name}</span>
-                        <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--accent)' }}>{formatCurrency(payment.amount_cents)}</span>
+                    <div key={payment.id} className="u-p-16px-20px" style={{ borderBottom: index < recentPayments.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                      <div className="u-gap-12px u-mb-4px" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span className="u-fs-fs-base" style={{ color: 'var(--text)' }}>{payment.household_name}</span>
+                        <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--accent-text, var(--accent))' }}>{formatCurrency(payment.amount_cents)}</span>
                       </div>
-                      <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
+                      <div className="u-fs-fs-xs" style={{ color: 'var(--text-muted)' }}>
                         {payment.invoice_number} · {payment.method} · {payment.paid_at ? new Date(payment.paid_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Pending'}
                       </div>
                     </div>
@@ -185,21 +185,21 @@ export function OverviewPanel({ onNavigateTab }: { onNavigateTab: (tab: 'invoice
             </section>
 
             <section className="card" style={{ overflow: 'hidden' }}>
-              <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+              <div className="u-p-16px-20px u-gap-12px" style={{ borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap' }}>
                 <h2 className="card-title">Overdue invoices</h2>
-                <button onClick={() => onNavigateTab('invoices')} style={{ fontSize: 'var(--fs-sm)', color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Open invoices</button>
+                <button type="button" onClick={() => onNavigateTab('invoices')} className="u-fs-fs-sm u-p-0" style={{ color: 'var(--accent-text, var(--accent))', background: 'none', border: 'none', cursor: 'pointer' }}>Open invoices</button>
               </div>
               {metrics.overdueInvoices.length === 0 ? (
-                <div style={{ padding: '20px' }}><EmptyState icon="shield-check" title="No overdue invoices" description="All current balances are within their due dates." /></div>
+                <div className="u-p-20px" ><EmptyState icon="shield-check" title="No overdue invoices" description="All current balances are within their due dates." /></div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column' }}>
                   {metrics.overdueInvoices.slice(0, 8).map((invoice, index) => (
-                    <div key={invoice.id} style={{ padding: '16px 20px', borderBottom: index < Math.min(metrics.overdueInvoices.length, 8) - 1 ? '1px solid var(--border)' : 'none' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '4px' }}>
-                        <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text)' }}>{invoice.household_name}</span>
-                        <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--error)' }}>{formatCurrency(invoice.amount_due_cents)}</span>
+                    <div key={invoice.id} className="u-p-16px-20px" style={{ borderBottom: index < Math.min(metrics.overdueInvoices.length, 8) - 1 ? '1px solid var(--border)' : 'none' }}>
+                      <div className="u-gap-12px u-mb-4px" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span className="u-fs-fs-base" style={{ color: 'var(--text)' }}>{invoice.household_name}</span>
+                        <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--error)' }}>{formatCurrency(invoice.amount_due_cents)}</span>
                       </div>
-                      <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
+                      <div className="u-fs-fs-xs" style={{ color: 'var(--text-muted)' }}>
                         {invoice.invoice_number} · Due {formatDateOnly(invoice.due_date)} · Status {invoice.status}
                       </div>
                     </div>

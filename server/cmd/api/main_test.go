@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 )
@@ -71,5 +73,24 @@ func TestLoadLocalEnvFilesLoadsExpectedPathsForDevelopment(t *testing.T) {
 	want := []string{"../.env.local", ".env.local"}
 	if !slices.Equal(paths, want) {
 		t.Fatalf("loadLocalEnvFiles loaded %v, want %v", paths, want)
+	}
+}
+
+func TestLoadDotEnvPreservesQuotedCommentsAndExistingEmptyValues(t *testing.T) {
+	t.Setenv("AQUIFY_DOTENV_EMPTY", "")
+	for _, key := range []string{"AQUIFY_DOTENV_DOUBLE", "AQUIFY_DOTENV_SINGLE", "AQUIFY_DOTENV_PLAIN"} {
+		os.Unsetenv(key)
+		t.Cleanup(func() { os.Unsetenv(key) })
+	}
+	path := filepath.Join(t.TempDir(), "test.env")
+	content := "AQUIFY_DOTENV_EMPTY=override\nAQUIFY_DOTENV_DOUBLE=\"secret # value\" # comment\nAQUIFY_DOTENV_SINGLE='another # value' # comment\nAQUIFY_DOTENV_PLAIN=value # comment\n"
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+	loadDotEnv(path)
+	for key, want := range map[string]string{"AQUIFY_DOTENV_EMPTY": "", "AQUIFY_DOTENV_DOUBLE": "secret # value", "AQUIFY_DOTENV_SINGLE": "another # value", "AQUIFY_DOTENV_PLAIN": "value"} {
+		if got := os.Getenv(key); got != want {
+			t.Errorf("%s = %q, want %q", key, got, want)
+		}
 	}
 }

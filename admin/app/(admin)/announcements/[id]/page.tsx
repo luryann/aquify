@@ -95,61 +95,61 @@ export default function AnnouncementDetailPage() {
   }
 
   if (!session) {
-    return <div style={{ padding: '32px' }}><EmptyState icon="megaphone" title="Sign in required" description="Authenticate to inspect live announcement details." /></div>
+    return <div className="u-p-32px" ><EmptyState icon="megaphone" title="Sign in required" description="Authenticate to inspect live announcement details." /></div>
   }
 
   if (loading) {
-    return <div style={{ padding: '32px' }}><EmptyState icon="megaphone" title="Loading announcement" description="Fetching the live announcement record." /></div>
+    return <div className="u-p-32px" ><EmptyState icon="megaphone" title="Loading announcement" description="Fetching the live announcement record." /></div>
   }
 
   if (!announcement) {
-    return <div style={{ padding: '32px' }}><EmptyState icon="megaphone" title="Announcement not found" description={error ?? 'The requested announcement could not be loaded.'} /></div>
+    return <div className="u-p-32px" ><EmptyState icon="megaphone" title="Announcement not found" description={error ?? 'The requested announcement could not be loaded.'} /></div>
   }
 
   return (
     <div className="page">
-      <div style={{ marginBottom: '20px' }}>
-        <Link href="/announcements" style={{ fontSize: 'var(--fs-sm)', color: 'var(--accent)', textDecoration: 'none' }}>← Back to announcements</Link>
+      <div className="u-mb-20px" >
+        <Link href="/announcements" className="u-fs-fs-sm" style={{ color: 'var(--accent-text, var(--accent))', textDecoration: 'none' }}>← Back to announcements</Link>
       </div>
 
       {error ? (
-        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: 'var(--fs-sm)' }}>
+        <div className="u-mb-20px u-p-12px-16px u-fs-fs-sm" style={{ borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)' }}>
           {error}
         </div>
       ) : null}
 
-      <div className="card" style={{ padding: '24px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', alignItems: 'flex-start', marginBottom: '16px', flexWrap: 'wrap' }}>
+      <div className="card u-p-24px" >
+        <div className="u-gap-16px u-mb-16px" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap' }}>
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '4px' }}>
+            <div className="u-gap-12px u-mb-4px" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
               <h1 className="page-title">
                 {announcement.title}
               </h1>
               <span className="badge badge-default">{announcement.status}</span>
             </div>
-            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
+            <div className="u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>
               Audience: {announcement.audience} · Created {formatDateTime(announcement.created_at)} by {staffName(announcement.created_by)} · Updated {formatDateTime(announcement.updated_at)}
             </div>
           </div>
-          <div style={{ display: 'flex', gap: '8px' }}>
+          <div className="u-gap-8px" style={{ display: 'flex' }}>
             {announcement.status === 'draft' ? (
-              <button onClick={() => void handlePublish()} disabled={working} className="btn btn-primary">
+              <button type="button" onClick={() => void handlePublish()} disabled={working} className="btn btn-primary">
                 Publish
               </button>
             ) : null}
             {announcement.status !== 'archived' ? (
-              <button onClick={() => void handleArchive()} disabled={working} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: 'var(--fs-sm)', cursor: working ? 'not-allowed' : 'pointer' }}>
+              <button type="button" onClick={() => void handleArchive()} disabled={working} className="u-p-8px-12px u-fs-fs-sm" style={{ borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)', cursor: working ? 'not-allowed' : 'pointer' }}>
                 Archive
               </button>
             ) : null}
           </div>
         </div>
 
-        <div style={{ padding: '16px 20px', borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border)', fontSize: 'var(--fs-md)', lineHeight: 1.7, color: 'var(--text-subtle)', whiteSpace: 'pre-wrap' }}>
+        <div className="u-p-16px-20px u-fs-fs-md u-lh-1_7" style={{ borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border)', color: 'var(--text-subtle)', whiteSpace: 'pre-wrap' }}>
           {announcement.body}
         </div>
 
-        <div style={{ marginTop: '16px', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
+        <div className="u-mt-16px u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>
           Published {formatDateTime(announcement.published_at)} · Archived {formatDateTime(announcement.archived_at)} · Group {announcement.group_id || 'All'}
         </div>
       </div>

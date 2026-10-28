@@ -21,10 +21,7 @@ function formatDateTime(value?: string) {
   })
 }
 
-const FIELD_INPUT_STYLE: React.CSSProperties = {
-  width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)',
-  background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: 'var(--fs-base)', boxSizing: 'border-box',
-}
+const FIELD_INPUT_STYLE: React.CSSProperties = { width: '100%' }
 
 type DeletionRow = DataDeletionRequestRecord & { householdName: string }
 
@@ -148,7 +145,7 @@ export default function DataDeletionsPage() {
   }
 
   if (!session) {
-    return <div style={{ padding: '32px' }}><EmptyState icon="trash-2" title="Sign in required" description="Authenticate to manage deletion requests." /></div>
+    return <div className="u-p-32px" ><EmptyState icon="trash-2" title="Sign in required" description="Authenticate to manage deletion requests." /></div>
   }
 
   const columns = [
@@ -171,7 +168,7 @@ export default function DataDeletionsPage() {
       label: '',
       sortable: false,
       render: (row) => (row.status === 'pending' || row.status === 'reviewing' || row.status === 'failed') ? (
-        <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+        <div className="u-gap-6px" style={{ display: 'flex', justifyContent: 'flex-end' }}>
           <button className="btn btn-sm btn-secondary" onClick={() => { setReview({ row, action: 'approve' }); setReviewNotes(''); setReviewError(null) }}>
             {row.status === 'failed' ? 'Retry erasure' : 'Approve'}
           </button>
@@ -187,18 +184,18 @@ export default function DataDeletionsPage() {
 
   return (
     <div className="page">
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px', marginBottom: '24px', flexWrap: 'wrap' }}>
+      <div className="u-gap-16px u-mb-24px" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap' }}>
         <div>
           <h1 className="page-title">Data deletion requests</h1>
         </div>
         <button onClick={() => setModalOpen(true)} className="btn btn-primary">
           <Icon name="plus" size={14} />
-          New Request
+          New request
         </button>
       </div>
 
       {error ? (
-        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: 'var(--fs-sm)' }}>
+        <div className="u-mb-20px u-p-12px-16px u-fs-fs-sm" style={{ borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)' }}>
           {error}
         </div>
       ) : null}
@@ -228,16 +225,16 @@ export default function DataDeletionsPage() {
           </>
         }
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div className="u-gap-12px" style={{ display: 'flex', flexDirection: 'column' }}>
           <div>
-            <label style={{ display: 'block', fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '4px' }}>Household</label>
+            <label className="u-fs-fs-sm u-ff-font-body u-mb-4px" style={{ display: 'block', color: 'var(--text-muted)' }}>Household</label>
             <select value={selectedHouseholdId} onChange={(event) => setSelectedHouseholdId(event.target.value)} style={FIELD_INPUT_STYLE}>
               {households.map((household) => <option key={household.id} value={household.id}>{household.household_name}</option>)}
             </select>
           </div>
           <div>
-            <label style={{ display: 'block', fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '4px' }}>Reason</label>
-            <textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={4} placeholder="Why this family asked for deletion" style={{ ...FIELD_INPUT_STYLE, resize: 'vertical' }} />
+            <label className="u-fs-fs-sm u-ff-font-body u-mb-4px" style={{ display: 'block', color: 'var(--text-muted)' }}>Reason</label>
+            <textarea aria-label="Why this family asked for deletion" value={reason} onChange={(event) => setReason(event.target.value)} rows={4} placeholder="Why this family asked for deletion" style={{ ...FIELD_INPUT_STYLE, resize: 'vertical' }} />
           </div>
         </div>
       </Modal>
@@ -257,11 +254,11 @@ export default function DataDeletionsPage() {
           </>
         }
       >
-        <label htmlFor="deletion-review-notes" style={{ display: 'block', fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
+        <label htmlFor="deletion-review-notes" className="u-fs-fs-sm u-fw-600 u-mb-6px" style={{ display: 'block', color: 'var(--text-muted)' }}>
           Review notes{review?.action === 'reject' ? ' (required)' : ' (optional)'}
         </label>
         <textarea id="deletion-review-notes" rows={3} value={reviewNotes} onChange={(e) => setReviewNotes(e.target.value)} style={{ ...FIELD_INPUT_STYLE, resize: 'vertical' }} />
-        {reviewError ? <p style={{ marginTop: '8px', fontSize: 'var(--fs-sm)', color: 'var(--error)' }}>{reviewError}</p> : null}
+        {reviewError ? <p className="u-mt-8px u-fs-fs-sm" style={{ color: 'var(--error)' }}>{reviewError}</p> : null}
       </Modal>
     </div>
   )

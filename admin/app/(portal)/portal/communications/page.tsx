@@ -15,16 +15,17 @@ import {
   type PortalCommunicationPreference,
 } from '@/lib/portal-communications-preferences'
 import { parseBackendDate } from '@/lib/dates'
+import './page.inline.css'
 
 // ── Category config ─────────────────────────────────────────────────────────
 const CATEGORY_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
   all:       { label: 'All',       color: 'var(--text-muted)', bg: 'var(--bg-surface)' },
   meet:      { label: 'Meet',      color: 'var(--info)', bg: 'var(--info-bg)' },
-  admin:     { label: 'Admin',     color: '#7c3aed', bg: '#f5f3ff' },
+  admin:     { label: 'Admin',     color: 'var(--water)', bg: 'var(--water-subtle)' },
   facility:  { label: 'Facility',  color: 'var(--success)', bg: 'var(--success-bg)' },
   training:  { label: 'Training',  color: 'var(--warning)', bg: 'var(--warning-bg)' },
   billing:   { label: 'Billing',   color: 'var(--error)', bg: 'var(--error-bg)' },
-  volunteer: { label: 'Volunteer', color: '#0891b2', bg: '#ecfeff' },
+  volunteer: { label: 'Volunteer', color: 'var(--water)', bg: 'var(--water-subtle)' },
 }
 
 type NotifChannel = 'email' | 'push'
@@ -46,22 +47,22 @@ function audienceToCategory(audience: string): string {
 // ── Loading skeleton ─────────────────────────────────────────────────────────
 function Skeleton() {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+    <div className="is-930d87f">
       {[1, 2, 3].map((i) => (
         <div
           key={i}
           style={{
             background: 'var(--bg-elevated)',
             borderRadius: '12px',
-            border: '1px solid rgba(0,0,0,0.07)',
+            border: '1px solid var(--border)',
             padding: '20px 24px',
             animation: 'pulse 1.5s ease-in-out infinite',
             animationDelay: `${i * 0.1}s`,
           }}
         >
-          <div style={{ width: '60%', height: '14px', background: '#f0eeec', borderRadius: '6px', marginBottom: '12px' }} />
-          <div style={{ width: '90%', height: '10px', background: '#f5f4f2', borderRadius: '6px', marginBottom: '6px' }} />
-          <div style={{ width: '70%', height: '10px', background: '#f5f4f2', borderRadius: '6px' }} />
+          <div className="is-f22a507" />
+          <div className="is-42ea615" />
+          <div style={{ width: '70%', height: '10px', background: 'var(--bg-surface)', borderRadius: '6px' }} />
         </div>
       ))}
     </div>
@@ -178,19 +179,10 @@ export default function CommunicationsPage() {
 
       {/* Tabs */}
       <div
-        style={{
-          display: 'flex',
-          gap: '2px',
-          marginBottom: '24px',
-          background: 'rgba(0,0,0,0.04)',
-          borderRadius: '12px',
-          padding: '4px',
-          maxWidth: '340px',
-          animation: 'slideUp 0.38s ease both',
-        }}
+        className="is-b7bb846"
       >
         {(['inbox', 'preferences'] as const).map((t) => (
-          <button
+          <button type="button"
             key={t}
             onClick={() => setActiveTab(t)}
             style={{
@@ -219,22 +211,16 @@ export default function CommunicationsPage() {
         <div>
           {/* Category filter pills */}
           <div
-            style={{
-              display: 'flex',
-              gap: '8px',
-              flexWrap: 'wrap',
-              marginBottom: '20px',
-              animation: 'slideUp 0.4s ease both',
-            }}
+            className="is-d22a75f"
           >
             {Object.entries(CATEGORY_CONFIG).map(([key, cfg]) => (
-              <button
+              <button type="button"
                 key={key}
                 onClick={() => setFilter(key)}
                 style={{
                   padding: '4px 12px',
                   borderRadius: '999px',
-                  border: `1px solid ${filter === key ? cfg.color : 'rgba(0,0,0,0.12)'}`,
+                  border: `1px solid ${filter === key ? cfg.color : 'var(--border-strong)'}`,
                   background: filter === key ? cfg.bg : 'var(--bg-elevated)',
                   color: filter === key ? cfg.color : 'var(--text-subtle)',
                   fontSize: 'var(--fs-sm)',
@@ -254,57 +240,37 @@ export default function CommunicationsPage() {
             <Skeleton />
           ) : announcementsError ? (
             <div
-              style={{
-                background: 'var(--error-bg)',
-                borderRadius: '12px',
-                border: '1px solid rgba(220,38,38,0.18)',
-                padding: '20px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '16px',
-                animation: 'slideUp 0.3s ease both',
-              }}
+              className="is-392b6e6"
             >
               <div>
-                <p style={{ fontSize: 'var(--fs-md)', color: 'var(--error)', fontWeight: 600, marginBottom: '4px' }}>
+                <p className="is-703ac01">
                   Announcements are unavailable
                 </p>
-                <p style={{ fontSize: 'var(--fs-base)', color: 'var(--error)' }}>{announcementsError}</p>
+                <p className="is-de107ca">{announcementsError}</p>
               </div>
-              <button
+              <button type="button"
                 onClick={() => setAnnouncementsRetryKey((current) => current + 1)}
-                style={{
-                  padding: '8px 16px',
-                  borderRadius: '8px',
-                  border: 'none',
-                  background: 'var(--error)',
-                  color: 'var(--bg-elevated)',
-                  fontSize: 'var(--fs-base)',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  flexShrink: 0,
-                }}
+                className="is-b2368ab"
               >
                 Retry
               </button>
             </div>
           ) : filtered.length === 0 ? (
             <div
-              className="card" style={{ padding: '56px 32px', textAlign: 'center', animation: 'slideUp 0.3s ease both' }}
+              className="card is-ae9c012" 
             >
-              <Icon name="megaphone" size={32} style={{ color: '#D4D1CE', marginBottom: '16px' }} />
-              <p style={{ fontSize: 'var(--fs-md)', color: 'var(--text-muted)', fontWeight: 500, marginBottom: '6px' }}>
+              <Icon name="megaphone" size={32} style={{ color: 'var(--text-muted)', marginBottom: '16px' }} />
+              <p className="is-91904b5">
                 No announcements
               </p>
-              <p style={{ fontSize: 'var(--fs-base)', color: 'var(--border-strong)' }}>
+              <p className="is-f299ae1">
                 {filter === 'all'
                   ? 'Club announcements will appear here when published.'
                   : 'No announcements in this category.'}
               </p>
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div className="is-930d87f">
               {filtered.map((ann, i) => {
                 const cat = CATEGORY_CONFIG[audienceToCategory(ann.audience)] ?? CATEGORY_CONFIG.admin
                 const expanded = expandedId === ann.id
@@ -314,47 +280,27 @@ export default function CommunicationsPage() {
                     style={{
                       background: 'var(--bg-elevated)',
                       borderRadius: '12px',
-                      border: '1px solid rgba(0,0,0,0.07)',
+                      border: '1px solid var(--border)',
                       overflow: 'hidden',
                       animation: `slideUp 0.3s ease ${i * 0.06}s both`,
                     }}
                   >
                     {/* Header */}
-                    <button
+                    <button type="button"
                       onClick={() => setExpandedId(expanded ? null : ann.id)}
-                      style={{
-                        width: '100%',
-                        display: 'flex',
-                        alignItems: 'flex-start',
-                        justifyContent: 'space-between',
-                        gap: '16px',
-                        padding: '20px 20px',
-                        background: 'none',
-                        border: 'none',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        transition: 'background 100ms ease',
-                      }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(0,0,0,0.015)')}
+                      className="is-b89ef60"
+                      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-wash)')}
                       onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                     >
                       <div style={{ flex: 1 }}>
                         <div
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            marginBottom: '4px',
-                            flexWrap: 'wrap',
-                          }}
+                          className="is-9fcf47c"
                         >
                           <span
                             style={{
                               fontSize: 'var(--fs-2xs)',
                               fontWeight: 600,
                               fontFamily: 'var(--font-body)',
-                              textTransform: 'uppercase',
-                              letterSpacing: '0.05em',
                               color: cat.color,
                               background: cat.bg,
                               padding: '2px 8px',
@@ -364,27 +310,17 @@ export default function CommunicationsPage() {
                             {cat.label}
                           </span>
                           <span
-                            style={{
-                              fontSize: 'var(--fs-xs)',
-                              color: 'var(--text-muted)',
-                              fontFamily: 'var(--font-body)',
-                            }}
+                            className="is-c9c6d72"
                           >
                             {fmtDate(ann.published_at)}
                           </span>
                         </div>
                         <p
-                          style={{
-                            fontSize: 'var(--fs-md)',
-                            fontWeight: 600,
-                            color: 'var(--text)',
-                            marginBottom: '4px',
-                            lineHeight: 1.3,
-                          }}
+                          className="is-90d8fe3"
                         >
                           {ann.title}
                         </p>
-                        <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
+                        <p className="is-4f39ab0">
                           {ann.created_by || 'Club Administration'}
                         </p>
                       </div>
@@ -404,19 +340,10 @@ export default function CommunicationsPage() {
                     {/* Expanded body */}
                     {expanded && (
                       <div
-                        style={{
-                          padding: '0 20px 20px',
-                          borderTop: '1px solid rgba(0,0,0,0.06)',
-                          animation: 'slideUp 0.2s ease both',
-                        }}
+                        className="is-945cf76"
                       >
                         <p
-                          style={{
-                            fontSize: 'var(--fs-md)',
-                            color: '#3D3A38',
-                            lineHeight: 1.65,
-                            marginTop: '16px',
-                          }}
+                          className="is-debe079"
                         >
                           {ann.body}
                         </p>
@@ -435,32 +362,17 @@ export default function CommunicationsPage() {
         <div style={{ animation: 'slideUp 0.35s ease both' }}>
           {prefsError && (
             <div
-              style={{
-                marginBottom: '16px',
-                padding: '12px 16px',
-                borderRadius: '12px',
-                border: '1px solid rgba(220,38,38,0.18)',
-                background: 'var(--error-bg)',
-                color: 'var(--error)',
-                fontSize: 'var(--fs-base)',
-              }}
+              className="is-b705077"
             >
               {prefsError}
             </div>
           )}
           <div
-            className="card" style={{ overflow: 'hidden', marginBottom: '20px' }}
+            className="card is-b25ef49" 
           >
             {/* Header */}
             <div
-              style={{
-                padding: '16px 20px',
-                borderBottom: '1px solid rgba(0,0,0,0.06)',
-                display: 'grid',
-                gridTemplateColumns: '1fr 60px 60px',
-                gap: '12px',
-                alignItems: 'center',
-              }}
+              className="is-0378948"
             >
               <span className="col-head">
                 Notification Event
@@ -478,7 +390,7 @@ export default function CommunicationsPage() {
                 key={pref.id}
                 style={{
                   padding: '16px 20px',
-                  borderBottom: i < prefs.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none',
+                  borderBottom: i < prefs.length - 1 ? '1px solid var(--border)' : 'none',
                   display: 'grid',
                   gridTemplateColumns: '1fr 60px 60px',
                   gap: '12px',
@@ -486,21 +398,21 @@ export default function CommunicationsPage() {
                 }}
               >
                 <div>
-                  <p style={{ fontSize: 'var(--fs-md)', fontWeight: 500, color: 'var(--text)', marginBottom: '2px' }}>
+                  <p className="is-58c33bb">
                     {pref.label}
                   </p>
-                  <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>{pref.description}</p>
+                  <p className="is-4f39ab0">{pref.description}</p>
                 </div>
                 {(['email', 'push'] as NotifChannel[]).map((ch) => (
                   <div key={ch} style={{ display: 'flex', justifyContent: 'center' }}>
-                    <button
+                    <button type="button"
                       onClick={() => togglePref(pref.id, ch)}
                       disabled={prefsLoading || prefsSaving}
                       style={{
                         width: '40px',
                         height: '22px',
                         borderRadius: '999px',
-                        background: pref[ch] ? 'var(--accent)' : 'rgba(0,0,0,0.12)',
+                        background: pref[ch] ? 'var(--accent)' : 'var(--bg-wash-strong)',
                         border: 'none',
                         cursor: prefsLoading || prefsSaving ? 'not-allowed' : 'pointer',
                         opacity: prefsLoading || prefsSaving ? 0.55 : 1,
@@ -518,7 +430,7 @@ export default function CommunicationsPage() {
                           height: '16px',
                           borderRadius: '50%',
                           background: 'var(--bg-elevated)',
-                          boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                          boxShadow: 'var(--shadow-sm)',
                           transition: 'left 150ms ease',
                         }}
                       />
@@ -529,8 +441,8 @@ export default function CommunicationsPage() {
             ))}
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <button
+          <div className="is-e2ff0fd">
+            <button type="button"
               onClick={savePrefs}
               disabled={prefsLoading || prefsSaving || !portalCommunicationPreferencesChanged(prefs, savedPrefs)}
               style={{
@@ -556,15 +468,7 @@ export default function CommunicationsPage() {
             </button>
             {prefsSaved && (
               <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  color: 'var(--success)',
-                  fontSize: 'var(--fs-base)',
-                  fontWeight: 500,
-                  animation: 'slideUp 0.2s ease both',
-                }}
+                className="is-f38032e"
               >
                 <Icon name="check-circle" size={15} />
                 Saved

@@ -44,19 +44,7 @@ export function Banner({ tone, children, onRetry }: { tone: 'error' | 'success' 
   return (
     <div
       role={tone === 'error' ? 'alert' : 'status'}
-      style={{
-        display: 'flex',
-        gap: 12,
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '12px 16px',
-        borderRadius: 12,
-        margin: '12px 0',
-        fontSize: 'var(--fs-base)',
-        background: `var(--${tone}-bg)`,
-        border: `1px solid var(--${tone}-border)`,
-        color: 'var(--text)',
-      }}
+      className="u-gap-12px u-p-12px-16px u-fs-fs-base" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderRadius: 12, margin: '12px 0', background: `var(--${tone}-bg)`, border: `1px solid var(--${tone}-border)`, color: 'var(--text)' }}
     >
       <span>{children}</span>
       {onRetry ? (
@@ -70,7 +58,7 @@ export function Banner({ tone, children, onRetry }: { tone: 'error' | 'success' 
 
 export function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
   return (
-    <label className="form-field" style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
+    <label className="form-field u-gap-6px" style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
       <span className="form-label">{label}</span>
       {children}
       {hint ? <span className="form-hint">{hint}</span> : null}
@@ -81,5 +69,5 @@ export function Field({ label, children, hint }: { label: string; children: Reac
 export const formGrid: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16 }
 
 export function ScrollTable({ children }: { children: ReactNode }) {
-  return <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>{children}</div>
+  return <div className="table-scroll">{children}</div>
 }

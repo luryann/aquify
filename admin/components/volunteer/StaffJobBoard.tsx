@@ -15,6 +15,7 @@ import {
 } from '@/lib/volunteerData'
 import { VOLUNTEER_ROLE_LABELS, formatHours, groupInOrder, localDayKey } from '@/lib/volunteer-state'
 import { InlineNotice, SpotPips } from './VolunteerPrimitives'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 
 const STATUS_BADGE: Record<VolunteerSignup['status'], string> = {
   confirmed: 'badge badge-info',
@@ -90,8 +91,9 @@ export function StaffJobBoard({ api, orgId, jobs, onChanged, showEvent = true }:
     }
   }
 
+  const confirm = useConfirm()
   async function removeJob(job: VolunteerJobView) {
-    if (!window.confirm(`Delete "${job.title}"? Volunteers signed up for it lose their spot.`)) return
+    if (!(await confirm({ title: `Delete ${job.title}?`, message: 'Volunteers signed up for it lose their spot.', confirmLabel: 'Delete job', destructive: true }))) return
     await run(`del-${job.id}`, () => deleteVolunteerJob(api, orgId, job.id), 'Couldn’t delete the job. Try again.')
     setOpenId(null)
   }
@@ -99,13 +101,13 @@ export function StaffJobBoard({ api, orgId, jobs, onChanged, showEvent = true }:
   const days = groupInOrder(jobs, (j) => localDayKey(j.starts_at))
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+    <div className="u-gap-20px" style={{ display: 'flex', flexDirection: 'column' }}>
       {days.map((day) => (
         <section key={day.key}>
-          <h3 className="section-title" style={{ margin: '0 0 12px' }}>
+          <h3 className="section-title u-m-0-0-12px" >
             {dayHeading(day.items[0].starts_at)}
           </h3>
-          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div className="card u-p-0" style={{ overflow: 'hidden' }}>
             {day.items.map((job, idx) => {
               const open = openId === job.id
               return (
@@ -114,20 +116,15 @@ export function StaffJobBoard({ api, orgId, jobs, onChanged, showEvent = true }:
                     type="button"
                     onClick={() => toggle(job.id)}
                     aria-expanded={open}
-                    className="job-row"
-                    style={{
-                      width: '100%',
-                      gap: '12px', alignItems: 'center', padding: '12px 16px', textAlign: 'left',
-                      background: open ? 'var(--bg-elevated)' : 'transparent', border: 'none',
-                      color: 'var(--text)', cursor: 'pointer', fontFamily: 'var(--font-body)',
-                    }}
+                    className="job-row u-gap-12px u-p-12px-16px u-ff-font-body"
+                    style={{ width: '100%', alignItems: 'center', textAlign: 'left', background: open ? 'var(--bg-elevated)' : 'transparent', border: 'none', color: 'var(--text)', cursor: 'pointer' }}
                   >
-                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
+                    <span className="u-ff-font-mono u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>
                       {time(job.starts_at)}–{time(job.ends_at)}
                     </span>
                     <span style={{ minWidth: 0 }}>
-                      <span style={{ display: 'block', fontWeight: 600, fontSize: 'var(--fs-md)' }}>{job.title}</span>
-                      <span style={{ display: 'block', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
+                      <span className="u-fw-600 u-fs-fs-md" style={{ display: 'block' }}>{job.title}</span>
+                      <span className="u-fs-fs-sm" style={{ display: 'block', color: 'var(--text-muted)' }}>
                         {VOLUNTEER_ROLE_LABELS[job.role]} · {formatHours(job.hour_credit)} credit
                         {showEvent ? ` · ${job.meet_name || job.event_name || 'Meet'}` : ''}
                         {job.requires_certification ? ' · Certified only' : ''}
@@ -139,13 +136,13 @@ export function StaffJobBoard({ api, orgId, jobs, onChanged, showEvent = true }:
                     <div style={{ padding: '4px 16px 16px', background: 'var(--bg-elevated)' }}>
                       {rosterError ? <InlineNotice tone="error">{rosterError}</InlineNotice> : null}
                       {roster.length === 0 && !rosterError ? (
-                        <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)', margin: '8px 0' }}>Nobody has signed up yet.</p>
+                        <p className="u-fs-fs-base" style={{ color: 'var(--text-muted)', margin: '8px 0' }}>Nobody has signed up yet.</p>
                       ) : null}
                       {roster.map((s) => (
-                        <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                        <div key={s.id} className="u-gap-12px u-p-8px-0" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', borderBottom: '1px solid var(--border)' }}>
                           <span style={{ flex: '1 1 160px', minWidth: 0 }}>
-                            <span style={{ fontSize: 'var(--fs-md)', fontWeight: 600 }}>{s.volunteer_name}</span>
-                            <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}> · {s.household_name || 'Household'}</span>
+                            <span className="u-fs-fs-md u-fw-600" >{s.volunteer_name}</span>
+                            <span className="u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}> · {s.household_name || 'Household'}</span>
                           </span>
                           <span className={STATUS_BADGE[s.status]}>
                             {STATUS_TEXT[s.status]}{s.status === 'worked' ? ` ${formatHours(s.effective_hours)}` : ''}
@@ -173,7 +170,7 @@ export function StaffJobBoard({ api, orgId, jobs, onChanged, showEvent = true }:
                             household_id: addHousehold, volunteer_name: addName.trim(), certified: job.requires_certification,
                           }), 'Couldn’t add the volunteer. Try again.').then(() => setAddName(''))
                         }}
-                        style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '12px', alignItems: 'center' }}
+                        className="u-gap-8px u-mt-12px" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center' }}
                       >
                         <select className="form-input" aria-label="Household" value={addHousehold} onChange={(e) => setAddHousehold(e.target.value)} style={{ flex: '1 1 160px', minWidth: 0 }}>
                           <option value="">Household…</option>
@@ -184,7 +181,7 @@ export function StaffJobBoard({ api, orgId, jobs, onChanged, showEvent = true }:
                         <button type="submit" className="btn btn-primary btn-sm" disabled={busy !== null || job.open_spots === 0 || !addHousehold || !addName.trim()}>
                           Add volunteer
                         </button>
-                        <button type="button" className="btn btn-danger btn-sm" style={{ marginLeft: 'auto' }} disabled={busy !== null} onClick={() => removeJob(job)}>
+                        <button type="button" className="btn btn-danger btn-sm u-ml-auto" disabled={busy !== null} onClick={() => removeJob(job)}>
                           Delete job
                         </button>
                       </form>

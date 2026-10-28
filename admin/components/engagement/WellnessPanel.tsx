@@ -41,12 +41,12 @@ export function WellnessPanel({ api, orgId, swimmerId, swimmerName, selfView }: 
   const days = lastNDays(30)
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))', gap: 20, alignItems: 'start' }}>
-      <section className="card" style={{ padding: 20 }}>
-        <h2 className="section-title" style={{ marginBottom: 4 }}>
+    <div className="u-gap-20px" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))', alignItems: 'start' }}>
+      <section className="card u-p-20px" >
+        <h2 className="section-title u-mb-4px" >
           {todays ? 'Today’s check-in is in' : selfView ? 'How are you today?' : `How is ${swimmerName ?? 'your swimmer'} today?`}
         </h2>
-        <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', marginBottom: 20 }}>
+        <p className="u-fs-fs-base u-mb-20px" style={{ color: 'var(--text-subtle)' }}>
           Takes 20 seconds. Coaches use it to adjust training before small problems become injuries.
         </p>
         {data || error ? (
@@ -54,20 +54,20 @@ export function WellnessPanel({ api, orgId, swimmerId, swimmerName, selfView }: 
             forName={selfView ? undefined : swimmerName} onSaved={() => setReloadKey((k) => k + 1)} />
         ) : <div className="skeleton" style={{ height: 320, borderRadius: 12 }} />}
       </section>
-      <section className="card" style={{ padding: 20 }}>
-        <h2 className="section-title" style={{ marginBottom: 4 }}>Last 30 days</h2>
+      <section className="card u-p-20px" >
+        <h2 className="section-title u-mb-4px" >Last 30 days</h2>
         {error ? (
-          <div role="alert" style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', fontSize: 'var(--fs-base)', color: 'var(--warning)' }}>
+          <div role="alert" className="u-gap-12px u-fs-fs-base" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--warning)' }}>
             <span>{error}</span>
             <button type="button" className="btn btn-secondary btn-sm" onClick={() => setReloadKey((k) => k + 1)}>Retry</button>
           </div>
         ) : !data ? (
           <div className="skeleton" style={{ height: 180, borderRadius: 12 }} />
         ) : data.checkins.length === 0 ? (
-          <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)' }}>No check-ins yet. Your first one starts the trend line.</p>
+          <p className="u-fs-fs-base" style={{ color: 'var(--text-muted)' }}>No check-ins yet. Your first one starts the trend line.</p>
         ) : (
           <>
-            <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', marginBottom: 12 }}>
+            <p className="u-fs-fs-base u-mb-12px" style={{ color: 'var(--text-subtle)' }}>
               Average readiness {data.averages.readiness.toFixed(1)} / 5 across {data.averages.count} check-ins · {data.averages.sleep_hours}h sleep on average
             </p>
             <ReadinessTrend checkins={data.checkins} days={days} />

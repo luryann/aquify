@@ -23,6 +23,8 @@ import {
   shiftLabel,
 } from '@/lib/volunteer-state'
 import { HoursMeter, InlineNotice, LoadErrorBanner, SpotPips } from '@/components/volunteer/VolunteerPrimitives'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
+import './page.inline.css'
 
 const h2: React.CSSProperties = { fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--fs-2xl)', margin: '0 0 12px' }
 
@@ -107,8 +109,11 @@ export default function PortalVolunteerPage() {
     }
   }
 
+  const confirm = useConfirm()
+
   async function cancel(s: VolunteerSignup) {
-    if (!window.confirm(`Cancel ${s.volunteer_name}'s ${s.job?.title ?? 'shift'}?`)) return
+    const ok = await confirm({ title: 'Cancel this shift?', message: `${s.volunteer_name}'s ${s.job?.title ?? 'shift'} will open up for another family.`, confirmLabel: 'Cancel shift', cancelLabel: 'Keep shift', destructive: true })
+    if (!ok) return
     setBusy(true)
     setNotice(null)
     try {
@@ -129,14 +134,14 @@ export default function PortalVolunteerPage() {
       </div>
 
       {!householdId && !loading ? (
-        <p className="card" style={{ fontSize: 'var(--fs-md)', color: 'var(--text-muted)' }}>Your account is not linked to a household yet, so there are no shifts to show.</p>
+        <p className="card is-550d8c4" >Your account is not linked to a household yet, so there are no shifts to show.</p>
       ) : null}
       {loadError ? <LoadErrorBanner message={loadError} onRetry={reload} /> : null}
       {notice ? <InlineNotice tone={notice.tone}>{notice.text}</InlineNotice> : null}
 
       {!loading && !loadError && current ? (
-        <section className="card" style={{ marginBottom: 'var(--space-8)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' }}>
+        <section className="card is-6a59054" >
+          <div className="is-f226448">
             <h2 style={{ ...h2, margin: 0 }}>
               {current.required_hours > 0
                 ? current.remaining_hours > 0
@@ -149,11 +154,11 @@ export default function PortalVolunteerPage() {
             <HoursMeter required={current.required_hours} earned={current.earned_hours} scheduled={current.scheduled_hours} />
           ) : null}
           {current.status === 'bought_out' && current.buyout ? (
-            <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)', margin: '12px 0 0' }}>
+            <p className="is-9266feb">
               Your remaining hours were billed as a {formatCents(current.buyout.amount_cents)} buyout. See Billing for the invoice.
             </p>
           ) : current.remaining_hours > 0 && current.buyout_cents_per_hour > 0 ? (
-            <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)', margin: '12px 0 0' }}>
+            <p className="is-9266feb">
               Hours not worked by season end are billed at {formatCents(current.buyout_cents_per_hour)} per hour.
             </p>
           ) : null}
@@ -162,24 +167,24 @@ export default function PortalVolunteerPage() {
 
       {!loading && !loadError && householdId ? (
         <>
-          <section style={{ marginBottom: 'var(--space-8)' }}>
+          <section className="is-6a59054">
             <h2 style={h2}>Your shifts</h2>
             {upcomingMine.length === 0 ? (
-              <p style={{ fontSize: 'var(--fs-md)', color: 'var(--text-muted)', margin: 0 }}>You have no upcoming shifts. Pick one below.</p>
+              <p className="is-1f5cef7">You have no upcoming shifts. Pick one below.</p>
             ) : (
-              <div className="card" style={{ padding: 0 }}>
+              <div className="card is-bcb0a0d" >
                 {upcomingMine.map((s, i) => (
                   <div key={s.id} style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', padding: '12px 16px', borderTop: i ? '1px solid var(--border)' : 'none' }}>
                     <div style={{ flex: '1 1 220px', minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: 'var(--fs-md)' }}>{s.job?.title} · {s.volunteer_name}</div>
-                      <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
+                      <div className="is-dd1df4f">{s.job?.title} · {s.volunteer_name}</div>
+                      <div className="is-4f39ab0">
                         {s.job ? shiftLabel(s.job.starts_at, s.job.ends_at) : ''}{s.job?.location ? ` · ${s.job.location}` : ''} · {formatHours(s.job?.hour_credit ?? 0)}
                       </div>
                     </div>
                     {canSignUp && s.can_cancel ? (
                       <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => cancel(s)}>Cancel shift</button>
                     ) : (
-                      <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>Too close to cancel online — contact the club</span>
+                      <span className="is-4f39ab0">Too close to cancel online — contact the club</span>
                     )}
                   </div>
                 ))}
@@ -187,28 +192,28 @@ export default function PortalVolunteerPage() {
             )}
           </section>
 
-          <section style={{ marginBottom: 'var(--space-8)' }}>
+          <section className="is-6a59054">
             <h2 style={h2}>Shifts</h2>
             {openDays.length === 0 ? (
-              <p style={{ fontSize: 'var(--fs-md)', color: 'var(--text-muted)', margin: 0 }}>No shifts are posted yet. New shifts appear here as meets are scheduled.</p>
+              <p className="is-1f5cef7">No shifts are posted yet. New shifts appear here as meets are scheduled.</p>
             ) : null}
             {openDays.map((day) => (
-              <div key={day.key} style={{ marginBottom: '20px' }}>
-                <h3 className="card-title" style={{ color: 'var(--text-muted)', margin: '0 0 8px' }}>{dayHeading(day.items[0].starts_at)}</h3>
-                <div className="card" style={{ padding: 0 }}>
+              <div key={day.key} className="is-b75fad0">
+                <h3 className="card-title is-51cb2c4" >{dayHeading(day.items[0].starts_at)}</h3>
+                <div className="card is-bcb0a0d" >
                   {day.items.map((job, i) => {
                     const mine = mineByJob.has(job.id)
                     const formOpen = signingUp === job.id
                     return (
                       <div key={job.id} style={{ padding: '12px 16px', borderTop: i ? '1px solid var(--border)' : 'none' }}>
-                        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <div className="is-2fee94f">
                           <div style={{ flex: '1 1 220px', minWidth: 0 }}>
-                            <div style={{ fontWeight: 600, fontSize: 'var(--fs-md)' }}>{job.title}</div>
-                            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
+                            <div className="is-dd1df4f">{job.title}</div>
+                            <div className="is-4f39ab0">
                               {shiftLabel(job.starts_at, job.ends_at)} · {job.meet_name || job.event_name} · {formatHours(job.hour_credit)}
                               {job.min_age ? ` · ${job.min_age}+` : ''}{job.requires_certification ? ' · Certification required' : ''}
                             </div>
-                            {job.description ? <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', marginTop: '4px' }}>{job.description}</div> : null}
+                            {job.description ? <div className="is-12e9cd9">{job.description}</div> : null}
                           </div>
                           <SpotPips filled={job.filled_count} capacity={job.capacity} />
                           {canSignUp && job.open_spots > 0 && !formOpen ? (
@@ -222,12 +227,12 @@ export default function PortalVolunteerPage() {
                         {formOpen ? (
                           <form
                             onSubmit={(e) => { e.preventDefault(); void submitSignup(job) }}
-                            style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginTop: '12px' }}
+                            className="is-387ebaf"
                           >
                             <input className="form-input" aria-label="Who is volunteering" placeholder="Volunteer's name" value={name}
                               onChange={(e) => setName(e.target.value)} style={{ flex: '1 1 200px', minWidth: 0 }} required />
                             {job.requires_certification ? (
-                              <label style={{ display: 'flex', gap: '6px', alignItems: 'center', fontSize: 'var(--fs-base)' }}>
+                              <label className="is-e3238f0">
                                 <input type="checkbox" checked={certified} onChange={(e) => setCertified(e.target.checked)} />
                                 I hold the required certification
                               </label>
@@ -249,7 +254,7 @@ export default function PortalVolunteerPage() {
           {history.length > 0 ? (
             <section>
               <h2 style={h2}>Past shifts</h2>
-              <div className="card" style={{ padding: 0 }}>
+              <div className="card is-bcb0a0d" >
                 {history.map((s, i) => (
                   <div key={s.id} style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', padding: '12px 16px', borderTop: i ? '1px solid var(--border)' : 'none', fontSize: 'var(--fs-base)' }}>
                     <span style={{ flex: '1 1 220px' }}>{s.job?.title} · {s.volunteer_name}{s.job ? ` · ${shiftLabel(s.job.starts_at, s.job.ends_at)}` : ''}</span>
@@ -263,7 +268,7 @@ export default function PortalVolunteerPage() {
           ) : null}
         </>
       ) : null}
-      {loading ? <p style={{ fontSize: 'var(--fs-md)', color: 'var(--text-muted)' }}>Loading shifts…</p> : null}
+      {loading ? <p className="is-550d8c4">Loading shifts…</p> : null}
     </div>
   )
 }

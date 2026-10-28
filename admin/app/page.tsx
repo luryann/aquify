@@ -12,7 +12,7 @@ export default function LandingPage() {
           <div className="land-logo">
             <svg width="44" height="44" viewBox="0 0 34 34" fill="none" aria-hidden="true">
               <rect width="34" height="34" rx="9" fill="rgba(235,93,30,0.14)" />
-              <path d="M9 25V9h7c4.4 0 8 3.58 8 8s-3.6 8-8 8H9z" fill="#eb5d1e" />
+              <path d="M9 25V9h7c4.4 0 8 3.58 8 8s-3.6 8-8 8H9z" fill="var(--accent)" />
               <path d="M13 21v-8h3c2.2 0 4 1.79 4 4s-1.8 4-4 4h-3z" fill="#06101A" />
             </svg>
             <span className="land-wordmark">aquify</span>
@@ -96,7 +96,7 @@ export default function LandingPage() {
           gap: 6px;
           margin-top: 8px;
           padding: 11px 24px;
-          background: #eb5d1e;
+          background: var(--accent);
           border-radius: 9px;
           color: #fff;
           font-family: var(--font-body);
@@ -107,7 +107,7 @@ export default function LandingPage() {
           transition: background 0.18s, transform 0.12s, box-shadow 0.18s;
         }
         .land-btn:hover {
-          background: #d44f14;
+          background: var(--accent-hover);
           transform: translateY(-1px);
           box-shadow: 0 6px 20px rgba(235,93,30,0.28);
         }

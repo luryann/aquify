@@ -9,6 +9,8 @@ import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
 import { fetchHouseholds, fetchRegistrations, fetchSwimmers, fetchGroups, createRegistration, transitionRegistration, type HouseholdRecord, type RegistrationRecord, type SwimmerRecord, type GroupRecord } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
+import { Modal } from '@/components/ui/Modal'
 
 type RegistrationStatus = 'pending' | 'active' | 'inactive' | 'completed' | 'rejected' | 'withdrawn'
 type WaiverStatus = 'pending' | 'accepted'
@@ -65,30 +67,30 @@ function buildColumns(
     key: 'swimmer',
     label: 'Swimmer',
     sortable: true,
-    render: (row) => <Link href={`/members/swimmers/${row.swimmerId}`} style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)', textDecoration: 'none' }}>{row.swimmer}</Link>,
+    render: (row) => <Link href={`/members/swimmers/${row.swimmerId}`} className="u-fs-fs-base u-fw-600" style={{ color: 'var(--text)', textDecoration: 'none' }}>{row.swimmer}</Link>,
   },
   {
     key: 'household',
     label: 'Household',
     sortable: true,
-    render: (row) => <Link href={`/members/households/${row.householdId}`} style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', textDecoration: 'none' }}>{row.household}</Link>,
+    render: (row) => <Link href={`/members/households/${row.householdId}`} className="u-fs-fs-base" style={{ color: 'var(--text-subtle)', textDecoration: 'none' }}>{row.household}</Link>,
   },
   {
     key: 'program',
     label: 'Program',
     sortable: true,
-    render: (row) => <Link href={`/members/groups/${row.groupId}`} style={{ fontSize: 'var(--fs-base)', color: 'var(--text-subtle)', textDecoration: 'none' }}>{row.program}</Link>,
+    render: (row) => <Link href={`/members/groups/${row.groupId}`} className="u-fs-fs-base" style={{ color: 'var(--text-subtle)', textDecoration: 'none' }}>{row.program}</Link>,
   },
   {
     key: 'season',
     label: 'Season',
-    render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', padding: '2px 8px', background: 'var(--bg-elevated)', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)' }}>{row.season}</span>,
+    render: (row) => <span className="u-ff-font-body u-fs-fs-sm u-p-2px-8px" style={{ color: 'var(--text-subtle)', background: 'var(--bg-elevated)', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)' }}>{row.season}</span>,
   },
   {
     key: 'submittedAt',
     label: 'Submitted',
     sortable: true,
-    render: (row) => <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)' }}>{row.submittedAt ? new Date(row.submittedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span>,
+    render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{row.submittedAt ? new Date(row.submittedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span>,
   },
   {
     key: 'status',
@@ -104,7 +106,7 @@ function buildColumns(
     render: (row) => {
       const c = WAIVER_CONFIG[row.waiverStatus]
       const icon = row.waiverStatus === 'accepted' ? 'check-circle' : 'clock'
-      return <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: 'var(--fs-sm)', color: c.color }}><Icon name={icon} size={13} />{c.label}</div>
+      return <div className="u-gap-4px u-fs-fs-sm" style={{ display: 'flex', alignItems: 'center', color: c.color }}><Icon name={icon} size={13} />{c.label}</div>
     },
   },
   {
@@ -115,9 +117,9 @@ function buildColumns(
       if (options.length === 0) return null
       const busy = transitioningId === row.id
       return (
-        <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+        <div className="u-gap-6px" style={{ display: 'flex', justifyContent: 'flex-end' }}>
           {options.map((toStatus) => (
-            <button
+            <button type="button"
               key={toStatus}
               className="btn btn-sm btn-secondary"
               disabled={busy}
@@ -161,8 +163,7 @@ function deriveRows(
     .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))
 }
 
-const INPUT_STYLE: React.CSSProperties = { width: '100%', padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none', boxSizing: 'border-box' }
-const LABEL_STYLE: React.CSSProperties = { fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }
+const INPUT_STYLE: React.CSSProperties = { width: '100%' }
 
 export function RegistrationsPanel() {
   const { session } = useSession()
@@ -242,18 +243,19 @@ export function RegistrationsPanel() {
     }
   }, [rows, seasonFilter])
 
-  const selectStyle: React.CSSProperties = { padding: '8px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none', cursor: 'pointer' }
+  const selectStyle: React.CSSProperties = {}
 
   const filteredSwimmers = useMemo(() => form.household_id ? swimmers.filter((s) => s.household_id === form.household_id) : swimmers, [swimmers, form.household_id])
 
   const [transitioningId, setTransitioningId] = useState<string | null>(null)
   const [transitionError, setTransitionError] = useState<string | null>(null)
 
+  const confirm = useConfirm()
   const handleTransition = useCallback(async (row: RegistrationRow, toStatus: string) => {
     const orgId = session?.user.orgId
     if (!orgId) return
     const label = TRANSITION_LABELS[row.status]?.[toStatus] ?? toStatus
-    if (!window.confirm(`${label} ${row.swimmer}'s ${row.program} registration?`)) return
+    if (!(await confirm({ title: `${label} registration?`, message: `${row.swimmer}'s ${row.program} registration will change status.`, confirmLabel: label }))) return
     setTransitioningId(row.id)
     setTransitionError(null)
     try {
@@ -269,7 +271,7 @@ export function RegistrationsPanel() {
     } finally {
       setTransitioningId(null)
     }
-  }, [api, session?.user.orgId, households, swimmers, groupsList])
+  }, [api, session?.user.orgId, households, swimmers, groupsList, confirm])
 
   const columns = useMemo(() => buildColumns(handleTransition, transitioningId), [handleTransition, transitioningId])
 
@@ -293,22 +295,22 @@ export function RegistrationsPanel() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
-        <button className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setShowNew(true)}>
-          <Icon name="plus" size={14} /> New Registration
+      <div className="u-mb-16px" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <button type="button" className="btn btn-primary u-gap-6px" style={{ display: 'flex', alignItems: 'center' }} onClick={() => setShowNew(true)}>
+          <Icon name="plus" size={14} /> New registration
         </button>
       </div>
 
-      <div className="cols-4" style={{ gap: '12px', marginBottom: '20px' }}>
+      <div className="cols-4 u-gap-12px u-mb-20px" >
         {[
           { label: 'Total', value: counts.total, color: 'var(--text)' },
           { label: 'Active', value: counts.active, color: 'var(--success)' },
           { label: 'Pending', value: counts.pending, color: 'var(--warning)' },
-          { label: 'Swimmers', value: counts.swimmers, color: 'var(--accent)' },
+          { label: 'Swimmers', value: counts.swimmers, color: 'var(--accent-text, var(--accent))' },
         ].map((stat) => (
-          <div key={stat.label} className="card" style={{ padding: '16px 16px' }}>
-            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginBottom: '6px' }}>{stat.label}</div>
-            <div style={{ fontSize: 'var(--fs-2xl)', fontFamily: 'var(--font-body)', fontWeight: 700, color: stat.color }}>{stat.value}</div>
+          <div key={stat.label} className="card u-p-16px-16px" >
+            <div className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ color: 'var(--text-muted)' }}>{stat.label}</div>
+            <div className="u-fs-fs-2xl u-ff-font-body u-fw-700" style={{ color: stat.color }}>{stat.value}</div>
           </div>
         ))}
       </div>
@@ -316,7 +318,7 @@ export function RegistrationsPanel() {
       <div className="toolbar">
         <div className="toolbar-search">
           <Icon name="search" size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
-          <input type="text" placeholder="Search households..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: '100%', padding: '8px 12px 8px 32px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: 'var(--fs-base)', color: 'var(--text)', outline: 'none' }} />
+          <input aria-label="Search households..." type="text" placeholder="Search households..." value={search} onChange={(e) => setSearch(e.target.value)} className="u-p-8px-12px-8px-32px u-fs-fs-base" style={{ width: '100%' }} />
         </div>
         <select value={seasonFilter} onChange={(e) => setSeasonFilter(e.target.value)} style={selectStyle}>
           <option value="all">All seasons</option>
@@ -330,11 +332,11 @@ export function RegistrationsPanel() {
           <option value="rejected">Rejected</option>
           <option value="withdrawn">Withdrawn</option>
         </select>
-        <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', marginLeft: 'auto' }}>{filtered.length} registrations</span>
+        <span className="u-fs-fs-sm u-ff-font-body u-ml-auto" style={{ color: 'var(--text-muted)' }}>{filtered.length} registrations</span>
       </div>
 
       {transitionError && (
-        <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: 'var(--fs-base)' }}>
+        <div className="u-p-12px-16px u-mb-16px u-fs-fs-base" style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px' }}>
           {transitionError}
         </div>
       )}
@@ -348,48 +350,40 @@ export function RegistrationsPanel() {
       )}
 
       {/* New Registration Modal */}
-      {showNew && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)' }} onClick={(e) => { if (e.target === e.currentTarget) setShowNew(false) }}>
-          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '480px', boxShadow: '0 24px 80px rgba(0,0,0,0.4)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-              <h2 className="section-title" style={{ margin: 0 }}>New registration</h2>
-              <button onClick={() => setShowNew(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><Icon name="x" size={18} /></button>
-            </div>
-            {formError && <div style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: 'var(--fs-base)' }}>{formError}</div>}
-            <form onSubmit={handleCreateRegistration} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <Modal open={Boolean(showNew)} onClose={() => setShowNew(false)} title="New registration" width={480}>
+            {formError && <div role="alert" className="form-banner-error u-mb-16px">{formError}</div>}
+            <form onSubmit={handleCreateRegistration} className="u-gap-16px" style={{ display: 'flex', flexDirection: 'column' }}>
               <div>
-                <label style={LABEL_STYLE}>Household *</label>
+                <label className="form-label form-label-required">Household</label>
                 <select required style={INPUT_STYLE} value={form.household_id} onChange={(e) => setForm((f) => ({ ...f, household_id: e.target.value, swimmer_id: '' }))}>
                   <option value="">Select household…</option>
                   {households.map((h) => <option key={h.id} value={h.id}>{h.household_name}</option>)}
                 </select>
               </div>
               <div>
-                <label style={LABEL_STYLE}>Swimmer *</label>
+                <label className="form-label form-label-required">Swimmer</label>
                 <select required style={INPUT_STYLE} value={form.swimmer_id} onChange={(e) => setForm((f) => ({ ...f, swimmer_id: e.target.value }))}>
                   <option value="">Select swimmer…</option>
                   {filteredSwimmers.map((s) => <option key={s.id} value={s.id}>{s.first_name} {s.last_name}</option>)}
                 </select>
               </div>
               <div>
-                <label style={LABEL_STYLE}>Group *</label>
+                <label className="form-label form-label-required">Group</label>
                 <select required style={INPUT_STYLE} value={form.group_id} onChange={(e) => setForm((f) => ({ ...f, group_id: e.target.value }))}>
                   <option value="">Select group…</option>
                   {groupsList.map((g) => <option key={g.id} value={g.id}>{g.name} ({g.code})</option>)}
                 </select>
               </div>
               <div>
-                <label style={LABEL_STYLE}>Season *</label>
-                <input required style={INPUT_STYLE} value={form.season} onChange={(e) => setForm((f) => ({ ...f, season: e.target.value }))} placeholder="2025-26" />
+                <label className="form-label form-label-required">Season</label>
+                <input aria-label="2025-26" required style={INPUT_STYLE} value={form.season} onChange={(e) => setForm((f) => ({ ...f, season: e.target.value }))} placeholder="2025-26" />
               </div>
-              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '4px' }}>
+              <div className="form-actions">
                 <button type="button" className="btn" onClick={() => setShowNew(false)}>Cancel</button>
                 <button type="submit" className="btn btn-primary" disabled={submitting}>{submitting ? 'Creating…' : 'Create Registration'}</button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+      </Modal>
     </div>
   )
 }

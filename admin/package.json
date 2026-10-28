@@ -11,6 +11,7 @@
     "dev": "next dev",
     "build": "npm run check:offline-build && next build",
     "check:offline-build": "node ./scripts/check-offline-build.mjs",
+    "check:inline-style": "node ./scripts/check-inline-style.mjs",
     "test": "tsx --tsconfig tsconfig.test.json --test",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { ApiClient } from '@/lib/api'
 import { formatDateOnly } from '@/lib/dates'
 import { fetchStatement, fetchUpcomingCharges, financeErrorMessage, formatCents, type Statement, type UpcomingCharges } from '@/lib/financeData'
+import './PortalStatement.inline.css'
 
 const headingStyle = { fontSize: 'var(--fs-md)', fontWeight: 600, fontFamily: 'var(--font-body)', color: 'var(--text)', margin: '0 0 16px' } as const
 const rowStyle = { padding: '12px 20px', borderBottom: '1px solid var(--border)', fontSize: 'var(--fs-base)' } as const
@@ -38,29 +39,29 @@ export function PortalStatement({ api, orgId, householdId }: { api: ApiClient; o
 
   return (
     <>
-      <section style={{ marginTop: '32px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+      <section className="is-8dd12b4">
+        <div className="is-347f2f9">
           <h2 style={headingStyle}>Account statement</h2>
           {statement ? (
-            <div style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)' }}>
+            <div className="is-8fb176a">
               Balance <strong style={{ color: 'var(--text)', fontVariantNumeric: 'tabular-nums' }}>{formatCents(statement.closing_balance_cents)}</strong>
               {statement.credit_balance_cents > 0 ? <> · {formatCents(statement.credit_balance_cents)} account credit</> : null}
             </div>
           ) : null}
         </div>
         {error ? (
-          <div role="alert" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '12px 16px', borderRadius: 12, background: 'var(--error-bg)', border: '1px solid var(--error-border)', fontSize: 'var(--fs-base)' }}>
+          <div role="alert" className="is-67f161c">
             <span>{error}</span>
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => void load()}>
               Retry
             </button>
           </div>
         ) : (
-          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div className="card is-f27afbb" >
             {loading ? (
-              <div style={{ padding: 24, color: 'var(--text-muted)', fontSize: 'var(--fs-md)' }}>Loading statement…</div>
+              <div className="is-13c4a2f">Loading statement…</div>
             ) : lines.length === 0 ? (
-              <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--fs-md)' }}>No charges or payments yet.</div>
+              <div className="is-3d754c5">No charges or payments yet.</div>
             ) : (
               lines.map((line, i) => (
                 <div key={i} className="ledger-row" style={rowStyle}>
@@ -78,24 +79,24 @@ export function PortalStatement({ api, orgId, householdId }: { api: ApiClient; o
       </section>
 
       {upcoming && upcoming.charges.length > 0 ? (
-        <section style={{ marginTop: '32px' }}>
+        <section className="is-8dd12b4">
           <h2 style={headingStyle}>Upcoming charges</h2>
-          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div className="card is-f27afbb" >
             {upcoming.charges.map((c, i) => (
-              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '12px 20px', borderBottom: '1px solid var(--border)', fontSize: 'var(--fs-base)' }}>
+              <div key={i} className="is-98991f7">
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ color: 'var(--text)', fontWeight: 500 }}>
+                  <div className="is-aaa1da3">
                     {c.schedule_name} for {c.swimmer_name}
                   </div>
-                  <div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>
+                  <div className="is-a4e789a">
                     {formatDateOnly(c.period_start)} – {formatDateOnly(c.period_end)}
                     {c.discount_cents > 0 ? `, includes ${formatCents(c.discount_cents)} sibling discount` : ''}
                   </div>
                 </div>
-                <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{formatCents(c.net_cents)}</span>
+                <span className="is-e298452">{formatCents(c.net_cents)}</span>
               </div>
             ))}
-            <div style={{ padding: '12px 20px', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
+            <div className="is-ecbf34d">
               Estimated through {formatDateOnly(upcoming.through)}: {formatCents(upcoming.total_cents)}.
               {upcoming.credit_balance_cents > 0 ? ` Your ${formatCents(upcoming.credit_balance_cents)} account credit applies automatically.` : ''}
             </div>

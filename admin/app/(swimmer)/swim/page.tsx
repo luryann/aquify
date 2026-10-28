@@ -28,6 +28,7 @@ import {
   type SwimmerRecord,
   type AnnouncementRecord,
 } from '@/lib/adminData'
+import './page.inline.css'
 
 // ── Design tokens ──────────────────────────────────────────────────────────
 const C = {
@@ -97,6 +98,7 @@ type BestTimeDisplay = {
   event: string
   course: string
   time: string
+  fresh: boolean
 }
 
 // ── Skeleton components ────────────────────────────────────────────────────
@@ -116,13 +118,8 @@ function SkeletonLine({ width = '100%', height = '14px' }: { width?: string; hei
 
 function SkeletonCard() {
   return (
-    <div className="card"
-      style={{
-        padding: '20px 20px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '12px',
-      }}
+    <div className="card is-d18a76e"
+      
     >
       <SkeletonLine width="60%" height="16px" />
       <SkeletonLine width="40%" height="12px" />
@@ -155,14 +152,8 @@ function StatCard({ label, value, sub, accent }: { label: string; value: string;
 function MeetCard({ meet }: { meet: MeetDisplay }) {
   const status = COMMIT_STATUS[meet.commitmentStatus]
   return (
-    <div className="card"
-      style={{
-        padding: '20px 20px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '16px',
-        transition: 'border-color 150ms ease, box-shadow 150ms ease',
-      }}
+    <div className="card is-5a15081"
+      
       onMouseEnter={(e) => {
         const el = e.currentTarget as HTMLDivElement
         el.style.borderColor = C.accentBorder
@@ -175,12 +166,12 @@ function MeetCard({ meet }: { meet: MeetDisplay }) {
       }}
     >
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+      <div className="is-99561b3">
         <div>
           <p style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: C.text, marginBottom: '4px' }}>
             {meet.name}
           </p>
-          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+          <div className="is-18d4ed1">
             <span style={{ fontSize: 'var(--fs-sm)', color: C.subtle, display: 'flex', alignItems: 'center', gap: '4px' }}>
               <Icon name="calendar" size={11} />
               {meet.date}
@@ -193,9 +184,9 @@ function MeetCard({ meet }: { meet: MeetDisplay }) {
             )}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+        <div className="is-eba923c">
           {meet.course && (
-            <span title={courseTitle(meet.course)} style={{ fontSize: 'var(--fs-2xs)', fontFamily: 'var(--font-body)', fontWeight: 600, color: 'var(--bg-surface)', background: C.accent, padding: '2px 8px', borderRadius: '4px', letterSpacing: '0.04em' }}>
+            <span title={courseTitle(meet.course)} style={{ fontSize: 'var(--fs-2xs)', fontFamily: 'var(--font-body)', fontWeight: 600, color: 'var(--bg-surface)', background: C.accent, padding: '2px 8px', borderRadius: '4px', }}>
               {meet.course}
             </span>
           )}
@@ -261,7 +252,7 @@ export default function SwimmerDashboardPage() {
   useEffect(() => {
     if (!orgId) {
       setLoading(false)
-      setLoadError('Swimmer portal is unavailable because no organization is selected.')
+      setLoadError('We could not find your club. Sign out and back in to try again.')
       return
     }
 
@@ -301,6 +292,8 @@ export default function SwimmerDashboardPage() {
             event: eventName(bt.event_distance, bt.stroke),
             course: bt.course.toUpperCase(),
             time: fmtTime(bt.best_time_ms!),
+            // A best set in the last 30 days still counts as news.
+            fresh: bt.recorded_at ? Date.now() - new Date(bt.recorded_at).getTime() < 30 * 86_400_000 : false,
           }))
         setBestTimes(btDisplay)
 
@@ -351,7 +344,7 @@ export default function SwimmerDashboardPage() {
       setLoadError(reportUIError(
         'swimmer-dashboard-load',
         error,
-        'Swimmer dashboard data is unavailable right now.',
+        'We could not load this page. Check your connection and try again.',
         { orgId, householdId },
       ))
     }).finally(() => { if (!cancelled) setLoading(false) })
@@ -385,29 +378,12 @@ export default function SwimmerDashboardPage() {
 
       {/* Hero greeting */}
       <div
-        style={{
-          marginBottom: '40px',
-          animation: 'slideUp 0.45s cubic-bezier(0.16,1,0.3,1) both',
-        }}
+        className="is-31a2ed9"
       >
         {/* Swimmer avatar + name */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '20px', marginBottom: '8px' }}>
+        <div className="is-3e1d09b">
           <div
-            style={{
-              width: '56px',
-              height: '56px',
-              borderRadius: '50%',
-              background: 'var(--accent)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'var(--bg)',
-              fontSize: 'var(--fs-xl)',
-              fontWeight: 700,
-              fontFamily: 'var(--font-body)',
-              boxShadow: '0 0 24px rgba(0,212,170,0.30)',
-              flexShrink: 0,
-            }}
+            className="is-5ee2994"
           >
             {loading ? '…' : initials}
           </div>
@@ -424,12 +400,8 @@ export default function SwimmerDashboardPage() {
 
       {/* Stats strip */}
       <div
-        className="cols-4"
-        style={{
-          gap: '12px',
-          marginBottom: '40px',
-          animation: 'slideUp 0.45s cubic-bezier(0.16,1,0.3,1) 0.06s both',
-        }}
+        className="cols-4 is-7d699cf"
+        
       >
         {loading ? (
           <>
@@ -479,7 +451,7 @@ export default function SwimmerDashboardPage() {
             gap: '16px',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+          <div className="is-493767e">
             <Icon name="alert-circle" size={16} style={{ color: C.warn, marginTop: '1px', flexShrink: 0 }} />
             <p style={{ margin: 0, fontSize: 'var(--fs-base)', color: C.text, lineHeight: 1.5 }}>{loadError}</p>
           </div>
@@ -506,17 +478,14 @@ export default function SwimmerDashboardPage() {
       {!loading && !loadError && noLinkedSwimmer && <UnlinkedSwimmerNotice />}
 
       <div
-        className="split-aside"
-        style={{
-          gap: '24px',
-          alignItems: 'start',
-        }}
+        className="split-aside is-5345b20"
+        
       >
         {/* Left column */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+        <div className="is-141baf8">
           {/* Upcoming meets */}
           <section>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+            <div className="is-abcbf74">
               <h2 className="section-title"
               >
                 Upcoming Meets
@@ -540,27 +509,15 @@ export default function SwimmerDashboardPage() {
                 <Icon name="chevron-right" size={14} />
               </Link>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div className="is-930d87f">
               {loading ? (
                 <>
                   <SkeletonCard />
                   <SkeletonCard />
                 </>
-              ) : loadError ? (
-                <div className="card"
-                  style={{
-                    padding: '32px 20px',
-                    textAlign: 'center',
-                  }}
-                >
-                  <p style={{ fontSize: 'var(--fs-md)', color: C.subtle }}>Meet data is unavailable right now.</p>
-                </div>
-              ) : shouldShowCollectionEmptyState(loading, loadError, meets.length) ? (
-                <div className="card"
-                  style={{
-                    padding: '32px 20px',
-                    textAlign: 'center',
-                  }}
+              ) : loadError ? null : shouldShowCollectionEmptyState(loading, loadError, meets.length) ? (
+                <div className="card is-911be78"
+                  
                 >
                   <p style={{ fontSize: 'var(--fs-md)', color: C.subtle }}>No upcoming meets scheduled.</p>
                 </div>
@@ -579,7 +536,7 @@ export default function SwimmerDashboardPage() {
 
           {/* Best times preview */}
           <section>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+            <div className="is-abcbf74">
               <h2 className="section-title"
               >
                 My Best Times
@@ -625,8 +582,6 @@ export default function SwimmerDashboardPage() {
                       fontSize: 'var(--fs-2xs)',
                       fontFamily: 'var(--font-body)',
                       color: C.muted,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.05em',
                     }}
                   >
                     {h}
@@ -634,18 +589,14 @@ export default function SwimmerDashboardPage() {
                 ))}
               </div>
               {loading ? (
-                <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div className="is-6455ae6">
                   <SkeletonLine />
                   <SkeletonLine />
                   <SkeletonLine />
                 </div>
-              ) : loadError ? (
-                <div style={{ padding: '24px 20px', textAlign: 'center' }}>
-                  <p style={{ fontSize: 'var(--fs-base)', color: C.muted }}>Best-time data is unavailable right now.</p>
-                </div>
-              ) : shouldShowCollectionEmptyState(loading, loadError, bestTimes.length) ? (
-                <div style={{ padding: '24px 20px', textAlign: 'center' }}>
-                  <p style={{ fontSize: 'var(--fs-base)', color: C.muted }}>No best times recorded yet.</p>
+              ) : loadError ? null : shouldShowCollectionEmptyState(loading, loadError, bestTimes.length) ? (
+                <div className="is-337a55f">
+                  <p style={{ fontSize: 'var(--fs-base)', color: C.muted }}>No times on the board yet. Your first race lands here.</p>
                 </div>
               ) : (
                 bestTimes.map((bt, i) => (
@@ -662,7 +613,7 @@ export default function SwimmerDashboardPage() {
                     onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--border)')}
                     onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                   >
-                    <span style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: C.text }}>{bt.event}</span>
+                    <span style={{ fontSize: 'var(--fs-base)', fontWeight: 600, color: C.text }}>{bt.event}{bt.fresh && <> <span className="pb-chip">New best</span></>}</span>
                     <span title={courseTitle(bt.course)} style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: C.subtle }}>{bt.course}</span>
                     <span style={{ fontSize: 'var(--fs-md)', fontFamily: 'var(--font-body)', fontWeight: 700, color: C.accent }}>{bt.time}</span>
                   </div>
@@ -697,17 +648,13 @@ export default function SwimmerDashboardPage() {
           </div>
 
           {loading ? (
-            <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div className="is-6455ae6">
               <SkeletonLine />
               <SkeletonLine width="80%" />
               <SkeletonLine width="90%" />
             </div>
-          ) : loadError ? (
-            <div style={{ padding: '24px 20px', textAlign: 'center' }}>
-              <p style={{ fontSize: 'var(--fs-base)', color: C.muted }}>Announcements are unavailable right now.</p>
-            </div>
-          ) : shouldShowCollectionEmptyState(loading, loadError, announcements.length) ? (
-            <div style={{ padding: '24px 20px', textAlign: 'center' }}>
+          ) : loadError ? null : shouldShowCollectionEmptyState(loading, loadError, announcements.length) ? (
+            <div className="is-337a55f">
               <p style={{ fontSize: 'var(--fs-base)', color: C.muted }}>No announcements.</p>
             </div>
           ) : (

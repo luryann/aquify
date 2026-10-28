@@ -121,7 +121,7 @@ HTTP handlers live in `server/internal/app/handlers/<domain>.go` and are thin: v
 ### Frontend Layout
 - `admin/app/(admin)/` — admin-only pages (auth-gated to admin/coach)
 - `admin/app/(portal)/portal/` — parent portal pages
-- `admin/app/(swimmer)/swim/` — swimmer portal pages
+- `admin/app/(swimmer)/swim/` — swimmer portal pages (always on; the old `NEXT_PUBLIC_SWIMMER_PORTAL_ENABLED` flag and "Coming Soon" screen were removed — do not reintroduce a portal gate, access is controlled by the `swimmer` role only)
 - `admin/lib/adminData.ts` — all fetch helpers and shared types; add new API calls here
 - `admin/lib/roles.ts` — nav sections and role-to-nav mapping; add new nav items here
 - `admin/components/layout/Sidebar.tsx` — resizable sidebar (width persisted to localStorage)

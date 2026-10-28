@@ -50,7 +50,7 @@ function ProgressionChart({ results }: { results: ProgressionResultRecord[] }) {
   if (points.length === 0) {
     return (
       <div style={{ padding: '32px 20px', textAlign: 'center' }}>
-        <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)' }}>No timed results recorded for this event yet.</p>
+        <p className="u-fs-fs-base" style={{ color: 'var(--text-muted)' }}>No timed results recorded for this event yet.</p>
       </div>
     )
   }
@@ -81,7 +81,7 @@ function ProgressionChart({ results }: { results: ProgressionResultRecord[] }) {
 
   return (
     // Below ~520px the viewBox would shrink axis labels to unreadable sizes; scroll instead.
-    <div style={{ padding: '16px 20px', overflowX: 'auto' }}>
+    <div className="u-p-16px-20px" style={{ overflowX: 'auto' }}>
       <svg viewBox={`0 0 ${width} ${height}`} style={{ width: '100%', minWidth: 520, height: 'auto', display: 'block' }} role="img" aria-label="Finish time over time, faster times plotted higher">
         {yTicks.map((ms, i) => (
           <g key={i}>
@@ -108,7 +108,7 @@ function ProgressionChart({ results }: { results: ProgressionResultRecord[] }) {
           {points[points.length - 1].date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
         </text>
       </svg>
-      <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: '8px' }}>
+      <p className="u-fs-fs-xs u-mt-8px" style={{ color: 'var(--text-muted)' }}>
         {points.length} timed result{points.length !== 1 ? 's' : ''}. Faster times plot higher.
       </p>
     </div>
@@ -243,7 +243,7 @@ export default function PerformanceVisualizationPage() {
     : []
 
   if (!session) {
-    return <div style={{ padding: '32px' }}><EmptyState icon="bar-chart-2" title="Sign in required" description="Sign in to view performance analytics." /></div>
+    return <div className="u-p-32px" ><EmptyState icon="bar-chart-2" title="Sign in required" description="Sign in to view performance analytics." /></div>
   }
 
   return (
@@ -255,7 +255,7 @@ export default function PerformanceVisualizationPage() {
       </div>
 
       {error ? (
-        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)', fontSize: 'var(--fs-sm)' }}>
+        <div className="u-mb-20px u-p-12px-16px u-fs-fs-sm" style={{ borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)' }}>
           {error}
         </div>
       ) : null}
@@ -265,8 +265,8 @@ export default function PerformanceVisualizationPage() {
       ) : snapshots.length === 0 ? (
         <EmptyState icon="bar-chart-2" title="No performance data yet" description="Add swimmers and results to populate this visualization." />
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+        <div className="u-gap-24px" style={{ display: 'flex', flexDirection: 'column' }}>
+          <div className="u-gap-8px" style={{ display: 'flex', flexWrap: 'wrap' }}>
             <span className="badge badge-default">{summary.swimmerCount} swimmers</span>
             <span className="badge badge-default">{summary.bestTimeCount} best times</span>
             <span className="badge badge-default">{summary.progressionCount} results</span>
@@ -275,15 +275,15 @@ export default function PerformanceVisualizationPage() {
 
           {chartableSwimmers.length > 0 && (
             <section className="card" style={{ overflow: 'hidden' }}>
-              <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <div className="u-p-16px-20px u-gap-12px" style={{ borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
                 <div>
                   <h2 className="card-title">Time progression</h2>
                 </div>
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <div className="u-gap-8px" style={{ display: 'flex', flexWrap: 'wrap' }}>
                   <select
                     value={chartSwimmer?.swimmer.id ?? ''}
                     onChange={(e) => { setChartSwimmerId(e.target.value); setChartEventKey('') }}
-                    style={{ fontSize: 'var(--fs-sm)', padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg-surface)', color: 'var(--text)' }}
+                    className="u-fs-fs-sm u-p-6px-12px" 
                   >
                     {chartableSwimmers.map((s) => (
                       <option key={s.swimmer.id} value={s.swimmer.id}>{s.swimmer.first_name} {s.swimmer.last_name}</option>
@@ -292,7 +292,7 @@ export default function PerformanceVisualizationPage() {
                   <select
                     value={activeEventKey}
                     onChange={(e) => setChartEventKey(e.target.value)}
-                    style={{ fontSize: 'var(--fs-sm)', padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg-surface)', color: 'var(--text)' }}
+                    className="u-fs-fs-sm u-p-6px-12px" 
                   >
                     {chartEventOptions.map((o) => (
                       <option key={o.key} value={o.key}>{o.label}</option>
@@ -304,20 +304,20 @@ export default function PerformanceVisualizationPage() {
             </section>
           )}
 
-          <div className="cols-2" style={{ gap: '20px' }}>
+          <div className="cols-2 u-gap-20px" >
             <section className="card" style={{ overflow: 'hidden' }}>
-              <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
+              <div className="u-p-16px-20px" style={{ borderBottom: '1px solid var(--border)' }}>
                 <h2 className="card-title">Swimmers with the broadest coverage</h2>
-                <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: '2px' }}>By number of events with a recorded best time</p>
+                <p className="u-fs-fs-xs u-mt-2px" style={{ color: 'var(--text-muted)' }}>By number of events with a recorded best time</p>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px 20px' }}>
+              <div className="u-gap-12px u-p-16px-20px" style={{ display: 'flex', flexDirection: 'column' }}>
                 {(() => {
                   const max = Math.max(1, ...summary.topSwimmers.map((e) => e.bestTimeCount))
                   return summary.topSwimmers.map((entry) => (
                     <div key={entry.swimmer.id} title={`${entry.swimmer.first_name} ${entry.swimmer.last_name}: ${entry.bestTimeCount} best times`}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '4px' }}>
-                        <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text)' }}>{entry.swimmer.first_name} {entry.swimmer.last_name}</span>
-                        <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--accent)', flexShrink: 0 }}>{entry.bestTimeCount}</span>
+                      <div className="u-gap-12px u-mb-4px" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span className="u-fs-fs-base" style={{ color: 'var(--text)' }}>{entry.swimmer.first_name} {entry.swimmer.last_name}</span>
+                        <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--accent-text, var(--accent))', flexShrink: 0 }}>{entry.bestTimeCount}</span>
                       </div>
                       <div style={{ height: '7px', borderRadius: '4px', background: 'var(--bg-elevated)', overflow: 'hidden' }}>
                         <div style={{ height: '100%', width: `${(entry.bestTimeCount / max) * 100}%`, background: 'var(--accent)', borderRadius: '4px' }} />
@@ -329,18 +329,18 @@ export default function PerformanceVisualizationPage() {
             </section>
 
             <section className="card" style={{ overflow: 'hidden' }}>
-              <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
+              <div className="u-p-16px-20px" style={{ borderBottom: '1px solid var(--border)' }}>
                 <h2 className="card-title">Most populated events</h2>
-                <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: '2px' }}>By number of swimmers with a recorded time</p>
+                <p className="u-fs-fs-xs u-mt-2px" style={{ color: 'var(--text-muted)' }}>By number of swimmers with a recorded time</p>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px 20px' }}>
+              <div className="u-gap-12px u-p-16px-20px" style={{ display: 'flex', flexDirection: 'column' }}>
                 {(() => {
                   const max = Math.max(1, ...summary.topEvents.map((e) => e.count))
                   return summary.topEvents.map((entry) => (
                     <div key={entry.event} title={`${entry.event}: ${entry.count} swimmers, fastest ${formatSwimTime(entry.fastest)}`}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '4px' }}>
-                        <span style={{ fontSize: 'var(--fs-base)', color: 'var(--text)' }}>{entry.event}</span>
-                        <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)', color: 'var(--accent)', flexShrink: 0 }}>{entry.count}</span>
+                      <div className="u-gap-12px u-mb-4px" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span className="u-fs-fs-base" style={{ color: 'var(--text)' }}>{entry.event}</span>
+                        <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--accent-text, var(--accent))', flexShrink: 0 }}>{entry.count}</span>
                       </div>
                       <div style={{ height: '7px', borderRadius: '4px', background: 'var(--bg-elevated)', overflow: 'hidden' }}>
                         <div style={{ height: '100%', width: `${(entry.count / max) * 100}%`, background: 'var(--accent)', borderRadius: '4px' }} />

@@ -29,11 +29,11 @@ export function ResultsImport({ meetId }: { meetId: string }) {
   }
 
   return (
-    <div className="card" style={{ padding: '20px', gridColumn: '1 / -1' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
+    <div className="card u-p-20px" style={{ gridColumn: '1 / -1' }}>
+      <div className="u-gap-16px" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
         <div style={{ flex: '1 1 300px' }}>
-          <h3 className="card-title" style={{ marginBottom: '6px' }}>Results</h3>
-          <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', lineHeight: 1.5 }}>
+          <h3 className="card-title u-mb-6px" >Results</h3>
+          <p className="u-fs-fs-sm u-lh-1_5" style={{ color: 'var(--text-subtle)' }}>
             Import the host&apos;s results file (.sd3, .cl2, .hy3, .zip). Re-importing is safe.
           </p>
         </div>
@@ -49,20 +49,20 @@ export function ResultsImport({ meetId }: { meetId: string }) {
           {busy ? 'Importing…' : 'Import Results File'}
         </button>
       </div>
-      {error ? <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--danger)', marginTop: '12px' }}>{error}</p> : null}
+      {error ? <p className="u-fs-fs-sm u-mt-12px" style={{ color: 'var(--danger)' }}>{error}</p> : null}
       {summary ? (
-        <div style={{ marginTop: '12px', fontSize: 'var(--fs-sm)', color: 'var(--text-subtle)', lineHeight: 1.6 }}>
-          <p style={{ color: 'var(--success)', fontWeight: 600 }}>
+        <div className="u-mt-12px u-fs-fs-sm u-lh-1_6" style={{ color: 'var(--text-subtle)' }}>
+          <p className="u-fw-600" style={{ color: 'var(--success)' }}>
             {summary.imported} swim{summary.imported === 1 ? '' : 's'} imported
             {summary.duplicates > 0 ? ` · ${summary.duplicates} already recorded` : ''}
             {summary.skipped > 0 ? ` · ${summary.skipped} skipped (relays / no time)` : ''}
           </p>
           {summary.unmatched.length > 0 ? (
-            <div style={{ marginTop: '8px' }}>
-              <p style={{ color: 'var(--warning)', fontWeight: 600 }}>
+            <div className="u-mt-8px" >
+              <p className="u-fw-600" style={{ color: 'var(--warning)' }}>
                 {summary.unmatched.length} swim{summary.unmatched.length === 1 ? '' : 's'} not matched to a club swimmer
               </p>
-              <ul style={{ margin: '4px 0 0', paddingLeft: '20px' }}>
+              <ul className="u-m-4px-0-0 u-pl-20px" >
                 {summary.unmatched.slice(0, 20).map((u, i) => (
                   <li key={`${u.name}-${u.event}-${i}`}>{u.name || 'Unknown'} — {u.event}: {u.reason}</li>
                 ))}
@@ -70,7 +70,7 @@ export function ResultsImport({ meetId }: { meetId: string }) {
               {summary.unmatched.length > 20 ? <p>…and {summary.unmatched.length - 20} more.</p> : null}
             </div>
           ) : null}
-          {summary.warnings.length > 0 ? <p style={{ marginTop: '6px', color: 'var(--text-muted)' }}>File warnings: {summary.warnings.join('; ')}</p> : null}
+          {summary.warnings.length > 0 ? <p className="u-mt-6px" style={{ color: 'var(--text-muted)' }}>File warnings: {summary.warnings.join('; ')}</p> : null}
         </div>
       ) : null}
     </div>

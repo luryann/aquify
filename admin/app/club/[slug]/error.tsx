@@ -9,7 +9,7 @@ export default function ClubError({ reset }: { error: Error; reset: () => void }
         <div className="cs-empty">
           <strong>The club site could not load</strong>
           Check your connection and try again.
-          <div style={{ marginTop: 16 }}>
+          <div className="cs-actions">
             <button type="button" className="cs-btn cs-btn-primary" onClick={reset}>Try again</button>
           </div>
         </div>

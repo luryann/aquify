@@ -55,22 +55,13 @@ export function InstallPrompt() {
     <div
       role="region"
       aria-label="Install app"
-      style={{
-        position: 'fixed', left: 16, right: 16, bottom: 16, zIndex: 900, maxWidth: 420,
-        margin: '0 auto', display: 'flex', alignItems: 'center', gap: 12, padding: '12px 12px',
-        borderRadius: 12, background: 'var(--bg-elevated)', color: 'var(--text)',
-        border: '1px solid var(--border)', boxShadow: '0 8px 30px rgba(0,0,0,.18)',
-        fontFamily: 'var(--font-body)', fontSize: 'var(--fs-md)',
-      }}
+      className="u-m-0-auto u-gap-12px u-p-12px-12px u-ff-font-body u-fs-fs-md" style={{ position: 'fixed', left: 16, right: 16, bottom: 16, zIndex: 900, maxWidth: 420, display: 'flex', alignItems: 'center', borderRadius: 12, background: 'var(--bg-elevated)', color: 'var(--text)', border: '1px solid var(--border)', boxShadow: 'var(--shadow)' }}
     >
       <span style={{ flex: 1 }}>Add Aquify to your home screen.</span>
       <button
         type="button"
         onClick={install}
-        style={{
-          background: 'var(--accent)', color: '#fff', border: 0, borderRadius: 8,
-          padding: '8px 16px', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
-        }}
+        className="u-p-8px-16px u-fw-600 u-ff-inherit" style={{ background: 'var(--accent)', color: '#fff', border: 0, borderRadius: 8, cursor: 'pointer' }}
       >
         Install app
       </button>
@@ -78,10 +69,7 @@ export function InstallPrompt() {
         type="button"
         onClick={dismiss}
         aria-label="Dismiss"
-        style={{
-          background: 'transparent', border: 0, color: 'var(--text-muted)', fontSize: 'var(--fs-xl)',
-          lineHeight: 1, cursor: 'pointer', padding: '4px 6px',
-        }}
+        className="u-fs-fs-xl u-lh-1 u-p-4px-6px" style={{ background: 'transparent', border: 0, color: 'var(--text-muted)', cursor: 'pointer' }}
       >
         ×
       </button>

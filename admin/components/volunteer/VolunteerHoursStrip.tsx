@@ -35,16 +35,16 @@ export function VolunteerHoursStrip() {
   return (
     <Link
       href="/portal/volunteer"
-      className="card"
-      style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap', marginBottom: '32px', color: 'var(--text)', textDecoration: 'none' }}
+      className="card u-gap-16px u-mb-32px"
+      style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', color: 'var(--text)', textDecoration: 'none' }}
     >
-      <span style={{ flex: '1 1 200px', fontSize: 'var(--fs-md)' }}>
+      <span className="u-fs-fs-md" style={{ flex: '1 1 200px' }}>
         <strong>{formatHours(row.remaining_hours)}</strong> of volunteer service left in {row.season_name}
       </span>
       <span style={{ flex: '2 1 220px' }}>
         <HoursMeter compact required={row.required_hours} earned={row.earned_hours} scheduled={row.scheduled_hours} />
       </span>
-      <span style={{ fontSize: 'var(--fs-base)', color: 'var(--accent)', fontWeight: 600 }}>Find a shift</span>
+      <span className="u-fs-fs-base u-fw-600" style={{ color: 'var(--accent-text, var(--accent))' }}>Find a shift</span>
     </Link>
   )
 }

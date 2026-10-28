@@ -17,6 +17,7 @@ import {
   requestMessageUploadURL,
   type MessageRecord,
 } from '@/lib/adminData'
+import './page.inline.css'
 
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '🎉', '😮', '😢']
 
@@ -184,13 +185,13 @@ export default function SwimmerMessagesPage() {
         <UnlinkedSwimmerNotice />
       ) : (
         <div className="card" style={{ display: 'flex', flexDirection: 'column', minHeight: '560px' }}>
-          <div style={{ flex: 1, padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', overflowY: 'auto', maxHeight: '600px' }}>
+          <div className="is-e566a3d">
             {loadError ? (
-              <p style={{ fontSize: 'var(--fs-base)', color: 'var(--error)' }}>{loadError}</p>
+              <p className="is-de107ca">{loadError}</p>
             ) : loading ? (
-              <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)' }}>Loading conversation…</p>
+              <p className="is-8fb176a">Loading conversation…</p>
             ) : messages.length === 0 ? (
-              <p style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)' }}>
+              <p className="is-8fb176a">
                 No messages yet. Send the first one below to reach your coach.
               </p>
             ) : (
@@ -201,15 +202,15 @@ export default function SwimmerMessagesPage() {
                 return (
                   <div key={m.id} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '75%' }}>
                     {isEditing ? (
-                      <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-end' }}>
-                        <textarea
+                      <div className="is-3be73af">
+                        <textarea aria-label="Edit message"
                           value={editDraft}
                           onChange={(e) => setEditDraft(e.target.value)}
                           rows={2}
-                          style={{ minWidth: '220px', padding: '8px 12px', borderRadius: '12px', border: '1px solid var(--accent-border)', background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: 'var(--fs-base)', resize: 'vertical' }}
+                          className="is-ef385dc"
                         />
-                        <button className="btn btn-sm btn-primary" onClick={() => void handleEditSave(m.id)}>Save</button>
-                        <button className="btn btn-sm btn-secondary" onClick={() => setEditingId(null)}>Cancel</button>
+                        <button type="button" className="btn btn-sm btn-primary" onClick={() => void handleEditSave(m.id)}>Save</button>
+                        <button type="button" className="btn btn-sm btn-secondary" onClick={() => setEditingId(null)}>Cancel</button>
                       </div>
                     ) : (
                       <div
@@ -227,38 +228,38 @@ export default function SwimmerMessagesPage() {
                         {m.attachments?.map((a) => (
                           a.download_url ? (
                             // eslint-disable-next-line @next/next/no-img-element
-                            <img key={a.filename} src={a.download_url} alt={a.filename} style={{ display: 'block', marginTop: '8px', maxWidth: '220px', maxHeight: '220px', borderRadius: '8px' }} />
+                            <img key={a.filename} src={a.download_url} alt={a.filename} className="is-5ca87c9" />
                           ) : null
                         ))}
                       </div>
                     )}
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', justifyContent: mine ? 'flex-end' : 'flex-start' }}>
-                      <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
+                      <p className="is-c454211">
                         {senderLabel(m.sender_role)} · {fmtTime(m.created_at)}{m.edited_at ? ' · (edited)' : ''}
                       </p>
                       {canEdit && !isEditing && (
-                        <button
+                        <button type="button"
                           onClick={() => { setEditingId(m.id); setEditDraft(m.body) }}
                           title="Edit"
-                          style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px', display: 'flex' }}
+                          className="is-8031a9d"
                         >
                           <Icon name="edit-2" size={11} />
                         </button>
                       )}
-                      <button
+                      <button type="button"
                         onClick={() => setReactionPickerId(reactionPickerId === m.id ? null : m.id)}
                         title="React"
-                        style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px', display: 'flex' }}
+                        className="is-8031a9d"
                       >
                         <Icon name="plus" size={11} />
                       </button>
                     </div>
 
                     {reactionPickerId === m.id && (
-                      <div style={{ display: 'flex', gap: '4px', marginTop: '4px', padding: '4px 6px', borderRadius: '12px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', width: 'fit-content' }}>
+                      <div className="is-1236a88">
                         {QUICK_REACTIONS.map((emoji) => (
-                          <button key={emoji} onClick={() => void handleToggleReaction(m, emoji)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--fs-md)', padding: '2px' }}>
+                          <button type="button" key={emoji} onClick={() => void handleToggleReaction(m, emoji)} className="is-72e22d5">
                             {emoji}
                           </button>
                         ))}
@@ -268,7 +269,7 @@ export default function SwimmerMessagesPage() {
                     {m.reactions && m.reactions.length > 0 && (
                       <div style={{ display: 'flex', gap: '4px', marginTop: '4px', flexWrap: 'wrap', justifyContent: mine ? 'flex-end' : 'flex-start' }}>
                         {m.reactions.map((r) => (
-                          <button
+                          <button type="button"
                             key={r.emoji}
                             onClick={() => void handleToggleReaction(m, r.emoji)}
                             style={{
@@ -279,7 +280,7 @@ export default function SwimmerMessagesPage() {
                             }}
                           >
                             <span>{r.emoji}</span>
-                            <span style={{ fontFamily: 'var(--font-body)' }}>{r.count}</span>
+                            <span className="is-b88ab11">{r.count}</span>
                           </button>
                         ))}
                       </div>
@@ -291,17 +292,17 @@ export default function SwimmerMessagesPage() {
           </div>
 
           {pendingAttachment && (
-            <div style={{ padding: '0 20px 8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div className="is-0d40ec1">
               <span className="badge badge-default">{pendingAttachment.file_name}</span>
-              <button onClick={() => setPendingAttachment(null)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex' }}>
+              <button type="button" onClick={() => setPendingAttachment(null)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex' }}>
                 <Icon name="x" size={12} />
               </button>
             </div>
           )}
-          {attachError && <p style={{ padding: '0 20px 8px', fontSize: 'var(--fs-sm)', color: 'var(--error)' }}>{attachError}</p>}
+          {attachError && <p className="is-5d8c782">{attachError}</p>}
 
-          <form onSubmit={(e) => void handleSend(e)} style={{ padding: '16px 20px', borderTop: '1px solid var(--border)', display: 'flex', gap: '12px' }}>
-            <input
+          <form onSubmit={(e) => void handleSend(e)} className="is-78213b9">
+            <input aria-label="Attach a file"
               ref={fileInputRef}
               type="file"
               accept="image/*"
@@ -313,24 +314,24 @@ export default function SwimmerMessagesPage() {
               onClick={() => fileInputRef.current?.click()}
               disabled={uploading}
               title="Attach an image"
-              style={{ background: 'none', border: '1px solid var(--border)', borderRadius: '12px', color: 'var(--text-muted)', cursor: 'pointer', padding: '12px', display: 'flex' }}
+              className="is-4a025ad"
             >
               <Icon name="upload-cloud" size={15} />
             </button>
-            <input
+            <input aria-label="Write a message"
               type="text"
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               placeholder="Write a message to your coach…"
               disabled={sending}
               maxLength={4000}
-              style={{ flex: 1, padding: '12px 16px', borderRadius: '12px', border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: 'var(--fs-base)', outline: 'none' }}
+              className="is-d884681"
             />
             <button type="submit" className="btn btn-primary" disabled={sending || (!draft.trim() && !pendingAttachment)}>
               {sending ? 'Sending…' : 'Send'}
             </button>
           </form>
-          {sendError && <p style={{ padding: '0 20px 16px', fontSize: 'var(--fs-sm)', color: 'var(--error)' }}>{sendError}</p>}
+          {sendError && <p className="is-2991f33">{sendError}</p>}
         </div>
       )}
 
