@@ -308,6 +308,52 @@ func TestDBRepoMembers_WriteInsideReloadWindowSurvives(t *testing.T) {
 	t.Fatalf("household %s written during a reload is missing from memory", created.ID)
 }
 
+// Groups reads re-sync before looking, so a lost write is only visible through a
+// read-modify-write: a rename that lands while another request is reloading must
+// not be overwritten by that request's stale copy of the group.
+func TestDBRepoGroups_UpdateInsideReloadWindowIsNotLost(t *testing.T) {
+	pool := openTestPool(t)
+	_ = testutil.RequireDBHarness(t)
+	admin := dbAdminPrincipal(t, pool)
+	cleanupGroupsFixtures(t, pool, testOrgID)
+
+	svc := groups.NewServiceWithPool(pool)
+	group, _, err := svc.CreateGroup(admin, testOrgID, groups.CreateGroupInput{Code: "WINDOW", Name: "Original Name"})
+	if err != nil {
+		t.Fatalf("CreateGroup: %v", err)
+	}
+
+	var armed atomic.Bool
+	var renameErr error
+	hook, wait := writeInsideSyncWindow(&armed, func() {
+		renamed := "Renamed"
+		_, _, renameErr = svc.UpdateGroup(admin, testOrgID, group.ID, groups.UpdateGroupInput{Name: &renamed})
+	})
+	svc.SetSyncHookForTest(hook)
+
+	armed.Store(true)
+	description := "New description"
+	if _, _, err := svc.UpdateGroup(admin, testOrgID, group.ID, groups.UpdateGroupInput{Description: &description}); err != nil {
+		t.Fatalf("UpdateGroup (description): %v", err)
+	}
+	wait()
+	if renameErr != nil {
+		t.Fatalf("UpdateGroup (rename): %v", renameErr)
+	}
+
+	svc.SetSyncHookForTest(nil)
+	fresh := groups.NewServiceWithPool(pool)
+	for _, g := range fresh.SnapshotGroups(testOrgID) {
+		if g.ID == group.ID {
+			if g.Name != "Renamed" || g.Description != description {
+				t.Fatalf("concurrent updates were lost: name=%q description=%q, want %q and %q", g.Name, g.Description, "Renamed", description)
+			}
+			return
+		}
+	}
+	t.Fatal("group missing after updates")
+}
+
 func TestDBRepoMeets_WriteInsideReloadWindowSurvives(t *testing.T) {
 	pool := openTestPool(t)
 	_ = testutil.RequireDBHarness(t)

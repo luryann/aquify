@@ -186,6 +186,9 @@ type householdRef struct {
 
 // Service is the in-memory groups/eligibility/registrations service.
 type Service struct {
+	// syncHook runs after a reload has read Postgres and before it replaces the
+	// in-memory state; tests use it to land a write inside that window.
+	syncHook        func()
 	mu              sync.RWMutex
 	repo            *Repository // nil = in-memory only
 	groups          map[string]Group
@@ -234,6 +237,10 @@ func NewServiceWithPool(pool *pgxpool.Pool) *Service {
 	return s
 }
 
+// SetSyncHookForTest installs a hook run inside syncFromDB between reading
+// Postgres and replacing memory. Set it before the service is used concurrently.
+func (s *Service) SetSyncHookForTest(fn func()) { s.syncHook = fn }
+
 // syncFromDB reloads the in-memory maps from the database (no-op without a repository).
 func (s *Service) syncFromDB(ctx context.Context) error {
 	if s.repo == nil {
@@ -246,6 +253,9 @@ func (s *Service) syncFromDB(ctx context.Context) error {
 	grps, rules, regs, waivers, swimmers, households, err := s.repo.LoadAll(ctx)
 	if err != nil {
 		return err
+	}
+	if s.syncHook != nil {
+		s.syncHook()
 	}
 	s.resetDBBackedStateLocked()
 	s.populateDBBackedStateLocked(grps, rules, regs, waivers, swimmers, households)
