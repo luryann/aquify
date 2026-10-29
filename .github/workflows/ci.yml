@@ -83,7 +83,16 @@ jobs:
 
       - name: Run server tests
         working-directory: server
-        run: go test ./...
+        shell: bash
+        run: |
+          set +e
+          go test ./... 2>&1 | tee /tmp/server-test.log
+          rc=${PIPESTATUS[0]}
+          # Repeat failures as annotations so they show on the run summary.
+          grep -E '^(--- FAIL|FAIL|panic:)|_test\.go:[0-9]+' /tmp/server-test.log | head -20 | while IFS= read -r line; do
+            echo "::error::${line}"
+          done
+          exit "$rc"
 
       - name: Enforce critical package coverage
         working-directory: server
