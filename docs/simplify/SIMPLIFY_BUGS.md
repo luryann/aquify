@@ -216,7 +216,7 @@ Note (bug 182): explained by bug 198. Earlier statements here that it was "not r
 
 ## Disposition of bugs 1-119 (Pass 21)
 
-Every original entry was checked against the current code and either fixed, shown to be already fixed, or judged not applicable. Counts: 99 fixed in this pass, 14 already fixed, 5 not applicable, 1 partial by design. Tests were added for the logic changes; four of the new server tests were confirmed to fail when their fix is reverted (#61, #62, #82, #101). Verification: admin tsc, lint, 169 unit tests and build; Go gofmt, vet, staticcheck, `go test ./...` with 0 skips, coverage gate; meetfiles; 3 consecutive Playwright runs of 9/9; promote/rollback sandbox test (`deploy/scripts/test-promote-rollback.sh`).
+Every original entry was checked against the current code and either fixed, shown to be already fixed, or judged not applicable. Counts: 99 fixed in this pass, 14 already fixed, 5 not applicable, 1 partial by design. Tests were added for the logic changes. Fix-reverted mutation checks (the test fails when the fix is removed) were run for #61, #62, #63, #72, #82, #88, #99, #100 and #101, and earlier for the lost-write race tests; the remaining new tests were verified only by passing. Verification: admin tsc, lint, 169 unit tests and build; Go gofmt, vet, staticcheck, `go test ./...` with 0 skips, coverage gate; meetfiles; 3 consecutive Playwright runs of 9/9; promote/rollback sandbox test (`deploy/scripts/test-promote-rollback.sh`).
 
 | # | Disposition | Note |
 |---|---|---|
@@ -243,7 +243,7 @@ Every original entry was checked against the current code and either fixed, show
 | 21 | FIXED |  |
 | 22 | ALREADY FIXED |  |
 | 23 | FIXED |  |
-| 24 | FIXED (see note) | Redirect targets are validated; an IdP host allowlist is enforced only when `NEXT_PUBLIC_IDP_ORIGINS` is set. |
+| 24 | FIXED | The server builds `logout_url` only from the configured OIDC end-session URL plus fixed query parameters (`authn/service.go` `buildOIDCLogoutURL`), never from request input, so the attacker-influenced scenario in the bug is not reachable. The client additionally validates scheme and origin and honours an optional `NEXT_PUBLIC_IDP_ORIGINS` allowlist. |
 | 25 | FIXED |  |
 | 26 | FIXED |  |
 | 27 | FIXED |  |
@@ -289,14 +289,14 @@ Every original entry was checked against the current code and either fixed, show
 | 67 | FIXED |  |
 | 68 | FIXED |  |
 | 69 | FIXED |  |
-| 70 | NOT APPLICABLE | In DB mode the webhook claim is atomic in Postgres (`claimWebhookEvent`); memory is only a mirror and the snapshot loader is the legacy no-DB path. |
+| 70 | NOT APPLICABLE (judged) | In DB mode the webhook claim is atomic in Postgres (`claimWebhookEvent`); memory is only a mirror and the snapshot loader is the legacy no-DB path. |
 | 71 | FIXED |  |
 | 72 | FIXED |  |
 | 73 | FIXED |  |
 | 74 | FIXED (see note) | Create, add-item and issue are still three billing calls, made safe by idempotent resume (lookup by `ExternalRef`, orphan draft finished on retry), not by one transaction. |
 | 75 | FIXED |  |
 | 76 | FIXED |  |
-| 77 | NOT APPLICABLE | `parentHousehold` has no DB table (filled by seeding/snapshot), so resetting it on reload would drop links with nothing to reload them; comment added. |
+| 77 | NOT APPLICABLE (judged) | `parentHousehold` has no DB table (filled by seeding/snapshot), so resetting it on reload would drop links with nothing to reload them; comment added. |
 | 78 | FIXED |  |
 | 79 | FIXED (see note) | One shared rule in `handlers/household_scope.go`; club events keep multi-household support through `principalMayActForHousehold`. |
 | 80 | FIXED |  |
@@ -342,3 +342,5 @@ Every original entry was checked against the current code and either fixed, show
 
 Bugs 120-205 were fixed in earlier passes or are recorded above with their status (bug 204, the staging gate, works but the staging SSH step fails for an environment reason).
 
+
+Judgment calls kept explicit: #85 (results import is idempotent and resumable per swim, not one transaction: the performance service writes through a cache with best-time and record side effects per swim, and an all-or-nothing import would need a transaction-aware performance service, a much larger change than the bug; the failure now reports exact partial progress and a re-run is a no-op for finished swims), #74 (RSVP charge is idempotent and resumes an orphan draft rather than being one billing transaction), #70 and #77 (code evidence in their notes above). These need the owner's agreement if a different trade-off is wanted.
