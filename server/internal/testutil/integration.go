@@ -34,7 +34,7 @@ func RequireDBHarness(t *testing.T) *DBHarness {
 func (h *DBHarness) Exec(t *testing.T, sql string) string {
 	t.Helper()
 
-	cmd := exec.Command("psql", h.DatabaseURL, "-v", "ON_ERROR_STOP=1", "-At", "-c", sql)
+	cmd := exec.Command("psql", h.DatabaseURL, "-v", "ON_ERROR_STOP=1", "-qAt", "-c", sql)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("psql exec failed: %v\nsql: %s\noutput:\n%s", err, sql, string(out))
