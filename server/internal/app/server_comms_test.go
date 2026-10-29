@@ -25,10 +25,12 @@ func newCommsRouter(t *testing.T, svc *comms.Service) http.Handler {
 func newCommsRouterWithServices(t *testing.T, svc *comms.Service, membersSvc *members.Service, groupsSvc *groups.Service, auditSvc *audit.Service) http.Handler {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewRouterWithServices(
-		Config{Auth: AuthConfig{EnableDevStubTokens: true}},
-		logger,
-		nil, membersSvc, groupsSvc, nil, nil, nil, nil, nil, svc, auditSvc, nil, nil, nil, nil, nil)
+	return NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, RouterDeps{
+		Members: membersSvc,
+		Groups:  groupsSvc,
+		Comms:   svc,
+		Audit:   auditSvc,
+	})
 }
 
 // issueCommsToken creates a real session token with the given role for org-demo.

@@ -22,7 +22,7 @@ type MembershipHandlers struct {
 func NewMembershipHandlers(service *members.Service) *MembershipHandlers {
 	return &MembershipHandlers{
 		service:  service,
-		validate: validator.New(),
+		validate: httpx.NewValidator(),
 	}
 }
 
@@ -31,7 +31,7 @@ func NewMembershipHandlersWithAudit(service *members.Service, auditSvc *audit.Se
 	return &MembershipHandlers{
 		service:      service,
 		auditService: auditSvc,
-		validate:     validator.New(),
+		validate:     httpx.NewValidator(),
 	}
 }
 

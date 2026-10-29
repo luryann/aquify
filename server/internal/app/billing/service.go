@@ -394,38 +394,26 @@ func (s *Service) reloadLocked(ctx context.Context) error {
 	}
 	s.invoices = make(map[string]*Invoice, len(invoices))
 	s.items = make(map[string][]*InvoiceItem)
-	s.itemsByID = make(map[string]*InvoiceItem, len(items))
 	s.payments = make(map[string][]*Payment)
-	s.paymentsByID = make(map[string]*Payment, len(payments))
-	s.stripeIntentIndex = make(map[string]*Payment)
 	s.refunds = make(map[string][]*Refund)
-	s.refundsByID = make(map[string]*Refund, len(refunds))
-	s.invoiceNums = make(map[string]bool, len(invoices))
 	s.autopayProfiles = make(map[string]*HouseholdAutopayProfile, len(autopayProfiles))
 	for _, inv := range invoices {
 		s.invoices[inv.ID] = inv
-		s.invoiceNums[invoiceNumKey(inv.OrgID, inv.InvoiceNumber)] = true
 	}
 	for _, item := range items {
 		s.items[item.InvoiceID] = append(s.items[item.InvoiceID], item)
-		s.itemsByID[item.ID] = item
 	}
 	for _, p := range payments {
 		s.payments[p.InvoiceID] = append(s.payments[p.InvoiceID], p)
-		s.paymentsByID[p.ID] = p
-		if p.StripePaymentIntentID != "" {
-			s.stripeIntentIndex[p.StripePaymentIntentID] = p
-		}
 	}
 	for _, r := range refunds {
 		s.refunds[r.InvoiceID] = append(s.refunds[r.InvoiceID], r)
-		s.refundsByID[r.ID] = r
 	}
 	s.ledger = ledger
 	for _, profile := range autopayProfiles {
 		s.autopayProfiles[autopayProfileKey(profile.OrgID, profile.HouseholdID)] = profile
 	}
-	s.deriveAmountsPaidLocked()
+	s.rebuildIndexesLocked()
 	// Finance tables load independently so a missing finance migration never
 	// hides core invoice data.
 	finance, err := s.repo.loadFinanceState(ctx)
@@ -435,6 +423,50 @@ func (s *Service) reloadLocked(ctx context.Context) error {
 	s.finance = finance
 	s.rebuildStripeCreditIndexLocked()
 	return nil
+}
+
+// rebuildIndexesLocked derives every lookup index and the derived paid/due
+// amounts from the primary maps (invoices, items, payments, refunds). Both the
+// DB loader and the runtime-snapshot loader install state through it so they
+// start with identical invariants. Caller holds s.mu (write).
+func (s *Service) rebuildIndexesLocked() {
+	s.itemsByID = make(map[string]*InvoiceItem)
+	for _, items := range s.items {
+		for _, item := range items {
+			if item != nil {
+				s.itemsByID[item.ID] = item
+			}
+		}
+	}
+	s.paymentsByID = make(map[string]*Payment)
+	s.stripeIntentIndex = make(map[string]*Payment)
+	for _, payments := range s.payments {
+		for _, p := range payments {
+			if p == nil {
+				continue
+			}
+			s.paymentsByID[p.ID] = p
+			if p.StripePaymentIntentID != "" {
+				s.stripeIntentIndex[p.StripePaymentIntentID] = p
+			}
+		}
+	}
+	s.refundsByID = make(map[string]*Refund)
+	for _, refunds := range s.refunds {
+		for _, r := range refunds {
+			if r != nil {
+				s.refundsByID[r.ID] = r
+			}
+		}
+	}
+	s.invoiceNums = make(map[string]bool, len(s.invoices))
+	for _, inv := range s.invoices {
+		if inv != nil {
+			s.invoiceNums[invoiceNumKey(inv.OrgID, inv.InvoiceNumber)] = true
+		}
+	}
+	s.deriveAmountsPaidLocked()
+	s.rebuildStripeCreditIndexLocked()
 }
 
 // deriveAmountsPaidLocked recomputes amount_paid/amount_due from the payment
@@ -719,12 +751,44 @@ func (s *Service) CreateInvoice(orgID, actorID string, principal *appmiddleware.
 
 	if s.repo != nil {
 		if err := s.repo.UpsertInvoice(context.Background(), inv); err != nil {
+			// The (org_id, invoice_number) unique constraint is the arbiter: the
+			// in-memory set above may be stale relative to other instances.
+			if isUniqueViolation(err, "invoices_number_org_unique") {
+				s.invoiceNums[key] = true
+				return nil, ErrDuplicateInvoiceNumber
+			}
 			return nil, fmt.Errorf("persist invoice: %w", err)
 		}
 	}
 	s.invoices[inv.ID] = inv
 	s.invoiceNums[key] = true
 	return inv, nil
+}
+
+// InvoicesByExternalRef returns every invoice (any status) carrying the given
+// external reference, oldest first. Integrations use it as an idempotency
+// lookup before creating an invoice (admin only).
+func (s *Service) InvoicesByExternalRef(orgID string, principal *appmiddleware.Principal, ref string) ([]*Invoice, error) {
+	if err := s.requireAdmin(principal); err != nil {
+		return nil, err
+	}
+	if ref == "" {
+		return nil, nil
+	}
+	if err := s.refreshForRead(); err != nil {
+		return nil, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []*Invoice
+	for _, inv := range s.invoices {
+		if inv.OrgID == orgID && inv.ExternalRef == ref {
+			cp := *inv
+			out = append(out, &cp)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
+	return out, nil
 }
 
 // GetInvoice retrieves an invoice by ID with read access check.

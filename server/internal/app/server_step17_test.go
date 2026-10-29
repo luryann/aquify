@@ -18,13 +18,9 @@ import (
 func newStep17Router(t *testing.T, ws workers.Backend) http.Handler {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewRouterWithServices(
-		Config{Auth: AuthConfig{EnableDevStubTokens: true}},
-		logger,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		nil,
-		ws,
-		nil)
+	return NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, RouterDeps{
+		Workers: ws,
+	})
 }
 
 func issueStep17Token(t *testing.T, router http.Handler, role string) string {

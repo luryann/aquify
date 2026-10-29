@@ -80,8 +80,8 @@ export function useMessageThread({
 
   useEffect(() => {
     if (!hasThread) return
-    markThreadRead(api, orgId, householdId, swimmerId).catch(() => {})
-  }, [api, orgId, householdId, swimmerId, hasThread])
+    markThreadRead(api, orgId, householdId, swimmerId).catch((error) => { reportUIError(`${loadErrorScope}.mark-read`, error, 'Couldn’t mark this thread read.') })
+  }, [api, orgId, householdId, swimmerId, hasThread, loadErrorScope])
 
   useMessageStream({
     orgId,
@@ -97,7 +97,7 @@ export function useMessageThread({
         return next
       })
       if (event.type === 'message.created' && event.message.sender_user_id !== userId) {
-        markThreadRead(api, orgId, householdId, swimmerId).catch(() => {})
+        markThreadRead(api, orgId, householdId, swimmerId).catch((error) => { reportUIError(`${loadErrorScope}.mark-read`, error, 'Couldn’t mark this thread read.') })
       }
     },
   })
@@ -148,19 +148,21 @@ export function useMessageThread({
 
   async function handleEditSave(messageId: string) {
     if (!editDraft.trim()) return
+    setSendError(null)
     try {
       const updated = await editMessage(api, orgId, messageId, editDraft.trim())
       setMessages((prev) => prev.map((m) => (m.id === messageId ? updated : m)))
-    } catch {
-      // Leave the bubble as-is; the user can retry.
-    } finally {
       setEditingId(null)
+    } catch (err) {
+      // Keep the editor open with the draft so the user can retry.
+      setSendError(reportUIError(`${loadErrorScope}.edit`, err, 'Couldn’t save your edit. Try again.'))
     }
   }
 
   async function handleToggleReaction(message: MessageRecord, emoji: string) {
     if (!hasThread) return
     const already = message.reactions?.some((r) => r.emoji === emoji && r.reacted_by_me)
+    setSendError(null)
     try {
       if (already) await removeReaction(api, orgId, message.id, emoji)
       else await addReaction(api, orgId, message.id, emoji)
@@ -168,8 +170,8 @@ export function useMessageThread({
       // depend on it — refetch so the reaction shows immediately even
       // without Redis configured.
       setMessages(await fetchMessages(api, orgId, householdId, swimmerId))
-    } catch {
-      // Leave state as-is; the user can retry.
+    } catch (err) {
+      setSendError(reportUIError(`${loadErrorScope}.reaction`, err, 'Couldn’t update that reaction. Try again.'))
     }
     setReactionPickerId(null)
   }

@@ -454,7 +454,7 @@ test('meet mutation helpers target the live /api/v1/meets route shape and backen
     entry: { id: 'entry_1', meet_id: 'meet_1', swimmer_id: 'sw_1', meet_event_id: 'event_1', status: 'draft' },
   })
   mock.respond('POST', '/api/v1/meets/meet_1/commitments/cmt_1/respond', {
-    commitment: { id: 'cmt_1', meet_id: 'meet_1', swimmer_id: 'sw_1', status: 'committed_yes', note: 'Can do prelims only.' },
+    commitment: { id: 'cmt_1', meet_id: 'meet_1', swimmer_id: 'sw_1', status: 'committed_yes', notes: 'Can do prelims only.' },
   })
 
   const api = mock as unknown as ApiClient
@@ -485,15 +485,17 @@ test('meet mutation helpers target the live /api/v1/meets route shape and backen
   ])
 })
 
-test('fetchSwimmers returns empty list on role-based forbidden response', async () => {
+test('fetchSwimmers surfaces role-based forbidden responses instead of returning an empty list', async () => {
   const api = {
     get: async () => {
       throw new ApiError(403, 'forbidden', 'You are not allowed to list swimmers.')
     },
   } as unknown as ApiClient
 
-  const swimmers = await fetchSwimmers(api, 'org_demo')
-  assert.deepEqual(swimmers, [])
+  await assert.rejects(
+    fetchSwimmers(api, 'org_demo'),
+    (error: unknown) => error instanceof ApiError && error.status === 403 && error.code === 'forbidden',
+  )
 })
 
 test('fetchSwimmers rethrows non-forbidden 403 responses', async () => {

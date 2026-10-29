@@ -55,6 +55,16 @@ func isCheckViolation(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == "23514"
 }
 
+// isUniqueViolation reports a Postgres unique-constraint violation, optionally
+// restricted to one constraint name.
+func isUniqueViolation(err error, constraint string) bool {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "23505" {
+		return false
+	}
+	return constraint == "" || pgErr.ConstraintName == constraint
+}
+
 func nullableDate(value string) any {
 	if value == "" {
 		return nil

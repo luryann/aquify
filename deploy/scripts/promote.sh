@@ -10,12 +10,14 @@
 #
 # The script:
 #   1. Validates the supplied image tag
-#   2. Backs up the current .env.production
+#   2. Records the last env that passed a health check (.env.production.good)
+#      as the rollback target (.env.production.prev), so a retry or re-run of a
+#      bad tag can never overwrite the rollback state
 #   3. Updates IMAGE_TAG in .env.production
 #   4. Pulls new images
 #   5. Does a rolling restart of dare-api, dare-admin, dare-worker
 #   6. Waits for the health endpoint to respond 200
-#   7. If health fails: auto-rolls back using the .env backup
+#   7. If health fails: runs rollback.sh (one implementation for manual and automatic rollback)
 #   8. Logs all events to /var/log/dare/deploys.log
 
 set -euo pipefail
@@ -24,14 +26,17 @@ set -euo pipefail
 # Configuration
 # ---------------------------------------------------------------------------
 
-DEPLOY_DIR="/opt/dare"
+# Overridable for tests; production uses the defaults.
+DEPLOY_DIR="${DEPLOY_DIR:-/opt/dare}"
 ENV_FILE="${DEPLOY_DIR}/.env.production"
 ENV_BACKUP="${ENV_FILE}.prev"
+ENV_GOOD="${ENV_FILE}.good"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_FILE="${DEPLOY_DIR}/docker-compose.production.yml"
-HEALTH_URL="http://localhost:8080/api/v1/health/live"
-HEALTH_TIMEOUT_SECONDS=60
-HEALTH_RETRY_INTERVAL=5
-DEPLOY_LOG="/var/log/dare/deploys.log"
+HEALTH_URL="${HEALTH_URL:-http://localhost:8080/api/v1/health/live}"
+HEALTH_TIMEOUT_SECONDS="${HEALTH_TIMEOUT_SECONDS:-60}"
+HEALTH_RETRY_INTERVAL="${HEALTH_RETRY_INTERVAL:-5}"
+DEPLOY_LOG="${DEPLOY_LOG:-/var/log/dare/deploys.log}"
 APP_SERVICES="dare-api dare-admin dare-worker"
 
 # ---------------------------------------------------------------------------
@@ -70,36 +75,6 @@ wait_for_health() {
   return 1
 }
 
-rollback() {
-  local reason="${1:-health check failed}"
-  log "ROLLBACK triggered: ${reason}"
-
-  if [ ! -f "${ENV_BACKUP}" ]; then
-    log "WARNING: No backup env file found at ${ENV_BACKUP}; cannot auto-rollback."
-    return 1
-  fi
-
-  log "Restoring ${ENV_BACKUP} -> ${ENV_FILE}"
-  cp "${ENV_BACKUP}" "${ENV_FILE}"
-
-  # Compose interpolates IMAGE_TAG from the shell, not from the env file, so pass
-  # the previous tag explicitly (as rollback.sh does).
-  local prev_tag
-  prev_tag="$(grep '^IMAGE_TAG=' "${ENV_BACKUP}" | cut -d= -f2 || true)"
-
-  log "Pulling rolled-back images..."
-  IMAGE_TAG="${prev_tag:-latest}" docker compose -f "${COMPOSE_FILE}" pull ${APP_SERVICES}
-
-  log "Restarting services with rolled-back image..."
-  IMAGE_TAG="${prev_tag:-latest}" docker compose -f "${COMPOSE_FILE}" up -d --no-deps --remove-orphans ${APP_SERVICES}
-
-  if wait_for_health; then
-    log "Rollback succeeded — platform is healthy on previous image."
-  else
-    log "CRITICAL: Rollback completed but health check still failing. Manual intervention required."
-  fi
-}
-
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -112,6 +87,11 @@ if [ $# -lt 1 ] || [ -z "${1}" ]; then
 fi
 
 IMAGE_TAG="${1}"
+# Tags go into a sed-free env rewrite and a compose image reference; allow only
+# what a registry tag can contain.
+if [[ ! "${IMAGE_TAG}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]]; then
+  die "Invalid image tag '${IMAGE_TAG}' (allowed: letters, digits, . _ -)"
+fi
 log "====== PROMOTE START: IMAGE_TAG=${IMAGE_TAG} operator=$(whoami) ======"
 
 # Change to deploy directory
@@ -124,8 +104,15 @@ cd "${DEPLOY_DIR}" || die "Cannot cd to ${DEPLOY_DIR}"
 # Step 1: Backup current env
 # ---------------------------------------------------------------------------
 
-log "Backing up ${ENV_FILE} -> ${ENV_BACKUP}"
-cp "${ENV_FILE}" "${ENV_BACKUP}"
+# The rollback target is the last env that passed a health check, never simply
+# "whatever was deployed a moment ago" - otherwise re-running promote after a
+# failed attempt would overwrite the backup with the bad configuration.
+if [ ! -f "${ENV_GOOD}" ]; then
+  log "No last-known-good env yet; treating the current ${ENV_FILE} as good"
+  cp "${ENV_FILE}" "${ENV_GOOD}"
+fi
+log "Recording rollback target ${ENV_GOOD} -> ${ENV_BACKUP}"
+cp "${ENV_GOOD}" "${ENV_BACKUP}"
 
 # Capture the old image tag for logging
 OLD_TAG=$(grep '^IMAGE_TAG=' "${ENV_FILE}" | cut -d= -f2 || echo "unknown")
@@ -135,13 +122,13 @@ log "Current IMAGE_TAG: ${OLD_TAG} -> ${IMAGE_TAG}"
 # Step 2: Update IMAGE_TAG in env file
 # ---------------------------------------------------------------------------
 
-if grep -q '^IMAGE_TAG=' "${ENV_FILE}"; then
-  # Replace existing IMAGE_TAG line
-  sed -i "s|^IMAGE_TAG=.*|IMAGE_TAG=${IMAGE_TAG}|" "${ENV_FILE}"
-else
-  # Append IMAGE_TAG
-  echo "IMAGE_TAG=${IMAGE_TAG}" >> "${ENV_FILE}"
-fi
+# Rewrite without sed -i (not portable) and without interpolating the tag into a
+# regex replacement; cat > keeps the file's owner and mode.
+ENV_TMP="$(mktemp)"
+grep -v '^IMAGE_TAG=' "${ENV_FILE}" > "${ENV_TMP}" || true
+echo "IMAGE_TAG=${IMAGE_TAG}" >> "${ENV_TMP}"
+cat "${ENV_TMP}" > "${ENV_FILE}"
+rm -f "${ENV_TMP}"
 
 log "Updated IMAGE_TAG in ${ENV_FILE}"
 
@@ -151,8 +138,8 @@ log "Updated IMAGE_TAG in ${ENV_FILE}"
 
 log "Pulling images for tag ${IMAGE_TAG}..."
 if ! IMAGE_TAG="${IMAGE_TAG}" docker compose -f "${COMPOSE_FILE}" pull ${APP_SERVICES}; then
-  log "Image pull failed — restoring backup and aborting"
-  cp "${ENV_BACKUP}" "${ENV_FILE}"
+  log "Image pull failed — restoring last-known-good env and aborting"
+  cp "${ENV_GOOD}" "${ENV_FILE}"
   die "docker compose pull failed for IMAGE_TAG=${IMAGE_TAG}"
 fi
 
@@ -165,8 +152,8 @@ log "Image pull succeeded"
 log "Starting rolling restart of application services: ${APP_SERVICES}"
 if ! IMAGE_TAG="${IMAGE_TAG}" docker compose -f "${COMPOSE_FILE}" \
     up -d --no-deps --remove-orphans ${APP_SERVICES}; then
-  log "docker compose up failed — triggering rollback"
-  rollback "compose up failed"
+  log "docker compose up failed — running rollback.sh"
+  "${SCRIPT_DIR}/rollback.sh" || log "CRITICAL: rollback.sh failed; manual intervention required"
   die "Deploy failed; rollback attempted"
 fi
 
@@ -177,8 +164,8 @@ log "Container restart issued — waiting for health..."
 # ---------------------------------------------------------------------------
 
 if ! wait_for_health; then
-  log "Health check failed after ${HEALTH_TIMEOUT_SECONDS}s — triggering rollback"
-  rollback "health check failed after ${HEALTH_TIMEOUT_SECONDS}s"
+  log "Health check failed after ${HEALTH_TIMEOUT_SECONDS}s — running rollback.sh"
+  "${SCRIPT_DIR}/rollback.sh" || log "CRITICAL: rollback.sh failed; manual intervention required"
   die "Deploy failed: health check did not pass. Rollback to ${OLD_TAG} initiated."
 fi
 
@@ -186,4 +173,6 @@ fi
 # Step 6: Log success
 # ---------------------------------------------------------------------------
 
+# Only now is this env the new rollback target.
+cp "${ENV_FILE}" "${ENV_GOOD}"
 log "====== PROMOTE SUCCESS: IMAGE_TAG=${IMAGE_TAG} (was ${OLD_TAG}) ======"

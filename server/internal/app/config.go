@@ -166,7 +166,15 @@ func (c StorageConfig) BaseURL() string {
 type AuthConfig struct {
 	EnableDevStubTokens  bool
 	AllowDevSessionIssue bool
-	OIDC                 OIDCConfig
+	// AllowInsecureSessionCookies drops the Secure attribute from session
+	// cookies (SESSION_COOKIE_SECURE=false) so plain-HTTP local dev can receive
+	// them. The zero value is Secure; startup rejects it outside explicit
+	// development/local/test environments.
+	AllowInsecureSessionCookies bool
+	// CSRFTokenFactory overrides CSRF token generation (tests); nil uses the
+	// production crypto/rand factory.
+	CSRFTokenFactory func() (string, error)
+	OIDC             OIDCConfig
 }
 
 type SecurityConfig struct {
@@ -218,7 +226,7 @@ func LoadConfig() Config {
 	// Default to empty (production-safe) when APP_ENV is not explicitly set.
 	// Dev auth flags are only enabled when the environment is explicitly
 	// "development", "local", or "test".
-	appEnv := strings.ToLower(getEnvTrimmed("APP_ENV", ""))
+	appEnv := NormalizeAppEnv(getEnvTrimmed("APP_ENV", ""))
 	enableDevStubTokensDefault := isExplicitDevelopmentEnv(appEnv)
 	metricsAddrDefault := ""
 	if isExplicitDevelopmentEnv(appEnv) {
@@ -238,8 +246,9 @@ func LoadConfig() Config {
 			Region:    strings.TrimSpace(firstEnvWithFallback("us-east-1", "STORAGE_REGION", "S3_REGION")),
 		},
 		Auth: AuthConfig{
-			EnableDevStubTokens:  getEnvBool("AUTH_ENABLE_DEV_STUB_TOKENS", enableDevStubTokensDefault),
-			AllowDevSessionIssue: getEnvBool("AUTH_ALLOW_DEV_SESSION_ISSUE", enableDevStubTokensDefault),
+			EnableDevStubTokens:         getEnvBool("AUTH_ENABLE_DEV_STUB_TOKENS", enableDevStubTokensDefault),
+			AllowDevSessionIssue:        getEnvBool("AUTH_ALLOW_DEV_SESSION_ISSUE", enableDevStubTokensDefault),
+			AllowInsecureSessionCookies: !getEnvBool("SESSION_COOKIE_SECURE", true),
 			OIDC: OIDCConfig{
 				AuthorizeURL:          getEnvTrimmed("OIDC_AUTHORIZE_URL", ""),
 				TokenURL:              getEnvTrimmed("OIDC_TOKEN_URL", ""),
@@ -324,7 +333,7 @@ func LoadConfig() Config {
 // outside of explicitly designated dev/local/test environments. This prevents
 // misconfigured deployments from accidentally exposing unauthenticated access.
 func ValidateDevAuthConfig(cfg Config) error {
-	appEnv := strings.ToLower(strings.TrimSpace(cfg.AppEnv))
+	appEnv := NormalizeAppEnv(cfg.AppEnv)
 	isDevEnv := isExplicitDevelopmentEnv(appEnv)
 	if isDevEnv {
 		return nil
@@ -341,6 +350,12 @@ func ValidateDevAuthConfig(cfg Config) error {
 			cfg.AppEnv,
 		)
 	}
+	if cfg.Auth.AllowInsecureSessionCookies {
+		return fmt.Errorf(
+			"SESSION_COOKIE_SECURE=false is not permitted when APP_ENV=%q; non-Secure session cookies are only allowed in development, local or test",
+			cfg.AppEnv,
+		)
+	}
 	return nil
 }
 
@@ -348,7 +363,7 @@ func ValidateDevAuthConfig(cfg Config) error {
 // startup so staging/production deployments cannot silently run with typoed or
 // inherited local defaults.
 func ValidateAppEnvConfig(cfg Config) error {
-	appEnv := strings.ToLower(strings.TrimSpace(cfg.AppEnv))
+	appEnv := NormalizeAppEnv(cfg.AppEnv)
 	if appEnv == "" {
 		return fmt.Errorf("APP_ENV must be set explicitly; allowed values: development, local, test, staging, production")
 	}
@@ -427,7 +442,7 @@ func splitCSV(value string) []string {
 }
 
 func isRecognizedAppEnv(appEnv string) bool {
-	switch strings.ToLower(strings.TrimSpace(appEnv)) {
+	switch NormalizeAppEnv(appEnv) {
 	case "development", "local", "test", "staging", "production":
 		return true
 	default:

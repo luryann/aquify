@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"time"
 
@@ -17,13 +18,24 @@ const redisMetricsHistoryLimit = 500
 type RedisJobMetrics struct {
 	client redis.UniversalClient
 	prefix string
+	logger *slog.Logger
 }
 
 func NewRedisJobMetrics(client redis.UniversalClient, prefix string) *RedisJobMetrics {
 	if prefix == "" {
 		prefix = "aquify:jobs:metrics"
 	}
-	return &RedisJobMetrics{client: client, prefix: prefix}
+	return &RedisJobMetrics{client: client, prefix: prefix, logger: slog.Default()}
+}
+
+// warnLoss records a metrics write/read that failed, so a Redis outage that
+// makes job counters and history under-report is visible in the logs.
+func (m *RedisJobMetrics) warnLoss(op string, err error, attrs ...any) {
+	logger := m.logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+	logger.Warn("workers: redis job metrics unavailable; data dropped", append([]any{"op", op, "error", err}, attrs...)...)
 }
 
 func (m *RedisJobMetrics) typeSetKey() string { return m.prefix + ":types" }
@@ -59,7 +71,9 @@ func (m *RedisJobMetrics) incrementCounter(ctx context.Context, taskType, field 
 	pipe := m.client.TxPipeline()
 	pipe.SAdd(ctx, m.typeSetKey(), taskType)
 	pipe.HIncrBy(ctx, m.countersKey(taskType), field, 1)
-	_, _ = pipe.Exec(ctx)
+	if _, err := pipe.Exec(ctx); err != nil {
+		m.warnLoss("increment_counter", err, "task_type", taskType, "field", field)
+	}
 }
 
 func (m *RedisJobMetrics) appendHistory(ctx context.Context, exec JobExecution) {
@@ -68,12 +82,15 @@ func (m *RedisJobMetrics) appendHistory(ctx context.Context, exec JobExecution) 
 	}
 	raw, err := json.Marshal(exec)
 	if err != nil {
+		m.warnLoss("marshal_history", err, "task_type", exec.Type)
 		return
 	}
 	pipe := m.client.TxPipeline()
 	pipe.LPush(ctx, m.historyKey(), raw)
 	pipe.LTrim(ctx, m.historyKey(), 0, redisMetricsHistoryLimit-1)
-	_, _ = pipe.Exec(ctx)
+	if _, err := pipe.Exec(ctx); err != nil {
+		m.warnLoss("append_history", err, "task_type", exec.Type)
+	}
 }
 
 func (m *RedisJobMetrics) TypeSnapshot() map[string]TypeMetricSnapshot {
@@ -82,7 +99,11 @@ func (m *RedisJobMetrics) TypeSnapshot() map[string]TypeMetricSnapshot {
 	}
 	ctx := context.Background()
 	types, err := m.client.SMembers(ctx, m.typeSetKey()).Result()
-	if err != nil || len(types) == 0 {
+	if err != nil {
+		m.warnLoss("type_snapshot_types", err)
+		return map[string]TypeMetricSnapshot{}
+	}
+	if len(types) == 0 {
 		return map[string]TypeMetricSnapshot{}
 	}
 	pipe := m.client.Pipeline()
@@ -90,7 +111,9 @@ func (m *RedisJobMetrics) TypeSnapshot() map[string]TypeMetricSnapshot {
 	for _, taskType := range types {
 		cmds[taskType] = pipe.HGetAll(ctx, m.countersKey(taskType))
 	}
-	_, _ = pipe.Exec(ctx)
+	if _, err := pipe.Exec(ctx); err != nil {
+		m.warnLoss("type_snapshot_counters", err)
+	}
 
 	out := make(map[string]TypeMetricSnapshot, len(types))
 	for _, taskType := range types {
@@ -118,6 +141,7 @@ func (m *RedisJobMetrics) RecentExecutions(limit int) []JobExecution {
 	ctx := context.Background()
 	rows, err := m.client.LRange(ctx, m.historyKey(), 0, int64(limit-1)).Result()
 	if err != nil {
+		m.warnLoss("recent_executions", err)
 		return nil
 	}
 	out := make([]JobExecution, 0, len(rows))

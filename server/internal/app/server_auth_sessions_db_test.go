@@ -161,16 +161,11 @@ func TestDBRepoAuthSessions_ExpiryValidatedFromPersistentStore(t *testing.T) {
 
 func cleanupAuthFixtures(t *testing.T, pool *pgxpool.Pool, orgID string) {
 	t.Helper()
-	ctx := context.Background()
-	for _, q := range []string{
+	deleteFixtures(t, pool, orgID, []string{
 		"DELETE FROM sessions WHERE org_id = $1::uuid",
 		"DELETE FROM mfa_factors WHERE org_id = $1",
 		"DELETE FROM users WHERE org_id = $1::uuid",
-	} {
-		if _, err := pool.Exec(ctx, q, orgID); err != nil {
-			t.Logf("cleanup warning (%s): %v", q, err)
-		}
-	}
+	})
 }
 
 func hashTokenForTest(token string) string {

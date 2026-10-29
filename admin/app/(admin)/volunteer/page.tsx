@@ -18,6 +18,7 @@ import {
   type VolunteerJobSummary,
   type VolunteerJobView,
   type VolunteerLedgerRow,
+  type VolunteerRequirement,
   type VolunteerSettings,
 } from '@/lib/volunteerData'
 import { fillPercent, formatCents, formatHours } from '@/lib/volunteer-state'
@@ -59,6 +60,7 @@ export default function VolunteerAdminPage() {
   const [creditReason, setCreditReason] = useState('')
 
   const [settings, setSettings] = useState<VolunteerSettings | null>(null)
+  const [seasonReq, setSeasonReq] = useState<VolunteerRequirement | null>(null)
   const [reqHours, setReqHours] = useState('')
   const [reqRate, setReqRate] = useState('')
   const [cutoff, setCutoff] = useState('')
@@ -100,14 +102,19 @@ export default function VolunteerAdminPage() {
         if (cancelled) return
         setLedger(rows)
         setLedgerError(null)
-        const seasonReq = reqs.find((r) => !r.household_id)
-        setReqHours(String(seasonReq?.required_hours ?? settings?.default_required_hours ?? 0))
-        setReqRate(((seasonReq?.buyout_cents_per_hour ?? settings?.default_buyout_cents_per_hour ?? 0) / 100).toFixed(2))
+        setSeasonReq(reqs.find((r) => !r.household_id) ?? null)
       })
       .catch((err) => { if (!cancelled) setLedgerError(reportUIError('volunteer.ledger', err, 'Couldn’t load household hours. Try again.')) })
       .finally(() => { if (!cancelled) setLedgerLoading(false) })
     return () => { cancelled = true }
-  }, [api, orgId, seasonId, ledgerKey, settings])
+  }, [api, orgId, seasonId, ledgerKey])
+
+  // Defaults come from org settings, so derive the form values here instead of
+  // refetching the ledger every time settings load or are saved.
+  useEffect(() => {
+    setReqHours(String(seasonReq?.required_hours ?? settings?.default_required_hours ?? 0))
+    setReqRate(((seasonReq?.buyout_cents_per_hour ?? settings?.default_buyout_cents_per_hour ?? 0) / 100).toFixed(2))
+  }, [seasonReq, settings])
 
   const totals = useMemo(() => {
     const short = ledger.filter((r) => r.status === 'short').length

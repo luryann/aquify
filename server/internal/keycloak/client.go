@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -128,6 +129,12 @@ type Client interface {
 
 	// GetUserRealmRoles returns the list of realm roles assigned to the user.
 	GetUserRealmRoles(ctx context.Context, userID string) ([]Role, error)
+
+	// ListUsersWithRealmRole returns every user in orgID that holds the named
+	// realm role, paging the role's membership to exhaustion. One role query
+	// replaces a per-user role lookup (the N+1 used to count org admins). An
+	// unknown role yields an empty list.
+	ListUsersWithRealmRole(ctx context.Context, orgID, roleName string) ([]User, error)
 
 	// AssignRealmRole adds the named realm role to the user.
 	// Returns ErrRoleNotFound if the role does not exist in the realm.
@@ -269,6 +276,10 @@ func (c *UnavailableClient) EnableUser(_ context.Context, _ string) error {
 }
 
 func (c *UnavailableClient) GetUserRealmRoles(_ context.Context, _ string) ([]Role, error) {
+	return nil, c.failure()
+}
+
+func (c *UnavailableClient) ListUsersWithRealmRole(_ context.Context, _, _ string) ([]User, error) {
 	return nil, c.failure()
 }
 
@@ -449,33 +460,41 @@ func (c *AdminClient) ListUsers(ctx context.Context, orgID, search string, limit
 		return filtered, nil
 	}
 
-	fallbackLimit := limit + offset
-	if fallbackLimit < 100 {
-		fallbackLimit = 100
+	// Page the realm until the requested org window is filled or the realm is
+	// exhausted, filtering by org locally. The window is applied to the org's own
+	// users, so orgs beyond the first realm page and deep offsets work.
+	matched := make([]User, 0, offset+limit)
+	for page := 0; page < maxFallbackPages && len(matched) < offset+limit; page++ {
+		batch, err := c.listUsersPage(ctx, search, fallbackPageSize, page*fallbackPageSize, "")
+		if err != nil {
+			return nil, err
+		}
+		hydrated, err := c.hydrateUsersMissingOrg(ctx, batch, orgID)
+		if err != nil {
+			return nil, err
+		}
+		matched = append(matched, filterUsersByOrg(hydrated, orgID)...)
+		if len(batch) < fallbackPageSize {
+			break // realm exhausted
+		}
 	}
-	if fallbackLimit > 500 {
-		fallbackLimit = 500
-	}
-
-	fallbackUsers, err := c.listUsersPage(ctx, search, fallbackLimit, 0, "")
-	if err != nil {
-		return nil, err
-	}
-	fallbackUsers, err = c.hydrateUsersMissingOrg(ctx, fallbackUsers, orgID)
-	if err != nil {
-		return nil, err
-	}
-
-	filtered = filterUsersByOrg(fallbackUsers, orgID)
-	if offset >= len(filtered) {
+	if offset >= len(matched) {
 		return []User{}, nil
 	}
-	filtered = filtered[offset:]
-	if len(filtered) > limit {
-		filtered = filtered[:limit]
+	matched = matched[offset:]
+	if len(matched) > limit {
+		matched = matched[:limit]
 	}
-	return filtered, nil
+	return matched, nil
 }
+
+const (
+	// fallbackPageSize is the realm page size used by the local-org-filter
+	// fallback; maxFallbackPages bounds the scan (100k realm users) so a
+	// misbehaving server cannot loop forever.
+	fallbackPageSize = 200
+	maxFallbackPages = 500
+)
 
 func (c *AdminClient) hydrateUsersMissingOrg(ctx context.Context, users []User, orgID string) ([]User, error) {
 	if orgID == "" || len(users) == 0 {
@@ -789,6 +808,47 @@ func (c *AdminClient) GetUserRealmRoles(ctx context.Context, userID string) ([]R
 		return nil, fmt.Errorf("keycloak: decode roles: %w", err)
 	}
 	return roles, nil
+}
+
+// ListUsersWithRealmRole pages GET /roles/{role}/users to exhaustion and keeps
+// the users belonging to orgID (the endpoint is realm-wide).
+func (c *AdminClient) ListUsersWithRealmRole(ctx context.Context, orgID, roleName string) ([]User, error) {
+	var matched []User
+	for page := 0; page < maxFallbackPages; page++ {
+		params := url.Values{
+			"first":               {fmt.Sprintf("%d", page*fallbackPageSize)},
+			"max":                 {fmt.Sprintf("%d", fallbackPageSize)},
+			"briefRepresentation": {"false"},
+		}
+		urlStr := c.adminURL("/roles/"+url.PathEscape(roleName)+"/users") + "?" + params.Encode()
+		resp, err := c.do(ctx, http.MethodGet, urlStr, nil)
+		if err != nil {
+			return nil, err
+		}
+		body, err := readBody(resp)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode == http.StatusNotFound {
+			return []User{}, nil
+		}
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("keycloak: list role members returned %d: %s", resp.StatusCode, body)
+		}
+		var batch []User
+		if err := json.Unmarshal(body, &batch); err != nil {
+			return nil, fmt.Errorf("keycloak: decode role members: %w", err)
+		}
+		hydrated, err := c.hydrateUsersMissingOrg(ctx, batch, orgID)
+		if err != nil {
+			return nil, err
+		}
+		matched = append(matched, filterUsersByOrg(hydrated, orgID)...)
+		if len(batch) < fallbackPageSize {
+			return matched, nil
+		}
+	}
+	return nil, fmt.Errorf("keycloak: role %q membership exceeds the %d-page scan limit", roleName, maxFallbackPages)
 }
 
 // getRoleByName fetches a realm role by name and returns the full Role (with ID).
@@ -1133,6 +1193,25 @@ func (s *StubClient) DisableUser(ctx context.Context, userID string) error {
 func (s *StubClient) EnableUser(ctx context.Context, userID string) error {
 	t := true
 	return s.UpdateUser(ctx, userID, UpdateUserFields{Enabled: &t})
+}
+
+func (s *StubClient) ListUsersWithRealmRole(_ context.Context, orgID, roleName string) ([]User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.GetUserRealmRolesErr != nil {
+		return nil, s.GetUserRealmRolesErr
+	}
+	var out []User
+	for id, u := range s.users {
+		if orgID != "" && u.OrgID() != orgID {
+			continue
+		}
+		if _, ok := s.userRoles[id][roleName]; ok {
+			out = append(out, *u)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out, nil
 }
 
 func (s *StubClient) GetUserRealmRoles(_ context.Context, userID string) ([]Role, error) {

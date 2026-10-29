@@ -3,15 +3,10 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useSession } from '@/lib/session'
+import { getCSRFToken } from '@/lib/api'
+import { uiErrorMessage } from '@/lib/frontend-telemetry'
+import { requestLogout } from '@/lib/logout-flow'
 import './page.inline.css'
-
-type LogoutResponse = {
-  status?: string
-  logout_url?: string
-  redirect_url?: string
-  message?: string
-  error?: string | { message?: string }
-}
 
 export default function LogoutPage() {
   const router = useRouter()
@@ -28,43 +23,22 @@ export default function LogoutPage() {
 
     async function revoke() {
       try {
-        const res = await fetch('/api/v1/auth/sessions/logout', {
-          method: 'POST',
-          credentials: 'include',
+        const next = await requestLogout({
+          csrfToken: getCSRFToken(),
+          origin: window.location.origin,
+          allowedOrigins: process.env.NEXT_PUBLIC_IDP_ORIGINS,
         })
-
-        if (!res.ok) {
-          let message = 'Couldn’t revoke your session. Try again.'
-          try {
-            const payload = await res.json() as {
-              message?: string
-              error?: string | { message?: string }
-            }
-            const errField = payload.error
-            message = payload.message
-              ?? (typeof errField === 'string' ? errField : errField?.message)
-              ?? message
-          } catch {
-            // Use default message.
-          }
-          throw new Error(message)
-        }
-
-        const payload = await res.json() as LogoutResponse
-        const nextRedirect = payload.redirect_url?.trim() || '/login'
-        const logoutURL = payload.logout_url?.trim() || ''
-
         signOut()
         if (!cancelled) {
-          setRedirectTarget(logoutURL || nextRedirect)
-          setTopLevelRedirect(Boolean(logoutURL))
+          setRedirectTarget(next.target)
+          setTopLevelRedirect(next.topLevel)
           setStage('done')
         }
-      } catch {
+      } catch (err) {
         signOut()
         if (!cancelled) {
           setStage('error')
-          setError('Couldn’t sign out cleanly. Try again.')
+          setError(uiErrorMessage(err, 'Couldn’t sign out cleanly. Try again.'))
         }
       }
     }

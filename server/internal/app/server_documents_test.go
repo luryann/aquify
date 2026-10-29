@@ -31,13 +31,9 @@ func newDocRouterWithStore(t *testing.T, svc *documents.Service, store storage.O
 	t.Cleanup(func() {
 		newObjectStorageClient = originalNewObjectStorageClient
 	})
-	return NewRouterWithServices(
-		Config{Auth: AuthConfig{EnableDevStubTokens: true}},
-		logger,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		svc,
-		nil, nil,
-		nil)
+	return NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, RouterDeps{
+		Documents: svc,
+	})
 }
 
 func issueDocToken(t *testing.T, router http.Handler, userID, orgID, role, householdID string) string {

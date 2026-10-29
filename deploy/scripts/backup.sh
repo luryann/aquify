@@ -120,7 +120,9 @@ log() {
   printf '%s [%-5s] %s\n' "${ts}" "${level}" "$*" | tee -a "${BACKUP_LOG}"
 }
 
-die() {
+# Records a failed step and returns; unlike restore.sh's die(), it does NOT exit.
+# The caller continues and the run is reported failed at the end.
+record_failure() {
   log "ERROR" "$*"
   ERRORS+=("$*")
 }
@@ -169,7 +171,7 @@ backup_postgres() {
   log "INFO" "--- Step 1: PostgreSQL backup ---"
 
   if [[ -z "${DATABASE_URL}" ]]; then
-    die "DATABASE_URL is not set — skipping PostgreSQL backup"
+    record_failure "DATABASE_URL is not set — skipping PostgreSQL backup"
     return
   fi
 
@@ -191,7 +193,7 @@ backup_postgres() {
     sz="$(du -sh "${dump_file}" | cut -f1)"
     log "INFO" "pg_dump complete: ${dump_file} (${sz})"
   else
-    die "pg_dump failed — see ${BACKUP_LOG}"
+    record_failure "pg_dump failed — see ${BACKUP_LOG}"
     rm -f "${dump_file}"
   fi
 }
@@ -204,19 +206,19 @@ backup_minio() {
   log "INFO" "--- Step 2: MinIO object storage backup ---"
 
   if ! command -v mc &>/dev/null; then
-    die "'mc' (MinIO client) not found in PATH — skipping MinIO backup"
+    record_failure "'mc' (MinIO client) not found in PATH — skipping MinIO backup"
     return
   fi
 
   if [[ -z "${MINIO_ACCESS_KEY}" || -z "${MINIO_SECRET_KEY}" ]]; then
-    die "MINIO_ACCESS_KEY / MINIO_SECRET_KEY not set — skipping MinIO backup"
+    record_failure "MINIO_ACCESS_KEY / MINIO_SECRET_KEY not set — skipping MinIO backup"
     return
   fi
 
   # Register a temporary mc alias scoped to this run
   mc alias set dare-src "${MINIO_ENDPOINT}" "${MINIO_ACCESS_KEY}" "${MINIO_SECRET_KEY}" \
     --api S3v4 2>> "${BACKUP_LOG}" \
-    || { die "mc alias set failed"; return; }
+    || { record_failure "mc alias set failed"; return; }
 
   local minio_dir="${SNAPSHOT_DIR}/minio"
   mkdir -p "${minio_dir}"
@@ -232,7 +234,7 @@ backup_minio() {
     cnt="$(find "${minio_dir}" -type f | wc -l | tr -d ' ')"
     log "INFO" "MinIO mirror complete: ${cnt} objects"
   else
-    die "mc mirror failed — see ${BACKUP_LOG}"
+    record_failure "mc mirror failed — see ${BACKUP_LOG}"
   fi
 }
 
@@ -267,7 +269,7 @@ backup_keycloak() {
 client_id=admin-cli&username=${KEYCLOAK_ADMIN_USER}&password=${KEYCLOAK_ADMIN_PASS}&grant_type=password
 EOF
 )" \
-    || { die "Keycloak token request failed (is Keycloak up?)"; return; }
+    || { record_failure "Keycloak token request failed (is Keycloak up?)"; return; }
 
   local access_token
   access_token="$(printf '%s' "${token_json}" | \
@@ -275,7 +277,7 @@ EOF
     || access_token=""
 
   if [[ -z "${access_token}" ]]; then
-    die "Failed to parse Keycloak access token — check credentials"
+    record_failure "Failed to parse Keycloak access token — check credentials"
     return
   fi
 
@@ -292,7 +294,7 @@ EOF
     sz="$(du -sh "${realm_file}" | cut -f1)"
     log "INFO" "Keycloak export complete: ${realm_file} (${sz})"
   else
-    die "Keycloak export HTTP status: ${http_code}"
+    record_failure "Keycloak export HTTP status: ${http_code}"
     rm -f "${realm_file}"
   fi
 }
@@ -316,7 +318,7 @@ create_archive() {
 
   log "INFO" "Creating tar.gz: ${archive_tar}..."
   tar -czf "${archive_tar}" -C "${BACKUP_DIR}" "${TIMESTAMP}" 2>> "${BACKUP_LOG}" \
-    || { die "tar failed"; echo ""; return; }
+    || { record_failure "tar failed"; echo ""; return; }
 
   local sz
   sz="$(du -sh "${archive_tar}" | cut -f1)"
@@ -333,7 +335,7 @@ create_archive() {
       rm -f "${archive_tar}"
       echo "${archive_out}"
     else
-      die "GPG encryption failed — unencrypted archive NOT uploaded"
+      record_failure "GPG encryption failed — unencrypted archive NOT uploaded"
       rm -f "${archive_out}" 2>/dev/null || true
       echo ""
     fi
@@ -352,17 +354,17 @@ upload_offsite() {
   log "INFO" "--- Step 5: Offsite upload ---"
 
   if [[ -z "${archive_path}" ]]; then
-    die "No archive path supplied to upload_offsite — skipping"
+    record_failure "No archive path supplied to upload_offsite — skipping"
     return
   fi
 
   if ! command -v rclone &>/dev/null; then
-    die "'rclone' not found in PATH — skipping offsite upload"
+    record_failure "'rclone' not found in PATH — skipping offsite upload"
     return
   fi
 
   if [[ -z "${RCLONE_REMOTE}" ]]; then
-    die "RCLONE_REMOTE not set — skipping offsite upload"
+    record_failure "RCLONE_REMOTE not set — skipping offsite upload"
     return
   fi
 
@@ -390,7 +392,7 @@ upload_offsite() {
   if rclone copy --progress "${archive_path}" "${remote_path}" >> "${BACKUP_LOG}" 2>&1; then
     log "INFO" "Offsite upload complete → ${remote_path}"
   else
-    die "rclone upload failed — backup is local only"
+    record_failure "rclone upload failed — backup is local only"
   fi
 }
 

@@ -4,6 +4,7 @@ package training
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -277,8 +278,17 @@ func (s *Service) Update(orgID, id string, updates PracticeUpdates, updatedBy st
 		}
 		if p.WorkoutID != "" {
 			// Yardage/strokes always derive from the linked workout.
-			if w, werr := s.repo.WorkoutsByIDs(context.Background(), orgID, []string{p.WorkoutID}); werr == nil && w[p.WorkoutID] != nil {
-				derivePractice(p, w[p.WorkoutID])
+			w, werr := s.repo.WorkoutsByIDs(context.Background(), orgID, []string{p.WorkoutID})
+			if werr != nil {
+				// Do not save a stale yardage/strokes snapshot for a linked practice.
+				return nil, fmt.Errorf("training: load linked workout %s: %w", p.WorkoutID, werr)
+			}
+			if linked := w[p.WorkoutID]; linked != nil {
+				derivePractice(p, linked)
+			} else {
+				// The workout no longer exists: unlink explicitly and keep the
+				// practice's own totals instead of pointing at a ghost.
+				p.WorkoutID = ""
 			}
 		}
 		p.UpdatedAt = time.Now().UTC()

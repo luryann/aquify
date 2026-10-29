@@ -276,7 +276,7 @@ func deriveDailyMeetSessions(startDate, endDate *time.Time) []ParsedMeetSession 
 	}
 
 	var sessions []ParsedMeetSession
-	for day := startDay; !day.After(endDay); day = day.Add(24 * time.Hour) {
+	for day := startDay; !day.After(endDay); day = day.AddDate(0, 0, 1) {
 		number := len(sessions) + 1
 		date := day
 		sessions = append(sessions, ParsedMeetSession{

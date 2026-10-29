@@ -155,17 +155,35 @@ func (c *bundleChecker) requireText(rel, needle string) {
 	}
 }
 
+// checkSmokeLog evaluates the structured result lines written by
+// scripts/cutover-smoke.sh ("PASS <name>" / "FAIL <name>: ...", optionally with
+// a leading "[timestamp] "). Only the leading status token of a line counts, so
+// a passing check whose name or URL contains "error" or "fail" is not a failure,
+// and a log with no PASS line at all is rejected.
 func (c *bundleChecker) checkSmokeLog(rel string) {
 	payload, ok := c.readFile(rel)
 	if !ok {
 		return
 	}
-	text := strings.ToLower(string(payload))
-	for _, bad := range []string{"fail ", "failed", "error"} {
-		if strings.Contains(text, bad) {
-			c.failures = append(c.failures, fmt.Sprintf("%s contains %q", rel, bad))
+	passes := 0
+	for _, line := range strings.Split(string(payload), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "[") {
+			if end := strings.Index(line, "]"); end >= 0 {
+				line = strings.TrimSpace(line[end+1:])
+			}
+		}
+		status := strings.ToUpper(strings.TrimRight(strings.Fields(line + " ")[0], ":"))
+		switch status {
+		case "PASS":
+			passes++
+		case "FAIL", "FAILED", "ERROR":
+			c.failures = append(c.failures, fmt.Sprintf("%s reports a failed check: %q", rel, line))
 			return
 		}
+	}
+	if passes == 0 {
+		c.failures = append(c.failures, fmt.Sprintf("%s has no PASS results", rel))
 	}
 }
 

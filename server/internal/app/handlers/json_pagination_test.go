@@ -69,3 +69,49 @@ func TestParseListPaginationClampsAndSlices(t *testing.T) {
 		t.Fatalf("paginateSlice() page = %#v, want [3 4 5]", page)
 	}
 }
+
+func TestJSONDecodeErrorsAreClientSafeAndOversizedIs413(t *testing.T) {
+	t.Parallel()
+
+	type payload struct {
+		Count int `json:"count"`
+	}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/t", strings.NewReader(`{"count":"abc"}`))
+	var got payload
+	err := decodeJSONBodyWithOptions(rec, req, &got, decodeJSONOptions{})
+	if err == nil {
+		t.Fatal("expected a type error")
+	}
+	for _, leak := range []string{"Go struct", "handlers.", "payload", "int"} {
+		if strings.Contains(err.Error(), leak) {
+			t.Fatalf("decode error leaks %q: %v", leak, err)
+		}
+	}
+	if !strings.Contains(err.Error(), `"count"`) {
+		t.Fatalf("expected JSON field name in error, got %v", err)
+	}
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest("POST", "/t", strings.NewReader(`{"count":1000000}`))
+	err = decodeJSONBodyWithOptions(rec, req, &got, decodeJSONOptions{MaxBytes: 4})
+	writeJSONDecodeError(rec, req, err, "bad_request", "Invalid JSON body.")
+	if rec.Code != 413 {
+		t.Fatalf("oversized body status = %d, want 413", rec.Code)
+	}
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest("POST", "/t", strings.NewReader(`{"count":`))
+	err = decodeJSONBodyWithOptions(rec, req, &got, decodeJSONOptions{})
+	writeJSONDecodeError(rec, req, err, "bad_request", "Invalid JSON body.")
+	if rec.Code != 400 {
+		t.Fatalf("malformed body status = %d, want 400", rec.Code)
+	}
+
+	// decodeAndValidateJSON shares the mapping.
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest("POST", "/t", strings.NewReader(`{"count":1000000}`))
+	if decodeAndValidateJSON(rec, req, &got, nil, decodeAndValidateOptions{MaxBytes: 4}) || rec.Code != 413 {
+		t.Fatalf("decodeAndValidateJSON oversized: code=%d", rec.Code)
+	}
+}

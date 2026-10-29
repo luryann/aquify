@@ -10,7 +10,7 @@ func SecurityHeaders(next http.Handler) http.Handler {
 		headers.Set("X-Content-Type-Options", "nosniff")
 		headers.Set("X-Frame-Options", "DENY")
 		headers.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-		if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		if RequestIsSecure(r) {
 			headers.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 		}
 		next.ServeHTTP(w, r)

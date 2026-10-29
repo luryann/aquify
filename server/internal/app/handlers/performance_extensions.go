@@ -80,12 +80,35 @@ func (h *PerformanceHandlers) audit(principal *appmiddleware.Principal, orgID, a
 	recordAudit(h.auditService, principal, orgID, action, resourceType, resourceID, before, after, meta)
 }
 
-func queryInt(r *http.Request, name string) int {
-	v, err := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get(name)))
-	if err != nil {
-		return 0
+// queryInt parses an optional non-negative integer query parameter. A missing
+// parameter is 0 (no filter); a malformed or negative one answers 400 and
+// returns ok=false so filters never silently widen on bad input.
+func queryInt(w http.ResponseWriter, r *http.Request, name string) (int, bool) {
+	raw := strings.TrimSpace(r.URL.Query().Get(name))
+	if raw == "" {
+		return 0, true
 	}
-	return v
+	v, err := strconv.Atoi(raw)
+	if err != nil || v < 0 {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_query_parameter", "Query parameter "+name+" must be a non-negative integer.", nil)
+		return 0, false
+	}
+	return v, true
+}
+
+// queryBool parses an optional boolean query parameter (strconv.ParseBool
+// forms). Missing is false; malformed answers 400 and returns ok=false.
+func queryBool(w http.ResponseWriter, r *http.Request, name string) (bool, bool) {
+	raw := strings.TrimSpace(r.URL.Query().Get(name))
+	if raw == "" {
+		return false, true
+	}
+	v, err := strconv.ParseBool(raw)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_query_parameter", "Query parameter "+name+" must be true or false.", nil)
+		return false, false
+	}
+	return v, true
 }
 
 // ─── Records ─────────────────────────────────────────────────────────────────
@@ -96,12 +119,16 @@ func (h *PerformanceHandlers) listRecords(w http.ResponseWriter, r *http.Request
 		return
 	}
 	q := r.URL.Query()
+	distance, ok := queryInt(w, r, "distance")
+	if !ok {
+		return
+	}
 	records, err := h.service.ListRecords(orgID, principal, performance.ListRecordsFilters{
 		Course:   strings.ToUpper(q.Get("course")),
 		Gender:   strings.ToUpper(q.Get("gender")),
 		AgeGroup: strings.ToUpper(q.Get("age_group")),
 		Stroke:   strings.ToLower(q.Get("stroke")),
-		Distance: queryInt(r, "distance"),
+		Distance: distance,
 	})
 	if err != nil {
 		writePerfExtError(w, r, err)
@@ -120,11 +147,15 @@ func (h *PerformanceHandlers) getRecordHistory(w http.ResponseWriter, r *http.Re
 		return
 	}
 	q := r.URL.Query()
+	distance, ok := queryInt(w, r, "distance")
+	if !ok {
+		return
+	}
 	history, err := h.service.GetRecordHistory(orgID, principal, performance.RecordKey{
 		Course:   strings.ToUpper(q.Get("course")),
 		Gender:   strings.ToUpper(q.Get("gender")),
 		AgeGroup: strings.ToUpper(q.Get("age_group")),
-		Distance: queryInt(r, "distance"),
+		Distance: distance,
 		Stroke:   strings.ToLower(q.Get("stroke")),
 	})
 	if err != nil {
@@ -222,7 +253,7 @@ func (h *PerformanceHandlers) decideRecord(w http.ResponseWriter, r *http.Reques
 	}
 	var body decideRecordBody
 	if err := decodeOptionalJSONBody(w, r, &body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request_body", err.Error(), nil)
+		writeJSONDecodeError(w, r, err, "invalid_request_body", "")
 		return
 	}
 	entryID := chi.URLParam(r, "entryID")
@@ -316,15 +347,23 @@ func (h *PerformanceHandlers) listTopTimes(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	q := r.URL.Query()
+	distance, ok := queryInt(w, r, "distance")
+	if !ok {
+		return
+	}
+	limit, ok := queryInt(w, r, "limit")
+	if !ok {
+		return
+	}
 	lists, err := h.service.TopTimes(orgID, principal, performance.TopTimesQuery{
 		Course:   q.Get("course"),
 		Gender:   q.Get("gender"),
 		AgeGroup: q.Get("age_group"),
-		Distance: queryInt(r, "distance"),
+		Distance: distance,
 		Stroke:   q.Get("stroke"),
 		From:     strings.TrimSpace(q.Get("from")),
 		To:       strings.TrimSpace(q.Get("to")),
-		Limit:    queryInt(r, "limit"),
+		Limit:    limit,
 	})
 	if err != nil {
 		writePerfExtError(w, r, err)
@@ -355,7 +394,10 @@ func (h *PerformanceHandlers) listGoals(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	swimmerID := chi.URLParam(r, "swimmerID")
-	includeArchived := r.URL.Query().Get("include_archived") == "true"
+	includeArchived, ok := queryBool(w, r, "include_archived")
+	if !ok {
+		return
+	}
 	goals, err := h.service.ListGoals(orgID, principal, swimmerID, includeArchived)
 	if err != nil {
 		writePerfExtError(w, r, err)
@@ -558,10 +600,14 @@ func (h *PerformanceHandlers) progressReport(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	q := r.URL.Query()
+	limit, ok := queryInt(w, r, "limit")
+	if !ok {
+		return
+	}
 	report, err := h.service.ProgressReport(orgID, principal, performance.ProgressReportInput{
 		FromA: q.Get("from_a"), ToA: q.Get("to_a"), FromB: q.Get("from_b"), ToB: q.Get("to_b"),
 		GroupCode: q.Get("group_code"), SwimmerID: strings.TrimSpace(q.Get("swimmer_id")), Course: q.Get("course"),
-		Limit: queryInt(r, "limit"),
+		Limit: limit,
 	})
 	if err != nil {
 		writePerfExtError(w, r, err)

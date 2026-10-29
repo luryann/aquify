@@ -31,7 +31,7 @@ import {
   type AuditEventRecord,
   type SwimmerRecord,
 } from '@/lib/adminData'
-import { ROLE_HIERARCHY, type Role } from '@/lib/roles'
+import { ROLE_HIERARCHY, highestRoleTier, type Role } from '@/lib/roles'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { ROLE_COLORS, ROLE_OPTIONS } from '@/lib/user-roles'
 
@@ -123,9 +123,9 @@ export default function UserDetailPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleteEmailConfirm, setDeleteEmailConfirm] = useState('')
 
-  const actorRole = session?.user.role as Role | undefined
-  const actorTier = actorRole ? ROLE_HIERARCHY[actorRole] : 0
-  const isAdmin = actorRole === 'admin'
+  const actorRoles = session?.user.roles ?? (session?.user.role ? [session.user.role] : [])
+  const actorTier = highestRoleTier(actorRoles)
+  const isAdmin = actorRoles.includes('admin')
 
   function canManageRole(roleName: string): boolean {
     const tier = ROLE_HIERARCHY[roleName as Role] ?? 1

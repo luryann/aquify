@@ -156,7 +156,7 @@ func (h *PublicSiteHandlers) site(w http.ResponseWriter, r *http.Request) {
 	if h.src.Announcements != nil {
 		out := []publicAnnouncement{}
 		for _, a := range h.src.Announcements(orgID) {
-			if !a.Public || a.Status != "published" || a.Audience != "all" || len(out) >= publicMaxAnnouncements {
+			if !a.IsPubliclyVisible() || len(out) >= publicMaxAnnouncements {
 				continue
 			}
 			out = append(out, publicAnnouncement{ID: a.ID, Title: a.Title, Body: a.Body, PublishedAt: a.PublishedAt})
@@ -167,14 +167,7 @@ func (h *PublicSiteHandlers) site(w http.ResponseWriter, r *http.Request) {
 	if h.src.Meets != nil {
 		list := []meets.Meet{}
 		for _, m := range h.src.Meets(orgID) {
-			if m.OrgID != orgID || m.Status == "draft" || m.Status == "archived" {
-				continue
-			}
-			end := m.EndDate
-			if end == "" {
-				end = m.StartDate
-			}
-			if end == "" || end < today {
+			if !m.IsPubliclyListed(orgID, today) {
 				continue
 			}
 			list = append(list, m)
@@ -193,7 +186,7 @@ func (h *PublicSiteHandlers) site(w http.ResponseWriter, r *http.Request) {
 	if h.src.Events != nil {
 		out := []publicEvent{}
 		for _, e := range h.src.Events(orgID, now) {
-			if e.OrgID != orgID || !e.Public || e.Audience != "all" || e.Status != "scheduled" || len(out) >= publicMaxEvents {
+			if !e.IsPubliclyVisible(orgID) || len(out) >= publicMaxEvents {
 				continue
 			}
 			out = append(out, publicEvent{ID: e.ID, Title: e.Title, Category: e.Category, Description: e.Description,

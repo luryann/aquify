@@ -351,3 +351,25 @@ func TestUpdateHouseholdParentCannotChangeStatus(t *testing.T) {
 		t.Fatalf("parent rename should still work: %v", err)
 	}
 }
+
+func TestSnapshotRosterIsOrgScoped(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService()
+	admin := testutil.AdminPrincipal()
+	hh, err := svc.CreateHousehold(admin, CreateHouseholdInput{OrgID: testutil.DefaultOrgID, HouseholdName: "Snap Family"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap, err := svc.SnapshotRoster(testutil.DefaultOrgID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snap.Households) != 1 || snap.Households[0].ID != hh.ID {
+		t.Fatalf("expected the org's household in the snapshot, got %+v", snap.Households)
+	}
+	other, err := svc.SnapshotRoster("another-org")
+	if err != nil || len(other.Households) != 0 || len(other.Swimmers) != 0 {
+		t.Fatalf("snapshot leaked across orgs: %+v err=%v", other, err)
+	}
+}

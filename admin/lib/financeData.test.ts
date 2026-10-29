@@ -1,8 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { ApiError } from './api.ts'
-import { agingShares, describeDiscount, describeTier, financeErrorMessage, formatCents, parseDollarsToCents } from './financeData.ts'
+import { ApiError, type ApiClient } from './api.ts'
+import { agingShares, fetchAdjustments, fetchBillingRuns, describeDiscount, describeTier, financeErrorMessage, formatCents, parseDollarsToCents } from './financeData.ts'
 
 test('parseDollarsToCents converts dollar strings to integer cents', () => {
   assert.equal(parseDollarsToCents('12.5'), 1250)
@@ -42,4 +42,21 @@ test('financeErrorMessage maps run conflicts to guidance', () => {
   assert.match(financeErrorMessage(new ApiError(422, 'nothing_to_bill', 'x'), 'f'), /already billed/)
   assert.match(financeErrorMessage(new ApiError(409, 'preview_stale', 'x'), 'f'), /changed since this preview/)
   assert.equal(financeErrorMessage(new Error('boom'), 'fallback'), 'fallback')
+})
+
+test('fetchAdjustments and fetchBillingRuns page through every row instead of truncating at 200', async () => {
+  const paths: string[] = []
+  const api = {
+    get: async (path: string) => {
+      paths.push(path)
+      const offset = Number(new URL(`http://x${path}`).searchParams.get('offset'))
+      const key = path.includes('/adjustments') ? 'adjustments' : 'runs'
+      const all = Array.from({ length: 250 }, (_, i) => ({ id: `r${i}` }))
+      return { [key]: all.slice(offset, offset + 200), total: 250 }
+    },
+  } as unknown as ApiClient
+
+  assert.equal((await fetchAdjustments(api, 'org_1')).length, 250)
+  assert.equal((await fetchBillingRuns(api, 'org_1')).length, 250)
+  assert.ok(paths.some((p) => p.includes('/adjustments?status=pending&limit=200&offset=200')))
 })

@@ -5,10 +5,12 @@ import { fileURLToPath } from 'node:url'
 import { pathToFileURL } from 'node:url'
 import { spawn } from 'node:child_process'
 
+import { e2eStateFile } from './state-file.mjs'
+
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const repoRoot = path.resolve(__dirname, '../../..')
-const stateFile = path.join(os.tmpdir(), 'aquify-playwright-state.json')
+const stateFile = e2eStateFile()
 const databaseUrl = process.env.DATABASE_URL ?? 'postgres://postgres:postgres@127.0.0.1:5432/aquify_e2e?sslmode=disable'
 const skipDocker = process.env.PLAYWRIGHT_E2E_SKIP_DOCKER === 'true'
 
@@ -102,7 +104,7 @@ async function ensurePostgres() {
   await run('docker', ['compose', 'up', '-d', 'postgres'])
   for (let attempt = 0; attempt < 60; attempt += 1) {
     try {
-      await run('docker', ['compose', 'exec', '-T', 'postgres', 'pg_isready', '-U', 'postgres', '-d', 'aquify'])
+      await run('docker', ['compose', 'exec', '-T', 'postgres', 'pg_isready', '-U', 'postgres', '-d', 'postgres'])
       return true
     } catch {
       await delay(1_000)
@@ -225,6 +227,8 @@ async function applyMigrationsWithPsql() {
   }
 }
 
+// Database setup runs only here. playwright.config.ts deliberately declares no
+// `globalSetup`, so start-api.mjs (the API webServer) is the single caller.
 export default async function globalSetup() {
   const startedPostgres = await ensurePostgres()
   await ensureE2EDatabase()

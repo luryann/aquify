@@ -667,7 +667,7 @@ paths:
     post:
       tags: [Users]
       summary: Approve self-registration
-      description: Activates a pending self-registration request, assigns the requested role when no roles exist yet, and sends the welcome or verification email. Admin only.
+      description: Activates a pending self-registration request, assigns the requested role when no roles exist yet, and sends the welcome or verification email. A failed Keycloak attribute or role write is returned as an error (the call is safe to retry); a failed welcome email is reported in `warnings`. Admin only.
       operationId: approveUser
       parameters:
         - $ref: "#/components/parameters/UserID"
@@ -2172,12 +2172,43 @@ paths:
                     type: array
                     description: Team records broken by this import (age group and Open); status pending means the standing record is locked.
                     items: { $ref: "#/components/schemas/RecordBreak" }
+                  record_detection_failures:
+                    type: integer
+                    description: Swims whose result was saved but whose team-record detection failed; run a records rebuild to repair those slots.
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "500":
+          description: >-
+            The import stopped mid-file (code result_import_failed). Swims already
+            recorded stay recorded and re-importing the same file resumes where it
+            stopped; error.details reports the partial progress.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: object
+                    properties:
+                      code: { type: string }
+                      message: { type: string }
+                      details:
+                        type: object
+                        properties:
+                          partial: { type: boolean }
+                          imported: { type: integer }
+                          duplicates: { type: integer }
+                          skipped: { type: integer }
+                          unmatched: { type: integer }
+                          record_detection_failures: { type: integer }
+                          rows_processed: { type: integer }
+                          rows_total: { type: integer }
+                          new_team_records: { type: array, items: { $ref: "#/components/schemas/RecordBreak" } }
+                          retry_safe: { type: boolean }
 
   /meets/{meetID}/exports:
     get:
@@ -8864,6 +8895,10 @@ components:
         status:
           type: string
           enum: [updated, disabled, enabled, approved, rejected, deleted, assigned, removed, password_reset_sent]
+        warnings:
+          type: array
+          description: Non-fatal follow-up steps that failed (for example verification_email_failed on approval).
+          items: { type: string }
 
     SelfRegisterRequest:
       type: object

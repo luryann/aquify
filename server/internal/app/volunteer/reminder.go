@@ -33,7 +33,12 @@ func (s *Service) scheduleReminder(ctx context.Context, job *Job, su *Signup) {
 		return
 	}
 	settings, err := s.settings(ctx, job.OrgID)
-	if err != nil || !settings.RemindersEnabled {
+	if err != nil {
+		s.logger.Warn("volunteer: shift reminder not scheduled; settings lookup failed",
+			"signup_id", su.ID, "job_id", job.ID, "error", err)
+		return
+	}
+	if !settings.RemindersEnabled {
 		return
 	}
 	delay := job.StartsAt.Add(-reminderLead).Sub(s.now())
@@ -46,6 +51,7 @@ func (s *Service) scheduleReminder(ctx context.Context, job *Job, su *Signup) {
 		OrgID: job.OrgID, SignupID: su.ID, StartsAtUnix: job.StartsAt.Unix(),
 	})
 	if err != nil {
+		s.logger.Error("volunteer: shift reminder dropped; building task failed", "signup_id", su.ID, "job_id", job.ID, "error", err)
 		return
 	}
 	key := fmt.Sprintf("volunteer-reminder:%s:%d", su.ID, job.StartsAt.Unix())

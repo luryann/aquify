@@ -23,7 +23,7 @@ type VolunteerHandlers struct {
 
 // NewVolunteerHandlers returns VolunteerHandlers.
 func NewVolunteerHandlers(svc *volunteer.Service, auditSvc *audit.Service) *VolunteerHandlers {
-	return &VolunteerHandlers{service: svc, auditService: auditSvc, validate: validator.New()}
+	return &VolunteerHandlers{service: svc, auditService: auditSvc, validate: httpx.NewValidator()}
 }
 
 // RegisterRoutes mounts volunteer routes on the protected router.

@@ -32,7 +32,7 @@ func NewDocumentHandlers(svc *documents.Service, auditSvc *audit.Service, store 
 		service:      svc,
 		auditService: auditSvc,
 		store:        store,
-		validate:     validator.New(),
+		validate:     httpx.NewValidator(),
 	}
 }
 
@@ -149,7 +149,7 @@ func (h *DocumentHandlers) updateDocumentType(w http.ResponseWriter, r *http.Req
 
 	var body updateDocumentTypeBody
 	if err := decodeJSONBody(w, r, &body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", nil)
+		writeJSONDecodeError(w, r, err, "bad_request", "Invalid JSON body.")
 		return
 	}
 
@@ -558,7 +558,7 @@ func (h *DocumentHandlers) reviewSubmission(w http.ResponseWriter, r *http.Reque
 
 	var body reviewBody
 	if err := decodeOptionalJSONBody(w, r, &body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", nil)
+		writeJSONDecodeError(w, r, err, "bad_request", "Invalid JSON body.")
 		return
 	}
 

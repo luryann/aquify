@@ -434,6 +434,39 @@ func (r *Repository) LoadMessageReads(ctx context.Context) ([]*MessageRead, erro
 // FK ON DELETE CASCADE; email_deliveries has no household_id column, so
 // callers must match by the household's captured contact emails instead.
 
+// EraseHousehold deletes a household's messages (edits/reactions/attachments
+// cascade), read watermarks, notification preferences and email deliveries in
+// a single transaction so a compliance erasure is all-or-nothing.
+func (r *Repository) EraseHousehold(ctx context.Context, orgID, householdID string, emails []string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin erase tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	stmts := []struct {
+		name string
+		sql  string
+		args []any
+	}{
+		{"messages", `DELETE FROM messages WHERE org_id = $1::uuid AND household_id = $2::uuid`, []any{orgID, householdID}},
+		{"message reads", `DELETE FROM message_reads WHERE org_id = $1::uuid AND household_id = $2::uuid`, []any{orgID, householdID}},
+		{"notification preferences", `DELETE FROM notification_preferences WHERE org_id = $1::uuid AND household_id = $2`, []any{orgID, householdID}},
+	}
+	if len(emails) > 0 {
+		stmts = append(stmts, struct {
+			name string
+			sql  string
+			args []any
+		}{"email deliveries", `DELETE FROM email_deliveries WHERE org_id = $1::uuid AND lower(recipient_email) = ANY($2::text[])`, []any{orgID, emails}})
+	}
+	for _, st := range stmts {
+		if _, err := tx.Exec(ctx, st.sql, st.args...); err != nil {
+			return fmt.Errorf("erase %s: %w", st.name, err)
+		}
+	}
+	return tx.Commit(ctx)
+}
+
 func (r *Repository) DeleteMessagesByHousehold(ctx context.Context, orgID, householdID string) error {
 	_, err := r.pool.Exec(ctx, `
 		DELETE FROM messages WHERE org_id = $1::uuid AND household_id = $2::uuid`,

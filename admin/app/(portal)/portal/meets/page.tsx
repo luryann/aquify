@@ -49,7 +49,7 @@ function fmtDay(iso?: string): string {
 
 function daysUntil(iso?: string): number {
   if (!iso) return -1
-  return Math.ceil((new Date(iso).getTime() - Date.now()) / 86400000)
+  return Math.ceil((parseBackendDate(iso).getTime() - Date.now()) / 86400000)
 }
 
 function mapCommitment(commitments: CommitmentRecord[], swimmerId: string, meetStatus: string): CommitmentStatus {

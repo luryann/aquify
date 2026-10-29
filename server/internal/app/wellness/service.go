@@ -98,7 +98,7 @@ type Service struct {
 	mu       sync.Mutex
 	repo     *Repository
 	now      func() time.Time
-	checkins map[string]*CheckIn // key: swimmerID|date
+	checkins map[string]*CheckIn // key: orgID|swimmerID|date
 }
 
 // NewService returns an in-memory Service.
@@ -121,7 +121,7 @@ func (s *Service) SetClock(now func() time.Time) { s.now = now }
 // Today returns the service's current date (UTC) as YYYY-MM-DD.
 func (s *Service) Today() string { return s.now().Format(dateLayout) }
 
-func key(swimmerID, date string) string { return swimmerID + "|" + date }
+func key(orgID, swimmerID, date string) string { return orgID + "|" + swimmerID + "|" + date }
 
 // Upsert stores the day's check-in, replacing an earlier submission for the
 // same swimmer and date. created reports whether a new row was inserted.
@@ -185,9 +185,9 @@ func (s *Service) Upsert(orgID string, in Input) (*CheckIn, bool, error) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	k := key(c.SwimmerID, c.Date)
+	k := key(orgID, c.SwimmerID, c.Date)
 	created := true
-	if prev, ok := s.checkins[k]; ok && prev.OrgID == orgID {
+	if prev, ok := s.checkins[k]; ok {
 		c.ID = prev.ID
 		c.CreatedAt = prev.CreatedAt
 		created = false

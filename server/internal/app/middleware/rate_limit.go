@@ -102,7 +102,7 @@ func parseTrustedNets(cidrs []string) []*net.IPNet {
 // honoured only when the direct peer is inside trustedProxyCIDRs.
 func NewClientAddressResolver(trustedProxyCIDRs []string) func(*http.Request) string {
 	rl := &rateLimiter{trustedNets: parseTrustedNets(trustedProxyCIDRs)}
-	return rl.clientAddress
+	return rl.resolveClientAddress
 }
 
 // allow reports whether the request may proceed and, when it may not, how
@@ -144,9 +144,23 @@ func (rl *rateLimiter) allow(key string, now time.Time) (bool, time.Duration) {
 // is within the configured trustedNets set. This prevents spoofing by
 // external clients who can freely set the X-Forwarded-For header.
 func (rl *rateLimiter) clientAddress(r *http.Request) string {
+	if info, ok := r.Context().Value(clientInfoKey{}).(clientInfo); ok {
+		return info.ip
+	}
+	return rl.resolveClientAddress(r)
+}
+
+// peerTrusted reports whether the direct TCP peer is a configured trusted proxy.
+func (rl *rateLimiter) peerTrusted(r *http.Request) bool {
+	remoteHost := remoteIP(r.RemoteAddr)
+	return len(rl.trustedNets) > 0 && remoteHost != "" && isTrustedIP(remoteHost, rl.trustedNets)
+}
+
+// resolveClientAddress applies the trusted-proxy rule directly to the request.
+func (rl *rateLimiter) resolveClientAddress(r *http.Request) string {
 	remoteHost := remoteIP(r.RemoteAddr)
 
-	if len(rl.trustedNets) > 0 && remoteHost != "" && isTrustedIP(remoteHost, rl.trustedNets) {
+	if rl.peerTrusted(r) {
 		if forwarded := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0]); forwarded != "" {
 			return forwarded
 		}

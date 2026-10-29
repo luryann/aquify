@@ -28,3 +28,16 @@ func TestValidateResetTargetRejectsRemoteAndProductionNames(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateResetTargetRejectsSubstringOnlyMatches(t *testing.T) {
+	for _, name := range []string{"contest_results", "latest", "aquify_attested", "e2eish"} {
+		if err := validateResetTarget("postgres://postgres:postgres@127.0.0.1:5432/"+name+"?sslmode=disable", "true"); err == nil {
+			t.Fatalf("expected database %q to be rejected", name)
+		}
+	}
+	for _, name := range []string{"aquify_e2e", "aquify-test", "test_aquify", "e2e"} {
+		if err := validateResetTarget("postgres://postgres:postgres@127.0.0.1:5432/"+name+"?sslmode=disable", "true"); err != nil {
+			t.Fatalf("expected database %q to pass: %v", name, err)
+		}
+	}
+}

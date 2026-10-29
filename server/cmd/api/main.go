@@ -43,9 +43,9 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -57,47 +57,25 @@ import (
 	"github.com/dareaquatics/aquify/server/internal/app"
 	"github.com/dareaquatics/aquify/server/internal/telemetry"
 	"github.com/dareaquatics/aquify/server/internal/workers"
+	"github.com/joho/godotenv"
 )
 
 var loadDotEnvFile = loadDotEnv
 
-// loadDotEnv reads a .env-style file and sets any unset environment variables.
-// Lines starting with # are ignored. Existing env vars are never overwritten.
+// loadDotEnv reads a .env-style file with the standard godotenv parser (export
+// prefixes, quoting, escapes and inline comments) and sets any unset
+// environment variables. Existing env vars (even empty ones) are never
+// overwritten. A missing file is ignored; a malformed file is reported on
+// stderr instead of being half-applied silently.
 func loadDotEnv(path string) {
-	f, err := os.Open(path)
+	values, err := godotenv.Read(path)
 	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			fmt.Fprintf(os.Stderr, "warning: ignoring %s: %v\n", path, err)
+		}
 		return
 	}
-	defer f.Close()
-
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		idx := strings.IndexByte(line, '=')
-		if idx <= 0 {
-			continue
-		}
-		key := strings.TrimSpace(line[:idx])
-		val := strings.TrimSpace(line[idx+1:])
-		// A comment marker inside a quoted value is part of the value.
-		if len(val) > 0 && (val[0] == '"' || val[0] == '\'') {
-			quote := val[0]
-			for end := 1; end < len(val); end++ {
-				if quote == '"' && val[end] == '\\' {
-					end++
-					continue
-				}
-				if val[end] == quote {
-					val = val[1:end]
-					break
-				}
-			}
-		} else if ci := strings.Index(val, " #"); ci >= 0 {
-			val = strings.TrimSpace(val[:ci])
-		}
+	for key, val := range values {
 		if _, exists := os.LookupEnv(key); key != "" && !exists {
 			_ = os.Setenv(key, val)
 		}
@@ -105,7 +83,7 @@ func loadDotEnv(path string) {
 }
 
 func shouldLoadLocalEnvFiles(appEnv string) bool {
-	switch strings.ToLower(strings.TrimSpace(appEnv)) {
+	switch app.NormalizeAppEnv(appEnv) {
 	case "development", "local":
 		return true
 	default:
@@ -212,12 +190,10 @@ func main() {
 	metrics := telemetry.NewMetrics()
 
 	// Build the HTTP router with the configured durable backend when available.
-	handler := app.NewRouterWithServicesAndMetrics(cfg, logger, metrics, false,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		nil,
-		backend,
-		nil,
-	)
+	handler := app.NewRouterWithServices(cfg, logger, app.RouterDeps{
+		Metrics: metrics,
+		Workers: backend,
+	})
 
 	httpServer := &http.Server{
 		Addr:              cfg.Addr,
@@ -314,12 +290,10 @@ func runWorker(cfg app.Config, logger *slog.Logger, backend *workers.RedisBacken
 			}
 		}()
 	}
-	app.NewRouterWithServicesAndMetrics(cfg, logger, metrics, false,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		nil,
-		backend,
-		nil,
-	)
+	app.NewRouterWithServices(cfg, logger, app.RouterDeps{
+		Metrics: metrics,
+		Workers: backend,
+	})
 	app.RegisterDurableScheduledJobs(backend, cfg)
 	if err := backend.Start(); err != nil {
 		logger.Error("worker start failed", "error", err)

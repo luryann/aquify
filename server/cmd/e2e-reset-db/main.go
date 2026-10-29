@@ -67,9 +67,21 @@ func validateResetTarget(databaseURL, allowReset string) error {
 	if dbName == "postgres" || strings.Contains(dbName, "prod") || strings.Contains(dbName, "staging") {
 		return fmt.Errorf("database name %q is not allowed for E2E reset", cfg.Database)
 	}
-	if !strings.Contains(dbName, "test") && !strings.Contains(dbName, "e2e") {
-		return fmt.Errorf("database name %q must clearly identify a test/e2e database", cfg.Database)
+	if !hasTestToken(dbName) {
+		return fmt.Errorf("database name %q must contain a whole `test` or `e2e` word (for example aquify_e2e)", cfg.Database)
 	}
 
 	return nil
+}
+
+// hasTestToken reports whether the database name contains "test" or "e2e" as a
+// whole word delimited by underscores or hyphens. Plain substring matching
+// would accept names such as "contest_results" or "latest".
+func hasTestToken(dbName string) bool {
+	for _, token := range strings.FieldsFunc(dbName, func(r rune) bool { return r == '_' || r == '-' }) {
+		if token == "test" || token == "e2e" {
+			return true
+		}
+	}
+	return false
 }

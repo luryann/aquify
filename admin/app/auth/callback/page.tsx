@@ -17,6 +17,8 @@ function CallbackInner() {
   const { refreshSession } = useSession()
   const [stage, setStage] = useState<'processing' | 'mfa' | 'error'>('processing')
   const [errorMsg, setErrorMsg] = useState('')
+  // Number of sign-in steps that have really completed (0-4).
+  const [progress, setProgress] = useState(0)
   const [dots, setDots] = useState(1)
 
   useEffect(() => {
@@ -68,6 +70,8 @@ function CallbackInner() {
           throw new Error(message)
         }
 
+        if (cancelled) return
+        setProgress(2)
         const next = await refreshSession()
         if (cancelled) return
 
@@ -75,12 +79,14 @@ function CallbackInner() {
           throw new Error('Sign-in completed but no active session could be loaded.')
         }
 
+        setProgress(3)
         if (roleRequiresMFA(next.user.roles) && !next.user.mfaAuthenticated) {
           setStage('mfa')
           setTimeout(() => router.replace('/mfa'), 400)
           return
         }
 
+        setProgress(4)
         router.replace(destinationForRole(next.user.roles))
       } catch (error) {
         if (cancelled) return
@@ -193,11 +199,11 @@ function CallbackInner() {
             className="is-87dbcd5"
           >
             {[
-              { label: 'Verifying state token', done: true },
-              { label: 'Exchanging authorization code', done: true },
-              { label: 'Creating session', done: stage !== 'processing' },
-              { label: 'Loading workspace', done: false },
-            ].map((step) => (
+              'Verifying state token',
+              'Exchanging authorization code',
+              'Creating session',
+              'Loading workspace',
+            ].map((label, index) => ({ label, done: index < progress })).map((step) => (
               <div
                 key={step.label}
                 style={{

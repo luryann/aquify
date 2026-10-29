@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { Icon } from '@/components/ui/icons'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
-import { useApiClient, ApiError } from '@/lib/api'
+import { useApiClient } from '@/lib/api'
+import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { assignRole, fetchMFAFactors, fetchRoleAssignments, fetchUsers, type MFAFactorRecord, type RoleAssignmentRecord, type UserRecord } from '@/lib/adminData'
 
 const ROLE_OPTIONS = ['admin', 'coach', 'parent', 'swimmer'] as const
@@ -25,16 +26,6 @@ function mfaSummary(factors: MFAFactorRecord[]) {
   if (factors.length === 0) return 'No MFA factors enrolled'
   const verified = factors.filter((factor) => factor.is_verified).length
   return `${verified}/${factors.length} factor${factors.length === 1 ? '' : 's'} verified`
-}
-
-// Never surface raw backend error text (e.g. header names, internal codes) directly
-// in the UI. Map known-safe messages through, and fall back to a generic message
-// for anything that looks technical or is otherwise unrecognized.
-function toFriendlyErrorMessage(err: unknown, fallback: string): string {
-  if (!(err instanceof ApiError)) return fallback
-  const looksTechnical = /header|x-org-id|x-csrf|null|undefined|panic|stack trace/i.test(err.message)
-  if (looksTechnical || !err.message.trim()) return fallback
-  return err.message
 }
 
 function userDisplayName(user: UserRecord): string {
@@ -77,7 +68,7 @@ export function RolesPanel() {
       })
       .catch((err: unknown) => {
         if (cancelled) return
-        setError(toFriendlyErrorMessage(err, 'Couldn’t load role management data. Try again.'))
+        setError(uiErrorMessage(err, 'Couldn’t load role management data. Try again.'))
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -126,7 +117,7 @@ export function RolesPanel() {
       setForm({ target_user_id: '', role: 'coach', reason: '' })
       setUserQuery('')
     } catch (err) {
-      setError(toFriendlyErrorMessage(err, 'Couldn’t assign role. Try again.'))
+      setError(uiErrorMessage(err, 'Couldn’t assign role. Try again.'))
     } finally {
       setSubmitting(false)
     }

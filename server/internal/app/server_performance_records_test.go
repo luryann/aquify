@@ -26,7 +26,11 @@ func TestPerformanceRecordsGoalsRelaysRoutes(t *testing.T) {
 	membersSvc := members.NewService()
 	meetsSvc := meets.NewService()
 	perfSvc := performance.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, membersSvc, nil, meetsSvc, nil, perfSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, RouterDeps{
+		Members:     membersSvc,
+		Meets:       meetsSvc,
+		Performance: perfSvc,
+	})
 	admin := issueSessionTokenForUser(t, router, "admin-user", org, []string{"admin"}, true)
 	coach := issueSessionTokenForUser(t, router, "coach-user", org, []string{"coach"}, false)
 
@@ -250,7 +254,11 @@ func TestResultsImportReportsNewTeamRecords(t *testing.T) {
 	t.Parallel()
 	const org = "org-import-records"
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	router := NewRouterWithServices(Config{}, logger, nil, members.NewService(), nil, meets.NewService(), nil, performance.NewService(), nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, RouterDeps{
+		Members:     members.NewService(),
+		Meets:       meets.NewService(),
+		Performance: performance.NewService(),
+	})
 	admin := issueSessionTokenForUser(t, router, "admin-user", org, []string{"admin"}, true)
 	post := func(path string, body map[string]any, dst any) {
 		req := httptest.NewRequest(http.MethodPost, path, encodeJSONBody(t, body))

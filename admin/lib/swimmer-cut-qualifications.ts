@@ -3,6 +3,8 @@ import type {
   SwimmerRecord,
   TimeStandardRecord,
 } from './adminData.ts'
+import { localToday } from './dates.ts'
+import { swimmerAgeAsOf } from './event-eligibility.ts'
 import { swimmerGenderToEventGender } from './gender.ts'
 
 export type SwimmerCutQualificationCard = {
@@ -11,13 +13,9 @@ export type SwimmerCutQualificationCard = {
 }
 
 export function swimmerAgeOnDate(swimmer: SwimmerRecord, now = new Date()): number {
-  const dob = new Date(swimmer.date_of_birth)
-  let age = now.getFullYear() - dob.getFullYear()
-  const monthDelta = now.getMonth() - dob.getMonth()
-  if (monthDelta < 0 || (monthDelta === 0 && now.getDate() < dob.getDate())) {
-    age--
-  }
-  return age
+  // Calendar-date arithmetic shared with event eligibility, so a date-only DOB
+  // never shifts across a timezone and both checks agree at a birthday boundary.
+  return swimmerAgeAsOf(swimmer.date_of_birth, localToday(now)) ?? Number.NaN
 }
 
 export function filterApplicableTimeStandards(

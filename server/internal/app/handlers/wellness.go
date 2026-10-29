@@ -29,7 +29,7 @@ type WellnessHandlers struct {
 
 // NewWellnessHandlers wires the wellness handlers.
 func NewWellnessHandlers(svc *wellness.Service, dir roster.Directory) *WellnessHandlers {
-	return &WellnessHandlers{service: svc, directory: dir, validate: validator.New()}
+	return &WellnessHandlers{service: svc, directory: dir, validate: httpx.NewValidator()}
 }
 
 // RegisterRoutes mounts the wellness routes.
@@ -56,19 +56,18 @@ func clampDays(raw string, def, max int) int {
 
 // readableSwimmer resolves the {swimmerID} route swimmer for a read: staff may
 // read anyone, family members their own household. It writes the 404/403/500
-// itself; what names the data in the household-scope message.
+// itself; what is kept for call-site readability.
 func readableSwimmer(w http.ResponseWriter, r *http.Request, dir roster.Directory, principal *appmiddleware.Principal, orgID, what string) (roster.Swimmer, bool) {
 	sw, allowed, err := householdSwimmer(dir, principal, orgID, chi.URLParam(r, "swimmerID"))
 	if err != nil {
 		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to resolve swimmer.", err)
 		return roster.Swimmer{}, false
 	}
-	if sw.ID == "" {
+	staff := hasAnyRole(principal, "admin", "coach")
+	// Unknown and foreign swimmers are indistinguishable to family members so
+	// the route cannot be used to probe which swimmer IDs exist in other households.
+	if sw.ID == "" || (!allowed && !staff) {
 		httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Swimmer not found.", nil)
-		return roster.Swimmer{}, false
-	}
-	if !allowed && !hasAnyRole(principal, "admin", "coach") {
-		httpx.WriteError(w, r, http.StatusForbidden, "household_scope_violation", "You can only view "+what+" for your own household.", nil)
 		return roster.Swimmer{}, false
 	}
 	return sw, true

@@ -20,24 +20,13 @@ import (
 func newReportsRouter(t *testing.T, memberSvc *members.Service, groupSvc *groups.Service, meetSvc *meets.Service, billingSvc *billing.Service, auditSvc *audit.Service) http.Handler {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewRouterWithServices(
-		Config{Auth: AuthConfig{EnableDevStubTokens: true}},
-		logger,
-		nil,
-		memberSvc,
-		groupSvc,
-		meetSvc,
-		nil,
-		nil,
-		billingSvc,
-		nil,
-		nil,
-		auditSvc,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil)
+	return NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, RouterDeps{
+		Members: memberSvc,
+		Groups:  groupSvc,
+		Meets:   meetSvc,
+		Billing: billingSvc,
+		Audit:   auditSvc,
+	})
 }
 
 func seedReportsFixture(t *testing.T, memberSvc *members.Service, groupSvc *groups.Service, meetSvc *meets.Service, billingSvc *billing.Service) (orgID string, principal *appmiddleware.Principal, household members.Household, swimmer members.Swimmer, group groups.Group, meet meets.Meet, invoice *billing.Invoice) {

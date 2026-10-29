@@ -19,12 +19,10 @@ import (
 func newStep30BRouter(t *testing.T, kc keycloak.Client) http.Handler {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewRouterWithServices(
-		Config{Auth: AuthConfig{EnableDevStubTokens: true}},
-		logger,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		audit.NewService(), nil, nil, nil, nil,
-		kc)
+	return NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, RouterDeps{
+		Audit:    audit.NewService(),
+		Keycloak: kc,
+	})
 }
 
 func issueStep30BToken(t *testing.T, router http.Handler, userID, orgID string, roles []string, mfa bool) string {
@@ -60,17 +58,14 @@ func TestUserMgmt_ListUsers_AdminCanList(t *testing.T) {
 
 func TestUserMgmt_ListUsers_SeedsDevStubUsersAndIncludesSourceMetadata(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	router := NewRouterWithServices(
-		Config{
-			AppEnv: "development",
-			Auth: AuthConfig{
-				EnableDevStubTokens: true,
-			},
+	router := NewRouterWithServices(Config{
+		AppEnv: "development",
+		Auth: AuthConfig{
+			EnableDevStubTokens: true,
 		},
-		logger,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		audit.NewService(), nil, nil, nil, nil,
-		nil)
+	}, logger, RouterDeps{
+		Audit: audit.NewService(),
+	})
 	token := issueStep30BToken(t, router, authn.LocalDevAdminUserID, authn.LocalDevOrgID, []string{"admin"}, false)
 
 	rr := doRequest(router, http.MethodGet, "/api/v1/users", token, "", authn.LocalDevOrgID)
@@ -249,23 +244,20 @@ func TestUserMgmt_Invite_NonAdminForbidden(t *testing.T) {
 
 func TestUserMgmt_CreateUser_NoSilentStubFallbackWhenRealOIDCConfigured(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	router := NewRouterWithServices(
-		Config{
-			AppEnv: "development",
-			Auth: AuthConfig{
-				EnableDevStubTokens: false,
-				OIDC: OIDCConfig{
-					AuthorizeURL:    "http://localhost:8180/realms/aquify/protocol/openid-connect/auth",
-					RedirectURL:     "http://localhost:3000/auth/callback",
-					ClientID:        "aquify-id",
-					StateSigningKey: "state-signing-key",
-				},
+	router := NewRouterWithServices(Config{
+		AppEnv: "development",
+		Auth: AuthConfig{
+			EnableDevStubTokens: false,
+			OIDC: OIDCConfig{
+				AuthorizeURL:    "http://localhost:8180/realms/aquify/protocol/openid-connect/auth",
+				RedirectURL:     "http://localhost:3000/auth/callback",
+				ClientID:        "aquify-id",
+				StateSigningKey: "state-signing-key",
 			},
 		},
-		logger,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		audit.NewService(), nil, nil, nil, nil,
-		nil)
+	}, logger, RouterDeps{
+		Audit: audit.NewService(),
+	})
 	token := issueStep30BToken(t, router, "admin1", "org-test", []string{"admin"}, false)
 
 	body := `{"first_name":"Bob","last_name":"Smith","email":"bob@example.com","password":"ChangeMe123!","role":"parent"}`
@@ -584,12 +576,10 @@ func TestUserMgmt_AuditEvents_InviteEmitsEvent(t *testing.T) {
 	kc := keycloak.NewStubClient()
 	auditSvc := audit.NewService()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	router := NewRouterWithServices(
-		Config{Auth: AuthConfig{EnableDevStubTokens: true}},
-		logger,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		auditSvc, nil, nil, nil, nil,
-		kc)
+	router := NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, RouterDeps{
+		Audit:    auditSvc,
+		Keycloak: kc,
+	})
 	token := issueStep30BToken(t, router, "admin1", "org-test", []string{"admin"}, false)
 
 	body := `{"email":"new@example.com","first_name":"New","last_name":"User"}`
@@ -619,12 +609,10 @@ func TestUserMgmt_AuditEvents_DisableEmitsEvent(t *testing.T) {
 	})
 	auditSvc := audit.NewService()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	router := NewRouterWithServices(
-		Config{Auth: AuthConfig{EnableDevStubTokens: true}},
-		logger,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		auditSvc, nil, nil, nil, nil,
-		kc)
+	router := NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, RouterDeps{
+		Audit:    auditSvc,
+		Keycloak: kc,
+	})
 	token := issueStep30BToken(t, router, "admin1", "org-test", []string{"admin"}, false)
 
 	rr := doRequest(router, http.MethodPost, "/api/v1/users/u1/disable", token, "", "org-test")

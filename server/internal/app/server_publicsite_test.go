@@ -19,7 +19,11 @@ func TestPublicTeamSite(t *testing.T) {
 	t.Parallel()
 	const org = "org-pubsite"
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	router := NewRouterWithServices(Config{}, logger, nil, members.NewService(), nil, meets.NewService(), exports.NewService(), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, RouterDeps{
+		Members: members.NewService(),
+		Meets:   meets.NewService(),
+		Exports: exports.NewService(),
+	})
 	admin := issueSessionTokenForUser(t, router, "admin-user", org, []string{"admin"}, true)
 	parent := issueSessionTokenForUser(t, router, "parent-user", org, []string{"parent"}, false)
 
@@ -100,6 +104,8 @@ func TestPublicTeamSite(t *testing.T) {
 			t.Fatalf("public payload leaked %q: %s", banned, body)
 		}
 	}
+	// Allowlist, not blacklist: every key at every depth must be a known public field.
+	assertPublicKeysAllowed(t, site)
 	for _, want := range []string{"Public news", "Open pool party", "Spring Invitational", "DARE Aquatics", "hello@dare.example", "/register"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("public payload missing %q: %s", want, body)
@@ -120,4 +126,44 @@ func TestPublicTeamSite(t *testing.T) {
 	}
 	must(do(admin, http.MethodPut, "/api/v1/org-settings", map[string]any{"public_site_enabled": false}), http.StatusOK, "disable")
 	must(do("", http.MethodGet, "/api/v1/public/orgs/dare/site", nil), http.StatusNotFound, "disabled again")
+}
+
+// publicAllowedKeys mirrors the documented public payload; a new field must be
+// added here on purpose (and in handlers/publicsite_leak_test.go).
+var publicAllowedKeys = map[string][]string{
+	"":              {"club", "announcements", "meets", "events", "records", "coaches"},
+	"club":          {"name", "slug", "about", "contact_email", "contact_phone", "join_url"},
+	"announcements": {"id", "title", "body", "published_at"},
+	"meets":         {"id", "name", "start_date", "end_date", "location", "host_org", "course"},
+	"events":        {"id", "title", "category", "description", "location", "starts_at", "ends_at", "all_day"},
+	"records":       {"label", "course", "gender", "age_group", "distance", "stroke", "time_ms", "swimmer_name", "swim_date", "meet_name"},
+	"coaches":       {"name", "role"},
+}
+
+func assertPublicKeysAllowed(t *testing.T, site map[string]any) {
+	t.Helper()
+	check := func(section string, obj map[string]any) {
+		allowed := map[string]bool{}
+		for _, k := range publicAllowedKeys[section] {
+			allowed[k] = true
+		}
+		for k := range obj {
+			if !allowed[k] {
+				t.Errorf("public payload %q contains non-allowlisted key %q", section, k)
+			}
+		}
+	}
+	check("", site)
+	for section, v := range site {
+		switch x := v.(type) {
+		case map[string]any:
+			check(section, x)
+		case []any:
+			for _, el := range x {
+				if obj, ok := el.(map[string]any); ok {
+					check(section, obj)
+				}
+			}
+		}
+	}
 }

@@ -27,7 +27,7 @@ type BillingHandlers struct {
 func NewBillingHandlers(svc *billing.Service) *BillingHandlers {
 	return &BillingHandlers{
 		service:  svc,
-		validate: validator.New(),
+		validate: httpx.NewValidator(),
 	}
 }
 
@@ -36,7 +36,7 @@ func NewBillingHandlersWithAudit(svc *billing.Service, auditSvc *audit.Service) 
 	return &BillingHandlers{
 		service:      svc,
 		auditService: auditSvc,
-		validate:     validator.New(),
+		validate:     httpx.NewValidator(),
 	}
 }
 
@@ -47,7 +47,7 @@ func NewBillingHandlersWithAuditAndStripe(svc *billing.Service, auditSvc *audit.
 		service:      svc,
 		auditService: auditSvc,
 		stripeClient: stripeClient,
-		validate:     validator.New(),
+		validate:     httpx.NewValidator(),
 	}
 }
 

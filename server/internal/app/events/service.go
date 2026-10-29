@@ -276,6 +276,13 @@ func normalize(in EventInput) (EventInput, error) {
 
 // ─── Billing seam ─────────────────────────────────────────────────────────────
 
+// IsPubliclyVisible reports whether the event may appear on the
+// unauthenticated team website: marked public, scheduled (not cancelled) and
+// open to the whole club.
+func (e *Event) IsPubliclyVisible(orgID string) bool {
+	return e != nil && e.OrgID == orgID && e.Public && e.Audience == "all" && e.Status == "scheduled"
+}
+
 // Charge describes an RSVP fee to bill to a household.
 type Charge struct {
 	EventID         string

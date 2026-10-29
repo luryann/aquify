@@ -37,7 +37,7 @@ type PerformanceHandlers struct {
 func NewPerformanceHandlers(svc *performance.Service) *PerformanceHandlers {
 	return &PerformanceHandlers{
 		service:  svc,
-		validate: validator.New(),
+		validate: httpx.NewValidator(),
 	}
 }
 
@@ -63,7 +63,7 @@ func NewPerformanceHandlersWithAuditAndContext(
 		meetsService:     meetsSvc,
 		documentsService: documentsSvc,
 		auditService:     auditSvc,
-		validate:         validator.New(),
+		validate:         httpx.NewValidator(),
 	}
 }
 
@@ -216,6 +216,11 @@ func (h *PerformanceHandlers) upsertResult(w http.ResponseWriter, r *http.Reques
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role to upsert results.", nil)
 			return
 		}
+		if errors.Is(err, performance.ErrRecordDetection) && result != nil {
+			// The result is stored; only team-record detection failed.
+			httpx.WriteError(w, r, http.StatusInternalServerError, "record_detection_incomplete", "The result was saved but team-record detection did not complete; run a records rebuild.", err)
+			return
+		}
 		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
 		return
 	}
@@ -341,7 +346,10 @@ func (h *PerformanceHandlers) listProgression(w http.ResponseWriter, r *http.Req
 	swimmerID := chi.URLParam(r, "swimmerID")
 
 	q := r.URL.Query()
-	distance := queryInt(r, "distance")
+	distance, ok := queryInt(w, r, "distance")
+	if !ok {
+		return
+	}
 
 	results, err := h.service.ListProgression(orgID, principal, swimmerID, performance.ListResultsFilters{
 		EventDistance: distance,
@@ -422,7 +430,10 @@ func (h *PerformanceHandlers) listOrgProgression(w http.ResponseWriter, r *http.
 	}
 
 	q := r.URL.Query()
-	distance := queryInt(r, "distance")
+	distance, ok := queryInt(w, r, "distance")
+	if !ok {
+		return
+	}
 
 	results, err := h.service.ListProgressionForOrg(orgID, principal, performance.ListResultsFilters{
 		SwimmerID:     q.Get("swimmer_id"),
@@ -651,9 +662,18 @@ func (h *PerformanceHandlers) listTimeStandards(w http.ResponseWriter, r *http.R
 	}
 
 	q := r.URL.Query()
-	yearFilter := queryInt(r, "season_year")
-	distFilter := queryInt(r, "event_distance")
-	activeOnly := q.Get("active_only") == "true" || q.Get("active_only") == "1"
+	yearFilter, ok := queryInt(w, r, "season_year")
+	if !ok {
+		return
+	}
+	distFilter, ok := queryInt(w, r, "event_distance")
+	if !ok {
+		return
+	}
+	activeOnly, ok := queryBool(w, r, "active_only")
+	if !ok {
+		return
+	}
 
 	standards, err := h.service.ListTimeStandards(orgID, performance.ListTimeStandardsFilters{
 		SeasonYear:    yearFilter,
@@ -743,7 +763,7 @@ func (h *PerformanceHandlers) updateTimeStandard(w http.ResponseWriter, r *http.
 
 	var body updateTimeStandardBody
 	if err := decodeJSONBody(w, r, &body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request_body", err.Error(), nil)
+		writeJSONDecodeError(w, r, err, "invalid_request_body", "")
 		return
 	}
 

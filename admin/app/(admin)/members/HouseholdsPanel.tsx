@@ -28,6 +28,7 @@ const STATUS_CONFIG: Record<HouseholdStatus, { label: string; color: string; bg:
   active: { label: 'Active', color: 'var(--success)', bg: 'var(--success-bg)' },
   inactive: { label: 'Inactive', color: 'var(--text-muted)', bg: 'var(--bg-elevated)' },
   archived: { label: 'Archived', color: 'var(--text-muted)', bg: 'var(--bg-elevated)' },
+  unknown: { label: 'Unknown', color: 'var(--warning)', bg: 'var(--warning-bg)' },
 }
 
 function StatusBadge({ status }: { status: HouseholdStatus }) {

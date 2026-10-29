@@ -23,8 +23,10 @@ export async function launchPortalInvoiceCheckout(params: {
   invoice: InvoiceRecord
   origin: string
   redirect: (url: string) => void
+  /** Unique per user attempt so a retry after a cancelled/expired session is not replayed by Stripe. */
+  attemptId?: string
 }): Promise<void> {
-  const { api, orgId, invoice, origin, redirect } = params
+  const { api, orgId, invoice, origin, redirect, attemptId = globalThis.crypto.randomUUID() } = params
   const urls = buildPortalInvoiceCheckoutURLs(origin, invoice.id)
   const checkout = await createInvoiceCheckoutSession(api, orgId, {
     invoice_id: invoice.id,
@@ -32,7 +34,7 @@ export async function launchPortalInvoiceCheckout(params: {
     description: invoice.notes ?? invoice.invoice_number,
     success_url: urls.success_url,
     cancel_url: urls.cancel_url,
-    idempotency_key: `invoice-checkout:${invoice.id}:${invoice.amount_due_cents}`,
+    idempotency_key: `invoice-checkout:${invoice.id}:${invoice.amount_due_cents}:${attemptId}`,
   })
   if (!checkout.url) {
     throw new Error('Checkout session did not return a redirect URL.')

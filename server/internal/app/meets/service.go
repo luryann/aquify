@@ -47,6 +47,20 @@ var (
 // ─── Domain types ─────────────────────────────────────────────────────────────
 
 // Meet represents a swim meet within an org.
+// IsPubliclyListed reports whether the meet may appear on the unauthenticated
+// team website as of today (YYYY-MM-DD): same org, not a draft or archived, and
+// not already over.
+func (m Meet) IsPubliclyListed(orgID, today string) bool {
+	if m.OrgID != orgID || m.Status == "draft" || m.Status == "archived" {
+		return false
+	}
+	end := m.EndDate
+	if end == "" {
+		end = m.StartDate
+	}
+	return end != "" && end >= today
+}
+
 type Meet struct {
 	ID                   string     `json:"id"`
 	OrgID                string     `json:"org_id"`

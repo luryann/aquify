@@ -23,7 +23,7 @@ test('portal meet selection state reloads persisted event selections from backen
       },
     ],
     [
-      { id: 'cmt_1', meet_id: 'meet_1', swimmer_id: 'sw_1', status: 'committed_yes', note: 'prefers sprint free' },
+      { id: 'cmt_1', meet_id: 'meet_1', swimmer_id: 'sw_1', status: 'committed_yes', notes: 'prefers sprint free' },
     ],
     {
       cmt_1: [

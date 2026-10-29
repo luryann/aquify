@@ -4,7 +4,8 @@ import { useState } from 'react'
 import type { ApiClient } from '@/lib/api'
 import { reportUIError } from '@/lib/frontend-telemetry'
 import { bulkCreateVolunteerJobs, createVolunteerJob } from '@/lib/volunteerData'
-import { VOLUNTEER_ROLE_LABELS, localInputToISO, type VolunteerRole } from '@/lib/volunteer-state'
+import { VOLUNTEER_ROLE_LABELS, type VolunteerRole } from '@/lib/volunteer-state'
+import { localInputToISO } from '@/lib/dates'
 import { InlineNotice } from './VolunteerPrimitives'
 
 type Shift = { date: string; start: string; end: string; label: string }
@@ -50,7 +51,7 @@ export function NewJobsForm({ api, orgId, meetId, defaultDate, onCreated }: {
   }
 
   function shiftISO(s: Shift) {
-    return { starts_at: localInputToISO(`${s.date}T${s.start}`), ends_at: localInputToISO(`${s.date}T${s.end}`) }
+    return { starts_at: localInputToISO(`${s.date}T${s.start}`) ?? '', ends_at: localInputToISO(`${s.date}T${s.end}`) ?? '' }
   }
 
   async function submit(e: React.FormEvent) {

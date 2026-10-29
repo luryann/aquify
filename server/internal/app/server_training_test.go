@@ -15,13 +15,9 @@ import (
 func newTrainingRouter(t *testing.T, svc *training.Service) http.Handler {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewRouterWithServices(
-		Config{Auth: AuthConfig{EnableDevStubTokens: true}},
-		logger,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		svc,
-		nil,
-		nil)
+	return NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, RouterDeps{
+		Training: svc,
+	})
 }
 
 func issueTrainingToken(t *testing.T, router http.Handler, userID, orgID, role string) string {

@@ -81,7 +81,10 @@ if [[ -n "${PROMETHEUS_URL}" ]]; then
   metrics_dir="${EVIDENCE_DIR}/prometheus"
   mkdir -p "${metrics_dir}"
   prometheus_query() {
-    curl -sS -G "${PROMETHEUS_URL}/api/v1/query" --data-urlencode "query=$2" -o "${metrics_dir}/$1.json"
+    # Record the HTTP status next to each snapshot, like api() does for the API
+    # evidence, so an error response is never mistaken for a metric.
+    curl -sS -G "${PROMETHEUS_URL}/api/v1/query" --data-urlencode "query=$2" \
+      -o "${metrics_dir}/$1.json" -w '%{http_code}' > "${metrics_dir}/$1.json.status" || echo 000 > "${metrics_dir}/$1.json.status"
   }
   prometheus_query api-5xx-rate 'sum(rate(http_requests_total{status=~"5.."}[15m]))'
   prometheus_query api-p95-latency 'histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[15m])) by (le))'
@@ -121,6 +124,20 @@ for name in [
     status = read_status(name)
     if not status.startswith("2"):
         failures.append(f"{name}: HTTP status {status or 'missing'}")
+
+prom_dir = root / "prometheus"
+if prom_dir.exists():
+    for status_file in sorted(prom_dir.glob("*.json.status")):
+        status = status_file.read_text(encoding="utf-8").strip()
+        snapshot = status_file.name[: -len(".json.status")]
+        if not status.startswith("2"):
+            failures.append(f"prometheus/{snapshot}: HTTP status {status or 'missing'}")
+        else:
+            try:
+                if json.loads((prom_dir / f"{snapshot}.json").read_text(encoding="utf-8")).get("status") != "success":
+                    failures.append(f"prometheus/{snapshot}: query status is not success")
+            except (OSError, ValueError):
+                failures.append(f"prometheus/{snapshot}: unreadable snapshot")
 
 dlq = load("jobs-dlq")
 dlq_count = int(dlq.get("count", 0))

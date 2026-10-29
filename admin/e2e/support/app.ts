@@ -85,8 +85,20 @@ function buildEmail(userId: string, orgId: string) {
   return `${userId}.${orgId}@example.test`
 }
 
+// Contexts opened by the current test. Playwright runs one test at a time per
+// worker process, so a module-level set is safe; the `trackedContexts` fixture in
+// ./test.ts closes them at teardown.
+const openContexts = new Set<BrowserContext>()
+
+export async function closeTrackedContexts() {
+  const contexts = [...openContexts]
+  openContexts.clear()
+  await Promise.all(contexts.map((context) => context.close().catch(() => undefined)))
+}
+
 export async function newAuthedContext(browser: Browser, input: SessionInput): Promise<BrowserContext> {
   const context = await browser.newContext({ baseURL: ADMIN_ORIGIN })
+  openContexts.add(context)
   await issueSession(context, input)
   return context
 }
@@ -198,19 +210,28 @@ export async function createGroup(
   return response.group
 }
 
+function isoDateFromToday(offsetDays: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() + offsetDays)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
 export async function createMeet(
   context: BrowserContext,
   orgId: string,
   input: { name: string; eventNumber?: string; selfSignupEnabled?: boolean },
 ) {
+  // Dates are relative to today so the scenarios keep working once any fixed date passes.
+  const startDate = isoDateFromToday(30)
   const response = await requestWithOrg<{ meet: MeetRecord }>(context, 'POST', '/api/v1/meets', orgId, {
     name: input.name,
     meet_type: 'invitational',
     course: 'SCY',
-    start_date: '2026-07-10',
-    end_date: '2026-07-10',
-    commitment_deadline: '2026-07-09',
-    sessions: [{ session_number: 1, name: 'Morning Session', session_date: '2026-07-10' }],
+    start_date: startDate,
+    end_date: startDate,
+    commitment_deadline: isoDateFromToday(29),
+    sessions: [{ session_number: 1, name: 'Morning Session', session_date: startDate }],
     events: [{
       session_number: 1,
       event_number: input.eventNumber ?? '1',

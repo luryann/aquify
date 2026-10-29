@@ -67,13 +67,9 @@ func TestDurableJobsSurviveAPIRestart(t *testing.T) {
 	}
 	defer func() { _ = backend2.Close() }()
 
-	router := NewRouterWithServices(
-		Config{Auth: AuthConfig{EnableDevStubTokens: true}},
-		logger,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		nil,
-		backend2,
-		nil)
+	router := NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, RouterDeps{
+		Workers: backend2,
+	})
 	token := issueStep17Token(t, router, "admin")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs?queue=imports", nil)
@@ -248,13 +244,9 @@ func TestDurableWorkerModeRegistersAndProcessesSharedHandlers(t *testing.T) {
 	defer cleanup()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	NewRouterWithServices(
-		Config{Auth: AuthConfig{EnableDevStubTokens: true}},
-		logger,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		nil,
-		backend,
-		nil)
+	NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, RouterDeps{
+		Workers: backend,
+	})
 
 	if err := backend.Start(); err != nil {
 		t.Fatalf("backend.Start: %v", err)
@@ -285,18 +277,14 @@ func TestDurableWorkerModeExecutesScheduledReconcileJobs(t *testing.T) {
 	defer cleanup()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	NewRouterWithServices(
-		Config{
-			Auth: AuthConfig{EnableDevStubTokens: true},
-			Worker: WorkerConfig{
-				ReconcileInterval: "50ms",
-			},
+	NewRouterWithServices(Config{
+		Auth: AuthConfig{EnableDevStubTokens: true},
+		Worker: WorkerConfig{
+			ReconcileInterval: "50ms",
 		},
-		logger,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		nil,
-		backend,
-		nil)
+	}, logger, RouterDeps{
+		Workers: backend,
+	})
 	RegisterDurableScheduledJobs(backend, Config{Worker: WorkerConfig{ReconcileInterval: "50ms"}})
 
 	if err := backend.Start(); err != nil {

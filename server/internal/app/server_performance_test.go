@@ -132,7 +132,9 @@ type timeStandardsListEnvelope struct {
 func newPerfRouter(t *testing.T, svc *performance.Service) http.Handler {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, nil, nil, nil, nil, nil, svc, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	return NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, RouterDeps{
+		Performance: svc,
+	})
 }
 
 // newPerfWithMembersRouter builds a router with both performance and members
@@ -140,7 +142,10 @@ func newPerfRouter(t *testing.T, svc *performance.Service) http.Handler {
 func newPerfWithMembersRouter(t *testing.T, perfSvc *performance.Service, memberSvc *members.Service) http.Handler {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, nil, memberSvc, nil, nil, nil, perfSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	return NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, RouterDeps{
+		Members:     memberSvc,
+		Performance: perfSvc,
+	})
 }
 
 // newPerfAndMeetsRouter builds a router with both performance and meets
@@ -148,7 +153,10 @@ func newPerfWithMembersRouter(t *testing.T, perfSvc *performance.Service, member
 func newPerfAndMeetsRouter(t *testing.T, perfSvc *performance.Service, meetsSvc *meets.Service) http.Handler {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, nil, nil, nil, meetsSvc, nil, perfSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	return NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, RouterDeps{
+		Meets:       meetsSvc,
+		Performance: perfSvc,
+	})
 }
 
 func newPerfActivityRouter(
@@ -161,24 +169,13 @@ func newPerfActivityRouter(
 ) http.Handler {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewRouterWithServices(
-		Config{Auth: AuthConfig{EnableDevStubTokens: true}},
-		logger,
-		nil,
-		memberSvc,
-		groupSvc,
-		meetsSvc,
-		nil,
-		perfSvc,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		documentSvc,
-		nil,
-		nil,
-		nil)
+	return NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, RouterDeps{
+		Members:     memberSvc,
+		Groups:      groupSvc,
+		Meets:       meetsSvc,
+		Performance: perfSvc,
+		Documents:   documentSvc,
+	})
 }
 
 func minimalResultBody(swimmerID string) string {

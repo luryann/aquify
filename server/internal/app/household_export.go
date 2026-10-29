@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/dareaquatics/aquify/server/internal/app/billing"
 	"github.com/dareaquatics/aquify/server/internal/app/groups"
@@ -13,7 +14,7 @@ import (
 // contacts and swimmers (including medical/emergency fields), group
 // memberships, registrations and waiver acceptances, and invoices with their
 // line items, payments, and refunds.
-func collectHouseholdExportData(orgID, householdID string, membersSvc *members.Service, groupsSvc *groups.Service, billingSvc *billing.Service) (map[string]any, error) {
+func collectHouseholdExportData(orgID, householdID string, membersSvc *members.Service, groupsSvc *groups.Service, billingSvc *billing.Service, extra ...householdExportSource) (map[string]any, error) {
 	if membersSvc == nil {
 		return nil, errors.New("members service is not configured")
 	}
@@ -60,6 +61,19 @@ func collectHouseholdExportData(orgID, householdID string, membersSvc *members.S
 		out["invoice_items"] = filter(billingSvc.SnapshotInvoiceItems(orgID), func(i billing.InvoiceItem) bool { return invoiceIDs[i.InvoiceID] })
 		out["payments"] = filter(billingSvc.SnapshotPayments(orgID), func(p billing.Payment) bool { return invoiceIDs[p.InvoiceID] })
 		out["refunds"] = filter(billingSvc.SnapshotRefunds(orgID), func(r billing.Refund) bool { return invoiceIDs[r.InvoiceID] })
+	}
+
+	// Every other domain that holds household records contributes through a
+	// source; a failing source fails the export rather than silently omitting
+	// personal data from a right-of-access response.
+	for _, src := range extra {
+		data, err := src.collect(orgID, householdID, swimmerIDs)
+		if err != nil {
+			return nil, fmt.Errorf("export %s: %w", src.name, err)
+		}
+		for k, v := range data {
+			out[k] = v
+		}
 	}
 	return out, nil
 }

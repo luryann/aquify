@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/dareaquatics/aquify/server/internal/app/httpx"
 	"github.com/go-playground/validator/v10"
@@ -14,6 +15,32 @@ import (
 const defaultJSONBodyLimit int64 = 1 << 20
 
 var errSingleJSONObject = errors.New("request body must contain a single JSON object")
+
+// bodyTooLargeError marks a request body over the configured limit; it maps to 413.
+type bodyTooLargeError struct{ limit int64 }
+
+func (e bodyTooLargeError) Error() string {
+	return fmt.Sprintf("request body must not exceed %d bytes", e.limit)
+}
+
+func isBodyTooLarge(err error) bool {
+	var tooLarge bodyTooLargeError
+	return errors.As(err, &tooLarge)
+}
+
+// writeJSONDecodeError answers a failed body decode: 413 for an oversized body,
+// otherwise 400 with the caller's code and message (or the decoder's safe
+// message when message is empty).
+func writeJSONDecodeError(w http.ResponseWriter, r *http.Request, err error, code, message string) {
+	if isBodyTooLarge(err) {
+		httpx.WriteError(w, r, http.StatusRequestEntityTooLarge, "request_body_too_large", err.Error(), nil)
+		return
+	}
+	if message == "" {
+		message = err.Error()
+	}
+	httpx.WriteError(w, r, http.StatusBadRequest, code, message, nil)
+}
 
 type decodeJSONOptions struct {
 	AllowEmpty bool
@@ -82,6 +109,9 @@ func decodeAndValidateJSON(w http.ResponseWriter, r *http.Request, dst any, vali
 		if message == "" {
 			message = err.Error()
 		}
+		if isBodyTooLarge(err) {
+			status, code, message = http.StatusRequestEntityTooLarge, "request_body_too_large", err.Error()
+		}
 		httpx.WriteError(w, r, status, code, message, nil)
 		return false
 	}
@@ -109,13 +139,15 @@ func decodeAndValidateJSON(w http.ResponseWriter, r *http.Request, dst any, vali
 	return true
 }
 
+// normalizeJSONDecodeError maps decoder errors to client-safe errors: no Go
+// struct or field names, no reflection detail.
 func normalizeJSONDecodeError(err error, limit int64) error {
 	var maxErr *http.MaxBytesError
 	if errors.As(err, &maxErr) {
-		return fmt.Errorf("request body must not exceed %d bytes", limit)
+		return bodyTooLargeError{limit: limit}
 	}
 
-	if errors.Is(err, io.ErrUnexpectedEOF) {
+	if errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF) {
 		return errors.New("request body contains malformed JSON")
 	}
 
@@ -123,7 +155,21 @@ func normalizeJSONDecodeError(err error, limit int64) error {
 		return errors.New("request body contains malformed JSON")
 	}
 
-	return err
+	var typeErr *json.UnmarshalTypeError
+	if errors.As(err, &typeErr) {
+		if typeErr.Field != "" {
+			return fmt.Errorf("request body field %q has the wrong type", typeErr.Field)
+		}
+		return errors.New("request body has the wrong type")
+	}
+
+	// DisallowUnknownFields reports `json: unknown field "x"`, which only
+	// echoes a name the client sent.
+	if strings.HasPrefix(err.Error(), "json: unknown field ") {
+		return err
+	}
+
+	return errors.New("request body is invalid")
 }
 
 // decodeAndValidateBadRequest decodes and validates a body, answering validation

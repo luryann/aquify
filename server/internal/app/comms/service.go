@@ -267,6 +267,13 @@ type AttachmentInput struct {
 }
 
 // CreateMessageInput holds fields for sending a message into a household+swimmer thread.
+// IsPubliclyVisible reports whether the announcement may appear on the
+// unauthenticated team website: explicitly marked public, published, and
+// addressed to everyone (never a group-scoped or draft announcement).
+func (a Announcement) IsPubliclyVisible() bool {
+	return a.Public && a.Status == "published" && a.Audience == "all"
+}
+
 type CreateMessageInput struct {
 	OrgID        string            `json:"org_id"       validate:"required"`
 	HouseholdID  string            `json:"household_id" validate:"required"`
@@ -1508,6 +1515,57 @@ func normalizeSuppressionReason(reason string) string {
 	}
 }
 
+// HouseholdExport is every comms record tied to one household, for a
+// right-of-access export. It mirrors what EraseHouseholdData removes.
+type HouseholdExport struct {
+	Messages           []Message                `json:"messages"`
+	MessageEdits       []MessageEdit            `json:"message_edits"`
+	MessageAttachments []MessageAttachment      `json:"message_attachments"`
+	MessageReads       []MessageRead            `json:"message_reads"`
+	Preferences        []NotificationPreference `json:"communication_preferences"`
+}
+
+// ExportHouseholdData returns the household's message threads (with edit
+// history and attachment metadata), read watermarks and notification
+// preferences.
+func (s *Service) ExportHouseholdData(orgID, householdID string) HouseholdExport {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := HouseholdExport{
+		Messages: []Message{}, MessageEdits: []MessageEdit{}, MessageAttachments: []MessageAttachment{},
+		MessageReads: []MessageRead{}, Preferences: []NotificationPreference{},
+	}
+	ids := map[string]bool{}
+	for _, m := range s.messages {
+		if m.OrgID == orgID && m.HouseholdID == householdID {
+			out.Messages = append(out.Messages, *m)
+			ids[m.ID] = true
+		}
+	}
+	sort.Slice(out.Messages, func(i, j int) bool { return out.Messages[i].CreatedAt.Before(out.Messages[j].CreatedAt) })
+	for _, e := range s.messageEdits {
+		if ids[e.MessageID] {
+			out.MessageEdits = append(out.MessageEdits, *e)
+		}
+	}
+	for _, a := range s.messageAttachments {
+		if ids[a.MessageID] {
+			out.MessageAttachments = append(out.MessageAttachments, *a)
+		}
+	}
+	for _, r := range s.messageReads {
+		if r.OrgID == orgID && r.HouseholdID == householdID {
+			out.MessageReads = append(out.MessageReads, *r)
+		}
+	}
+	for _, p := range s.preferences {
+		if p.OrgID == orgID && p.HouseholdID == householdID {
+			out.Preferences = append(out.Preferences, *p)
+		}
+	}
+	return out
+}
+
 // EraseHouseholdData permanently deletes every comms record tied to a
 // household as part of an approved compliance right-to-erasure request:
 // message threads (and their edits/reactions/attachments), read watermarks,
@@ -1528,14 +1586,33 @@ func (s *Service) EraseHouseholdData(ctx context.Context, orgID, householdID str
 	}
 
 	var objectKeys []string
-	for id, a := range s.messageAttachments {
-		if !messageIDs[a.MessageID] {
-			continue
-		}
-		if a.ObjectKey != "" {
+	for _, a := range s.messageAttachments {
+		if messageIDs[a.MessageID] && a.ObjectKey != "" {
 			objectKeys = append(objectKeys, a.ObjectKey)
 		}
-		delete(s.messageAttachments, id)
+	}
+
+	emailSet := make(map[string]bool, len(contactEmails))
+	for _, e := range contactEmails {
+		e = strings.ToLower(strings.TrimSpace(e))
+		if e != "" {
+			emailSet[e] = true
+		}
+	}
+
+	// Database first, in one transaction: a failure leaves both the DB and the
+	// in-memory state untouched. Memory is evicted only after the commit.
+	// (message_edits/reactions/attachments cascade via FK from messages.)
+	if s.repo != nil {
+		if err := s.repo.EraseHousehold(ctx, orgID, householdID, slices.Collect(maps.Keys(emailSet))); err != nil {
+			return nil, fmt.Errorf("erase household comms data: %w", err)
+		}
+	}
+
+	for id, a := range s.messageAttachments {
+		if messageIDs[a.MessageID] {
+			delete(s.messageAttachments, id)
+		}
 	}
 	for id, e := range s.messageEdits {
 		if messageIDs[e.MessageID] {
@@ -1561,33 +1638,9 @@ func (s *Service) EraseHouseholdData(ctx context.Context, orgID, householdID str
 		}
 	}
 
-	emailSet := make(map[string]bool, len(contactEmails))
-	for _, e := range contactEmails {
-		e = strings.ToLower(strings.TrimSpace(e))
-		if e != "" {
-			emailSet[e] = true
-		}
-	}
 	for id, d := range s.deliveries {
 		if d.OrgID == orgID && emailSet[strings.ToLower(d.RecipientEmail)] {
 			delete(s.deliveries, id)
-		}
-	}
-
-	if s.repo != nil {
-		// message_edits/reactions/attachments cascade-delete via FK once
-		// their parent message row is removed.
-		if err := s.repo.DeleteMessagesByHousehold(ctx, orgID, householdID); err != nil {
-			return objectKeys, fmt.Errorf("erase household messages: %w", err)
-		}
-		if err := s.repo.DeleteMessageReadsByHousehold(ctx, orgID, householdID); err != nil {
-			return objectKeys, fmt.Errorf("erase household message reads: %w", err)
-		}
-		if err := s.repo.DeleteNotificationPreferencesByHousehold(ctx, orgID, householdID); err != nil {
-			return objectKeys, fmt.Errorf("erase household notification preferences: %w", err)
-		}
-		if err := s.repo.DeleteEmailDeliveriesByRecipientEmails(ctx, orgID, slices.Collect(maps.Keys(emailSet))); err != nil {
-			return objectKeys, fmt.Errorf("erase household email deliveries: %w", err)
 		}
 	}
 

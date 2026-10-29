@@ -262,6 +262,11 @@ func (s *Service) syncFromDB(ctx context.Context) error {
 	return nil
 }
 
+// resetDBBackedStateLocked clears exactly the state populateDBBackedStateLocked
+// rebuilds from Postgres. parentHousehold is intentionally excluded: no table
+// backs it (it is only populated by SeedParentHousehold and the runtime
+// snapshot), so clearing it on a re-sync would drop links with nothing to
+// reload them from. Household scoping in DB mode comes from principal.HouseholdID.
 func (s *Service) resetDBBackedStateLocked() {
 	s.groups = make(map[string]Group)
 	s.rules = make(map[string]EligibilityRule)

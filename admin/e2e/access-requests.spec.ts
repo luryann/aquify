@@ -1,4 +1,6 @@
-import { expect, test, type Page } from '@playwright/test'
+import type { Page } from '@playwright/test'
+
+import { expect, test } from './support/test'
 
 import { expectLoaded, getUser, newAuthedContext } from './support/app'
 import { scenarioFixture } from './support/fixtures'
@@ -51,7 +53,6 @@ test('public registration requests can be approved from the admin approvals queu
   expect(approvedUser.user.attributes?.registration_status?.[0]).toBe('active')
   expect(approvedUser.user.attributes?.requested_role?.[0]).toBe('coach')
 
-  await adminContext.close()
 })
 
 test('public registration requests can be rejected from the admin approvals queue', async ({ browser, page }) => {
@@ -82,5 +83,4 @@ test('public registration requests can be rejected from the admin approvals queu
   expect(rejectedUser.user.enabled).toBe(false)
   expect(rejectedUser.user.attributes?.registration_status?.[0]).toBe('rejected')
 
-  await adminContext.close()
 })

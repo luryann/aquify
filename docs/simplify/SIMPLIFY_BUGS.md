@@ -213,3 +213,132 @@ Note: documents.go storage existence checks now use the request context.
 | 204 | 088 | .github/workflows/deploy-staging.yml, deploy/README.md — changed (YAML parsed; not run on GitHub) | medium | Staging deployed on every push to `main` regardless of CI, and tagged images with `type=sha`, which for any other trigger would not match the tag the SSH step computes. | Deploy now runs from `workflow_run` on `CI` only when it succeeded, checks out and builds `workflow_run.head_sha`, derives one short-sha tag used by both the image tags and the SSH step, and still allows `workflow_dispatch`. Production was already manual-only. |
 | 205 | 088 | server/internal/testutil/integration.go — fixed (found by the first real CI run) | low | `DBHarness.Exec` ran `psql -At -c <multi-statement>`; real psql prints a command tag per statement, so the harness returned `CREATE TABLE\nTRUNCATE TABLE\nINSERT 0 3\n3` and `TestDBHarnessExecutesAgainstConfiguredDatabase` failed on any machine with real psql. | `-qAt` suppresses the tags. |
 Note (bug 182): explained by bug 198. Earlier statements here that it was "not reproducible" were wrong about the cause, not about the observations.
+
+## Disposition of bugs 1-119 (Pass 21)
+
+Every original entry was checked against the current code and either fixed, shown to be already fixed, or judged not applicable. Counts: 99 fixed in this pass, 14 already fixed, 5 not applicable, 1 partial by design. Tests were added for the logic changes; four of the new server tests were confirmed to fail when their fix is reverted (#61, #62, #82, #101). Verification: admin tsc, lint, 169 unit tests and build; Go gofmt, vet, staticcheck, `go test ./...` with 0 skips, coverage gate; meetfiles; 3 consecutive Playwright runs of 9/9; promote/rollback sandbox test (`deploy/scripts/test-promote-rollback.sh`).
+
+| # | Disposition | Note |
+|---|---|---|
+| 1 | FIXED |  |
+| 2 | FIXED |  |
+| 3 | FIXED |  |
+| 4 | NOT APPLICABLE | `formatDateOnly` already parses instants correctly; no regression to fix. |
+| 5 | NOT APPLICABLE | `/audit-events` is admin-only, admins can call `/users`; `fetchUsers` is correct there. |
+| 6 | ALREADY FIXED |  |
+| 7 | FIXED |  |
+| 8 | ALREADY FIXED |  |
+| 9 | FIXED |  |
+| 10 | FIXED |  |
+| 11 | FIXED |  |
+| 12 | ALREADY FIXED |  |
+| 13 | FIXED |  |
+| 14 | FIXED |  |
+| 15 | FIXED |  |
+| 16 | FIXED |  |
+| 17 | FIXED |  |
+| 18 | FIXED |  |
+| 19 | ALREADY FIXED |  |
+| 20 | FIXED |  |
+| 21 | FIXED |  |
+| 22 | ALREADY FIXED |  |
+| 23 | FIXED |  |
+| 24 | FIXED (see note) | Redirect targets are validated; an IdP host allowlist is enforced only when `NEXT_PUBLIC_IDP_ORIGINS` is set. |
+| 25 | FIXED |  |
+| 26 | FIXED |  |
+| 27 | FIXED |  |
+| 28 | FIXED |  |
+| 29 | FIXED |  |
+| 30 | FIXED |  |
+| 31 | FIXED |  |
+| 32 | FIXED |  |
+| 33 | FIXED |  |
+| 34 | FIXED |  |
+| 35 | FIXED |  |
+| 36 | FIXED |  |
+| 37 | FIXED |  |
+| 38 | FIXED |  |
+| 39 | FIXED |  |
+| 40 | FIXED |  |
+| 41 | FIXED |  |
+| 42 | FIXED |  |
+| 43 | FIXED |  |
+| 44 | NOT APPLICABLE | `playwright.config.ts` declares no `globalSetup`, so DB setup runs once via `start-api.mjs`; comments added. |
+| 45 | ALREADY FIXED |  |
+| 46 | FIXED |  |
+| 47 | FIXED |  |
+| 48 | FIXED |  |
+| 49 | FIXED |  |
+| 50 | FIXED |  |
+| 51 | ALREADY FIXED |  |
+| 52 | FIXED |  |
+| 53 | FIXED |  |
+| 54 | FIXED |  |
+| 55 | FIXED |  |
+| 56 | FIXED |  |
+| 57 | FIXED |  |
+| 58 | FIXED |  |
+| 59 | FIXED |  |
+| 60 | FIXED |  |
+| 61 | FIXED |  |
+| 62 | FIXED |  |
+| 63 | FIXED |  |
+| 64 | ALREADY FIXED |  |
+| 65 | ALREADY FIXED |  |
+| 66 | FIXED |  |
+| 67 | FIXED |  |
+| 68 | FIXED |  |
+| 69 | FIXED |  |
+| 70 | NOT APPLICABLE | In DB mode the webhook claim is atomic in Postgres (`claimWebhookEvent`); memory is only a mirror and the snapshot loader is the legacy no-DB path. |
+| 71 | FIXED |  |
+| 72 | FIXED |  |
+| 73 | FIXED |  |
+| 74 | FIXED (see note) | Create, add-item and issue are still three billing calls, made safe by idempotent resume (lookup by `ExternalRef`, orphan draft finished on retry), not by one transaction. |
+| 75 | FIXED |  |
+| 76 | FIXED |  |
+| 77 | NOT APPLICABLE | `parentHousehold` has no DB table (filled by seeding/snapshot), so resetting it on reload would drop links with nothing to reload them; comment added. |
+| 78 | FIXED |  |
+| 79 | FIXED (see note) | One shared rule in `handlers/household_scope.go`; club events keep multi-household support through `principalMayActForHousehold`. |
+| 80 | FIXED |  |
+| 81 | ALREADY FIXED |  |
+| 82 | FIXED |  |
+| 83 | FIXED |  |
+| 84 | ALREADY FIXED |  |
+| 85 | PARTIAL | Not transactional by design: the import is idempotent per swim. A mid-file failure now returns 500 with `partial`, `imported`, `duplicates`, `skipped`, `rows_processed`, `retry_safe`; a test fails the second write and re-runs to completion. |
+| 86 | FIXED |  |
+| 87 | FIXED |  |
+| 88 | FIXED |  |
+| 89 | FIXED |  |
+| 90 | FIXED |  |
+| 91 | ALREADY FIXED |  |
+| 92 | FIXED |  |
+| 93 | FIXED |  |
+| 94 | FIXED |  |
+| 95 | ALREADY FIXED |  |
+| 96 | FIXED |  |
+| 97 | FIXED |  |
+| 98 | FIXED |  |
+| 99 | FIXED |  |
+| 100 | FIXED |  |
+| 101 | FIXED |  |
+| 102 | FIXED |  |
+| 103 | FIXED |  |
+| 104 | FIXED |  |
+| 105 | FIXED |  |
+| 106 | FIXED |  |
+| 107 | FIXED |  |
+| 108 | FIXED |  |
+| 109 | FIXED |  |
+| 110 | FIXED |  |
+| 111 | FIXED |  |
+| 112 | FIXED |  |
+| 113 | ALREADY FIXED |  |
+| 114 | FIXED |  |
+| 115 | FIXED |  |
+| 116 | FIXED |  |
+| 117 | FIXED |  |
+| 118 | FIXED |  |
+| 119 | FIXED |  |
+
+Bugs 120-205 were fixed in earlier passes or are recorded above with their status (bug 204, the staging gate, works but the staging SSH step fails for an environment reason).
+

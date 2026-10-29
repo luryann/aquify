@@ -466,7 +466,7 @@ func (h *BillingHandlers) applyLateFees(w http.ResponseWriter, r *http.Request) 
 		AsOf string `json:"as_of"`
 	}
 	if err := decodeOptionalJSONBody(w, r, &input); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request_body", "Request body is invalid.", nil)
+		writeJSONDecodeError(w, r, err, "invalid_request_body", "Request body is invalid.")
 		return
 	}
 	asOf := time.Now().UTC()

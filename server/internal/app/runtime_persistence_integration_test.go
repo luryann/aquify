@@ -26,7 +26,7 @@ func TestRuntimeSnapshotsRoundTripAcrossConvertedDomains(t *testing.T) {
 	harness := testutil.RequireDBHarness(t)
 	repo := runtimepersist.NewRepository(os.Getenv("DATABASE_URL"))
 	if !repo.Available() {
-		t.Skip("psql-backed runtime snapshot repository is unavailable")
+		t.Fatal("DATABASE_URL is set but the psql-backed runtime snapshot repository is unavailable")
 	}
 	if err := repo.EnsureSchema(); err != nil {
 		t.Fatalf("ensure runtime snapshot schema: %v", err)

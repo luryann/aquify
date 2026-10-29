@@ -18,7 +18,7 @@ import {
 import { formatDateOnly } from '@/lib/dates'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { FIELD_INPUT_STYLE } from '@/lib/form-styles'
-import { COURSE_LABELS } from '@/lib/meet-events'
+import { COURSE_LABELS, formatStroke } from '@/lib/meet-events'
 
 type MeetEventDraft = ParsedMeetEventDraftRecord
 
@@ -89,11 +89,6 @@ function deriveAgeGroupsFromEvents(events: MeetEventDraft[]): string[] {
 function maxEntriesButtonValue(value: number): string {
   if (value >= 6) return 'Unlimited'
   return String(value)
-}
-
-function formatEventStroke(stroke: string | undefined): string {
-  if (!stroke) return 'Event'
-  return stroke.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
 function formatEventAgeGroup(event: MeetEventDraft): string {
@@ -734,7 +729,7 @@ export default function NewMeetPage() {
                     <div className="u-gap-8px" style={{ display: 'flex', flexDirection: 'column' }}>
                       {parsedEvents.slice(0, 8).map((event) => (
                         <div key={`${event.event_number}-${event.session_number ?? 0}`} className="u-gap-12px u-fs-fs-sm" style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span style={{ color: 'var(--text)' }}>#{event.event_number} · {event.distance} {formatEventStroke(event.stroke)}</span>
+                          <span style={{ color: 'var(--text)' }}>#{event.event_number} · {event.distance} {(formatStroke(event.stroke) || 'Event')}</span>
                           <span className="u-ff-font-body" style={{ color: 'var(--text-muted)' }}>{formatEventAgeGroup(event)}</span>
                         </div>
                       ))}
@@ -807,7 +802,7 @@ export default function NewMeetPage() {
                 {parsedEvents.slice(0, 10).map((event) => (
                   <div key={`${event.event_number}-${event.session_number ?? 0}`} className="u-p-12px-16px" style={{ borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
                     <div className="u-fs-fs-sm u-fw-600" style={{ color: 'var(--text)' }}>
-                      #{event.event_number} · {event.distance} {formatEventStroke(event.stroke)}
+                      #{event.event_number} · {event.distance} {(formatStroke(event.stroke) || 'Event')}
                     </div>
                     <div className="u-fs-fs-xs u-ff-font-body u-mt-4px" style={{ color: 'var(--text-muted)' }}>
                       {formatEventAgeGroup(event)} · Session {event.session_number || 'Unassigned'}

@@ -16,6 +16,7 @@ import {
   type GroupRecord,
 } from '@/lib/adminData'
 import { SWIMMER_BIO_MAX_LENGTH, normalizeSwimmerBio, validateSwimmerBio } from '@/lib/swimmer-bio'
+import { ageFromDob, formatDateOnly } from '@/lib/dates'
 import './page.inline.css'
 import { SkeletonLine } from '@/components/ui/SkeletonLine'
 
@@ -31,19 +32,6 @@ const C = {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-function calcAge(dob: string): number {
-  const d = new Date(dob)
-  const now = new Date()
-  let age = now.getFullYear() - d.getFullYear()
-  const m = now.getMonth() - d.getMonth()
-  if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age--
-  return age
-}
-
-function fmtDob(dob: string): string {
-  return new Date(dob).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
 // ── Skeleton ───────────────────────────────────────────────────────────────
 // ── Components ─────────────────────────────────────────────────────────────
 function ReadOnlyField({ label, value }: { label: string; value: string }) {
@@ -322,11 +310,11 @@ export default function SwimmerProfilePage() {
                   )}
                   <ReadOnlyField
                     label="Date of birth"
-                    value={swimmer.date_of_birth ? fmtDob(swimmer.date_of_birth) : '—'}
+                    value={swimmer.date_of_birth ? formatDateOnly(swimmer.date_of_birth) : '—'}
                   />
                   <ReadOnlyField
                     label="Age"
-                    value={swimmer.date_of_birth ? String(calcAge(swimmer.date_of_birth)) : '—'}
+                    value={swimmer.date_of_birth ? ageFromDob(swimmer.date_of_birth) : '—'}
                   />
                   <ReadOnlyField
                     label="Gender"

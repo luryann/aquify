@@ -183,3 +183,59 @@ func prependFakePSQL(t *testing.T, behavior fakePSQLBehavior) string {
 	}
 	return fmt.Sprintf("%s%c%s", dir, os.PathListSeparator, current)
 }
+
+type exportCounter struct{ exports *int }
+
+func (c exportCounter) ExportRuntimeSnapshot() ([]byte, error) {
+	*c.exports++
+	return []byte(`{}`), nil
+}
+func (exportCounter) LoadRuntimeSnapshot([]byte) error { return nil }
+
+func TestRuntimePersistenceSnapshotsOnlyTouchedDomainAndSkipsNonSnapshotRoutes(t *testing.T) {
+	t.Setenv("PATH", prependFakePSQL(t, fakePSQLBehavior{}))
+	repo := runtimepersist.NewRepository("postgres://runtime-test")
+	var members, comms int
+	participants := []runtimeParticipant{
+		{domain: "members", service: exportCounter{&members}},
+		{domain: "comms", service: exportCounter{&comms}},
+	}
+	handler := runtimePersistenceMiddleware(slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)), repo, participants)(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	do := func(path string) {
+		handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, path, nil))
+	}
+
+	do("/api/v1/announcements")
+	if comms != 1 || members != 0 {
+		t.Fatalf("announcement mutation exported members=%d comms=%d, want only comms", members, comms)
+	}
+	do("/api/v1/volunteer/jobs")
+	do("/api/v1/club-events")
+	if comms != 1 || members != 0 {
+		t.Fatalf("non-snapshot routes must skip the bridge: members=%d comms=%d", members, comms)
+	}
+	do("/api/v1/something-unmapped")
+	if comms != 2 || members != 1 {
+		t.Fatalf("unmapped routes snapshot every domain: members=%d comms=%d", members, comms)
+	}
+}
+
+func TestRuntimePersistenceDoesNotBufferStreamingResponses(t *testing.T) {
+	t.Setenv("PATH", prependFakePSQL(t, fakePSQLBehavior{}))
+	repo := runtimepersist.NewRepository("postgres://runtime-test")
+	var n int
+	handler := runtimePersistenceMiddleware(slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)), repo,
+		[]runtimeParticipant{{domain: "comms", service: exportCounter{&n}}})(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte("chunk-1"))
+			w.(http.Flusher).Flush()
+			if rec := w.(interface{ Unwrap() http.ResponseWriter }).Unwrap().(*httptest.ResponseRecorder); rec.Body.String() != "chunk-1" || !rec.Flushed {
+				t.Errorf("first chunk was buffered until the handler returned (body=%q flushed=%v)", rec.Body.String(), rec.Flushed)
+			}
+		}))
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/api/v1/announcements", nil))
+	if n != 1 {
+		t.Fatalf("snapshot exports = %d", n)
+	}
+}

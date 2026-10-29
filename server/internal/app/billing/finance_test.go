@@ -304,3 +304,36 @@ func TestFinanceRBAC(t *testing.T) {
 		t.Fatalf("upcoming: %+v %v", up, err)
 	}
 }
+
+// The commit must load the roster inside runMu so its fingerprint cannot come
+// from a snapshot older than a concurrent commit.
+func TestCommitBillingRunLoadsRosterInsideRunLock(t *testing.T) {
+	svc, _ := newFinService(t)
+	var lockedDuringLoad bool
+	svc.SetRosterSource(func(string) (RosterSnapshot, error) {
+		if svc.runMu.TryLock() {
+			svc.runMu.Unlock()
+		} else {
+			lockedDuringLoad = true
+		}
+		return finRoster(), nil
+	})
+	if _, err := svc.CommitBillingRun(finOrg, "admin-1", finAdmin, RunInput{AsOf: "2026-11-20", InvoiceStatus: "issued"}, RunTriggerManual); err != nil {
+		t.Fatal(err)
+	}
+	if !lockedDuringLoad {
+		t.Fatal("roster was loaded outside runMu")
+	}
+}
+
+func TestReportsSurfaceRosterErrors(t *testing.T) {
+	svc, _ := newFinService(t)
+	boom := errors.New("roster down")
+	svc.SetRosterSource(func(string) (RosterSnapshot, error) { return RosterSnapshot{}, boom })
+	if _, err := svc.AgingReport(finOrg, finAdmin, mustDate(t, "2027-01-15")); !errors.Is(err, boom) {
+		t.Fatalf("aging: want roster error, got %v", err)
+	}
+	if _, err := svc.RevenueReport(finOrg, finAdmin, mustDate(t, "2026-01-01"), mustDate(t, "2027-01-01")); !errors.Is(err, boom) {
+		t.Fatalf("revenue: want roster error, got %v", err)
+	}
+}

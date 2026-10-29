@@ -4,6 +4,12 @@ import { useCallback, useEffect, useState } from 'react'
 import type { ApiClient } from './api'
 import { fetchStaff } from './adminData'
 
+/** Display label for an actor id: exact `system` is the system actor; a real id that merely starts with "system" is not. */
+export function staffLabel(names: Record<string, string>, userId?: string | null): string {
+  if (!userId) return 'System'
+  return names[userId] ?? (userId === 'system' ? 'System' : 'A staff member')
+}
+
 /**
  * Resolves staff user IDs (created_by, recorded-by, …) to display names via the
  * admin/coach staff directory. Unknown IDs fall back to a neutral label rather
@@ -21,8 +27,5 @@ export function useStaffNames(api: ApiClient, orgId: string | undefined): (userI
     return () => { cancelled = true }
   }, [api, orgId])
 
-  return useCallback((userId?: string | null) => {
-    if (!userId) return 'System'
-    return names[userId] ?? (userId === 'system' || userId.startsWith('system') ? 'System' : 'A staff member')
-  }, [names])
+  return useCallback((userId?: string | null) => staffLabel(names, userId), [names])
 }

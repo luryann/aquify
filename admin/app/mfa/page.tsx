@@ -8,7 +8,8 @@ import { destinationForRole } from '@/lib/auth-routing'
 import { resolveMfaBootstrapState, type MfaFactorSummary } from '@/lib/mfa-flow'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import './page.inline.css'
-import { rawRequestAuthHeaders } from '@/lib/api'
+import { getCSRFToken, rawRequestAuthHeaders } from '@/lib/api'
+import { requestLogout } from '@/lib/logout-flow'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -536,15 +537,25 @@ export default function MfaPage() {
   )
 
   const handleCancel = async () => {
-    // Best-effort: terminate the cookie-backed session, but always clear local
-    // state and navigate away so AuthGuard won't redirect back to /mfa.
+    // Revoke the session and honour the IdP logout_url (same path as /logout) so
+    // the SSO session does not silently re-authenticate the next sign-in. Always
+    // clear local state and navigate away so AuthGuard won't redirect back to /mfa.
+    let next: { target: string; topLevel: boolean } = { target: '/login', topLevel: false }
     try {
-      await fetch('/api/v1/auth/sessions/logout', { method: 'POST', credentials: 'include' })
+      next = await requestLogout({
+        csrfToken: getCSRFToken(),
+        origin: window.location.origin,
+        allowedOrigins: process.env.NEXT_PUBLIC_IDP_ORIGINS,
+      })
     } catch {
       // Ignore — local sign-out proceeds regardless.
     }
     signOut()
-    router.replace('/login')
+    if (next.topLevel) {
+      window.location.assign(next.target)
+      return
+    }
+    router.replace(next.target)
   }
 
   const cancelLink = (

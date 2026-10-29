@@ -1,5 +1,7 @@
 import { LOCAL_DEV_ORG_ID } from './localDev.ts'
 
+// Local-dev org resolution (localhost -> demo org) is disabled in production builds.
+const IS_PRODUCTION_BUILD = process.env.NEXT_PUBLIC_APP_ENV?.trim() === 'production'
 const DEFAULT_OIDC_ORG_ID = process.env.NEXT_PUBLIC_DEFAULT_OIDC_ORG_ID?.trim() ?? ''
 
 function parseStringMap(raw: string | undefined): Record<string, string> {
@@ -38,6 +40,8 @@ type PublicOrgResolverConfig = {
   clubCodeOrgMap?: StringMap | null
   hostOrgMap?: StringMap | null
   defaultOrgId?: string | null
+  /** Overrides NEXT_PUBLIC_APP_ENV === 'production' (tests). */
+  production?: boolean | null
 }
 
 function normalized(input: string | null | undefined): string {
@@ -111,7 +115,7 @@ export function resolvePublicOrg(input: {
     }
   }
 
-  if (isLocalHost(host)) {
+  if (isLocalHost(host) && !(input.config?.production ?? IS_PRODUCTION_BUILD)) {
     return { orgId: LOCAL_DEV_ORG_ID, clubCode, source: 'local_dev' }
   }
 

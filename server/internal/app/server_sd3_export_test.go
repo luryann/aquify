@@ -20,7 +20,11 @@ func TestMeetEntriesSD3ExportFlow(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	meetsSvc := meets.NewService()
 	membersSvc := members.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, membersSvc, nil, meetsSvc, exports.NewService(), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, RouterDeps{
+		Members: membersSvc,
+		Meets:   meetsSvc,
+		Exports: exports.NewService(),
+	})
 	adminToken := issueSessionTokenForUser(t, router, "admin-user", "org-sd3", []string{"admin"}, true)
 	coachToken := issueSessionTokenForUser(t, router, "coach-user", "org-sd3", []string{"coach"}, false)
 	parentToken := issueSessionTokenForUser(t, router, "parent-user", "org-sd3", []string{"parent"}, false)

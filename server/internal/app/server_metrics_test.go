@@ -14,12 +14,9 @@ import (
 func TestPrometheusMetricsRouteDisabledByDefault(t *testing.T) {
 	t.Parallel()
 
-	router := NewRouterWithServicesAndMetrics(
-		Config{AppEnv: "test"},
-		slog.New(slog.NewTextHandler(io.Discard, nil)),
-		telemetry.NewMetrics(),
-		false,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{AppEnv: "test"}, slog.New(slog.NewTextHandler(io.Discard, nil)), RouterDeps{
+		Metrics: telemetry.NewMetrics(),
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	rr := httptest.NewRecorder()
@@ -33,12 +30,10 @@ func TestPrometheusMetricsRouteDisabledByDefault(t *testing.T) {
 func TestPrometheusMetricsRouteCanBeMountedExplicitly(t *testing.T) {
 	t.Parallel()
 
-	router := NewRouterWithServicesAndMetrics(
-		Config{AppEnv: "test"},
-		slog.New(slog.NewTextHandler(io.Discard, nil)),
-		telemetry.NewMetrics(),
-		true,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{AppEnv: "test"}, slog.New(slog.NewTextHandler(io.Discard, nil)), RouterDeps{
+		Metrics:          telemetry.NewMetrics(),
+		ExposePrometheus: true,
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	rr := httptest.NewRecorder()

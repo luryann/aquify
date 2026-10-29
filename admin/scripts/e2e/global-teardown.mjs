@@ -1,13 +1,14 @@
-import { existsSync, readFileSync } from 'node:fs'
-import os from 'node:os'
+import { existsSync, readFileSync, rmSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
 
+import { e2eStateFile } from './state-file.mjs'
+
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const repoRoot = path.resolve(__dirname, '../../..')
-const stateFile = path.join(os.tmpdir(), 'aquify-playwright-state.json')
+const stateFile = e2eStateFile()
 
 function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -43,6 +44,7 @@ export default async function globalTeardown() {
   }
 
   const state = JSON.parse(readFileSync(stateFile, 'utf8'))
+  rmSync(stateFile, { force: true })
   if (state.skipDocker || !state.startedPostgres) {
     return
   }

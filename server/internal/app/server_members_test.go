@@ -654,12 +654,9 @@ func TestCreateSwimmer_DoesNotCreateUserAccount(t *testing.T) {
 
 	kc := keycloak.NewStubClient()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	router := NewRouterWithServices(
-		Config{Auth: AuthConfig{EnableDevStubTokens: true}},
-		logger,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		nil, nil, nil, nil, nil,
-		kc)
+	router := NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, RouterDeps{
+		Keycloak: kc,
+	})
 	parentToken := issueSessionToken(t, router, "org-demo", []string{"parent"}, false)
 	coachToken := issueSessionToken(t, router, "org-demo", []string{"coach"}, false)
 
@@ -801,7 +798,9 @@ func TestParentCanListOnlyOwnHouseholds(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	memberSvc := members.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, memberSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, RouterDeps{
+		Members: memberSvc,
+	})
 
 	adminToken := issueSessionTokenForUser(t, router, "admin-household-scope", "org-demo", []string{"admin"}, false)
 	parentOneToken := issueSessionTokenForUser(t, router, "parent-household-one", "org-demo", []string{"parent"}, false)
@@ -1007,7 +1006,9 @@ func TestParentAssociatedToExistingHouseholdCanManageOwnSwimmer(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	membershipService := members.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, membershipService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, RouterDeps{
+		Members: membershipService,
+	})
 
 	adminToken := issueSessionTokenForUser(t, router, "admin-user", "org-demo", []string{"admin"}, false)
 	parentToken := issueSessionTokenForUser(t, router, "parent-user", "org-demo", []string{"parent"}, false)
@@ -1236,7 +1237,10 @@ func TestApprovingRegistrationAddsSwimmerToGroupRoster(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	membersSvc := members.NewService()
 	groupsSvc := groups.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, membersSvc, groupsSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, RouterDeps{
+		Members: membersSvc,
+		Groups:  groupsSvc,
+	})
 	admin := issueSessionTokenForUser(t, router, "admin-user", "org-roster", []string{"admin"}, true)
 
 	do := func(method, path string, body map[string]any) *httptest.ResponseRecorder {
@@ -1282,7 +1286,10 @@ func TestHouseholdUpdateEmitsAuditEvent(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	auditSvc := audit.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, members.NewService(), nil, nil, nil, nil, nil, nil, nil, auditSvc, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, RouterDeps{
+		Members: members.NewService(),
+		Audit:   auditSvc,
+	})
 	token := issueSessionTokenForUser(t, router, "admin-household-audit", "org-demo", []string{"admin"}, false)
 
 	do := func(method, path string, body any) *httptest.ResponseRecorder {

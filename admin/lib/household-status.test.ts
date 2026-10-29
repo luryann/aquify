@@ -9,9 +9,13 @@ test('normalizeHouseholdStatus preserves supported household statuses', () => {
   assert.equal(normalizeHouseholdStatus('archived'), 'archived')
 })
 
-test('normalizeHouseholdStatus falls back to active for unsupported values', () => {
-  assert.equal(normalizeHouseholdStatus('pending'), 'active')
-  assert.equal(normalizeHouseholdStatus('suspended'), 'active')
+test('normalizeHouseholdStatus flags unrecognised statuses instead of showing them as active', () => {
+  assert.equal(normalizeHouseholdStatus('pending'), 'unknown')
+  assert.equal(normalizeHouseholdStatus('suspended'), 'unknown')
+})
+
+test('normalizeHouseholdStatus treats a missing status as active', () => {
   assert.equal(normalizeHouseholdStatus(undefined), 'active')
   assert.equal(normalizeHouseholdStatus(null), 'active')
+  assert.equal(normalizeHouseholdStatus(''), 'active')
 })

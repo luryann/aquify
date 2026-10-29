@@ -1,9 +1,16 @@
+import os from 'node:os'
+import path from 'node:path'
+
 import { defineConfig, devices } from '@playwright/test'
 
 const apiPort = process.env.PLAYWRIGHT_API_PORT ?? '8080'
 const adminPort = process.env.PLAYWRIGHT_ADMIN_PORT ?? '3000'
 const apiOrigin = `http://localhost:${apiPort}`
 const adminOrigin = `http://localhost:${adminPort}`
+
+// One bookkeeping file per run (start-api writes it, global-teardown reads it).
+// Set before any webServer starts so child processes and workers inherit it.
+process.env.PLAYWRIGHT_E2E_STATE_FILE ??= path.join(os.tmpdir(), `aquify-playwright-state-${process.pid}-${Date.now()}.json`)
 
 const databaseUrl = process.env.DATABASE_URL ?? 'postgres://postgres:postgres@127.0.0.1:5432/aquify_e2e?sslmode=disable'
 
@@ -21,6 +28,7 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
   },
+  // No `globalSetup`: database setup runs once, inside the API webServer (scripts/e2e/start-api.mjs).
   globalTeardown: './scripts/e2e/global-teardown.mjs',
   webServer: [
     {

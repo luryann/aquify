@@ -145,13 +145,18 @@ type householdAutopayListEnvelope struct {
 func newBillingRouter(t *testing.T, svc *billing.Service) http.Handler {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, nil, nil, nil, nil, nil, nil, svc, nil, nil, nil, nil, nil, nil, nil, nil)
+	return NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, RouterDeps{
+		Billing: svc,
+	})
 }
 
 func newBillingRouterWithAudit(t *testing.T, svc *billing.Service, auditSvc *audit.Service) http.Handler {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, nil, nil, nil, nil, nil, nil, svc, nil, nil, auditSvc, nil, nil, nil, nil, nil)
+	return NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, RouterDeps{
+		Billing: svc,
+		Audit:   auditSvc,
+	})
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -962,11 +967,10 @@ func TestCreateRefundValidatesLocallyBeforeCallingStripe(t *testing.T) {
 	svc := billing.NewService()
 	stripeStub := stripelib.NewStubClient()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	router := NewRouterWithServices(
-		Config{AppEnv: "test", Auth: AuthConfig{EnableDevStubTokens: true}},
-		logger,
-		nil, nil, nil, nil, nil, nil, svc, stripeStub, nil, nil, nil, nil, nil, nil,
-		nil)
+	router := NewRouterWithServices(Config{AppEnv: "test", Auth: AuthConfig{EnableDevStubTokens: true}}, logger, RouterDeps{
+		Billing: svc,
+		Stripe:  stripeStub,
+	})
 	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, true)
 
 	inv := createInvoice(t, router, token, "org-demo", "INV-RPRECHECK")

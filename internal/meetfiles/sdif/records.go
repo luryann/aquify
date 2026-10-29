@@ -105,6 +105,7 @@ func parseDate(raw string) *time.Time {
 	if err != nil {
 		return nil
 	}
+	t = t.UTC() // date-only values are UTC midnight, matching the Hytek parser
 	return &t
 }
 

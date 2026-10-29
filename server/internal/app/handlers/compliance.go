@@ -9,7 +9,6 @@ import (
 	"github.com/dareaquatics/aquify/server/internal/app/audit"
 	"github.com/dareaquatics/aquify/server/internal/app/compliance"
 	"github.com/dareaquatics/aquify/server/internal/app/httpx"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
 	"github.com/dareaquatics/aquify/server/internal/workers"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
@@ -43,12 +42,6 @@ func (h *ComplianceHandlers) enqueue(ctx context.Context, taskType string, paylo
 	return err
 }
 
-// parentOutsideHousehold reports whether a parent-only caller is acting on a household that is not their own.
-func parentOutsideHousehold(principal *appmiddleware.Principal, householdID string) bool {
-	return hasAnyRole(principal, "parent") && !hasAnyRole(principal, "admin") &&
-		(principal.HouseholdID == "" || principal.HouseholdID != householdID)
-}
-
 type complianceJobPayload struct {
 	RequestID   string `json:"request_id"`
 	OrgID       string `json:"org_id"`
@@ -60,7 +53,7 @@ func NewComplianceHandlers(svc *compliance.Service, auditSvc *audit.Service) *Co
 	return &ComplianceHandlers{
 		service:      svc,
 		auditService: auditSvc,
-		validate:     validator.New(),
+		validate:     httpx.NewValidator(),
 	}
 }
 
@@ -286,7 +279,7 @@ func (h *ComplianceHandlers) reviewDataDeletionRequest(w http.ResponseWriter, r 
 	}
 	var body reviewDataDeletionBody
 	if err := decodeOptionalJSONBody(w, r, &body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", nil)
+		writeJSONDecodeError(w, r, err, "bad_request", "Invalid JSON body.")
 		return
 	}
 	requestID := chi.URLParam(r, "requestID")

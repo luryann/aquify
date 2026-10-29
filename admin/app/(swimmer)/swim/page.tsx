@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
 import { parseBackendDate } from '@/lib/dates'
-import { useApiClient } from '@/lib/api'
+import { ApiError, useApiClient } from '@/lib/api'
 import { shouldShowCollectionEmptyState } from '@/lib/collection-load-state'
 import { reportUIError } from '@/lib/frontend-telemetry'
 import { UnlinkedSwimmerNotice } from '@/components/swimmer/UnlinkedSwimmerNotice'
@@ -279,8 +279,10 @@ export default function SwimmerDashboardPage() {
               const commitments = await fetchMeetCommitments(api, orgId, m.id)
               const myCommitment = commitments.find(c => c.swimmer_id === mySwimmer.id)
               cs = commitStatus(myCommitment?.status)
-            } catch {
-              // no commitment record yet → open
+            } catch (error) {
+              // Only a missing commitment list means "open"; any other failure
+              // must reach the page-level banner instead of reading as a status.
+              if (!(error instanceof ApiError && error.status === 404)) throw error
             }
             return {
               id: m.id,

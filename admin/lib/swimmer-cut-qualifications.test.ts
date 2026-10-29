@@ -22,6 +22,11 @@ test('swimmerAgeOnDate calculates age from DOB against a reference date', () => 
   assert.equal(swimmerAgeOnDate(swimmer, new Date('2026-05-17T00:00:00Z')), 13)
 })
 
+test('swimmerAgeOnDate turns over on the local birthday for date-only DOBs', () => {
+  assert.equal(swimmerAgeOnDate(swimmer, new Date(2026, 4, 19, 12)), 13)
+  assert.equal(swimmerAgeOnDate(swimmer, new Date(2026, 4, 20, 0, 5)), 14)
+})
+
 test('filterApplicableTimeStandards keeps only active standards matching swimmer gender and age band', () => {
   const standards = [
     { id: 'a', org_id: 'org_1', name: 'A', season_year: 2026, standard_code: 'A', event_distance: 100, stroke: 'free', course: 'SCY', gender: 'F', time_ms: 60000, is_active: true, created_at: '', updated_at: '', created_by: '', updated_by: '' },

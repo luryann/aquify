@@ -2,8 +2,6 @@ package app
 
 import (
 	"context"
-	"slices"
-	"strings"
 	"time"
 
 	"github.com/dareaquatics/aquify/server/internal/app/comms"
@@ -19,7 +17,10 @@ import (
 // buildPublicSiteHandlers wires the unauthenticated team-site feed to the
 // services that own its data. Public visibility is decided by flags on the
 // source records, never by the caller.
-func buildPublicSiteHandlers(cfg Config, settings *orgsettings.Service, commsSvc *comms.Service, meetsSvc *meets.Service, eventsSvc *events.Service, perfSvc *performance.Service, kc keycloak.Client) *handlers.PublicSiteHandlers {
+// publicStaffCacheTTL bounds Keycloak fan-out from anonymous public-site traffic.
+const publicStaffCacheTTL = time.Minute
+
+func buildPublicSiteHandlers(cfg Config, settings *orgsettings.Service, commsSvc *comms.Service, meetsSvc *meets.Service, eventsSvc *events.Service, perfSvc *performance.Service, kc keycloak.Client, clock func() time.Time) *handlers.PublicSiteHandlers {
 	src := handlers.PublicSiteSources{
 		Settings: settings.FindBySlug,
 	}
@@ -54,40 +55,20 @@ func buildPublicSiteHandlers(cfg Config, settings *orgsettings.Service, commsSvc
 		}
 	}
 	if kc != nil {
+		// Same staff rules as /users/staff, cached briefly because this surface is
+		// unauthenticated; names only (no email fallback) are ever exposed.
+		staffDir := handlers.NewCachedStaffLister(handlers.NewStaffDirectory(kc), publicStaffCacheTTL, clock)
 		src.Staff = func(ctx context.Context, orgID string) []handlers.PublicSiteStaff {
-			users, err := kc.ListUsers(ctx, orgID, "", 500, 0)
+			members, err := staffDir.ListStaff(ctx, orgID)
 			if err != nil {
 				return nil
 			}
 			out := []handlers.PublicSiteStaff{}
-			for _, u := range users {
-				if !u.Enabled {
-					continue
+			for _, m := range members {
+				if name := m.PersonalName(); name != "" && m.PublicRole() != "" {
+					out = append(out, handlers.PublicSiteStaff{Name: name, Role: m.PublicRole()})
 				}
-				roles, err := kc.GetUserRealmRoles(ctx, u.ID)
-				if err != nil {
-					continue
-				}
-				role := ""
-				for _, r := range roles {
-					switch strings.ToLower(r.Name) {
-					case "admin":
-						if role == "" {
-							role = "Administrator"
-						}
-					case "coach":
-						role = "Coach"
-					}
-				}
-				name := strings.TrimSpace(u.FirstName + " " + u.LastName)
-				if role == "" || name == "" {
-					continue
-				}
-				out = append(out, handlers.PublicSiteStaff{Name: name, Role: role})
 			}
-			slices.SortFunc(out, func(a, b handlers.PublicSiteStaff) int {
-				return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
-			})
 			return out
 		}
 	}

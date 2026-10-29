@@ -23,7 +23,7 @@ func NewSeasonsHandlers(svc *seasons.Service, auditSvc *audit.Service) *SeasonsH
 	return &SeasonsHandlers{
 		service:      svc,
 		auditService: auditSvc,
-		validate:     validator.New(),
+		validate:     httpx.NewValidator(),
 	}
 }
 
@@ -142,7 +142,7 @@ func (h *SeasonsHandlers) updateSeason(w http.ResponseWriter, r *http.Request) {
 
 	var body updateSeasonBody
 	if err := decodeOptionalJSONBody(w, r, &body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", nil)
+		writeJSONDecodeError(w, r, err, "bad_request", "Invalid JSON body.")
 		return
 	}
 

@@ -15,18 +15,14 @@ import (
 func cleanupLocalDevFixtures(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 
-	cleanupMeetsFixtures(t, pool, authn.LocalDevOrgID)
-	cleanupMembersFixtures(t, pool, authn.LocalDevOrgID)
-
-	ctx := context.Background()
-	for _, q := range []string{
+	// One ordered list so the t.Cleanup replay keeps the FK-safe order
+	// (separate registrations would run in reverse).
+	queries := append(append([]string{}, meetsFixtureQueries...), membersFixtureQueries...)
+	queries = append(queries,
 		"DELETE FROM mfa_factors WHERE org_id = $1",
 		"DELETE FROM users WHERE org_id = $1::uuid",
-	} {
-		if _, err := pool.Exec(ctx, q, authn.LocalDevOrgID); err != nil {
-			t.Logf("cleanup warning (%s): %v", q, err)
-		}
-	}
+	)
+	deleteFixtures(t, pool, authn.LocalDevOrgID, queries)
 }
 
 func countUsersForOrg(t *testing.T, pool *pgxpool.Pool, orgID string) int {

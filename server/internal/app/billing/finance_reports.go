@@ -126,14 +126,18 @@ type DepositsReport struct {
 	GeneratedAt time.Time    `json:"generated_at"`
 }
 
-func (s *Service) householdNames(orgID string) map[string]string {
-	names := map[string]string{}
-	if roster, err := s.loadRoster(orgID); err == nil {
-		for _, h := range roster.Households {
-			names[h.ID] = h.Name
-		}
+// householdNames resolves display names from the roster. A roster failure is
+// returned to the caller instead of silently degrading reports to raw IDs.
+func (s *Service) householdNames(orgID string) (map[string]string, error) {
+	roster, err := s.loadRoster(orgID)
+	if err != nil {
+		return nil, err
 	}
-	return names
+	names := make(map[string]string, len(roster.Households))
+	for _, h := range roster.Households {
+		names[h.ID] = h.Name
+	}
+	return names, nil
 }
 
 func nameOr(names map[string]string, id string) string {
@@ -164,7 +168,10 @@ func (s *Service) AgingReport(orgID string, principal *appmiddleware.Principal, 
 	if err := s.refreshForRead(); err != nil {
 		return nil, err
 	}
-	names := s.householdNames(orgID)
+	names, err := s.householdNames(orgID)
+	if err != nil {
+		return nil, err
+	}
 	asOf = dateOnly(asOf)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -217,14 +224,16 @@ func (s *Service) RevenueReport(orgID string, principal *appmiddleware.Principal
 	}
 	groupBySwimmer := map[string]string{}
 	groupNames := map[string]string{}
-	if roster, err := s.loadRoster(orgID); err == nil {
-		for _, g := range roster.Groups {
-			groupNames[g.Code] = g.Name
-		}
-		for _, link := range roster.GroupLinks {
-			if link.IsPrimary || groupBySwimmer[link.SwimmerID] == "" {
-				groupBySwimmer[link.SwimmerID] = link.GroupCode
-			}
+	roster, err := s.loadRoster(orgID)
+	if err != nil {
+		return nil, err
+	}
+	for _, g := range roster.Groups {
+		groupNames[g.Code] = g.Name
+	}
+	for _, link := range roster.GroupLinks {
+		if link.IsPrimary || groupBySwimmer[link.SwimmerID] == "" {
+			groupBySwimmer[link.SwimmerID] = link.GroupCode
 		}
 	}
 	from, to = dateOnly(from), dateOnly(to)
@@ -343,7 +352,10 @@ func (s *Service) OutstandingReport(orgID string, principal *appmiddleware.Princ
 	if err := s.refreshForRead(); err != nil {
 		return nil, err
 	}
-	names := s.householdNames(orgID)
+	names, err := s.householdNames(orgID)
+	if err != nil {
+		return nil, err
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	rows := map[string]*OutstandingRow{}
@@ -571,7 +583,10 @@ func (s *Service) QuickBooksCSV(orgID string, principal *appmiddleware.Principal
 	if err := s.refreshForRead(); err != nil {
 		return nil, err
 	}
-	names := s.householdNames(orgID)
+	names, err := s.householdNames(orgID)
+	if err != nil {
+		return nil, err
+	}
 	from, to = dateOnly(from), dateOnly(to)
 	inRange := func(t time.Time) bool {
 		d := dateOnly(t)

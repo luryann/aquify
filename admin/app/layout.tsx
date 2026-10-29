@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import './globals.css'
+import { BRAND_BG } from '@/lib/brand'
 import { Providers } from './providers'
 import { ServiceWorkerRegistrar } from '@/components/pwa/ServiceWorkerRegistrar'
 
@@ -17,10 +18,9 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   viewportFit: 'cover',
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#FAFAF8' },
-    { media: '(prefers-color-scheme: dark)', color: '#0A0A0B' },
-  ],
+  // The app renders dark by default regardless of the OS preference, so the
+  // browser chrome colour is a single value shared with the PWA manifest.
+  themeColor: BRAND_BG,
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

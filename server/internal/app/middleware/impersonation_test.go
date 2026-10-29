@@ -14,7 +14,7 @@ func TestRejectImpersonationHeadersAllowsRequestsWithoutImpersonationHeaders(t *
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/authz/ping", nil)
 	rr := httptest.NewRecorder()
 
-	h := RejectImpersonationHeaders(true)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := RejectImpersonationHeaders()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	h.ServeHTTP(rr, req)
@@ -24,93 +24,31 @@ func TestRejectImpersonationHeadersAllowsRequestsWithoutImpersonationHeaders(t *
 	}
 }
 
-func TestRejectImpersonationHeadersRejectsWhenFeatureDisabled(t *testing.T) {
+// Every impersonation attempt is refused with the same 403 regardless of the
+// caller's role, MFA state, headers present, or whether a principal exists.
+func TestRejectImpersonationHeadersRejectsUnconditionally(t *testing.T) {
 	t.Parallel()
 
-	rr := serveImpersonationRequest(t, false, &Principal{
-		UserID:           "admin-1",
-		OrgID:            "org-demo",
-		Roles:            []string{"admin"},
-		MFAAuthenticated: true,
-	}, "target-1", "Support escalation")
-
-	assertImpersonationErrorCode(t, rr, http.StatusForbidden, "impersonation_disabled")
+	cases := []struct {
+		name      string
+		principal *Principal
+		target    string
+		reason    string
+	}{
+		{"admin with mfa and reason", &Principal{UserID: "admin-1", OrgID: "org-demo", Roles: []string{"admin"}, MFAAuthenticated: true}, "target-1", "Support escalation"},
+		{"admin without mfa", &Principal{UserID: "admin-1", OrgID: "org-demo", Roles: []string{"admin"}}, "target-1", "Support escalation"},
+		{"coach", &Principal{UserID: "coach-1", OrgID: "org-demo", Roles: []string{"coach"}, MFAAuthenticated: true}, "target-1", "Support escalation"},
+		{"missing reason", &Principal{UserID: "admin-1", OrgID: "org-demo", Roles: []string{"admin"}, MFAAuthenticated: true}, "target-1", ""},
+		{"missing target", &Principal{UserID: "admin-1", OrgID: "org-demo", Roles: []string{"admin"}, MFAAuthenticated: true}, "", "Support escalation"},
+		{"anonymous", nil, "target-1", "Support escalation"},
+	}
+	for _, tc := range cases {
+		rr := serveImpersonationRequest(t, tc.principal, tc.target, tc.reason)
+		assertImpersonationErrorCode(t, rr, http.StatusForbidden, "impersonation_unavailable")
+	}
 }
 
-func TestRejectImpersonationHeadersRequiresAuthenticatedPrincipal(t *testing.T) {
-	t.Parallel()
-
-	rr := serveImpersonationRequest(t, true, nil, "target-1", "Support escalation")
-
-	assertImpersonationErrorCode(t, rr, http.StatusUnauthorized, "unauthorized")
-}
-
-func TestRejectImpersonationHeadersRequiresMFA(t *testing.T) {
-	t.Parallel()
-
-	rr := serveImpersonationRequest(t, true, &Principal{
-		UserID:           "admin-1",
-		OrgID:            "org-demo",
-		Roles:            []string{"admin"},
-		MFAAuthenticated: false,
-	}, "target-1", "Support escalation")
-
-	assertImpersonationErrorCode(t, rr, http.StatusForbidden, "mfa_required")
-}
-
-func TestRejectImpersonationHeadersRequiresReason(t *testing.T) {
-	t.Parallel()
-
-	rr := serveImpersonationRequest(t, true, &Principal{
-		UserID:           "admin-1",
-		OrgID:            "org-demo",
-		Roles:            []string{"admin"},
-		MFAAuthenticated: true,
-	}, "target-1", "")
-
-	assertImpersonationErrorCode(t, rr, http.StatusForbidden, "impersonation_reason_required")
-}
-
-func TestRejectImpersonationHeadersRequiresTargetUserID(t *testing.T) {
-	t.Parallel()
-
-	rr := serveImpersonationRequest(t, true, &Principal{
-		UserID:           "admin-1",
-		OrgID:            "org-demo",
-		Roles:            []string{"admin"},
-		MFAAuthenticated: true,
-	}, "", "Support escalation")
-
-	assertImpersonationErrorCode(t, rr, http.StatusForbidden, "impersonation_target_required")
-}
-
-func TestRejectImpersonationHeadersRestrictsToAdmins(t *testing.T) {
-	t.Parallel()
-
-	rr := serveImpersonationRequest(t, true, &Principal{
-		UserID:           "coach-1",
-		OrgID:            "org-demo",
-		Roles:            []string{"coach"},
-		MFAAuthenticated: true,
-	}, "target-1", "Support escalation")
-
-	assertImpersonationErrorCode(t, rr, http.StatusForbidden, "forbidden")
-}
-
-func TestRejectImpersonationHeadersFailsClosedUntilFeatureIsImplemented(t *testing.T) {
-	t.Parallel()
-
-	rr := serveImpersonationRequest(t, true, &Principal{
-		UserID:           "admin-1",
-		OrgID:            "org-demo",
-		Roles:            []string{"admin"},
-		MFAAuthenticated: true,
-	}, "target-1", "Support escalation")
-
-	assertImpersonationErrorCode(t, rr, http.StatusForbidden, "impersonation_unavailable")
-}
-
-func serveImpersonationRequest(t *testing.T, enabled bool, principal *Principal, targetUserID, reason string) *httptest.ResponseRecorder {
+func serveImpersonationRequest(t *testing.T, principal *Principal, targetUserID, reason string) *httptest.ResponseRecorder {
 	t.Helper()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/authz/ping", nil)
@@ -125,7 +63,7 @@ func serveImpersonationRequest(t *testing.T, enabled bool, principal *Principal,
 	}
 	rr := httptest.NewRecorder()
 
-	h := RejectImpersonationHeaders(enabled)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+	h := RejectImpersonationHeaders()(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		t.Fatal("next handler should not be called for impersonation attempts")
 	}))
 	h.ServeHTTP(rr, req)

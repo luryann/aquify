@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './support/test'
 
 import {
   createGroup,
@@ -76,8 +76,6 @@ test('parent portal registration wizard creates live registrations for multiple 
     [swimmerOne.id, swimmerTwo.id].sort(),
   )
 
-  await parentContext.close()
-  await adminContext.close()
 })
 
 test('swimmer portal bio edits persist after refresh', async ({ browser }) => {
@@ -126,8 +124,6 @@ test('swimmer portal bio edits persist after refresh', async ({ browser }) => {
   await expect(savedBio).toHaveText(nextBio)
   await expect(savedBio).toBeVisible()
 
-  await swimmerContext.close()
-  await adminContext.close()
 })
 
 test('parent portal communication preferences persist after refresh', async ({ browser }) => {
@@ -158,8 +154,6 @@ test('parent portal communication preferences persist after refresh', async ({ b
   await parentPage.getByRole('button', { name: 'Preferences' }).click()
   await expect(pushToggle).toBeChecked()
 
-  await parentContext.close()
-  await adminContext.close()
 })
 
 test('parent portal autopay settings persist after refresh', async ({ browser }) => {
@@ -199,8 +193,6 @@ test('parent portal autopay settings persist after refresh', async ({ browser })
   await expect(parentPage.getByLabel('Saved Label')).toHaveValue(paymentLabel)
   await expect(parentPage.getByRole('button', { name: 'Update autopay' })).toBeVisible()
 
-  await parentContext.close()
-  await adminContext.close()
 })
 
 test('swimmer portal cut qualifications render live time standard results', async ({ browser }) => {
@@ -256,8 +248,6 @@ test('swimmer portal cut qualifications render live time standard results', asyn
   await expect(swimmerPage.getByText('Qualified').first()).toBeVisible()
   await expect(swimmerPage.getByText('Under the cut by 2.00s.')).toBeVisible()
 
-  await swimmerContext.close()
-  await adminContext.close()
 })
 
 test('parent portal meet event selections reload from live commitments', async ({ browser }) => {
@@ -305,8 +295,6 @@ test('parent portal meet event selections reload from live commitments', async (
   await expect(eventRow).toBeVisible()
   await expect(eventRow.locator('svg')).toBeVisible()
 
-  await parentContext.close()
-  await adminContext.close()
 })
 
 test('parent portal swimmer activity history renders live backend activity', async ({ browser }) => {
@@ -345,6 +333,4 @@ test('parent portal swimmer activity history renders live backend activity', asy
   await expect(parentPage.getByText('100 SCY Freestyle')).toBeVisible()
   await expect(parentPage.getByText('Finished in 1:01.25.')).toBeVisible()
 
-  await parentContext.close()
-  await adminContext.close()
 })

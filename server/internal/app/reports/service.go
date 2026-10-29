@@ -87,14 +87,20 @@ func (s *Service) StoreCSVArtifact(orgID, kind string, generatedAt time.Time, do
 	if doc == nil {
 		return nil, fmt.Errorf("csv document is required")
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	// Upload first without the service lock (it can take as long as the object
+	// store does); the lock is held only to record the artifact.
+	s.mu.RLock()
+	store := s.store
+	s.mu.RUnlock()
 
 	id := fmt.Sprintf("report_%d", generatedAt.UnixNano())
 	storageKey := fmt.Sprintf("reports/%s/%s/%s", orgID, kind, doc.Filename)
-	if err := s.store.PutObject(context.Background(), storageKey, "text/csv; charset=utf-8", doc.Data); err != nil {
+	if err := store.PutObject(context.Background(), storageKey, "text/csv; charset=utf-8", doc.Data); err != nil {
 		return nil, fmt.Errorf("store report artifact: %w", err)
 	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	artifact := StoredArtifact{
 		ID:          id,

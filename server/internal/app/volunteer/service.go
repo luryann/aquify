@@ -847,7 +847,10 @@ func (s *Service) GetJob(ctx context.Context, p *appmiddleware.Principal, orgID,
 	v := s.jobView(job, effectiveSeason(job, s.seasonList(orgID)), filled, map[string]string{})
 	if isStaff(p) {
 		names := s.householdNames(orgID)
-		settings, _ := s.settings(ctx, orgID)
+		settings, err := s.settings(ctx, orgID)
+		if err != nil {
+			return nil, err
+		}
 		v.Signups = make([]SignupView, 0, len(signups))
 		for _, su := range signups {
 			v.Signups = append(v.Signups, s.signupView(su, job, names, settings, p))
@@ -1064,7 +1067,15 @@ func (s *Service) SignUp(ctx context.Context, p *appmiddleware.Principal, orgID,
 		return nil, err
 	}
 	s.scheduleReminder(ctx, job, su)
-	settings, _ := s.settings(ctx, orgID)
+	// The signup is already committed, so a settings read failure must not
+	// fail the request (a client retry would hit the duplicate guard). Log it
+	// and render with the default cutoff instead of hiding the problem.
+	settings, err := s.settings(ctx, orgID)
+	if err != nil {
+		s.logger.Warn("volunteer: settings lookup failed after signup; using default cancellation cutoff",
+			"org_id", orgID, "signup_id", su.ID, "job_id", job.ID, "error", err)
+		settings = DefaultSettings(orgID)
+	}
 	v := s.signupView(su, job, s.householdNames(orgID), settings, p)
 	return &v, nil
 }
@@ -1238,7 +1249,10 @@ func (s *Service) ListSignups(ctx context.Context, p *appmiddleware.Principal, o
 	for _, j := range jobs {
 		byID[j.ID] = j
 	}
-	settings, _ := s.settings(ctx, orgID)
+	settings, err := s.settings(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
 	names := s.householdNames(orgID)
 	out := make([]SignupView, 0, len(signups))
 	for _, su := range signups {

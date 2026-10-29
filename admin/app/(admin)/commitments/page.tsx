@@ -27,6 +27,7 @@ import {
   type EntryRecord,
 } from '@/lib/adminData'
 import { formatDateOnly } from '@/lib/dates'
+import { formatEventLabel } from '@/lib/meet-events'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { useDialogA11y } from '@/components/ui/useDialogA11y'
@@ -91,18 +92,11 @@ const ENTRY_STATUS_CFG: Record<string, { label: string; color: string; bg: strin
 
 const COMMITMENT_STATUSES = new Set(['commitment_open', 'commitment_closed', 'entry_finalized', 'completed'])
 
-const STROKE_LABELS: Record<string, string> = {
-  free: 'Freestyle', back: 'Backstroke', breast: 'Breaststroke', fly: 'Butterfly', im: 'IM', medley: 'Medley',
-}
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function eventLabel(ev: MeetEventRecord): string {
-  const dist = ev.distance ? `${ev.distance}` : ''
-  const stroke = STROKE_LABELS[ev.stroke?.toLowerCase() ?? ''] ?? ev.stroke ?? ''
-  const age = ev.age_group ? ` · ${ev.age_group}` : ''
-  const gender = ev.gender ? ` (${ev.gender === 'F' ? 'Girls' : ev.gender === 'M' ? 'Boys' : ev.gender})` : ''
-  return [dist, stroke].filter(Boolean).join(' ') + gender + age || `Event #${ev.event_number ?? ev.id.slice(-4)}`
+  if (!ev.distance && !ev.stroke) return `Event #${ev.event_number ?? ev.id.slice(-4)}`
+  return formatEventLabel(ev)
 }
 
 // ─── Swimmer detail panel ─────────────────────────────────────────────────────
@@ -570,7 +564,7 @@ function CommitmentsPageContent() {
               meetDate: meet.start_date ?? '',
               meetStatus: meet.status,
               status: c.status as CommitmentStatus,
-              note: c.note,
+              note: c.notes,
             })
           }
         }

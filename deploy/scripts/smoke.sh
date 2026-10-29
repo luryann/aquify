@@ -24,7 +24,12 @@ set -euo pipefail
 API_BASE_URL="${API_BASE_URL:-http://localhost:8080}"
 SMOKE_AUTH_TOKEN="${SMOKE_AUTH_TOKEN:-}"
 SMOKE_ORG_ID="${SMOKE_ORG_ID:-}"
-SMOKE_LOG="/var/log/dare/smoke.log"
+# File logging is opt-in by environment: set SMOKE_LOG to a path, or leave it
+# unset to log to /var/log/dare/smoke.log when that directory is writable
+# (the server). Elsewhere (CI, laptops) output goes to stdout only.
+if [ -z "${SMOKE_LOG+x}" ]; then
+  if [ -w /var/log/dare ]; then SMOKE_LOG="/var/log/dare/smoke.log"; else SMOKE_LOG=""; fi
+fi
 PASS=0
 FAIL=0
 
@@ -36,8 +41,9 @@ log() {
   local ts
   ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "[${ts}] $*"
-  mkdir -p "$(dirname "${SMOKE_LOG}")" 2>/dev/null || true
-  echo "[${ts}] $*" >> "${SMOKE_LOG}" 2>/dev/null || true
+  if [ -n "${SMOKE_LOG}" ]; then
+    echo "[${ts}] $*" >> "${SMOKE_LOG}" 2>/dev/null || true
+  fi
 }
 
 check() {

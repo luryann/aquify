@@ -140,3 +140,28 @@ func TestAverageAndDateRange(t *testing.T) {
 		t.Fatalf("range %s..%s (%d)", from, to, len(dates))
 	}
 }
+
+// Regression: the in-memory map was keyed swimmerID|date, so a same-ID write
+// from another org overwrote (and read back as) the first org's check-in.
+func TestInMemoryUpsertDoesNotCollideAcrossOrgs(t *testing.T) {
+	s := fixedService("2026-10-22")
+	a, createdA, err := s.Upsert("org-a", Input{SwimmerID: "s1", Metrics: good(), Note: "org a"})
+	if err != nil || !createdA {
+		t.Fatalf("org-a: created=%v err=%v", createdA, err)
+	}
+	b, createdB, err := s.Upsert("org-b", Input{SwimmerID: "s1", Metrics: poor(), Note: "org b"})
+	if err != nil || !createdB {
+		t.Fatalf("org-b write must create its own entry, created=%v err=%v", createdB, err)
+	}
+	if a.ID == b.ID {
+		t.Fatal("orgs must not share a check-in")
+	}
+	gotA, err := s.List("org-a", []string{"s1"}, "2026-10-01", "2026-10-31")
+	if err != nil || len(gotA) != 1 || gotA[0].Note != "org a" {
+		t.Fatalf("org-a check-in was overwritten: %+v err=%v", gotA, err)
+	}
+	gotB, _ := s.List("org-b", []string{"s1"}, "2026-10-01", "2026-10-31")
+	if len(gotB) != 1 || gotB[0].Note != "org b" {
+		t.Fatalf("org-b check-in missing: %+v", gotB)
+	}
+}

@@ -361,16 +361,69 @@ func (s *Service) appendAuditLocked(orgID, actorID, action, resource, resourceID
 
 // ─── Live detection ──────────────────────────────────────────────────────────
 
-// detectRecordBreaksLocked checks a freshly stored result against the
-// current records for its age group and Open. Caller holds s.mu.
-func (s *Service) detectRecordBreaksLocked(orgID, actorID string, result *Result, dir directorySnapshot) []RecordBreak {
-	if !qualifyingSwim(result) {
-		return nil
+// ErrRecordDetection marks a stored result whose team-record detection did not
+// complete (for example a failed database write). The result itself is saved;
+// callers can tell detection was incomplete and an admin can run a records
+// rebuild to repair the slot.
+var ErrRecordDetection = errors.New("team record detection incomplete")
+
+// slotVerdict is the outcome of evaluating one swim against one record slot.
+type slotVerdict struct {
+	Create bool
+	Status string
+	// Previous is the accepted entry the swim beat: the fastest accepted entry
+	// swum on or before the swim date. Nil when the swim opens the slot.
+	Previous *RecordEntry
+}
+
+// evaluateSlot is the single record-break rule shared by live detection and
+// rebuild, so a back-dated import behaves the same on both paths. entries are
+// every entry already in the slot. A swim is a break when it is faster than the
+// fastest accepted entry on or before its swim date (later-dated entries do not
+// block a back-dated swim; the progression view sorts them out). A slot whose
+// standing record is locked only accepts a swim that beats that record, and then
+// as a pending entry for admin approval.
+func evaluateSlot(entries []*RecordEntry, resultID string, timeMs int, swimDate string) slotVerdict {
+	var reference *RecordEntry
+	for _, e := range entries {
+		if resultID != "" && e.ResultID == resultID {
+			return slotVerdict{}
+		}
+		if e.Status != RecordStatusAccepted || (swimDate != "" && e.SwimDate > swimDate) {
+			continue
+		}
+		if reference == nil || e.TimeMs < reference.TimeMs {
+			reference = e
+		}
 	}
-	facts := factsFor(result, dir)
-	if facts.gender == "" {
-		return nil
+	if reference != nil && timeMs >= reference.TimeMs {
+		return slotVerdict{}
 	}
+	status := RecordStatusAccepted
+	if cur := currentRecordOf(entries); cur != nil && cur.Locked {
+		if timeMs >= cur.TimeMs {
+			return slotVerdict{}
+		}
+		status = RecordStatusPending
+	}
+	return slotVerdict{Create: true, Status: status, Previous: reference}
+}
+
+// newResultRecordEntry builds the entry for a swim that evaluateSlot accepted.
+func (s *Service) newResultRecordEntry(orgID, actorID string, key RecordKey, r *Result, facts swimFacts, status string, now time.Time) *RecordEntry {
+	return &RecordEntry{
+		ID: s.newID(), OrgID: orgID,
+		Course: key.Course, Gender: key.Gender, AgeGroup: key.AgeGroup, Distance: key.Distance, Stroke: key.Stroke,
+		TimeMs: *r.FinTimeMs, SwimmerID: r.SwimmerID, SwimmerName: facts.swimmerName, SwimmerAge: facts.age,
+		SwimDate: facts.date, MeetID: r.MeetID, MeetName: facts.meetName, ResultID: r.ID,
+		Source: RecordSourceResult, Status: status,
+		CreatedAt: now, UpdatedAt: now, CreatedBy: actorID, UpdatedBy: actorID,
+	}
+}
+
+// recordSlotsFor lists the slots a swim competes in: its age group (when its
+// age is known) and Open.
+func recordSlotsFor(r *Result, facts swimFacts) []RecordKey {
 	groups := []string{}
 	if facts.age != nil {
 		if g := AgeGroupForAge(*facts.age); g != "" {
@@ -378,59 +431,55 @@ func (s *Service) detectRecordBreaksLocked(orgID, actorID string, result *Result
 		}
 	}
 	groups = append(groups, AgeGroupOpen)
+	keys := make([]RecordKey, 0, len(groups))
+	for _, g := range groups {
+		keys = append(keys, RecordKey{Course: r.Course, Gender: facts.gender, AgeGroup: g, Distance: r.Distance, Stroke: r.Stroke})
+	}
+	return keys
+}
+
+// detectRecordBreaksLocked checks a freshly stored result against the
+// records for its age group and Open. Caller holds s.mu. A persistence failure
+// is returned (wrapping ErrRecordDetection) together with the breaks recorded
+// before it, so a dropped break is never silent.
+func (s *Service) detectRecordBreaksLocked(orgID, actorID string, result *Result, dir directorySnapshot) ([]RecordBreak, error) {
+	if !qualifyingSwim(result) {
+		return nil, nil
+	}
+	facts := factsFor(result, dir)
+	if facts.gender == "" {
+		return nil, nil
+	}
 
 	var breaks []RecordBreak
 	now := time.Now().UTC()
-	for _, group := range groups {
-		key := RecordKey{Course: result.Course, Gender: facts.gender, AgeGroup: group, Distance: result.Distance, Stroke: result.Stroke}
-		entries := s.entriesForKeyLocked(orgID, key)
-		duplicate := false
-		for _, e := range entries {
-			if e.ResultID == result.ID {
-				duplicate = true
-				break
-			}
-		}
-		if duplicate {
-			continue
-		}
-		cur := currentRecordOf(entries)
+	for _, key := range recordSlotsFor(result, facts) {
 		timeMs := *result.FinTimeMs
-		if cur != nil && timeMs >= cur.TimeMs {
+		v := evaluateSlot(s.entriesForKeyLocked(orgID, key), result.ID, timeMs, facts.date)
+		if !v.Create {
 			continue
 		}
-		status := RecordStatusAccepted
-		if cur != nil && cur.Locked {
-			status = RecordStatusPending
-		}
-		entry := &RecordEntry{
-			ID: s.newID(), OrgID: orgID,
-			Course: key.Course, Gender: key.Gender, AgeGroup: key.AgeGroup, Distance: key.Distance, Stroke: key.Stroke,
-			TimeMs: timeMs, SwimmerID: result.SwimmerID, SwimmerName: facts.swimmerName, SwimmerAge: facts.age,
-			SwimDate: facts.date, MeetID: result.MeetID, MeetName: facts.meetName, ResultID: result.ID,
-			Source: RecordSourceResult, Status: status,
-			CreatedAt: now, UpdatedAt: now, CreatedBy: actorID, UpdatedBy: actorID,
-		}
+		entry := s.newResultRecordEntry(orgID, actorID, key, result, facts, v.Status, now)
 		if err := s.persistRecordEntryLocked(entry); err != nil {
 			slog.Error("performance: persist record entry", "error", err, "result_id", result.ID)
-			continue
+			return breaks, fmt.Errorf("%w: persist record entry for result %s: %w", ErrRecordDetection, result.ID, err)
 		}
 		s.recordEntries[entry.ID] = entry
 		rb := RecordBreak{
 			EntryID: entry.ID, RecordKey: key, Label: key.Label(), TimeMs: timeMs,
-			SwimmerID: result.SwimmerID, SwimmerName: facts.swimmerName, SwimDate: facts.date, Status: status,
+			SwimmerID: result.SwimmerID, SwimmerName: facts.swimmerName, SwimDate: facts.date, Status: v.Status,
 		}
-		if cur != nil {
-			prev := cur.TimeMs
+		if v.Previous != nil {
+			prev := v.Previous.TimeMs
 			rb.PreviousTimeMs = &prev
-			rb.PreviousHolder = cur.SwimmerName
+			rb.PreviousHolder = v.Previous.SwimmerName
 		}
 		breaks = append(breaks, rb)
 		s.appendAuditLocked(orgID, actorID, "team_record.broken", "team_record_entry", entry.ID, map[string]any{
-			"label": rb.Label, "time_ms": timeMs, "status": status, "result_id": result.ID,
+			"label": rb.Label, "time_ms": timeMs, "status": v.Status, "result_id": result.ID,
 		})
 	}
-	return breaks
+	return breaks, nil
 }
 
 // ─── Reads ───────────────────────────────────────────────────────────────────
@@ -821,7 +870,6 @@ func (s *Service) RebuildRecords(orgID, actorID string, principal *appmiddleware
 
 	type cand struct {
 		facts swimFacts
-		key   RecordKey
 	}
 	candidates := map[RecordKey][]cand{}
 	for _, r := range s.results {
@@ -832,15 +880,8 @@ func (s *Service) RebuildRecords(orgID, actorID string, principal *appmiddleware
 		if f.gender == "" {
 			continue
 		}
-		groups := []string{AgeGroupOpen}
-		if f.age != nil {
-			if g := AgeGroupForAge(*f.age); g != "" {
-				groups = append(groups, g)
-			}
-		}
-		for _, g := range groups {
-			k := RecordKey{Course: r.Course, Gender: f.gender, AgeGroup: g, Distance: r.Distance, Stroke: r.Stroke}
-			candidates[k] = append(candidates[k], cand{facts: f, key: k})
+		for _, k := range recordSlotsFor(r, f) {
+			candidates[k] = append(candidates[k], cand{facts: f})
 		}
 	}
 	existing := map[RecordKey][]*RecordEntry{}
@@ -865,14 +906,10 @@ func (s *Service) RebuildRecords(orgID, actorID string, principal *appmiddleware
 			continue
 		}
 		var kept []*RecordEntry
-		excluded := map[string]bool{}
 		for _, e := range entries {
 			removable := e.Source == RecordSourceResult && !e.Verified && !e.Locked && e.Status != RecordStatusRejected
 			if !removable {
 				kept = append(kept, e)
-				if e.ResultID != "" {
-					excluded[e.ResultID] = true
-				}
 				continue
 			}
 			if s.repo != nil {
@@ -883,50 +920,29 @@ func (s *Service) RebuildRecords(orgID, actorID string, principal *appmiddleware
 			delete(s.recordEntries, e.ID)
 			summary.EntriesRemoved++
 		}
+		// Replay swims in the order they were recorded and apply the same rule
+		// live detection uses, so a rebuild reproduces what live imports produced.
 		cs := candidates[k]
 		sort.Slice(cs, func(i, j int) bool {
-			a, b := cs[i].facts, cs[j].facts
-			if a.date != b.date {
-				return a.date < b.date
+			a, b := cs[i].facts.result, cs[j].facts.result
+			if !a.CreatedAt.Equal(b.CreatedAt) {
+				return a.CreatedAt.Before(b.CreatedAt)
 			}
-			if *a.result.FinTimeMs != *b.result.FinTimeMs {
-				return *a.result.FinTimeMs < *b.result.FinTimeMs
-			}
-			return a.result.ID < b.result.ID
+			return a.ID < b.ID
 		})
-		var added []*RecordEntry
+		slot := append([]*RecordEntry(nil), kept...)
 		for _, c := range cs {
 			r := c.facts.result
-			if excluded[r.ID] {
+			v := evaluateSlot(slot, r.ID, *r.FinTimeMs, c.facts.date)
+			if !v.Create {
 				continue
 			}
-			best := 0
-			for _, e := range kept {
-				if e.Status == RecordStatusAccepted && e.SwimDate <= c.facts.date && (best == 0 || e.TimeMs < best) {
-					best = e.TimeMs
-				}
-			}
-			for _, e := range added {
-				if best == 0 || e.TimeMs < best {
-					best = e.TimeMs
-				}
-			}
-			if best != 0 && *r.FinTimeMs >= best {
-				continue
-			}
-			e := &RecordEntry{
-				ID: s.newID(), OrgID: orgID,
-				Course: k.Course, Gender: k.Gender, AgeGroup: k.AgeGroup, Distance: k.Distance, Stroke: k.Stroke,
-				TimeMs: *r.FinTimeMs, SwimmerID: r.SwimmerID, SwimmerName: c.facts.swimmerName, SwimmerAge: c.facts.age,
-				SwimDate: c.facts.date, MeetID: r.MeetID, MeetName: c.facts.meetName, ResultID: r.ID,
-				Source: RecordSourceResult, Status: RecordStatusAccepted,
-				CreatedAt: now, UpdatedAt: now, CreatedBy: actorID, UpdatedBy: actorID,
-			}
+			e := s.newResultRecordEntry(orgID, actorID, k, r, c.facts, RecordStatusAccepted, now)
 			if err := s.persistRecordEntryLocked(e); err != nil {
 				return summary, fmt.Errorf("persist record entry: %w", err)
 			}
 			s.recordEntries[e.ID] = e
-			added = append(added, e)
+			slot = append(slot, e)
 			summary.EntriesCreated++
 		}
 	}

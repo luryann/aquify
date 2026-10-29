@@ -204,7 +204,8 @@ func TestWellnessPrivacyAndHeatmap(t *testing.T) {
 	expectStatus(t, f.do(t, http.MethodPut, "/api/v1/wellness/checkins", "coach", strings.Replace(body, `{`, `{"swimmer_id":"sw-a",`, 1)), http.StatusForbidden, "coach submit")
 	expectStatus(t, f.do(t, http.MethodPut, "/api/v1/wellness/checkins", "swimA", `{"sleep_hours":7,"sleep_quality":9,"soreness":2,"energy":4,"stress":2,"mood":4}`), http.StatusUnprocessableEntity, "bad scale")
 
-	expectStatus(t, f.do(t, http.MethodGet, "/api/v1/wellness/swimmers/sw-a", "parentB", ""), http.StatusForbidden, "foreign trend")
+	expectStatus(t, f.do(t, http.MethodGet, "/api/v1/wellness/swimmers/sw-a", "parentB", ""), http.StatusNotFound, "foreign trend")
+	expectStatus(t, f.do(t, http.MethodGet, "/api/v1/wellness/swimmers/sw-nonexistent", "parentB", ""), http.StatusNotFound, "unknown trend matches foreign (no existence oracle)")
 	rr := f.do(t, http.MethodGet, "/api/v1/wellness/swimmers/sw-a", "parentA", "")
 	expectStatus(t, rr, http.StatusOK, "household trend")
 	if !strings.Contains(rr.Body.String(), "slept ok") {
@@ -235,6 +236,6 @@ func TestAttendanceSummaryScoping(t *testing.T) {
 		t.Fatalf("unexpected summary: %s", rr.Body.String())
 	}
 	expectStatus(t, f.do(t, http.MethodGet, "/api/v1/swimmers/sw-a/attendance-summary", "parentA", ""), http.StatusOK, "own household")
-	expectStatus(t, f.do(t, http.MethodGet, "/api/v1/swimmers/sw-a/attendance-summary", "parentB", ""), http.StatusForbidden, "foreign household")
+	expectStatus(t, f.do(t, http.MethodGet, "/api/v1/swimmers/sw-a/attendance-summary", "parentB", ""), http.StatusNotFound, "foreign household")
 	expectStatus(t, f.do(t, http.MethodGet, "/api/v1/swimmers/nope/attendance-summary", "coach", ""), http.StatusNotFound, "unknown swimmer")
 }

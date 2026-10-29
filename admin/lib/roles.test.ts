@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { canAccess, filterNavItems, hasRole } from './roles.ts'
+import { canAccess, filterNavItems, hasRole, highestRoleTier } from './roles.ts'
 
 test('multi-role access checks use the full backend role set', () => {
   assert.equal(canAccess(['parent', 'admin'], ['admin']), true)
@@ -22,4 +22,11 @@ test('navigation filtering hides items the role cannot access', () => {
   assert.equal(items.some((item) => item.path === '/settings'), false)
   assert.equal(items.some((item) => item.path === '/meets'), true)
   assert.equal(items.every((item) => item.allowedRoles.includes('coach')), true)
+})
+
+test('highestRoleTier takes the maximum across mixed roles', () => {
+  assert.equal(highestRoleTier(['parent', 'admin']), 3)
+  assert.equal(highestRoleTier(['swimmer', 'coach']), 2)
+  assert.equal(highestRoleTier(['bogus']), 0)
+  assert.equal(highestRoleTier(undefined), 0)
 })

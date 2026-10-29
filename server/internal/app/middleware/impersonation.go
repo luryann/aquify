@@ -7,52 +7,19 @@ import (
 	"github.com/dareaquatics/aquify/server/internal/app/httpx"
 )
 
-func RejectImpersonationHeaders(enabled bool) func(http.Handler) http.Handler {
+// RejectImpersonationHeaders refuses any request carrying admin-impersonation
+// headers. Impersonation is not implemented (there is no audited session-switch
+// path), so rejection is unconditional: there is deliberately no role, MFA or
+// feature-flag branching to drift from the eventual real implementation.
+func RejectImpersonationHeaders() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			targetUserID := strings.TrimSpace(r.Header.Get("X-Impersonate-User-Id"))
-			reason := strings.TrimSpace(r.Header.Get("X-Impersonate-Reason"))
-			if targetUserID == "" && reason == "" {
+			if strings.TrimSpace(r.Header.Get("X-Impersonate-User-Id")) == "" &&
+				strings.TrimSpace(r.Header.Get("X-Impersonate-Reason")) == "" {
 				next.ServeHTTP(w, r)
 				return
 			}
-
-			if !enabled {
-				httpx.WriteError(w, r, http.StatusForbidden, "impersonation_disabled", "Admin impersonation is disabled in this environment.", nil)
-				return
-			}
-
-			principal, ok := PrincipalFromContext(r.Context())
-			if !ok || principal == nil {
-				httpx.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Authentication context is missing.", nil)
-				return
-			}
-			if !principal.MFAAuthenticated {
-				httpx.WriteError(w, r, http.StatusForbidden, "mfa_required", "MFA step-up is required for impersonation.", nil)
-				return
-			}
-			if strings.TrimSpace(reason) == "" {
-				httpx.WriteError(w, r, http.StatusForbidden, "impersonation_reason_required", "Impersonation reason is required.", nil)
-				return
-			}
-			if targetUserID == "" {
-				httpx.WriteError(w, r, http.StatusForbidden, "impersonation_target_required", "Impersonation target user ID is required.", nil)
-				return
-			}
-
-			allowed := false
-			for _, role := range principal.Roles {
-				if role == "admin" {
-					allowed = true
-					break
-				}
-			}
-			if !allowed {
-				httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only admins may impersonate users.", nil)
-				return
-			}
-
-			httpx.WriteError(w, r, http.StatusForbidden, "impersonation_unavailable", "Admin impersonation remains unavailable until audited session-switch controls are fully implemented.", nil)
+			httpx.WriteError(w, r, http.StatusForbidden, "impersonation_unavailable", "Admin impersonation is unavailable.", nil)
 		})
 	}
 }

@@ -14,8 +14,8 @@ type DBHarness struct {
 	DatabaseURL string
 }
 
-// RequireDBHarness returns a DATABASE_URL-backed harness or skips when the
-// environment is not provisioned for DB integration tests.
+// RequireDBHarness returns a DATABASE_URL-backed harness. It skips only when
+// DATABASE_URL is unset; a configured but unusable database is a failure.
 func RequireDBHarness(t *testing.T) *DBHarness {
 	t.Helper()
 
@@ -23,8 +23,10 @@ func RequireDBHarness(t *testing.T) *DBHarness {
 	if databaseURL == "" {
 		t.Skip("DATABASE_URL is not set; skipping DB integration harness test")
 	}
+	// DATABASE_URL is set, so the DB tests were requested: a missing psql must
+	// fail loudly instead of silently dropping coverage.
 	if _, err := exec.LookPath("psql"); err != nil {
-		t.Skip("psql is not installed; skipping DB integration harness test")
+		t.Fatalf("DATABASE_URL is set but psql is not installed: %v", err)
 	}
 
 	return &DBHarness{DatabaseURL: databaseURL}

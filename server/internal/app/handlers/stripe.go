@@ -66,7 +66,7 @@ func NewStripeHandlers(
 		webhookSecret:                webhookSecret,
 		currency:                     currency,
 		reconcileAlertThresholdCents: reconcileAlertThresholdCents,
-		validate:                     validator.New(),
+		validate:                     httpx.NewValidator(),
 		logger:                       logger,
 	}
 }

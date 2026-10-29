@@ -8,8 +8,8 @@ import {
   formatHours,
   groupInOrder,
   hoursProgress,
-  localInputToISO,
 } from './volunteer-state.ts'
+import { localInputToISO } from './dates.ts'
 
 test('formatHours trims trailing zeros and pluralises', () => {
   assert.equal(formatHours(1), '1 hr')
@@ -48,8 +48,8 @@ test('currentLedgerRow prefers the active season', () => {
   assert.equal(currentLedgerRow([]), null)
 })
 
-test('localInputToISO returns empty for blank or invalid input', () => {
-  assert.equal(localInputToISO(''), '')
-  assert.equal(localInputToISO('nope'), '')
-  assert.match(localInputToISO('2026-03-07T08:00'), /^2026-03-0[67]T\d\d:00:00\.000Z$/)
+test('localInputToISO (shared in dates.ts) returns null for blank or invalid input', () => {
+  assert.equal(localInputToISO(''), null)
+  assert.equal(localInputToISO('nope'), null)
+  assert.match(localInputToISO('2026-03-07T08:00') ?? '', /^2026-03-0[67]T\d\d:00:00\.000Z$/)
 })

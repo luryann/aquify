@@ -36,8 +36,13 @@ export function scenarioFixture(testInfo: TestInfo) {
     text(label: string) {
       return `${label} ${slug}`
     },
+    // A short readable label prefix plus a hash of the full title path, so tests
+    // with similar titles cannot collide on a truncated slug.
     code(label: string, length = 12) {
-      return slugify(`${label}-${slug}`).replace(/-/g, '').slice(0, length).toUpperCase()
+      // Short codes are all hash; the prefix only appears when there are 8+ hash characters to spare.
+      const prefix = label.replace(/[^a-z0-9]/gi, '').slice(0, Math.max(0, Math.min(4, length - 8))).toUpperCase()
+      const digest = createHash('sha256').update(`${label}:${slug}`).digest('hex').toUpperCase()
+      return `${prefix}${digest}`.slice(0, length)
     },
   }
 }

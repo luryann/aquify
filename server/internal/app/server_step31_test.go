@@ -80,16 +80,13 @@ func TestNewRouterWithServicesFallsBackToInMemoryWhenSchemaValidationFails(t *te
 	}
 	closeDBPool = func(_ *pgxpool.Pool) {}
 
-	router := NewRouterWithServices(
-		Config{
-			DatabaseURL: "postgres://example.invalid/aquify",
-			Auth: AuthConfig{
-				EnableDevStubTokens:  true,
-				AllowDevSessionIssue: true,
-			},
+	router := NewRouterWithServices(Config{
+		DatabaseURL: "postgres://example.invalid/aquify",
+		Auth: AuthConfig{
+			EnableDevStubTokens:  true,
+			AllowDevSessionIssue: true,
 		},
-		logger,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	}, logger, RouterDeps{})
 
 	reqBody, err := json.Marshal(map[string]any{
 		"user_id": "user-step31",
@@ -118,16 +115,15 @@ func TestNewRouterWithServicesTreatsTypedNilWorkerBackendAsMissing(t *testing.T)
 
 	var durableBackend *workers.RedisBackend
 
-	router := NewRouterWithServices(
-		Config{
-			AppEnv: "test",
-			Auth: AuthConfig{
-				EnableDevStubTokens:  true,
-				AllowDevSessionIssue: true,
-			},
+	router := NewRouterWithServices(Config{
+		AppEnv: "test",
+		Auth: AuthConfig{
+			EnableDevStubTokens:  true,
+			AllowDevSessionIssue: true,
 		},
-		slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)),
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, durableBackend, nil)
+	}, slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)), RouterDeps{
+		Workers: durableBackend,
+	})
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/health/ready", nil)

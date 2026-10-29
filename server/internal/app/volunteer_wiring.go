@@ -39,7 +39,7 @@ type volunteerDeps struct {
 // meets, seasons, billing, and email domains, registers the shift-reminder
 // job handler on the worker backend (API and dedicated worker processes both
 // pass through here), and returns the HTTP handlers.
-func wireVolunteer(d volunteerDeps) *handlers.VolunteerHandlers {
+func wireVolunteer(d volunteerDeps) (*handlers.VolunteerHandlers, *volunteer.Service) {
 	var svc *volunteer.Service
 	if d.pool != nil {
 		svc = volunteer.NewServiceWithPool(d.pool)
@@ -117,7 +117,7 @@ func wireVolunteer(d volunteerDeps) *handlers.VolunteerHandlers {
 		d.workerBack.RegisterHandler(volunteer.TaskTypeShiftReminder, svc.ReminderHandler())
 		svc.SetReminderQueue(d.workerBack)
 	}
-	return handlers.NewVolunteerHandlers(svc, d.audit)
+	return handlers.NewVolunteerHandlers(svc, d.audit), svc
 }
 
 // volunteerBiller bills buyouts through the existing billing service so all

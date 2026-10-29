@@ -25,7 +25,7 @@ type MeetsHandlers struct {
 func NewMeetsHandlers(service *meets.Service) *MeetsHandlers {
 	return &MeetsHandlers{
 		service:  service,
-		validate: validator.New(),
+		validate: httpx.NewValidator(),
 	}
 }
 
@@ -34,7 +34,7 @@ func NewMeetsHandlersWithAudit(service *meets.Service, auditSvc *audit.Service) 
 	return &MeetsHandlers{
 		service:      service,
 		auditService: auditSvc,
-		validate:     validator.New(),
+		validate:     httpx.NewValidator(),
 	}
 }
 

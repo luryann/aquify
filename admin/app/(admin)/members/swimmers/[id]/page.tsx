@@ -184,7 +184,7 @@ export default function SwimmerDetailPage() {
   ], [bestTimes.length, groupMemberships.length, history.length])
 
   const bestEvent = bestTimes[0]
-  const canDelete = session?.user.role === 'admin'
+  const canDelete = session?.user.roles?.includes('admin') ?? false
 
   async function handleDeleteSwimmer() {
     if (!session?.user.orgId || !swimmer) return

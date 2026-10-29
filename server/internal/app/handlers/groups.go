@@ -2,13 +2,14 @@ package handlers
 
 import (
 	"errors"
-	"net"
+
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/dareaquatics/aquify/server/internal/app/groups"
 	"github.com/dareaquatics/aquify/server/internal/app/httpx"
+	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
 )
@@ -32,18 +33,14 @@ func (h *GroupsHandlers) waiverIP(r *http.Request) string {
 	if h.clientAddress != nil {
 		return h.clientAddress(r)
 	}
-	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
-	if err != nil {
-		return strings.TrimSpace(r.RemoteAddr)
-	}
-	return host
+	return appmiddleware.ClientIP(r)
 }
 
 // NewGroupsHandlers returns a new GroupsHandlers.
 func NewGroupsHandlers(service *groups.Service) *GroupsHandlers {
 	return &GroupsHandlers{
 		service:  service,
-		validate: validator.New(),
+		validate: httpx.NewValidator(),
 	}
 }
 

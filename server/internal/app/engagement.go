@@ -5,8 +5,9 @@ package app
 // those domains importing each other.
 
 import (
-	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -28,13 +29,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// engagementSystemPrincipal performs trusted server-side reads/writes on
-// behalf of an already-authorized request (RSVP fees, feed rendering).
-func engagementSystemPrincipal(orgID, actorID string) *appmiddleware.Principal {
-	if strings.TrimSpace(actorID) == "" {
-		actorID = "system:club-events"
-	}
-	return &appmiddleware.Principal{UserID: actorID, OrgID: orgID, Roles: []string{"admin"}}
+// engagementSystemPrincipal is the fixed, explicitly-marked identity for
+// trusted server-side reads/writes made on behalf of an already-authorized
+// request. It never carries a caller-supplied user ID: the real actor is passed
+// separately as the actorID argument of each billing call, so audit trails
+// attribute work to the actual user and admin rights never attach to them.
+const engagementSystemUserID = "system:club-events"
+
+func engagementSystemPrincipal(orgID string) *appmiddleware.Principal {
+	return &appmiddleware.Principal{UserID: engagementSystemUserID, OrgID: orgID, Roles: []string{"admin"}}
 }
 
 // ─── RSVP fee billing ─────────────────────────────────────────────────────────
@@ -46,45 +49,89 @@ type rsvpFeeBiller struct {
 	billing *billing.Service
 }
 
+// ChargeRSVP is idempotent per (event, household, swimmer, quantity): the
+// charge's ExternalRef is the idempotency key and the invoice number is derived
+// from it plus the attempt index, so the DB's (org_id, invoice_number) unique
+// constraint arbitrates concurrent retries. A retry after a timeout finds the
+// existing invoice and resumes it (a half-built draft is completed) instead of
+// creating a second one. Compensating voids are never silent: a failed void is
+// logged and joined to the returned error.
 func (b rsvpFeeBiller) ChargeRSVP(orgID string, c events.Charge) (string, error) {
-	actor := engagementSystemPrincipal(orgID, "")
-	suffix := make([]byte, 3)
-	if _, err := rand.Read(suffix); err != nil {
-		return "", err
+	actor := engagementSystemPrincipal(orgID)
+	ref := fmt.Sprintf("club_event:%s:%s:%s:q%d", c.EventID, c.HouseholdID, c.SwimmerID, c.Quantity)
+
+	for attempt := 0; attempt < 3; attempt++ {
+		existing, err := b.billing.InvoicesByExternalRef(orgID, actor, ref)
+		if err != nil {
+			return "", fmt.Errorf("lookup rsvp invoice: %w", err)
+		}
+		for _, inv := range existing {
+			switch inv.Status {
+			case "voided", "written_off":
+				continue
+			case "draft":
+				return b.finishRSVPInvoice(orgID, c, actor, inv.ID)
+			default:
+				return inv.ID, nil
+			}
+		}
+		sum := sha256.Sum256([]byte(ref))
+		eventPrefix := c.EventID
+		if len(eventPrefix) > 8 {
+			eventPrefix = eventPrefix[:8]
+		}
+		inv, err := b.billing.CreateInvoice(orgID, c.ActorUserID, actor, billing.CreateInvoiceInput{
+			HouseholdID: c.HouseholdID,
+			InvoiceNumber: fmt.Sprintf("EVT-%s-%s-%d", strings.ToUpper(eventPrefix),
+				strings.ToUpper(hex.EncodeToString(sum[:4])), len(existing)+1),
+			DueDate:     c.DueDate,
+			Notes:       c.Description,
+			ExternalRef: ref,
+		})
+		if errors.Is(err, billing.ErrDuplicateInvoiceNumber) {
+			continue // a concurrent retry created it first; re-run the lookup
+		}
+		if err != nil {
+			return "", fmt.Errorf("create rsvp invoice: %w", err)
+		}
+		return b.finishRSVPInvoice(orgID, c, actor, inv.ID)
 	}
-	eventPrefix := c.EventID
-	if len(eventPrefix) > 8 {
-		eventPrefix = eventPrefix[:8]
+	return "", errors.New("create rsvp invoice: concurrent creation did not settle")
+}
+
+// finishRSVPInvoice adds the fee line (if missing) and issues a draft invoice.
+func (b rsvpFeeBiller) finishRSVPInvoice(orgID string, c events.Charge, actor *appmiddleware.Principal, invoiceID string) (string, error) {
+	fail := func(step string, cause error) (string, error) {
+		if _, _, verr := b.billing.VoidInvoice(orgID, c.ActorUserID, actor, invoiceID); verr != nil {
+			slog.Error("club events: voiding rsvp invoice after failure also failed; draft left for retry",
+				"invoice_id", invoiceID, "step", step, "cause", cause, "void_error", verr)
+			return "", errors.Join(fmt.Errorf("%s: %w", step, cause), fmt.Errorf("void rsvp invoice %s: %w", invoiceID, verr))
+		}
+		return "", fmt.Errorf("%s: %w", step, cause)
 	}
-	inv, err := b.billing.CreateInvoice(orgID, c.ActorUserID, actor, billing.CreateInvoiceInput{
-		HouseholdID:   c.HouseholdID,
-		InvoiceNumber: fmt.Sprintf("EVT-%s-%s", strings.ToUpper(eventPrefix), strings.ToUpper(hex.EncodeToString(suffix))),
-		DueDate:       c.DueDate,
-		Notes:         c.Description,
-		ExternalRef:   "club_event:" + c.EventID,
-	})
+	items, err := b.billing.ListInvoiceItems(orgID, actor, invoiceID)
 	if err != nil {
-		return "", fmt.Errorf("create rsvp invoice: %w", err)
+		return fail("list rsvp invoice items", err)
 	}
-	if _, err := b.billing.AddInvoiceItem(orgID, c.ActorUserID, actor, inv.ID, billing.AddInvoiceItemInput{
-		Description:     c.Description,
-		Quantity:        c.Quantity,
-		UnitAmountCents: c.UnitAmountCents,
-		Category:        "manual",
-		SwimmerID:       c.SwimmerID,
-	}); err != nil {
-		_, _, _ = b.billing.VoidInvoice(orgID, c.ActorUserID, actor, inv.ID)
-		return "", fmt.Errorf("add rsvp invoice item: %w", err)
+	if len(items) == 0 {
+		if _, err := b.billing.AddInvoiceItem(orgID, c.ActorUserID, actor, invoiceID, billing.AddInvoiceItemInput{
+			Description:     c.Description,
+			Quantity:        c.Quantity,
+			UnitAmountCents: c.UnitAmountCents,
+			Category:        "manual",
+			SwimmerID:       c.SwimmerID,
+		}); err != nil {
+			return fail("add rsvp invoice item", err)
+		}
 	}
-	if _, _, err := b.billing.IssueInvoice(orgID, c.ActorUserID, actor, inv.ID); err != nil {
-		_, _, _ = b.billing.VoidInvoice(orgID, c.ActorUserID, actor, inv.ID)
-		return "", fmt.Errorf("issue rsvp invoice: %w", err)
+	if _, _, err := b.billing.IssueInvoice(orgID, c.ActorUserID, actor, invoiceID); err != nil {
+		return fail("issue rsvp invoice", err)
 	}
-	return inv.ID, nil
+	return invoiceID, nil
 }
 
 func (b rsvpFeeBiller) ReleaseCharge(orgID, invoiceID, actorUserID string) (bool, error) {
-	actor := engagementSystemPrincipal(orgID, "")
+	actor := engagementSystemPrincipal(orgID)
 	inv, err := b.billing.GetInvoice(orgID, actor, invoiceID)
 	if err != nil {
 		return false, err
@@ -153,7 +200,7 @@ var feedMeetStatuses = map[string]bool{
 
 func buildCalendarFeedSource(meetsService *meets.Service, trainingService *training.Service, groupsService *groups.Service, dir roster.Directory) handlers.CalendarFeedSource {
 	return func(orgID string, household []roster.Swimmer, from, to time.Time) ([]events.CalendarItem, error) {
-		actor := engagementSystemPrincipal(orgID, "")
+		actor := engagementSystemPrincipal(orgID)
 		fromDate, toDate := from.Format("2006-01-02"), to.Format("2006-01-02")
 		items := []events.CalendarItem{}
 
@@ -273,6 +320,7 @@ type engagementHandlers struct {
 	wellness          *handlers.WellnessHandlers
 	attendanceSummary *handlers.AttendanceSummaryHandlers
 	eventsService     *events.Service
+	wellnessService   *wellness.Service
 }
 
 func buildEngagementHandlers(dbPool *pgxpool.Pool, logger *slog.Logger, membershipService *members.Service, groupsService *groups.Service, meetsService *meets.Service, trainingService *training.Service, billingService *billing.Service, auditService *audit.Service) engagementHandlers {
@@ -288,7 +336,8 @@ func buildEngagementHandlers(dbPool *pgxpool.Pool, logger *slog.Logger, membersh
 		source = trainingPracticeSource{training: trainingService}
 	}
 	return engagementHandlers{
-		eventsService: clubEventsService,
+		eventsService:   clubEventsService,
+		wellnessService: wellnessService,
 		clubEvents: handlers.NewClubEventsHandlers(clubEventsService, dir, auditService,
 			buildCalendarFeedSource(meetsService, trainingService, groupsService, dir)),
 		wellness: handlers.NewWellnessHandlers(wellnessService, dir),

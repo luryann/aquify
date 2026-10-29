@@ -44,12 +44,12 @@ func (h *CommsHandlers) SetStorage(store storage.ObjectStorage) {
 
 // NewCommsHandlers returns a new CommsHandlers.
 func NewCommsHandlers(svc *comms.Service, membersSvc *members.Service, groupsSvc *groups.Service) *CommsHandlers {
-	return &CommsHandlers{service: svc, membersService: membersSvc, groupsService: groupsSvc, validate: validator.New()}
+	return &CommsHandlers{service: svc, membersService: membersSvc, groupsService: groupsSvc, validate: httpx.NewValidator()}
 }
 
 // NewCommsHandlersWithAudit returns a CommsHandlers with audit logging enabled.
 func NewCommsHandlersWithAudit(svc *comms.Service, auditSvc *audit.Service, membersSvc *members.Service, groupsSvc *groups.Service) *CommsHandlers {
-	return &CommsHandlers{service: svc, auditService: auditSvc, membersService: membersSvc, groupsService: groupsSvc, validate: validator.New()}
+	return &CommsHandlers{service: svc, auditService: auditSvc, membersService: membersSvc, groupsService: groupsSvc, validate: httpx.NewValidator()}
 }
 
 // NewCommsHandlersWithWebhookAuth returns a CommsHandlers configured to verify
@@ -59,7 +59,7 @@ func NewCommsHandlersWithWebhookAuth(svc *comms.Service, membersSvc *members.Ser
 		service:              svc,
 		membersService:       membersSvc,
 		groupsService:        groupsSvc,
-		validate:             validator.New(),
+		validate:             httpx.NewValidator(),
 		postmarkHeaderName:   strings.TrimSpace(headerName),
 		postmarkHeaderValue:  strings.TrimSpace(headerValue),
 		postmarkBasicUser:    strings.TrimSpace(basicUser),
@@ -248,7 +248,7 @@ func (h *CommsHandlers) handlePostmarkWebhook(w http.ResponseWriter, r *http.Req
 		SuppressionReason string         `json:"SuppressionReason"`
 	}
 	if err := decodeJSONBody(w, r, &body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Could not parse request body.", nil)
+		writeJSONDecodeError(w, r, err, "invalid_body", "Could not parse request body.")
 		return
 	}
 
@@ -346,12 +346,10 @@ func (h *CommsHandlers) swimmerHouseholdID(orgID, swimmerID string) string {
 	if h.membersService == nil {
 		return ""
 	}
-	for _, swimmer := range h.membersService.SnapshotSwimmers(orgID) {
-		if swimmer.ID == swimmerID {
-			return swimmer.HouseholdID
-		}
-	}
-	return ""
+	// O(1) lookup: this runs per SSE event per connection, so it must not copy
+	// the org roster.
+	householdID, _ := h.membersService.CachedSwimmerHouseholdID(orgID, swimmerID)
+	return householdID
 }
 
 // authorizeMessageThread checks that the principal may read/write the given
@@ -364,10 +362,10 @@ func (h *CommsHandlers) authorizeMessageThread(principal *appmiddleware.Principa
 	if !hasAnyRole(principal, "parent", "swimmer") {
 		return false
 	}
-	if strings.TrimSpace(principal.HouseholdID) == "" || strings.TrimSpace(principal.HouseholdID) != strings.TrimSpace(householdID) {
+	if !principalOwnsHousehold(principal, householdID) {
 		return false
 	}
-	return h.swimmerHouseholdID(orgID, swimmerID) == householdID
+	return h.swimmerHouseholdID(orgID, swimmerID) == strings.TrimSpace(householdID)
 }
 
 // Chat attachments are images shared inline in a conversation, not legal
@@ -630,7 +628,7 @@ func (h *CommsHandlers) addReaction(w http.ResponseWriter, r *http.Request) {
 		Emoji string `json:"emoji" validate:"required"`
 	}
 	if err := decodeJSONBody(w, r, &body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Could not parse request body.", nil)
+		writeJSONDecodeError(w, r, err, "invalid_body", "Could not parse request body.")
 		return
 	}
 	if err := h.service.AddReaction(orgID, messageID, principal.UserID, body.Emoji); err != nil {
@@ -1008,7 +1006,7 @@ func (h *CommsHandlers) sendCampaign(w http.ResponseWriter, r *http.Request) {
 
 	var body struct{}
 	if err := decodeOptionalJSONBody(w, r, &body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Could not parse request body.", nil)
+		writeJSONDecodeError(w, r, err, "invalid_body", "Could not parse request body.")
 		return
 	}
 

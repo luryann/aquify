@@ -36,7 +36,7 @@ type ClubEventsHandlers struct {
 // NewClubEventsHandlers wires the club events handlers. feedSource may be nil
 // (feeds then contain only club events).
 func NewClubEventsHandlers(svc *events.Service, dir roster.Directory, auditSvc *audit.Service, feedSource CalendarFeedSource) *ClubEventsHandlers {
-	return &ClubEventsHandlers{service: svc, directory: dir, auditService: auditSvc, feedSource: feedSource, validate: validator.New()}
+	return &ClubEventsHandlers{service: svc, directory: dir, auditService: auditSvc, feedSource: feedSource, validate: httpx.NewValidator()}
 }
 
 // RegisterRoutes mounts the authenticated routes.
@@ -63,14 +63,21 @@ func (h *ClubEventsHandlers) RegisterPublicRoutes(router chi.Router) {
 
 // viewer captures who is asking and which swimmers/households they act for.
 type viewer struct {
-	principal  *appmiddleware.Principal
-	staff      bool
-	households map[string]bool
-	swimmers   []roster.Swimmer // swimmers the viewer may act/see for
+	principal *appmiddleware.Principal
+	staff     bool
+	// linked is the directory-resolved household set (multi-household parents).
+	linked   []string
+	swimmers []roster.Swimmer // swimmers the viewer may act/see for
+}
+
+// ownsHousehold applies the shared household-scope rule (household_scope.go)
+// plus the viewer's linked households.
+func (v *viewer) ownsHousehold(householdID string) bool {
+	return principalMayActForHousehold(v.principal, householdID, v.linked)
 }
 
 func (h *ClubEventsHandlers) resolveViewer(principal *appmiddleware.Principal, orgID string) (*viewer, error) {
-	v := &viewer{principal: principal, staff: roster.IsStaff(principal), households: map[string]bool{}}
+	v := &viewer{principal: principal, staff: roster.IsStaff(principal)}
 	if v.staff {
 		return v, nil
 	}
@@ -78,16 +85,14 @@ func (h *ClubEventsHandlers) resolveViewer(principal *appmiddleware.Principal, o
 	if err != nil {
 		return nil, err
 	}
-	for _, id := range ids {
-		v.households[id] = true
-	}
+	v.linked = ids
 	all, err := h.directory.Swimmers(orgID)
 	if err != nil {
 		return nil, err
 	}
 	isParent := roster.HasAnyRole(principal, "parent")
 	for _, sw := range all {
-		if isParent && v.households[sw.HouseholdID] {
+		if isParent && v.ownsHousehold(sw.HouseholdID) {
 			v.swimmers = append(v.swimmers, sw)
 		} else if !isParent && sw.ID == strings.TrimSpace(principal.SwimmerID) {
 			v.swimmers = append(v.swimmers, sw)
@@ -122,13 +127,13 @@ func (v *viewer) ownsRSVP(r *events.RSVP) bool {
 		return true
 	}
 	if roster.HasAnyRole(v.principal, "parent") {
-		return v.households[r.HouseholdID]
+		return v.ownsHousehold(r.HouseholdID)
 	}
 	// Swimmer: their own RSVP, or their household's household-mode RSVP.
 	if r.SwimmerID != "" {
 		return r.SwimmerID == strings.TrimSpace(v.principal.SwimmerID)
 	}
-	return v.households[r.HouseholdID]
+	return v.ownsHousehold(r.HouseholdID)
 }
 
 // ─── Views ────────────────────────────────────────────────────────────────────
@@ -568,12 +573,10 @@ func (h *ClubEventsHandlers) respondRSVP(w http.ResponseWriter, r *http.Request)
 				httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "A parent must RSVP for the household.", nil)
 				return
 			}
-			if in.HouseholdID == "" && len(v.households) == 1 {
-				for id := range v.households {
-					in.HouseholdID = id
-				}
+			if in.HouseholdID == "" && len(v.linked) == 1 {
+				in.HouseholdID = v.linked[0]
 			}
-			if !v.households[in.HouseholdID] {
+			if !v.ownsHousehold(in.HouseholdID) {
 				httpx.WriteError(w, r, http.StatusForbidden, "household_scope_violation", "You can only RSVP for your own household.", nil)
 				return
 			}
@@ -716,15 +719,13 @@ func (h *ClubEventsHandlers) feedHousehold(w http.ResponseWriter, r *http.Reques
 			return "", false
 		}
 		sort.Strings(ids)
-		if strings.TrimSpace(principal.HouseholdID) != "" {
-			return strings.TrimSpace(principal.HouseholdID), true
+		if own := strings.TrimSpace(principal.HouseholdID); principalMayActForHousehold(principal, own, ids) {
+			return own, true
 		}
 		return ids[0], true
 	}
-	for _, id := range ids {
-		if id == requested {
-			return id, true
-		}
+	if principalMayActForHousehold(principal, requested, ids) {
+		return requested, true
 	}
 	httpx.WriteError(w, r, http.StatusForbidden, "household_scope_violation", "You can only manage your own household's feed.", nil)
 	return "", false

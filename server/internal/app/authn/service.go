@@ -238,15 +238,16 @@ func (s *Service) upsertAuthenticatedUser(ctx context.Context, userID, email, na
 		lastLoginAt = &now
 	}
 
-	err := s.upsertAuthenticatedUserRow(ctx, userID, email, name, orgID, lastLoginAt)
+	err := s.upsertAuthenticatedUserRow(ctx, userID, email, name, orgID, lastLoginAt, false)
 	if isUniqueConstraintViolation(err, "users_email_key") {
-		surrogateEmail := surrogateSyncedUserEmail(userID)
-		s.logger.Warn("authn: email already belongs to another users row; using surrogate email for DB user sync",
+		// Identity policy: the email belongs to a different users row. Never
+		// overwrite an existing row's email with a placeholder; keep it as is.
+		// Only a brand new row (email is NOT NULL) gets a surrogate address.
+		s.logger.Error("authn: email already belongs to another users row; keeping existing email for this user",
 			"user_id", userID,
 			"email", email,
-			"surrogate_email", surrogateEmail,
 		)
-		err = s.upsertAuthenticatedUserRow(ctx, userID, surrogateEmail, name, orgID, lastLoginAt)
+		err = s.upsertAuthenticatedUserRowKeepEmail(ctx, userID, surrogateSyncedUserEmail(userID), name, orgID, lastLoginAt)
 	}
 	if err != nil {
 		return fmt.Errorf("upsert authenticated user: %w", err)
@@ -254,7 +255,11 @@ func (s *Service) upsertAuthenticatedUser(ctx context.Context, userID, email, na
 	return nil
 }
 
-func (s *Service) upsertAuthenticatedUserRow(ctx context.Context, userID, email, name, orgID string, lastLoginAt *time.Time) error {
+func (s *Service) upsertAuthenticatedUserRowKeepEmail(ctx context.Context, userID, insertEmail, name, orgID string, lastLoginAt *time.Time) error {
+	return s.upsertAuthenticatedUserRow(ctx, userID, insertEmail, name, orgID, lastLoginAt, true)
+}
+
+func (s *Service) upsertAuthenticatedUserRow(ctx context.Context, userID, email, name, orgID string, lastLoginAt *time.Time, keepExistingEmail bool) error {
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO users (
 			id, org_id, email, oidc_subject, display_name, status, last_login_at, created_at, updated_at
@@ -262,13 +267,13 @@ func (s *Service) upsertAuthenticatedUserRow(ctx context.Context, userID, email,
 		VALUES ($1::uuid, $2::uuid, $3, $4, $5, 'active', $6, now(), now())
 		ON CONFLICT (id) DO UPDATE SET
 			org_id        = EXCLUDED.org_id,
-			email         = EXCLUDED.email,
+			email         = CASE WHEN $7::boolean THEN users.email ELSE EXCLUDED.email END,
 			oidc_subject  = EXCLUDED.oidc_subject,
 			display_name  = EXCLUDED.display_name,
 			status        = 'active',
 			last_login_at = COALESCE(EXCLUDED.last_login_at, users.last_login_at),
 			updated_at    = now()`,
-		userID, orgID, email, userID, name, lastLoginAt,
+		userID, orgID, email, userID, name, lastLoginAt, keepExistingEmail,
 	)
 	return err
 }
@@ -335,15 +340,16 @@ func (s *Service) updateMFAFactorInDB(r mfaFactorRecord) {
 	if s.pool == nil {
 		return
 	}
-	backupCodesJSON := marshalBackupCodes(r.BackupCodes)
+	// backup_codes is intentionally not written here: consumption is a
+	// conditional UPDATE (consumeBackupCodeInDB), and writing this process's
+	// copy back would resurrect codes another instance already spent.
 	ctx := context.Background()
 	_, err := s.pool.Exec(ctx, `
 		UPDATE mfa_factors
 		SET is_verified        = $2,
-		    backup_codes       = $3,
-		    last_challenged_at = $4
+		    last_challenged_at = $3
 		WHERE id = $1`,
-		r.Factor.ID, r.Factor.IsVerified, backupCodesJSON, r.Factor.LastChallengedAt,
+		r.Factor.ID, r.Factor.IsVerified, r.Factor.LastChallengedAt,
 	)
 	if err != nil {
 		s.logger.Warn("authn: update MFA factor in DB", "error", err)
@@ -730,7 +736,7 @@ func (s *Service) RefreshSession(refreshToken string) (SessionTokens, error) {
 
 	nextAccess := "atk_" + randomToken(32)
 	nextRefresh := "rtk_" + randomToken(32)
-	expiresAt := now.Add(24 * time.Hour)
+	expiresAt := refreshedExpiry(now, record)
 
 	next := &sessionRecord{
 		AccessToken:  nextAccess,
@@ -1037,9 +1043,19 @@ func (s *Service) ChallengeMFA(currentAccessToken string, principal *appmiddlewa
 			if _, replayed := s.usedTOTPCodes[replayKey]; replayed {
 				return SessionTokens{}, ErrInvalidMFACode
 			}
-			if !verifyTOTP(factors[i].TOTPSecret, challengeCode, now) {
+			step, ok := verifyTOTPStep(factors[i].TOTPSecret, challengeCode, now)
+			if !ok {
 				s.recordMFAFailureLocked(factors[i].Factor.ID, now)
 				return SessionTokens{}, ErrInvalidMFACode
+			}
+			if s.pool != nil {
+				fresh, err := s.consumeTOTPStepInDB(context.Background(), factors[i].Factor.ID, step)
+				if err != nil {
+					return SessionTokens{}, err
+				}
+				if !fresh {
+					return SessionTokens{}, ErrInvalidMFACode
+				}
 			}
 			delete(s.mfaFailures, factors[i].Factor.ID)
 			s.usedTOTPCodes[replayKey] = now
@@ -1051,6 +1067,17 @@ func (s *Service) ChallengeMFA(currentAccessToken string, principal *appmiddlewa
 					continue
 				}
 				if subtle.ConstantTimeCompare([]byte(providedHash), []byte(factors[i].BackupCodes[j].Hash)) == 1 {
+					if s.pool != nil {
+						consumed, err := s.consumeBackupCodeInDB(context.Background(), factors[i].Factor.ID, factors[i].BackupCodes[j].Hash)
+						if err != nil {
+							return SessionTokens{}, err
+						}
+						if !consumed {
+							// Another instance already spent it.
+							factors[i].BackupCodes[j].Used = true
+							break
+						}
+					}
 					factors[i].BackupCodes[j].Used = true
 					matched = true
 					break
@@ -1171,7 +1198,7 @@ func (s *Service) refreshPersistentSession(ctx context.Context, refreshToken str
 
 	nextAccess := "atk_" + randomToken(32)
 	nextRefresh := "rtk_" + randomToken(32)
-	expiresAt := now.Add(24 * time.Hour)
+	expiresAt := refreshedExpiry(now, record)
 
 	next := &sessionRecord{
 		AccessToken:  nextAccess,
@@ -1192,6 +1219,17 @@ func (s *Service) refreshPersistentSession(ctx context.Context, refreshToken str
 		RefreshToken: nextRefresh,
 		ExpiresAt:    expiresAt,
 	}, nil
+}
+
+// refreshedExpiry returns the expiry for a rotated session. An MFA-elevated
+// session is short-lived by design, so rotation must not extend it past its
+// original expiry.
+func refreshedExpiry(now time.Time, prev *sessionRecord) time.Time {
+	expiresAt := now.Add(24 * time.Hour)
+	if prev.Principal.MFAAuthenticated && prev.ExpiresAt.Before(expiresAt) {
+		return prev.ExpiresAt
+	}
+	return expiresAt
 }
 
 // insertSessionRecord stores a session row using the pool or an open transaction.
@@ -1845,19 +1883,55 @@ func toStringSlice(value any) []string {
 	}
 }
 
-func verifyTOTP(secret, challengeCode string, now time.Time) bool {
+// verifyTOTPStep returns the 30-second time-step counter the code matched.
+func verifyTOTPStep(secret, challengeCode string, now time.Time) (int64, bool) {
 	secret = strings.TrimSpace(secret)
 	challengeCode = strings.TrimSpace(challengeCode)
 	if secret == "" || len(challengeCode) != 6 {
-		return false
+		return 0, false
 	}
 
 	for _, offset := range []int64{-1, 0, 1} {
-		if subtle.ConstantTimeCompare([]byte(generateTOTP(secret, now.Unix()+offset*30)), []byte(challengeCode)) == 1 {
-			return true
+		at := now.Unix() + offset*30
+		if subtle.ConstantTimeCompare([]byte(generateTOTP(secret, at)), []byte(challengeCode)) == 1 {
+			return at / 30, true
 		}
 	}
-	return false
+	return 0, false
+}
+
+// consumeTOTPStepInDB atomically records step as used for the factor. It
+// reports false when this or a later step was already consumed (a replay),
+// including by another API instance.
+func (s *Service) consumeTOTPStepInDB(ctx context.Context, factorID string, step int64) (bool, error) {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE mfa_factors
+		SET totp_last_counter = $2
+		WHERE id = $1 AND (totp_last_counter IS NULL OR totp_last_counter < $2)`,
+		factorID, step)
+	if err != nil {
+		return false, fmt.Errorf("consume totp step: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
+// consumeBackupCodeInDB atomically flips a single unused backup code to used.
+// It reports false when the code is absent or already consumed.
+func (s *Service) consumeBackupCodeInDB(ctx context.Context, factorID, hash string) (bool, error) {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE mfa_factors
+		SET backup_codes = (
+			SELECT jsonb_agg(CASE WHEN e->>'Hash' = $2 THEN jsonb_set(e, '{Used}', 'true'::jsonb) ELSE e END)
+			FROM jsonb_array_elements(backup_codes) e)
+		WHERE id = $1
+		  AND EXISTS (
+			SELECT 1 FROM jsonb_array_elements(backup_codes) e
+			WHERE e->>'Hash' = $2 AND COALESCE((e->>'Used')::boolean, false) = false)`,
+		factorID, hash)
+	if err != nil {
+		return false, fmt.Errorf("consume backup code: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
 }
 
 func generateTOTP(secret string, unixTime int64) string {

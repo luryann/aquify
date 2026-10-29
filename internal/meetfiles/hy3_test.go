@@ -1,6 +1,8 @@
 package meetfiles_test
 
 import (
+	"archive/zip"
+	"bytes"
 	"testing"
 
 	"github.com/dareaquatics/aquify/meetfiles"
@@ -264,5 +266,36 @@ func TestDetectFileType_HY3TakesPriorityOverZIPMagic(t *testing.T) {
 	got := meetfiles.DetectFileType("meet.hy3", zipMagic)
 	if got != meetfiles.FileTypeHY3 {
 		t.Errorf("DetectFileType(.hy3 with ZIP magic) = %q; want hy3 (extension priority)", got)
+	}
+}
+
+// A size-cap violation and a corrupt compressed stream are different problems
+// and must be reported as such.
+func TestReadHY3_ReportsTooLargeAndCorruptEntriesDistinctly(t *testing.T) {
+	tooLarge := buildZIP(t, map[string][]byte{"big.sd3": bytes.Repeat([]byte("A"), 101<<20)})
+	if got := meetfiles.ReadHY3("meet.hy3", tooLarge); got.Error == nil || got.Error.Code != meetfiles.ErrCodeArchiveTooLarge {
+		t.Fatalf("oversized entry: error = %+v, want code %q", got.Error, meetfiles.ErrCodeArchiveTooLarge)
+	}
+
+	// Store (no compression) an entry, then damage its CRC so reading it fails
+	// with a checksum error rather than a size error.
+	var buf bytes.Buffer
+	w := zip.NewWriter(&buf)
+	fw, err := w.CreateHeader(&zip.FileHeader{Name: "meet.sd3", Method: zip.Store})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fw.Write([]byte("A0 payload that will be damaged")); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	damaged := buf.Bytes()
+	i := bytes.Index(damaged, []byte("A0 payload"))
+	damaged[i+3] ^= 0xFF
+	got := meetfiles.ReadHY3("meet.hy3", damaged)
+	if got.Error == nil || got.Error.Code != meetfiles.ErrCodeMalformedRecord {
+		t.Fatalf("corrupt entry: error = %+v, want code %q", got.Error, meetfiles.ErrCodeMalformedRecord)
 	}
 }

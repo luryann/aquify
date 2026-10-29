@@ -74,7 +74,7 @@ func (h *OrgSettingsHandlers) update(w http.ResponseWriter, r *http.Request) {
 
 	var body updateOrgSettingsBody
 	if err := decodeOptionalJSONBody(w, r, &body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", nil)
+		writeJSONDecodeError(w, r, err, "bad_request", "Invalid JSON body.")
 		return
 	}
 

@@ -17,8 +17,25 @@ var newObjectStorageClient = func(cfg storage.Config) (storage.ObjectStorage, er
 
 var validatePackagedOpenAPI = appopenapi.Validate
 
+// NormalizeAppEnv is the single canonical form of APP_ENV (trimmed, lowercase).
+// LoadConfig applies it once; every environment predicate below also routes
+// through it so a hand-built Config cannot be classified differently by two sites.
+func NormalizeAppEnv(appEnv string) string {
+	return strings.ToLower(strings.TrimSpace(appEnv))
+}
+
+// effectiveAppEnv is the normalized environment for in-process wiring. An empty
+// value (only possible for hand-built Configs; the API refuses to start without
+// APP_ENV) behaves as "test" everywhere, instead of per-site defaults.
+func effectiveAppEnv(cfg Config) string {
+	if env := NormalizeAppEnv(cfg.AppEnv); env != "" {
+		return env
+	}
+	return "test"
+}
+
 func isExplicitDevelopmentEnv(appEnv string) bool {
-	switch strings.ToLower(strings.TrimSpace(appEnv)) {
+	switch NormalizeAppEnv(appEnv) {
 	case "development", "local", "test":
 		return true
 	default:

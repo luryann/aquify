@@ -148,3 +148,23 @@ func write(t *testing.T, path, content string) {
 		t.Fatalf("write %s: %v", path, err)
 	}
 }
+
+func TestCheckSmokeLogUsesStatusTokensNotSubstrings(t *testing.T) {
+	cases := []struct {
+		name, log string
+		wantFail  bool
+	}{
+		{"name contains error", "PASS GET /api/v1/errors\n[2026-01-01T00:00:00Z] PASS [failover-ready]: ok", false},
+		{"fail line", "PASS health live\nFAIL openapi: expected 200, got 500", true},
+		{"timestamped fail", "[2026-01-01T00:00:00Z] FAIL [x]: boom", true},
+		{"no results", "nothing useful here", true},
+	}
+	for _, tc := range cases {
+		c := &bundleChecker{root: t.TempDir()}
+		write(t, filepath.Join(c.root, "smoke.log"), tc.log)
+		c.checkSmokeLog("smoke.log")
+		if got := len(c.failures) > 0; got != tc.wantFail {
+			t.Errorf("%s: failures=%v, wantFail=%v", tc.name, c.failures, tc.wantFail)
+		}
+	}
+}

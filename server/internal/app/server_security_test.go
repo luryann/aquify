@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -71,15 +72,7 @@ func TestIssueSessionSetsSecureCookies(t *testing.T) {
 }
 
 func TestIssueSessionFailsWhenCSRFTokenGenerationFails(t *testing.T) {
-	originalNewCSRFToken := appmiddleware.CSRFTokenFactory
-	appmiddleware.CSRFTokenFactory = func() (string, error) {
-		return "", errors.New("rng unavailable")
-	}
-	t.Cleanup(func() {
-		appmiddleware.CSRFTokenFactory = originalNewCSRFToken
-	})
-
-	router := NewRouter(Config{AppEnv: "test"}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	router := NewRouter(failingCSRFConfig(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/sessions/issue", encodeJSONBody(t, map[string]any{
 		"user_id": "cookie-user",
 		"org_id":  "org-demo",
@@ -131,20 +124,25 @@ func TestIssueSessionRejectsUnknownFieldsTrailingPayloadAndOversizedBodies(t *te
 	router := NewRouter(Config{AppEnv: "test"}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	tests := []struct {
-		name string
-		body string
+		name       string
+		body       string
+		wantStatus int
+		wantCode   string
 	}{
 		{
-			name: "unknown field",
-			body: `{"user_id":"cookie-user","org_id":"org-demo","roles":["admin"],"unexpected":true}`,
+			name:       "unknown field",
+			body:       `{"user_id":"cookie-user","org_id":"org-demo","roles":["admin"],"unexpected":true}`,
+			wantStatus: http.StatusBadRequest, wantCode: "invalid_request_body",
 		},
 		{
-			name: "trailing payload",
-			body: `{"user_id":"cookie-user","org_id":"org-demo","roles":["admin"]}{"extra":true}`,
+			name:       "trailing payload",
+			body:       `{"user_id":"cookie-user","org_id":"org-demo","roles":["admin"]}{"extra":true}`,
+			wantStatus: http.StatusBadRequest, wantCode: "invalid_request_body",
 		},
 		{
-			name: "oversized body",
-			body: `{"user_id":"cookie-user","org_id":"org-demo","roles":["admin"],"name":"` + strings.Repeat("x", 1<<20) + `"}`,
+			name:       "oversized body",
+			body:       `{"user_id":"cookie-user","org_id":"org-demo","roles":["admin"],"name":"` + strings.Repeat("x", 1<<20) + `"}`,
+			wantStatus: http.StatusRequestEntityTooLarge, wantCode: "request_body_too_large",
 		},
 	}
 
@@ -159,16 +157,16 @@ func TestIssueSessionRejectsUnknownFieldsTrailingPayloadAndOversizedBodies(t *te
 
 			router.ServeHTTP(rr, req)
 
-			if rr.Code != http.StatusBadRequest {
-				t.Fatalf("expected 400, got %d: %s", rr.Code, rr.Body.String())
+			if rr.Code != tc.wantStatus {
+				t.Fatalf("expected %d, got %d: %s", tc.wantStatus, rr.Code, rr.Body.String())
 			}
 
 			var env apiErrorEnvelope
 			if err := json.Unmarshal(rr.Body.Bytes(), &env); err != nil {
 				t.Fatalf("decode error response: %v", err)
 			}
-			if env.Error.Code != "invalid_request_body" {
-				t.Fatalf("expected invalid_request_body, got %q", env.Error.Code)
+			if env.Error.Code != tc.wantCode {
+				t.Fatalf("expected %s, got %q", tc.wantCode, env.Error.Code)
 			}
 		})
 	}
@@ -201,16 +199,19 @@ func TestRefreshSessionWithCookieRequiresCSRF(t *testing.T) {
 }
 
 func TestRefreshSessionWithoutCookieFailsWhenCSRFTokenGenerationFails(t *testing.T) {
-	router := NewRouter(Config{AppEnv: "test"}, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	session := issueSessionWithCookies(t, router)
-
-	originalNewCSRFToken := appmiddleware.CSRFTokenFactory
-	appmiddleware.CSRFTokenFactory = func() (string, error) {
-		return "", errors.New("rng unavailable")
+	// The same router must issue the session first, so the failing factory is
+	// armed only after issuance; the per-router factory defers to a flag.
+	var failCSRF atomic.Bool
+	cfg := Config{AppEnv: "test"}
+	cfg.Auth.CSRFTokenFactory = func() (string, error) {
+		if failCSRF.Load() {
+			return "", errors.New("rng unavailable")
+		}
+		return appmiddleware.NewCSRFToken()
 	}
-	t.Cleanup(func() {
-		appmiddleware.CSRFTokenFactory = originalNewCSRFToken
-	})
+	router := NewRouter(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	session := issueSessionWithCookies(t, router)
+	failCSRF.Store(true)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/sessions/refresh", encodeJSONBody(t, map[string]any{
 		"refresh_token": session.refreshCookie.Value,
@@ -485,24 +486,9 @@ func TestLogoutSessionReturnsOIDCLogoutURLWhenConfigured(t *testing.T) {
 		t.Fatalf("issue session: %v", err)
 	}
 
-	router := NewRouterWithServices(
-		Config{AppEnv: "test"},
-		slog.New(slog.NewTextHandler(io.Discard, nil)),
-		authService,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil)
+	router := NewRouterWithServices(Config{AppEnv: "test"}, slog.New(slog.NewTextHandler(io.Discard, nil)), RouterDeps{
+		Auth: authService,
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/sessions/logout", nil)
 	req.AddCookie(&http.Cookie{Name: appmiddleware.AccessTokenCookieName, Value: session.AccessToken})
@@ -812,4 +798,12 @@ func headerListContains(headerValue, expected string) bool {
 		}
 	}
 	return false
+}
+
+// failingCSRFConfig returns a config whose router can never mint a CSRF token.
+// The factory lives on this router's config, so parallel tests are unaffected.
+func failingCSRFConfig() Config {
+	cfg := Config{AppEnv: "test"}
+	cfg.Auth.CSRFTokenFactory = func() (string, error) { return "", errors.New("rng unavailable") }
+	return cfg
 }

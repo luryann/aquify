@@ -604,9 +604,12 @@ func (s *Service) UpsertResultWithRecords(orgID, actorID string, principal *appm
 		}
 	}
 
-	var breaks []RecordBreak
+	var (
+		breaks       []RecordBreak
+		detectionErr error
+	)
 	if recordCandidate {
-		breaks = s.detectRecordBreaksLocked(orgID, actorID, result, dir)
+		breaks, detectionErr = s.detectRecordBreaksLocked(orgID, actorID, result, dir)
 	}
 
 	// Emit result.upserted audit event.
@@ -641,7 +644,9 @@ func (s *Service) UpsertResultWithRecords(orgID, actorID string, principal *appm
 		updater.UpdateSeedTimesForSwimmer(orgID, input.SwimmerID, input.Distance, input.Stroke, input.Course, newBestTimeMs)
 	}
 
-	return result, breaks, nil
+	// The result is saved either way; surface an incomplete record detection so
+	// callers can report it instead of silently losing a break.
+	return result, breaks, detectionErr
 }
 
 // recomputeBestTimeLocked scans all active results for the swimmer/event/course

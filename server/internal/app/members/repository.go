@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/dareaquatics/aquify/server/internal/dbutil"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -104,12 +105,33 @@ func (r *Repository) UpsertContact(ctx context.Context, c Contact) error {
 
 // ───────────────────────────── Swimmers ────────────────────────────────────
 
-func (r *Repository) UpsertSwimmer(ctx context.Context, sw Swimmer) error {
-	flagsJSON, _ := json.Marshal(sw.MedicalFlags)
-	if len(flagsJSON) == 0 {
-		flagsJSON = []byte("[]")
+// encodeMedicalFlags marshals the flag list for the jsonb column; nil becomes [].
+func encodeMedicalFlags(flags []string) ([]byte, error) {
+	if flags == nil {
+		return []byte("[]"), nil
 	}
-	_, err := r.pool.Exec(ctx, `
+	return json.Marshal(flags)
+}
+
+// decodeMedicalFlags parses the jsonb column. Corrupt data is an error rather
+// than silently loading as "no flags", which would hide medical information.
+func decodeMedicalFlags(raw string) ([]string, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	var flags []string
+	if err := json.Unmarshal([]byte(raw), &flags); err != nil {
+		return nil, fmt.Errorf("decode medical_flags: %w", err)
+	}
+	return flags, nil
+}
+
+func (r *Repository) UpsertSwimmer(ctx context.Context, sw Swimmer) error {
+	flagsJSON, err := encodeMedicalFlags(sw.MedicalFlags)
+	if err != nil {
+		return fmt.Errorf("members: encode medical flags for swimmer %s: %w", sw.ID, err)
+	}
+	_, err = r.pool.Exec(ctx, `
 		INSERT INTO swimmers (id, org_id, household_id, first_name, last_name, preferred_name,
 		                      date_of_birth, gender, swimmer_external_id, usa_swimming_id, registration_status,
 		                      medical_flags, notes, emergency_contact_name, emergency_contact_phone,
@@ -412,7 +434,11 @@ func loadSwimmersInTx(ctx context.Context, tx pgx.Tx) ([]Swimmer, error) {
 		); err != nil {
 			return sw, err
 		}
-		_ = json.Unmarshal([]byte(flagsJSON), &sw.MedicalFlags)
+		flags, err := decodeMedicalFlags(flagsJSON)
+		if err != nil {
+			return sw, fmt.Errorf("swimmer %s: %w", sw.ID, err)
+		}
+		sw.MedicalFlags = flags
 		return sw, nil
 	})
 }

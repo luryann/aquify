@@ -18,12 +18,11 @@ import (
 func newStep30ERouter(t *testing.T, kc keycloak.Client, membersSvc *members.Service) http.Handler {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewRouterWithServices(
-		Config{Auth: AuthConfig{EnableDevStubTokens: true}},
-		logger,
-		nil, membersSvc, nil, nil, nil, nil, nil, nil, nil,
-		audit.NewService(), nil, nil, nil, nil,
-		kc)
+	return NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, RouterDeps{
+		Members:  membersSvc,
+		Audit:    audit.NewService(),
+		Keycloak: kc,
+	})
 }
 
 func issueStep30EToken(t *testing.T, router http.Handler, userID, orgID string, roles []string) string {

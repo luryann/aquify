@@ -116,7 +116,7 @@ Domains: `members`, `groups`, `meets`, `imports`, `exports`, `performance`, `bil
 
 HTTP handlers live in `server/internal/app/handlers/<domain>.go` and are thin: validate → call service → respond.
 
-**`NewRouterWithServices`** in `server.go` is the main wiring point — it takes all 17 service + provider dependencies. Tests call `NewRouter(cfg, logger)` which passes all-nil services.
+**`NewRouterWithServices(cfg, logger, RouterDeps{...})`** in `server.go` is the main wiring point — dependencies are named fields on `RouterDeps` (nil = default/stub), not positional parameters. Tests call `NewRouter(cfg, logger)` which passes all-nil services.
 
 ### Frontend Layout
 - `admin/app/(admin)/` — admin-only pages (auth-gated to admin/coach)

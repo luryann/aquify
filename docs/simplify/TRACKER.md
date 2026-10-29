@@ -1183,3 +1183,8 @@ Moved the plain-string `<style>{`...`}</style>` blocks (no `${}`) from `app/page
 ## Pass 20v (deterministic groups test)
 - The earlier conclusion that groups could not have a deterministic race test was wrong: groups reads re-sync before looking, but a read-modify-write still exposes the lost update. `TestDBRepoGroups_UpdateInsideReloadWindowIsNotLost` renames a group inside another request's reload window and checks both edits survive. It fails 3/3 against the old read-then-lock ordering (the rename is reverted to "Original Name") and passes 3/3 with the fix.
 - Remaining unverifiable items: the staging `Deploy to staging via SSH` step (environment, fails in history since 2026-07-04; logs need admin rights).
+
+## Pass 21 (all 119 original bugs dispositioned)
+- Three workstreams: admin front end and e2e scripts (bugs 1-44), Go server (58-119 plus partials of earlier passes), and deploy/evidence shell scripts plus `meetfiles` (45-57), the last done directly.
+- Real fixes of note: TOTP/backup-code replay now atomic in Postgres with a migration; MFA-elevated sessions keep their original expiry on refresh; users' real emails are never overwritten; record-break detection shared between live and rebuild paths; household export now covers meets, volunteer, wellness, RSVPs, documents and communications; proxy/scheme/IP resolved once; cookie Secure flag configurable only for dev environments; router constructors replaced by `RouterDeps`; promote.sh now keeps a last-known-good env and delegates rollback to rollback.sh.
+- Environment-dependent items unchanged: GitHub Actions run for these commits, and the staging SSH deploy step.

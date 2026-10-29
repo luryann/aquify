@@ -30,7 +30,7 @@ func NewTrainingHandlers(svc *training.Service, auditSvc *audit.Service) *Traini
 	return &TrainingHandlers{
 		service:      svc,
 		auditService: auditSvc,
-		validate:     validator.New(),
+		validate:     httpx.NewValidator(),
 	}
 }
 
@@ -44,7 +44,7 @@ func NewTrainingHandlersWithMembers(svc *training.Service, membersService *membe
 		membersService: membersService,
 		groupsService:  groupsService,
 		auditService:   auditSvc,
-		validate:       validator.New(),
+		validate:       httpx.NewValidator(),
 	}
 }
 
@@ -202,7 +202,7 @@ func (h *TrainingHandlers) updatePractice(w http.ResponseWriter, r *http.Request
 
 	var body updatePracticeBody
 	if err := decodeOptionalJSONBody(w, r, &body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", nil)
+		writeJSONDecodeError(w, r, err, "bad_request", "Invalid JSON body.")
 		return
 	}
 

@@ -46,7 +46,7 @@ func NewExportsHandlersWithMeetAccess(service *exports.Service, meetsService *me
 		meetsService:   meetsService,
 		membersService: membersService,
 		orgSettings:    orgSettings,
-		validate:       validator.New(),
+		validate:       httpx.NewValidator(),
 	}
 }
 
@@ -202,21 +202,7 @@ func (h *ExportsHandlers) listMeetExports(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	list := h.service.ListExportsForAuthorizedMeet(orgID, meetID)
-
-	// Parent/swimmer household access to a meet's files must not expose
-	// staff-only reports (e.g. eligibility_report can include other
-	// swimmers' age/eligibility detail). Only admin/coach see every type.
-	if !hasAnyRole(principal, "admin", "coach") {
-		filtered := list[:0:0]
-		for _, ex := range list {
-			if ex.ExportType == "eligibility_report" {
-				continue
-			}
-			filtered = append(filtered, ex)
-		}
-		list = filtered
-	}
+	list := h.service.ListExportsForViewer(principal, orgID, meetID)
 
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"count":   len(list),
@@ -625,7 +611,7 @@ func writeSD3MeetError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, meets.ErrForbidden):
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to export this meet.", nil)
 	default:
-		httpx.WriteError(w, r, http.StatusInternalServerError, "sd3_export_failed", "Failed to load meet data for export.", nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "sd3_export_failed", "Failed to load meet data for export.", err)
 	}
 }
 

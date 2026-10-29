@@ -35,7 +35,7 @@ func StructuredLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 				"status", writer.Status(),
 				"bytes", writer.BytesWritten(),
 				"duration_ms", time.Since(startedAt).Milliseconds(),
-				"remote_addr", r.RemoteAddr,
+				"remote_addr", ClientIP(r),
 				"user_agent", r.UserAgent(),
 			}
 

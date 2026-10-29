@@ -65,7 +65,11 @@ func reportRequestBody(reportType string) string {
 func newExportsReportRouter(t *testing.T, orgID string, roles []string) (http.Handler, string, string) {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	router := NewRouterWithServices(Config{}, logger, nil, members.NewService(), nil, meets.NewService(), exports.NewService(), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, RouterDeps{
+		Members: members.NewService(),
+		Meets:   meets.NewService(),
+		Exports: exports.NewService(),
+	})
 	token := issueSessionToken(t, router, orgID, roles, false)
 	meetID := createMeet(t, router, orgID, token, "Spring Invitational")
 	return router, token, meetID
@@ -291,7 +295,7 @@ func TestGetExport_NotFound(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, RouterDeps{})
 
 	orgID := "org-export-404"
 	token := issueSessionToken(t, router, orgID, []string{"admin"}, false)
@@ -376,7 +380,7 @@ func TestGenerateReport_UnauthenticatedRejected(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, RouterDeps{})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/meets/m1/exports",
 		strings.NewReader(reportRequestBody("event_report")))
@@ -397,7 +401,10 @@ func TestListMeetExports_ParentHouseholdCanAccessMeetFiles(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	meetsSvc := meets.NewService()
 	exportsSvc := exports.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsSvc, exportsSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, RouterDeps{
+		Meets:   meetsSvc,
+		Exports: exportsSvc,
+	})
 
 	orgID := "org-export-parent-files"
 	adminToken := issueSessionToken(t, router, orgID, []string{"admin"}, false)
@@ -448,7 +455,10 @@ func TestListMeetExports_ParentCrossHouseholdForbidden(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	meetsSvc := meets.NewService()
 	exportsSvc := exports.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsSvc, exportsSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, RouterDeps{
+		Meets:   meetsSvc,
+		Exports: exportsSvc,
+	})
 
 	orgID := "org-export-parent-forbidden"
 	adminToken := issueSessionToken(t, router, orgID, []string{"admin"}, false)
@@ -486,7 +496,10 @@ func TestListMeetExports_SwimmerHouseholdCanAccessMeetFiles(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	meetsSvc := meets.NewService()
 	exportsSvc := exports.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsSvc, exportsSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, RouterDeps{
+		Meets:   meetsSvc,
+		Exports: exportsSvc,
+	})
 
 	orgID := "org-export-swimmer-files"
 	adminToken := issueSessionToken(t, router, orgID, []string{"admin"}, false)
@@ -524,7 +537,10 @@ func TestListMeetExports_SwimmerCrossHouseholdForbidden(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	meetsSvc := meets.NewService()
 	exportsSvc := exports.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsSvc, exportsSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, RouterDeps{
+		Meets:   meetsSvc,
+		Exports: exportsSvc,
+	})
 
 	orgID := "org-export-swimmer-forbidden"
 	adminToken := issueSessionToken(t, router, orgID, []string{"admin"}, false)

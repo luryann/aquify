@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -27,7 +30,8 @@ type mockKeycloak struct {
 	emptyOrgQueryResults  bool
 	alwaysOmitAttributes  bool
 
-	tokenCalls int
+	tokenCalls    int
+	roleUserCalls int
 }
 
 func newMockKeycloak() *mockKeycloak {
@@ -108,6 +112,40 @@ func (mk *mockKeycloak) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 		}
 
+	// ── /roles/{name}/users (members of a realm role) ──────────────
+	case strings.HasPrefix(subPath, "/roles/") && strings.HasSuffix(subPath, "/users"):
+		mk.roleUserCalls++
+		roleName := strings.TrimSuffix(strings.TrimPrefix(subPath, "/roles/"), "/users")
+		if _, ok := mk.roles[roleName]; !ok {
+			http.NotFound(w, r)
+			return
+		}
+		ids := make([]string, 0)
+		for id, names := range mk.userRoles {
+			for _, n := range names {
+				if n == roleName {
+					ids = append(ids, id)
+				}
+			}
+		}
+		sort.Strings(ids)
+		first, _ := strconv.Atoi(r.URL.Query().Get("first"))
+		max, err := strconv.Atoi(r.URL.Query().Get("max"))
+		if err != nil {
+			max = len(ids)
+		}
+		out := []keycloak.User{}
+		for i, id := range ids {
+			if i < first || len(out) >= max {
+				continue
+			}
+			if u, ok := mk.users[id]; ok {
+				out = append(out, *u)
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(out)
+
 	// ── /roles/{name} ─────────────────────────────────────────────
 	case strings.HasPrefix(subPath, "/roles/"):
 		roleName := strings.TrimPrefix(subPath, "/roles/")
@@ -171,7 +209,13 @@ func (mk *mockKeycloak) handleListUsers(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var out []keycloak.User
-	for _, u := range mk.users {
+	ids := make([]string, 0, len(mk.users))
+	for id := range mk.users {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids) // stable order so first/max paging is deterministic
+	for _, id := range ids {
+		u := mk.users[id]
 		if orgID != "" && u.OrgID() != orgID {
 			continue
 		}
@@ -186,6 +230,16 @@ func (mk *mockKeycloak) handleListUsers(w http.ResponseWriter, r *http.Request) 
 			copy.Attributes = nil
 		}
 		out = append(out, copy)
+	}
+	// Honor Keycloak's first/max paging.
+	if first, err := strconv.Atoi(q.Get("first")); err == nil && first > 0 {
+		if first > len(out) {
+			first = len(out)
+		}
+		out = out[first:]
+	}
+	if max, err := strconv.Atoi(q.Get("max")); err == nil && max >= 0 && max < len(out) {
+		out = out[:max]
 	}
 	if out == nil {
 		out = []keycloak.User{}
@@ -930,5 +984,76 @@ func TestAdminClientRejectsUnsafeUserIDsWithoutCallingKeycloak(t *testing.T) {
 	}
 	if calls != 0 {
 		t.Fatalf("unsafe ids reached Keycloak %d times", calls)
+	}
+}
+
+// Regression: the fallback used to read at most 500 realm users and apply the
+// offset to that window, so org users beyond the first realm pages vanished.
+func TestAdminClient_ListUsers_FallbackPagesRealmToExhaustion(t *testing.T) {
+	srv, mk := newTestServer(t)
+	c := newTestClient(t, srv)
+	ctx := context.Background()
+
+	mk.disableOrgQueryFilter = true
+	// 700 users of another org sort first; org-1's 5 users come after them.
+	for i := 0; i < 700; i++ {
+		id := fmt.Sprintf("a-%04d", i)
+		mk.users[id] = &keycloak.User{ID: id, Email: id + "@other.example", Attributes: map[string][]string{"org_id": {"org-2"}}}
+	}
+	for i := 0; i < 5; i++ {
+		id := fmt.Sprintf("z-%04d", i)
+		mk.users[id] = &keycloak.User{ID: id, Email: id + "@club.example", Attributes: map[string][]string{"org_id": {"org-1"}}}
+	}
+
+	users, err := c.ListUsers(ctx, "org-1", "", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(users) != 5 {
+		t.Fatalf("expected all 5 org users past the first 700 realm users, got %d", len(users))
+	}
+	page2, err := c.ListUsers(ctx, "org-1", "", 2, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page2) != 2 || page2[0].ID != "z-0002" || page2[1].ID != "z-0003" {
+		t.Fatalf("deep offset page wrong: %+v", page2)
+	}
+	if empty, _ := c.ListUsers(ctx, "org-1", "", 10, 5); len(empty) != 0 {
+		t.Fatalf("offset past the end should be empty, got %d", len(empty))
+	}
+}
+
+func TestAdminClient_ListUsersWithRealmRole_PagesAndFiltersByOrg(t *testing.T) {
+	srv, mk := newTestServer(t)
+	c := newTestClient(t, srv)
+	ctx := context.Background()
+
+	mk.roles["admin"] = &keycloak.Role{ID: "r-admin", Name: "admin"}
+	// 450 admins of another org plus 3 admins of org-1: more than one page.
+	for i := 0; i < 450; i++ {
+		id := fmt.Sprintf("a-%04d", i)
+		mk.users[id] = &keycloak.User{ID: id, Attributes: map[string][]string{"org_id": {"org-2"}}}
+		mk.userRoles[id] = []string{"admin"}
+	}
+	for i := 0; i < 3; i++ {
+		id := fmt.Sprintf("z-%04d", i)
+		mk.users[id] = &keycloak.User{ID: id, Attributes: map[string][]string{"org_id": {"org-1"}}}
+		mk.userRoles[id] = []string{"admin"}
+	}
+	mk.users["coach-1"] = &keycloak.User{ID: "coach-1", Attributes: map[string][]string{"org_id": {"org-1"}}}
+
+	admins, err := c.ListUsersWithRealmRole(ctx, "org-1", "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(admins) != 3 {
+		t.Fatalf("expected 3 org-1 admins across pages, got %d", len(admins))
+	}
+	if mk.roleUserCalls != 3 {
+		t.Fatalf("expected 3 role-member page calls (200/page over 453 members), got %d", mk.roleUserCalls)
+	}
+	if none, err := c.ListUsersWithRealmRole(ctx, "org-1", "no-such-role"); err != nil || len(none) != 0 {
+		t.Fatalf("unknown role should be empty: %v %v", none, err)
 	}
 }

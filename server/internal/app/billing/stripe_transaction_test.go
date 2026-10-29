@@ -227,3 +227,19 @@ func TestFinanceConfigVisibleAcrossInstances(t *testing.T) {
 		t.Fatalf("first instance should see the archived schedule, got %+v err %v", got, err)
 	}
 }
+
+// Invoice numbers are arbitrated by the DB unique constraint, so an instance
+// whose in-memory set is stale must still get ErrDuplicateInvoiceNumber.
+func TestCreateInvoiceDuplicateNumberAcrossInstances(t *testing.T) {
+	pool := stripeTestPool(t)
+	org := uuid.NewString()
+	admin := &appmiddleware.Principal{UserID: uuid.NewString(), OrgID: org, Roles: []string{"admin"}, MFAAuthenticated: true}
+	a, b := NewServiceWithPool(pool), NewServiceWithPool(pool)
+	in := CreateInvoiceInput{InvoiceNumber: "DUP-1"}
+	if _, err := a.CreateInvoice(org, admin.UserID, admin, in); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.CreateInvoice(org, admin.UserID, admin, in); !errors.Is(err, ErrDuplicateInvoiceNumber) {
+		t.Fatalf("second instance: want ErrDuplicateInvoiceNumber, got %v", err)
+	}
+}

@@ -19,12 +19,17 @@ type AuthHandlers struct {
 	auditService         *audit.Service
 	validate             *validator.Validate
 	allowDevSessionIssue bool
+	cookies              appmiddleware.SessionCookies
 }
+
+// SetSessionCookies configures cookie issuance (Secure flag, CSRF token factory).
+// The zero value is Secure with the production token factory.
+func (h *AuthHandlers) SetSessionCookies(c appmiddleware.SessionCookies) { h.cookies = c }
 
 func NewAuthHandlers(service *authn.Service, allowDevSessionIssue bool) *AuthHandlers {
 	return &AuthHandlers{
 		service:              service,
-		validate:             validator.New(),
+		validate:             httpx.NewValidator(),
 		allowDevSessionIssue: allowDevSessionIssue,
 	}
 }
@@ -34,7 +39,7 @@ func NewAuthHandlersWithAudit(service *authn.Service, auditSvc *audit.Service, a
 	return &AuthHandlers{
 		service:              service,
 		auditService:         auditSvc,
-		validate:             validator.New(),
+		validate:             httpx.NewValidator(),
 		allowDevSessionIssue: allowDevSessionIssue,
 	}
 }
@@ -92,11 +97,11 @@ func authSessionMetadata(expiresAt any) map[string]any {
 }
 
 // existingOrNewCSRFToken keeps the caller's CSRF cookie value when present, else mints a token.
-func existingOrNewCSRFToken(w http.ResponseWriter, r *http.Request) (string, bool) {
+func (h *AuthHandlers) existingOrNewCSRFToken(w http.ResponseWriter, r *http.Request) (string, bool) {
 	if cookie, err := r.Cookie(appmiddleware.CSRFTokenCookieName); err == nil && strings.TrimSpace(cookie.Value) != "" {
 		return strings.TrimSpace(cookie.Value), true
 	}
-	token, err := appmiddleware.CSRFTokenFactory()
+	token, err := h.cookies.NewToken()
 	if err != nil {
 		writeCSRFGenerationError(w, r, err)
 		return "", false
@@ -131,12 +136,12 @@ func (h *AuthHandlers) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	csrfToken, err := appmiddleware.CSRFTokenFactory()
+	csrfToken, err := h.cookies.NewToken()
 	if err != nil {
 		writeCSRFGenerationError(w, r, err)
 		return
 	}
-	appmiddleware.SetSessionCookies(w, result.AccessToken, result.RefreshToken, csrfToken, result.ExpiresAt)
+	h.cookies.Set(w, result.AccessToken, result.RefreshToken, csrfToken, result.ExpiresAt)
 
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status": "ok",
@@ -182,12 +187,12 @@ func (h *AuthHandlers) issueSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	csrfToken, err := appmiddleware.CSRFTokenFactory()
+	csrfToken, err := h.cookies.NewToken()
 	if err != nil {
 		writeCSRFGenerationError(w, r, err)
 		return
 	}
-	appmiddleware.SetSessionCookies(w, session.AccessToken, session.RefreshToken, csrfToken, session.ExpiresAt)
+	h.cookies.Set(w, session.AccessToken, session.RefreshToken, csrfToken, session.ExpiresAt)
 
 	_ = httpx.WriteJSON(w, http.StatusCreated, map[string]any{
 		"status":     "issued",
@@ -277,11 +282,11 @@ func (h *AuthHandlers) refreshSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	csrfToken, ok := existingOrNewCSRFToken(w, r)
+	csrfToken, ok := h.existingOrNewCSRFToken(w, r)
 	if !ok {
 		return
 	}
-	appmiddleware.SetSessionCookies(w, session.AccessToken, session.RefreshToken, csrfToken, session.ExpiresAt)
+	h.cookies.Set(w, session.AccessToken, session.RefreshToken, csrfToken, session.ExpiresAt)
 
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":     "refreshed",
@@ -298,7 +303,7 @@ func (h *AuthHandlers) revokeSession(w http.ResponseWriter, r *http.Request) {
 	// Clear session cookies FIRST — before any WriteHeader call.
 	// Go's net/http ignores w.Header().Add(...) after WriteHeader is called,
 	// so a defer would silently drop the Set-Cookie headers on every code path.
-	appmiddleware.ClearSessionCookies(w)
+	h.cookies.Clear(w)
 
 	refreshToken, ok := refreshTokenFromCookieOrBody(w, r)
 	if !ok {
@@ -317,7 +322,7 @@ func (h *AuthHandlers) revokeSession(w http.ResponseWriter, r *http.Request) {
 
 func (h *AuthHandlers) logoutSession(w http.ResponseWriter, r *http.Request) {
 	// Clear session cookies FIRST — before any WriteHeader call.
-	appmiddleware.ClearSessionCookies(w)
+	h.cookies.Clear(w)
 
 	accessToken, _, _ := appmiddleware.ExtractAuthToken(r)
 	refreshToken, ok := refreshTokenFromCookieOrBody(w, r)
@@ -401,11 +406,11 @@ func (h *AuthHandlers) challengeMFA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	csrfToken, ok := existingOrNewCSRFToken(w, r)
+	csrfToken, ok := h.existingOrNewCSRFToken(w, r)
 	if !ok {
 		return
 	}
-	appmiddleware.SetSessionCookies(w, session.AccessToken, session.RefreshToken, csrfToken, session.ExpiresAt)
+	h.cookies.Set(w, session.AccessToken, session.RefreshToken, csrfToken, session.ExpiresAt)
 
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":     "verified",
@@ -487,7 +492,7 @@ func refreshTokenFromCookieOrBody(w http.ResponseWriter, r *http.Request) (strin
 	}
 	var req revokeSessionRequest
 	if err := decodeOptionalJSONBody(w, r, &req); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request_body", err.Error(), nil)
+		writeJSONDecodeError(w, r, err, "invalid_request_body", "")
 		return "", false
 	}
 	return req.RefreshToken, true

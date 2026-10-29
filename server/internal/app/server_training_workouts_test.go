@@ -56,8 +56,11 @@ func newTrainingFixture(t *testing.T) *trainingFixture {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	memberSvc := members.NewService()
 	groupSvc := groups.NewService()
-	router := NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger,
-		nil, memberSvc, groupSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, training.NewService(), nil, nil)
+	router := NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, RouterDeps{
+		Members:  memberSvc,
+		Groups:   groupSvc,
+		Training: training.NewService(),
+	})
 	f := &trainingFixture{t: t, router: router, org: "org-train"}
 	f.admin = issueSessionTokenForUser(t, router, "admin-train", f.org, []string{"admin"}, true)
 	f.coach = issueSessionTokenForUser(t, router, "coach-train", f.org, []string{"coach"}, false)

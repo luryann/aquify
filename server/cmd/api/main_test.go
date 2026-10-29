@@ -94,3 +94,23 @@ func TestLoadDotEnvPreservesQuotedCommentsAndExistingEmptyValues(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadDotEnvSupportsExportPrefixAndEscapedNewlines(t *testing.T) {
+	keys := []string{"AQUIFY_DOTENV_EXPORTED", "AQUIFY_DOTENV_NEWLINE"}
+	for _, key := range keys {
+		os.Unsetenv(key)
+		t.Cleanup(func() { os.Unsetenv(key) })
+	}
+	path := filepath.Join(t.TempDir(), "test.env")
+	content := "export AQUIFY_DOTENV_EXPORTED=yes\nAQUIFY_DOTENV_NEWLINE=\"line1\\nline2\"\n"
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+	loadDotEnv(path)
+	if got := os.Getenv("AQUIFY_DOTENV_EXPORTED"); got != "yes" {
+		t.Errorf("export-prefixed key = %q, want yes", got)
+	}
+	if got := os.Getenv("AQUIFY_DOTENV_NEWLINE"); got != "line1\nline2" {
+		t.Errorf("escaped newline = %q", got)
+	}
+}

@@ -24,7 +24,11 @@ func TestMeetResultsImportMatchesSwimmersAndIsIdempotent(t *testing.T) {
 	membersSvc := members.NewService()
 	meetsSvc := meets.NewService()
 	perfSvc := performance.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, membersSvc, nil, meetsSvc, nil, perfSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, RouterDeps{
+		Members:     membersSvc,
+		Meets:       meetsSvc,
+		Performance: perfSvc,
+	})
 	coachToken := issueSessionTokenForUser(t, router, "coach-user", "org-results", []string{"coach"}, false)
 	adminToken := issueSessionTokenForUser(t, router, "admin-user", "org-results", []string{"admin"}, true)
 	parentToken := issueSessionTokenForUser(t, router, "parent-user", "org-results", []string{"parent"}, false)

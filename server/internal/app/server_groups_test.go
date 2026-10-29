@@ -225,7 +225,9 @@ func TestGroupScopedCoachVisibility(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	groupsService := groups.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, groupsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, RouterDeps{
+		Groups: groupsService,
+	})
 
 	// Issue tokens for two distinct coaches.
 	coach1Token := issueSessionTokenForUser(t, router, "user-coach-1", "org-demo", []string{"coach"}, false)
@@ -363,7 +365,10 @@ func TestListRegistrationsReturnsLiveData(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	memberSvc := members.NewService()
 	groupSvc := groups.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, memberSvc, groupSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, RouterDeps{
+		Members: memberSvc,
+		Groups:  groupSvc,
+	})
 	adminToken := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
 	parentToken := issueSessionToken(t, router, "org-demo", []string{"parent"}, false)
 
@@ -474,7 +479,10 @@ func TestListRegistrationsParentScopedAndIncludesWaiverSummary(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	memberSvc := members.NewService()
 	groupSvc := groups.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, memberSvc, groupSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, RouterDeps{
+		Members: memberSvc,
+		Groups:  groupSvc,
+	})
 	adminToken := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
 	parentOneToken := issueSessionTokenForUser(t, router, "parent-reg-one", "org-demo", []string{"parent"}, false)
 	parentTwoToken := issueSessionTokenForUser(t, router, "parent-reg-two", "org-demo", []string{"parent"}, false)
@@ -610,7 +618,10 @@ func TestListRegistrationsEnforcesPaginationCeiling(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	memberSvc := members.NewService()
 	groupSvc := groups.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, memberSvc, groupSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, RouterDeps{
+		Members: memberSvc,
+		Groups:  groupSvc,
+	})
 	adminToken := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
 	parentToken := issueSessionToken(t, router, "org-demo", []string{"parent"}, false)
 
@@ -716,7 +727,9 @@ func TestEligibilityRuleAttachAndEvaluate(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	groupsService := groups.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, groupsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, RouterDeps{
+		Groups: groupsService,
+	})
 
 	adminToken := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
 	coachToken := issueSessionToken(t, router, "org-demo", []string{"coach"}, false)
@@ -828,7 +841,9 @@ func TestRegistrationCreateAndTransition(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	groupsService := groups.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, groupsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, RouterDeps{
+		Groups: groupsService,
+	})
 
 	adminToken := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
 	parentToken := issueSessionTokenForUser(t, router, "user-parent-1", "org-demo", []string{"parent"}, false)
@@ -935,7 +950,9 @@ func TestRegistrationDuplicateRejected(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	groupsService := groups.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, groupsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, RouterDeps{
+		Groups: groupsService,
+	})
 
 	adminToken := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
 
@@ -992,7 +1009,9 @@ func TestParentCannotActivateRegistration(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	groupsService := groups.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, groupsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, RouterDeps{
+		Groups: groupsService,
+	})
 
 	adminToken := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
 	parentToken := issueSessionTokenForUser(t, router, "user-parent-noact", "org-demo", []string{"parent"}, false)
@@ -1054,7 +1073,9 @@ func TestWaiverAcceptanceAndIdempotency(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	groupsService := groups.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, groupsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, RouterDeps{
+		Groups: groupsService,
+	})
 
 	adminToken := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
 	parentToken := issueSessionTokenForUser(t, router, "user-parent-wvr", "org-demo", []string{"parent"}, false)

@@ -270,6 +270,32 @@ func (s *Service) ListExports(principal *appmiddleware.Principal, orgID, meetID 
 	return s.ListExportsForAuthorizedMeet(orgID, meetID), nil
 }
 
+// staffOnlyExportTypes are report types whose contents are for admin/coach
+// only (eligibility reports can include other swimmers' age/eligibility
+// detail). The audience rule lives here, with the types, so a new staff-only
+// report is declared in one place.
+var staffOnlyExportTypes = map[string]bool{"eligibility_report": true}
+
+// IsStaffOnlyExportType reports whether only admin/coach may see exports of the type.
+func IsStaffOnlyExportType(exportType string) bool { return staffOnlyExportTypes[exportType] }
+
+// ListExportsForViewer lists a meet's exports that the principal's role may
+// see. Meet-level access (e.g. household commitment) must already have been
+// verified by the caller; this applies the per-type audience rule.
+func (s *Service) ListExportsForViewer(principal *appmiddleware.Principal, orgID, meetID string) []FileExport {
+	list := s.ListExportsForAuthorizedMeet(orgID, meetID)
+	if appmiddleware.HasAnyRole(principal, "admin", "coach") {
+		return list
+	}
+	filtered := make([]FileExport, 0, len(list))
+	for _, ex := range list {
+		if !IsStaffOnlyExportType(ex.ExportType) {
+			filtered = append(filtered, ex)
+		}
+	}
+	return filtered
+}
+
 func (s *Service) ListExportsForAuthorizedMeet(orgID, meetID string) []FileExport {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

@@ -2,11 +2,13 @@ package documents
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
 	"github.com/dareaquatics/aquify/server/internal/dbutil"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -183,4 +185,10 @@ func nullableInt64(n int64) interface{} {
 		return nil
 	}
 	return n
+}
+
+// isUniqueViolation reports a Postgres unique-constraint violation (23505).
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }

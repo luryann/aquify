@@ -82,10 +82,3 @@ export function shiftLabel(startsAt: string, endsAt: string): string {
 export function currentLedgerRow<T extends { season_status: string }>(rows: T[]): T | null {
   return rows.find((r) => r.season_status === 'active') ?? rows[0] ?? null
 }
-
-/** Convert a datetime-local input value ("2026-03-07T08:00") to RFC3339 in the viewer's zone. */
-export function localInputToISO(value: string): string {
-  if (!value) return ''
-  const d = new Date(value)
-  return Number.isNaN(d.getTime()) ? '' : d.toISOString()
-}

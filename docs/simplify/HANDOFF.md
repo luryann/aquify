@@ -87,3 +87,4 @@ Pass 20s: bug 203 (meets cross-instance sync); pg_restore verified on matching v
 Pass 20t: deterministic race tests (members, meets), staging gated on CI (bug 204). Only a real GitHub Actions run remains unverifiable locally.
 Pass 20u: pushed to main; CI green on GitHub after a harness fix (31a56e7). Staging SSH deploy step has failed on every run since July (host/secrets), unrelated to code.
 Pass 20v: groups race now has a deterministic test (earlier claim that it was impossible was wrong). Only the environment-bound staging SSH step remains failing.
+Pass 21: all 119 original bugs dispositioned (see SIMPLIFY_BUGS.md, 'Disposition of bugs 1-119').

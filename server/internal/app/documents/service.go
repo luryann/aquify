@@ -126,15 +126,16 @@ func (s *Service) loadFromDB(ctx context.Context) error {
 func (s *Service) CreateDocumentType(orgID, name, category, description, appliesTo string, isRequired, isActive bool, expiryMonths *int, createdBy string) (*DocumentType, error) {
 	trimmedName := strings.TrimSpace(name)
 
-	// In-memory duplicate name check (org-scoped)
-	s.mu.RLock()
+	// Fast-path duplicate check (org-scoped) and the insert share one write
+	// lock; across instances the partial unique index on (org_id, lower(name))
+	// is the arbiter and its violation maps to ErrDuplicateName below.
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	for _, dt := range s.docTypes {
 		if dt.OrgID == orgID && strings.EqualFold(dt.Name, trimmedName) {
-			s.mu.RUnlock()
 			return nil, ErrDuplicateName
 		}
 	}
-	s.mu.RUnlock()
 
 	id := uuid.NewString()
 	now := time.Now().UTC()
@@ -161,12 +162,13 @@ func (s *Service) CreateDocumentType(orgID, name, category, description, applies
 	}
 	if s.repo != nil {
 		if err := s.repo.UpsertDocumentType(context.Background(), dt); err != nil {
+			if isUniqueViolation(err) {
+				return nil, ErrDuplicateName
+			}
 			return nil, err
 		}
 	}
-	s.mu.Lock()
 	s.docTypes[id] = dt
-	s.mu.Unlock()
 	return dt, nil
 }
 
@@ -213,6 +215,9 @@ func (s *Service) UpdateDocumentType(orgID, typeID string, updates map[string]in
 
 	if s.repo != nil {
 		if err := s.repo.UpsertDocumentType(context.Background(), &cp); err != nil {
+			if isUniqueViolation(err) {
+				return nil, ErrDuplicateName
+			}
 			return nil, err
 		}
 	}

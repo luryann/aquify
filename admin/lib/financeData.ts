@@ -1,5 +1,6 @@
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { ApiError, rawRequestAuthHeaders, type ApiClient, orgHeaders } from './api.ts'
+import { fetchAllPages } from './adminData.ts'
 
 // ─── Types (mirror server/internal/app/billing finance contracts) ────────────
 
@@ -241,8 +242,7 @@ export async function archiveDiscountRule(api: ApiClient, orgId: string, id: str
 }
 
 export async function fetchAdjustments(api: ApiClient, orgId: string, status = 'pending') {
-  const res = await api.get<{ adjustments: BillingAdjustment[] }>(`/api/v1/billing/adjustments?status=${status}&limit=200`, undefined, orgHeaders(orgId))
-  return res.adjustments ?? []
+  return fetchAllPages<BillingAdjustment>(api, `/api/v1/billing/adjustments?status=${encodeURIComponent(status)}`, 'adjustments', orgId)
 }
 
 export async function createAdjustment(api: ApiClient, orgId: string, input: { household_id: string; amount_cents: number; reason: string }) {
@@ -271,7 +271,7 @@ export async function commitBillingRun(api: ApiClient, orgId: string, input: Run
 }
 
 export async function fetchBillingRuns(api: ApiClient, orgId: string) {
-  return (await api.get<{ runs: BillingRun[] }>('/api/v1/billing/runs?limit=200', undefined, orgHeaders(orgId))).runs ?? []
+  return fetchAllPages<BillingRun>(api, '/api/v1/billing/runs', 'runs', orgId)
 }
 
 export async function applyLateFeesNow(api: ApiClient, orgId: string) {

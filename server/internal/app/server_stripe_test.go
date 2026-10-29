@@ -30,7 +30,10 @@ func newStripeRouter(t *testing.T, billingSvc *billing.Service, stripeClient str
 		Stripe:         StripeConfig{WebhookSecret: "whsec_test", Currency: "usd", ReconciliationAlertThresholdCents: 100},
 		AllowedOrigins: []string{"https://example.com"},
 	}
-	return NewRouterWithServices(cfg, logger, nil, nil, nil, nil, nil, nil, billingSvc, stripeClient, nil, nil, nil, nil, nil, nil, nil)
+	return NewRouterWithServices(cfg, logger, RouterDeps{
+		Billing: billingSvc,
+		Stripe:  stripeClient,
+	})
 }
 
 // ─── Webhook payload builders ─────────────────────────────────────────────────

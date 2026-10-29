@@ -14,6 +14,11 @@ export const ROLE_HIERARCHY: Record<Role, number> = {
   swimmer: 0,
 }
 
+/** Highest tier across a user's full role set; 0 when empty. */
+export function highestRoleTier(userRoles: readonly string[] | undefined | null): number {
+  return (userRoles ?? []).reduce((max, r) => Math.max(max, ROLE_HIERARCHY[r as Role] ?? 0), 0)
+}
+
 export type NavItem = {
   id: string
   label: string

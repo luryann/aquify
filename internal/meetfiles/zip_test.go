@@ -3,6 +3,7 @@ package meetfiles_test
 import (
 	"archive/zip"
 	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/dareaquatics/aquify/meetfiles"
@@ -121,5 +122,16 @@ func TestReadZip_RejectsOversizedEntry(t *testing.T) {
 	}
 	if _, err := meetfiles.ReadZip(data); err == nil {
 		t.Fatal("expected an error for an entry larger than the size limit")
+	}
+}
+
+// The 250 MiB archive cap must hold while reading, not after: the third 90 MiB
+// entry only gets the 70 MiB that is left of the budget, so it fails without
+// being read in full.
+func TestReadZip_EnforcesCumulativeCapWhileReading(t *testing.T) {
+	chunk := bytes.Repeat([]byte("A"), 90<<20)
+	data := buildZIP(t, map[string][]byte{"a.sd3": chunk, "b.sd3": chunk, "c.sd3": chunk})
+	if _, err := meetfiles.ReadZip(data); err == nil || !strings.Contains(err.Error(), "cumulative") {
+		t.Fatalf("expected a cumulative-cap error, got %v", err)
 	}
 }

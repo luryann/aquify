@@ -29,7 +29,9 @@ func TestSensitiveRouteRBACMatrix(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, nil, nil, nil, billing.NewService(), nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, RouterDeps{
+		Billing: billing.NewService(),
+	})
 
 	tokens := map[string]string{
 		"admin":   issueSessionTokenForUser(t, router, "admin-user", "org-rbac", []string{"admin"}, true),
@@ -102,24 +104,14 @@ func TestParentAndSwimmerPortalReadMatrix(t *testing.T) {
 	perfSvc := performance.NewService()
 	commsSvc := comms.NewService()
 	trainingSvc := training.NewService()
-	router := NewRouterWithServices(
-		Config{Auth: AuthConfig{EnableDevStubTokens: true}},
-		logger,
-		nil,
-		memberSvc,
-		groupSvc,
-		meetsSvc,
-		nil,
-		perfSvc,
-		nil,
-		nil,
-		commsSvc,
-		nil,
-		nil,
-		nil,
-		trainingSvc,
-		nil,
-		nil)
+	router := NewRouterWithServices(Config{Auth: AuthConfig{EnableDevStubTokens: true}}, logger, RouterDeps{
+		Members:     memberSvc,
+		Groups:      groupSvc,
+		Meets:       meetsSvc,
+		Performance: perfSvc,
+		Comms:       commsSvc,
+		Training:    trainingSvc,
+	})
 
 	adminToken := issueSessionTokenForUser(t, router, "admin-portal-matrix", "org-portal", []string{"admin"}, true)
 	parentToken := issueSessionTokenForUser(t, router, "parent-portal-matrix", "org-portal", []string{"parent"}, false)
@@ -288,7 +280,11 @@ func TestP0RegistrationToPaymentFlow(t *testing.T) {
 	memberSvc := members.NewService()
 	groupSvc := groups.NewService()
 	billingSvc := billing.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, memberSvc, groupSvc, nil, nil, nil, billingSvc, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, RouterDeps{
+		Members: memberSvc,
+		Groups:  groupSvc,
+		Billing: billingSvc,
+	})
 
 	adminToken := issueSessionTokenForUser(t, router, "admin-user", "org-p0-reg", []string{"admin"}, true)
 	parentToken := issueSessionTokenForUser(t, router, "parent-user", "org-p0-reg", []string{"parent"}, false)
@@ -403,7 +399,10 @@ func TestP0MeetCommitToSD3ExportFlow(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	meetsSvc := meets.NewService()
 	exportsSvc := exports.NewService()
-	router := NewRouterWithServices(Config{}, logger, nil, nil, nil, meetsSvc, exportsSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{}, logger, RouterDeps{
+		Meets:   meetsSvc,
+		Exports: exportsSvc,
+	})
 
 	adminToken := issueSessionTokenForUser(t, router, "admin-user", "org-p0-meet", []string{"admin"}, true)
 	parentToken := issueSessionTokenWithHousehold(t, router, "parent-user", "org-p0-meet", "household-p0", []string{"parent"}, false)

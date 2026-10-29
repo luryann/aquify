@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
 	"github.com/go-pdf/fpdf"
 )
 
@@ -177,5 +178,30 @@ func TestPDFDocTranslatesUnicodeForCoreFonts(t *testing.T) {
 	})
 	if err != nil || len(content) == 0 {
 		t.Fatalf("buildReportPDF with accented names: err=%v len=%d", err, len(content))
+	}
+}
+
+func TestListExportsForViewerAppliesPerTypeAudience(t *testing.T) {
+	t.Parallel()
+	svc := NewService()
+	for id, typ := range map[string]string{"e1": "eligibility_report", "e2": "entry_report", "e3": "event_report"} {
+		svc.exports[id] = &FileExport{ID: id, OrgID: "org-1", MeetID: "m1", ExportType: typ}
+	}
+	if !IsStaffOnlyExportType("eligibility_report") || IsStaffOnlyExportType("entry_report") {
+		t.Fatal("staff-only attribute wrong")
+	}
+	parent := &appmiddleware.Principal{UserID: "p", Roles: []string{"parent"}}
+	coach := &appmiddleware.Principal{UserID: "c", Roles: []string{"coach"}}
+	got := svc.ListExportsForViewer(parent, "org-1", "m1")
+	if len(got) != 2 {
+		t.Fatalf("parent should see 2 non-staff exports, got %d", len(got))
+	}
+	for _, ex := range got {
+		if ex.ExportType == "eligibility_report" {
+			t.Fatal("staff-only report leaked to parent")
+		}
+	}
+	if n := len(svc.ListExportsForViewer(coach, "org-1", "m1")); n != 3 {
+		t.Fatalf("coach should see all 3, got %d", n)
 	}
 }

@@ -10,7 +10,7 @@ import {
 
 test('swimmer meet detail state reloads persisted commitment event selections from backend records', () => {
   const state = buildSwimmerMeetDetailState(
-    { id: 'cmt_1', meet_id: 'meet_1', swimmer_id: 'sw_1', status: 'committed_yes', note: 'ready' },
+    { id: 'cmt_1', meet_id: 'meet_1', swimmer_id: 'sw_1', status: 'committed_yes', notes: 'ready' },
     [
       { id: 'sel_1', org_id: 'org_1', commitment_id: 'cmt_1', meet_event_id: 'ev_1', created_at: '', created_by: 'u1' },
       { id: 'sel_2', org_id: 'org_1', commitment_id: 'cmt_1', meet_event_id: 'ev_2', created_at: '', created_by: 'u1' },

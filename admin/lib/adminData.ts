@@ -132,8 +132,7 @@ export type CommitmentRecord = {
   meet_id: string
   swimmer_id: string
   status: string
-  /** Parent message for coaches. The API field is `notes`; fetchers copy it here. */
-  note?: string
+  /** Parent message for coaches (the API field name; there is no `note` alias). */
   notes?: string
 }
 
@@ -874,18 +873,10 @@ export async function addHouseholdContact(
   return res.contact
 }
 
+// The backend scopes this list per role (swimmer-only sessions get their own
+// household), so a 403 is a real failure and must reach the caller's load-state UI.
 export async function fetchSwimmers(api: ApiClient, orgId: string): Promise<SwimmerRecord[]> {
-  try {
-    return await fetchAllPages<SwimmerRecord>(api, '/api/v1/members/swimmers', 'swimmers', orgId)
-  } catch (error) {
-    // Swimmer-role sessions are not allowed to list org-wide swimmers.
-    // Treat that specific permission denial as "no scoped swimmers" so
-    // swimmer portal pages can continue rendering.
-    if (error instanceof ApiError && error.status === 403 && error.code === 'forbidden') {
-      return []
-    }
-    throw error
-  }
+  return fetchAllPages<SwimmerRecord>(api, '/api/v1/members/swimmers', 'swimmers', orgId)
 }
 
 export async function fetchSwimmer(api: ApiClient, orgId: string, swimmerId: string): Promise<SwimmerRecord> {
@@ -939,8 +930,7 @@ export async function fetchMeetSessions(api: ApiClient, orgId: string, meetId: s
 }
 
 export async function fetchMeetCommitments(api: ApiClient, orgId: string, meetId: string): Promise<CommitmentRecord[]> {
-  const commitments = await fetchAllPages<CommitmentRecord>(api, `/api/v1/meets/${meetId}/commitments`, 'commitments', orgId)
-  return commitments.map((c) => ({ ...c, note: c.note ?? c.notes }))
+  return fetchAllPages<CommitmentRecord>(api, `/api/v1/meets/${meetId}/commitments`, 'commitments', orgId)
 }
 
 export async function fetchMeetEvents(api: ApiClient, orgId: string, meetId: string): Promise<MeetEventRecord[]> {

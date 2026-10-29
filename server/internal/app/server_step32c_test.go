@@ -84,15 +84,12 @@ func TestHealthReadyReportsActualLocalDependencies(t *testing.T) {
 func TestHealthReadyReturns503WhenStripeProbeFails(t *testing.T) {
 	t.Parallel()
 
-	router := NewRouterWithServices(
-		Config{
-			AppEnv: "production",
-			Stripe: StripeConfig{SecretKey: "sk_live_example"},
-		},
-		slog.New(slog.NewTextHandler(io.Discard, nil)),
-		nil, nil, nil, nil, nil, nil, nil,
-		readinessStripeClient{StubClient: stripelib.NewStubClient(), err: errors.New("stripe probe failed")},
-		nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{
+		AppEnv: "production",
+		Stripe: StripeConfig{SecretKey: "sk_live_example"},
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)), RouterDeps{
+		Stripe: readinessStripeClient{StubClient: stripelib.NewStubClient(), err: errors.New("stripe probe failed")},
+	})
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/health/ready", nil)
@@ -107,15 +104,12 @@ func TestHealthReadyReturns503WhenStripeProbeFails(t *testing.T) {
 func TestHealthReadyReportsReadyWhenStripeProbeSucceeds(t *testing.T) {
 	t.Parallel()
 
-	router := NewRouterWithServices(
-		Config{
-			AppEnv: "production",
-			Stripe: StripeConfig{SecretKey: "sk_live_example"},
-		},
-		slog.New(slog.NewTextHandler(io.Discard, nil)),
-		nil, nil, nil, nil, nil, nil, nil,
-		readinessStripeClient{StubClient: stripelib.NewStubClient()},
-		nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouterWithServices(Config{
+		AppEnv: "production",
+		Stripe: StripeConfig{SecretKey: "sk_live_example"},
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)), RouterDeps{
+		Stripe: readinessStripeClient{StubClient: stripelib.NewStubClient()},
+	})
 
 	assertReadinessCheckEquals(t, serveReady(t, router), "stripe", "ready")
 }
@@ -123,18 +117,15 @@ func TestHealthReadyReportsReadyWhenStripeProbeSucceeds(t *testing.T) {
 func TestHealthReadyReturns503WhenPostmarkProbeFails(t *testing.T) {
 	t.Parallel()
 
-	router := NewRouterWithServices(
-		Config{
-			AppEnv: "production",
-			Postmark: PostmarkConfig{
-				ServerToken: "pm_live_example",
-				FromEmail:   "noreply@example.com",
-			},
+	router := NewRouterWithServices(Config{
+		AppEnv: "production",
+		Postmark: PostmarkConfig{
+			ServerToken: "pm_live_example",
+			FromEmail:   "noreply@example.com",
 		},
-		slog.New(slog.NewTextHandler(io.Discard, nil)),
-		nil, nil, nil, nil, nil, nil, nil, nil,
-		comms.NewServiceWithClient(readinessPostmarkClient{StubClient: postmark.NewStubClient(), err: errors.New("postmark probe failed")}),
-		nil, nil, nil, nil, nil, nil)
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)), RouterDeps{
+		Comms: comms.NewServiceWithClient(readinessPostmarkClient{StubClient: postmark.NewStubClient(), err: errors.New("postmark probe failed")}),
+	})
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/health/ready", nil)
@@ -149,18 +140,15 @@ func TestHealthReadyReturns503WhenPostmarkProbeFails(t *testing.T) {
 func TestHealthReadyReportsReadyWhenPostmarkProbeSucceeds(t *testing.T) {
 	t.Parallel()
 
-	router := NewRouterWithServices(
-		Config{
-			AppEnv: "production",
-			Postmark: PostmarkConfig{
-				ServerToken: "pm_live_example",
-				FromEmail:   "noreply@example.com",
-			},
+	router := NewRouterWithServices(Config{
+		AppEnv: "production",
+		Postmark: PostmarkConfig{
+			ServerToken: "pm_live_example",
+			FromEmail:   "noreply@example.com",
 		},
-		slog.New(slog.NewTextHandler(io.Discard, nil)),
-		nil, nil, nil, nil, nil, nil, nil, nil,
-		comms.NewServiceWithClient(readinessPostmarkClient{StubClient: postmark.NewStubClient()}),
-		nil, nil, nil, nil, nil, nil)
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)), RouterDeps{
+		Comms: comms.NewServiceWithClient(readinessPostmarkClient{StubClient: postmark.NewStubClient()}),
+	})
 
 	assertReadinessCheckEquals(t, serveReady(t, router), "postmark", "ready")
 }
@@ -168,19 +156,17 @@ func TestHealthReadyReportsReadyWhenPostmarkProbeSucceeds(t *testing.T) {
 func TestHealthReadyReturns503WhenKeycloakProbeFails(t *testing.T) {
 	t.Parallel()
 
-	router := NewRouterWithServices(
-		Config{
-			AppEnv: "production",
-			Keycloak: KeycloakAdminConfig{
-				AdminURL:     "https://keycloak.example.com",
-				Realm:        "aquify",
-				ClientID:     "admin-cli",
-				ClientSecret: "secret",
-			},
+	router := NewRouterWithServices(Config{
+		AppEnv: "production",
+		Keycloak: KeycloakAdminConfig{
+			AdminURL:     "https://keycloak.example.com",
+			Realm:        "aquify",
+			ClientID:     "admin-cli",
+			ClientSecret: "secret",
 		},
-		slog.New(slog.NewTextHandler(io.Discard, nil)),
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		readinessKeycloakClient{StubClient: keycloak.NewStubClient(), err: errors.New("keycloak probe failed")})
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)), RouterDeps{
+		Keycloak: readinessKeycloakClient{StubClient: keycloak.NewStubClient(), err: errors.New("keycloak probe failed")},
+	})
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/health/ready", nil)
@@ -195,19 +181,17 @@ func TestHealthReadyReturns503WhenKeycloakProbeFails(t *testing.T) {
 func TestHealthReadyReportsReadyWhenKeycloakProbeSucceeds(t *testing.T) {
 	t.Parallel()
 
-	router := NewRouterWithServices(
-		Config{
-			AppEnv: "production",
-			Keycloak: KeycloakAdminConfig{
-				AdminURL:     "https://keycloak.example.com",
-				Realm:        "aquify",
-				ClientID:     "admin-cli",
-				ClientSecret: "secret",
-			},
+	router := NewRouterWithServices(Config{
+		AppEnv: "production",
+		Keycloak: KeycloakAdminConfig{
+			AdminURL:     "https://keycloak.example.com",
+			Realm:        "aquify",
+			ClientID:     "admin-cli",
+			ClientSecret: "secret",
 		},
-		slog.New(slog.NewTextHandler(io.Discard, nil)),
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		readinessKeycloakClient{StubClient: keycloak.NewStubClient()})
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)), RouterDeps{
+		Keycloak: readinessKeycloakClient{StubClient: keycloak.NewStubClient()},
+	})
 
 	assertReadinessCheckEquals(t, serveReady(t, router), "keycloak", "ready")
 }

@@ -1615,6 +1615,42 @@ func (s *Service) SnapshotSwimmers(orgID string) []Swimmer {
 	return out
 }
 
+// RosterSnapshot is a consistent, org-scoped copy of the member roster for
+// trusted in-process consumers (billing). It re-syncs from the database first
+// so cross-instance writes are visible, then copies all three collections
+// under one read lock. There is no principal: callers are server code, not
+// requests, and must not expose the result without their own authorization.
+type RosterSnapshot struct {
+	Households []Household
+	Swimmers   []Swimmer
+	GroupLinks []SwimmerGroupLink
+}
+
+func (s *Service) SnapshotRoster(orgID string) (RosterSnapshot, error) {
+	if err := s.syncFromDB(context.Background()); err != nil {
+		return RosterSnapshot{}, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var snap RosterSnapshot
+	for _, h := range s.households {
+		if h.OrgID == orgID {
+			snap.Households = append(snap.Households, h)
+		}
+	}
+	for _, sw := range s.swimmers {
+		if sw.OrgID == orgID {
+			snap.Swimmers = append(snap.Swimmers, sw)
+		}
+	}
+	for _, l := range s.swimmerGroupLinks {
+		if l.OrgID == orgID {
+			snap.GroupLinks = append(snap.GroupLinks, l)
+		}
+	}
+	return snap, nil
+}
+
 // SnapshotSwimmerGroupLinks returns a copy of all swimmer-group links for the given org.
 func (s *Service) SnapshotSwimmerGroupLinks(orgID string) []SwimmerGroupLink {
 	s.mu.RLock()
@@ -1628,6 +1664,18 @@ func (s *Service) SnapshotSwimmerGroupLinks(orgID string) []SwimmerGroupLink {
 		out = append(out, link)
 	}
 	return out
+}
+
+// CachedSwimmerHouseholdID is an O(1) in-memory lookup of a swimmer's household
+// (no DB re-sync), for hot paths such as per-event stream authorization.
+func (s *Service) CachedSwimmerHouseholdID(orgID, swimmerID string) (string, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	sw, ok := s.swimmerLocked(orgID, swimmerID)
+	if !ok {
+		return "", false
+	}
+	return sw.HouseholdID, true
 }
 
 // SwimmerHouseholdID returns the household ID for the given swimmer within the

@@ -31,10 +31,11 @@ const CATEGORY_CONFIG: Record<string, { label: string; color: string; bg: string
 type NotifChannel = 'email' | 'push'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
+// One canonical audience -> category mapping, used for both the badge and the
+// filter so they cannot disagree. The API only emits `all` and `group`; anything
+// without its own category (including unknown future audiences) files under Admin.
 function audienceToCategory(audience: string): string {
-  if (audience === 'all') return 'admin'
-  if (audience === 'parents') return 'admin'
-  return audience
+  return audience in CATEGORY_CONFIG && audience !== 'all' ? audience : 'admin'
 }
 
 // ── Loading skeleton ─────────────────────────────────────────────────────────
@@ -133,7 +134,7 @@ export default function CommunicationsPage() {
 
   const filtered = announcements.filter((a) => {
     if (filter === 'all') return true
-    return audienceToCategory(a.audience) === filter || a.audience === filter
+    return audienceToCategory(a.audience) === filter
   })
 
   const togglePref = (id: string, channel: NotifChannel) => {

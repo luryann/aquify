@@ -39,6 +39,13 @@ export function ageFromDob(dob?: string | null, asOf: Date = new Date()): string
   return `${age}`
 }
 
+/** <input type="datetime-local"> value ("2026-03-07T08:00") -> ISO timestamp in the viewer's zone; null when blank or invalid. */
+export function localInputToISO(value: string): string | null {
+  if (!value) return null
+  const d = new Date(value)
+  return Number.isNaN(d.getTime()) ? null : d.toISOString()
+}
+
 /** Format a start–end date range, collapsing to a single date when equal/absent. */
 export function formatDateRange(start?: string | null, end?: string | null): string {
   if (!start) return '—'

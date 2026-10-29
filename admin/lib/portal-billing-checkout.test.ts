@@ -96,6 +96,26 @@ test('launchPortalInvoiceCheckout redirects to Stripe checkout URL on success', 
   assert.equal(redirectedTo, 'https://checkout.stripe.com/pay/cs_live_123')
 })
 
+test('launchPortalInvoiceCheckout uses a fresh idempotency key per attempt', async () => {
+  const keys: string[] = []
+  const api = {
+    post: async (_path: string, _body?: unknown, headers?: Record<string, string>) => {
+      keys.push(headers?.['Idempotency-Key'] ?? '')
+      return { checkout_session: { id: 'cs_1', url: 'https://checkout.stripe.com/pay/cs_1' } }
+    },
+  } as unknown as ApiClient
+  const run = (attemptId?: string) =>
+    launchPortalInvoiceCheckout({ api, orgId: 'org_portal', invoice: makeInvoice(), origin: 'https://app.example.com', redirect: () => {}, attemptId })
+
+  await run()
+  await run()
+  await run('fixed')
+  await run('fixed')
+  assert.notEqual(keys[0], keys[1])
+  assert.match(keys[0], /^invoice-checkout:inv_123:9500:.+/)
+  assert.equal(keys[2], keys[3])
+})
+
 test('portal checkout helpers expose redirect-disabled and failure states', async () => {
   const invoice = makeInvoice()
 

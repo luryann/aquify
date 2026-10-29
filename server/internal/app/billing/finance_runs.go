@@ -623,22 +623,21 @@ func (s *Service) PreviewBillingRun(orgID string, principal *appmiddleware.Princ
 		return nil, err
 	}
 	ctx := context.Background()
-	s.mu.Lock()
-	err := s.refreshLocked(ctx)
-	s.mu.Unlock()
-	if err != nil {
-		return nil, err
-	}
 	in, err := s.normalizeRunInput(orgID, input)
 	if err != nil {
 		return nil, err
 	}
+	// Roster first (it takes s.mu itself), then refresh + build in one critical
+	// section so the preview reflects a single billing snapshot.
 	roster, err := s.loadRoster(orgID)
 	if err != nil {
 		return nil, err
 	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.refreshLocked(ctx); err != nil {
+		return nil, err
+	}
 	return s.buildRunPreviewLocked(orgID, roster, in), nil
 }
 
@@ -666,16 +665,18 @@ func (s *Service) CommitBillingRun(orgID, actorID string, principal *appmiddlewa
 	if err != nil {
 		return nil, err
 	}
-	roster, err := s.loadRoster(orgID)
-	if err != nil {
-		return nil, err
-	}
 
 	s.runMu.Lock()
 	defer s.runMu.Unlock()
 	ctx := context.Background()
 	var result *RunResult
 	commit := func() error {
+		// Load the roster inside runMu and the org lock, immediately before the
+		// refresh + build, so the fingerprint is computed from one snapshot.
+		roster, err := s.loadRoster(orgID)
+		if err != nil {
+			return err
+		}
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		if err := s.refreshLocked(ctx); err != nil {

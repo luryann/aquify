@@ -17,9 +17,25 @@ const (
 
 var csrfTokenRandRead = rand.Read
 
-// CSRFTokenFactory allows callers/tests to override CSRF token generation.
-// Production code should leave this pointed at NewCSRFToken.
-var CSRFTokenFactory = NewCSRFToken
+// SessionCookies issues and clears the session cookie trio. It is a per-router
+// dependency (not package state) so tests can inject a failing CSRF token
+// factory or a non-Secure cookie flag without affecting parallel routers.
+type SessionCookies struct {
+	// Insecure drops the Secure cookie attribute. The zero value is Secure; it
+	// is only ever set for explicit local/dev/test environments so plain-HTTP
+	// development can receive cookies.
+	Insecure bool
+	// NewCSRFToken mints the double-submit token; nil means the package NewCSRFToken.
+	NewCSRFToken func() (string, error)
+}
+
+// NewToken mints a CSRF token with the configured factory.
+func (c SessionCookies) NewToken() (string, error) {
+	if c.NewCSRFToken != nil {
+		return c.NewCSRFToken()
+	}
+	return NewCSRFToken()
+}
 
 func NewCSRFToken() (string, error) {
 	raw := make([]byte, 32)
@@ -41,7 +57,7 @@ func RequestUsesCookieAuth(r *http.Request) bool {
 	return cookieHeader != ""
 }
 
-func SetSessionCookies(w http.ResponseWriter, accessToken, refreshToken, csrfToken string, expiresAt time.Time) {
+func (c SessionCookies) Set(w http.ResponseWriter, accessToken, refreshToken, csrfToken string, expiresAt time.Time) {
 	maxAge := int(time.Until(expiresAt).Seconds())
 	if maxAge < 0 {
 		maxAge = 0
@@ -52,7 +68,7 @@ func SetSessionCookies(w http.ResponseWriter, accessToken, refreshToken, csrfTok
 		Value:    accessToken,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   !c.Insecure,
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   maxAge,
 		Expires:  expiresAt.UTC(),
@@ -62,7 +78,7 @@ func SetSessionCookies(w http.ResponseWriter, accessToken, refreshToken, csrfTok
 		Value:    refreshToken,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   !c.Insecure,
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   maxAge,
 		Expires:  expiresAt.UTC(),
@@ -72,14 +88,14 @@ func SetSessionCookies(w http.ResponseWriter, accessToken, refreshToken, csrfTok
 		Value:    csrfToken,
 		Path:     "/",
 		HttpOnly: false,
-		Secure:   true,
+		Secure:   !c.Insecure,
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   maxAge,
 		Expires:  expiresAt.UTC(),
 	})
 }
 
-func ClearSessionCookies(w http.ResponseWriter) {
+func (c SessionCookies) Clear(w http.ResponseWriter) {
 	expired := time.Unix(0, 0).UTC()
 	for _, name := range []string{AccessTokenCookieName, RefreshTokenCookieName, CSRFTokenCookieName} {
 		http.SetCookie(w, &http.Cookie{
@@ -87,7 +103,7 @@ func ClearSessionCookies(w http.ResponseWriter) {
 			Value:    "",
 			Path:     "/",
 			HttpOnly: name != CSRFTokenCookieName,
-			Secure:   true,
+			Secure:   !c.Insecure,
 			SameSite: http.SameSiteStrictMode,
 			MaxAge:   -1,
 			Expires:  expired,

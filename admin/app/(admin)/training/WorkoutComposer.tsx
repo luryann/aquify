@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { ApiError, type ApiClient } from '@/lib/api'
+import type { ApiClient } from '@/lib/api'
+import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { parseWorkoutText, type Course, type ParsedWorkout, type WorkoutInput } from '@/lib/trainingData'
 import { formatDistance, formatDuration, parseTags } from '@/lib/workout-format'
 import { WorkoutSheet, ZoneBar } from '@/components/training/WorkoutSheet'
@@ -24,9 +25,7 @@ function Label({ children, htmlFor }: { children: React.ReactNode; htmlFor: stri
 }
 
 export function errorText(error: unknown, fallback: string): string {
-  if (error instanceof ApiError) return error.message
-  if (error instanceof Error && error.message) return error.message
-  return fallback
+  return uiErrorMessage(error, fallback)
 }
 
 /**

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"net/http"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/dareaquatics/aquify/server/internal/app/httpx"
 	"github.com/dareaquatics/aquify/server/internal/app/meets"
 	"github.com/dareaquatics/aquify/server/internal/app/members"
+	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
 	"github.com/dareaquatics/aquify/server/internal/app/performance"
 	"github.com/go-chi/chi/v5"
 )
@@ -67,70 +69,26 @@ func (h *PerformanceHandlers) importMeetResults(w http.ResponseWriter, r *http.R
 	}
 
 	matcher := newResultSwimmerMatcher(h.membersService.SnapshotSwimmers(orgID))
-	var (
-		imported, duplicates, skipped int
-		unmatched                     []unmatchedResult
-		newRecords                    []performance.RecordBreak
-	)
-	for _, res := range parsed.IndividualResults {
-		eventLabel := fmt.Sprintf("%d %s", res.Event.Distance, res.Event.Stroke)
-		stroke := string(res.Event.Stroke)
-		if res.Event.Distance <= 0 || stroke == "" || stroke == string(meetfiles.StrokeFreestyleRelay) || stroke == string(meetfiles.StrokeMedleyRelay) {
-			skipped++
-			continue
-		}
-		dq := strings.EqualFold(strings.TrimSpace(res.FinalsTime.Raw), "DQ")
-		if !res.FinalsTime.Valid && !dq {
-			skipped++ // NT / NS / SCR / DNF: no swim to record
-			continue
-		}
-		swimmer, reason := matcher.match(res.Swimmer)
-		if swimmer == nil {
-			unmatched = append(unmatched, unmatchedResult{
-				Name:      strings.TrimSpace(res.Swimmer.FirstName + " " + res.Swimmer.LastName),
-				USSNumber: res.Swimmer.USSNumber,
-				Event:     eventLabel,
-				Reason:    reason,
+	progress, importErr := importParsedResults(h.service, orgID, principal, meet.ID, meet.Course, parsed, matcher)
+	imported, duplicates, skipped := progress.Imported, progress.Duplicates, progress.Skipped
+	unmatched, newRecords := progress.Unmatched, progress.NewRecords
+
+	if importErr != nil {
+		// Idempotency is per swim: everything recorded so far stays recorded and
+		// a re-import skips it. Report that progress instead of a bare error.
+		h.auditResultsImport(principal, orgID, meet.ID, filename, "results.import_partial", progress)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "result_import_failed",
+			fmt.Sprintf("The import stopped after recording %d result(s); re-importing the same file is safe and resumes where it stopped (already-recorded swims are skipped).", progress.Imported),
+			importFailureDetails{
+				Partial: true, Imported: progress.Imported, Duplicates: progress.Duplicates, Skipped: progress.Skipped,
+				Unmatched: len(progress.Unmatched), RecordDetectionFailures: progress.RecordDetectionFailures,
+				Processed: progress.Processed, Total: progress.Total, NewTeamRecords: recordBreaksOrEmpty(progress.NewRecords), RetrySafe: true,
 			})
-			continue
-		}
-		course := resultCourse(res.Event.Course, parsed.Course, meet.Course)
-		if course == "" {
-			skipped++
-			continue
-		}
-		if h.service.HasMeetResult(orgID, swimmer.ID, meet.ID, res.Event.Distance, stroke, course) {
-			duplicates++
-			continue
-		}
-		input := resultUpsertInput(res, swimmer, meet.ID, course, stroke, dq)
-		_, breaks, err := h.service.UpsertResultWithRecords(orgID, principal.UserID, principal, input)
-		if err != nil {
-			httpx.WriteError(w, r, http.StatusInternalServerError, "result_import_failed", fmt.Sprintf("Imported %d results before a failure: %v", imported, err), nil)
-			return
-		}
-		newRecords = append(newRecords, breaks...)
-		imported++
+		slog.Error("results import stopped mid-file", "meet_id", meet.ID, "imported", progress.Imported, "processed", progress.Processed, "total", progress.Total, "error", importErr)
+		return
 	}
 
-	if h.auditService != nil {
-		_, _ = h.auditService.Append(audit.AppendRequest{
-			OrgID:        orgID,
-			ActorUserID:  principal.UserID,
-			ActorRoles:   principal.Roles,
-			Action:       "results.imported",
-			ResourceType: "meet",
-			ResourceID:   meet.ID,
-			Metadata: map[string]string{
-				"file":       filename,
-				"imported":   fmt.Sprintf("%d", imported),
-				"duplicates": fmt.Sprintf("%d", duplicates),
-				"unmatched":  fmt.Sprintf("%d", len(unmatched)),
-				"skipped":    fmt.Sprintf("%d", skipped),
-				"records":    fmt.Sprintf("%d", len(newRecords)),
-			},
-		})
-	}
+	h.auditResultsImport(principal, orgID, meet.ID, filename, "results.imported", progress)
 
 	if unmatched == nil {
 		unmatched = []unmatchedResult{}
@@ -149,6 +107,125 @@ func (h *PerformanceHandlers) importMeetResults(w http.ResponseWriter, r *http.R
 		// with status "pending" await admin approval because the standing
 		// record is locked.
 		"new_team_records": recordBreaksOrEmpty(newRecords),
+		// Swims whose result was saved but whose team-record detection failed;
+		// an admin can run a records rebuild to repair the affected slots.
+		"record_detection_failures": progress.RecordDetectionFailures,
+	})
+}
+
+// importFailureDetails is the body of a mid-file failure: how far the import
+// got, so the caller knows what is already recorded.
+type importFailureDetails struct {
+	Partial                 bool                      `json:"partial"`
+	Imported                int                       `json:"imported"`
+	Duplicates              int                       `json:"duplicates"`
+	Skipped                 int                       `json:"skipped"`
+	Unmatched               int                       `json:"unmatched"`
+	RecordDetectionFailures int                       `json:"record_detection_failures"`
+	Processed               int                       `json:"rows_processed"`
+	Total                   int                       `json:"rows_total"`
+	NewTeamRecords          []performance.RecordBreak `json:"new_team_records"`
+	RetrySafe               bool                      `json:"retry_safe"`
+}
+
+// resultsRecorder is the slice of the performance service the import needs.
+type resultsRecorder interface {
+	HasMeetResult(orgID, swimmerID, meetID string, distance int, stroke, course string) bool
+	UpsertResultWithRecords(orgID, actorID string, principal *appmiddleware.Principal, input performance.UpsertResultInput) (*performance.Result, []performance.RecordBreak, error)
+}
+
+type resultsImportProgress struct {
+	Imported, Duplicates, Skipped, RecordDetectionFailures int
+	Processed, Total                                       int
+	Unmatched                                              []unmatchedResult
+	NewRecords                                             []performance.RecordBreak
+}
+
+// importParsedResults records each matched swim in file order. It is safe to
+// re-run after a failure: swims already recorded for the swimmer/event/meet are
+// skipped, so a retry resumes where the previous run stopped. On error the
+// progress made so far is returned alongside it.
+func importParsedResults(rec resultsRecorder, orgID string, principal *appmiddleware.Principal, meetID, meetCourse string, parsed *meetfiles.ParseResult, matcher *resultSwimmerMatcher) (resultsImportProgress, error) {
+	prog := resultsImportProgress{Total: len(parsed.IndividualResults)}
+	for _, res := range parsed.IndividualResults {
+		eventLabel := fmt.Sprintf("%d %s", res.Event.Distance, res.Event.Stroke)
+		stroke := string(res.Event.Stroke)
+		if res.Event.Distance <= 0 || stroke == "" || stroke == string(meetfiles.StrokeFreestyleRelay) || stroke == string(meetfiles.StrokeMedleyRelay) {
+			prog.Skipped++
+			prog.Processed++
+			continue
+		}
+		dq := strings.EqualFold(strings.TrimSpace(res.FinalsTime.Raw), "DQ")
+		if !res.FinalsTime.Valid && !dq {
+			prog.Skipped++ // NT / NS / SCR / DNF: no swim to record
+			prog.Processed++
+			continue
+		}
+		swimmer, reason := matcher.match(res.Swimmer)
+		if swimmer == nil {
+			prog.Unmatched = append(prog.Unmatched, unmatchedResult{
+				Name:      strings.TrimSpace(res.Swimmer.FirstName + " " + res.Swimmer.LastName),
+				USSNumber: res.Swimmer.USSNumber,
+				Event:     eventLabel,
+				Reason:    reason,
+			})
+			prog.Processed++
+			continue
+		}
+		course := resultCourse(res.Event.Course, parsed.Course, meetCourse)
+		if course == "" {
+			prog.Skipped++
+			prog.Processed++
+			continue
+		}
+		if rec.HasMeetResult(orgID, swimmer.ID, meetID, res.Event.Distance, stroke, course) {
+			prog.Duplicates++
+			prog.Processed++
+			continue
+		}
+		input := resultUpsertInput(res, swimmer, meetID, course, stroke, dq)
+		_, breaks, err := rec.UpsertResultWithRecords(orgID, principal.UserID, principal, input)
+		if err != nil {
+			if errors.Is(err, performance.ErrRecordDetection) {
+				// The result itself is saved (a retry would skip it), so count it and
+				// keep going; the failure is reported for a records rebuild.
+				prog.NewRecords = append(prog.NewRecords, breaks...)
+				prog.Imported++
+				prog.RecordDetectionFailures++
+				prog.Processed++
+				continue
+			}
+			return prog, err
+		}
+		prog.NewRecords = append(prog.NewRecords, breaks...)
+		prog.Imported++
+		prog.Processed++
+	}
+	return prog, nil
+}
+
+func (h *PerformanceHandlers) auditResultsImport(principal *appmiddleware.Principal, orgID, meetID, filename, action string, p resultsImportProgress) {
+	if h.auditService == nil {
+		return
+	}
+	_ = appendAudit(h.auditService, audit.AppendRequest{
+		OrgID:        orgID,
+		ActorUserID:  principal.UserID,
+		ActorRoles:   principal.Roles,
+		Action:       action,
+		ResourceType: "meet",
+		ResourceID:   meetID,
+		Metadata: map[string]string{
+			"file":                      filename,
+			"imported":                  fmt.Sprintf("%d", p.Imported),
+			"duplicates":                fmt.Sprintf("%d", p.Duplicates),
+			"unmatched":                 fmt.Sprintf("%d", len(p.Unmatched)),
+			"skipped":                   fmt.Sprintf("%d", p.Skipped),
+			"records":                   fmt.Sprintf("%d", len(p.NewRecords)),
+			"record_detection_failures": fmt.Sprintf("%d", p.RecordDetectionFailures),
+			"rows_processed":            fmt.Sprintf("%d", p.Processed),
+			"rows_total":                fmt.Sprintf("%d", p.Total),
+		},
 	})
 }
 

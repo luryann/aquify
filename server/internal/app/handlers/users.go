@@ -3,6 +3,8 @@ package handlers
 import (
 	"context"
 	"errors"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"slices"
 	"strings"
@@ -51,42 +53,35 @@ func actorMaxTier(roles []string) int {
 }
 
 // countOrgAdmins returns how many users in orgID currently hold the admin
-// realm role. Errors listing users/roles are treated as zero found for that
-// user, matching the fail-open behavior already used by the role-removal
-// guard (a listing failure should not itself block a legitimate action).
+// realm role, using a single "members of the admin role" query instead of one
+// role lookup per user. Any lookup failure is returned: a partial count would
+// undercount admins and let the last admin be removed.
 func (h *UserHandlers) countOrgAdmins(ctx context.Context, orgID string) (int, error) {
-	users, err := h.kc.ListUsers(ctx, orgID, "", 500, 0)
+	admins, err := h.kc.ListUsersWithRealmRole(ctx, orgID, "admin")
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("list admin role members: %w", err)
 	}
-	count := 0
-	for _, u := range users {
-		roles, rerr := h.kc.GetUserRealmRoles(ctx, u.ID)
-		if rerr != nil {
-			continue
-		}
-		if hasAdminRealmRole(roles) {
-			count++
-		}
-	}
-	return count, nil
+	return len(admins), nil
 }
 
 // orgHasOnlyOneAdmin reports whether orgID currently has at most one admin.
-// A listing failure fails closed (returns true) so a transient Keycloak error
-// can't be used to strip the sole admin's role or delete the sole admin.
-func (h *UserHandlers) orgHasOnlyOneAdmin(ctx context.Context, orgID string) bool {
+// A lookup failure is returned (never folded into the answer) so callers can
+// refuse the destructive action with a clear "could not verify" response.
+func (h *UserHandlers) orgHasOnlyOneAdmin(ctx context.Context, orgID string) (bool, error) {
 	count, err := h.countOrgAdmins(ctx, orgID)
-	return err != nil || count <= 1
+	if err != nil {
+		return false, err
+	}
+	return count <= 1, nil
 }
 
 // userIsOrgAdmin reports whether userID currently holds the admin realm role.
-func (h *UserHandlers) userIsOrgAdmin(ctx context.Context, userID string) bool {
+func (h *UserHandlers) userIsOrgAdmin(ctx context.Context, userID string) (bool, error) {
 	roles, err := h.kc.GetUserRealmRoles(ctx, userID)
 	if err != nil {
-		return false
+		return false, err
 	}
-	return hasAdminRealmRole(roles)
+	return hasAdminRealmRole(roles), nil
 }
 
 func hasAdminRealmRole(roles []keycloak.Role) bool {
@@ -418,7 +413,10 @@ func (h *UserHandlers) listUsers(w http.ResponseWriter, r *http.Request) {
 	for _, u := range users {
 		realmRoles, err := h.kc.GetUserRealmRoles(r.Context(), u.ID)
 		if err != nil {
-			realmRoles = []keycloak.Role{}
+			// Do not render a lookup failure as "no roles": the role filter
+			// would silently drop the user from results.
+			writeKeycloakAdminError(w, r, err, "Failed to load user roles.")
+			return
 		}
 		normalizedRoles := normalizeRealmRoles(realmRoles)
 		if roleFilter != "" && !slices.Contains(normalizedRoles, roleFilter) {
@@ -454,42 +452,21 @@ type staffListItem struct {
 	Roles []string `json:"roles"`
 }
 
-// staffDirectoryLimit bounds the Keycloak page scanned for staff; clubs have
-// far fewer accounts than this, and the admin /users list uses the same cap.
-const staffDirectoryLimit = 500
-
 func (h *UserHandlers) listStaff(w http.ResponseWriter, r *http.Request) {
 	_, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
 
-	users, err := h.kc.ListUsers(r.Context(), orgID, "", staffDirectoryLimit, 0)
+	members, err := NewStaffDirectory(h.kc).ListStaff(r.Context(), orgID)
 	if err != nil {
 		writeKeycloakAdminError(w, r, err, "Failed to list staff.")
 		return
 	}
-
-	staff := make([]staffListItem, 0)
-	for _, u := range users {
-		if !u.Enabled {
-			continue
-		}
-		realmRoles, err := h.kc.GetUserRealmRoles(r.Context(), u.ID)
-		if err != nil {
-			continue
-		}
-		roles := normalizeRealmRoles(realmRoles)
-		if !slices.Contains(roles, "admin") && !slices.Contains(roles, "coach") {
-			continue
-		}
-		name := strings.TrimSpace(u.FirstName + " " + u.LastName)
-		if name == "" {
-			name = u.Email
-		}
-		staff = append(staff, staffListItem{ID: u.ID, Name: name, Roles: roles})
+	staff := make([]staffListItem, 0, len(members))
+	for _, m := range members {
+		staff = append(staff, staffListItem{ID: m.ID, Name: m.DisplayName(), Roles: m.Roles})
 	}
-	slices.SortFunc(staff, func(a, b staffListItem) int { return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)) })
 
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status": "ok",
@@ -540,7 +517,7 @@ type selfRegisterRequest struct {
 func (h *UserHandlers) selfRegister(w http.ResponseWriter, r *http.Request) {
 	var req selfRegisterRequest
 	if err := decodeJSONBody(w, r, &req); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "Invalid request body.", nil)
+		writeJSONDecodeError(w, r, err, "invalid_request", "Invalid request body.")
 		return
 	}
 	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
@@ -590,7 +567,15 @@ func (h *UserHandlers) selfRegister(w http.ResponseWriter, r *http.Request) {
 		registrationAttributes["registration_swimmer_name"] = []string{req.SwimmerName}
 	}
 
-	_ = h.kc.UpdateUser(r.Context(), newUserID, keycloak.UpdateUserFields{Attributes: registrationAttributes})
+	if err := h.kc.UpdateUser(r.Context(), newUserID, keycloak.UpdateUserFields{Attributes: registrationAttributes}); err != nil {
+		// Without these attributes the account is not in the approval queue (and
+		// has no org), so do not leave a half-registered user behind.
+		if derr := h.kc.DeleteUser(r.Context(), newUserID); derr != nil {
+			slog.Error("register: cleanup of half-registered user failed", "user_id", newUserID, "error", derr)
+		}
+		writeKeycloakAdminError(w, r, err, "Failed to record the registration. Please try again.")
+		return
+	}
 
 	if h.auditService != nil {
 		metadata := map[string]string{"email": req.Email}
@@ -603,7 +588,7 @@ func (h *UserHandlers) selfRegister(w http.ResponseWriter, r *http.Request) {
 		if req.SwimmerName != "" {
 			metadata["swimmer_name"] = req.SwimmerName
 		}
-		_, _ = h.auditService.Append(audit.AppendRequest{
+		_ = appendAudit(h.auditService, audit.AppendRequest{
 			OrgID:        req.OrgID,
 			ActorUserID:  newUserID,
 			ActorRoles:   []string{},
@@ -641,7 +626,7 @@ func (h *UserHandlers) createUser(w http.ResponseWriter, r *http.Request) {
 
 	var req createUserRequest
 	if err := decodeJSONBody(w, r, &req); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "Invalid request body.", nil)
+		writeJSONDecodeError(w, r, err, "invalid_request", "Invalid request body.")
 		return
 	}
 	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
@@ -720,7 +705,7 @@ func (h *UserHandlers) inviteUser(w http.ResponseWriter, r *http.Request) {
 
 	var req inviteUserRequest
 	if err := decodeJSONBody(w, r, &req); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "Invalid request body.", nil)
+		writeJSONDecodeError(w, r, err, "invalid_request", "Invalid request body.")
 		return
 	}
 	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
@@ -793,7 +778,7 @@ func (h *UserHandlers) updateUser(w http.ResponseWriter, r *http.Request) {
 
 	var req updateUserRequest
 	if err := decodeJSONBody(w, r, &req); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "Invalid request body.", nil)
+		writeJSONDecodeError(w, r, err, "invalid_request", "Invalid request body.")
 		return
 	}
 
@@ -898,23 +883,39 @@ func (h *UserHandlers) approveUser(w http.ResponseWriter, r *http.Request) {
 	attrs := cloneUserAttributes(user)
 	setUserAttribute(attrs, "org_id", user.OrgID())
 	setUserAttribute(attrs, "registration_status", "active")
-	_ = h.kc.UpdateUser(r.Context(), userID, keycloak.UpdateUserFields{Attributes: attrs})
-
-	// Assign the requested role if the user has no realm roles yet.
-	existingRoles, _ := h.kc.GetUserRealmRoles(r.Context(), userID)
-	if len(existingRoles) == 0 {
-		_ = h.kc.AssignRealmRole(r.Context(), userID, requestedRole)
+	// Each remaining step is reported, never swallowed. The user is already
+	// enabled, and every step is idempotent, so a retry of Approve completes it.
+	if err := h.kc.UpdateUser(r.Context(), userID, keycloak.UpdateUserFields{Attributes: attrs}); err != nil {
+		writeKeycloakAdminError(w, r, err, "User was enabled but the registration status could not be updated. Approve again to retry.")
+		return
 	}
 
-	// Trigger welcome / verification email.
-	_ = h.kc.SendVerificationEmail(r.Context(), userID)
+	// Assign the requested role if the user has no realm roles yet.
+	existingRoles, err := h.kc.GetUserRealmRoles(r.Context(), userID)
+	if err != nil {
+		writeKeycloakAdminError(w, r, err, "User was enabled but their roles could not be checked. Approve again to retry.")
+		return
+	}
+	if len(existingRoles) == 0 {
+		if err := h.kc.AssignRealmRole(r.Context(), userID, requestedRole); err != nil {
+			writeKeycloakAdminError(w, r, err, "User was enabled but the requested role could not be assigned. Approve again to retry.")
+			return
+		}
+	}
 
 	h.emitAudit(principal, audit.ActionAuthUserApprove, userID, map[string]string{
 		"email":          user.Email,
 		"requested_role": requestedRole,
 	})
 
-	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": "approved"})
+	resp := map[string]any{"status": "approved"}
+	// Trigger welcome / verification email; the approval stands if it fails,
+	// but the caller is told.
+	if err := h.kc.SendVerificationEmail(r.Context(), userID); err != nil {
+		slog.Error("approve user: verification email failed", "user_id", userID, "error", err)
+		resp["warnings"] = []string{"verification_email_failed"}
+	}
+	_ = httpx.WriteJSON(w, http.StatusOK, resp)
 }
 
 // ── POST /users/{id}/reject ────────────────────────────────────────────────────
@@ -948,7 +949,10 @@ func (h *UserHandlers) rejectUser(w http.ResponseWriter, r *http.Request) {
 	attrs := cloneUserAttributes(user)
 	setUserAttribute(attrs, "org_id", user.OrgID())
 	setUserAttribute(attrs, "registration_status", "rejected")
-	_ = h.kc.UpdateUser(r.Context(), userID, keycloak.UpdateUserFields{Attributes: attrs})
+	if err := h.kc.UpdateUser(r.Context(), userID, keycloak.UpdateUserFields{Attributes: attrs}); err != nil {
+		writeKeycloakAdminError(w, r, err, "User was disabled but the registration status could not be updated. Reject again to retry.")
+		return
+	}
 
 	meta := map[string]string{"email": user.Email}
 	if req.Reason != "" {
@@ -980,9 +984,21 @@ func (h *UserHandlers) deleteUser(w http.ResponseWriter, r *http.Request) {
 
 	// Last-admin guard: deleting the target must not leave the org with zero
 	// admins, mirroring the guard on admin role removal.
-	if h.userIsOrgAdmin(r.Context(), userID) && h.orgHasOnlyOneAdmin(r.Context(), orgID) {
-		httpx.WriteError(w, r, http.StatusConflict, "last_admin", "Cannot delete the last admin in this org.", nil)
+	targetIsAdmin, err := h.userIsOrgAdmin(r.Context(), userID)
+	if err != nil {
+		writeKeycloakAdminError(w, r, err, "Could not verify the user's roles; nothing was deleted.")
 		return
+	}
+	if targetIsAdmin {
+		onlyOne, err := h.orgHasOnlyOneAdmin(r.Context(), orgID)
+		if err != nil {
+			writeKeycloakAdminError(w, r, err, "Could not verify the org's admin count; nothing was deleted.")
+			return
+		}
+		if onlyOne {
+			httpx.WriteError(w, r, http.StatusConflict, "last_admin", "Cannot delete the last admin in this org.", nil)
+			return
+		}
 	}
 
 	if err := h.kc.DeleteUser(r.Context(), userID); err != nil {
@@ -1047,7 +1063,7 @@ func (h *UserHandlers) assignRole(w http.ResponseWriter, r *http.Request) {
 
 	var req userAssignRoleRequest
 	if err := decodeJSONBody(w, r, &req); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "Invalid request body.", nil)
+		writeJSONDecodeError(w, r, err, "invalid_request", "Invalid request body.")
 		return
 	}
 	req.Role = normalizeUserRole(req.Role)
@@ -1100,9 +1116,16 @@ func (h *UserHandlers) removeRole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Last-admin guard: prevent removal of the final admin role in the org.
-	if roleName == "admin" && h.orgHasOnlyOneAdmin(r.Context(), orgID) {
-		httpx.WriteError(w, r, http.StatusConflict, "last_admin", "Cannot remove the last admin role assignment.", nil)
-		return
+	if roleName == "admin" {
+		onlyOne, err := h.orgHasOnlyOneAdmin(r.Context(), orgID)
+		if err != nil {
+			writeKeycloakAdminError(w, r, err, "Could not verify the org's admin count; the role was not removed.")
+			return
+		}
+		if onlyOne {
+			httpx.WriteError(w, r, http.StatusConflict, "last_admin", "Cannot remove the last admin role assignment.", nil)
+			return
+		}
 	}
 
 	if err := h.kc.RemoveRealmRole(r.Context(), userID, roleName); err != nil {
@@ -1224,7 +1247,7 @@ func (h *UserHandlers) userLinkScope(w http.ResponseWriter, r *http.Request) (pr
 func decodeRequiredID[T any](w http.ResponseWriter, r *http.Request, field string, pick func(T) string) (string, bool) {
 	var body T
 	if err := decodeJSONBody(w, r, &body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "Invalid request body.", nil)
+		writeJSONDecodeError(w, r, err, "invalid_request", "Invalid request body.")
 		return "", false
 	}
 	id := strings.TrimSpace(pick(body))
@@ -1409,7 +1432,7 @@ func (h *UserHandlers) createSwimmerLinkRequest(w http.ResponseWriter, r *http.R
 
 	var body createSwimmerLinkRequestBody
 	if err := decodeJSONBody(w, r, &body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "Invalid request body.", nil)
+		writeJSONDecodeError(w, r, err, "invalid_request", "Invalid request body.")
 		return
 	}
 
@@ -1462,7 +1485,7 @@ func (h *UserHandlers) resolveSwimmerLinkRequest(w http.ResponseWriter, r *http.
 	requestID := chi.URLParam(r, "requestID")
 	var body resolveSwimmerLinkRequestBody
 	if err := decodeJSONBody(w, r, &body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "Invalid request body.", nil)
+		writeJSONDecodeError(w, r, err, "invalid_request", "Invalid request body.")
 		return
 	}
 	body.SwimmerID = strings.TrimSpace(body.SwimmerID)

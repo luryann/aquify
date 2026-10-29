@@ -215,10 +215,11 @@ export default function MeetDetailPage() {
         setSessions(sess)
         setMeetFiles(files)
 
-        // Filter to household swimmers
+        // Household swimmers only; without a resolved household show none rather
+        // than falling back to the unfiltered org list.
         const householdSwimmers = householdId
           ? swmrs.filter((s) => s.household_id === householdId)
-          : swmrs
+          : []
 
         setSwimmers(householdSwimmers)
 
@@ -226,9 +227,8 @@ export default function MeetDetailPage() {
         await Promise.all(
           cmts.map(async (commitment) => {
             if (!commitment.id) return
-            selectionsByCommitmentId[commitment.id] = await fetchCommitmentEventSelections(api, orgId, meetId, commitment.id).catch(
-              () => [] as CommitmentEventSelectionRecord[],
-            )
+            // A failed load must surface (outer catch shows the retry banner), not read as "no events selected".
+            selectionsByCommitmentId[commitment.id] = await fetchCommitmentEventSelections(api, orgId, meetId, commitment.id)
           }),
         )
 

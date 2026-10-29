@@ -35,7 +35,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// openTestPool returns a pgxpool.Pool from DATABASE_URL, or skips the test.
+// openTestPool returns a pgxpool.Pool from DATABASE_URL. The test is skipped
+// only when DATABASE_URL is unset; when it is set but unreachable the test
+// FAILS, so a broken database can never turn DB coverage into silent passes.
 func openTestPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	dbURL := os.Getenv("DATABASE_URL")
@@ -44,14 +46,31 @@ func openTestPool(t *testing.T) *pgxpool.Pool {
 	}
 	pool, err := pgxpool.New(context.Background(), dbURL)
 	if err != nil {
-		t.Skipf("cannot open test pool: %v", err)
+		t.Fatalf("DATABASE_URL is set but the pool cannot be opened: %v", err)
 	}
 	if err := pool.Ping(context.Background()); err != nil {
 		pool.Close()
-		t.Skipf("cannot ping test database: %v", err)
+		t.Fatalf("DATABASE_URL is set but the database is unreachable: %v", err)
 	}
 	t.Cleanup(func() { pool.Close() })
 	return pool
+}
+
+// deleteFixtures runs the DELETE statements for orgID now (so the test starts
+// clean) and again via t.Cleanup (so it leaves nothing behind). A failed DELETE
+// fails the test instead of leaving dirty state for the next one.
+func deleteFixtures(t *testing.T, pool *pgxpool.Pool, orgID string, queries []string) {
+	t.Helper()
+	run := func(report func(format string, args ...any)) {
+		for _, q := range queries {
+			if _, err := pool.Exec(context.Background(), q, orgID); err != nil {
+				report("fixture cleanup failed (%s): %v", q, err)
+				return
+			}
+		}
+	}
+	run(t.Fatalf)
+	t.Cleanup(func() { run(t.Errorf) })
 }
 
 // testOrgID is a valid UUID for integration tests.
@@ -461,21 +480,18 @@ func TestDBRepoMembers_DeleteSwimmerRejectsWhenDependenciesExist(t *testing.T) {
 	}
 }
 
+// membersFixtureQueries lists the DELETEs (FK-safe order) that clear the fixtures.
+var membersFixtureQueries = []string{
+	"DELETE FROM results WHERE org_id = $1::uuid",
+	"DELETE FROM swimmer_groups WHERE org_id = $1::uuid",
+	"DELETE FROM swimmers WHERE org_id = $1::uuid",
+	"DELETE FROM contacts WHERE org_id = $1::uuid",
+	"DELETE FROM households WHERE org_id = $1::uuid",
+}
+
 func cleanupMembersFixtures(t *testing.T, pool *pgxpool.Pool, orgID string) {
 	t.Helper()
-	ctx := context.Background()
-	// Delete in FK-safe order (results restricts swimmer deletion).
-	for _, q := range []string{
-		"DELETE FROM results WHERE org_id = $1::uuid",
-		"DELETE FROM swimmer_groups WHERE org_id = $1::uuid",
-		"DELETE FROM swimmers WHERE org_id = $1::uuid",
-		"DELETE FROM contacts WHERE org_id = $1::uuid",
-		"DELETE FROM households WHERE org_id = $1::uuid",
-	} {
-		if _, err := pool.Exec(ctx, q, orgID); err != nil {
-			t.Logf("cleanup warning (%s): %v", q, err)
-		}
-	}
+	deleteFixtures(t, pool, orgID, membersFixtureQueries)
 }
 
 // ─── Groups ─────────────────────────────────────────────────────────────────
@@ -638,17 +654,12 @@ func TestDBRepoGroups_CrossInstanceConflictAndVisibility(t *testing.T) {
 
 func cleanupGroupsFixtures(t *testing.T, pool *pgxpool.Pool, orgID string) {
 	t.Helper()
-	ctx := context.Background()
-	for _, q := range []string{
+	deleteFixtures(t, pool, orgID, []string{
 		"DELETE FROM waiver_acceptances WHERE org_id = $1::uuid",
 		"DELETE FROM registrations WHERE org_id = $1::uuid",
 		"DELETE FROM eligibility_rules WHERE org_id = $1::uuid",
 		"DELETE FROM groups WHERE org_id = $1::uuid",
-	} {
-		if _, err := pool.Exec(ctx, q, orgID); err != nil {
-			t.Logf("cleanup warning (%s): %v", q, err)
-		}
-	}
+	})
 }
 
 // ─── Training ───────────────────────────────────────────────────────────────
@@ -717,10 +728,7 @@ func TestDBRepoTraining_CrossInstanceVisibilityWithoutRestart(t *testing.T) {
 
 func cleanupPracticesFixtures(t *testing.T, pool *pgxpool.Pool, orgID string) {
 	t.Helper()
-	ctx := context.Background()
-	if _, err := pool.Exec(ctx, `DELETE FROM practices WHERE org_id = $1`, orgID); err != nil {
-		t.Logf("cleanup warning (DELETE FROM practices): %v", err)
-	}
+	deleteFixtures(t, pool, orgID, []string{`DELETE FROM practices WHERE org_id = $1`})
 }
 
 // ─── Meets ──────────────────────────────────────────────────────────────────
@@ -933,20 +941,18 @@ func TestDBRepoMeets_RoundTrip(t *testing.T) {
 	}
 }
 
+// meetsFixtureQueries lists the DELETEs (FK-safe order) that clear the fixtures.
+var meetsFixtureQueries = []string{
+	"DELETE FROM entries WHERE org_id = $1::uuid",
+	"DELETE FROM commitments WHERE org_id = $1::uuid",
+	"DELETE FROM meet_events WHERE org_id = $1::uuid",
+	"DELETE FROM meet_sessions WHERE org_id = $1::uuid",
+	"DELETE FROM meets WHERE org_id = $1::uuid",
+}
+
 func cleanupMeetsFixtures(t *testing.T, pool *pgxpool.Pool, orgID string) {
 	t.Helper()
-	ctx := context.Background()
-	for _, q := range []string{
-		"DELETE FROM entries WHERE org_id = $1::uuid",
-		"DELETE FROM commitments WHERE org_id = $1::uuid",
-		"DELETE FROM meet_events WHERE org_id = $1::uuid",
-		"DELETE FROM meet_sessions WHERE org_id = $1::uuid",
-		"DELETE FROM meets WHERE org_id = $1::uuid",
-	} {
-		if _, err := pool.Exec(ctx, q, orgID); err != nil {
-			t.Logf("cleanup warning (%s): %v", q, err)
-		}
-	}
+	deleteFixtures(t, pool, orgID, meetsFixtureQueries)
 }
 
 // ─── Performance ────────────────────────────────────────────────────────────
@@ -1025,16 +1031,11 @@ func seedPerformancePrereqs(t *testing.T, pool *pgxpool.Pool, orgID, swimmerID, 
 
 func cleanupPerformanceFixtures(t *testing.T, pool *pgxpool.Pool, orgID string) {
 	t.Helper()
-	ctx := context.Background()
-	for _, q := range []string{
+	deleteFixtures(t, pool, orgID, []string{
 		"DELETE FROM best_times WHERE org_id = $1::uuid",
 		"DELETE FROM results WHERE org_id = $1::uuid",
 		"DELETE FROM time_standards WHERE org_id = $1::uuid",
-	} {
-		if _, err := pool.Exec(ctx, q, orgID); err != nil {
-			t.Logf("cleanup warning (%s): %v", q, err)
-		}
-	}
+	})
 }
 
 // ─── Billing ────────────────────────────────────────────────────────────────
@@ -1092,8 +1093,7 @@ func TestDBRepoBilling_RoundTrip(t *testing.T) {
 
 func cleanupBillingFixtures(t *testing.T, pool *pgxpool.Pool, orgID string) {
 	t.Helper()
-	ctx := context.Background()
-	for _, q := range []string{
+	deleteFixtures(t, pool, orgID, []string{
 		"DELETE FROM ledger_events WHERE org_id = $1::uuid",
 		"DELETE FROM refunds WHERE org_id = $1::uuid",
 		"DELETE FROM payments WHERE org_id = $1::uuid",
@@ -1104,11 +1104,7 @@ func cleanupBillingFixtures(t *testing.T, pool *pgxpool.Pool, orgID string) {
 		"DELETE FROM swimmer_groups WHERE org_id = $1::uuid",
 		"DELETE FROM swimmers WHERE org_id = $1::uuid",
 		"DELETE FROM households WHERE org_id = $1::uuid",
-	} {
-		if _, err := pool.Exec(ctx, q, orgID); err != nil {
-			t.Logf("cleanup warning (%s): %v", q, err)
-		}
-	}
+	})
 }
 
 // ─── Comms ──────────────────────────────────────────────────────────────────
@@ -1151,16 +1147,11 @@ func TestDBRepoComms_RoundTrip(t *testing.T) {
 
 func cleanupCommsFixtures(t *testing.T, pool *pgxpool.Pool, orgID string) {
 	t.Helper()
-	ctx := context.Background()
-	for _, q := range []string{
+	deleteFixtures(t, pool, orgID, []string{
 		"DELETE FROM email_deliveries WHERE org_id = $1::uuid",
 		"DELETE FROM email_campaigns WHERE org_id = $1::uuid",
 		"DELETE FROM announcements WHERE org_id = $1::uuid",
-	} {
-		if _, err := pool.Exec(ctx, q, orgID); err != nil {
-			t.Logf("cleanup warning (%s): %v", q, err)
-		}
-	}
+	})
 }
 
 // ─── Compliance ─────────────────────────────────────────────────────────────
@@ -1207,15 +1198,10 @@ func TestDBRepoCompliance_RoundTrip(t *testing.T) {
 
 func cleanupComplianceFixtures(t *testing.T, pool *pgxpool.Pool, orgID string) {
 	t.Helper()
-	ctx := context.Background()
-	for _, q := range []string{
+	deleteFixtures(t, pool, orgID, []string{
 		"DELETE FROM data_deletion_requests WHERE org_id = $1",
 		"DELETE FROM data_export_requests WHERE org_id = $1",
-	} {
-		if _, err := pool.Exec(ctx, q, orgID); err != nil {
-			t.Logf("cleanup warning (%s): %v", q, err)
-		}
-	}
+	})
 }
 
 // ─── Exports ────────────────────────────────────────────────────────────────

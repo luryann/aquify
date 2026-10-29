@@ -24,6 +24,7 @@ package meetfiles
 import (
 	"archive/zip"
 	"bytes"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -81,8 +82,12 @@ func ReadHY3(filename string, data []byte) HY3IngestResult {
 
 		content, newBudget, readErr := readZipEntryBounded(f, budget)
 		if readErr != nil {
+			code := ErrCodeMalformedRecord // corrupt stream or I/O failure
+			if errors.Is(readErr, errZipTooLarge) {
+				code = ErrCodeArchiveTooLarge
+			}
 			result.Error = &ParseError{
-				Code:    ErrCodeArchiveTooLarge,
+				Code:    code,
 				Message: readErr.Error(),
 			}
 			return result

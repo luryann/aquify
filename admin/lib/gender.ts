@@ -3,11 +3,14 @@
 // `event.gender === swimmer.gender`) never matches for gendered events —
 // always translate swimmer gender to the event vocabulary first.
 
-/** Maps a swimmer's gender to the event-gender vocabulary it's eligible for. */
+const FEMALE_VALUES = new Set(['f', 'female'])
+const MALE_VALUES = new Set(['m', 'male'])
+
+/** Maps a swimmer's gender to the event-gender vocabulary it's eligible for. Exact matches only: "multi" must not read as male. */
 export function swimmerGenderToEventGender(swimmerGender: string): 'F' | 'M' | 'X' {
-  const normalized = swimmerGender.trim().toUpperCase()
-  if (normalized.startsWith('F')) return 'F'
-  if (normalized.startsWith('M')) return 'M'
+  const normalized = swimmerGender.trim().toLowerCase()
+  if (FEMALE_VALUES.has(normalized)) return 'F'
+  if (MALE_VALUES.has(normalized)) return 'M'
   return 'X' // non_binary / undisclosed / unknown → only open/mixed events
 }
 

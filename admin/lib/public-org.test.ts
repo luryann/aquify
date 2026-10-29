@@ -28,6 +28,16 @@ test('resolvePublicOrg falls back to local dev org on localhost', () => {
   assert.equal(resolved.source, 'local_dev')
 })
 
+test('resolvePublicOrg does not resolve the local dev org in a production build', () => {
+  const resolved = resolvePublicOrg({
+    host: 'localhost',
+    config: { defaultOrgId: '', production: true },
+  })
+
+  assert.equal(resolved.orgId, '')
+  assert.equal(resolved.source, 'none')
+})
+
 test('resolvePublicOrg resolves club code query parameters to tenant org ids', () => {
   const resolved = resolvePublicOrg({
     searchParams: new URLSearchParams('club_code=dare2026'),

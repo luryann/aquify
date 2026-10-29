@@ -120,7 +120,13 @@ Write-Host ""
 Write-Host "Starting Keycloak $kcVersion on http://localhost:$Port" -ForegroundColor Green
 Write-Host "  Admin console: http://localhost:$Port/admin  ($($env:KC_BOOTSTRAP_ADMIN_USERNAME)/$($env:KC_BOOTSTRAP_ADMIN_PASSWORD))"
 Write-Host "  Realm:         aquify"
-Write-Host "  Seed users:    owner@dare.local (and admin/coach/parent/swimmer/billing) — password: ChangeMe123!"
+# Print the users the realm import actually seeds (service accounts excluded)
+# instead of a hand-kept list that drifts when roles change.
+$seedUsers = (Get-Content -Raw $realmFile | ConvertFrom-Json).users |
+    Where-Object { $_.username -notlike "service-account-*" } |
+    ForEach-Object { "$($_.username) [$($_.realmRoles -join ',')]" }
+Write-Host "  Seed users:    $($seedUsers -join '; ')"
+Write-Host "  Seed password: ChangeMe123!"
 Write-Host ""
 
 & $kcBat start-dev --http-port=$Port --import-realm

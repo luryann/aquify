@@ -47,14 +47,38 @@ import (
 // because the scheduler goroutine cannot be stopped from this call site.
 // Production deployments use NewRouterWithServices directly (see main.go).
 func NewRouter(cfg Config, logger *slog.Logger) http.Handler {
-	return NewRouterWithServices(cfg, logger, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	return NewRouterWithServices(cfg, logger, RouterDeps{})
 }
 
-// NewRouterWithServicesAndMetrics constructs the HTTP router with a caller-
-// supplied Prometheus registry. exposePrometheus controls whether the scrape
-// endpoint itself is mounted on the returned router.
-func NewRouterWithServicesAndMetrics(cfg Config, logger *slog.Logger, metrics *telemetry.Metrics, exposePrometheus bool, authService *authn.Service, membershipService *members.Service, groupsService *groups.Service, meetsService *meets.Service, exportsService *exports.Service, performanceService *performance.Service, billingService *billing.Service, stripeClient stripelib.Client, commsService *comms.Service, auditService *audit.Service, complianceService *compliance.Service, documentsService *documents.Service, trainingService *training.Service, workerBackend workers.Backend, kcClient keycloak.Client) http.Handler {
-	return newRouterWithServices(cfg, logger, metrics, exposePrometheus, authService, membershipService, groupsService, meetsService, exportsService, performanceService, billingService, stripeClient, commsService, auditService, complianceService, documentsService, trainingService, workerBackend, kcClient)
+// RouterDeps names every injectable dependency of the router. Zero (nil)
+// fields are replaced by defaults: in-memory/stub services in dev and test
+// environments, real clients (or startup failures) elsewhere. Named fields
+// replace the old 17-19 positional parameters, where same-typed nils could be
+// transposed without a compile error.
+type RouterDeps struct {
+	Auth        *authn.Service
+	Members     *members.Service
+	Groups      *groups.Service
+	Meets       *meets.Service
+	Exports     *exports.Service
+	Performance *performance.Service
+	Billing     *billing.Service
+	Stripe      stripelib.Client
+	Comms       *comms.Service
+	Audit       *audit.Service
+	Compliance  *compliance.Service
+	Documents   *documents.Service
+	Training    *training.Service
+	// Workers may be nil; when nil a new in-memory worker server is created,
+	// registered and started automatically.
+	Workers workers.Backend
+	// Keycloak may be nil; when nil a StubClient is used in dev/test and a real
+	// AdminClient is constructed from cfg.Keycloak in non-dev environments.
+	Keycloak keycloak.Client
+	// Metrics is the Prometheus registry; nil creates a private one.
+	Metrics *telemetry.Metrics
+	// ExposePrometheus mounts the scrape endpoint on the returned router.
+	ExposePrometheus bool
 }
 
 func allowsProviderStubFallback(appEnv string) bool {
@@ -73,7 +97,7 @@ func canonicalUserManagementRole(role string) string {
 // household) should be seeded. The test env is excluded so suites keep
 // starting from empty state.
 func seedsLocalDevFixtures(appEnv string) bool {
-	switch strings.ToLower(strings.TrimSpace(appEnv)) {
+	switch NormalizeAppEnv(appEnv) {
 	case "development", "local":
 		return true
 	}
@@ -301,25 +325,25 @@ func isNilWorkerBackend(backend workers.Backend) bool {
 	}
 }
 
-// NewRouterWithServices constructs the HTTP router and wires all services.
-// workerBackend may be nil; when nil a new in-memory worker server is
-// created, registered, and started automatically.
-// kcClient may be nil; when nil a StubClient is used in dev/test and a real
-// AdminClient is constructed from cfg.Keycloak in non-dev environments.
-func NewRouterWithServices(cfg Config, logger *slog.Logger, authService *authn.Service, membershipService *members.Service, groupsService *groups.Service, meetsService *meets.Service, exportsService *exports.Service, performanceService *performance.Service, billingService *billing.Service, stripeClient stripelib.Client, commsService *comms.Service, auditService *audit.Service, complianceService *compliance.Service, documentsService *documents.Service, trainingService *training.Service, workerBackend workers.Backend, kcClient keycloak.Client) http.Handler {
-	return newRouterWithServices(cfg, logger, telemetry.NewMetrics(), false, authService, membershipService, groupsService, meetsService, exportsService, performanceService, billingService, stripeClient, commsService, auditService, complianceService, documentsService, trainingService, workerBackend, kcClient)
-}
-
-func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.Metrics, exposePrometheus bool, authService *authn.Service, membershipService *members.Service, groupsService *groups.Service, meetsService *meets.Service, exportsService *exports.Service, performanceService *performance.Service, billingService *billing.Service, stripeClient stripelib.Client, commsService *comms.Service, auditService *audit.Service, complianceService *compliance.Service, documentsService *documents.Service, trainingService *training.Service, workerBackend workers.Backend, kcClient keycloak.Client) http.Handler {
+// NewRouterWithServices constructs the HTTP router and wires all services from
+// the named dependencies in deps (see RouterDeps for the nil defaults).
+func NewRouterWithServices(cfg Config, logger *slog.Logger, deps RouterDeps) http.Handler {
+	metrics := deps.Metrics
+	if metrics == nil {
+		metrics = telemetry.NewMetrics()
+	}
+	exposePrometheus := deps.ExposePrometheus
+	authService, membershipService, groupsService := deps.Auth, deps.Members, deps.Groups
+	meetsService, exportsService, performanceService := deps.Meets, deps.Exports, deps.Performance
+	billingService, stripeClient, commsService := deps.Billing, deps.Stripe, deps.Comms
+	auditService, complianceService, documentsService := deps.Audit, deps.Compliance, deps.Documents
+	trainingService, workerBackend, kcClient := deps.Training, deps.Workers, deps.Keycloak
 	if logger == nil {
 		logger = slog.Default()
 	}
-	appEnv := strings.ToLower(strings.TrimSpace(cfg.AppEnv))
-	if appEnv == "" {
-		appEnv = "test"
-	}
+	appEnv := effectiveAppEnv(cfg)
 	allowDevSessionIssue := cfg.Auth.AllowDevSessionIssue
-	if !allowDevSessionIssue && (appEnv == "development" || appEnv == "local" || appEnv == "test") {
+	if !allowDevSessionIssue && isExplicitDevelopmentEnv(appEnv) {
 		allowDevSessionIssue = true
 	}
 
@@ -351,7 +375,7 @@ func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.M
 	if authService == nil {
 		authService = authn.NewService(authn.Config{
 			EnableDevStubTokens: cfg.Auth.EnableDevStubTokens,
-			SeedLocalUsers:      appEnv == "development" || appEnv == "local" || appEnv == "test",
+			SeedLocalUsers:      isExplicitDevelopmentEnv(appEnv),
 			Logger:              logger,
 			OIDC: authn.OIDCConfig{
 				AuthorizeURL:          cfg.Auth.OIDC.AuthorizeURL,
@@ -371,6 +395,11 @@ func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.M
 	// Persist MFA factors to DB when a pool is available so they survive restarts.
 	authService.SetPool(dbPool)
 	authHandlers := handlers.NewAuthHandlersWithAudit(authService, auditService, allowDevSessionIssue)
+	authHandlers.SetSessionCookies(appmiddleware.SessionCookies{
+		// Defence in depth: non-Secure cookies are honoured only in explicit dev-like envs.
+		Insecure:     cfg.Auth.AllowInsecureSessionCookies && isExplicitDevelopmentEnv(appEnv),
+		NewCSRFToken: cfg.Auth.CSRFTokenFactory,
+	})
 	if membershipService == nil {
 		membershipService = members.NewServiceWithPool(dbPool)
 	}
@@ -486,9 +515,6 @@ func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.M
 	if complianceService == nil {
 		complianceService = compliance.NewServiceWithPool(dbPool, cfg.Compliance.ExportTTLDays, cfg.Compliance.DeletionReviewDays)
 	}
-	complianceService.SetHouseholdDataCollector(func(orgID, householdID string) (map[string]any, error) {
-		return collectHouseholdExportData(orgID, householdID, membershipService, groupsService, billingService)
-	})
 	complianceHandlers := handlers.NewComplianceHandlers(complianceService, auditService)
 	documentHandlers := handlers.NewDocumentHandlers(documentsService, auditService, objectStore)
 	if trainingService == nil {
@@ -505,7 +531,7 @@ func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.M
 	engagement := buildEngagementHandlers(dbPool, logger, membershipService, groupsService, meetsService, trainingService, billingService, auditService)
 	trainingHandlers.SetSeasonsService(seasonsService)
 	orgSettingsHandlers := handlers.NewOrgSettingsHandlers(orgSettingsService, auditService)
-	publicSiteHandlers := buildPublicSiteHandlers(cfg, orgSettingsService, commsService, meetsService, engagement.eventsService, performanceService, kcClient)
+	publicSiteHandlers := buildPublicSiteHandlers(cfg, orgSettingsService, commsService, meetsService, engagement.eventsService, performanceService, kcClient, nil)
 
 	kcClient = resolveKeycloakClient(cfg, logger, kcClient)
 	userHandlers := handlers.NewUserHandlersWithMembers(kcClient, auditService, membershipService)
@@ -549,12 +575,22 @@ func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.M
 	exportsService.SetQueue(workerBackend)
 	complianceHandlers.SetJobQueue(workerBackend)
 	jobsHandlers := handlers.NewJobsHandlers(workerBackend)
-	volunteerHandlers := wireVolunteer(volunteerDeps{
+	volunteerHandlers, volunteerService := wireVolunteer(volunteerDeps{
 		pool: dbPool, logger: logger, audit: auditService, members: membershipService, meets: meetsService,
 		seasons: seasonsService, billing: billingService, postmark: postmarkClient, workerBack: workerBackend,
 	})
+	// Right-of-access export: members, groups and billing are read directly;
+	// every other domain holding household records contributes via a source.
+	exportSources := buildHouseholdExportSources(householdExportDeps{
+		meets: meetsService, volunteer: volunteerService, wellness: engagement.wellnessService,
+		events: engagement.eventsService, documents: documentsService, comms: commsService,
+	})
+	complianceService.SetHouseholdDataCollector(func(orgID, householdID string) (map[string]any, error) {
+		return collectHouseholdExportData(orgID, householdID, membershipService, groupsService, billingService, exportSources...)
+	})
 
 	router.Use(chimiddleware.RequestID)
+	router.Use(appmiddleware.TrustedProxy(cfg.Security.RateLimit.TrustedProxyCIDRs))
 	router.Use(appmiddleware.OTelTracing(cfg.Telemetry.ServiceName))
 	router.Use(appmiddleware.PrometheusMetrics(metrics))
 	router.Use(appmiddleware.StructuredLogger(logger))
@@ -642,7 +678,7 @@ func newRouterWithServices(cfg Config, logger *slog.Logger, metrics *telemetry.M
 			protected.Use(appmiddleware.CSRFProtection(cfg.Security.CSRFHeaderName))
 			protected.Use(appmiddleware.Auth(authService))
 			protected.Use(appmiddleware.RequireOrgScope)
-			protected.Use(appmiddleware.RejectImpersonationHeaders(cfg.Security.Impersonation.Enabled))
+			protected.Use(appmiddleware.RejectImpersonationHeaders())
 			protected.With(appmiddleware.RBACStub("admin", "coach")).Get("/authz/ping", handlers.AuthzPing)
 
 			protected.Route("/members", func(membersRouter chi.Router) {
@@ -835,10 +871,7 @@ func scheduledOrgIDs(cfg Config) []string {
 		seen[orgID] = struct{}{}
 		orgIDs = append(orgIDs, orgID)
 	}
-	appEnv := strings.TrimSpace(cfg.AppEnv)
-	if appEnv == "" {
-		appEnv = "test"
-	}
+	appEnv := effectiveAppEnv(cfg)
 	if len(orgIDs) == 0 && allowsProviderStubFallback(appEnv) {
 		return []string{"org-demo"}
 	}

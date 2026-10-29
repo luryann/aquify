@@ -13,7 +13,7 @@ import {
   type UserRecord,
   type UserListSource,
 } from '@/lib/adminData'
-import { ROLE_HIERARCHY, type Role } from '@/lib/roles'
+import { ROLE_HIERARCHY, highestRoleTier, type Role } from '@/lib/roles'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { ROLE_COLORS, ROLE_OPTIONS } from '@/lib/user-roles'
 
@@ -82,8 +82,8 @@ export function UsersPanel() {
     create_household: false,
   })
 
-  const actorRole = session?.user.role as Role | undefined
-  const actorTier = actorRole ? ROLE_HIERARCHY[actorRole] : 0
+  const actorRoles = session?.user.roles ?? (session?.user.role ? [session.user.role] : [])
+  const actorTier = highestRoleTier(actorRoles)
 
   // Roles actor can assign (at or below their tier)
   const assignableRoles = ROLE_OPTIONS.filter((r) => {

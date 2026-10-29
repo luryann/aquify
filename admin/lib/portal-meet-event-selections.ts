@@ -41,8 +41,8 @@ export function buildPortalSwimmerStates(
       commitmentId: commitment?.id ?? null,
       selectedEvents: persistedSelections.map((selection) => selection.meet_event_id),
       selectedEventSelectionIds,
-      note: commitment?.note ?? '',
-      savedNote: commitment?.note ?? '',
+      note: commitment?.notes ?? '',
+      savedNote: commitment?.notes ?? '',
     }
   }
 

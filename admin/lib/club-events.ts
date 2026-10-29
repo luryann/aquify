@@ -1,5 +1,6 @@
 // Pure helpers for club events (form drafts, date handling, calendar keys).
 import type { ClubEventInput, ClubEventRecord, ClubEventRSVP, ClubEventSummary } from './engagementData'
+import { localInputToISO } from './dates.ts'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 
@@ -16,12 +17,7 @@ export function isoToLocalInput(iso?: string | null): string {
   return `${localDateKey(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-/** <input type="datetime-local"> value -> ISO timestamp (local time). */
-export function localInputToISO(value: string): string | null {
-  if (!value) return null
-  const d = new Date(value)
-  return Number.isNaN(d.getTime()) ? null : d.toISOString()
-}
+export { localInputToISO }
 
 /** All-day events carry UTC-midnight timestamps; the date part is the day. */
 export function allDayISO(date: string): string {
