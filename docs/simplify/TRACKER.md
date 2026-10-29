@@ -1174,3 +1174,8 @@ Moved the plain-string `<style>{`...`}</style>` blocks (no `${}`) from `app/page
 - Staging is now gated on CI success (bug 204). Production remains manual.
 - Gates after the last edit: gofmt, build, vet, staticcheck, `go test ./...` with 0 skips, coverage gate, meetfiles vet+test all green. Admin gates re-run after the last server change: tsc, lint, 153 unit tests, and 3 consecutive Playwright runs of 9/9 against the server with the meets sync additions.
 - The workflows still have not run on GitHub Actions.
+
+## Pass 20u (real GitHub Actions run)
+- With the owner's go-ahead the work was committed and pushed to `main`. CI results on GitHub: the first two runs failed in `Run server tests`; the third passed all five jobs (secret scan, OpenAPI, server tests and lint, admin build and lint, admin browser E2E).
+- The failure was real and invisible locally: the repo's test harness runs `psql -At -c` with several statements, and real psql prints a command tag per statement (`CREATE TABLE`, `INSERT 0 3`), which `TestDBHarnessExecutesAgainstConfiguredDatabase` did not expect. My `psql` stand-in did not print tags. Fixed with `-q` (commit 31a56e7). CI now also repeats failing test lines as annotations.
+- The CI-gated staging deploy behaved correctly on real runs: skipped for the two commits whose CI failed, started for the passing one. The image build and push succeeded; the `Deploy to staging via SSH` step failed. That step has failed on every staging deploy in the run history (back to 2026-07-04, before any of these changes), so it is an environment problem (staging host or `STAGING_SSH_*` secrets), not a code regression. It cannot be diagnosed from outside because job logs need repository admin rights.

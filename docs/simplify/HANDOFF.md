@@ -85,3 +85,4 @@ Pass 20q: remaining files read; bugs 196-200 fixed; bug 182 root-caused (stale-s
 Pass 20r: bugs 201-202; backup/restore/backfill scripts verified with real PostgreSQL client tools. Open by nature: GitHub Actions run, deploy gating decision.
 Pass 20s: bug 203 (meets cross-instance sync); pg_restore verified on matching versions; production deploy is already manual-only, staging auto-deploys on push by design. Open by nature: a real GitHub Actions run.
 Pass 20t: deterministic race tests (members, meets), staging gated on CI (bug 204). Only a real GitHub Actions run remains unverifiable locally.
+Pass 20u: pushed to main; CI green on GitHub after a harness fix (31a56e7). Staging SSH deploy step has failed on every run since July (host/secrets), unrelated to code.
