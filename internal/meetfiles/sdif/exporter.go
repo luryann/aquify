@@ -41,11 +41,11 @@ type ExportSwimmer struct {
 // ExportIndividualEntry represents one swimmer's entry in one individual event.
 type ExportIndividualEntry struct {
 	Swimmer     ExportSwimmer
-	EventNumber string           // e.g. "1", "12", "12A"
-	Distance    int              // in yards or meters
+	EventNumber string // e.g. "1", "12", "12A"
+	Distance    int    // in yards or meters
 	Stroke      meetfiles.Stroke
-	EventGender string           // "M", "F", or "X"
-	AgeGroup    string           // e.g. "1517" or "" (blank is valid)
+	EventGender string // "M", "F", or "X"
+	AgeGroup    string // e.g. "1517" or "" (blank is valid)
 	Course      meetfiles.Course
 	SeedTime    meetfiles.Time // zero value = NT
 	Heat        int            // 0 = unassigned
@@ -58,7 +58,7 @@ type ExportRelayEntry struct {
 	EventNumber string
 	Distance    int
 	Stroke      meetfiles.Stroke
-	EventGender string           // "M", "F", or "X"
+	EventGender string // "M", "F", or "X"
 	AgeGroup    string
 	Course      meetfiles.Course
 	SeedTime    meetfiles.Time
@@ -134,7 +134,7 @@ type RosterExportInput struct {
 
 // RosterImportResult holds the output of parsing an SDIF roster file.
 type RosterImportResult struct {
-	Swimmers   []RosterExportSwimmer
+	Swimmers    []RosterExportSwimmer
 	ParseErrors []meetfiles.ParseError
 }
 
@@ -535,7 +535,7 @@ func buildD1(sw RosterExportSwimmer) string {
 
 func buildE0(relay ExportRelayEntry) string {
 	buf := newBuf("E0")
-	place(buf, 12, 1, "A")  // relay team char
+	place(buf, 12, 1, "A") // relay team char
 	place(buf, 13, 6, relay.TeamCode)
 	place(buf, 21, 1, relay.EventGender)
 	placeRight(buf, 22, 4, fmt.Sprintf("%d", relay.Distance))

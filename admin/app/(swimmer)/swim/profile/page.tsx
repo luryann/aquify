@@ -17,6 +17,7 @@ import {
 } from '@/lib/adminData'
 import { SWIMMER_BIO_MAX_LENGTH, normalizeSwimmerBio, validateSwimmerBio } from '@/lib/swimmer-bio'
 import './page.inline.css'
+import { SkeletonLine } from '@/components/ui/SkeletonLine'
 
 // ── Design tokens ──────────────────────────────────────────────────────────
 const C = {
@@ -26,10 +27,7 @@ const C = {
   text:         'var(--text)',
   subtle:       'var(--text-subtle)',
   muted:        'var(--text-muted)',
-  card:         'var(--bg-surface)',
   border:       'var(--border)',
-  inputBg:      'var(--border-strong)',
-  inputBorder:  'rgba(0,212,170,0.18)',
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -47,12 +45,6 @@ function fmtDob(dob: string): string {
 }
 
 // ── Skeleton ───────────────────────────────────────────────────────────────
-function SkeletonLine({ width = '100%', height = '14px' }: { width?: string; height?: string }) {
-  return (
-    <div style={{ width, height, background: 'var(--border)', borderRadius: '6px', animation: 'pulse 1.5s ease-in-out infinite' }} />
-  )
-}
-
 // ── Components ─────────────────────────────────────────────────────────────
 function ReadOnlyField({ label, value }: { label: string; value: string }) {
   return (
@@ -194,11 +186,7 @@ export default function SwimmerProfilePage() {
 
   return (
     <div>
-      <style>{`
-        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.45} }
-        @keyframes slideUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
-      `}</style>
-
+      
       {/* Header */}
       <div
         className="is-ce0e9fe"

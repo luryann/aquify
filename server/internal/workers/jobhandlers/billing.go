@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"math"
 	"time"
 
 	"github.com/dareaquatics/aquify/server/internal/app/billing"
@@ -223,7 +222,7 @@ func validateBillingIntegrity(ctx context.Context, billingService *billing.Servi
 				return fmt.Errorf("nightly integrity: ledger event %s references missing refund %s", event.ID, event.RefundID)
 			}
 		}
-		if math.Abs(float64(event.AmountCents)) == 0 {
+		if event.AmountCents == 0 {
 			return fmt.Errorf("nightly integrity: ledger event %s has zero amount", event.ID)
 		}
 	}

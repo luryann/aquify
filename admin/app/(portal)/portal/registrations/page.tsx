@@ -24,6 +24,8 @@ import {
 } from '@/lib/portal-registration-status'
 import { parseBackendDate } from '@/lib/dates'
 import './page.inline.css'
+import { SWIMMER_AVATAR_COLOR } from '@/lib/avatar-colors'
+import { ShimmerBlock } from '@/components/ui/ShimmerBlock'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 function fmtDate(iso?: string): string {
@@ -31,26 +33,6 @@ function fmtDate(iso?: string): string {
   return parseBackendDate(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-
-const GRADIENTS = [
-  'var(--accent-text)',
-  'var(--accent-text)',
-  'var(--accent-text)',
-  'var(--accent-text)',
-]
-
-function Skeleton({ w = '100%', h = 16, r = 8 }: { w?: string | number; h?: number; r?: number }) {
-  return (
-    <div
-      style={{
-        width: w, height: h, borderRadius: r,
-        background: 'linear-gradient(90deg, var(--bg-elevated) 25%, var(--border-strong) 50%, var(--bg-elevated) 75%)',
-        backgroundSize: '200% 100%',
-        animation: 'shimmer 1.5s infinite',
-      }}
-    />
-  )
-}
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 const STATUS_CONFIG: Record<string, { label: string; bg: string; color: string }> = {
@@ -138,11 +120,7 @@ export default function RegistrationsPage() {
 
   return (
     <div>
-      <style>{`
-        @keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
-      `}</style>
-
+      
       {/* Page header */}
       <div className="page-heading">
         <h1 className="page-title">
@@ -155,8 +133,8 @@ export default function RegistrationsPage() {
         {loading ? (
           [0, 1, 2, 3].map((i) => (
             <div key={i} className="card is-401e6d8" >
-              <Skeleton w="40%" h={22} r={4} />
-              <div className="is-36ca0af"><Skeleton w="80%" h={12} /></div>
+              <ShimmerBlock w="40%" h={22} r={4} />
+              <div className="is-36ca0af"><ShimmerBlock w="80%" h={12} /></div>
             </div>
           ))
         ) : (
@@ -198,10 +176,10 @@ export default function RegistrationsPage() {
         {loading ? (
           [0, 1].map((i) => (
             <div key={i} className="card is-ebaaa90" >
-              <Skeleton w={48} h={48} r={24} />
+              <ShimmerBlock w={48} h={48} r={24} />
               <div className="is-20f80e0">
-                <Skeleton w="40%" h={18} />
-                <Skeleton w="60%" h={13} />
+                <ShimmerBlock w="40%" h={18} />
+                <ShimmerBlock w="60%" h={13} />
               </div>
             </div>
           ))
@@ -215,8 +193,8 @@ export default function RegistrationsPage() {
             const group = getGroup(reg.group_id)
             const isExpanded = expandedId === reg.id
             const ini = swimmer ? `${swimmer.first_name[0] ?? ''}${swimmer.last_name[0] ?? ''}`.toUpperCase() : '?'
-            const gradient = GRADIENTS[idx % GRADIENTS.length]
-            const statusCfg = STATUS_CONFIG[reg.status] ?? STATUS_CONFIG['active']
+            const gradient = SWIMMER_AVATAR_COLOR
+            const statusCfg = STATUS_CONFIG[reg.status] ?? STATUS_CONFIG.active
             const waiverSummary = summarizeRegistrationWaiver(reg)
             const documentRows = buildPortalRegistrationDocumentRows({
               registration: reg,
@@ -403,7 +381,7 @@ export default function RegistrationsPage() {
           <div className="card" style={{ overflow: 'hidden' }}>
             {pastRegs.map((reg, i) => {
               const sw = getSwimmer(reg.swimmer_id)
-              const statusCfg = STATUS_CONFIG[reg.status] ?? STATUS_CONFIG['expired']
+              const statusCfg = STATUS_CONFIG[reg.status] ?? STATUS_CONFIG.expired
               return (
                 <div
                   key={reg.id}

@@ -26,7 +26,7 @@ function ZoneTag({ zone, variant }: { zone?: string; variant: Variant }) {
   )
 }
 
-function SetRow({ set, variant, depth, inheritedZone }: { set: WorkoutSet; variant: Variant; depth: number; inheritedZone?: string }) {
+function SetRow({ set, variant, inheritedZone }: { set: WorkoutSet; variant: Variant; inheritedZone?: string }) {
   const sz = SIZES[variant]
   const zone = set.zone || inheritedZone
   const details = setDetails(set)
@@ -54,7 +54,7 @@ function SetRow({ set, variant, depth, inheritedZone }: { set: WorkoutSet; varia
         {isRound && (
           <ul className="u-p-0" style={{ margin: `${sz.gap}px 0 0`, display: 'flex', flexDirection: 'column', gap: sz.gap }}>
             {set.sets!.map((child, i) => (
-              <SetRow key={i} set={child} variant={variant} depth={depth + 1} inheritedZone={zone} />
+              <SetRow key={i} set={child} variant={variant} inheritedZone={zone} />
             ))}
           </ul>
         )}
@@ -108,7 +108,7 @@ export function WorkoutSheet({ workout, variant = 'compact' }: { workout: Pick<W
             </div>
             {section.notes && <p style={{ fontSize: sz.detail, color: 'var(--text-subtle)', margin: `0 0 ${sz.gap}px` }}>{section.notes}</p>}
             <ul className="u-m-0 u-p-0" style={{ display: 'flex', flexDirection: 'column', gap: sz.gap }}>
-              {section.sets.map((set, j) => <SetRow key={j} set={set} variant={variant} depth={0} />)}
+              {section.sets.map((set, j) => <SetRow key={j} set={set} variant={variant} />)}
             </ul>
           </section>
         )

@@ -1,12 +1,16 @@
 package comms
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/dareaquatics/aquify/server/internal/runtimepersist"
+)
 
 type runtimeSnapshot struct {
-	Announcements map[string]*Announcement      `json:"announcements"`
-	Campaigns     map[string]*EmailCampaign     `json:"campaigns"`
-	Deliveries    map[string]*EmailDelivery     `json:"deliveries"`
-	Suppression   map[string]*SuppressionEntry  `json:"suppression"`
+	Announcements map[string]*Announcement           `json:"announcements"`
+	Campaigns     map[string]*EmailCampaign          `json:"campaigns"`
+	Deliveries    map[string]*EmailDelivery          `json:"deliveries"`
+	Suppression   map[string]*SuppressionEntry       `json:"suppression"`
 	Preferences   map[string]*NotificationPreference `json:"preferences"`
 }
 
@@ -15,11 +19,11 @@ func (s *Service) ExportRuntimeSnapshot() ([]byte, error) {
 	defer s.mu.RUnlock()
 
 	snapshot := runtimeSnapshot{
-		Announcements: cloneAnnouncements(s.announcements),
-		Campaigns:     cloneCampaigns(s.campaigns),
-		Deliveries:    cloneDeliveries(s.deliveries),
-		Suppression:   cloneSuppressionEntries(s.suppression),
-		Preferences:   cloneNotificationPreferences(s.preferences),
+		Announcements: runtimepersist.ClonePtrMap(s.announcements),
+		Campaigns:     runtimepersist.ClonePtrMap(s.campaigns),
+		Deliveries:    runtimepersist.ClonePtrMap(s.deliveries),
+		Suppression:   runtimepersist.ClonePtrMap(s.suppression),
+		Preferences:   runtimepersist.ClonePtrMap(s.preferences),
 	}
 	return json.Marshal(snapshot)
 }
@@ -36,75 +40,10 @@ func (s *Service) LoadRuntimeSnapshot(data []byte) error {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.announcements = cloneAnnouncements(snapshot.Announcements)
-	s.campaigns = cloneCampaigns(snapshot.Campaigns)
-	s.deliveries = cloneDeliveries(snapshot.Deliveries)
-	s.suppression = cloneSuppressionEntries(snapshot.Suppression)
-	s.preferences = cloneNotificationPreferences(snapshot.Preferences)
+	s.announcements = runtimepersist.ClonePtrMap(snapshot.Announcements)
+	s.campaigns = runtimepersist.ClonePtrMap(snapshot.Campaigns)
+	s.deliveries = runtimepersist.ClonePtrMap(snapshot.Deliveries)
+	s.suppression = runtimepersist.ClonePtrMap(snapshot.Suppression)
+	s.preferences = runtimepersist.ClonePtrMap(snapshot.Preferences)
 	return nil
-}
-
-func cloneAnnouncements(in map[string]*Announcement) map[string]*Announcement {
-	out := make(map[string]*Announcement, len(in))
-	for k, v := range in {
-		if v == nil {
-			out[k] = nil
-			continue
-		}
-		cp := *v
-		out[k] = &cp
-	}
-	return out
-}
-
-func cloneCampaigns(in map[string]*EmailCampaign) map[string]*EmailCampaign {
-	out := make(map[string]*EmailCampaign, len(in))
-	for k, v := range in {
-		if v == nil {
-			out[k] = nil
-			continue
-		}
-		cp := *v
-		out[k] = &cp
-	}
-	return out
-}
-
-func cloneDeliveries(in map[string]*EmailDelivery) map[string]*EmailDelivery {
-	out := make(map[string]*EmailDelivery, len(in))
-	for k, v := range in {
-		if v == nil {
-			out[k] = nil
-			continue
-		}
-		cp := *v
-		out[k] = &cp
-	}
-	return out
-}
-
-func cloneSuppressionEntries(in map[string]*SuppressionEntry) map[string]*SuppressionEntry {
-	out := make(map[string]*SuppressionEntry, len(in))
-	for k, v := range in {
-		if v == nil {
-			out[k] = nil
-			continue
-		}
-		cp := *v
-		out[k] = &cp
-	}
-	return out
-}
-
-func cloneNotificationPreferences(in map[string]*NotificationPreference) map[string]*NotificationPreference {
-	out := make(map[string]*NotificationPreference, len(in))
-	for k, v := range in {
-		if v == nil {
-			out[k] = nil
-			continue
-		}
-		cp := *v
-		out[k] = &cp
-	}
-	return out
 }

@@ -3,38 +3,11 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useSession } from '@/lib/session'
-import { parseBackendDate } from '@/lib/dates'
+import { parseBackendDate, localToday } from '@/lib/dates'
 import { useApiClient } from '@/lib/api'
 import { Icon } from '@/components/ui/icons'
-import {
-  fetchHouseholds,
-  fetchSwimmers,
-  fetchMeets,
-  fetchInvoices,
-  fetchGroups,
-  fetchAuditEvents,
-  fetchPerformanceBestTimes,
-  fetchUsers,
-  fetchSeasons,
-  fetchPractices,
-  fetchMeetEntries,
-  fetchMeetCommitments,
-  type PracticeRecord,
-  type HouseholdRecord,
-  type SwimmerRecord,
-  type MeetRecord,
-  type InvoiceRecord,
-  type GroupRecord,
-  type AuditEventRecord,
-  type BestTimeRecord,
-  type UserRecord,
-  type SeasonRecord,
-} from '@/lib/adminData'
-
-function displayNameForUser(user: UserRecord): string {
-  const name = `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim()
-  return name || user.email || user.id
-}
+import { displayNameForUser, fetchAuditEvents, fetchGroups, fetchHouseholds, fetchInvoices, fetchMeetCommitments, fetchMeetEntries, fetchMeets, fetchPerformanceBestTimes, fetchPractices, fetchSeasons, fetchSwimmers, fetchUsers, type AuditEventRecord, type BestTimeRecord, type GroupRecord, type HouseholdRecord, type InvoiceRecord, type MeetRecord, type PracticeRecord, type SeasonRecord, type SwimmerRecord, type UserRecord } from '@/lib/adminData'
+import './page.inline.css'
 
 // A dev-stub/system principal ID renders as all zeros (e.g.
 // "00000000-0000-0000-0000-000000000000") — treat it as an unattributed
@@ -232,7 +205,8 @@ export default function DashboardPage() {
   const [reloadKey, setReloadKey] = useState(0)
   // Invoices, the audit log, and the user directory are admin-only APIs; coaches
   // must not see placeholder billing totals or an empty "recent activity" feed.
-  const isAdmin = (session?.user.roles ?? (session?.user.role ? [session.user.role] : [])).includes('admin')
+  const roles = session?.user.roles ?? (session?.user.role ? [session.user.role] : [])
+  const isAdmin = roles.includes('admin')
 
   useEffect(() => {
     let cancelled = false
@@ -242,7 +216,7 @@ export default function DashboardPage() {
         setLoading(true)
         setLoadFailed(false)
         let failures = 0
-        const [sw, hh, mm, inv, gr, audit, bt, users, sn] = await Promise.all([
+        const [sw, hh, mm, inv, gr, audit, bt, users, sn, pr] = await Promise.all([
           fetchSwimmers(api, session.user.orgId).catch(() => { failures++; return [] as SwimmerRecord[] }),
           fetchHouseholds(api, session.user.orgId).catch(() => { failures++; return [] as HouseholdRecord[] }),
           fetchMeets(api, session.user.orgId).catch(() => { failures++; return [] as MeetRecord[] }),
@@ -252,9 +226,9 @@ export default function DashboardPage() {
           fetchPerformanceBestTimes(api, session.user.orgId).catch(() => [] as BestTimeRecord[]),
           isAdmin ? fetchUsers(api, session.user.orgId, { limit: 200 }).catch(() => ({ users: [] as UserRecord[] })) : Promise.resolve({ users: [] as UserRecord[] }),
           fetchSeasons(api, session.user.orgId).catch(() => [] as SeasonRecord[]),
+          fetchPractices(api, session.user.orgId).catch(() => [] as PracticeRecord[]),
         ])
         const orgId = session.user.orgId
-        const pr = await fetchPractices(api, orgId).catch(() => [] as PracticeRecord[])
         const live = mm.filter((m) => UPCOMING_STATUSES.has(m.status)).slice(0, 6)
         const entryLists = await Promise.all(live.map((m) => fetchMeetEntries(api, orgId, m.id).catch(() => [])))
         const openMeets = live.filter((m) => m.status === 'commitment_open')
@@ -333,7 +307,7 @@ export default function DashboardPage() {
   const activeSeason = seasons.find((s) => s.status === 'active') ?? null
   const seasonLabel = activeSeason ? activeSeason.name : 'No active season'
 
-  const todayIso = new Date().toISOString().slice(0, 10)
+  const todayIso = localToday()
   const upcomingPractice = practices
     .filter((pr) => pr.date >= todayIso && pr.type !== 'rest')
     .sort((x, y) => x.date.localeCompare(y.date))[0]
@@ -371,8 +345,7 @@ export default function DashboardPage() {
 
   return (
     <div className="page" style={{ animation: 'slideUp 0.35s var(--ease-out) both' }}>
-      <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }`}</style>
-
+      
       <div className="page-heading">
         <h1 className="page-title">Today</h1>
         <p className="page-subtitle">{loading ? '\u00a0' : seasonLabel}</p>
@@ -455,9 +428,7 @@ export default function DashboardPage() {
                 <Link
                   key={meet.id}
                   href={`/meets/${meet.id}`}
-                  className="u-p-12px-16px" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderRadius: '8px', background: 'var(--bg-surface)', border: '1px solid var(--border)', textDecoration: 'none', transition: 'border-color 0.15s' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent)' }}
-                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)' }}
+                  className="u-p-12px-16px hv-64a866" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderRadius: '8px', background: 'var(--bg-surface)', border: '1px solid var(--border)', textDecoration: 'none', transition: 'border-color 0.15s' }}
                 >
                   <div>
                     <p className="u-fs-fs-base u-fw-600 u-mb-2px" style={{ color: 'var(--text)' }}>{meet.name}</p>
@@ -484,10 +455,7 @@ export default function DashboardPage() {
               { label: 'New household', href: '/members?tab=households', icon: '＋', roles: ['admin'] },
               { label: 'New invoice', href: '/billing?tab=invoices', icon: '＋', roles: ['admin'] },
             ]
-              .filter((action) => {
-                const roles = session?.user.roles ?? (session?.user.role ? [session.user.role] : [])
-                return roles.some((role) => action.roles.includes(role))
-              })
+              .filter((action) => roles.some((role) => action.roles.includes(role)))
               .map((action) => (
               <Link
                 key={action.href}

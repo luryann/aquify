@@ -19,8 +19,11 @@ import {
   type SwimmerGroupLinkRecord,
   type GroupRecord,
 } from '@/lib/adminData'
-import { parseBackendDate } from '@/lib/dates'
+import { formatDateOnly, parseBackendDate } from '@/lib/dates'
 import './page.inline.css'
+import { LoadErrorBanner } from '@/components/ui/LoadErrorBanner'
+import { ShimmerBlock } from '@/components/ui/ShimmerBlock'
+import { SWIMMER_AVATAR_COLOR } from '@/lib/avatar-colors'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 function fmtPhone(e164?: string): string {
@@ -37,11 +40,6 @@ function fmtMonthYear(iso?: string): string {
   return parseBackendDate(iso).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
 }
 
-function fmtDOB(iso?: string): string {
-  if (!iso) return '—'
-  return parseBackendDate(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
 function calcAge(dob: string): number {
   const d = parseBackendDate(dob)
   const now = new Date()
@@ -55,14 +53,6 @@ function initials(first: string, last: string): string {
   return `${first[0] ?? ''}${last[0] ?? ''}`.toUpperCase()
 }
 
-const GRADIENTS = [
-  'var(--accent-text)',
-  'var(--accent-text)',
-  'var(--accent-text)',
-  'var(--accent-text)',
-  'var(--accent-text)',
-]
-
 const REG_STATUS_CONFIG = {
   active:   { label: 'Registered', color: 'var(--success)', bg: 'var(--success-bg)', border: 'var(--success-bg)' },
   pending:  { label: 'Pending',    color: 'var(--warning)', bg: 'var(--warning-bg)', border: 'var(--warning-border)' },
@@ -72,21 +62,6 @@ const REG_STATUS_CONFIG = {
 type Tab = 'overview' | 'contacts' | 'swimmers'
 
 // ── Skeleton ─────────────────────────────────────────────────────────────────
-function Skeleton({ w = '100%', h = 16, r = 8 }: { w?: string | number; h?: number; r?: number }) {
-  return (
-    <div
-      style={{
-        width: w,
-        height: h,
-        borderRadius: r,
-        background: 'linear-gradient(90deg, var(--bg-elevated) 25%, var(--border-strong) 50%, var(--bg-elevated) 75%)',
-        backgroundSize: '200% 100%',
-        animation: 'shimmer 1.5s infinite',
-      }}
-    />
-  )
-}
-
 // ── Components ─────────────────────────────────────────────────────────────
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
@@ -184,16 +159,13 @@ function ContactCard({ contact }: { contact: ContactRecord }) {
 
 function SwimmerProfileCard({
   swimmer,
-  idx,
   groupName,
 }: {
   swimmer: SwimmerRecord
-  idx: number
   groupName: string
 }) {
   const regKey = swimmer.registration_status === 'active' ? 'active' : swimmer.registration_status === 'pending' ? 'pending' : 'default'
   const regCfg = REG_STATUS_CONFIG[regKey]
-  const gradient = GRADIENTS[idx % GRADIENTS.length]
   const ini = initials(swimmer.first_name, swimmer.last_name)
   const age = calcAge(swimmer.date_of_birth)
 
@@ -209,7 +181,7 @@ function SwimmerProfileCard({
             width: '52px',
             height: '52px',
             borderRadius: '50%',
-            background: gradient,
+            background: SWIMMER_AVATAR_COLOR,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -247,7 +219,7 @@ function SwimmerProfileCard({
       </div>
 
       <dl className="is-8e2cdea">
-        <InfoRow label="Date of birth" value={fmtDOB(swimmer.date_of_birth)} />
+        <InfoRow label="Date of birth" value={formatDateOnly(swimmer.date_of_birth)} />
         <InfoRow label="External ID"    value={swimmer.swimmer_external_id ?? '—'} />
       </dl>
 
@@ -256,24 +228,14 @@ function SwimmerProfileCard({
       >
         <Link
           href={`/portal/household/swimmers/${swimmer.id}`}
-          className="is-f312e03"
-          onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-wash-strong)')}
-          onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--bg-wash-strong)')}
+          className="is-f312e03 hv-dbb904"
         >
           <Icon name="user" size={13} />
           View Profile
         </Link>
         <Link
           href="/portal/meets"
-          className="is-b60a01e"
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = 'var(--bg-wash)'
-            e.currentTarget.style.color = 'var(--text)'
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'transparent'
-            e.currentTarget.style.color = 'var(--text-subtle)'
-          }}
+          className="is-b60a01e hv-0ddfb6"
         >
           <Icon name="calendar" size={13} />
           Meets
@@ -358,11 +320,7 @@ export default function HouseholdProfilePage() {
 
   return (
     <div style={{ animation: 'slideUp 0.35s var(--ease-out) both' }}>
-      <style>{`
-        @keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
-      `}</style>
-
+      
       {/* Page header */}
       <div className="is-aa82eef">
         <div
@@ -374,8 +332,8 @@ export default function HouseholdProfilePage() {
         <div style={{ flex: '1 1 200px', minWidth: 0 }}>
           {loading ? (
             <div className="is-930d87f">
-              <Skeleton w="200px" h={28} />
-              <Skeleton w="120px" h={18} />
+              <ShimmerBlock w="200px" h={28} />
+              <ShimmerBlock w="120px" h={18} />
             </div>
           ) : (
             <>
@@ -407,21 +365,7 @@ export default function HouseholdProfilePage() {
       </div>
 
       {loadError && (
-        <div
-          className="is-d01e931"
-        >
-          <div className="is-730b6a7">
-            <Icon name="alert-circle" size={15} style={{ color: 'var(--warning)', marginTop: '1px', flexShrink: 0 }} />
-            <p className="is-51a00ce">{loadError}</p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setReloadKey((key) => key + 1)}
-            className="is-889d44c"
-          >
-            Retry
-          </button>
-        </div>
+        <LoadErrorBanner message={loadError} onRetry={() => setReloadKey((key) => key + 1)} />
       )}
 
       {/* Tabs */}
@@ -488,8 +432,8 @@ export default function HouseholdProfilePage() {
             </h3>
             {loading ? (
               <div className="is-930d87f">
-                <Skeleton h={14} />
-                <Skeleton h={14} />
+                <ShimmerBlock h={14} />
+                <ShimmerBlock h={14} />
               </div>
             ) : (
               <dl>
@@ -509,8 +453,8 @@ export default function HouseholdProfilePage() {
             </h3>
             {loading ? (
               <div className="is-930d87f">
-                <Skeleton h={14} />
-                <Skeleton h={14} />
+                <ShimmerBlock h={14} />
+                <ShimmerBlock h={14} />
               </div>
             ) : (
               <div className="is-529a823">
@@ -549,10 +493,10 @@ export default function HouseholdProfilePage() {
           {loading ? (
             [0, 1, 2].map((i) => (
               <div key={i} className="card is-cb387ac" >
-                <Skeleton w={44} h={44} r={22} />
+                <ShimmerBlock w={44} h={44} r={22} />
                 <div className="is-20f80e0">
-                  <Skeleton w="60%" h={15} />
-                  <Skeleton w="40%" h={12} />
+                  <ShimmerBlock w="60%" h={15} />
+                  <ShimmerBlock w="40%" h={12} />
                 </div>
               </div>
             ))
@@ -582,21 +526,20 @@ export default function HouseholdProfilePage() {
           {loading ? (
             [0, 1].map((i) => (
               <div key={i} className="card is-ebaaa90" >
-                <Skeleton w={52} h={52} r={26} />
+                <ShimmerBlock w={52} h={52} r={26} />
                 <div className="is-20f80e0">
-                  <Skeleton w="50%" h={16} />
-                  <Skeleton w="70%" h={12} />
+                  <ShimmerBlock w="50%" h={16} />
+                  <ShimmerBlock w="70%" h={12} />
                 </div>
               </div>
             ))
           ) : loadError ? null : shouldShowCollectionEmptyState(loading, loadError, swimmers.length) ? (
             <div className="is-e37262b">No swimmers found for this household.</div>
           ) : (
-            swimmers.map((swimmer, idx) => (
+            swimmers.map((swimmer) => (
               <SwimmerProfileCard
                 key={swimmer.id}
                 swimmer={swimmer}
-                idx={idx}
                 groupName={getGroupName(swimmer.id)}
               />
             ))

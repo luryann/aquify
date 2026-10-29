@@ -214,7 +214,7 @@ services:
   # ---------------------------------------------------------------------------
 
   keycloak:
-    image: quay.io/keycloak/keycloak:latest
+    image: quay.io/keycloak/keycloak:26.5
     <<: *default-restart
     command: start --optimized
     env_file:

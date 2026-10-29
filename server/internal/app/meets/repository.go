@@ -3,6 +3,7 @@ package meets
 import (
 	"context"
 	"fmt"
+	"github.com/dareaquatics/aquify/server/internal/dbutil"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -17,17 +18,6 @@ type Repository struct {
 
 func newRepository(pool *pgxpool.Pool) *Repository {
 	return &Repository{pool: pool}
-}
-
-func nullableString(s string) interface{} {
-	if s == "" {
-		return nil
-	}
-	return s
-}
-
-func nonNullString(s string) string {
-	return s
 }
 
 type execer interface {
@@ -75,13 +65,13 @@ func upsertMeet(ctx context.Context, db execer, m Meet) error {
 		  updated_at              = EXCLUDED.updated_at,
 		  updated_by              = EXCLUDED.updated_by`,
 		m.ID, m.OrgID, m.Name, m.MeetType, m.Course,
-		nullableString(m.StartDate), nullableString(m.EndDate),
-		nullableString(m.EntryDeadline), nullableString(m.CommitmentDeadline),
+		dbutil.NullableString(m.StartDate), dbutil.NullableString(m.EndDate),
+		dbutil.NullableString(m.EntryDeadline), dbutil.NullableString(m.CommitmentDeadline),
 		strings.TrimSpace(m.HostOrg), strings.TrimSpace(m.Location),
 		m.SelfSignupEnabled, m.MaxEntriesPerSwimmer,
 		m.Status, m.CommitmentOpenAt, m.CommitmentClosedAt, m.EntryFinalizedAt,
 		m.CreatedAt, m.UpdatedAt,
-		nullableString(m.CreatedBy), nullableString(m.UpdatedBy),
+		dbutil.NullableString(m.CreatedBy), dbutil.NullableString(m.UpdatedBy),
 	)
 	return err
 }
@@ -100,11 +90,9 @@ func (r *Repository) LoadMeets(ctx context.Context) ([]Meet, error) {
 	if err != nil {
 		return nil, fmt.Errorf("meets: load meets: %w", err)
 	}
-	defer rows.Close()
-	var out []Meet
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "meets: scan meet", func(rows pgx.Rows) (Meet, error) {
 		var m Meet
-		if err := rows.Scan(
+		err := rows.Scan(
 			&m.ID, &m.OrgID, &m.Name, &m.MeetType, &m.Course,
 			&m.StartDate, &m.EndDate,
 			&m.EntryDeadline, &m.CommitmentDeadline,
@@ -113,12 +101,9 @@ func (r *Repository) LoadMeets(ctx context.Context) ([]Meet, error) {
 			&m.Status, &m.CommitmentOpenAt, &m.CommitmentClosedAt, &m.EntryFinalizedAt,
 			&m.CreatedAt, &m.UpdatedAt,
 			&m.CreatedBy, &m.UpdatedBy,
-		); err != nil {
-			return nil, fmt.Errorf("meets: scan meet: %w", err)
-		}
-		out = append(out, m)
-	}
-	return out, rows.Err()
+		)
+		return m, err
+	})
 }
 
 // ─── Meet Sessions ────────────────────────────────────────────────────────────
@@ -147,9 +132,9 @@ func upsertMeetSession(ctx context.Context, db execer, s MeetSession) error {
 		  updated_at     = EXCLUDED.updated_at,
 		  updated_by     = EXCLUDED.updated_by`,
 		s.ID, s.OrgID, s.MeetID, s.SessionNumber, s.Name,
-		nullableString(s.SessionDate), nullableString(s.WarmupTime), nullableString(s.StartTime), s.Notes,
+		dbutil.NullableString(s.SessionDate), dbutil.NullableString(s.WarmupTime), dbutil.NullableString(s.StartTime), s.Notes,
 		s.CreatedAt, s.UpdatedAt,
-		nullableString(s.CreatedBy), nullableString(s.UpdatedBy),
+		dbutil.NullableString(s.CreatedBy), dbutil.NullableString(s.UpdatedBy),
 	)
 	return err
 }
@@ -165,21 +150,16 @@ func (r *Repository) LoadMeetSessions(ctx context.Context) ([]MeetSession, error
 	if err != nil {
 		return nil, fmt.Errorf("meets: load meet_sessions: %w", err)
 	}
-	defer rows.Close()
-	var out []MeetSession
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "meets: scan meet_session", func(rows pgx.Rows) (MeetSession, error) {
 		var s MeetSession
-		if err := rows.Scan(
+		err := rows.Scan(
 			&s.ID, &s.OrgID, &s.MeetID, &s.SessionNumber,
 			&s.Name, &s.SessionDate, &s.WarmupTime, &s.StartTime,
 			&s.Notes, &s.CreatedAt, &s.UpdatedAt,
 			&s.CreatedBy, &s.UpdatedBy,
-		); err != nil {
-			return nil, fmt.Errorf("meets: scan meet_session: %w", err)
-		}
-		out = append(out, s)
-	}
-	return out, rows.Err()
+		)
+		return s, err
+	})
 }
 
 // ─── Meet Events ──────────────────────────────────────────────────────────────
@@ -213,11 +193,11 @@ func upsertMeetEvent(ctx context.Context, db execer, e MeetEvent) error {
 		  is_relay         = EXCLUDED.is_relay,
 		  updated_at       = EXCLUDED.updated_at,
 		  updated_by       = EXCLUDED.updated_by`,
-		e.ID, e.OrgID, e.MeetID, nullableString(e.SessionID),
+		e.ID, e.OrgID, e.MeetID, dbutil.NullableString(e.SessionID),
 		e.EventNumber, e.Stroke, e.Distance, e.Course, e.Gender,
 		e.MinAge, e.MaxAge, e.EntryFeeCents, e.IsRelay,
 		e.CreatedAt, e.UpdatedAt,
-		nullableString(e.CreatedBy), nullableString(e.UpdatedBy),
+		dbutil.NullableString(e.CreatedBy), dbutil.NullableString(e.UpdatedBy),
 	)
 	return err
 }
@@ -234,21 +214,16 @@ func (r *Repository) LoadMeetEvents(ctx context.Context) ([]MeetEvent, error) {
 	if err != nil {
 		return nil, fmt.Errorf("meets: load meet_events: %w", err)
 	}
-	defer rows.Close()
-	var out []MeetEvent
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "meets: scan meet_event", func(rows pgx.Rows) (MeetEvent, error) {
 		var e MeetEvent
-		if err := rows.Scan(
+		err := rows.Scan(
 			&e.ID, &e.OrgID, &e.MeetID, &e.SessionID,
 			&e.EventNumber, &e.Distance, &e.Stroke, &e.Gender, &e.Course,
 			&e.MinAge, &e.MaxAge, &e.EntryFeeCents, &e.IsRelay,
 			&e.CreatedAt, &e.UpdatedAt, &e.CreatedBy, &e.UpdatedBy,
-		); err != nil {
-			return nil, fmt.Errorf("meets: scan meet_event: %w", err)
-		}
-		out = append(out, e)
-	}
-	return out, rows.Err()
+		)
+		return e, err
+	})
 }
 
 func (r *Repository) CreateMeetBundle(ctx context.Context, meet Meet, sessions []MeetSession, events []MeetEvent) error {
@@ -291,7 +266,7 @@ func (r *Repository) UpsertCommitment(ctx context.Context, c Commitment) error {
 		  committed_at = EXCLUDED.committed_at,
 		  updated_at   = EXCLUDED.updated_at`,
 		c.ID, c.OrgID, c.MeetID, c.HouseholdID, c.SwimmerID,
-		c.Status, nonNullString(c.Notes), c.CommittedAt,
+		c.Status, c.Notes, c.CommittedAt,
 		c.CreatedAt, c.UpdatedAt,
 	)
 	return err
@@ -306,20 +281,15 @@ func (r *Repository) LoadCommitments(ctx context.Context) ([]Commitment, error) 
 	if err != nil {
 		return nil, fmt.Errorf("meets: load commitments: %w", err)
 	}
-	defer rows.Close()
-	var out []Commitment
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "meets: scan commitment", func(rows pgx.Rows) (Commitment, error) {
 		var c Commitment
-		if err := rows.Scan(
+		err := rows.Scan(
 			&c.ID, &c.OrgID, &c.MeetID, &c.HouseholdID, &c.SwimmerID,
 			&c.Status, &c.Notes, &c.CommittedAt,
 			&c.CreatedAt, &c.UpdatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("meets: scan commitment: %w", err)
-		}
-		out = append(out, c)
-	}
-	return out, rows.Err()
+		)
+		return c, err
+	})
 }
 
 // ─── Event selections ─────────────────────────────────────────────────────────
@@ -334,7 +304,7 @@ func (r *Repository) UpsertEventSelection(ctx context.Context, sel EventSelectio
 		VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7::uuid)
 		ON CONFLICT (id) DO UPDATE SET
 		  seed_time_ms = EXCLUDED.seed_time_ms`,
-		sel.ID, sel.OrgID, sel.CommitmentID, sel.MeetEventID, seedTime, sel.CreatedAt, nullableString(sel.CreatedBy),
+		sel.ID, sel.OrgID, sel.CommitmentID, sel.MeetEventID, seedTime, sel.CreatedAt, dbutil.NullableString(sel.CreatedBy),
 	)
 	return err
 }
@@ -351,18 +321,15 @@ func (r *Repository) LoadEventSelections(ctx context.Context) ([]EventSelection,
 	if err != nil {
 		return nil, fmt.Errorf("meets: load event selections: %w", err)
 	}
-	defer rows.Close()
-	var out []EventSelection
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "meets: scan event selection", func(rows pgx.Rows) (EventSelection, error) {
 		var sel EventSelection
 		var seedTime *int
 		if err := rows.Scan(&sel.ID, &sel.OrgID, &sel.CommitmentID, &sel.MeetEventID, &seedTime, &sel.CreatedAt, &sel.CreatedBy); err != nil {
-			return nil, fmt.Errorf("meets: scan event selection: %w", err)
+			return sel, err
 		}
 		sel.SeedTimeMs = seedTime
-		out = append(out, sel)
-	}
-	return out, rows.Err()
+		return sel, nil
+	})
 }
 
 // ─── Entries ──────────────────────────────────────────────────────────────────
@@ -387,7 +354,7 @@ func upsertEntry(ctx context.Context, db execer, e Entry) error {
 		  updated_at    = EXCLUDED.updated_at`,
 		e.ID, e.OrgID, e.MeetID, e.SwimmerID, e.MeetEventID,
 		e.Status, seedTime, nil,
-		nonNullString(e.OverrideReason),
+		e.OverrideReason,
 		e.CreatedAt, e.UpdatedAt,
 	)
 	return err
@@ -402,9 +369,7 @@ func (r *Repository) LoadEntries(ctx context.Context) ([]Entry, error) {
 	if err != nil {
 		return nil, fmt.Errorf("meets: load entries: %w", err)
 	}
-	defer rows.Close()
-	var out []Entry
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "meets: scan entry", func(rows pgx.Rows) (Entry, error) {
 		var e Entry
 		var seedMs *int
 		if err := rows.Scan(
@@ -412,12 +377,11 @@ func (r *Repository) LoadEntries(ctx context.Context) ([]Entry, error) {
 			&e.Status, &seedMs, &e.OverrideReason,
 			&e.CreatedAt, &e.UpdatedAt,
 		); err != nil {
-			return nil, fmt.Errorf("meets: scan entry: %w", err)
+			return e, err
 		}
 		e.SeedTimeMs = seedMs
-		out = append(out, e)
-	}
-	return out, rows.Err()
+		return e, nil
+	})
 }
 
 // ─── Batch load ───────────────────────────────────────────────────────────────
@@ -466,17 +430,11 @@ func (r *Repository) LoadSwimmerRefs(ctx context.Context) ([]swimmerRef, error) 
 	if err != nil {
 		return nil, fmt.Errorf("meets: load swimmer refs: %w", err)
 	}
-	defer rows.Close()
-
-	var out []swimmerRef
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "meets: scan swimmer ref", func(rows pgx.Rows) (swimmerRef, error) {
 		var swimmer swimmerRef
-		if err := rows.Scan(&swimmer.ID, &swimmer.OrgID, &swimmer.HouseholdID); err != nil {
-			return nil, fmt.Errorf("meets: scan swimmer ref: %w", err)
-		}
-		out = append(out, swimmer)
-	}
-	return out, rows.Err()
+		err := rows.Scan(&swimmer.ID, &swimmer.OrgID, &swimmer.HouseholdID)
+		return swimmer, err
+	})
 }
 
 func (r *Repository) LoadHouseholdRefs(ctx context.Context) ([]householdRef, error) {
@@ -487,15 +445,9 @@ func (r *Repository) LoadHouseholdRefs(ctx context.Context) ([]householdRef, err
 	if err != nil {
 		return nil, fmt.Errorf("meets: load household refs: %w", err)
 	}
-	defer rows.Close()
-
-	var out []householdRef
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "meets: scan household ref", func(rows pgx.Rows) (householdRef, error) {
 		var household householdRef
-		if err := rows.Scan(&household.ID, &household.OrgID); err != nil {
-			return nil, fmt.Errorf("meets: scan household ref: %w", err)
-		}
-		out = append(out, household)
-	}
-	return out, rows.Err()
+		err := rows.Scan(&household.ID, &household.OrgID)
+		return household, err
+	})
 }

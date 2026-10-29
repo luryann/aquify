@@ -22,11 +22,7 @@ func TestSDKClientUsesOwnKeyAndCallerContext(t *testing.T) {
 	for _, key := range []string{"sk_test_first", "sk_test_second"} {
 		t.Run(key, func(t *testing.T) {
 			t.Parallel()
-			c, err := NewSDKClient(key)
-			if err != nil {
-				t.Fatal(err)
-			}
-			c.backend = stripeapi.GetBackendWithConfig(stripeapi.APIBackend, &stripeapi.BackendConfig{
+			c := newSDKClientWithBackend(key, stripeapi.GetBackendWithConfig(stripeapi.APIBackend, &stripeapi.BackendConfig{
 				MaxNetworkRetries: stripeapi.Int64(0),
 				HTTPClient: &http.Client{Transport: sdkTransport(func(r *http.Request) (*http.Response, error) {
 					if r.Header.Get("Authorization") != "Bearer "+key {
@@ -44,7 +40,7 @@ func TestSDKClientUsesOwnKeyAndCallerContext(t *testing.T) {
 					}
 					return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
 				})},
-			})
+			}))
 			calls := []func(context.Context) error{
 				c.Ready,
 				func(ctx context.Context) error {

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"github.com/google/uuid"
 	"strings"
 	"time"
 )
@@ -46,7 +47,7 @@ func (s *Service) RotateFeedToken(orgID, householdID, actorID string) (string, *
 	}
 	now := s.now()
 	tok := &FeedToken{
-		ID:          newID(),
+		ID:          uuid.NewString(),
 		OrgID:       orgID,
 		HouseholdID: householdID,
 		TokenHash:   HashFeedToken(secret),

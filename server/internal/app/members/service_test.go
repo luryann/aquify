@@ -296,3 +296,58 @@ func TestListSwimmersRedactsMedicalFlagsForSwimmerRole(t *testing.T) {
 	}
 }
 
+func TestAnonymizeHouseholdScrubsEmergencyContactAndAllergies(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService()
+	admin := testutil.AdminPrincipal()
+	household, err := svc.CreateHousehold(admin, CreateHouseholdInput{OrgID: testutil.DefaultOrgID, HouseholdName: "Lane Family", PrimaryEmail: "lane@example.com"})
+	if err != nil {
+		t.Fatalf("CreateHousehold: %v", err)
+	}
+	swimmer, _, err := svc.CreateSwimmer(admin, testutil.DefaultOrgID, CreateSwimmerInput{
+		HouseholdID: household.ID, FirstName: "Mia", LastName: "Lane", DateOfBirth: "2012-04-15", Gender: "female",
+	})
+	if err != nil {
+		t.Fatalf("CreateSwimmer: %v", err)
+	}
+	name, phone, rel, allergies := "Pat Lane", "+15555550100", "aunt", "peanuts"
+	if _, _, err := svc.UpdateSwimmer(admin, testutil.DefaultOrgID, swimmer.ID, UpdateSwimmerInput{
+		EmergencyContactName: &name, EmergencyContactPhone: &phone, EmergencyContactRelationship: &rel, Allergies: &allergies,
+	}); err != nil {
+		t.Fatalf("UpdateSwimmer: %v", err)
+	}
+
+	if err := svc.AnonymizeHousehold(testutil.DefaultOrgID, household.ID); err != nil {
+		t.Fatalf("AnonymizeHousehold: %v", err)
+	}
+
+	got, err := svc.GetSwimmer(admin, testutil.DefaultOrgID, swimmer.ID, true)
+	if err != nil {
+		t.Fatalf("GetSwimmer: %v", err)
+	}
+	if got.FirstName != "Deleted" || got.EmergencyContactName != "" || got.EmergencyContactPhone != "" ||
+		got.EmergencyContactRelationship != "" || got.Allergies != "" {
+		t.Fatalf("expected identifying fields scrubbed, got %+v", got.Swimmer)
+	}
+}
+
+func TestUpdateHouseholdParentCannotChangeStatus(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService()
+	parent := testutil.ParentPrincipal("parent-1", "")
+	household, err := svc.CreateHousehold(parent, CreateHouseholdInput{OrgID: testutil.DefaultOrgID, HouseholdName: "Lane Family"})
+	if err != nil {
+		t.Fatalf("CreateHousehold: %v", err)
+	}
+
+	archived := "archived"
+	if _, err := svc.UpdateHousehold(parent, testutil.DefaultOrgID, household.ID, UpdateHouseholdInput{Status: &archived}); err != ErrForbidden {
+		t.Fatalf("parent status change = %v, want ErrForbidden", err)
+	}
+	name := "Lane-Smith Family"
+	if _, err := svc.UpdateHousehold(parent, testutil.DefaultOrgID, household.ID, UpdateHouseholdInput{HouseholdName: &name}); err != nil {
+		t.Fatalf("parent rename should still work: %v", err)
+	}
+}

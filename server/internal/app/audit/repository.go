@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
+	"github.com/dareaquatics/aquify/server/internal/dbutil"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -38,41 +41,82 @@ func (r *repository) Insert(ctx context.Context, ev AuditEvent) error {
 	return nil
 }
 
-func (r *repository) ListAll(ctx context.Context) ([]AuditEvent, error) {
-	rows, err := r.pool.Query(ctx, `
+// Query returns events matching f, newest first, straight from Postgres so
+// every API instance sees the same log and memory does not grow with it.
+// Cursor semantics match the in-memory path: results start after the event
+// whose ID is f.Cursor, and an unknown cursor yields no rows.
+func (r *repository) Query(ctx context.Context, f Filter) ([]AuditEvent, error) {
+	var (
+		where []string
+		args  []any
+	)
+	add := func(cond string, v any) {
+		args = append(args, v)
+		where = append(where, fmt.Sprintf(cond, len(args)))
+	}
+	if f.OrgID != "" {
+		add("org_id = $%d", f.OrgID)
+	}
+	if f.ActorUserID != "" {
+		add("actor_user_id = $%d", f.ActorUserID)
+	}
+	if f.Action != "" {
+		add("lower(action) = lower($%d)", f.Action)
+	}
+	if f.ResourceType != "" {
+		add("lower(resource_type) = lower($%d)", f.ResourceType)
+	}
+	if f.ResourceID != "" {
+		add("resource_id = $%d", f.ResourceID)
+	}
+	if f.From != nil {
+		add("occurred_at >= $%d", *f.From)
+	}
+	if f.To != nil {
+		add("occurred_at <= $%d", *f.To)
+	}
+	if f.Cursor != "" {
+		add("(occurred_at, id) < (SELECT occurred_at, id FROM audit_events WHERE id = $%d)", f.Cursor)
+	}
+	query := `
 		SELECT id, org_id, actor_user_id, actor_roles, action, resource_type,
 		       resource_id, before_state, after_state, metadata, occurred_at
-		FROM audit_events
-		ORDER BY occurred_at DESC`)
-	if err != nil {
-		return nil, fmt.Errorf("audit: list events: %w", err)
+		FROM audit_events`
+	if len(where) > 0 {
+		query += " WHERE " + strings.Join(where, " AND ")
 	}
-	defer rows.Close()
-
-	var out []AuditEvent
-	for rows.Next() {
+	query += " ORDER BY occurred_at DESC, id DESC"
+	if f.Limit > 0 {
+		args = append(args, f.Limit)
+		query += fmt.Sprintf(" LIMIT $%d", len(args))
+	}
+	rows, err := r.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("audit: query events: %w", err)
+	}
+	events, err := dbutil.CollectRowsNonNil(rows, "audit: scan event", func(rows pgx.Rows) (AuditEvent, error) {
 		var ev AuditEvent
 		var metadata []byte
 		if err := rows.Scan(
 			&ev.ID, &ev.OrgID, &ev.ActorUserID, &ev.ActorRoles, &ev.Action, &ev.ResourceType,
 			&ev.ResourceID, &ev.BeforeState, &ev.AfterState, &metadata, &ev.OccurredAt,
 		); err != nil {
-			return nil, fmt.Errorf("audit: scan event: %w", err)
+			return ev, err
 		}
 		if len(metadata) > 0 {
 			if err := json.Unmarshal(metadata, &ev.Metadata); err != nil {
-				return nil, fmt.Errorf("audit: decode metadata: %w", err)
+				return ev, fmt.Errorf("decode metadata: %w", err)
 			}
 		}
 		if ev.Metadata == nil {
 			ev.Metadata = map[string]string{}
 		}
-		out = append(out, ev)
+		return ev, nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("audit: iterate events: %w", err)
-	}
-	return out, nil
+	return events, nil
 }
 
 func nullableRawMessage(raw json.RawMessage) any {

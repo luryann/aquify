@@ -14,7 +14,7 @@ import {
   savePortalCommunicationPreferences,
   type PortalCommunicationPreference,
 } from '@/lib/portal-communications-preferences'
-import { parseBackendDate } from '@/lib/dates'
+import { formatDateOnly } from '@/lib/dates'
 import './page.inline.css'
 
 // ── Category config ─────────────────────────────────────────────────────────
@@ -31,13 +31,6 @@ const CATEGORY_CONFIG: Record<string, { label: string; color: string; bg: string
 type NotifChannel = 'email' | 'push'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
-function fmtDate(dateStr?: string): string {
-  if (!dateStr) return '—'
-  const d = parseBackendDate(dateStr)
-  if (isNaN(d.getTime())) return dateStr
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
 function audienceToCategory(audience: string): string {
   if (audience === 'all') return 'admin'
   if (audience === 'parents') return 'admin'
@@ -288,9 +281,7 @@ export default function CommunicationsPage() {
                     {/* Header */}
                     <button type="button"
                       onClick={() => setExpandedId(expanded ? null : ann.id)}
-                      className="is-b89ef60"
-                      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-wash)')}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                      className="is-b89ef60 comms-ann-header"
                     >
                       <div style={{ flex: 1 }}>
                         <div
@@ -312,7 +303,7 @@ export default function CommunicationsPage() {
                           <span
                             className="is-c9c6d72"
                           >
-                            {fmtDate(ann.published_at)}
+                            {formatDateOnly(ann.published_at)}
                           </span>
                         </div>
                         <p
@@ -448,24 +439,7 @@ export default function CommunicationsPage() {
             <button type="button"
               onClick={savePrefs}
               disabled={prefsLoading || prefsSaving || !portalCommunicationPreferencesChanged(prefs, savedPrefs)}
-              style={{
-                padding: '12px 24px',
-                background: prefsLoading || prefsSaving || !portalCommunicationPreferencesChanged(prefs, savedPrefs) ? 'var(--text-subtle)' : 'var(--text)',
-                color: 'var(--bg-elevated)',
-                border: 'none',
-                borderRadius: '8px',
-                fontSize: 'var(--fs-md)',
-                fontWeight: 600,
-                cursor: prefsLoading || prefsSaving || !portalCommunicationPreferencesChanged(prefs, savedPrefs) ? 'not-allowed' : 'pointer',
-                fontFamily: 'var(--font-body)',
-                transition: 'background 120ms ease',
-              }}
-              onMouseEnter={(e) => {
-                if (!e.currentTarget.disabled) e.currentTarget.style.background = 'var(--accent)'
-              }}
-              onMouseLeave={(e) => {
-                if (!e.currentTarget.disabled) e.currentTarget.style.background = 'var(--text)'
-              }}
+              className="comms-save-btn"
             >
               {prefsLoading ? 'Loading…' : prefsSaving ? 'Saving…' : 'Save Preferences'}
             </button>
@@ -481,16 +455,6 @@ export default function CommunicationsPage() {
         </div>
       )}
 
-      <style>{`
-        @keyframes slideUp {
-          from { opacity: 0; transform: translateY(10px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50%       { opacity: 0.5; }
-        }
-      `}</style>
     </div>
   )
 }

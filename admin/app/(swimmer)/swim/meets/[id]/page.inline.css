@@ -14,7 +14,7 @@
 .is-15297e7.is-15297e7 { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .is-18d4ed1.is-18d4ed1 { display: flex; gap: 12px; flex-wrap: wrap; }
 .is-f9d2ce8.is-f9d2ce8 { margin-top: 12px; font-size: var(--fs-sm); color: var(--error); line-height: 1.6; }
-.is-8b5fc35.is-8b5fc35 { margin-top: 12px; font-size: var(--fs-sm); color: #93c5fd; line-height: 1.6; }
+.is-8b5fc35.is-8b5fc35 { margin-top: 12px; font-size: var(--fs-sm); color: var(--info); line-height: 1.6; }
 .is-e58c8a9.is-e58c8a9 { padding: 20px 20px; }
 .is-645d85e.is-645d85e { margin-bottom: 12px; font-size: var(--fs-sm); color: var(--error); line-height: 1.6; }
 .is-2b01013.is-2b01013 { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }

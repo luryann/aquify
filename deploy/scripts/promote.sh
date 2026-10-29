@@ -82,11 +82,16 @@ rollback() {
   log "Restoring ${ENV_BACKUP} -> ${ENV_FILE}"
   cp "${ENV_BACKUP}" "${ENV_FILE}"
 
+  # Compose interpolates IMAGE_TAG from the shell, not from the env file, so pass
+  # the previous tag explicitly (as rollback.sh does).
+  local prev_tag
+  prev_tag="$(grep '^IMAGE_TAG=' "${ENV_BACKUP}" | cut -d= -f2 || true)"
+
   log "Pulling rolled-back images..."
-  docker compose -f "${COMPOSE_FILE}" pull ${APP_SERVICES}
+  IMAGE_TAG="${prev_tag:-latest}" docker compose -f "${COMPOSE_FILE}" pull ${APP_SERVICES}
 
   log "Restarting services with rolled-back image..."
-  docker compose -f "${COMPOSE_FILE}" up -d --no-deps --remove-orphans ${APP_SERVICES}
+  IMAGE_TAG="${prev_tag:-latest}" docker compose -f "${COMPOSE_FILE}" up -d --no-deps --remove-orphans ${APP_SERVICES}
 
   if wait_for_health; then
     log "Rollback succeeded — platform is healthy on previous image."

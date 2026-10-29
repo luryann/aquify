@@ -34,6 +34,9 @@ var (
 const maxSwimmerBioLength = 400
 
 type Service struct {
+	// syncHook runs after a reload has read Postgres and before it replaces the
+	// in-memory state; tests use it to land a write inside that window.
+	syncHook             func()
 	mu                   sync.RWMutex
 	repo                 *Repository // nil = in-memory only
 	households           map[string]Household
@@ -76,38 +79,32 @@ func NewServiceWithPool(pool *pgxpool.Pool) *Service {
 		return s
 	}
 	s.repo = newRepository(pool)
-	if err := s.loadFromDB(context.Background()); err != nil {
+	if err := s.syncFromDB(context.Background()); err != nil {
 		slog.Error("members: failed to load initial state from DB", "error", err)
 	}
 	return s
 }
 
-// loadFromDB populates the in-memory maps from the database.
-func (s *Service) loadFromDB(ctx context.Context) error {
-	if s.repo == nil {
-		return nil
-	}
-	households, contacts, swimmers, links, err := s.repo.LoadAll(ctx)
-	if err != nil {
-		return err
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.resetDBBackedStateLocked()
-	s.populateDBBackedStateLocked(households, contacts, swimmers, links)
-	return nil
-}
+// SetSyncHookForTest installs a hook run inside syncFromDB between reading
+// Postgres and replacing memory. Set it before the service is used concurrently.
+func (s *Service) SetSyncHookForTest(fn func()) { s.syncHook = fn }
 
+// syncFromDB reloads the in-memory maps from the database (no-op without a repository).
 func (s *Service) syncFromDB(ctx context.Context) error {
 	if s.repo == nil {
 		return nil
 	}
+	// Load under the write lock so a concurrent write cannot be overwritten by an
+	// older snapshot (writers persist and update memory while holding it).
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	households, contacts, swimmers, links, err := s.repo.LoadAll(ctx)
 	if err != nil {
 		return err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	if s.syncHook != nil {
+		s.syncHook()
+	}
 	s.resetDBBackedStateLocked()
 	s.populateDBBackedStateLocked(households, contacts, swimmers, links)
 	return nil
@@ -144,6 +141,8 @@ func (s *Service) newID(prefix string) string {
 	}
 	return prefix + randomToken(12)
 }
+
+var validSwimmerGenders = []string{"female", "male", "non_binary", "undisclosed"}
 
 type Household struct {
 	ID               string    `json:"id"`
@@ -316,7 +315,7 @@ type SwimmerAuditEvent struct {
 }
 
 func (s *Service) CreateHousehold(principal *appmiddleware.Principal, input CreateHouseholdInput) (Household, error) {
-	if !hasAnyRole(principal, "admin", "coach", "parent") {
+	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent") {
 		return Household{}, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -354,7 +353,7 @@ func (s *Service) CreateHousehold(principal *appmiddleware.Principal, input Crea
 	}
 
 	s.households[household.ID] = household
-	if hasAnyRole(principal, "parent") {
+	if appmiddleware.HasAnyRole(principal, "parent") {
 		s.associateParentHouseholdLocked(principal.UserID, household.ID)
 	}
 
@@ -392,7 +391,7 @@ func (s *Service) EnsureSeedHousehold(household Household, parentUserID string) 
 }
 
 func (s *Service) UpdateHousehold(principal *appmiddleware.Principal, orgID, householdID string, input UpdateHouseholdInput) (Household, error) {
-	if !hasAnyRole(principal, "admin", "coach", "parent") {
+	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent") {
 		return Household{}, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -402,8 +401,8 @@ func (s *Service) UpdateHousehold(principal *appmiddleware.Principal, orgID, hou
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	household, ok := s.households[householdID]
-	if !ok || household.OrgID != orgID {
+	household, ok := s.householdLocked(orgID, householdID)
+	if !ok {
 		return Household{}, ErrHouseholdNotFound
 	}
 	if err := s.enforceParentHouseholdAccess(principal, householdID); err != nil {
@@ -420,6 +419,11 @@ func (s *Service) UpdateHousehold(principal *appmiddleware.Principal, orgID, hou
 		household.PrimaryPhoneE164 = strings.TrimSpace(*input.PrimaryPhoneE164)
 	}
 	if input.Status != nil {
+		// Household lifecycle is staff-controlled (a parent could otherwise
+		// reactivate a household an admin archived).
+		if appmiddleware.IsParentOnly(principal) {
+			return Household{}, ErrForbidden
+		}
 		household.Status = strings.TrimSpace(strings.ToLower(*input.Status))
 	}
 	if input.Notes != nil {
@@ -441,7 +445,7 @@ func (s *Service) UpdateHousehold(principal *appmiddleware.Principal, orgID, hou
 }
 
 func (s *Service) DeleteHousehold(principal *appmiddleware.Principal, orgID, householdID string) (Household, error) {
-	if !hasAnyRole(principal, "admin") {
+	if !appmiddleware.HasAnyRole(principal, "admin") {
 		return Household{}, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -451,8 +455,8 @@ func (s *Service) DeleteHousehold(principal *appmiddleware.Principal, orgID, hou
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	household, ok := s.households[strings.TrimSpace(householdID)]
-	if !ok || household.OrgID != orgID {
+	household, ok := s.householdLocked(orgID, strings.TrimSpace(householdID))
+	if !ok {
 		return Household{}, ErrHouseholdNotFound
 	}
 	for _, swimmer := range s.swimmers {
@@ -462,11 +466,11 @@ func (s *Service) DeleteHousehold(principal *appmiddleware.Principal, orgID, hou
 	}
 
 	if s.repo != nil {
-		if err := s.repo.DeleteHousehold(context.Background(), householdID, principal.UserID); err != nil {
+		if err := s.repo.DeleteHousehold(context.Background(), household.ID, principal.UserID); err != nil {
 			return Household{}, fmt.Errorf("delete household: %w", err)
 		}
 	}
-	delete(s.households, householdID)
+	delete(s.households, household.ID)
 	return household, nil
 }
 
@@ -490,8 +494,8 @@ func (s *Service) GetHouseholdErasureContext(orgID, householdID string) (Househo
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	household, ok := s.households[strings.TrimSpace(householdID)]
-	if !ok || household.OrgID != orgID {
+	household, ok := s.householdLocked(orgID, strings.TrimSpace(householdID))
+	if !ok {
 		return HouseholdErasureContext{}, ErrHouseholdNotFound
 	}
 
@@ -536,8 +540,8 @@ func (s *Service) AnonymizeHousehold(orgID, householdID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	household, ok := s.households[strings.TrimSpace(householdID)]
-	if !ok || household.OrgID != orgID {
+	household, ok := s.householdLocked(orgID, strings.TrimSpace(householdID))
+	if !ok {
 		return ErrHouseholdNotFound
 	}
 
@@ -587,6 +591,11 @@ func (s *Service) AnonymizeHousehold(orgID, householdID string) error {
 		swimmer.USASwimmingID = ""
 		swimmer.MedicalFlags = nil
 		swimmer.Notes = ""
+		swimmer.EmergencyContactName = ""
+		swimmer.EmergencyContactPhone = ""
+		swimmer.EmergencyContactRelationship = ""
+		swimmer.Allergies = ""
+		swimmer.KeycloakUserID = ""
 		swimmer.UpdatedAt = now
 		swimmer.UpdatedBy = "compliance_erasure"
 		if s.repo != nil {
@@ -601,7 +610,7 @@ func (s *Service) AnonymizeHousehold(orgID, householdID string) error {
 }
 
 func (s *Service) GetHousehold(principal *appmiddleware.Principal, orgID, householdID string) (Household, error) {
-	if !hasAnyRole(principal, "admin", "coach", "parent") {
+	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent") {
 		return Household{}, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -611,8 +620,8 @@ func (s *Service) GetHousehold(principal *appmiddleware.Principal, orgID, househ
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	household, ok := s.households[strings.TrimSpace(householdID)]
-	if !ok || household.OrgID != orgID {
+	household, ok := s.householdLocked(orgID, strings.TrimSpace(householdID))
+	if !ok {
 		return Household{}, ErrHouseholdNotFound
 	}
 	if err := s.enforceParentHouseholdAccess(principal, household.ID); err != nil {
@@ -625,7 +634,7 @@ func (s *Service) GetHousehold(principal *appmiddleware.Principal, orgID, househ
 // ListHouseholds returns the households visible to the principal.
 // Parent and swimmer roles are strictly limited to their own household scope.
 func (s *Service) ListHouseholds(principal *appmiddleware.Principal, orgID string) ([]Household, error) {
-	if !hasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
+	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
 		return nil, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -636,7 +645,7 @@ func (s *Service) ListHouseholds(principal *appmiddleware.Principal, orgID strin
 	defer s.mu.RUnlock()
 
 	swimmerScopedHouseholdID := ""
-	if hasAnyRole(principal, "swimmer") && !hasAnyRole(principal, "admin", "coach", "parent") {
+	if appmiddleware.IsSwimmerOnly(principal) {
 		swimmerScopedHouseholdID = strings.TrimSpace(principal.HouseholdID)
 		if swimmerScopedHouseholdID == "" {
 			return nil, ErrForbidden
@@ -644,7 +653,7 @@ func (s *Service) ListHouseholds(principal *appmiddleware.Principal, orgID strin
 	}
 
 	allowedHouseholds := map[string]struct{}{}
-	if hasAnyRole(principal, "parent") {
+	if appmiddleware.HasAnyRole(principal, "parent") {
 		allowedHouseholds = s.parentAllowedHouseholdsLocked(principal)
 	}
 
@@ -656,7 +665,7 @@ func (s *Service) ListHouseholds(principal *appmiddleware.Principal, orgID strin
 		if swimmerScopedHouseholdID != "" && household.ID != swimmerScopedHouseholdID {
 			continue
 		}
-		if hasAnyRole(principal, "parent") {
+		if appmiddleware.HasAnyRole(principal, "parent") {
 			if _, ok := allowedHouseholds[household.ID]; !ok {
 				continue
 			}
@@ -674,7 +683,7 @@ func (s *Service) ListHouseholds(principal *appmiddleware.Principal, orgID strin
 }
 
 func (s *Service) AddContact(principal *appmiddleware.Principal, orgID, householdID string, input AddContactInput) (Contact, error) {
-	if !hasAnyRole(principal, "admin", "coach", "parent") {
+	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent") {
 		return Contact{}, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -684,8 +693,7 @@ func (s *Service) AddContact(principal *appmiddleware.Principal, orgID, househol
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	household, ok := s.households[householdID]
-	if !ok || household.OrgID != orgID {
+	if _, ok := s.householdLocked(orgID, householdID); !ok {
 		return Contact{}, ErrHouseholdNotFound
 	}
 	if err := s.enforceParentHouseholdAccess(principal, householdID); err != nil {
@@ -733,7 +741,7 @@ func (s *Service) CreateSwimmer(principal *appmiddleware.Principal, orgID string
 }
 
 func (s *Service) createSwimmer(principal *appmiddleware.Principal, orgID string, input CreateSwimmerInput) (Swimmer, SwimmerAuditEvent, error) {
-	if !hasAnyRole(principal, "admin", "coach", "parent") {
+	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent") {
 		return Swimmer{}, SwimmerAuditEvent{}, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -743,7 +751,7 @@ func (s *Service) createSwimmer(principal *appmiddleware.Principal, orgID string
 	if _, err := time.Parse("2006-01-02", strings.TrimSpace(input.DateOfBirth)); err != nil {
 		return Swimmer{}, SwimmerAuditEvent{}, ErrInvalidDateOfBirth
 	}
-	if !slices.Contains([]string{"female", "male", "non_binary", "undisclosed"}, strings.TrimSpace(strings.ToLower(input.Gender))) {
+	if !slices.Contains(validSwimmerGenders, strings.TrimSpace(strings.ToLower(input.Gender))) {
 		return Swimmer{}, SwimmerAuditEvent{}, errors.New("gender must be one of: female, male, non_binary, undisclosed")
 	}
 	if strings.TrimSpace(input.RegistrationStatus) == "" {
@@ -753,8 +761,8 @@ func (s *Service) createSwimmer(principal *appmiddleware.Principal, orgID string
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	household, ok := s.households[strings.TrimSpace(input.HouseholdID)]
-	if !ok || household.OrgID != orgID {
+	household, ok := s.householdLocked(orgID, strings.TrimSpace(input.HouseholdID))
+	if !ok {
 		return Swimmer{}, SwimmerAuditEvent{}, ErrHouseholdNotFound
 	}
 	if err := s.enforceParentHouseholdAccess(principal, household.ID); err != nil {
@@ -783,23 +791,15 @@ func (s *Service) createSwimmer(principal *appmiddleware.Principal, orgID string
 	if swimmer.FirstName == "" || swimmer.LastName == "" || swimmer.HouseholdID == "" {
 		return Swimmer{}, SwimmerAuditEvent{}, errors.New("household_id, first_name, and last_name are required")
 	}
-	if hasAnyRole(principal, "parent") && len(swimmer.MedicalFlags) > 0 {
+	if appmiddleware.HasAnyRole(principal, "parent") && len(swimmer.MedicalFlags) > 0 {
 		return Swimmer{}, SwimmerAuditEvent{}, ErrMedicalFlagsRestricted
 	}
 
-	if swimmer.SwimmerExternalID != "" {
-		for _, existing := range s.swimmers {
-			if existing.OrgID == orgID && existing.SwimmerExternalID != "" && strings.EqualFold(existing.SwimmerExternalID, swimmer.SwimmerExternalID) {
-				return Swimmer{}, SwimmerAuditEvent{}, fmt.Errorf("swimmer_external_id %q already exists in org", swimmer.SwimmerExternalID)
-			}
-		}
+	if swimmer.SwimmerExternalID != "" && s.swimmerFieldTakenLocked(orgID, swimmer.ID, swimmer.SwimmerExternalID, func(sw Swimmer) string { return sw.SwimmerExternalID }) {
+		return Swimmer{}, SwimmerAuditEvent{}, fmt.Errorf("swimmer_external_id %q already exists in org", swimmer.SwimmerExternalID)
 	}
-	if swimmer.USASwimmingID != "" {
-		for _, existing := range s.swimmers {
-			if existing.OrgID == orgID && existing.USASwimmingID != "" && strings.EqualFold(existing.USASwimmingID, swimmer.USASwimmingID) {
-				return Swimmer{}, SwimmerAuditEvent{}, fmt.Errorf("usa_swimming_id %q already exists in org", swimmer.USASwimmingID)
-			}
-		}
+	if swimmer.USASwimmingID != "" && s.swimmerFieldTakenLocked(orgID, swimmer.ID, swimmer.USASwimmingID, func(sw Swimmer) string { return sw.USASwimmingID }) {
+		return Swimmer{}, SwimmerAuditEvent{}, fmt.Errorf("usa_swimming_id %q already exists in org", swimmer.USASwimmingID)
 	}
 
 	if s.repo != nil {
@@ -823,7 +823,7 @@ func (s *Service) createSwimmer(principal *appmiddleware.Principal, orgID string
 }
 
 func (s *Service) UpdateSwimmer(principal *appmiddleware.Principal, orgID, swimmerID string, input UpdateSwimmerInput) (Swimmer, SwimmerAuditEvent, error) {
-	if !hasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
+	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
 		return Swimmer{}, SwimmerAuditEvent{}, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -833,20 +833,21 @@ func (s *Service) UpdateSwimmer(principal *appmiddleware.Principal, orgID, swimm
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	swimmer, ok := s.swimmers[strings.TrimSpace(swimmerID)]
-	if !ok || swimmer.OrgID != orgID {
+	swimmer, ok := s.swimmerLocked(orgID, strings.TrimSpace(swimmerID))
+	if !ok {
 		return Swimmer{}, SwimmerAuditEvent{}, ErrSwimmerNotFound
 	}
 	if err := s.enforceParentHouseholdAccess(principal, swimmer.HouseholdID); err != nil {
 		return Swimmer{}, SwimmerAuditEvent{}, err
 	}
-	swimmerOnly := hasAnyRole(principal, "swimmer") && !hasAnyRole(principal, "admin", "coach", "parent")
+	swimmerOnly := appmiddleware.IsSwimmerOnly(principal)
 	if swimmerOnly {
 		if strings.TrimSpace(principal.HouseholdID) == "" || strings.TrimSpace(principal.HouseholdID) != strings.TrimSpace(swimmer.HouseholdID) {
 			return Swimmer{}, SwimmerAuditEvent{}, ErrForbidden
 		}
-		if input.FirstName != nil || input.LastName != nil || input.PreferredName != nil || input.DateOfBirth != nil || input.Gender != nil || input.SwimmerExternalID != nil || input.USASwimmingID != nil || input.RegistrationStatus != nil || input.MedicalFlags != nil ||
-			input.EmergencyContactName != nil || input.EmergencyContactPhone != nil || input.EmergencyContactRelationship != nil || input.Allergies != nil {
+		// A swimmer may edit only their own bio; any other field set is refused
+		// (new fields are denied by default).
+		if input != (UpdateSwimmerInput{Notes: input.Notes}) {
 			return Swimmer{}, SwimmerAuditEvent{}, ErrForbidden
 		}
 	}
@@ -870,48 +871,36 @@ func (s *Service) UpdateSwimmer(principal *appmiddleware.Principal, orgID, swimm
 	}
 	if input.Gender != nil {
 		nextGender := strings.TrimSpace(strings.ToLower(*input.Gender))
-		if !slices.Contains([]string{"female", "male", "non_binary", "undisclosed"}, nextGender) {
+		if !slices.Contains(validSwimmerGenders, nextGender) {
 			return Swimmer{}, SwimmerAuditEvent{}, errors.New("gender must be one of: female, male, non_binary, undisclosed")
 		}
 		swimmer.Gender = nextGender
 	}
 	if input.SwimmerExternalID != nil {
 		nextExternalID := strings.TrimSpace(*input.SwimmerExternalID)
-		if nextExternalID != "" && nextExternalID != swimmer.SwimmerExternalID {
-			for _, existing := range s.swimmers {
-				if existing.ID == swimmer.ID {
-					continue
-				}
-				if existing.OrgID == orgID && strings.EqualFold(existing.SwimmerExternalID, nextExternalID) {
-					return Swimmer{}, SwimmerAuditEvent{}, fmt.Errorf("swimmer_external_id %q already exists in org", nextExternalID)
-				}
-			}
+		if nextExternalID != "" && nextExternalID != swimmer.SwimmerExternalID &&
+			s.swimmerFieldTakenLocked(orgID, swimmer.ID, nextExternalID, func(sw Swimmer) string { return sw.SwimmerExternalID }) {
+			return Swimmer{}, SwimmerAuditEvent{}, fmt.Errorf("swimmer_external_id %q already exists in org", nextExternalID)
 		}
 		swimmer.SwimmerExternalID = nextExternalID
 	}
 	if input.USASwimmingID != nil {
 		nextUSAID := strings.TrimSpace(*input.USASwimmingID)
-		if nextUSAID != "" && !strings.EqualFold(nextUSAID, swimmer.USASwimmingID) {
-			for _, existing := range s.swimmers {
-				if existing.ID == swimmer.ID {
-					continue
-				}
-				if existing.OrgID == orgID && existing.USASwimmingID != "" && strings.EqualFold(existing.USASwimmingID, nextUSAID) {
-					return Swimmer{}, SwimmerAuditEvent{}, fmt.Errorf("usa_swimming_id %q already exists in org", nextUSAID)
-				}
-			}
+		if nextUSAID != "" && !strings.EqualFold(nextUSAID, swimmer.USASwimmingID) &&
+			s.swimmerFieldTakenLocked(orgID, swimmer.ID, nextUSAID, func(sw Swimmer) string { return sw.USASwimmingID }) {
+			return Swimmer{}, SwimmerAuditEvent{}, fmt.Errorf("usa_swimming_id %q already exists in org", nextUSAID)
 		}
 		swimmer.USASwimmingID = nextUSAID
 	}
 	if input.RegistrationStatus != nil {
 		nextStatus := strings.TrimSpace(strings.ToLower(*input.RegistrationStatus))
-		if hasAnyRole(principal, "parent") {
+		if appmiddleware.HasAnyRole(principal, "parent") {
 			return Swimmer{}, SwimmerAuditEvent{}, ErrForbidden
 		}
 		swimmer.RegistrationStatus = nextStatus
 	}
 	if input.MedicalFlags != nil {
-		if !hasAnyRole(principal, "admin", "coach") {
+		if !appmiddleware.HasAnyRole(principal, "admin", "coach") {
 			return Swimmer{}, SwimmerAuditEvent{}, ErrMedicalFlagsRestricted
 		}
 		swimmer.MedicalFlags = normalizeFlags(*input.MedicalFlags)
@@ -967,8 +956,30 @@ func (s *Service) UpdateSwimmer(principal *appmiddleware.Principal, orgID, swimm
 	return swimmer, event, nil
 }
 
+// householdLocked looks up a household in the org (callers hold s.mu).
+func (s *Service) householdLocked(orgID, householdID string) (Household, bool) {
+	household, ok := s.households[strings.TrimSpace(householdID)]
+	return household, ok && household.OrgID == orgID
+}
+
+// swimmerLocked looks up a swimmer in the org (callers hold s.mu).
+func (s *Service) swimmerLocked(orgID, swimmerID string) (Swimmer, bool) {
+	swimmer, ok := s.swimmers[strings.TrimSpace(swimmerID)]
+	return swimmer, ok && swimmer.OrgID == orgID
+}
+
+// swimmerFieldTakenLocked reports whether another swimmer in the org already has value (case-insensitive) in the field field returns.
+func (s *Service) swimmerFieldTakenLocked(orgID, selfID, value string, field func(Swimmer) string) bool {
+	for _, existing := range s.swimmers {
+		if existing.ID != selfID && existing.OrgID == orgID && strings.EqualFold(field(existing), value) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Service) DeleteSwimmer(principal *appmiddleware.Principal, orgID, swimmerID string) (Swimmer, []SwimmerDeleteDependency, error) {
-	if !hasAnyRole(principal, "admin") {
+	if !appmiddleware.HasAnyRole(principal, "admin") {
 		return Swimmer{}, nil, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -978,8 +989,8 @@ func (s *Service) DeleteSwimmer(principal *appmiddleware.Principal, orgID, swimm
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	swimmer, ok := s.swimmers[strings.TrimSpace(swimmerID)]
-	if !ok || swimmer.OrgID != orgID {
+	swimmer, ok := s.swimmerLocked(orgID, strings.TrimSpace(swimmerID))
+	if !ok {
 		return Swimmer{}, nil, ErrSwimmerNotFound
 	}
 
@@ -991,11 +1002,7 @@ func (s *Service) DeleteSwimmer(principal *appmiddleware.Principal, orgID, swimm
 		}
 		dependencies = make([]SwimmerDeleteDependency, 0, len(blockers))
 		for _, blocker := range blockers {
-			dependencies = append(dependencies, SwimmerDeleteDependency{
-				Code:  blocker.Code,
-				Label: blocker.Label,
-				Count: blocker.Count,
-			})
+			dependencies = append(dependencies, SwimmerDeleteDependency(blocker))
 		}
 	}
 	if len(dependencies) > 0 {
@@ -1031,7 +1038,7 @@ func (s *Service) DeleteSwimmer(principal *appmiddleware.Principal, orgID, swimm
 }
 
 func (s *Service) GetSwimmer(principal *appmiddleware.Principal, orgID, swimmerID string, includeMedical bool) (SwimmerView, error) {
-	if !hasAnyRole(principal, "admin", "coach", "parent") {
+	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent") {
 		return SwimmerView{}, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -1041,27 +1048,29 @@ func (s *Service) GetSwimmer(principal *appmiddleware.Principal, orgID, swimmerI
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	swimmer, ok := s.swimmers[strings.TrimSpace(swimmerID)]
-	if !ok || swimmer.OrgID != orgID {
+	swimmer, ok := s.swimmerLocked(orgID, strings.TrimSpace(swimmerID))
+	if !ok {
 		return SwimmerView{}, ErrSwimmerNotFound
 	}
 	if err := s.enforceParentHouseholdAccess(principal, swimmer.HouseholdID); err != nil {
 		return SwimmerView{}, err
 	}
 
-	view := SwimmerView{Swimmer: swimmer}
-	if includeMedical && s.canViewMedicalLocked(principal, swimmer.HouseholdID) {
-		view.MedicalFlagsRedacted = false
-		return view, nil
-	}
+	return s.swimmerViewLocked(principal, swimmer, includeMedical), nil
+}
 
-	view.MedicalFlags = nil
-	view.MedicalFlagsRedacted = true
-	return view, nil
+// swimmerViewLocked wraps a swimmer, redacting medical flags unless requested and permitted.
+func (s *Service) swimmerViewLocked(principal *appmiddleware.Principal, swimmer Swimmer, includeMedical bool) SwimmerView {
+	view := SwimmerView{Swimmer: swimmer}
+	if !includeMedical || !s.canViewMedicalLocked(principal, swimmer.HouseholdID) {
+		view.MedicalFlags = nil
+		view.MedicalFlagsRedacted = true
+	}
+	return view
 }
 
 func (s *Service) AssignSwimmerToGroup(principal *appmiddleware.Principal, orgID, swimmerID string, input AssignSwimmerGroupInput) (SwimmerGroupLink, error) {
-	if !hasAnyRole(principal, "admin", "coach") {
+	if !appmiddleware.HasAnyRole(principal, "admin", "coach") {
 		return SwimmerGroupLink{}, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -1071,8 +1080,8 @@ func (s *Service) AssignSwimmerToGroup(principal *appmiddleware.Principal, orgID
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	swimmer, ok := s.swimmers[strings.TrimSpace(swimmerID)]
-	if !ok || swimmer.OrgID != orgID {
+	swimmer, ok := s.swimmerLocked(orgID, strings.TrimSpace(swimmerID))
+	if !ok {
 		return SwimmerGroupLink{}, ErrSwimmerNotFound
 	}
 
@@ -1090,13 +1099,14 @@ func (s *Service) AssignSwimmerToGroup(principal *appmiddleware.Principal, orgID
 	}
 
 	now := time.Now().UTC()
+	// Making this link primary demotes the swimmer's current primary link. Both
+	// changes are persisted before memory changes, and the demotion is undone in
+	// the database if the new link cannot be saved.
+	var demoted []SwimmerGroupLink
 	if input.IsPrimary {
-		for id, link := range s.swimmerGroupLinks {
+		for _, link := range s.swimmerGroupLinks {
 			if link.OrgID == orgID && link.SwimmerID == swimmer.ID && link.IsPrimary {
-				link.IsPrimary = false
-				link.UpdatedAt = now
-				link.UpdatedBy = principal.UserID
-				s.swimmerGroupLinks[id] = link
+				demoted = append(demoted, link)
 			}
 		}
 	}
@@ -1113,17 +1123,44 @@ func (s *Service) AssignSwimmerToGroup(principal *appmiddleware.Principal, orgID
 		CreatedBy:  principal.UserID,
 		UpdatedBy:  principal.UserID,
 	}
+	updatedLinks := make([]SwimmerGroupLink, 0, len(demoted))
+	for _, previous := range demoted {
+		previous.IsPrimary = false
+		previous.UpdatedAt = now
+		previous.UpdatedBy = principal.UserID
+		updatedLinks = append(updatedLinks, previous)
+	}
 	if s.repo != nil {
-		if err := s.repo.UpsertSwimmerGroupLink(context.Background(), link); err != nil {
+		ctx := context.Background()
+		for i, updated := range updatedLinks {
+			if err := s.repo.UpsertSwimmerGroupLink(ctx, updated); err != nil {
+				s.restoreLinksLocked(ctx, demoted[:i])
+				return SwimmerGroupLink{}, fmt.Errorf("persist demoted primary group link: %w", err)
+			}
+		}
+		if err := s.repo.UpsertSwimmerGroupLink(ctx, link); err != nil {
+			s.restoreLinksLocked(ctx, demoted)
 			return SwimmerGroupLink{}, fmt.Errorf("persist swimmer group link: %w", err)
 		}
+	}
+	for _, updated := range updatedLinks {
+		s.swimmerGroupLinks[updated.ID] = updated
 	}
 	s.swimmerGroupLinks[link.ID] = link
 	return link, nil
 }
 
+// restoreLinksLocked rewrites links to the database as they were, after a failed multi-row change.
+func (s *Service) restoreLinksLocked(ctx context.Context, originals []SwimmerGroupLink) {
+	for _, original := range originals {
+		if err := s.repo.UpsertSwimmerGroupLink(ctx, original); err != nil {
+			slog.Error("members: restore swimmer group link failed", "link_id", original.ID, "error", err)
+		}
+	}
+}
+
 func (s *Service) ListSwimmers(principal *appmiddleware.Principal, orgID string, input ListSwimmersInput) ([]SwimmerView, error) {
-	if !hasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
+	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
 		return nil, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -1135,7 +1172,7 @@ func (s *Service) ListSwimmers(principal *appmiddleware.Principal, orgID string,
 
 	householdFilter := strings.TrimSpace(input.HouseholdID)
 	// Swimmer-only accounts can only list swimmers in their own household.
-	if hasAnyRole(principal, "swimmer") && !hasAnyRole(principal, "admin", "coach", "parent") {
+	if appmiddleware.IsSwimmerOnly(principal) {
 		swimmerHouseholdID := strings.TrimSpace(principal.HouseholdID)
 		if swimmerHouseholdID == "" {
 			return nil, ErrForbidden
@@ -1146,7 +1183,7 @@ func (s *Service) ListSwimmers(principal *appmiddleware.Principal, orgID string,
 		householdFilter = swimmerHouseholdID
 	}
 	allowedHouseholds := map[string]struct{}{}
-	if hasAnyRole(principal, "parent") {
+	if appmiddleware.HasAnyRole(principal, "parent") {
 		allowedHouseholds = s.parentAllowedHouseholdsLocked(principal)
 		if householdFilter != "" {
 			if _, ok := allowedHouseholds[householdFilter]; !ok {
@@ -1169,7 +1206,7 @@ func (s *Service) ListSwimmers(principal *appmiddleware.Principal, orgID string,
 		if statusFilter != "" && swimmer.RegistrationStatus != statusFilter {
 			continue
 		}
-		if hasAnyRole(principal, "parent") {
+		if appmiddleware.HasAnyRole(principal, "parent") {
 			if _, ok := allowedHouseholds[swimmer.HouseholdID]; !ok {
 				continue
 			}
@@ -1178,18 +1215,7 @@ func (s *Service) ListSwimmers(principal *appmiddleware.Principal, orgID string,
 			continue
 		}
 
-		view := SwimmerView{Swimmer: swimmer}
-		if input.IncludeMedical {
-			if s.canViewMedicalLocked(principal, swimmer.HouseholdID) {
-				view.MedicalFlagsRedacted = false
-			} else {
-				view.MedicalFlags = nil
-				view.MedicalFlagsRedacted = true
-			}
-		} else {
-			view.MedicalFlags = nil
-			view.MedicalFlagsRedacted = true
-		}
+		view := s.swimmerViewLocked(principal, swimmer, input.IncludeMedical)
 		results = append(results, view)
 	}
 
@@ -1201,7 +1227,7 @@ func (s *Service) ListSwimmers(principal *appmiddleware.Principal, orgID string,
 // ListSwimmerGroupLinks returns swimmer-group links visible to the principal.
 // Parent and swimmer accounts are strictly limited to their own household.
 func (s *Service) ListSwimmerGroupLinks(principal *appmiddleware.Principal, orgID string) ([]SwimmerGroupLink, error) {
-	if !hasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
+	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
 		return nil, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -1212,7 +1238,7 @@ func (s *Service) ListSwimmerGroupLinks(principal *appmiddleware.Principal, orgI
 	defer s.mu.RUnlock()
 
 	swimmerScopedHouseholdID := ""
-	if hasAnyRole(principal, "swimmer") && !hasAnyRole(principal, "admin", "coach", "parent") {
+	if appmiddleware.IsSwimmerOnly(principal) {
 		swimmerScopedHouseholdID = strings.TrimSpace(principal.HouseholdID)
 		if swimmerScopedHouseholdID == "" {
 			return nil, ErrForbidden
@@ -1220,7 +1246,7 @@ func (s *Service) ListSwimmerGroupLinks(principal *appmiddleware.Principal, orgI
 	}
 
 	allowedHouseholds := map[string]struct{}{}
-	if hasAnyRole(principal, "parent") {
+	if appmiddleware.HasAnyRole(principal, "parent") {
 		allowedHouseholds = s.parentAllowedHouseholdsLocked(principal)
 	}
 
@@ -1236,7 +1262,7 @@ func (s *Service) ListSwimmerGroupLinks(principal *appmiddleware.Principal, orgI
 		if swimmerScopedHouseholdID != "" && swimmer.HouseholdID != swimmerScopedHouseholdID {
 			continue
 		}
-		if hasAnyRole(principal, "parent") {
+		if appmiddleware.HasAnyRole(principal, "parent") {
 			if _, ok := allowedHouseholds[swimmer.HouseholdID]; !ok {
 				continue
 			}
@@ -1280,7 +1306,7 @@ func (s *Service) enforceParentHouseholdAccess(principal *appmiddleware.Principa
 	if principal == nil {
 		return ErrForbidden
 	}
-	if !hasAnyRole(principal, "parent") {
+	if !appmiddleware.HasAnyRole(principal, "parent") {
 		return nil
 	}
 	if _, ok := s.parentAllowedHouseholdsLocked(principal)[householdID]; !ok {
@@ -1292,7 +1318,7 @@ func (s *Service) enforceParentHouseholdAccess(principal *appmiddleware.Principa
 // AssociateParentToHousehold creates explicit parent-household access links,
 // allowing imported/admin-created households to be accessible to a parent.
 func (s *Service) AssociateParentToHousehold(principal *appmiddleware.Principal, orgID, parentUserID, householdID string) error {
-	if !hasAnyRole(principal, "admin", "coach") {
+	if !appmiddleware.HasAnyRole(principal, "admin", "coach") {
 		return ErrForbidden
 	}
 	if strings.TrimSpace(principal.OrgID) != strings.TrimSpace(orgID) {
@@ -1305,6 +1331,9 @@ func (s *Service) AssociateParentToHousehold(principal *appmiddleware.Principal,
 		return errors.New("parent_user_id and household_id are required")
 	}
 
+	if err := s.syncFromDB(context.Background()); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1321,10 +1350,10 @@ func (s *Service) canViewMedicalLocked(principal *appmiddleware.Principal, house
 	if principal == nil {
 		return false
 	}
-	if hasAnyRole(principal, "admin", "coach") {
+	if appmiddleware.HasAnyRole(principal, "admin", "coach") {
 		return true
 	}
-	if hasAnyRole(principal, "parent") {
+	if appmiddleware.HasAnyRole(principal, "parent") {
 		_, ok := s.parentAllowedHouseholdsLocked(principal)[householdID]
 		return ok
 	}
@@ -1409,6 +1438,17 @@ func (s *Service) GetHouseholdByKeycloakUserID(keycloakUserID string) (Household
 // LinkHouseholdToUser sets the keycloak_user_id on a household record.
 // The household must belong to the specified org.
 func (s *Service) LinkHouseholdToUser(orgID, householdID, keycloakUserID string) error {
+	return s.setHouseholdKeycloakUser(orgID, householdID, keycloakUserID)
+}
+
+// UnlinkHouseholdFromUser clears the keycloak_user_id on a household record.
+func (s *Service) UnlinkHouseholdFromUser(orgID, householdID string) error {
+	return s.setHouseholdKeycloakUser(orgID, householdID, "")
+}
+
+// setHouseholdKeycloakUser links (or, with an empty ID, unlinks) a household,
+// refusing an ID already linked to another household.
+func (s *Service) setHouseholdKeycloakUser(orgID, householdID, keycloakUserID string) error {
 	if err := s.syncFromDB(context.Background()); err != nil {
 		return err
 	}
@@ -1419,45 +1459,19 @@ func (s *Service) LinkHouseholdToUser(orgID, householdID, keycloakUserID string)
 	if !ok || h.OrgID != orgID {
 		return ErrHouseholdNotFound
 	}
-
-	// Verify keycloakUserID is not already taken by another household.
-	for _, existing := range s.households {
-		if existing.KeycloakUserID == keycloakUserID && existing.ID != householdID {
-			return errors.New("keycloak_user_id is already linked to another household")
+	if keycloakUserID != "" {
+		for _, existing := range s.households {
+			if existing.KeycloakUserID == keycloakUserID && existing.ID != householdID {
+				return errors.New("keycloak_user_id is already linked to another household")
+			}
 		}
 	}
 
 	h.KeycloakUserID = keycloakUserID
 	h.UpdatedAt = time.Now().UTC()
-
 	if s.repo != nil {
 		if err := s.repo.SetHouseholdKeycloakUserID(context.Background(), householdID, keycloakUserID); err != nil {
 			return fmt.Errorf("persist household link: %w", err)
-		}
-	}
-	s.households[householdID] = h
-	return nil
-}
-
-// UnlinkHouseholdFromUser clears the keycloak_user_id on a household record.
-func (s *Service) UnlinkHouseholdFromUser(orgID, householdID string) error {
-	if err := s.syncFromDB(context.Background()); err != nil {
-		return err
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	h, ok := s.households[householdID]
-	if !ok || h.OrgID != orgID {
-		return ErrHouseholdNotFound
-	}
-
-	h.KeycloakUserID = ""
-	h.UpdatedAt = time.Now().UTC()
-
-	if s.repo != nil {
-		if err := s.repo.SetHouseholdKeycloakUserID(context.Background(), householdID, ""); err != nil {
-			return fmt.Errorf("persist household unlink: %w", err)
 		}
 	}
 	s.households[householdID] = h
@@ -1490,6 +1504,17 @@ func (s *Service) GetSwimmerByKeycloakUserID(keycloakUserID string) (Swimmer, bo
 // roster entry that merely shares a household. The swimmer must belong to
 // the specified org.
 func (s *Service) LinkSwimmerToUser(orgID, swimmerID, keycloakUserID string) error {
+	return s.setSwimmerKeycloakUser(orgID, swimmerID, keycloakUserID)
+}
+
+// UnlinkSwimmerFromUser clears the keycloak_user_id on a swimmer record.
+func (s *Service) UnlinkSwimmerFromUser(orgID, swimmerID string) error {
+	return s.setSwimmerKeycloakUser(orgID, swimmerID, "")
+}
+
+// setSwimmerKeycloakUser links (or, with an empty ID, unlinks) a swimmer,
+// refusing an ID already linked to another swimmer.
+func (s *Service) setSwimmerKeycloakUser(orgID, swimmerID, keycloakUserID string) error {
 	if err := s.syncFromDB(context.Background()); err != nil {
 		return err
 	}
@@ -1500,44 +1525,19 @@ func (s *Service) LinkSwimmerToUser(orgID, swimmerID, keycloakUserID string) err
 	if !ok || sw.OrgID != orgID {
 		return ErrSwimmerNotFound
 	}
-
-	for _, existing := range s.swimmers {
-		if existing.KeycloakUserID == keycloakUserID && existing.ID != swimmerID {
-			return errors.New("keycloak_user_id is already linked to another swimmer")
+	if keycloakUserID != "" {
+		for _, existing := range s.swimmers {
+			if existing.KeycloakUserID == keycloakUserID && existing.ID != swimmerID {
+				return errors.New("keycloak_user_id is already linked to another swimmer")
+			}
 		}
 	}
 
 	sw.KeycloakUserID = keycloakUserID
 	sw.UpdatedAt = time.Now().UTC()
-
 	if s.repo != nil {
 		if err := s.repo.SetSwimmerKeycloakUserID(context.Background(), swimmerID, keycloakUserID); err != nil {
 			return fmt.Errorf("persist swimmer link: %w", err)
-		}
-	}
-	s.swimmers[swimmerID] = sw
-	return nil
-}
-
-// UnlinkSwimmerFromUser clears the keycloak_user_id on a swimmer record.
-func (s *Service) UnlinkSwimmerFromUser(orgID, swimmerID string) error {
-	if err := s.syncFromDB(context.Background()); err != nil {
-		return err
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	sw, ok := s.swimmers[swimmerID]
-	if !ok || sw.OrgID != orgID {
-		return ErrSwimmerNotFound
-	}
-
-	sw.KeycloakUserID = ""
-	sw.UpdatedAt = time.Now().UTC()
-
-	if s.repo != nil {
-		if err := s.repo.SetSwimmerKeycloakUserID(context.Background(), swimmerID, ""); err != nil {
-			return fmt.Errorf("persist swimmer unlink: %w", err)
 		}
 	}
 	s.swimmers[swimmerID] = sw
@@ -1560,7 +1560,7 @@ func (s *Service) SnapshotContacts(orgID string) []Contact {
 }
 
 func (s *Service) ListContacts(principal *appmiddleware.Principal, orgID, householdID string) ([]Contact, error) {
-	if !hasAnyRole(principal, "admin", "coach", "parent") {
+	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent") {
 		return nil, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
@@ -1570,8 +1570,8 @@ func (s *Service) ListContacts(principal *appmiddleware.Principal, orgID, househ
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	household, ok := s.households[strings.TrimSpace(householdID)]
-	if !ok || household.OrgID != orgID {
+	household, ok := s.householdLocked(orgID, strings.TrimSpace(householdID))
+	if !ok {
 		return nil, ErrHouseholdNotFound
 	}
 	if err := s.enforceParentHouseholdAccess(principal, household.ID); err != nil {
@@ -1640,8 +1640,8 @@ func (s *Service) SwimmerHouseholdID(orgID, swimmerID string) (string, bool) {
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	sw, ok := s.swimmers[strings.TrimSpace(swimmerID)]
-	if !ok || sw.OrgID != orgID {
+	sw, ok := s.swimmerLocked(orgID, swimmerID)
+	if !ok {
 		return "", false
 	}
 	return sw.HouseholdID, true
@@ -1665,8 +1665,8 @@ func (s *Service) SwimmerEligibility(orgID, swimmerID string) (SwimmerEligibilit
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	sw, ok := s.swimmers[strings.TrimSpace(swimmerID)]
-	if !ok || sw.OrgID != orgID {
+	sw, ok := s.swimmerLocked(orgID, swimmerID)
+	if !ok {
 		return SwimmerEligibilityInfo{}, false
 	}
 	return SwimmerEligibilityInfo{
@@ -1691,18 +1691,6 @@ func swimmerSnapshot(swimmer Swimmer) map[string]any {
 		"notes":               swimmer.Notes,
 		"household_id":        swimmer.HouseholdID,
 	}
-}
-
-func hasAnyRole(principal *appmiddleware.Principal, required ...string) bool {
-	if principal == nil {
-		return false
-	}
-	for _, role := range principal.Roles {
-		if slices.Contains(required, role) {
-			return true
-		}
-	}
-	return false
 }
 
 func normalizeFlags(flags []string) []string {

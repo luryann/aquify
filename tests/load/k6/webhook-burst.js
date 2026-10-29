@@ -49,7 +49,10 @@ const BASE_URL = __ENV.API_BASE_URL || 'http://localhost:8080';
 const WEBHOOK_SECRET = __ENV.WEBHOOK_SECRET || 'whsec_test_secret';
 
 /**
- * Build a minimal Stripe payment_intent.succeeded webhook payload.
+ * Build a minimal Stripe payment_intent.payment_failed webhook payload. The
+ * intent is unknown to the ledger, so the API verifies the signature, records
+ * the event and acknowledges it with 200 without touching invoices — which is
+ * what this ingestion-throughput test measures.
  */
 function buildWebhookPayload(vuId, iterationId) {
   const eventId = `evt_load_${vuId}_${iterationId}_${Date.now()}`;
@@ -60,7 +63,7 @@ function buildWebhookPayload(vuId, iterationId) {
     object: 'event',
     api_version: '2023-10-16',
     created: Math.floor(Date.now() / 1000),
-    type: 'payment_intent.succeeded',
+    type: 'payment_intent.payment_failed',
     livemode: false,
     data: {
       object: {
@@ -70,7 +73,7 @@ function buildWebhookPayload(vuId, iterationId) {
         currency: 'usd',
         status: 'succeeded',
         metadata: {
-          org_id: 'org-demo',
+          org_id: '00000000-0000-0000-0000-00000000a001',
           invoice_id: `inv-load-${vuId}`,
         },
       },
@@ -99,7 +102,7 @@ function buildStripeSignature(payload, secret) {
 // Setup
 // ---------------------------------------------------------------------------
 export function setup() {
-  const res = http.get(`${BASE_URL}/health/live`);
+  const res = http.get(`${BASE_URL}/api/v1/health/live`);
   if (res.status !== 200) {
     throw new Error(`Health check failed: ${res.status}`);
   }

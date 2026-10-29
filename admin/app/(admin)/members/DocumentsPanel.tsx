@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
+import { formatDateOnly } from '@/lib/dates'
 import {
   type DocumentTypeRecord,
   type DocumentSubmissionRecord,
@@ -11,36 +12,34 @@ import {
   updateDocumentType,
   deleteDocumentType,
   fetchDocumentSubmissions,
+  fetchHouseholds,
+  fetchSwimmers,
   verifyDocumentSubmission,
   rejectDocumentSubmission,
 } from '@/lib/adminData'
-import { parseBackendDate } from '@/lib/dates'
 import { Icon } from '@/components/ui/icons'
 import { Modal } from '@/components/ui/Modal'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
+import './DocumentsPanel.inline.css'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function fmt(value?: string | null) {
-  if (!value) return '—'
-  return parseBackendDate(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
 
 const CATEGORY_COLORS: Record<string, { bg: string; text: string }> = {
-  waiver:       { bg: 'rgba(235,93,30,0.10)', text: '#c04010' },
-  medical:      { bg: 'rgba(239,68,68,0.10)', text: '#b91c1c' },
-  insurance:    { bg: 'rgba(59,130,246,0.10)', text: '#1d4ed8' },
-  release:      { bg: 'rgba(16,185,129,0.10)', text: '#065f46' },
-  registration: { bg: 'rgba(139,92,246,0.10)', text: '#5b21b6' },
-  other:        { bg: 'rgba(107,114,128,0.10)', text: '#374151' },
+  waiver:       { bg: 'rgba(235,93,30,0.10)', text: 'var(--accent-text)' },
+  medical:      { bg: 'rgba(239,68,68,0.10)', text: 'var(--error)' },
+  insurance:    { bg: 'rgba(59,130,246,0.10)', text: 'var(--info)' },
+  release:      { bg: 'rgba(16,185,129,0.10)', text: 'var(--success)' },
+  registration: { bg: 'rgba(139,92,246,0.10)', text: 'var(--text-subtle)' },
+  other:        { bg: 'rgba(107,114,128,0.10)', text: 'var(--text-subtle)' },
 }
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
-  pending:   { bg: 'rgba(107,114,128,0.10)', text: '#374151', dot: '#9ca3af' },
-  submitted: { bg: 'rgba(245,158,11,0.12)', text: '#92400e', dot: '#f59e0b' },
-  verified:  { bg: 'rgba(16,185,129,0.10)', text: '#065f46', dot: '#10b981' },
-  rejected:  { bg: 'rgba(239,68,68,0.10)', text: '#b91c1c', dot: '#ef4444' },
-  expired:   { bg: 'rgba(239,68,68,0.10)', text: '#b91c1c', dot: '#ef4444' },
+  pending:   { bg: 'rgba(107,114,128,0.10)', text: 'var(--text-subtle)', dot: '#9ca3af' },
+  submitted: { bg: 'rgba(245,158,11,0.12)', text: 'var(--warning)', dot: '#f59e0b' },
+  verified:  { bg: 'rgba(16,185,129,0.10)', text: 'var(--success)', dot: '#10b981' },
+  rejected:  { bg: 'rgba(239,68,68,0.10)', text: 'var(--error)', dot: '#ef4444' },
+  expired:   { bg: 'rgba(239,68,68,0.10)', text: 'var(--error)', dot: '#ef4444' },
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -241,6 +240,8 @@ export function DocumentsPanel() {
   const [tab, setTab] = useState<'types' | 'submissions'>('types')
   const [docTypes, setDocTypes] = useState<DocumentTypeRecord[]>([])
   const [submissions, setSubmissions] = useState<DocumentSubmissionRecord[]>([])
+  const [householdNames, setHouseholdNames] = useState<Map<string, string>>(new Map())
+  const [swimmerNames, setSwimmerNames] = useState<Map<string, string>>(new Map())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -257,12 +258,16 @@ export function DocumentsPanel() {
     try {
       setLoading(true)
       setError(null)
-      const [types, subs] = await Promise.all([
+      const [types, subs, households, swimmers] = await Promise.all([
         fetchDocumentTypes(api, orgId, false),
         fetchDocumentSubmissions(api, orgId),
+        fetchHouseholds(api, orgId),
+        fetchSwimmers(api, orgId),
       ])
       setDocTypes(types)
       setSubmissions(subs)
+      setHouseholdNames(new Map(households.map((h) => [h.id, h.household_name])))
+      setSwimmerNames(new Map(swimmers.map((sw) => [sw.id, `${sw.first_name} ${sw.last_name}`])))
     } catch (ex) {
       setError(uiErrorMessage(ex, 'Couldn’t load document center data. Try again.'))
     } finally {
@@ -287,7 +292,7 @@ export function DocumentsPanel() {
     if (editingType && editingType !== 'new') {
       await updateDocumentType(api, orgId, editingType.id, payload)
     } else {
-      await createDocumentType(api, orgId, { ...payload, name: payload.name, is_required: payload.is_required, is_active: payload.is_active })
+      await createDocumentType(api, orgId, payload)
     }
     await loadData()
   }
@@ -318,21 +323,11 @@ export function DocumentsPanel() {
 
   return (
     <div>
-      <style>{`
-        @keyframes modalIn {
-          from { opacity: 0; transform: scale(0.96) translateY(8px); }
-          to   { opacity: 1; transform: scale(1)    translateY(0);   }
-        }
-        @keyframes fadeUp {
-          from { opacity: 0; transform: translateY(10px); }
-          to   { opacity: 1; transform: translateY(0);     }
-        }
-      `}</style>
 
       {pendingCount > 0 && (
         <div className="u-gap-8px u-p-8px-16px u-mb-20px" style={{ display: 'flex', alignItems: 'center', borderRadius: '12px', background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.25)', width: 'fit-content', animation: 'fadeUp 0.3s ease both' }}>
           <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#f59e0b', flexShrink: 0 }} />
-          <span className="u-fs-fs-sm u-fw-600" style={{ color: '#92400e' }}>
+          <span className="u-fs-fs-sm u-fw-600" style={{ color: 'var(--warning)' }}>
             {pendingCount} submission{pendingCount !== 1 ? 's' : ''} need review
           </span>
         </div>
@@ -480,15 +475,15 @@ export function DocumentsPanel() {
                             {sub.file_name && <div className="u-fs-fs-xs u-mt-2px u-ff-font-body" style={{ color: 'var(--text-muted)' }}>{sub.file_name}</div>}
                           </td>
                           <td className="u-p-12px-16px u-fs-fs-sm u-ff-font-body" style={{ color: 'var(--text-subtle)' }}>
-                            {sub.household_id.slice(0, 8)}…
+                            {householdNames.get(sub.household_id) ?? 'Unknown household'}
                           </td>
                           <td className="u-p-12px-16px u-fs-fs-sm u-ff-font-body" style={{ color: 'var(--text-subtle)' }}>
-                            {sub.swimmer_id ? sub.swimmer_id.slice(0, 8) + '…' : '—'}
+                            {sub.swimmer_id ? (swimmerNames.get(sub.swimmer_id) ?? 'Unknown swimmer') : '—'}
                           </td>
                           <td className="u-p-12px-16px" ><StatusPill status={sub.status} /></td>
-                          <td className="u-p-12px-16px u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{fmt(sub.submitted_at)}</td>
+                          <td className="u-p-12px-16px u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{formatDateOnly(sub.submitted_at)}</td>
                           <td className="u-p-12px-16px u-fs-fs-sm" style={{ color: sub.expires_at && new Date(sub.expires_at) < new Date() ? '#dc2626' : 'var(--text-subtle)' }}>
-                            {fmt(sub.expires_at)}
+                            {formatDateOnly(sub.expires_at)}
                           </td>
                           <td className="u-p-12px-16px" >
                             {canReview ? (

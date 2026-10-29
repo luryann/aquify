@@ -20,17 +20,13 @@ import {
   type SwimmerRecord,
   type RegistrationRecord,
 } from '@/lib/adminData'
-import { getPortalDocumentAction, selectLatestSubmission } from '@/lib/document-submissions'
+import { documentNeedsAction, getPortalDocumentAction, resolveDocumentStatus, selectLatestSubmission, type DocumentStatus } from '@/lib/document-submissions'
 import { summarizeRegistrationWaiver } from '@/lib/portal-registration-status'
-import { parseBackendDate } from '@/lib/dates'
+import { formatDateOnly } from '@/lib/dates'
 import './page.inline.css'
+import { LoadErrorBanner } from '@/components/ui/LoadErrorBanner'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function fmtDate(iso?: string | null): string {
-  if (!iso) return ''
-  return parseBackendDate(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
 
 function daysUntil(iso?: string | null): number | null {
   if (!iso) return null
@@ -40,9 +36,7 @@ function daysUntil(iso?: string | null): number | null {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type DocStatus = 'verified' | 'submitted' | 'pending' | 'rejected' | 'expired' | 'missing'
-
-const STATUS_CONFIG: Record<DocStatus, {
+const STATUS_CONFIG: Record<DocumentStatus, {
   label: string; bg: string; color: string; icon: 'check-circle' | 'alert-circle' | 'clock' | 'upload' | 'x-circle'
 }> = {
   verified:  { label: 'Verified',        bg: 'var(--success-bg)', color: 'var(--success)', icon: 'check-circle' },
@@ -78,17 +72,9 @@ interface MergedDoc {
   expiryMonths: number | null
   swimmerLabel: string
   submission: DocumentSubmissionRecord | null
-  effectiveStatus: DocStatus
+  effectiveStatus: DocumentStatus
   expiresAt: string | null
   submittedAt: string | null
-}
-
-function resolveStatus(sub: DocumentSubmissionRecord | null): DocStatus {
-  if (!sub) return 'missing'
-  if (sub.expires_at && new Date(sub.expires_at) < new Date() && sub.status !== 'verified') {
-    return 'expired'
-  }
-  return (sub.status as DocStatus) || 'pending'
 }
 
 function mergeDocuments(
@@ -118,7 +104,7 @@ function mergeDocuments(
           expiryMonths: dt.expiry_months ?? null,
           swimmerLabel: 'All Swimmers',
           submission: sub,
-          effectiveStatus: resolveStatus(sub),
+          effectiveStatus: resolveDocumentStatus(sub),
           expiresAt: sub?.expires_at ?? null,
           submittedAt: sub?.submitted_at ?? null,
         })
@@ -137,7 +123,7 @@ function mergeDocuments(
             expiryMonths: dt.expiry_months ?? null,
             swimmerLabel: `${sw.first_name} ${sw.last_name}`,
             submission: sub,
-            effectiveStatus: resolveStatus(sub),
+            effectiveStatus: resolveDocumentStatus(sub),
             expiresAt: sub?.expires_at ?? null,
             submittedAt: sub?.submitted_at ?? null,
           })
@@ -158,7 +144,7 @@ function mergeDocuments(
         expiryMonths: dt.expiry_months ?? null,
         swimmerLabel: dt.applies_to === 'household' ? 'Household' : 'All Swimmers',
         submission: sub,
-        effectiveStatus: resolveStatus(sub),
+        effectiveStatus: resolveDocumentStatus(sub),
         expiresAt: sub?.expires_at ?? null,
         submittedAt: sub?.submitted_at ?? null,
       })
@@ -166,6 +152,24 @@ function mergeDocuments(
   }
 
   return docs
+}
+
+type StatusCfg = (typeof STATUS_CONFIG)[DocumentStatus]
+
+function StatusIcon({ cfg }: { cfg: StatusCfg }) {
+  return (
+    <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: cfg.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+      <Icon name={cfg.icon} size={18} style={{ color: cfg.color }} />
+    </div>
+  )
+}
+
+function StatusBadge({ cfg }: { cfg: StatusCfg }) {
+  return (
+    <span style={{ padding: '4px 8px', borderRadius: '999px', fontSize: 'var(--fs-xs)', fontWeight: 600, background: cfg.bg, color: cfg.color, whiteSpace: 'nowrap', flexShrink: 0 }}>
+      {cfg.label}
+    </span>
+  )
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -238,7 +242,7 @@ export default function DocumentsPage() {
   const merged = mergeDocuments(docTypes, submissions, swimmers)
   // 'pending' = a submission was started but no file was attached (e.g. the
   // upload failed), so it still needs an upload from the family.
-  const pendingDocs = merged.filter(d => d.effectiveStatus === 'missing' || d.effectiveStatus === 'pending' || d.effectiveStatus === 'rejected' || d.effectiveStatus === 'expired')
+  const pendingDocs = merged.filter(d => documentNeedsAction(d.effectiveStatus))
   const visibleDocs = filter === 'pending' ? pendingDocs : merged
 
   const categories = [...new Set(visibleDocs.map(d => d.typeCategory))]
@@ -352,19 +356,7 @@ export default function DocumentsPage() {
       </div>
 
       {loadError && (
-        <div className="is-6fe8896">
-          <div className="is-730b6a7">
-            <Icon name="alert-circle" size={15} style={{ color: 'var(--warning)', marginTop: '1px', flexShrink: 0 }} />
-            <span>{loadError}</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setReloadKey((key) => key + 1)}
-            className="is-889d44c"
-          >
-            Retry
-          </button>
-        </div>
+        <LoadErrorBanner message={loadError} onRetry={() => setReloadKey((key) => key + 1)} />
       )}
 
       {/* Upload error */}
@@ -403,7 +395,7 @@ export default function DocumentsPage() {
                   <li key={doc.typeId}>
                     <strong>{doc.typeName}</strong>
                     {doc.expiresAt && daysUntil(doc.expiresAt) !== null && (daysUntil(doc.expiresAt) ?? 99) <= 14
-                      ? ` — due by ${fmtDate(doc.expiresAt)}`
+                      ? ` — due by ${formatDateOnly(doc.expiresAt)}`
                       : ''}
                   </li>
                 ))}
@@ -462,22 +454,18 @@ export default function DocumentsPage() {
               const statusCfg = w.accepted ? STATUS_CONFIG.verified : STATUS_CONFIG.pending
               return (
                 <div key={w.id} style={{ display: 'flex', gap: '16px', padding: '20px 20px', borderBottom: i < visibleWaivers.length - 1 ? '1px solid var(--border)' : 'none', alignItems: 'flex-start', background: w.accepted ? 'transparent' : 'rgba(220,38,38,0.01)' }}>
-                  <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: statusCfg.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <Icon name={statusCfg.icon} size={18} style={{ color: statusCfg.color }} />
-                  </div>
+                  <StatusIcon cfg={statusCfg} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div className="is-ff14055">
                       Registration waiver — {w.swimmerLabel}
                     </div>
                     <div className="is-1042204">
                       {w.accepted
-                        ? `${w.count} accepted waiver${w.count === 1 ? '' : 's'}${w.lastAcceptedAt ? ` • last accepted ${fmtDate(w.lastAcceptedAt)}` : ''} (${w.season})`
+                        ? `${w.count} accepted waiver${w.count === 1 ? '' : 's'}${w.lastAcceptedAt ? ` • last accepted ${formatDateOnly(w.lastAcceptedAt)}` : ''} (${w.season})`
                         : `No registration waiver acceptance is recorded yet (${w.season}).`}
                     </div>
                   </div>
-                  <span style={{ padding: '4px 8px', borderRadius: '999px', fontSize: 'var(--fs-xs)', fontWeight: 600, background: statusCfg.bg, color: statusCfg.color, whiteSpace: 'nowrap', flexShrink: 0 }}>
-                    {statusCfg.label}
-                  </span>
+                  <StatusBadge cfg={statusCfg} />
                 </div>
               )
             })}
@@ -500,7 +488,7 @@ export default function DocumentsPage() {
                 {catDocs.map((doc, i) => {
                   const statusCfg = STATUS_CONFIG[doc.effectiveStatus]
                   const isUploading = uploadingId === doc.typeId
-                  const needsAction = doc.effectiveStatus === 'missing' || doc.effectiveStatus === 'pending' || doc.effectiveStatus === 'rejected' || doc.effectiveStatus === 'expired'
+                  const needsAction = documentNeedsAction(doc.effectiveStatus)
                   const actionKind = getPortalDocumentAction({
                     effectiveStatus: doc.effectiveStatus,
                     typeCategory: doc.typeCategory,
@@ -511,9 +499,7 @@ export default function DocumentsPage() {
                   return (
                     <div key={doc.typeId} style={{ display: 'flex', gap: '16px', padding: '20px 20px', borderBottom: i < catDocs.length - 1 ? '1px solid var(--border)' : 'none', alignItems: 'flex-start', background: needsAction ? 'rgba(220,38,38,0.01)' : 'transparent' }}>
                       {/* Status icon */}
-                      <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: statusCfg.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <Icon name={statusCfg.icon} size={18} style={{ color: statusCfg.color }} />
-                      </div>
+                      <StatusIcon cfg={statusCfg} />
 
                       {/* Content */}
                       <div style={{ flex: 1, minWidth: 0 }}>
@@ -533,12 +519,12 @@ export default function DocumentsPage() {
                         )}
                         <div className="is-9b73712">
                           <span>For: <span style={{ color: 'var(--text-subtle)' }}>{doc.swimmerLabel}</span></span>
-                          {doc.submittedAt && <span>Submitted: <span style={{ color: 'var(--text-subtle)' }}>{fmtDate(doc.submittedAt)}</span></span>}
+                          {doc.submittedAt && <span>Submitted: <span style={{ color: 'var(--text-subtle)' }}>{formatDateOnly(doc.submittedAt)}</span></span>}
                           {doc.expiresAt && (
                             <span>
                               Expires:{' '}
                               <span style={{ color: expiringUrgent ? 'var(--warning)' : 'var(--text-subtle)', fontWeight: expiringUrgent ? 600 : 400 }}>
-                                {fmtDate(doc.expiresAt)}
+                                {formatDateOnly(doc.expiresAt)}
                                 {expiringUrgent && days !== null && (
                                   <span className="is-3ef9660">({days}d)</span>
                                 )}
@@ -550,9 +536,7 @@ export default function DocumentsPage() {
 
                       {/* Action area */}
                       <div className="is-0da4d5a">
-                        <span style={{ padding: '4px 8px', borderRadius: '999px', fontSize: 'var(--fs-xs)', fontWeight: 600, background: statusCfg.bg, color: statusCfg.color, whiteSpace: 'nowrap' }}>
-                          {statusCfg.label}
-                        </span>
+                        <StatusBadge cfg={statusCfg} />
 
                         {actionKind === 'upload' && needsAction && (
                           <button type="button"
@@ -594,12 +578,6 @@ export default function DocumentsPage() {
         </span>
       </div>
 
-      <style>{`
-        @keyframes slideUp {
-          from { opacity: 0; transform: translateY(12px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
     </div>
   )
 }

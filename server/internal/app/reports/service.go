@@ -222,10 +222,7 @@ func (s *Service) RunMembershipStatusReport(orgID string, principal *appmiddlewa
 	links := s.members.SnapshotSwimmerGroupLinks(orgID)
 	groupDefs := s.groups.SnapshotGroups(orgID)
 
-	householdByID := make(map[string]members.Household, len(households))
-	for _, household := range households {
-		householdByID[household.ID] = household
-	}
+	householdByID := indexBy(households, func(v members.Household) string { return v.ID })
 
 	primaryContact := make(map[string]members.Contact)
 	for _, contact := range contacts {
@@ -261,7 +258,7 @@ func (s *Service) RunMembershipStatusReport(orgID string, principal *appmiddlewa
 			PrimaryEmail:        firstNonEmpty(contact.Email, household.PrimaryEmail),
 			PrimaryPhoneE164:    firstNonEmpty(contact.PhoneE164, household.PrimaryPhoneE164),
 			SwimmerID:           swimmer.ID,
-			SwimmerName:         strings.TrimSpace(swimmer.FirstName + " " + swimmer.LastName),
+			SwimmerName:         fullName(swimmer.FirstName, swimmer.LastName),
 			PreferredName:       swimmer.PreferredName,
 			RegistrationStatus:  swimmer.RegistrationStatus,
 			GroupCount:          len(swimmerLinks),
@@ -331,18 +328,9 @@ func (s *Service) RunMeetFeesReport(orgID string, principal *appmiddleware.Princ
 	meetDefs := s.meets.SnapshotMeets(orgID)
 	swimmers := s.members.SnapshotSwimmers(orgID)
 
-	invoiceByID := make(map[string]billing.Invoice, len(invoices))
-	for _, invoice := range invoices {
-		invoiceByID[invoice.ID] = invoice
-	}
-	meetByID := make(map[string]meets.Meet, len(meetDefs))
-	for _, meet := range meetDefs {
-		meetByID[meet.ID] = meet
-	}
-	swimmerByID := make(map[string]members.Swimmer, len(swimmers))
-	for _, swimmer := range swimmers {
-		swimmerByID[swimmer.ID] = swimmer
-	}
+	invoiceByID := indexBy(invoices, func(v billing.Invoice) string { return v.ID })
+	meetByID := indexBy(meetDefs, func(v meets.Meet) string { return v.ID })
+	swimmerByID := indexBy(swimmers, func(v members.Swimmer) string { return v.ID })
 
 	rows := make([]MeetFeesRow, 0)
 	total := 0
@@ -361,7 +349,7 @@ func (s *Service) RunMeetFeesReport(orgID string, principal *appmiddleware.Princ
 			MeetID:          item.MeetID,
 			MeetName:        meet.Name,
 			SwimmerID:       item.SwimmerID,
-			SwimmerName:     strings.TrimSpace(swimmer.FirstName + " " + swimmer.LastName),
+			SwimmerName:     fullName(swimmer.FirstName, swimmer.LastName),
 			LineItemID:      item.ID,
 			LineDescription: item.Description,
 			Quantity:        item.Quantity,
@@ -520,10 +508,7 @@ func (s *Service) RunInvoiceDetailReport(orgID string, principal *appmiddleware.
 	}
 
 	swimmers := s.members.SnapshotSwimmers(orgID)
-	swimmerByID := make(map[string]members.Swimmer, len(swimmers))
-	for _, swimmer := range swimmers {
-		swimmerByID[swimmer.ID] = swimmer
-	}
+	swimmerByID := indexBy(swimmers, func(v members.Swimmer) string { return v.ID })
 
 	rows := make([]InvoiceDetailRow, 0)
 	for _, item := range s.billing.SnapshotInvoiceItems(orgID) {
@@ -533,7 +518,7 @@ func (s *Service) RunInvoiceDetailReport(orgID string, principal *appmiddleware.
 		swimmerName := ""
 		if item.SwimmerID != "" {
 			if swimmer, ok := swimmerByID[item.SwimmerID]; ok {
-				swimmerName = strings.TrimSpace(swimmer.FirstName + " " + swimmer.LastName)
+				swimmerName = fullName(swimmer.FirstName, swimmer.LastName)
 			}
 		}
 		rows = append(rows, InvoiceDetailRow{
@@ -619,10 +604,7 @@ func (s *Service) RunPaymentReconciliationReport(orgID string, principal *appmid
 	refunds := s.billing.SnapshotRefunds(orgID)
 	ledger := s.billing.SnapshotLedgerEvents(orgID)
 
-	invoiceByID := make(map[string]billing.Invoice, len(invoices))
-	for _, invoice := range invoices {
-		invoiceByID[invoice.ID] = invoice
-	}
+	invoiceByID := indexBy(invoices, func(v billing.Invoice) string { return v.ID })
 
 	refundsByPayment := make(map[string][]billing.Refund)
 	for _, refund := range refunds {
@@ -633,7 +615,7 @@ func (s *Service) RunPaymentReconciliationReport(orgID string, principal *appmid
 	refundLedger := make(map[string]int)
 	for _, event := range ledger {
 		switch event.EventType {
-		case "payment_succeeded":
+		case "payment_succeeded", "credit_applied": // account-credit payments are ledgered as credit_applied
 			if event.PaymentID != "" {
 				paymentLedger[event.PaymentID] += -event.AmountCents
 			}
@@ -753,18 +735,9 @@ func (s *Service) RunRegistrationStatusReport(orgID string, principal *appmiddle
 	households := s.members.SnapshotHouseholds(orgID)
 	swimmers := s.members.SnapshotSwimmers(orgID)
 
-	groupByID := make(map[string]groups.Group, len(groupDefs))
-	for _, group := range groupDefs {
-		groupByID[group.ID] = group
-	}
-	householdByID := make(map[string]members.Household, len(households))
-	for _, household := range households {
-		householdByID[household.ID] = household
-	}
-	swimmerByID := make(map[string]members.Swimmer, len(swimmers))
-	for _, swimmer := range swimmers {
-		swimmerByID[swimmer.ID] = swimmer
-	}
+	groupByID := indexBy(groupDefs, func(v groups.Group) string { return v.ID })
+	householdByID := indexBy(households, func(v members.Household) string { return v.ID })
+	swimmerByID := indexBy(swimmers, func(v members.Swimmer) string { return v.ID })
 
 	waiverCountByRegistration := make(map[string]int)
 	lastWaiverByRegistration := make(map[string]time.Time)
@@ -796,7 +769,7 @@ func (s *Service) RunRegistrationStatusReport(orgID string, principal *appmiddle
 			HouseholdID:          registration.HouseholdID,
 			HouseholdName:        household.HouseholdName,
 			SwimmerID:            registration.SwimmerID,
-			SwimmerName:          strings.TrimSpace(swimmer.FirstName + " " + swimmer.LastName),
+			SwimmerName:          fullName(swimmer.FirstName, swimmer.LastName),
 			WaiverCount:          waiverCountByRegistration[registration.ID],
 			LastWaiverAcceptedAt: lastWaiver,
 		})
@@ -817,6 +790,19 @@ func (s *Service) RunRegistrationStatusReport(orgID string, principal *appmiddle
 		RowCount:    len(rows),
 		Rows:        rows,
 	}, nil
+}
+
+// indexBy builds a lookup of items keyed by key(item).
+func indexBy[T any](items []T, key func(T) string) map[string]T {
+	out := make(map[string]T, len(items))
+	for _, item := range items {
+		out[key(item)] = item
+	}
+	return out
+}
+
+func fullName(first, last string) string {
+	return strings.TrimSpace(first + " " + last)
 }
 
 func agingBucket(daysPastDue, amountDueCents int) string {

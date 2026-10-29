@@ -40,7 +40,7 @@ consistent with the existing codebase (Stripe, Postmark, and MinIO all use this 
 |---|---|---|---|
 | `imports:parse` | imports | On finalize import | handlers/imports.go |
 | `exports:generate` | imports | On export request | handlers/exports.go |
-| `email:campaign_batch` | email | On campaign send | handlers/email.go |
+| ~~`email:campaign_batch`~~ | email | removed (unused; recipients are resolved server-side at send time) | — |
 | `billing:reconcile` | reconcile | Nightly / on-demand | handlers/billing.go |
 | `integrity:nightly` | billing | Nightly | handlers/billing.go |
 | `cleanup:purge_expired` | default | Nightly | handlers/cleanup.go |

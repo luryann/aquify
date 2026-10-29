@@ -1,0 +1,12 @@
+        @keyframes attendanceSheetUp {
+          from { transform: translateY(24px); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
+        }
+        @media (min-width: 640px) {
+          .attendance-sheet {
+            margin-bottom: 8vh;
+            border-radius: 18px;
+            border-bottom: 1px solid var(--border);
+          }
+        }
+      

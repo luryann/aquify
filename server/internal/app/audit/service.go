@@ -14,7 +14,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"log/slog"
 	"sort"
 	"strings"
 	"sync"
@@ -60,6 +59,7 @@ const (
 	ActionBillingInvoiceVoid                 = "billing.invoice.void"
 	ActionBillingInvoiceWriteOff             = "billing.invoice.write_off"
 	ActionBillingRefundCreate                = "billing.refund.create"
+	ActionBillingPaymentRecord               = "billing.payment.record"
 	ActionBillingAutopayEnroll               = "billing.autopay.enroll"
 	ActionBillingAutopayOptOut               = "billing.autopay.opt_out"
 	ActionMeetEntryOverride                  = "meet.entry.override"
@@ -68,6 +68,8 @@ const (
 	ActionMeetCommitmentsLock                = "meet.commitments.lock"
 	ActionPerformanceBestTimeOverride        = "performance.best_time.override"
 	ActionMembersHouseholdDelete             = "members.household.delete"
+	ActionMembersHouseholdUpdate             = "members.household.update"
+	ActionMembersSwimmerGroupAssign          = "members.swimmer.group_assign"
 	ActionMembersSwimmerDelete               = "members.swimmer.delete"
 	ActionMembersSwimmerUpdate               = "members.swimmer.update"
 	ActionComplianceDataExportRequest        = "compliance.data_export.request"
@@ -144,26 +146,15 @@ func NewService() *Service {
 	return &Service{}
 }
 
-// SetPool wires a DB pool into the service and loads existing audit events
-// from Postgres into the in-memory read cache so restart-time state is
-// restored before the service handles requests. A nil pool leaves the
-// service in-memory-only (used by tests).
+// SetPool wires a DB pool into the service. Once set, Append writes through
+// to Postgres and Query reads from it, so the in-memory slice is no longer
+// kept. A nil pool leaves the service in-memory-only (used by tests).
 func (s *Service) SetPool(pool *pgxpool.Pool) {
 	if pool == nil {
 		return
 	}
-	repo := newRepository(pool)
-
-	events, err := repo.ListAll(context.Background())
-	if err != nil {
-		slog.Error("audit: failed to load events from DB at startup", "error", err)
-	}
-
 	s.mu.Lock()
-	s.repo = repo
-	if events != nil {
-		s.events = events
-	}
+	s.repo = newRepository(pool)
 	s.mu.Unlock()
 }
 
@@ -222,9 +213,11 @@ func (s *Service) Append(req AppendRequest) (*AuditEvent, error) {
 		}
 	}
 
-	s.mu.Lock()
-	s.events = append(s.events, ev)
-	s.mu.Unlock()
+	if repo == nil {
+		s.mu.Lock()
+		s.events = append(s.events, ev)
+		s.mu.Unlock()
+	}
 
 	return &ev, nil
 }
@@ -232,14 +225,18 @@ func (s *Service) Append(req AppendRequest) (*AuditEvent, error) {
 // Query returns audit events matching the filter, sorted newest-first.
 func (s *Service) Query(f Filter) ([]AuditEvent, error) {
 	s.mu.RLock()
+	repo := s.repo
+	s.mu.RUnlock()
+	if repo != nil {
+		return repo.Query(context.Background(), f)
+	}
+
+	s.mu.RLock()
 	all := make([]AuditEvent, len(s.events))
 	copy(all, s.events)
 	s.mu.RUnlock()
 
-	// s.events is not guaranteed to already be newest-first: in-memory Append
-	// calls append in insertion order, but a DB-backed resync reloads via
-	// ListAll's ORDER BY occurred_at DESC. Sort explicitly rather than assume
-	// either ordering.
+	// In-memory Append calls append in insertion order; sort newest-first.
 	sort.Slice(all, func(i, j int) bool {
 		return all[i].OccurredAt.After(all[j].OccurredAt)
 	})

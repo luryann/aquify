@@ -25,6 +25,20 @@ var roleTier = map[string]int{
 	"swimmer": 1,
 }
 
+// requireAssignableRole writes a 400/403 unless role exists and sits at or below the actor's tier.
+func requireAssignableRole(w http.ResponseWriter, r *http.Request, principal *appmiddleware.Principal, role, verb string) bool {
+	targetTier := roleTier[role]
+	if targetTier == 0 {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_role", "Unknown role: "+role, nil)
+		return false
+	}
+	if actorMaxTier(principal.Roles) < targetTier {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You cannot "+verb+" a role above your own privilege tier.", nil)
+		return false
+	}
+	return true
+}
+
 // actorMaxTier returns the highest tier among the actor's roles.
 func actorMaxTier(roles []string) int {
 	max := 0
@@ -51,9 +65,7 @@ func (h *UserHandlers) countOrgAdmins(ctx context.Context, orgID string) (int, e
 		if rerr != nil {
 			continue
 		}
-		if slices.ContainsFunc(roles, func(rl keycloak.Role) bool {
-			return strings.EqualFold(rl.Name, "admin")
-		}) {
+		if hasAdminRealmRole(roles) {
 			count++
 		}
 	}
@@ -74,6 +86,10 @@ func (h *UserHandlers) userIsOrgAdmin(ctx context.Context, userID string) bool {
 	if err != nil {
 		return false
 	}
+	return hasAdminRealmRole(roles)
+}
+
+func hasAdminRealmRole(roles []keycloak.Role) bool {
 	return slices.ContainsFunc(roles, func(rl keycloak.Role) bool {
 		return strings.EqualFold(rl.Name, "admin")
 	})
@@ -115,16 +131,7 @@ func normalizeRealmRoleObjects(roles []keycloak.Role) []keycloak.Role {
 		seen[role.Name] = struct{}{}
 		out = append(out, role)
 	}
-	slices.SortFunc(out, func(a, b keycloak.Role) int {
-		switch {
-		case a.Name < b.Name:
-			return -1
-		case a.Name > b.Name:
-			return 1
-		default:
-			return 0
-		}
-	})
+	slices.SortFunc(out, func(a, b keycloak.Role) int { return strings.Compare(a.Name, b.Name) })
 	return out
 }
 
@@ -152,6 +159,20 @@ func buildUserListItem(user keycloak.User, roles []string) userListItem {
 		Attributes:    user.Attributes,
 		Roles:         roles,
 	}
+}
+
+// userMatchesStatus applies the /users ?status= filter; unknown values match nothing.
+func userMatchesStatus(u userListItem, status string) bool {
+	switch status {
+	case "active":
+		return u.Enabled
+	case "disabled":
+		return !u.Enabled
+	case "pending_approval":
+		vals := u.Attributes["registration_status"]
+		return len(vals) > 0 && vals[0] == "pending_approval"
+	}
+	return false
 }
 
 func keycloakSource(client keycloak.Client) string {
@@ -190,51 +211,46 @@ func (h *UserHandlers) RegisterPublicRoutes(r chi.Router) {
 // The router must already have auth + org-scope middleware applied.
 func (h *UserHandlers) RegisterRoutes(r chi.Router) {
 	r.Route("/users", func(users chi.Router) {
+		admin := users.With(appmiddleware.RBACStub("admin"))
 		// admin only
-		users.With(appmiddleware.RBACStub("admin")).Get("/", h.listUsers)
+		admin.Get("/", h.listUsers)
 		// staff directory (admin + coach): names only, for coach pickers and
 		// resolving coach_user_id labels without exposing the full user list.
 		users.With(appmiddleware.RBACStub("admin", "coach")).Get("/staff", h.listStaff)
-		users.With(appmiddleware.RBACStub("admin")).Post("/", h.createUser)
-		users.With(appmiddleware.RBACStub("admin")).Post("/invite", h.inviteUser)
-		users.With(appmiddleware.RBACStub("admin")).Get("/{id}", h.getUser)
-		users.With(appmiddleware.RBACStub("admin")).Put("/{id}", h.updateUser)
-		users.With(appmiddleware.RBACStub("admin")).Post("/{id}/disable", h.disableUser)
-		users.With(appmiddleware.RBACStub("admin")).Post("/{id}/enable", h.enableUser)
-		users.With(appmiddleware.RBACStub("admin")).Get("/{id}/roles", h.listUserRoles)
-		users.With(appmiddleware.RBACStub("admin")).Post("/{id}/roles", h.assignRole)
-		users.With(appmiddleware.RBACStub("admin")).Delete("/{id}/roles/{role}", h.removeRole)
-		users.With(appmiddleware.RBACStub("admin")).Post("/{id}/password-reset", h.passwordReset)
+		admin.Post("/", h.createUser)
+		admin.Post("/invite", h.inviteUser)
+		admin.Get("/{id}", h.getUser)
+		admin.Put("/{id}", h.updateUser)
+		admin.Post("/{id}/disable", h.disableUser)
+		admin.Post("/{id}/enable", h.enableUser)
+		admin.Get("/{id}/roles", h.listUserRoles)
+		admin.Post("/{id}/roles", h.assignRole)
+		admin.Delete("/{id}/roles/{role}", h.removeRole)
+		admin.Post("/{id}/password-reset", h.passwordReset)
 		// approval flow (admin only)
-		users.With(appmiddleware.RBACStub("admin")).Post("/{id}/approve", h.approveUser)
-		users.With(appmiddleware.RBACStub("admin")).Post("/{id}/reject", h.rejectUser)
+		admin.Post("/{id}/approve", h.approveUser)
+		admin.Post("/{id}/reject", h.rejectUser)
 		// household linkage (admin only)
-		users.With(appmiddleware.RBACStub("admin")).Get("/{id}/household", h.getUserHousehold)
-		users.With(appmiddleware.RBACStub("admin")).Post("/{id}/household/link", h.linkUserHousehold)
-		users.With(appmiddleware.RBACStub("admin")).Post("/{id}/household/unlink", h.unlinkUserHousehold)
+		admin.Get("/{id}/household", h.getUserHousehold)
+		admin.Post("/{id}/household/link", h.linkUserHousehold)
+		admin.Post("/{id}/household/unlink", h.unlinkUserHousehold)
 		// swimmer linkage (admin only) — links a swimmer-role user's Keycloak
 		// account to a specific swimmer record, so their portal session resolves
 		// deterministically instead of guessing from the household roster.
-		users.With(appmiddleware.RBACStub("admin")).Get("/{id}/swimmer", h.getUserSwimmer)
-		users.With(appmiddleware.RBACStub("admin")).Post("/{id}/swimmer/link", h.linkUserSwimmer)
-		users.With(appmiddleware.RBACStub("admin")).Post("/{id}/swimmer/unlink", h.unlinkUserSwimmer)
+		admin.Get("/{id}/swimmer", h.getUserSwimmer)
+		admin.Post("/{id}/swimmer/link", h.linkUserSwimmer)
+		admin.Post("/{id}/swimmer/unlink", h.unlinkUserSwimmer)
 		// self-service swimmer-link recovery: any authenticated user may submit a
 		// request for their own account; only admin may view/resolve the queue.
 		users.Post("/me/swimmer-link-requests", h.createSwimmerLinkRequest)
-		users.With(appmiddleware.RBACStub("admin")).Get("/swimmer-link-requests", h.listSwimmerLinkRequests)
-		users.With(appmiddleware.RBACStub("admin")).Post("/swimmer-link-requests/{requestID}/resolve", h.resolveSwimmerLinkRequest)
+		admin.Get("/swimmer-link-requests", h.listSwimmerLinkRequests)
+		admin.Post("/swimmer-link-requests/{requestID}/resolve", h.resolveSwimmerLinkRequest)
 		// admin only (destructive)
-		users.With(appmiddleware.RBACStub("admin")).Delete("/{id}", h.deleteUser)
+		admin.Delete("/{id}", h.deleteUser)
 	})
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
-
-// userScopeFromRequest extracts the principal and orgID, writes a 401/400 if
-// missing, and returns (principal, orgID, true) on success.
-func userScopeFromRequest(w http.ResponseWriter, r *http.Request) (*appmiddleware.Principal, string, bool) {
-	return scopedRequestFromContext(w, r)
-}
 
 func writeKeycloakAdminError(w http.ResponseWriter, r *http.Request, err error, fallbackMessage string) {
 	switch {
@@ -257,8 +273,17 @@ func writeKeycloakAdminError(w http.ResponseWriter, r *http.Request, err error, 
 			nil,
 		)
 	default:
-		httpx.WriteError(w, r, http.StatusInternalServerError, "keycloak_error", fallbackMessage, nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "keycloak_error", fallbackMessage, err)
 	}
+}
+
+// writeKeycloakUserError answers 404 for a missing user, else the admin-client error.
+func writeKeycloakUserError(w http.ResponseWriter, r *http.Request, err error, fallbackMessage string) {
+	if errors.Is(err, keycloak.ErrUserNotFound) {
+		httpx.WriteError(w, r, http.StatusNotFound, "user_not_found", "User not found.", nil)
+		return
+	}
+	writeKeycloakAdminError(w, r, err, fallbackMessage)
 }
 
 func cloneUserAttributes(user *keycloak.User) map[string][]string {
@@ -297,16 +322,63 @@ func firstUserAttribute(user *keycloak.User, key string) string {
 	return strings.TrimSpace(values[0])
 }
 
+// createKeycloakUser creates the account, writing 409/5xx responses itself on failure.
+func (h *UserHandlers) createKeycloakUser(w http.ResponseWriter, r *http.Request, email, firstName, lastName, orgID string) (string, bool) {
+	userID, err := h.kc.CreateUser(r.Context(), email, firstName, lastName, orgID)
+	if err != nil {
+		if errors.Is(err, keycloak.ErrConflict) {
+			httpx.WriteError(w, r, http.StatusConflict, "user_already_exists", "A user with that email already exists.", nil)
+		} else {
+			writeKeycloakAdminError(w, r, err, "Failed to create user.")
+		}
+		return "", false
+	}
+	return userID, true
+}
+
+// createLinkedHousehold creates a household named after the user and linked to their Keycloak account.
+func (h *UserHandlers) createLinkedHousehold(principal *appmiddleware.Principal, orgID, firstName, lastName, email, keycloakUserID string) (members.Household, error) {
+	householdName := strings.TrimSpace(firstName + " " + lastName)
+	if householdName == "" {
+		householdName = email
+	}
+	actor := &appmiddleware.Principal{UserID: principal.UserID, OrgID: orgID, Roles: principal.Roles}
+	return h.membershipService.CreateHousehold(actor, members.CreateHouseholdInput{
+		OrgID:          orgID,
+		HouseholdName:  householdName,
+		PrimaryEmail:   email,
+		KeycloakUserID: keycloakUserID,
+	})
+}
+
+// assignInitialRole grants role to a just-created user. Failure is non-fatal
+// (the account exists) and is recorded as an audit event instead.
+func (h *UserHandlers) assignInitialRole(ctx context.Context, principal *appmiddleware.Principal, userID, role string) {
+	if role == "" {
+		return
+	}
+	if err := h.kc.AssignRealmRole(ctx, userID, role); err != nil {
+		h.emitAudit(principal, audit.ActionAuthRoleAssign, userID, map[string]string{
+			"role":  role,
+			"error": err.Error(),
+		})
+	}
+}
+
+func writeUserCreated(w http.ResponseWriter, userID, householdID string) {
+	resp := map[string]any{"status": "created", "user_id": userID}
+	if householdID != "" {
+		resp["household_id"] = householdID
+	}
+	_ = httpx.WriteJSON(w, http.StatusCreated, resp)
+}
+
 // requireUserInOrg fetches the target user and verifies org membership.
 // Writes 404 or 403 on failure. Returns (user, true) on success.
 func (h *UserHandlers) requireUserInOrg(w http.ResponseWriter, r *http.Request, userID, orgID string) (*keycloak.User, bool) {
 	user, err := h.kc.GetUser(r.Context(), userID)
 	if err != nil {
-		if errors.Is(err, keycloak.ErrUserNotFound) {
-			httpx.WriteError(w, r, http.StatusNotFound, "user_not_found", "User not found.", nil)
-		} else {
-			writeKeycloakAdminError(w, r, err, "Failed to fetch user.")
-		}
+		writeKeycloakUserError(w, r, err, "Failed to fetch user.")
 		return nil, false
 	}
 	if user.OrgID() != orgID {
@@ -317,25 +389,14 @@ func (h *UserHandlers) requireUserInOrg(w http.ResponseWriter, r *http.Request, 
 }
 
 // emitAudit logs a user management audit event; ignores errors (non-fatal).
-func (h *UserHandlers) emitAudit(r *http.Request, principal *appmiddleware.Principal, action, resourceID string, meta map[string]string) {
-	if h.auditService == nil {
-		return
-	}
-	_, _ = h.auditService.Append(audit.AppendRequest{
-		OrgID:        principal.OrgID,
-		ActorUserID:  principal.UserID,
-		ActorRoles:   principal.Roles,
-		Action:       action,
-		ResourceType: "keycloak_user",
-		ResourceID:   resourceID,
-		Metadata:     meta,
-	})
+func (h *UserHandlers) emitAudit(principal *appmiddleware.Principal, action, resourceID string, meta map[string]string) {
+	recordAudit(h.auditService, principal, principal.OrgID, action, "keycloak_user", resourceID, nil, nil, meta)
 }
 
 // ── GET /users ─────────────────────────────────────────────────────────────────
 
 func (h *UserHandlers) listUsers(w http.ResponseWriter, r *http.Request) {
-	_, orgID, ok := userScopeFromRequest(w, r)
+	_, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -352,6 +413,7 @@ func (h *UserHandlers) listUsers(w http.ResponseWriter, r *http.Request) {
 
 	roleFilter := normalizeUserRole(q.Get("role"))
 
+	source := keycloakSource(h.kc)
 	listItems := make([]userListItem, 0, len(users))
 	for _, u := range users {
 		realmRoles, err := h.kc.GetUserRealmRoles(r.Context(), u.ID)
@@ -365,32 +427,8 @@ func (h *UserHandlers) listUsers(w http.ResponseWriter, r *http.Request) {
 		listItems = append(listItems, buildUserListItem(u, normalizedRoles))
 	}
 
-	// Optional status filter.
-	if statusFilter := strings.TrimSpace(q.Get("status")); statusFilter != "" {
-		var filtered []userListItem
-		for _, u := range listItems {
-			switch strings.ToLower(statusFilter) {
-			case "active":
-				if u.Enabled {
-					filtered = append(filtered, u)
-				}
-			case "disabled":
-				if !u.Enabled {
-					filtered = append(filtered, u)
-				}
-			case "pending_approval":
-				regStatus := ""
-				if u.Attributes != nil {
-					if vals := u.Attributes["registration_status"]; len(vals) > 0 {
-						regStatus = vals[0]
-					}
-				}
-				if regStatus == "pending_approval" {
-					filtered = append(filtered, u)
-				}
-			}
-		}
-		listItems = filtered
+	if statusFilter := strings.ToLower(strings.TrimSpace(q.Get("status"))); statusFilter != "" {
+		listItems = slices.DeleteFunc(listItems, func(u userListItem) bool { return !userMatchesStatus(u, statusFilter) })
 	}
 
 	if listItems == nil {
@@ -402,8 +440,8 @@ func (h *UserHandlers) listUsers(w http.ResponseWriter, r *http.Request) {
 		"count":      len(listItems),
 		"limit":      pagination.Limit,
 		"offset":     pagination.Offset,
-		"source":     keycloakSource(h.kc),
-		"is_stubbed": keycloakSource(h.kc) == "stub",
+		"source":     source,
+		"is_stubbed": source == "stub",
 		"users":      listItems,
 	})
 }
@@ -421,7 +459,7 @@ type staffListItem struct {
 const staffDirectoryLimit = 500
 
 func (h *UserHandlers) listStaff(w http.ResponseWriter, r *http.Request) {
-	_, orgID, ok := userScopeFromRequest(w, r)
+	_, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -463,7 +501,7 @@ func (h *UserHandlers) listStaff(w http.ResponseWriter, r *http.Request) {
 // ── GET /users/{id} ────────────────────────────────────────────────────────────
 
 func (h *UserHandlers) getUser(w http.ResponseWriter, r *http.Request) {
-	_, orgID, ok := userScopeFromRequest(w, r)
+	_, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -529,13 +567,8 @@ func (h *UserHandlers) selfRegister(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	newUserID, err := h.kc.CreateUser(r.Context(), req.Email, req.FirstName, req.LastName, req.OrgID)
-	if err != nil {
-		if errors.Is(err, keycloak.ErrConflict) {
-			httpx.WriteError(w, r, http.StatusConflict, "user_already_exists", "A user with that email already exists.", nil)
-		} else {
-			writeKeycloakAdminError(w, r, err, "Failed to create user.")
-		}
+	newUserID, ok := h.createKeycloakUser(w, r, req.Email, req.FirstName, req.LastName, req.OrgID)
+	if !ok {
 		return
 	}
 
@@ -601,7 +634,7 @@ type createUserRequest struct {
 }
 
 func (h *UserHandlers) createUser(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := userScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -631,25 +664,12 @@ func (h *UserHandlers) createUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Tier guard.
-	if req.Role != "" {
-		targetTier := roleTier[req.Role]
-		if targetTier == 0 {
-			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_role", "Unknown role: "+req.Role, nil)
-			return
-		}
-		if actorMaxTier(principal.Roles) < targetTier {
-			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You cannot assign a role above your own privilege tier.", nil)
-			return
-		}
+	if req.Role != "" && !requireAssignableRole(w, r, principal, req.Role, "assign") {
+		return
 	}
 
-	newUserID, err := h.kc.CreateUser(r.Context(), req.Email, req.FirstName, req.LastName, orgID)
-	if err != nil {
-		if errors.Is(err, keycloak.ErrConflict) {
-			httpx.WriteError(w, r, http.StatusConflict, "user_already_exists", "A user with that email already exists.", nil)
-		} else {
-			writeKeycloakAdminError(w, r, err, "Failed to create user.")
-		}
+	newUserID, ok := h.createKeycloakUser(w, r, req.Email, req.FirstName, req.LastName, orgID)
+	if !ok {
 		return
 	}
 
@@ -661,54 +681,25 @@ func (h *UserHandlers) createUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Assign the requested role if provided.
-	if req.Role != "" {
-		if assignErr := h.kc.AssignRealmRole(r.Context(), newUserID, req.Role); assignErr != nil {
-			h.emitAudit(r, principal, audit.ActionAuthRoleAssign, newUserID, map[string]string{
-				"role":  req.Role,
-				"error": assignErr.Error(),
-			})
-		}
-	}
+	h.assignInitialRole(r.Context(), principal, newUserID, req.Role)
 
 	// Auto-create a linked household if requested.
 	var householdID string
 	if req.CreateHousehold && h.membershipService != nil {
-		householdName := strings.TrimSpace(req.FirstName + " " + req.LastName)
-		if householdName == "" {
-			householdName = req.Email
-		}
-		syntheticPrincipal := &appmiddleware.Principal{
-			UserID: principal.UserID,
-			OrgID:  orgID,
-			Roles:  principal.Roles,
-		}
-		hh, hhErr := h.membershipService.CreateHousehold(syntheticPrincipal, members.CreateHouseholdInput{
-			OrgID:          orgID,
-			HouseholdName:  householdName,
-			PrimaryEmail:   req.Email,
-			KeycloakUserID: newUserID,
-		})
+		hh, hhErr := h.createLinkedHousehold(principal, orgID, req.FirstName, req.LastName, req.Email, newUserID)
 		if hhErr == nil {
 			householdID = hh.ID
 		}
 	}
 
-	h.emitAudit(r, principal, audit.ActionAuthUserInvite, newUserID, map[string]string{
+	h.emitAudit(principal, audit.ActionAuthUserInvite, newUserID, map[string]string{
 		"email":        req.Email,
 		"role":         req.Role,
 		"method":       "direct_create",
 		"household_id": householdID,
 	})
 
-	resp := map[string]any{
-		"status":  "created",
-		"user_id": newUserID,
-	}
-	if householdID != "" {
-		resp["household_id"] = householdID
-	}
-	_ = httpx.WriteJSON(w, http.StatusCreated, resp)
+	writeUserCreated(w, newUserID, householdID)
 }
 
 // ── POST /users/invite ─────────────────────────────────────────────────────────
@@ -722,7 +713,7 @@ type inviteUserRequest struct {
 }
 
 func (h *UserHandlers) inviteUser(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := userScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -743,60 +734,24 @@ func (h *UserHandlers) inviteUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Tier guard: actor may only invite users with roles at or below their tier.
-	if req.Role != "" {
-		targetTier := roleTier[req.Role]
-		if targetTier == 0 {
-			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_role", "Unknown role: "+req.Role, nil)
-			return
-		}
-		if actorMaxTier(principal.Roles) < targetTier {
-			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You cannot assign a role above your own privilege tier.", nil)
-			return
-		}
-	}
-
-	newUserID, err := h.kc.CreateUser(r.Context(), req.Email, req.FirstName, req.LastName, orgID)
-	if err != nil {
-		if errors.Is(err, keycloak.ErrConflict) {
-			httpx.WriteError(w, r, http.StatusConflict, "user_already_exists", "A user with that email already exists.", nil)
-		} else {
-			writeKeycloakAdminError(w, r, err, "Failed to create user.")
-		}
+	if req.Role != "" && !requireAssignableRole(w, r, principal, req.Role, "assign") {
 		return
 	}
 
-	// Assign the requested role if provided.
-	if req.Role != "" {
-		if assignErr := h.kc.AssignRealmRole(r.Context(), newUserID, req.Role); assignErr != nil {
-			// Non-fatal: user is created; role assignment failure is logged.
-			h.emitAudit(r, principal, audit.ActionAuthRoleAssign, newUserID, map[string]string{
-				"role":  req.Role,
-				"error": assignErr.Error(),
-			})
-		}
+	newUserID, ok := h.createKeycloakUser(w, r, req.Email, req.FirstName, req.LastName, orgID)
+	if !ok {
+		return
 	}
+
+	h.assignInitialRole(r.Context(), principal, newUserID, req.Role)
 
 	// If requested and a members service is available, auto-create a linked household.
 	var householdID string
 	if req.CreateHousehold && h.membershipService != nil {
-		householdName := strings.TrimSpace(req.FirstName + " " + req.LastName)
-		if householdName == "" {
-			householdName = req.Email
-		}
-		syntheticPrincipal := &appmiddleware.Principal{
-			UserID: principal.UserID,
-			OrgID:  orgID,
-			Roles:  principal.Roles,
-		}
-		hh, hhErr := h.membershipService.CreateHousehold(syntheticPrincipal, members.CreateHouseholdInput{
-			OrgID:          orgID,
-			HouseholdName:  householdName,
-			PrimaryEmail:   req.Email,
-			KeycloakUserID: newUserID,
-		})
+		hh, hhErr := h.createLinkedHousehold(principal, orgID, req.FirstName, req.LastName, req.Email, newUserID)
 		if hhErr != nil {
 			// Non-fatal: user is already created; log the failure and continue.
-			h.emitAudit(r, principal, audit.ActionAuthUserInvite, newUserID, map[string]string{
+			h.emitAudit(principal, audit.ActionAuthUserInvite, newUserID, map[string]string{
 				"email":           req.Email,
 				"household_error": hhErr.Error(),
 			})
@@ -808,20 +763,13 @@ func (h *UserHandlers) inviteUser(w http.ResponseWriter, r *http.Request) {
 	// Send welcome / verification email.
 	_ = h.kc.SendVerificationEmail(r.Context(), newUserID)
 
-	h.emitAudit(r, principal, audit.ActionAuthUserInvite, newUserID, map[string]string{
+	h.emitAudit(principal, audit.ActionAuthUserInvite, newUserID, map[string]string{
 		"email":        req.Email,
 		"role":         req.Role,
 		"household_id": householdID,
 	})
 
-	resp := map[string]any{
-		"status":  "created",
-		"user_id": newUserID,
-	}
-	if householdID != "" {
-		resp["household_id"] = householdID
-	}
-	_ = httpx.WriteJSON(w, http.StatusCreated, resp)
+	writeUserCreated(w, newUserID, householdID)
 }
 
 // ── PUT /users/{id} ────────────────────────────────────────────────────────────
@@ -833,7 +781,7 @@ type updateUserRequest struct {
 }
 
 func (h *UserHandlers) updateUser(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := userScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -856,15 +804,11 @@ func (h *UserHandlers) updateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.kc.UpdateUser(r.Context(), userID, fields); err != nil {
-		if errors.Is(err, keycloak.ErrUserNotFound) {
-			httpx.WriteError(w, r, http.StatusNotFound, "user_not_found", "User not found.", nil)
-		} else {
-			writeKeycloakAdminError(w, r, err, "Failed to update user.")
-		}
+		writeKeycloakUserError(w, r, err, "Failed to update user.")
 		return
 	}
 
-	h.emitAudit(r, principal, audit.ActionAuthUserUpdate, userID, map[string]string{
+	h.emitAudit(principal, audit.ActionAuthUserUpdate, userID, map[string]string{
 		"email":      req.Email,
 		"first_name": req.FirstName,
 		"last_name":  req.LastName,
@@ -876,7 +820,7 @@ func (h *UserHandlers) updateUser(w http.ResponseWriter, r *http.Request) {
 // ── POST /users/{id}/disable ───────────────────────────────────────────────────
 
 func (h *UserHandlers) disableUser(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := userScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -887,22 +831,18 @@ func (h *UserHandlers) disableUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.kc.DisableUser(r.Context(), userID); err != nil {
-		if errors.Is(err, keycloak.ErrUserNotFound) {
-			httpx.WriteError(w, r, http.StatusNotFound, "user_not_found", "User not found.", nil)
-		} else {
-			writeKeycloakAdminError(w, r, err, "Failed to disable user.")
-		}
+		writeKeycloakUserError(w, r, err, "Failed to disable user.")
 		return
 	}
 
-	h.emitAudit(r, principal, audit.ActionAuthUserDisable, userID, nil)
+	h.emitAudit(principal, audit.ActionAuthUserDisable, userID, nil)
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": "disabled"})
 }
 
 // ── POST /users/{id}/enable ────────────────────────────────────────────────────
 
 func (h *UserHandlers) enableUser(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := userScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -913,22 +853,18 @@ func (h *UserHandlers) enableUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.kc.EnableUser(r.Context(), userID); err != nil {
-		if errors.Is(err, keycloak.ErrUserNotFound) {
-			httpx.WriteError(w, r, http.StatusNotFound, "user_not_found", "User not found.", nil)
-		} else {
-			writeKeycloakAdminError(w, r, err, "Failed to enable user.")
-		}
+		writeKeycloakUserError(w, r, err, "Failed to enable user.")
 		return
 	}
 
-	h.emitAudit(r, principal, audit.ActionAuthUserEnable, userID, nil)
+	h.emitAudit(principal, audit.ActionAuthUserEnable, userID, nil)
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": "enabled"})
 }
 
 // ── POST /users/{id}/approve ───────────────────────────────────────────────────
 
 func (h *UserHandlers) approveUser(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := userScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -939,20 +875,6 @@ func (h *UserHandlers) approveUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.kc.EnableUser(r.Context(), userID); err != nil {
-		if errors.Is(err, keycloak.ErrUserNotFound) {
-			httpx.WriteError(w, r, http.StatusNotFound, "user_not_found", "User not found.", nil)
-		} else {
-			writeKeycloakAdminError(w, r, err, "Failed to enable user.")
-		}
-		return
-	}
-
-	attrs := cloneUserAttributes(user)
-	setUserAttribute(attrs, "org_id", user.OrgID())
-	setUserAttribute(attrs, "registration_status", "active")
-	_ = h.kc.UpdateUser(r.Context(), userID, keycloak.UpdateUserFields{Attributes: attrs})
-
 	requestedRole := normalizeUserRole(firstUserAttribute(user, "requested_role"))
 	if requestedRole == "" {
 		requestedRole = "parent"
@@ -962,12 +884,21 @@ func (h *UserHandlers) approveUser(w http.ResponseWriter, r *http.Request) {
 	// the same guard applied to direct create/invite/assign-role paths.
 	// Self-registration can request any role, so this is the only gate that
 	// prevents a lower-tier approver from indirectly granting a role above
-	// their own.
-	targetTier := roleTier[requestedRole]
-	if actorMaxTier(principal.Roles) < targetTier {
+	// their own. It runs before any change so a refusal leaves the account untouched.
+	if actorMaxTier(principal.Roles) < roleTier[requestedRole] {
 		httpx.WriteError(w, r, http.StatusForbidden, "insufficient_role_tier", "You cannot approve a user for a role above your own.", nil)
 		return
 	}
+
+	if err := h.kc.EnableUser(r.Context(), userID); err != nil {
+		writeKeycloakUserError(w, r, err, "Failed to enable user.")
+		return
+	}
+
+	attrs := cloneUserAttributes(user)
+	setUserAttribute(attrs, "org_id", user.OrgID())
+	setUserAttribute(attrs, "registration_status", "active")
+	_ = h.kc.UpdateUser(r.Context(), userID, keycloak.UpdateUserFields{Attributes: attrs})
 
 	// Assign the requested role if the user has no realm roles yet.
 	existingRoles, _ := h.kc.GetUserRealmRoles(r.Context(), userID)
@@ -978,7 +909,7 @@ func (h *UserHandlers) approveUser(w http.ResponseWriter, r *http.Request) {
 	// Trigger welcome / verification email.
 	_ = h.kc.SendVerificationEmail(r.Context(), userID)
 
-	h.emitAudit(r, principal, audit.ActionAuthUserApprove, userID, map[string]string{
+	h.emitAudit(principal, audit.ActionAuthUserApprove, userID, map[string]string{
 		"email":          user.Email,
 		"requested_role": requestedRole,
 	})
@@ -993,7 +924,7 @@ type rejectUserRequest struct {
 }
 
 func (h *UserHandlers) rejectUser(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := userScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -1010,11 +941,7 @@ func (h *UserHandlers) rejectUser(w http.ResponseWriter, r *http.Request) {
 	req.Reason = strings.TrimSpace(req.Reason)
 
 	if err := h.kc.DisableUser(r.Context(), userID); err != nil {
-		if errors.Is(err, keycloak.ErrUserNotFound) {
-			httpx.WriteError(w, r, http.StatusNotFound, "user_not_found", "User not found.", nil)
-		} else {
-			writeKeycloakAdminError(w, r, err, "Failed to disable user.")
-		}
+		writeKeycloakUserError(w, r, err, "Failed to disable user.")
 		return
 	}
 
@@ -1027,7 +954,7 @@ func (h *UserHandlers) rejectUser(w http.ResponseWriter, r *http.Request) {
 	if req.Reason != "" {
 		meta["reason"] = req.Reason
 	}
-	h.emitAudit(r, principal, audit.ActionAuthUserReject, userID, meta)
+	h.emitAudit(principal, audit.ActionAuthUserReject, userID, meta)
 
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": "rejected"})
 }
@@ -1035,7 +962,7 @@ func (h *UserHandlers) rejectUser(w http.ResponseWriter, r *http.Request) {
 // ── DELETE /users/{id} ─────────────────────────────────────────────────────────
 
 func (h *UserHandlers) deleteUser(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := userScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -1059,22 +986,18 @@ func (h *UserHandlers) deleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.kc.DeleteUser(r.Context(), userID); err != nil {
-		if errors.Is(err, keycloak.ErrUserNotFound) {
-			httpx.WriteError(w, r, http.StatusNotFound, "user_not_found", "User not found.", nil)
-		} else {
-			writeKeycloakAdminError(w, r, err, "Failed to delete user.")
-		}
+		writeKeycloakUserError(w, r, err, "Failed to delete user.")
 		return
 	}
 
-	h.emitAudit(r, principal, audit.ActionAuthUserDelete, userID, nil)
+	h.emitAudit(principal, audit.ActionAuthUserDelete, userID, nil)
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": "deleted"})
 }
 
 // ── GET /users/{id}/roles ──────────────────────────────────────────────────────
 
 func (h *UserHandlers) listUserRoles(w http.ResponseWriter, r *http.Request) {
-	_, orgID, ok := userScopeFromRequest(w, r)
+	_, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -1106,7 +1029,7 @@ type userAssignRoleRequest struct {
 }
 
 func (h *UserHandlers) assignRole(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := userScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -1134,13 +1057,7 @@ func (h *UserHandlers) assignRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	targetTier := roleTier[req.Role]
-	if targetTier == 0 {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_role", "Unknown role: "+req.Role, nil)
-		return
-	}
-	if actorMaxTier(principal.Roles) < targetTier {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You cannot assign a role above your own privilege tier.", nil)
+	if !requireAssignableRole(w, r, principal, req.Role, "assign") {
 		return
 	}
 
@@ -1153,14 +1070,14 @@ func (h *UserHandlers) assignRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.emitAudit(r, principal, audit.ActionAuthRoleAssign, userID, map[string]string{"role": req.Role})
+	h.emitAudit(principal, audit.ActionAuthRoleAssign, userID, map[string]string{"role": req.Role})
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": "assigned"})
 }
 
 // ── DELETE /users/{id}/roles/{role} ────────────────────────────────────────────
 
 func (h *UserHandlers) removeRole(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := userScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -1178,13 +1095,7 @@ func (h *UserHandlers) removeRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	targetTier := roleTier[roleName]
-	if targetTier == 0 {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_role", "Unknown role: "+roleName, nil)
-		return
-	}
-	if actorMaxTier(principal.Roles) < targetTier {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You cannot remove a role above your own privilege tier.", nil)
+	if !requireAssignableRole(w, r, principal, roleName, "remove") {
 		return
 	}
 
@@ -1205,14 +1116,14 @@ func (h *UserHandlers) removeRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.emitAudit(r, principal, audit.ActionAuthRoleRemove, userID, map[string]string{"role": roleName})
+	h.emitAudit(principal, audit.ActionAuthRoleRemove, userID, map[string]string{"role": roleName})
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": "removed"})
 }
 
 // ── POST /users/{id}/password-reset ────────────────────────────────────────────
 
 func (h *UserHandlers) passwordReset(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := userScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -1223,22 +1134,18 @@ func (h *UserHandlers) passwordReset(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.kc.SendPasswordResetEmail(r.Context(), userID); err != nil {
-		if errors.Is(err, keycloak.ErrUserNotFound) {
-			httpx.WriteError(w, r, http.StatusNotFound, "user_not_found", "User not found.", nil)
-		} else {
-			writeKeycloakAdminError(w, r, err, "Failed to send password reset email.")
-		}
+		writeKeycloakUserError(w, r, err, "Failed to send password reset email.")
 		return
 	}
 
-	h.emitAudit(r, principal, audit.ActionAuthUserPasswordReset, userID, nil)
+	h.emitAudit(principal, audit.ActionAuthUserPasswordReset, userID, nil)
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": "password_reset_sent"})
 }
 
 // ── GET /users/{id}/household ──────────────────────────────────────────────────
 
 func (h *UserHandlers) getUserHousehold(w http.ResponseWriter, r *http.Request) {
-	_, orgID, ok := userScopeFromRequest(w, r)
+	_, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -1248,8 +1155,7 @@ func (h *UserHandlers) getUserHousehold(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if h.membershipService == nil {
-		httpx.WriteError(w, r, http.StatusServiceUnavailable, "service_unavailable", "Membership service is not available.", nil)
+	if !h.requireMembership(w, r) {
 		return
 	}
 
@@ -1279,38 +1185,68 @@ func (h *UserHandlers) getUserHousehold(w http.ResponseWriter, r *http.Request) 
 
 // ── POST /users/{id}/household/link ───────────────────────────────────────────
 
-type linkHouseholdRequest struct {
+type swimmerIDBody struct {
+	SwimmerID string `json:"swimmer_id"`
+}
+
+type householdIDBody struct {
 	HouseholdID string `json:"household_id"`
 }
 
+// requireMembership writes a 503 when the members service is not wired.
+func (h *UserHandlers) requireMembership(w http.ResponseWriter, r *http.Request) bool {
+	if h.membershipService == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, "service_unavailable", "Membership service is not available.", nil)
+		return false
+	}
+	return true
+}
+
+// userLinkScope runs the checks shared by the user link/unlink routes: org
+// scope, the target user belonging to the org, and the membership service being wired.
+func (h *UserHandlers) userLinkScope(w http.ResponseWriter, r *http.Request) (principal *appmiddleware.Principal, orgID, userID string, ok bool) {
+	principal, orgID, ok = scopedRequestFromContext(w, r)
+	if !ok {
+		return nil, "", "", false
+	}
+	userID = chi.URLParam(r, "id")
+	if _, ok := h.requireUserInOrg(w, r, userID, orgID); !ok {
+		return nil, "", "", false
+	}
+	if !h.requireMembership(w, r) {
+		return nil, "", "", false
+	}
+	return principal, orgID, userID, true
+}
+
+// decodeRequiredID decodes a single-ID JSON body and returns the trimmed,
+// non-empty value of the field named by pick, or writes a 400 and returns ok=false.
+func decodeRequiredID[T any](w http.ResponseWriter, r *http.Request, field string, pick func(T) string) (string, bool) {
+	var body T
+	if err := decodeJSONBody(w, r, &body); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "Invalid request body.", nil)
+		return "", false
+	}
+	id := strings.TrimSpace(pick(body))
+	if id == "" {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", field+" is required.", nil)
+		return "", false
+	}
+	return id, true
+}
+
 func (h *UserHandlers) linkUserHousehold(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := userScopeFromRequest(w, r)
+	principal, orgID, userID, ok := h.userLinkScope(w, r)
 	if !ok {
 		return
 	}
 
-	userID := chi.URLParam(r, "id")
-	if _, ok := h.requireUserInOrg(w, r, userID, orgID); !ok {
+	householdID, ok := decodeRequiredID(w, r, "household_id", func(b householdIDBody) string { return b.HouseholdID })
+	if !ok {
 		return
 	}
 
-	if h.membershipService == nil {
-		httpx.WriteError(w, r, http.StatusServiceUnavailable, "service_unavailable", "Membership service is not available.", nil)
-		return
-	}
-
-	var req linkHouseholdRequest
-	if err := decodeJSONBody(w, r, &req); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "Invalid request body.", nil)
-		return
-	}
-	req.HouseholdID = strings.TrimSpace(req.HouseholdID)
-	if req.HouseholdID == "" {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "household_id is required.", nil)
-		return
-	}
-
-	if err := h.membershipService.LinkHouseholdToUser(orgID, req.HouseholdID, userID); err != nil {
+	if err := h.membershipService.LinkHouseholdToUser(orgID, householdID, userID); err != nil {
 		switch {
 		case errors.Is(err, members.ErrHouseholdNotFound):
 			httpx.WriteError(w, r, http.StatusNotFound, "household_not_found", "Household not found.", nil)
@@ -1320,70 +1256,50 @@ func (h *UserHandlers) linkUserHousehold(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	h.emitAudit(r, principal, "user.household.link", userID, map[string]string{
-		"household_id": req.HouseholdID,
+	h.emitAudit(principal, "user.household.link", userID, map[string]string{
+		"household_id": householdID,
 	})
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":       "linked",
-		"household_id": req.HouseholdID,
+		"household_id": householdID,
 	})
 }
 
 // ── POST /users/{id}/household/unlink ─────────────────────────────────────────
 
-type unlinkHouseholdRequest struct {
-	HouseholdID string `json:"household_id"`
-}
-
 func (h *UserHandlers) unlinkUserHousehold(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := userScopeFromRequest(w, r)
+	principal, orgID, userID, ok := h.userLinkScope(w, r)
 	if !ok {
 		return
 	}
 
-	userID := chi.URLParam(r, "id")
-	if _, ok := h.requireUserInOrg(w, r, userID, orgID); !ok {
+	householdID, ok := decodeRequiredID(w, r, "household_id", func(b householdIDBody) string { return b.HouseholdID })
+	if !ok {
 		return
 	}
 
-	if h.membershipService == nil {
-		httpx.WriteError(w, r, http.StatusServiceUnavailable, "service_unavailable", "Membership service is not available.", nil)
-		return
-	}
-
-	var req unlinkHouseholdRequest
-	if err := decodeJSONBody(w, r, &req); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "Invalid request body.", nil)
-		return
-	}
-	req.HouseholdID = strings.TrimSpace(req.HouseholdID)
-	if req.HouseholdID == "" {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "household_id is required.", nil)
-		return
-	}
-
-	if err := h.membershipService.UnlinkHouseholdFromUser(orgID, req.HouseholdID); err != nil {
+	if err := h.membershipService.UnlinkHouseholdFromUser(orgID, householdID); err != nil {
 		if errors.Is(err, members.ErrHouseholdNotFound) {
 			httpx.WriteError(w, r, http.StatusNotFound, "household_not_found", "Household not found.", nil)
 		} else {
-			httpx.WriteError(w, r, http.StatusInternalServerError, "service_error", "Failed to unlink household.", nil)
+			httpx.WriteError(w, r, http.StatusInternalServerError, "service_error", "Failed to unlink household.", err)
 		}
 		return
 	}
 
-	h.emitAudit(r, principal, "user.household.unlink", userID, map[string]string{
-		"household_id": req.HouseholdID,
+	h.emitAudit(principal, "user.household.unlink", userID, map[string]string{
+		"household_id": householdID,
 	})
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":       "unlinked",
-		"household_id": req.HouseholdID,
+		"household_id": householdID,
 	})
 }
 
 // ── GET /users/{id}/swimmer ────────────────────────────────────────────────
 
 func (h *UserHandlers) getUserSwimmer(w http.ResponseWriter, r *http.Request) {
-	_, orgID, ok := userScopeFromRequest(w, r)
+	_, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -1393,8 +1309,7 @@ func (h *UserHandlers) getUserSwimmer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.membershipService == nil {
-		httpx.WriteError(w, r, http.StatusServiceUnavailable, "service_unavailable", "Membership service is not available.", nil)
+	if !h.requireMembership(w, r) {
 		return
 	}
 
@@ -1415,38 +1330,18 @@ func (h *UserHandlers) getUserSwimmer(w http.ResponseWriter, r *http.Request) {
 
 // ── POST /users/{id}/swimmer/link ─────────────────────────────────────────
 
-type linkSwimmerRequest struct {
-	SwimmerID string `json:"swimmer_id"`
-}
-
 func (h *UserHandlers) linkUserSwimmer(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := userScopeFromRequest(w, r)
+	principal, orgID, userID, ok := h.userLinkScope(w, r)
 	if !ok {
 		return
 	}
 
-	userID := chi.URLParam(r, "id")
-	if _, ok := h.requireUserInOrg(w, r, userID, orgID); !ok {
+	swimmerID, ok := decodeRequiredID(w, r, "swimmer_id", func(b swimmerIDBody) string { return b.SwimmerID })
+	if !ok {
 		return
 	}
 
-	if h.membershipService == nil {
-		httpx.WriteError(w, r, http.StatusServiceUnavailable, "service_unavailable", "Membership service is not available.", nil)
-		return
-	}
-
-	var req linkSwimmerRequest
-	if err := decodeJSONBody(w, r, &req); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "Invalid request body.", nil)
-		return
-	}
-	req.SwimmerID = strings.TrimSpace(req.SwimmerID)
-	if req.SwimmerID == "" {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "swimmer_id is required.", nil)
-		return
-	}
-
-	if err := h.membershipService.LinkSwimmerToUser(orgID, req.SwimmerID, userID); err != nil {
+	if err := h.membershipService.LinkSwimmerToUser(orgID, swimmerID, userID); err != nil {
 		switch {
 		case errors.Is(err, members.ErrSwimmerNotFound):
 			httpx.WriteError(w, r, http.StatusNotFound, "swimmer_not_found", "Swimmer not found.", nil)
@@ -1456,63 +1351,43 @@ func (h *UserHandlers) linkUserSwimmer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.emitAudit(r, principal, "user.swimmer.link", userID, map[string]string{
-		"swimmer_id": req.SwimmerID,
+	h.emitAudit(principal, "user.swimmer.link", userID, map[string]string{
+		"swimmer_id": swimmerID,
 	})
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":     "linked",
-		"swimmer_id": req.SwimmerID,
+		"swimmer_id": swimmerID,
 	})
 }
 
 // ── POST /users/{id}/swimmer/unlink ───────────────────────────────────────
 
-type unlinkSwimmerRequest struct {
-	SwimmerID string `json:"swimmer_id"`
-}
-
 func (h *UserHandlers) unlinkUserSwimmer(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := userScopeFromRequest(w, r)
+	principal, orgID, userID, ok := h.userLinkScope(w, r)
 	if !ok {
 		return
 	}
 
-	userID := chi.URLParam(r, "id")
-	if _, ok := h.requireUserInOrg(w, r, userID, orgID); !ok {
+	swimmerID, ok := decodeRequiredID(w, r, "swimmer_id", func(b swimmerIDBody) string { return b.SwimmerID })
+	if !ok {
 		return
 	}
 
-	if h.membershipService == nil {
-		httpx.WriteError(w, r, http.StatusServiceUnavailable, "service_unavailable", "Membership service is not available.", nil)
-		return
-	}
-
-	var req unlinkSwimmerRequest
-	if err := decodeJSONBody(w, r, &req); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "Invalid request body.", nil)
-		return
-	}
-	req.SwimmerID = strings.TrimSpace(req.SwimmerID)
-	if req.SwimmerID == "" {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "swimmer_id is required.", nil)
-		return
-	}
-
-	if err := h.membershipService.UnlinkSwimmerFromUser(orgID, req.SwimmerID); err != nil {
+	if err := h.membershipService.UnlinkSwimmerFromUser(orgID, swimmerID); err != nil {
 		if errors.Is(err, members.ErrSwimmerNotFound) {
 			httpx.WriteError(w, r, http.StatusNotFound, "swimmer_not_found", "Swimmer not found.", nil)
 		} else {
-			httpx.WriteError(w, r, http.StatusInternalServerError, "service_error", "Failed to unlink swimmer.", nil)
+			httpx.WriteError(w, r, http.StatusInternalServerError, "service_error", "Failed to unlink swimmer.", err)
 		}
 		return
 	}
 
-	h.emitAudit(r, principal, "user.swimmer.unlink", userID, map[string]string{
-		"swimmer_id": req.SwimmerID,
+	h.emitAudit(principal, "user.swimmer.unlink", userID, map[string]string{
+		"swimmer_id": swimmerID,
 	})
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":     "unlinked",
-		"swimmer_id": req.SwimmerID,
+		"swimmer_id": swimmerID,
 	})
 }
 
@@ -1524,12 +1399,11 @@ type createSwimmerLinkRequestBody struct {
 }
 
 func (h *UserHandlers) createSwimmerLinkRequest(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := userScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
-	if h.membershipService == nil {
-		httpx.WriteError(w, r, http.StatusServiceUnavailable, "service_unavailable", "Membership service is not available.", nil)
+	if !h.requireMembership(w, r) {
 		return
 	}
 
@@ -1545,7 +1419,7 @@ func (h *UserHandlers) createSwimmerLinkRequest(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	h.emitAudit(r, principal, "user.swimmer_link_request.create", principal.UserID, map[string]string{
+	h.emitAudit(principal, "user.swimmer_link_request.create", principal.UserID, map[string]string{
 		"request_id": req.ID,
 	})
 	_ = httpx.WriteJSON(w, http.StatusCreated, map[string]any{"request": req})
@@ -1554,12 +1428,11 @@ func (h *UserHandlers) createSwimmerLinkRequest(w http.ResponseWriter, r *http.R
 // ── GET /users/swimmer-link-requests ───────────────────────────────────────
 
 func (h *UserHandlers) listSwimmerLinkRequests(w http.ResponseWriter, r *http.Request) {
-	_, orgID, ok := userScopeFromRequest(w, r)
+	_, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
-	if h.membershipService == nil {
-		httpx.WriteError(w, r, http.StatusServiceUnavailable, "service_unavailable", "Membership service is not available.", nil)
+	if !h.requireMembership(w, r) {
 		return
 	}
 
@@ -1578,12 +1451,11 @@ type resolveSwimmerLinkRequestBody struct {
 }
 
 func (h *UserHandlers) resolveSwimmerLinkRequest(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := userScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
-	if h.membershipService == nil {
-		httpx.WriteError(w, r, http.StatusServiceUnavailable, "service_unavailable", "Membership service is not available.", nil)
+	if !h.requireMembership(w, r) {
 		return
 	}
 
@@ -1629,7 +1501,7 @@ func (h *UserHandlers) resolveSwimmerLinkRequest(w http.ResponseWriter, r *http.
 		return
 	}
 
-	h.emitAudit(r, principal, "user.swimmer_link_request.resolve", target.UserID, map[string]string{
+	h.emitAudit(principal, "user.swimmer_link_request.resolve", target.UserID, map[string]string{
 		"request_id": requestID,
 		"swimmer_id": body.SwimmerID,
 	})

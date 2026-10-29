@@ -2,6 +2,7 @@ package billing
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -173,5 +175,55 @@ func TestStripeWebhookDatabaseLeaseRequiresRetry(t *testing.T) {
 	}
 	if claimed, err := a.RecordWebhookEvent("stripe", "", "evt_lease", "test", nil); err != nil || claimed {
 		t.Fatalf("completed event: %v %v", claimed, err)
+	}
+}
+
+func TestStripeWebhookMalformedIDsAreNotFoundNotDatabaseErrors(t *testing.T) {
+	pool := stripeTestPool(t)
+	svc := NewServiceWithPool(pool)
+	for _, tc := range []struct{ org, invoice string }{
+		{uuid.NewString(), "inv-load-1"},
+		{"org-demo", uuid.NewString()},
+	} {
+		_, _, err := svc.HandleStripePaymentIntentSucceeded(tc.org, "pi_malformed", tc.invoice, 100, "stripe-webhook")
+		if !errors.Is(err, ErrInvoiceNotFound) {
+			t.Errorf("org %q invoice %q: err = %v, want ErrInvoiceNotFound", tc.org, tc.invoice, err)
+		}
+	}
+}
+
+// A second API instance must see fee schedules and discount rules created on
+// the first without a restart, and be able to archive them.
+func TestFinanceConfigVisibleAcrossInstances(t *testing.T) {
+	pool := stripeTestPool(t)
+	org := uuid.NewString()
+	admin := &appmiddleware.Principal{UserID: "admin-x", OrgID: org, Roles: []string{"admin"}, MFAAuthenticated: true}
+	a, b := NewServiceWithPool(pool), NewServiceWithPool(pool)
+
+	sc, err := a.CreateFeeSchedule(org, admin.UserID, admin, FeeScheduleInput{
+		Name: "Dues", Kind: ScheduleKindDues, GroupCode: "SENIOR", Frequency: FrequencyMonthly, AmountCents: 5000, StartDate: "2026-01-01",
+	})
+	if err != nil {
+		t.Fatalf("create schedule: %v", err)
+	}
+	rule, err := a.CreateDiscountRule(org, admin.UserID, admin, DiscountRuleInput{
+		Name: "Sibling", AppliesTo: "dues", MinPosition: 2, DiscountType: DiscountTypePercent, PercentBps: 1000,
+	})
+	if err != nil {
+		t.Fatalf("create rule: %v", err)
+	}
+
+	if _, err := b.GetFeeSchedule(org, admin, sc.ID); err != nil {
+		t.Fatalf("second instance get schedule: %v", err)
+	}
+	if _, err := b.ArchiveFeeSchedule(org, admin.UserID, admin, sc.ID); err != nil {
+		t.Fatalf("second instance archive schedule: %v", err)
+	}
+	if _, err := b.ArchiveDiscountRule(org, admin.UserID, admin, rule.ID); err != nil {
+		t.Fatalf("second instance archive rule: %v", err)
+	}
+	got, err := a.GetFeeSchedule(org, admin, sc.ID)
+	if err != nil || got.Active {
+		t.Fatalf("first instance should see the archived schedule, got %+v err %v", got, err)
 	}
 }

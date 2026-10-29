@@ -56,7 +56,47 @@ func (s *Service) HouseholdStatement(orgID string, principal *appmiddleware.Prin
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	lines := make([]StatementLine, 0)
+	lines, open := s.statementLinesLocked(orgID, householdID)
+
+	st := &Statement{
+		HouseholdID: householdID, To: fmtDate(to), Lines: []StatementLine{},
+		CreditBalanceCents:   s.finance.balances[balanceKey(orgID, householdID)],
+		OpenInvoicesDueCents: open,
+	}
+	if !from.IsZero() {
+		st.From = fmtDate(from)
+	}
+	end := dateOnly(to).AddDate(0, 0, 1)
+	balance := 0
+	for _, line := range lines {
+		if !line.at.Before(end) {
+			break
+		}
+		balance += line.AmountCents
+		line.BalanceCents = balance
+		if !from.IsZero() && line.at.Before(dateOnly(from)) {
+			st.OpeningBalanceCents = balance
+			continue
+		}
+		switch {
+		case line.Informational:
+		case line.AmountCents > 0:
+			st.ChargesCents += line.AmountCents
+		case line.Type == "payment":
+			st.PaymentsCents += -line.AmountCents
+		default:
+			st.CreditsCents += -line.AmountCents
+		}
+		st.Lines = append(st.Lines, line)
+	}
+	st.ClosingBalanceCents = balance
+	return st, nil
+}
+
+// statementLinesLocked collects the household's statement lines in date order
+// (callers hold s.mu) plus the amount due on its open invoices.
+func (s *Service) statementLinesLocked(orgID, householdID string) (lines []StatementLine, open int) {
+	lines = make([]StatementLine, 0)
 	add := func(at time.Time, typ, desc, ref, invoiceID string, effect, display int, info bool) {
 		lines = append(lines, StatementLine{
 			Date: fmtDate(at), Type: typ, Description: desc, Reference: ref, InvoiceID: invoiceID,
@@ -75,7 +115,6 @@ func (s *Service) HouseholdStatement(orgID string, principal *appmiddleware.Prin
 			creditRefunds[e.RefundID] = true
 		}
 	}
-	open := 0
 	for _, inv := range s.invoices {
 		if inv.OrgID != orgID || inv.HouseholdID != householdID || inv.IssuedAt == nil {
 			continue
@@ -151,40 +190,7 @@ func (s *Service) HouseholdStatement(orgID string, principal *appmiddleware.Prin
 		}
 		return lines[i].seq < lines[j].seq
 	})
-
-	st := &Statement{
-		HouseholdID: householdID, To: fmtDate(to), Lines: []StatementLine{},
-		CreditBalanceCents:   s.finance.balances[balanceKey(orgID, householdID)],
-		OpenInvoicesDueCents: open,
-	}
-	if !from.IsZero() {
-		st.From = fmtDate(from)
-	}
-	end := dateOnly(to).AddDate(0, 0, 1)
-	balance := 0
-	for _, line := range lines {
-		if !line.at.Before(end) {
-			break
-		}
-		balance += line.AmountCents
-		line.BalanceCents = balance
-		if !from.IsZero() && line.at.Before(dateOnly(from)) {
-			st.OpeningBalanceCents = balance
-			continue
-		}
-		switch {
-		case line.Informational:
-		case line.AmountCents > 0:
-			st.ChargesCents += line.AmountCents
-		case line.Type == "payment":
-			st.PaymentsCents += -line.AmountCents
-		default:
-			st.CreditsCents += -line.AmountCents
-		}
-		st.Lines = append(st.Lines, line)
-	}
-	st.ClosingBalanceCents = balance
-	return st, nil
+	return lines, open
 }
 
 // UpcomingCharge is a projected recurring charge not yet billed.

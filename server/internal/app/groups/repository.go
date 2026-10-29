@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/dareaquatics/aquify/server/internal/dbutil"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -15,18 +17,6 @@ type Repository struct {
 
 func newRepository(pool *pgxpool.Pool) *Repository {
 	return &Repository{pool: pool}
-}
-
-// nullableString converts an empty string to nil so Postgres stores NULL.
-func nullableString(s string) interface{} {
-	if s == "" {
-		return nil
-	}
-	return s
-}
-
-func nonNullString(s string) string {
-	return s
 }
 
 // ─── Groups ───────────────────────────────────────────────────────────────────
@@ -50,8 +40,8 @@ func (r *Repository) UpsertGroup(ctx context.Context, g Group) error {
 		  is_active     = EXCLUDED.is_active,
 		  updated_at    = EXCLUDED.updated_at`,
 		g.ID, g.OrgID, g.Code, g.Name,
-		nonNullString(g.Description),
-		nullableString(g.Type),
+		g.Description,
+		dbutil.NullableString(g.Type),
 		g.MinAge, g.MaxAge,
 		coachUserID,
 		g.IsActive,
@@ -70,9 +60,7 @@ func (r *Repository) LoadGroups(ctx context.Context) ([]Group, error) {
 	if err != nil {
 		return nil, fmt.Errorf("groups: load groups: %w", err)
 	}
-	defer rows.Close()
-	var out []Group
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "groups: scan group", func(rows pgx.Rows) (Group, error) {
 		var g Group
 		var typeVal string
 		if err := rows.Scan(&g.ID, &g.OrgID, &g.Code, &g.Name,
@@ -80,16 +68,15 @@ func (r *Repository) LoadGroups(ctx context.Context) ([]Group, error) {
 			&g.MinAge, &g.MaxAge, &g.CoachUserID,
 			&g.IsActive,
 			&g.CreatedAt, &g.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("groups: scan group: %w", err)
+			return g, err
 		}
 		if typeVal != "" {
 			g.Type = typeVal
 		} else {
 			g.Type = "competitive"
 		}
-		out = append(out, g)
-	}
-	return out, rows.Err()
+		return g, nil
+	})
 }
 
 // ─── Eligibility Rules ────────────────────────────────────────────────────────
@@ -120,21 +107,18 @@ func (r *Repository) LoadEligibilityRules(ctx context.Context) ([]EligibilityRul
 	if err != nil {
 		return nil, fmt.Errorf("groups: load eligibility_rules: %w", err)
 	}
-	defer rows.Close()
-	var out []EligibilityRule
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "groups: scan eligibility_rule", func(rows pgx.Rows) (EligibilityRule, error) {
 		var rule EligibilityRule
 		var paramsJSON string
 		if err := rows.Scan(&rule.ID, &rule.OrgID, &rule.GroupID,
 			&rule.RuleType, &paramsJSON,
 			&rule.CreatedAt, &rule.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("groups: scan eligibility_rule: %w", err)
+			return rule, err
 		}
 		_ = json.Unmarshal([]byte(paramsJSON), &rule.Parameters)
 		rule.IsActive = true
-		out = append(out, rule)
-	}
-	return out, rows.Err()
+		return rule, nil
+	})
 }
 
 // ─── Registrations ────────────────────────────────────────────────────────────
@@ -162,18 +146,13 @@ func (r *Repository) LoadRegistrations(ctx context.Context) ([]Registration, err
 	if err != nil {
 		return nil, fmt.Errorf("groups: load registrations: %w", err)
 	}
-	defer rows.Close()
-	var out []Registration
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "groups: scan registration", func(rows pgx.Rows) (Registration, error) {
 		var reg Registration
-		if err := rows.Scan(&reg.ID, &reg.OrgID, &reg.HouseholdID, &reg.SwimmerID, &reg.GroupID,
+		err := rows.Scan(&reg.ID, &reg.OrgID, &reg.HouseholdID, &reg.SwimmerID, &reg.GroupID,
 			&reg.Season, &reg.Status, &reg.Notes,
-			&reg.CreatedAt, &reg.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("groups: scan registration: %w", err)
-		}
-		out = append(out, reg)
-	}
-	return out, rows.Err()
+			&reg.CreatedAt, &reg.UpdatedAt)
+		return reg, err
+	})
 }
 
 // ─── Waiver Acceptances ───────────────────────────────────────────────────────
@@ -187,7 +166,7 @@ func (r *Repository) UpsertWaiverAcceptance(ctx context.Context, w WaiverAccepta
 		  accepted_by = EXCLUDED.accepted_by,
 		  accepted_at = EXCLUDED.accepted_at`,
 		w.ID, w.OrgID, w.RegistrationID,
-		w.WaiverType, nullableString(w.AcceptedByUserID), w.AcceptedAt,
+		w.WaiverType, dbutil.NullableString(w.AcceptedByUserID), w.AcceptedAt,
 	)
 	return err
 }
@@ -200,17 +179,12 @@ func (r *Repository) LoadWaiverAcceptances(ctx context.Context) ([]WaiverAccepta
 	if err != nil {
 		return nil, fmt.Errorf("groups: load waiver_acceptances: %w", err)
 	}
-	defer rows.Close()
-	var out []WaiverAcceptance
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "groups: scan waiver_acceptance", func(rows pgx.Rows) (WaiverAcceptance, error) {
 		var w WaiverAcceptance
-		if err := rows.Scan(&w.ID, &w.OrgID, &w.RegistrationID,
-			&w.WaiverType, &w.AcceptedByUserID, &w.AcceptedAt, &w.CreatedAt); err != nil {
-			return nil, fmt.Errorf("groups: scan waiver_acceptance: %w", err)
-		}
-		out = append(out, w)
-	}
-	return out, rows.Err()
+		err := rows.Scan(&w.ID, &w.OrgID, &w.RegistrationID,
+			&w.WaiverType, &w.AcceptedByUserID, &w.AcceptedAt, &w.CreatedAt)
+		return w, err
+	})
 }
 
 // ─── Batch load ───────────────────────────────────────────────────────────────
@@ -251,20 +225,14 @@ func (r *Repository) LoadSwimmerRefs(ctx context.Context) ([]swimmerRef, error) 
 	if err != nil {
 		return nil, fmt.Errorf("groups: load swimmer refs: %w", err)
 	}
-	defer rows.Close()
-
-	var out []swimmerRef
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "groups: scan swimmer ref", func(rows pgx.Rows) (swimmerRef, error) {
 		var swimmer swimmerRef
-		if err := rows.Scan(
+		err := rows.Scan(
 			&swimmer.ID, &swimmer.OrgID, &swimmer.HouseholdID,
 			&swimmer.DateOfBirth, &swimmer.Gender, &swimmer.RegistrationStatus,
-		); err != nil {
-			return nil, fmt.Errorf("groups: scan swimmer ref: %w", err)
-		}
-		out = append(out, swimmer)
-	}
-	return out, rows.Err()
+		)
+		return swimmer, err
+	})
 }
 
 func (r *Repository) LoadHouseholdRefs(ctx context.Context) ([]householdRef, error) {
@@ -275,15 +243,9 @@ func (r *Repository) LoadHouseholdRefs(ctx context.Context) ([]householdRef, err
 	if err != nil {
 		return nil, fmt.Errorf("groups: load household refs: %w", err)
 	}
-	defer rows.Close()
-
-	var out []householdRef
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "groups: scan household ref", func(rows pgx.Rows) (householdRef, error) {
 		var household householdRef
-		if err := rows.Scan(&household.ID, &household.OrgID); err != nil {
-			return nil, fmt.Errorf("groups: scan household ref: %w", err)
-		}
-		out = append(out, household)
-	}
-	return out, rows.Err()
+		err := rows.Scan(&household.ID, &household.OrgID)
+		return household, err
+	})
 }

@@ -43,6 +43,12 @@ func (h *ComplianceHandlers) enqueue(ctx context.Context, taskType string, paylo
 	return err
 }
 
+// parentOutsideHousehold reports whether a parent-only caller is acting on a household that is not their own.
+func parentOutsideHousehold(principal *appmiddleware.Principal, householdID string) bool {
+	return hasAnyRole(principal, "parent") && !hasAnyRole(principal, "admin") &&
+		(principal.HouseholdID == "" || principal.HouseholdID != householdID)
+}
+
 type complianceJobPayload struct {
 	RequestID   string `json:"request_id"`
 	OrgID       string `json:"org_id"`
@@ -73,12 +79,6 @@ func (h *ComplianceHandlers) RegisterRoutes(router chi.Router) {
 	router.Post("/compliance/data-deletion-requests/{requestID}/reject", h.rejectDataDeletionRequest)
 }
 
-// ─── Scope helper ─────────────────────────────────────────────────────────────
-
-func complianceScopeFromRequest(w http.ResponseWriter, r *http.Request) (*appmiddleware.Principal, string, bool) {
-	return scopedRequestFromContext(w, r)
-}
-
 // ─── Data export requests ─────────────────────────────────────────────────────
 
 type createDataExportRequestBody struct {
@@ -87,7 +87,7 @@ type createDataExportRequestBody struct {
 
 // createDataExportRequest handles POST /api/v1/compliance/data-export-requests.
 func (h *ComplianceHandlers) createDataExportRequest(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := complianceScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -98,21 +98,14 @@ func (h *ComplianceHandlers) createDataExportRequest(w http.ResponseWriter, r *h
 	}
 
 	var body createDataExportRequestBody
-	if err := decodeJSONBody(w, r, &body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", nil)
-		return
-	}
-	if err := h.validate.Struct(body); err != nil {
-		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "validation_error", "Request validation failed.", httpx.FormatValidationErrors(err))
+	if !decodeAndValidateLegacy(w, r, &body, h.validate, "Request validation failed.") {
 		return
 	}
 
 	// Parents may only request data for their own household.
-	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "admin") {
-		if principal.HouseholdID == "" || principal.HouseholdID != body.HouseholdID {
-			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Parent may only request a data export for their own household.", nil)
-			return
-		}
+	if parentOutsideHousehold(principal, body.HouseholdID) {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Parent may only request a data export for their own household.", nil)
+		return
 	}
 
 	req, err := h.service.CreateDataExportRequest(orgID, body.HouseholdID, principal.UserID)
@@ -120,24 +113,12 @@ func (h *ComplianceHandlers) createDataExportRequest(w http.ResponseWriter, r *h
 		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to create data export request.", err)
 		return
 	}
-	// The request stays "pending" until the worker builds the archive; if the
-	// enqueue fails the request is still recorded and an admin can retry.
+	// The request is saved, so audit it before queueing: it stays "pending" until
+	// the worker builds the archive, and if the enqueue fails an admin can retry.
+	recordAudit(h.auditService, principal, orgID, audit.ActionComplianceDataExportRequest, "data_export_request", req.ID, nil, req, map[string]string{"household_id": body.HouseholdID})
 	if err := h.enqueue(r.Context(), workers.TypeProcessDataExport, complianceJobPayload{RequestID: req.ID, OrgID: orgID, HouseholdID: req.HouseholdID}); err != nil {
-		httpx.WriteError(w, r, http.StatusServiceUnavailable, "export_queue_unavailable", "The export request was saved but could not be queued for processing. Try again shortly.", nil)
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, "export_queue_unavailable", "The export request was saved but could not be queued for processing. Try again shortly.", err)
 		return
-	}
-
-	if h.auditService != nil {
-		_, _ = h.auditService.Append(audit.AppendRequest{
-			OrgID:        orgID,
-			ActorUserID:  principal.UserID,
-			ActorRoles:   principal.Roles,
-			Action:       audit.ActionComplianceDataExportRequest,
-			ResourceType: "data_export_request",
-			ResourceID:   req.ID,
-			After:        req,
-			Metadata:     map[string]string{"household_id": body.HouseholdID},
-		})
 	}
 
 	httpx.WriteJSON(w, http.StatusCreated, req)
@@ -145,7 +126,7 @@ func (h *ComplianceHandlers) createDataExportRequest(w http.ResponseWriter, r *h
 
 // listDataExportRequests handles GET /api/v1/compliance/data-export-requests.
 func (h *ComplianceHandlers) listDataExportRequests(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := complianceScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -165,7 +146,7 @@ func (h *ComplianceHandlers) listDataExportRequests(w http.ResponseWriter, r *ht
 
 // getDataExportRequest handles GET /api/v1/compliance/data-export-requests/{requestID}.
 func (h *ComplianceHandlers) getDataExportRequest(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := complianceScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -197,7 +178,7 @@ type createDataDeletionRequestBody struct {
 
 // createDataDeletionRequest handles POST /api/v1/compliance/data-deletion-requests.
 func (h *ComplianceHandlers) createDataDeletionRequest(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := complianceScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -207,21 +188,14 @@ func (h *ComplianceHandlers) createDataDeletionRequest(w http.ResponseWriter, r 
 	}
 
 	var body createDataDeletionRequestBody
-	if err := decodeJSONBody(w, r, &body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", nil)
-		return
-	}
-	if err := h.validate.Struct(body); err != nil {
-		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "validation_error", "Request validation failed.", httpx.FormatValidationErrors(err))
+	if !decodeAndValidateLegacy(w, r, &body, h.validate, "Request validation failed.") {
 		return
 	}
 
 	// Parents may only request deletion for their own household.
-	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "admin") {
-		if principal.HouseholdID == "" || principal.HouseholdID != body.HouseholdID {
-			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Parent may only request data deletion for their own household.", nil)
-			return
-		}
+	if parentOutsideHousehold(principal, body.HouseholdID) {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Parent may only request data deletion for their own household.", nil)
+		return
 	}
 
 	req, err := h.service.CreateDataDeletionRequest(orgID, body.HouseholdID, principal.UserID, body.Reason)
@@ -230,25 +204,14 @@ func (h *ComplianceHandlers) createDataDeletionRequest(w http.ResponseWriter, r 
 		return
 	}
 
-	if h.auditService != nil {
-		_, _ = h.auditService.Append(audit.AppendRequest{
-			OrgID:        orgID,
-			ActorUserID:  principal.UserID,
-			ActorRoles:   principal.Roles,
-			Action:       audit.ActionComplianceDataDeletionRequest,
-			ResourceType: "data_deletion_request",
-			ResourceID:   req.ID,
-			After:        req,
-			Metadata:     map[string]string{"household_id": body.HouseholdID, "reason": body.Reason},
-		})
-	}
+	recordAudit(h.auditService, principal, orgID, audit.ActionComplianceDataDeletionRequest, "data_deletion_request", req.ID, nil, req, map[string]string{"household_id": body.HouseholdID, "reason": body.Reason})
 
 	httpx.WriteJSON(w, http.StatusCreated, req)
 }
 
 // listDataDeletionRequests handles GET /api/v1/compliance/data-deletion-requests.
 func (h *ComplianceHandlers) listDataDeletionRequests(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := complianceScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -268,7 +231,7 @@ func (h *ComplianceHandlers) listDataDeletionRequests(w http.ResponseWriter, r *
 
 // getDataDeletionRequest handles GET /api/v1/compliance/data-deletion-requests/{requestID}.
 func (h *ComplianceHandlers) getDataDeletionRequest(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := complianceScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -309,7 +272,7 @@ func (h *ComplianceHandlers) rejectDataDeletionRequest(w http.ResponseWriter, r 
 }
 
 func (h *ComplianceHandlers) reviewDataDeletionRequest(w http.ResponseWriter, r *http.Request, approve bool) {
-	principal, orgID, ok := complianceScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -349,28 +312,18 @@ func (h *ComplianceHandlers) reviewDataDeletionRequest(w http.ResponseWriter, r 
 		return
 	}
 
+	// The review is committed, so audit it before queueing the erasure.
+	action := "compliance.data_deletion.reject"
+	if approve {
+		action = "compliance.data_deletion.approve"
+	}
+	recordAudit(h.auditService, principal, orgID, action, "data_deletion_request", req.ID, nil, req, map[string]string{"household_id": req.HouseholdID})
+
 	if approve {
 		if err := h.enqueue(r.Context(), workers.TypeProcessDataDeletion, complianceJobPayload{RequestID: req.ID, OrgID: orgID, HouseholdID: req.HouseholdID}); err != nil {
-			httpx.WriteError(w, r, http.StatusServiceUnavailable, "deletion_queue_unavailable", "The request was approved but could not be queued for erasure. Approve again to retry.", nil)
+			httpx.WriteError(w, r, http.StatusServiceUnavailable, "deletion_queue_unavailable", "The request was approved but could not be queued for erasure. Approve again to retry.", err)
 			return
 		}
-	}
-
-	if h.auditService != nil {
-		action := "compliance.data_deletion.reject"
-		if approve {
-			action = "compliance.data_deletion.approve"
-		}
-		_, _ = h.auditService.Append(audit.AppendRequest{
-			OrgID:        orgID,
-			ActorUserID:  principal.UserID,
-			ActorRoles:   principal.Roles,
-			Action:       action,
-			ResourceType: "data_deletion_request",
-			ResourceID:   req.ID,
-			After:        req,
-			Metadata:     map[string]string{"household_id": req.HouseholdID},
-		})
 	}
 	httpx.WriteJSON(w, http.StatusOK, req)
 }

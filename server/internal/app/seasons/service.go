@@ -8,8 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"log/slog"
-
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -69,39 +67,15 @@ func NewService() *Service {
 	}
 }
 
-// NewServiceWithPool creates a DB-backed Service and loads existing records
-// from Postgres into memory on startup.
+// NewServiceWithPool creates a DB-backed Service. Postgres is canonical: every
+// read and write goes to the database, so the in-memory map is unused.
 func NewServiceWithPool(pool *pgxpool.Pool) *Service {
 	s := NewService()
 	if pool == nil {
 		return s
 	}
 	s.repo = newRepository(pool)
-	if err := s.loadFromDB(context.Background()); err != nil {
-		slog.Error("seasons: failed to load from DB", "err", err)
-	}
 	return s
-}
-
-func (s *Service) loadFromDB(ctx context.Context) error {
-	if s.repo == nil {
-		return nil
-	}
-	seasons, err := s.repo.LoadAll(ctx)
-	if err != nil {
-		return err
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.seasons = make(map[string]*Season, len(seasons))
-	for _, season := range seasons {
-		s.seasons[season.ID] = season
-	}
-	return nil
-}
-
-func newID() string {
-	return uuid.New().String()
 }
 
 // ─── CRUD ─────────────────────────────────────────────────────────────────────
@@ -111,7 +85,7 @@ func (s *Service) Create(orgID, name, startDate, endDate, status, goals, created
 	if !validStatuses[status] {
 		return nil, ErrInvalidStatus
 	}
-	id := newID()
+	id := uuid.NewString()
 	now := time.Now().UTC()
 	season := &Season{
 		ID:        id,
@@ -253,7 +227,7 @@ func (s *Service) Delete(orgID, id string) error {
 		if _, err := s.repo.GetByID(context.Background(), orgID, id); err != nil {
 			return err
 		}
-		return s.repo.Delete(context.Background(), id)
+		return s.repo.Delete(context.Background(), orgID, id)
 	}
 
 	s.mu.Lock()

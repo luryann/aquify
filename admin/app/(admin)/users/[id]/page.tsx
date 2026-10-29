@@ -33,20 +33,7 @@ import {
 } from '@/lib/adminData'
 import { ROLE_HIERARCHY, type Role } from '@/lib/roles'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
-
-const ROLE_OPTIONS: { value: string; label: string }[] = [
-  { value: 'admin', label: 'Admin' },
-  { value: 'coach', label: 'Coach' },
-  { value: 'parent', label: 'Parent' },
-  { value: 'swimmer', label: 'Swimmer' },
-]
-
-const ROLE_COLORS: Record<string, { bg: string; color: string }> = {
-  admin:           { bg: 'rgba(251,191,36,0.12)',   color: '#fbbf24' },
-  coach:           { bg: 'rgba(74,222,128,0.10)',   color: '#4ade80' },
-  parent:          { bg: 'rgba(196,148,255,0.10)',  color: '#c484ff' },
-  swimmer:         { bg: 'rgba(248,113,113,0.10)',  color: '#f87171' },
-}
+import { ROLE_COLORS, ROLE_OPTIONS } from '@/lib/user-roles'
 
 function RoleChip({ roleName, onRemove, canRemove }: { roleName: string; onRemove?: () => void; canRemove: boolean }) {
   const c = ROLE_COLORS[roleName] ?? { bg: 'var(--bg-elevated)', color: 'var(--text-subtle)' }

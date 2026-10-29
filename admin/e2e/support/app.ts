@@ -1,4 +1,7 @@
-import { expect, type APIRequestContext, type Browser, type BrowserContext, type Page } from '@playwright/test'
+import type { scenarioFixture } from './fixtures'
+import { expect, type Browser, type BrowserContext, type Page } from '@playwright/test'
+
+type ScenarioFixture = ReturnType<typeof scenarioFixture>
 
 const API_ORIGIN = `http://localhost:${process.env.PLAYWRIGHT_API_PORT ?? '8080'}`
 const ADMIN_ORIGIN = `http://localhost:${process.env.PLAYWRIGHT_ADMIN_PORT ?? '3000'}`
@@ -88,6 +91,16 @@ export async function newAuthedContext(browser: Browser, input: SessionInput): P
   return context
 }
 
+/** Authed admin context for the scenario's org. */
+export function newAdminContext(browser: Browser, fixture: ScenarioFixture, label: string, name: string) {
+  return newAuthedContext(browser, { userId: fixture.userId(label), orgId: fixture.orgId, roles: ['admin'], name })
+}
+
+/** Authed parent context scoped to one household. */
+export function newParentContext(browser: Browser, fixture: ScenarioFixture, label: string, householdId: string, name: string) {
+  return newAuthedContext(browser, { userId: fixture.userId(label), orgId: fixture.orgId, householdId, roles: ['parent'], name })
+}
+
 export async function issueSession(context: BrowserContext, input: SessionInput) {
   const response = await context.request.post(`${API_ORIGIN}/api/v1/auth/sessions/issue`, {
     data: {
@@ -101,7 +114,10 @@ export async function issueSession(context: BrowserContext, input: SessionInput)
     },
   })
 
-  await expect(response).toBeOK()
+  if (!response.ok()) {
+    // Carry the status and body so an intermittent failure is diagnosable from the report.
+    throw new Error(`Session issue failed: HTTP ${response.status()} ${(await response.text()).slice(0, 300)}`)
+  }
 }
 
 async function csrfToken(context: BrowserContext) {
@@ -134,7 +150,9 @@ async function requestWithOrg<T>(
     headers,
   })
 
-  await expect(response).toBeOK()
+  if (!response.ok()) {
+    throw new Error(`${method} ${path} failed: HTTP ${response.status()} ${(await response.text()).slice(0, 300)}`)
+  }
   return await response.json() as T
 }
 
@@ -142,7 +160,7 @@ export async function createHousehold(context: BrowserContext, orgId: string, ho
   const response = await requestWithOrg<{ household: HouseholdRecord }>(context, 'POST', '/api/v1/members/households', orgId, {
     org_id: orgId,
     household_name: householdName,
-    primary_email: `${householdName.toLowerCase().replace(/[^a-z0-9]+/g, '-') }@example.test`,
+    primary_email: `${householdName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}@example.test`,
     status: 'active',
   })
   return response.household

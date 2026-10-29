@@ -4,7 +4,8 @@ import Link from 'next/link'
 import { useState, useEffect } from 'react'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
-import { parseBackendDate } from '@/lib/dates'
+import { ageFromDob, formatDateOnly, parseBackendDate } from '@/lib/dates'
+import { formatCents } from '@/lib/financeData'
 import { useApiClient } from '@/lib/api'
 import { shouldShowCollectionEmptyState } from '@/lib/collection-load-state'
 import { reportUIError } from '@/lib/frontend-telemetry'
@@ -17,29 +18,11 @@ import {
 } from '@/lib/adminData'
 import { VolunteerHoursStrip } from '@/components/volunteer/VolunteerHoursStrip'
 import './page.inline.css'
+import { SWIMMER_AVATAR_COLORS } from '@/lib/avatar-colors'
+import { LoadErrorBanner } from '@/components/ui/LoadErrorBanner'
+import { ShimmerBlock } from '@/components/ui/ShimmerBlock'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
-function fmtMeetDate(iso?: string): string {
-  if (!iso) return '—'
-  return parseBackendDate(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
-function calcAge(dob: string): number {
-  const d = parseBackendDate(dob)
-  const now = new Date()
-  let age = now.getFullYear() - d.getFullYear()
-  const m = now.getMonth() - d.getMonth()
-  if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age--
-  return age
-}
-
-const GRADIENTS = [
-  'var(--accent)',
-  'var(--info)',
-  'var(--warning)',
-  'var(--danger, #dc2626)',
-]
-
 // ── Derived types ─────────────────────────────────────────────────────────────
 type DashAlert = {
   id: string
@@ -55,9 +38,7 @@ type DashAlert = {
 type DashSwimmer = {
   id: string
   name: string
-  age: number
-  group: string
-  status: string
+  age: string
   gradient: string
   initials: string
   pendingCommits: number
@@ -106,21 +87,6 @@ const COMMIT_STATUS = {
 }
 
 // ── Skeleton ─────────────────────────────────────────────────────────────────
-function Skeleton({ w = '100%', h = 16, r = 8 }: { w?: string | number; h?: number; r?: number }) {
-  return (
-    <div
-      style={{
-        width: w,
-        height: h,
-        borderRadius: r,
-        background: 'linear-gradient(90deg, var(--bg-elevated) 25%, var(--border-strong) 50%, var(--bg-elevated) 75%)',
-        backgroundSize: '200% 100%',
-        animation: 'shimmer 1.5s infinite',
-      }}
-    />
-  )
-}
-
 // ── Components ─────────────────────────────────────────────────────────────
 function AlertCard({ alert }: { alert: DashAlert }) {
   const cfg = URGENCY_CONFIG[alert.urgency]
@@ -128,6 +94,7 @@ function AlertCard({ alert }: { alert: DashAlert }) {
 
   return (
     <div
+      className="dash-alert"
       style={{
         background: 'var(--bg-elevated)',
         borderRadius: '12px',
@@ -138,17 +105,6 @@ function AlertCard({ alert }: { alert: DashAlert }) {
         alignItems: 'center',
         gap: '16px',
         animation: 'slideUp 0.35s var(--ease-out) both',
-        transition: 'box-shadow 150ms ease, transform 150ms ease',
-      }}
-      onMouseEnter={(e) => {
-        const el = e.currentTarget as HTMLDivElement
-        el.style.boxShadow = 'var(--shadow-sm)'
-        el.style.transform = 'translateY(-1px)'
-      }}
-      onMouseLeave={(e) => {
-        const el = e.currentTarget as HTMLDivElement
-        el.style.boxShadow = 'none'
-        el.style.transform = 'translateY(0)'
       }}
     >
       <div
@@ -176,12 +132,7 @@ function AlertCard({ alert }: { alert: DashAlert }) {
         </p>
       </div>
 
-      <Link
-        href={alert.ctaPath}
-        className="is-2e4df72"
-        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--accent)')}
-        onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--text)')}
-      >
+      <Link href={alert.ctaPath} className="is-2e4df72 dash-alert-cta">
         {alert.cta}
         <Icon name="chevron-right" size={13} />
       </Link>
@@ -191,20 +142,7 @@ function AlertCard({ alert }: { alert: DashAlert }) {
 
 function SwimmerCard({ swimmer }: { swimmer: DashSwimmer }) {
   return (
-    <div
-      className="card is-979d69e"
-      
-      onMouseEnter={(e) => {
-        const el = e.currentTarget as HTMLDivElement
-        el.style.boxShadow = 'var(--shadow-sm)'
-        el.style.transform = 'translateY(-2px)'
-      }}
-      onMouseLeave={(e) => {
-        const el = e.currentTarget as HTMLDivElement
-        el.style.boxShadow = 'none'
-        el.style.transform = 'translateY(0)'
-      }}
-    >
+    <div className="card is-979d69e dash-swimmer">
       <div
         style={{
           width: '52px',
@@ -234,7 +172,7 @@ function SwimmerCard({ swimmer }: { swimmer: DashSwimmer }) {
           </span>
         </div>
         <p className="is-029575d">
-          Age {swimmer.age}{swimmer.group ? ` · ${swimmer.group}` : ''}
+          Age {swimmer.age}
         </p>
 
         {swimmer.pendingCommits > 0 ? (
@@ -253,15 +191,7 @@ function SwimmerCard({ swimmer }: { swimmer: DashSwimmer }) {
       <Link
         href={`/portal/household/swimmers/${swimmer.id}`}
         aria-label={`View ${swimmer.name}`}
-        className="is-3d8302e"
-        onMouseEnter={(e) => {
-          e.currentTarget.style.background = 'var(--accent)'
-          e.currentTarget.style.color = 'var(--bg-elevated)'
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.background = 'var(--bg-wash)'
-          e.currentTarget.style.color = 'var(--text-subtle)'
-        }}
+        className="is-3d8302e dash-view-link"
       >
         View
         <Icon name="chevron-right" size={13} />
@@ -275,9 +205,6 @@ function MeetRow({ meet }: { meet: DashMeet }) {
   return (
     <div
       className="meet-row is-cedd9d7"
-      
-      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-wash)')}
-      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
     >
       <div>
         <p className="is-f923d95">
@@ -317,12 +244,7 @@ function MeetRow({ meet }: { meet: DashMeet }) {
           Respond
         </Link>
       ) : (
-        <Link
-          href="/portal/meets"
-          className="is-9192dd1"
-          onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text)'; e.currentTarget.style.borderColor = 'var(--border-strong)' }}
-          onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-subtle)'; e.currentTarget.style.borderColor = 'var(--border-strong)' }}
-        >
+        <Link href="/portal/meets" className="is-9192dd1 dash-meet-view">
           View
         </Link>
       )}
@@ -339,9 +261,7 @@ function SectionHeader({ title, action, actionPath }: { title: string; action?: 
       {action && actionPath && (
         <Link
           href={actionPath}
-          className="is-5dd0b6c"
-          onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--accent-hover)')}
-          onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--accent-text)')}
+          className="is-5dd0b6c dash-section-link"
         >
           {action}
           <Icon name="chevron-right" size={14} />
@@ -433,17 +353,14 @@ export default function ParentDashboardPage() {
           const swCommits = allCommitments.filter(
             (c) => c.swimmer_id === sw.id && c.status === 'invited'
           )
-          const nextMeet = upcoming.find(() => true)
           return {
             id: sw.id,
             name: `${sw.first_name} ${sw.last_name}`,
-            age: calcAge(sw.date_of_birth),
-            group: '',
-            status: sw.registration_status,
-            gradient: GRADIENTS[idx % GRADIENTS.length],
+            age: ageFromDob(sw.date_of_birth),
+            gradient: SWIMMER_AVATAR_COLORS[idx % SWIMMER_AVATAR_COLORS.length],
             initials: `${sw.first_name[0] ?? ''}${sw.last_name[0] ?? ''}`.toUpperCase(),
             pendingCommits: swCommits.length,
-            nextMeet: nextMeet?.name ?? '',
+            nextMeet: upcoming[0]?.name ?? '',
           }
         })
 
@@ -467,7 +384,7 @@ export default function ParentDashboardPage() {
           return {
             id: m.id,
             name: m.name,
-            date: fmtMeetDate(m.start_date),
+            date: formatDateOnly(m.start_date),
             course: m.course,
             location: m.location ?? '—',
             commitment,
@@ -486,7 +403,7 @@ export default function ParentDashboardPage() {
             id: `inv-${inv.id}`,
             type: 'invoice',
             title: 'Invoice due',
-            body: `$${(inv.amount_due_cents / 100).toFixed(2)} outstanding`,
+            body: `${formatCents(inv.amount_due_cents)} outstanding`,
             detail: inv.notes ?? `Invoice ${inv.invoice_number}`,
             urgency: 'high',
             cta: 'Pay Now',
@@ -532,11 +449,6 @@ export default function ParentDashboardPage() {
 
   return (
     <div>
-      <style>{`
-        @keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
-      `}</style>
-
       {/* Page greeting */}
       <div className="page-heading">
         <h1 className="page-title">
@@ -545,21 +457,7 @@ export default function ParentDashboardPage() {
       </div>
 
       {loadError && (
-        <div
-          className="is-d737d2f"
-        >
-          <div className="is-730b6a7">
-            <Icon name="alert-circle" size={16} style={{ color: 'var(--warning)', marginTop: '1px', flexShrink: 0 }} />
-            <p className="is-a1c5efd">{loadError}</p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setReloadKey((key) => key + 1)}
-            className="is-e00c0b3"
-          >
-            Retry
-          </button>
-        </div>
+        <LoadErrorBanner message={loadError} onRetry={() => setReloadKey((key) => key + 1)} />
       )}
 
       {!loadError && <VolunteerHoursStrip />}
@@ -575,13 +473,13 @@ export default function ParentDashboardPage() {
           <div className="is-e680c18">
             {[0, 1].map((i) => (
               <div key={i} className="card is-8ef476f" >
-                <Skeleton w={38} h={38} r={10} />
+                <ShimmerBlock w={38} h={38} r={10} />
                 <div className="is-355eedd">
-                  <Skeleton w="40%" h={12} />
-                  <Skeleton w="70%" h={20} />
-                  <Skeleton w="60%" h={13} />
+                  <ShimmerBlock w="40%" h={12} />
+                  <ShimmerBlock w="70%" h={20} />
+                  <ShimmerBlock w="60%" h={13} />
                 </div>
-                <Skeleton w={90} h={34} r={8} />
+                <ShimmerBlock w={90} h={34} r={8} />
               </div>
             ))}
           </div>
@@ -610,10 +508,10 @@ export default function ParentDashboardPage() {
           <div className="is-50fcb73">
             {[0, 1].map((i) => (
               <div key={i} className="card is-9487582" >
-                <Skeleton w={52} h={52} r={26} />
+                <ShimmerBlock w={52} h={52} r={26} />
                 <div className="is-20f80e0">
-                  <Skeleton w="50%" h={15} />
-                  <Skeleton w="70%" h={12} />
+                  <ShimmerBlock w="50%" h={15} />
+                  <ShimmerBlock w="70%" h={12} />
                 </div>
               </div>
             ))}
@@ -636,13 +534,13 @@ export default function ParentDashboardPage() {
           <div className="card" style={{ overflow: 'hidden' }}>
             {[0, 1, 2].map((i) => (
               <div key={i} className="is-2e1633b">
-                <Skeleton w={80} h={14} />
+                <ShimmerBlock w={80} h={14} />
                 <div className="is-9808a21">
-                  <Skeleton w="60%" h={14} />
-                  <Skeleton w="40%" h={12} />
+                  <ShimmerBlock w="60%" h={14} />
+                  <ShimmerBlock w="40%" h={12} />
                 </div>
-                <Skeleton w={90} h={26} r={999} />
-                <Skeleton w={70} h={30} r={7} />
+                <ShimmerBlock w={90} h={26} r={999} />
+                <ShimmerBlock w={70} h={30} r={7} />
               </div>
             ))}
           </div>

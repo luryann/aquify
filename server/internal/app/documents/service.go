@@ -30,29 +30,29 @@ var (
 
 // DocumentType defines a category of document that households must provide.
 type DocumentType struct {
-	ID           string     `json:"id"`
-	OrgID        string     `json:"org_id"`
-	Name         string     `json:"name"`
-	Category     string     `json:"category"`     // waiver | medical | insurance | release | registration | other
-	Description  string     `json:"description,omitempty"`
-	IsRequired   bool       `json:"is_required"`
-	AppliesTo    string     `json:"applies_to"`   // swimmer | household | all
-	ExpiryMonths *int       `json:"expiry_months,omitempty"` // nil = never expires
-	IsActive     bool       `json:"is_active"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
-	CreatedBy    string     `json:"created_by"`
-	UpdatedBy    string     `json:"updated_by"`
+	ID           string    `json:"id"`
+	OrgID        string    `json:"org_id"`
+	Name         string    `json:"name"`
+	Category     string    `json:"category"` // waiver | medical | insurance | release | registration | other
+	Description  string    `json:"description,omitempty"`
+	IsRequired   bool      `json:"is_required"`
+	AppliesTo    string    `json:"applies_to"`              // swimmer | household | all
+	ExpiryMonths *int      `json:"expiry_months,omitempty"` // nil = never expires
+	IsActive     bool      `json:"is_active"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	CreatedBy    string    `json:"created_by"`
+	UpdatedBy    string    `json:"updated_by"`
 }
 
 // DocumentSubmission is a single household/swimmer document record.
 type DocumentSubmission struct {
-	ID               string     `json:"id"`
-	OrgID            string     `json:"org_id"`
-	DocumentTypeID   string     `json:"document_type_id"`
-	DocumentTypeName string     `json:"document_type_name,omitempty"` // denormalized for UI
-	HouseholdID      string     `json:"household_id"`
-	SwimmerID        string     `json:"swimmer_id,omitempty"` // empty when applies_to=household
+	ID               string `json:"id"`
+	OrgID            string `json:"org_id"`
+	DocumentTypeID   string `json:"document_type_id"`
+	DocumentTypeName string `json:"document_type_name,omitempty"` // denormalized for UI
+	HouseholdID      string `json:"household_id"`
+	SwimmerID        string `json:"swimmer_id,omitempty"` // empty when applies_to=household
 	// Status: pending | submitted | verified | rejected | expired
 	Status         string     `json:"status"`
 	FileObjectKey  string     `json:"file_object_key,omitempty"`
@@ -120,10 +120,6 @@ func (s *Service) loadFromDB(ctx context.Context) error {
 	return nil
 }
 
-func newID() string {
-	return uuid.New().String()
-}
-
 // ─── Document Types ───────────────────────────────────────────────────────────
 
 // CreateDocumentType creates a new document type definition.
@@ -140,7 +136,7 @@ func (s *Service) CreateDocumentType(orgID, name, category, description, applies
 	}
 	s.mu.RUnlock()
 
-	id := newID()
+	id := uuid.NewString()
 	now := time.Now().UTC()
 	if category == "" {
 		category = "other"
@@ -278,7 +274,7 @@ func (s *Service) CreateSubmission(orgID, docTypeID, householdID, swimmerID, cre
 		return nil, ErrTypeNotFound
 	}
 
-	id := newID()
+	id := uuid.NewString()
 	now := time.Now().UTC()
 
 	var expiresAt *time.Time
@@ -347,36 +343,17 @@ func (s *Service) AttachFile(orgID, submissionID, fileObjectKey, fileName, fileM
 
 // VerifySubmission transitions a submission to "verified".
 func (s *Service) VerifySubmission(orgID, submissionID, verifiedBy, reviewNotes string) (*DocumentSubmission, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	sub, ok := s.submissions[submissionID]
-	if !ok || sub.OrgID != orgID {
-		return nil, ErrSubmissionNotFound
-	}
-	if sub.Status != "submitted" {
-		return nil, ErrInvalidTransition
-	}
-	cp := *sub
-	cp.Status = "verified"
-	cp.ReviewNotes = strings.TrimSpace(reviewNotes)
-	now := time.Now().UTC()
-	cp.VerifiedAt = &now
-	cp.VerifiedBy = verifiedBy
-	cp.UpdatedAt = now
-	cp.UpdatedBy = verifiedBy
-
-	if s.repo != nil {
-		if err := s.repo.UpsertSubmission(context.Background(), &cp); err != nil {
-			return nil, err
-		}
-	}
-	s.submissions[submissionID] = &cp
-	return &cp, nil
+	return s.reviewSubmission(orgID, submissionID, verifiedBy, "verified", reviewNotes)
 }
 
-// RejectSubmission transitions a submission back to "rejected".
+// RejectSubmission records a reviewer rejecting a submitted document.
 func (s *Service) RejectSubmission(orgID, submissionID, rejectedBy, reviewNotes string) (*DocumentSubmission, error) {
+	return s.reviewSubmission(orgID, submissionID, rejectedBy, "rejected", reviewNotes)
+}
+
+// reviewSubmission records a reviewer's decision on a submitted document;
+// verifying also stamps who verified it and when.
+func (s *Service) reviewSubmission(orgID, submissionID, reviewer, status, reviewNotes string) (*DocumentSubmission, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -387,12 +364,16 @@ func (s *Service) RejectSubmission(orgID, submissionID, rejectedBy, reviewNotes 
 	if sub.Status != "submitted" {
 		return nil, ErrInvalidTransition
 	}
-	cp := *sub
-	cp.Status = "rejected"
-	cp.ReviewNotes = strings.TrimSpace(reviewNotes)
 	now := time.Now().UTC()
+	cp := *sub
+	cp.Status = status
+	cp.ReviewNotes = strings.TrimSpace(reviewNotes)
+	if status == "verified" {
+		cp.VerifiedAt = &now
+		cp.VerifiedBy = reviewer
+	}
 	cp.UpdatedAt = now
-	cp.UpdatedBy = rejectedBy
+	cp.UpdatedBy = reviewer
 
 	if s.repo != nil {
 		if err := s.repo.UpsertSubmission(context.Background(), &cp); err != nil {

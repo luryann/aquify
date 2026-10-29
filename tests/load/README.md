@@ -37,7 +37,7 @@ k6 run tests/load/k6/<script>.js
 k6 run \
   -e API_BASE_URL=https://api-staging.dare.club \
   -e AUTH_TOKEN=your-token-here \
-  -e ORG_ID=org-demo \
+  -e ORG_ID=00000000-0000-0000-0000-00000000a001 \
   tests/load/k6/admin-browse.js
 ```
 
@@ -46,8 +46,8 @@ k6 run \
 ```bash
 docker run --rm -i grafana/k6 run - \
   -e API_BASE_URL=http://host.docker.internal:8080 \
-  -e AUTH_TOKEN=stub-admin-token \
-  -e ORG_ID=org-demo \
+  -e AUTH_TOKEN=stub-admin \
+  -e ORG_ID=00000000-0000-0000-0000-00000000a001 \
   < tests/load/k6/admin-browse.js
 ```
 
@@ -64,8 +64,8 @@ make load-test
 | Variable | Default | Description |
 |---|---|---|
 | `API_BASE_URL` | `http://localhost:8080` | Base URL for the DARE API |
-| `AUTH_TOKEN` | `stub-admin-token` | Bearer token for authentication |
-| `ORG_ID` | `org-demo` | Organization ID sent as `X-Org-Id` header |
+| `AUTH_TOKEN` | `stub-admin` | Bearer token for authentication |
+| `ORG_ID` | `00000000-0000-0000-0000-00000000a001` | Organization ID sent as `X-Org-Id` header |
 | `PARENT_TOKEN` | `stub-parent` | Bearer token for parent portal tests |
 | `WEBHOOK_SECRET` | `whsec_test_secret` | Stripe webhook signing secret for webhook tests |
 

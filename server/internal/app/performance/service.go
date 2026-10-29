@@ -7,10 +7,9 @@ package performance
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/dareaquatics/aquify/server/internal/dbutil"
 	"log/slog"
 	"slices"
 	"sort"
@@ -350,7 +349,7 @@ func (s *Service) newID() string {
 	if s.repo != nil {
 		return uuid.New().String()
 	}
-	return newID()
+	return dbutil.NewHexID()
 }
 
 // SetEntrySeedTimeUpdater injects the cross-domain updater used to back-fill
@@ -372,14 +371,6 @@ func (s *Service) SetHouseholdChecker(checker SwimmerHouseholdChecker) {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-func newID() string {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		panic(fmt.Errorf("secure random unavailable for performance ID generation: %w", err))
-	}
-	return hex.EncodeToString(b)
-}
 
 func (s *Service) requireAdminOrCoach(principal *appmiddleware.Principal) error {
 	for _, r := range principal.Roles {
@@ -528,7 +519,7 @@ func (s *Service) UpsertResultWithRecords(orgID, actorID string, principal *appm
 
 	now := time.Now().UTC()
 	result := &Result{
-		ID:          newID(),
+		ID:          s.newID(),
 		OrgID:       orgID,
 		SwimmerID:   input.SwimmerID,
 		MeetID:      input.MeetID,
@@ -570,7 +561,7 @@ func (s *Service) UpsertResultWithRecords(orgID, actorID string, principal *appm
 		ss := make([]*Split, 0, len(input.Splits))
 		for _, sp := range input.Splits {
 			ss = append(ss, &Split{
-				ID:               newID(),
+				ID:               s.newID(),
 				OrgID:            orgID,
 				ResultID:         result.ID,
 				SplitNumber:      sp.SplitNumber,
@@ -582,6 +573,13 @@ func (s *Service) UpsertResultWithRecords(orgID, actorID string, principal *appm
 				CreatedBy:        actorID,
 				UpdatedBy:        actorID,
 			})
+		}
+		if s.repo != nil {
+			if err := s.repo.UpsertSplits(context.Background(), ss); err != nil {
+				slog.Error("performance: upsert splits", "error", err)
+				s.mu.Unlock()
+				return nil, nil, fmt.Errorf("persist splits: %w", err)
+			}
 		}
 		s.splits[result.ID] = ss
 	}
@@ -595,7 +593,10 @@ func (s *Service) UpsertResultWithRecords(orgID, actorID string, principal *appm
 		newBestTimeMs     *int
 	)
 	if result.IsOfficial && !result.DQ && result.FinTimeMs != nil && !isRelayStroke(input.Stroke) {
-		s.recomputeBestTimeLocked(orgID, actorID, input.SwimmerID, input.Distance, input.Stroke, input.Course)
+		if err := s.recomputeBestTimeLocked(orgID, actorID, input.SwimmerID, input.Distance, input.Stroke, input.Course); err != nil {
+			s.mu.Unlock()
+			return nil, nil, err
+		}
 		triggerSeedUpdate = true
 		key := btKey(orgID, input.SwimmerID, input.Distance, input.Stroke, input.Course)
 		if bt := s.btByKey[key]; bt != nil {
@@ -610,7 +611,7 @@ func (s *Service) UpsertResultWithRecords(orgID, actorID string, principal *appm
 
 	// Emit result.upserted audit event.
 	s.auditEvents = append(s.auditEvents, &BestTimeAuditEvent{
-		ID:         newID(),
+		ID:         s.newID(),
 		OrgID:      orgID,
 		ActorID:    actorID,
 		Action:     "result.upserted",
@@ -646,7 +647,9 @@ func (s *Service) UpsertResultWithRecords(orgID, actorID string, principal *appm
 // recomputeBestTimeLocked scans all active results for the swimmer/event/course
 // and updates (or creates) the best_time record. Caller must hold s.mu.Lock().
 // RecordedAt is always set to the timestamp of the result that produced the BT.
-func (s *Service) recomputeBestTimeLocked(orgID, actorID, swimmerID string, distance int, stroke, course string) {
+// The record is persisted before the cache is replaced, so a failed write
+// leaves memory unchanged and is returned to the caller.
+func (s *Service) recomputeBestTimeLocked(orgID, actorID, swimmerID string, distance int, stroke, course string) error {
 	var best *Result
 	for _, r := range s.results {
 		if r.OrgID != orgID || r.SwimmerID != swimmerID {
@@ -664,58 +667,48 @@ func (s *Service) recomputeBestTimeLocked(orgID, actorID, swimmerID string, dist
 	}
 
 	key := btKey(orgID, swimmerID, distance, stroke, course)
-
-	// O(1) lookup via secondary index.
-	existing := s.btByKey[key]
-
+	existing := s.btByKey[key] // O(1) lookup via secondary index
 	now := time.Now().UTC()
 
+	var next *BestTime
+	switch {
+	case existing != nil && existing.IsManualOverride:
+		return nil
+	case best == nil && existing == nil:
+		return nil
+	case existing != nil:
+		cp := *existing
+		next = &cp
+	default:
+		next = &BestTime{
+			ID:            s.newID(),
+			OrgID:         orgID,
+			SwimmerID:     swimmerID,
+			EventDistance: distance,
+			Stroke:        stroke,
+			Course:        course,
+			CreatedAt:     now,
+			CreatedBy:     actorID,
+		}
+	}
 	if best == nil {
-		// No qualifying result found; clear the BT if not manually overridden.
-		if existing != nil && !existing.IsManualOverride {
-			existing.BestTimeMs = nil
-			existing.ResultID = ""
-			existing.RecordedAt = nil
-			existing.UpdatedAt = now
-			existing.UpdatedBy = actorID
-		}
-		return
+		// No qualifying result found; clear the time.
+		next.BestTimeMs, next.ResultID, next.RecordedAt = nil, "", nil
+	} else {
+		recordedAt := best.CreatedAt
+		next.BestTimeMs, next.ResultID, next.RecordedAt = best.FinTimeMs, best.ID, &recordedAt
 	}
+	next.UpdatedAt = now
+	next.UpdatedBy = actorID
 
-	if existing != nil {
-		if !existing.IsManualOverride {
-			existing.BestTimeMs = best.FinTimeMs
-			existing.ResultID = best.ID
-			existing.RecordedAt = &best.CreatedAt
-			existing.UpdatedAt = now
-			existing.UpdatedBy = actorID
-		}
-		return
-	}
-
-	// Create new BT record and register in both indexes.
-	bt := &BestTime{
-		ID:            newID(),
-		OrgID:         orgID,
-		SwimmerID:     swimmerID,
-		EventDistance: distance,
-		Stroke:        stroke,
-		Course:        course,
-		BestTimeMs:    best.FinTimeMs,
-		ResultID:      best.ID,
-		RecordedAt:    &best.CreatedAt,
-		CreatedAt:     now,
-		UpdatedAt:     now,
-		CreatedBy:     actorID,
-		UpdatedBy:     actorID,
-	}
 	if s.repo != nil {
-		if err := s.repo.UpsertBestTime(context.Background(), bt); err != nil {
-			slog.Error("performance: upsert best_time (recompute)", "error", err)
+		if err := s.repo.UpsertBestTime(context.Background(), next); err != nil {
+			return fmt.Errorf("persist best time: %w", err)
 		}
 	}
-	s.bestTimes[bt.ID] = bt
-	s.btByKey[key] = bt
+	s.bestTimes[next.ID] = next
+	s.btByKey[key] = next
+	return nil
 }
 
 // RecomputeBestTime forces a best-time recompute for the given swimmer/event/course.
@@ -727,7 +720,9 @@ func (s *Service) RecomputeBestTime(orgID, actorID string, principal *appmiddlew
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.recomputeBestTimeLocked(orgID, actorID, swimmerID, distance, stroke, course)
+	if err := s.recomputeBestTimeLocked(orgID, actorID, swimmerID, distance, stroke, course); err != nil {
+		return nil, err
+	}
 
 	key := btKey(orgID, swimmerID, distance, stroke, course)
 	return s.btByKey[key], nil
@@ -746,32 +741,8 @@ func (s *Service) ListBestTimes(orgID string, principal *appmiddleware.Principal
 		return nil, err
 	}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	var out []*BestTime
-	for _, bt := range s.bestTimes {
-		if bt.OrgID != orgID || bt.SwimmerID != swimmerID {
-			continue
-		}
-		if filters.Course != "" && bt.Course != filters.Course {
-			continue
-		}
-		if filters.Stroke != "" && bt.Stroke != filters.Stroke {
-			continue
-		}
-		out = append(out, bt)
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Stroke != out[j].Stroke {
-			return out[i].Stroke < out[j].Stroke
-		}
-		if out[i].EventDistance != out[j].EventDistance {
-			return out[i].EventDistance < out[j].EventDistance
-		}
-		return out[i].Course < out[j].Course
-	})
-	return out, nil
+	filters.SwimmerID = swimmerID
+	return s.filterBestTimes(orgID, filters, nil), nil
 }
 
 // ListBestTimesForOrg returns all best-time records visible within the org.
@@ -779,8 +750,16 @@ func (s *Service) ListBestTimesForOrg(orgID string, principal *appmiddleware.Pri
 	if err := s.requireReadAccess(principal); err != nil {
 		return nil, err
 	}
-	householdScoped := principalRequiresHouseholdScope(principal)
+	var allow func(swimmerID string) bool
+	if principalRequiresHouseholdScope(principal) {
+		allow = func(swimmerID string) bool { return s.householdScopedSwimmerAllowed(principal, orgID, swimmerID) }
+	}
+	return s.filterBestTimes(orgID, filters, allow), nil
+}
 
+// filterBestTimes returns copies of the org's best times matching the filters
+// (and, when set, the allow predicate), ordered by swimmer, stroke, distance, course.
+func (s *Service) filterBestTimes(orgID string, filters ListBestTimesFilters, allow func(swimmerID string) bool) []*BestTime {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -798,7 +777,7 @@ func (s *Service) ListBestTimesForOrg(orgID string, principal *appmiddleware.Pri
 		if filters.Stroke != "" && bt.Stroke != filters.Stroke {
 			continue
 		}
-		if householdScoped && !s.householdScopedSwimmerAllowed(principal, orgID, bt.SwimmerID) {
+		if allow != nil && !allow(bt.SwimmerID) {
 			continue
 		}
 		cp := *bt
@@ -816,7 +795,7 @@ func (s *Service) ListBestTimesForOrg(orgID string, principal *appmiddleware.Pri
 		}
 		return out[i].Course < out[j].Course
 	})
-	return out, nil
+	return out
 }
 
 // OverrideBestTime applies a manual best-time override and emits an audit event.
@@ -842,9 +821,13 @@ func (s *Service) OverrideBestTime(orgID, actorID string, principal *appmiddlewa
 		beforeMs = existing.BestTimeMs
 	}
 
-	if existing == nil {
-		existing = &BestTime{
-			ID:            newID(),
+	// Edit a copy so a failed write leaves the cached record untouched.
+	var next BestTime
+	if existing != nil {
+		next = *existing
+	} else {
+		next = BestTime{
+			ID:            s.newID(),
 			OrgID:         orgID,
 			SwimmerID:     input.SwimmerID,
 			EventDistance: input.EventDistance,
@@ -853,22 +836,27 @@ func (s *Service) OverrideBestTime(orgID, actorID string, principal *appmiddlewa
 			CreatedAt:     now,
 			CreatedBy:     actorID,
 		}
-		s.bestTimes[existing.ID] = existing
-		s.btByKey[key] = existing
 	}
-
-	existing.BestTimeMs = input.BestTimeMs
-	existing.IsManualOverride = true
-	existing.OverrideReason = input.Reason
-	existing.OverrideBy = actorID
-	existing.UpdatedAt = now
-	existing.UpdatedBy = actorID
+	next.BestTimeMs = input.BestTimeMs
+	next.IsManualOverride = true
+	next.OverrideReason = input.Reason
+	next.OverrideBy = actorID
+	next.UpdatedAt = now
+	next.UpdatedBy = actorID
 
 	if input.RecordedAt != "" {
 		if t, err := time.Parse("2006-01-02", input.RecordedAt); err == nil {
-			existing.RecordedAt = &t
+			next.RecordedAt = &t
 		}
 	}
+	if s.repo != nil {
+		if err := s.repo.UpsertBestTime(context.Background(), &next); err != nil {
+			return nil, nil, fmt.Errorf("persist best time override: %w", err)
+		}
+	}
+	s.bestTimes[next.ID] = &next
+	s.btByKey[key] = &next
+	existing = &next
 
 	meta := map[string]any{
 		"swimmer_id":     input.SwimmerID,
@@ -889,7 +877,7 @@ func (s *Service) OverrideBestTime(orgID, actorID string, principal *appmiddlewa
 	}
 
 	audit := &BestTimeAuditEvent{
-		ID:         newID(),
+		ID:         s.newID(),
 		OrgID:      orgID,
 		ActorID:    actorID,
 		Action:     "best_time.manual_override",
@@ -897,11 +885,6 @@ func (s *Service) OverrideBestTime(orgID, actorID string, principal *appmiddlewa
 		ResourceID: existing.ID,
 		Meta:       meta,
 		CreatedAt:  now,
-	}
-	if s.repo != nil {
-		if err := s.repo.UpsertBestTime(context.Background(), existing); err != nil {
-			slog.Error("performance: upsert best_time (override)", "error", err)
-		}
 	}
 	s.auditEvents = append(s.auditEvents, audit)
 
@@ -942,7 +925,8 @@ func (s *Service) ListProgression(orgID string, principal *appmiddleware.Princip
 		if filters.Course != "" && r.Course != filters.Course {
 			continue
 		}
-		out = append(out, r)
+		cp := *r
+		out = append(out, &cp)
 	}
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].CreatedAt.Before(out[j].CreatedAt)
@@ -1008,7 +992,7 @@ func (s *Service) CreateTimeStandard(orgID, actorID string, principal *appmiddle
 
 	now := time.Now().UTC()
 	ts := &TimeStandard{
-		ID:            newID(),
+		ID:            s.newID(),
 		OrgID:         orgID,
 		Name:          input.Name,
 		SeasonYear:    input.SeasonYear,
@@ -1029,7 +1013,7 @@ func (s *Service) CreateTimeStandard(orgID, actorID string, principal *appmiddle
 	}
 	if s.repo != nil {
 		if err := s.repo.UpsertTimeStandard(context.Background(), ts); err != nil {
-			slog.Error("performance: upsert time_standard", "error", err)
+			return nil, fmt.Errorf("persist time standard: %w", err)
 		}
 	}
 	s.standards[ts.ID] = ts
@@ -1105,11 +1089,13 @@ func (s *Service) UpdateTimeStandard(orgID, actorID, standardID string, principa
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	ts, ok := s.standards[standardID]
-	if !ok || ts.OrgID != orgID || ts.DeletedAt != nil {
+	current, ok := s.standards[standardID]
+	if !ok || current.OrgID != orgID || current.DeletedAt != nil {
 		return nil, ErrStandardNotFound
 	}
 
+	ts := new(TimeStandard)
+	*ts = *current
 	if input.Name != nil {
 		ts.Name = *input.Name
 	}
@@ -1126,9 +1112,10 @@ func (s *Service) UpdateTimeStandard(orgID, actorID, standardID string, principa
 	ts.UpdatedBy = actorID
 	if s.repo != nil {
 		if err := s.repo.UpsertTimeStandard(context.Background(), ts); err != nil {
-			slog.Error("performance: upsert time_standard (update)", "error", err)
+			return nil, fmt.Errorf("persist time standard: %w", err)
 		}
 	}
+	s.standards[standardID] = ts
 	return ts, nil
 }
 
@@ -1147,9 +1134,17 @@ func (s *Service) DeleteTimeStandard(orgID, actorID, standardID string, principa
 	}
 
 	now := time.Now().UTC()
-	ts.DeletedAt = &now
-	ts.UpdatedAt = now
-	ts.UpdatedBy = actorID
+	if s.repo != nil {
+		if err := s.repo.SoftDeleteTimeStandard(context.Background(), orgID, standardID, now); err != nil {
+			return fmt.Errorf("persist time standard delete: %w", err)
+		}
+	}
+	// Replace rather than mutate: readers may still hold the old pointer.
+	deleted := *ts
+	deleted.DeletedAt = &now
+	deleted.UpdatedAt = now
+	deleted.UpdatedBy = actorID
+	s.standards[standardID] = &deleted
 	return nil
 }
 

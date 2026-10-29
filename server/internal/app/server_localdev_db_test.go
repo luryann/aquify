@@ -20,7 +20,7 @@ func cleanupLocalDevFixtures(t *testing.T, pool *pgxpool.Pool) {
 
 	ctx := context.Background()
 	for _, q := range []string{
-		"DELETE FROM mfa_factors WHERE org_id = $1::uuid",
+		"DELETE FROM mfa_factors WHERE org_id = $1",
 		"DELETE FROM users WHERE org_id = $1::uuid",
 	} {
 		if _, err := pool.Exec(ctx, q, authn.LocalDevOrgID); err != nil {

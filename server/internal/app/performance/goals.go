@@ -306,7 +306,7 @@ func (s *Service) DeleteGoal(orgID, actorID string, principal *appmiddleware.Pri
 		return ErrGoalNotFound
 	}
 	if s.repo != nil {
-		if err := s.repo.DeleteGoal(context.Background(), goalID); err != nil {
+		if err := s.repo.DeleteGoal(context.Background(), orgID, goalID); err != nil {
 			return fmt.Errorf("delete goal: %w", err)
 		}
 	}

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import type { ApiClient } from '@/lib/api'
 import { fetchSeasons, type GroupRecord, type SeasonRecord } from '@/lib/adminData'
-import { parseBackendDate } from '@/lib/dates'
+import { formatShortDate } from '@/lib/dates'
 import {
   createTrainingPhase, deleteTrainingPhase, fetchSeasonPlan, type PhaseKind, type SeasonPlan,
 } from '@/lib/trainingData'
@@ -20,7 +20,6 @@ const PHASES: { kind: PhaseKind; label: string }[] = [
   { kind: 'recovery', label: 'Recovery' },
 ]
 
-const shortDate = (iso: string) => parseBackendDate(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 
 const field: React.CSSProperties = { width: '100%' }
 
@@ -111,7 +110,7 @@ export function SeasonPlanPanel({ api, orgId, groups }: { api: ApiClient; orgId:
               ariaLabel="Planned yards per week with weekly target"
               height={150}
               data={plan.weeks.map((w) => ({
-                key: w.week_start, label: shortDate(w.week_start), value: w.planned_yards, target: w.target_yards || undefined,
+                key: w.week_start, label: formatShortDate(w.week_start), value: w.planned_yards, target: w.target_yards || undefined,
                 detail: `${w.phase ? PHASES.find((p) => p.kind === w.phase)?.label : 'No phase'}, ${w.practices} practices`,
               }))}
             />
@@ -128,7 +127,7 @@ export function SeasonPlanPanel({ api, orgId, groups }: { api: ApiClient; orgId:
           {plan?.phases.map((p) => (
             <li key={p.id} className="u-gap-12px u-p-8px-0 u-fs-fs-base" style={{ display: 'grid', gridTemplateColumns: '90px minmax(0,1fr) auto auto', alignItems: 'center', borderBottom: '1px solid var(--border)' }}>
               <span className="u-fw-600" style={{ color: 'var(--text)' }}>{PHASES.find((x) => x.kind === p.phase)?.label}</span>
-              <span style={{ color: 'var(--text-subtle)', minWidth: 0 }}>{shortDate(p.start_date)} – {shortDate(p.end_date)}{p.focus ? `, ${p.focus}` : ''}</span>
+              <span style={{ color: 'var(--text-subtle)', minWidth: 0 }}>{formatShortDate(p.start_date)} – {formatShortDate(p.end_date)}{p.focus ? `, ${p.focus}` : ''}</span>
               <span className="u-ff-font-mono u-fs-fs-sm" style={{ color: 'var(--text)' }}>{p.weekly_yardage_target.toLocaleString('en-US')} yd/wk</span>
               <button type="button" className="btn-icon" aria-label={`Delete ${p.phase} phase`} style={{ color: 'var(--text-muted)' }}
                 onClick={async () => {

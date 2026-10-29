@@ -15,8 +15,10 @@ import {
   type MeetCreateDraftState,
   type MeetSessionDraft,
 } from '@/lib/meet-draft'
-import { parseBackendDate } from '@/lib/dates'
+import { formatDateOnly } from '@/lib/dates'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
+import { FIELD_INPUT_STYLE } from '@/lib/form-styles'
+import { COURSE_LABELS } from '@/lib/meet-events'
 
 type MeetEventDraft = ParsedMeetEventDraftRecord
 
@@ -29,13 +31,6 @@ type MeetDraft = MeetCreateDraftState & {
 type PackageFile = { name: string; size: number; type: string; file?: File }
 
 const STEP_LABELS = ['Basic Info', 'Schedule', 'Entry Rules', 'Review']
-function formatReviewDate(value?: string | null) {
-  if (!value) return '—'
-  const parsed = parseBackendDate(value)
-  if (Number.isNaN(parsed.getTime())) return value
-  return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
 function formatReviewDateTime(value?: string | null) {
   if (!value) return '—'
   const parsed = new Date(value)
@@ -44,17 +39,8 @@ function formatReviewDateTime(value?: string | null) {
 }
 
 const COURSES: Course[] = ['SCY', 'SCM', 'LCM']
-const COURSE_FULL_NAMES: Record<Course, string> = {
-  SCY: 'Short Course Yards',
-  SCM: 'Short Course Meters',
-  LCM: 'Long Course Meters',
-}
 const DEFAULT_AGE_GROUPS = ['8 & Under', '9-10', '11-12', '13-14', '15-16', '17-18', 'Open']
 const MEET_ENTRY_EXTS = ['.cl2', '.sd3', '.zip', '.hy3', '.hyv', '.ev3']
-
-// ── Input style helpers ─────────────────────────────────────────────────────
-
-const inputStyle: React.CSSProperties = { width: '100%' }
 
 function FieldLabel({ children, required }: { children: React.ReactNode; required?: boolean }) {
   return (
@@ -75,7 +61,7 @@ function InputField({
         aria-label={placeholder ?? type} type={type} value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        style={inputStyle}
+        style={FIELD_INPUT_STYLE}
       />
       {hint && <p className="u-fs-fs-xs u-mt-4px" style={{ color: 'var(--text-muted)' }}>{hint}</p>}
     </div>
@@ -257,7 +243,7 @@ function SessionCard({
             value={session.section}
             onChange={(e) => onChange('section', e.target.value)}
             placeholder="e.g. Day 1"
-            style={inputStyle}
+            style={FIELD_INPUT_STYLE}
           />
         </div>
         <div>
@@ -267,7 +253,7 @@ function SessionCard({
             value={session.name}
             onChange={(e) => onChange('name', e.target.value)}
             placeholder="e.g. Morning Session"
-            style={inputStyle}
+            style={FIELD_INPUT_STYLE}
           />
         </div>
       </div>
@@ -280,7 +266,7 @@ function SessionCard({
             type="date"
             value={session.date}
             onChange={(e) => onChange('date', e.target.value)}
-            style={inputStyle}
+            style={FIELD_INPUT_STYLE}
           />
         </div>
         <div>
@@ -289,7 +275,7 @@ function SessionCard({
             type="time"
             value={session.warmupTime}
             onChange={(e) => onChange('warmupTime', e.target.value)}
-            style={inputStyle}
+            style={FIELD_INPUT_STYLE}
           />
         </div>
         <div>
@@ -298,7 +284,7 @@ function SessionCard({
             type="time"
             value={session.startTime}
             onChange={(e) => onChange('startTime', e.target.value)}
-            style={inputStyle}
+            style={FIELD_INPUT_STYLE}
           />
         </div>
       </div>
@@ -399,8 +385,9 @@ export default function NewMeetPage() {
       const parsed = await parseMeetEntryFile(session.token, session.user.orgId, f.file)
       setEntryFileParsing(false)
       setEntryFileParsed(true)
-      setParsedEvents(parsed.events ?? [])
-      const parsedAgeGroups = deriveAgeGroupsFromEvents(parsed.events ?? [])
+      const events = parsed.events ?? []
+      setParsedEvents(events)
+      const parsedAgeGroups = deriveAgeGroupsFromEvents(events)
       setDraft((d) => ({
         ...d,
         name: d.name || parsed.meet_name || d.name,
@@ -548,11 +535,11 @@ export default function NewMeetPage() {
                   <FieldLabel required>Course</FieldLabel>
                   <div className="u-gap-4px u-p-4px" style={{ display: 'flex', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '8px' }}>
                     {COURSES.map((c) => (
-                      <button type="button" key={c} onClick={() => update('course', c)} title={COURSE_FULL_NAMES[c]}
+                      <button type="button" key={c} onClick={() => update('course', c)} title={COURSE_LABELS[c]}
                         className="u-p-8px u-fs-fs-sm u-fw-700 u-ff-font-body" style={{ flex: 1, borderRadius: '6px', border: 'none', cursor: 'pointer', background: draft.course === c ? 'var(--accent)' : 'transparent', color: draft.course === c ? '#fff' : 'var(--text-muted)', transition: 'all 0.15s' }}>{c}</button>
                     ))}
                   </div>
-                  <div className="u-fs-fs-xs u-mt-4px" style={{ color: 'var(--text-muted)' }}>{COURSE_FULL_NAMES[draft.course as Course]}</div>
+                  <div className="u-fs-fs-xs u-mt-4px" style={{ color: 'var(--text-muted)' }}>{COURSE_LABELS[draft.course as Course]}</div>
                 </div>
                 <div>
                   <FieldLabel required>Host club</FieldLabel>
@@ -580,7 +567,7 @@ export default function NewMeetPage() {
                   onChange={(e) => update('description', e.target.value)}
                   placeholder="Optional notes, special rules, travel info…"
                   rows={3}
-                  style={{ ...inputStyle, resize: 'vertical' }}
+                  style={{ ...FIELD_INPUT_STYLE, resize: 'vertical' }}
                 />
               </div>
 
@@ -788,7 +775,7 @@ export default function NewMeetPage() {
                 { label: 'Course',       value: draft.course },
                 { label: 'Host club',    value: draft.hostClub || '—' },
                 { label: 'Location',     value: draft.location || '—' },
-                { label: 'Dates',        value: draft.startDate && draft.endDate ? `${formatReviewDate(draft.startDate)} to ${formatReviewDate(draft.endDate)}` : '—' },
+                { label: 'Dates',        value: draft.startDate && draft.endDate ? `${formatDateOnly(draft.startDate)} to ${formatDateOnly(draft.endDate)}` : '—' },
                 { label: 'Commit by',    value: formatReviewDateTime(draft.commitmentDeadline) },
                 { label: 'Entry by',     value: formatReviewDateTime(draft.entryDeadline) },
                 { label: 'Age groups',   value: draft.ageGroups.join(', ') || '—' },
@@ -874,7 +861,6 @@ export default function NewMeetPage() {
           )}
         </button>
       </div>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-    </div>
+          </div>
   )
 }

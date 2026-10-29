@@ -9,9 +9,8 @@ import (
 )
 
 func AuthzPing(w http.ResponseWriter, r *http.Request) {
-	principal, ok := appmiddleware.PrincipalFromContext(r.Context())
-	if !ok || principal == nil {
-		httpx.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Authentication context is missing.", nil)
+	principal, ok := requirePrincipal(w, r)
+	if !ok {
 		return
 	}
 

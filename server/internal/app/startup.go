@@ -34,31 +34,29 @@ func requiresStrictRuntimeDependencies(appEnv string) bool {
 // required external dependencies available before the API begins serving.
 func ValidateStartupDependencies(ctx context.Context, cfg Config, logger *slog.Logger) error {
 	var errs []string
-	if err := validateOpenAPIStartupDependency(); err != nil {
-		errs = append(errs, err.Error())
-	}
-	if !requiresStrictRuntimeDependencies(cfg.AppEnv) {
-		if len(errs) == 0 {
-			return nil
+	collect := func(err error) {
+		if err != nil {
+			errs = append(errs, err.Error())
 		}
+	}
+
+	collect(validateOpenAPIStartupDependency())
+	strict := requiresStrictRuntimeDependencies(cfg.AppEnv)
+	if strict {
+		collect(validateDatabaseStartupDependency(ctx, cfg))
+		collect(validateStorageStartupDependency(cfg))
+	}
+	if len(errs) > 0 {
 		return fmt.Errorf("startup dependency validation failed: %s", strings.Join(errs, "; "))
 	}
-	if logger == nil {
-		logger = slog.Default()
-	}
 
-	if err := validateDatabaseStartupDependency(ctx, cfg); err != nil {
-		errs = append(errs, err.Error())
-	}
-	if err := validateStorageStartupDependency(cfg); err != nil {
-		errs = append(errs, err.Error())
-	}
-
-	if len(errs) == 0 {
+	if strict {
+		if logger == nil {
+			logger = slog.Default()
+		}
 		logger.Info("startup dependencies validated", "app_env", cfg.AppEnv)
-		return nil
 	}
-	return fmt.Errorf("startup dependency validation failed: %s", strings.Join(errs, "; "))
+	return nil
 }
 
 func validateOpenAPIStartupDependency() error {
@@ -78,13 +76,10 @@ func ValidateOIDCLogoutConfig(cfg Config, logger *slog.Logger) error {
 		logger = slog.Default()
 	}
 
-	var missing []string
-	if strings.TrimSpace(cfg.Auth.OIDC.EndSessionURL) == "" {
-		missing = append(missing, "OIDC_END_SESSION_URL")
-	}
-	if strings.TrimSpace(cfg.Auth.OIDC.PostLogoutRedirectURL) == "" {
-		missing = append(missing, "OIDC_POST_LOGOUT_REDIRECT_URL")
-	}
+	missing := missingEnv(
+		envVar{"OIDC_END_SESSION_URL", cfg.Auth.OIDC.EndSessionURL},
+		envVar{"OIDC_POST_LOGOUT_REDIRECT_URL", cfg.Auth.OIDC.PostLogoutRedirectURL},
+	)
 	if len(missing) == 0 {
 		return nil
 	}
@@ -113,19 +108,12 @@ func ValidateKeycloakAdminConfig(cfg Config) error {
 		return nil
 	}
 
-	var missing []string
-	if strings.TrimSpace(cfg.Keycloak.AdminURL) == "" {
-		missing = append(missing, "KEYCLOAK_ADMIN_URL")
-	}
-	if strings.TrimSpace(cfg.Keycloak.Realm) == "" {
-		missing = append(missing, "KEYCLOAK_REALM")
-	}
-	if strings.TrimSpace(cfg.Keycloak.ClientID) == "" {
-		missing = append(missing, "KEYCLOAK_ADMIN_CLIENT_ID")
-	}
-	if strings.TrimSpace(cfg.Keycloak.ClientSecret) == "" {
-		missing = append(missing, "KEYCLOAK_ADMIN_CLIENT_SECRET")
-	}
+	missing := missingEnv(
+		envVar{"KEYCLOAK_ADMIN_URL", cfg.Keycloak.AdminURL},
+		envVar{"KEYCLOAK_REALM", cfg.Keycloak.Realm},
+		envVar{"KEYCLOAK_ADMIN_CLIENT_ID", cfg.Keycloak.ClientID},
+		envVar{"KEYCLOAK_ADMIN_CLIENT_SECRET", cfg.Keycloak.ClientSecret},
+	)
 	if len(missing) == 0 {
 		return nil
 	}
@@ -177,14 +165,7 @@ func validateDatabaseStartupDependency(ctx context.Context, cfg Config) error {
 }
 
 func validateStorageStartupDependency(cfg Config) error {
-	storageCfg := storage.Config{
-		Endpoint:  cfg.Storage.Endpoint,
-		AccessKey: cfg.Storage.AccessKey,
-		SecretKey: cfg.Storage.SecretKey,
-		Bucket:    cfg.Storage.Bucket,
-		UseSSL:    cfg.Storage.UseSSL,
-		Region:    cfg.Storage.Region,
-	}
+	storageCfg := cfg.Storage.ClientConfig()
 
 	if !storageCfg.Enabled() {
 		return errors.New("object storage: STORAGE_ENDPOINT, STORAGE_ACCESS_KEY, STORAGE_SECRET_KEY, and STORAGE_BUCKET must be set in non-development environments")
@@ -209,6 +190,20 @@ func oidcBrowserLoginConfigured(cfg OIDCConfig) bool {
 
 func requiresKeycloakAdminConfig(cfg Config) bool {
 	return oidcBrowserLoginConfigured(cfg.Auth.OIDC) && !cfg.Auth.EnableDevStubTokens
+}
+
+// envVar pairs an environment variable name with its configured value.
+type envVar struct{ name, value string }
+
+// missingEnv returns the names of the variables whose value is blank.
+func missingEnv(vars ...envVar) []string {
+	var missing []string
+	for _, v := range vars {
+		if strings.TrimSpace(v.value) == "" {
+			missing = append(missing, v.name)
+		}
+	}
+	return missing
 }
 
 func pluralize(n int, singular, plural string) string {

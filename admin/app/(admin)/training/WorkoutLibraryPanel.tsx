@@ -13,6 +13,7 @@ import { ZoneBar } from '@/components/training/WorkoutSheet'
 import { Icon } from '@/components/ui/icons'
 import { WorkoutComposer, errorText, type ComposerInitial } from './WorkoutComposer'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
+import { localToday } from '@/lib/dates'
 
 type Editing = { id: string | null; initial: ComposerInitial }
 
@@ -26,7 +27,7 @@ const chip = (active: boolean): React.CSSProperties => ({
 })
 
 function AssignForm({ groups, onAssign, onCancel }: { groups: GroupRecord[]; onAssign: (date: string, groupId: string) => Promise<void>; onCancel: () => void }) {
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
+  const [date, setDate] = useState(localToday())
   const [groupId, setGroupId] = useState(groups[0]?.id ?? '')
   const [busy, setBusy] = useState(false)
   const field: React.CSSProperties = { padding: '8px 8px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)', fontSize: 'var(--fs-sm)' }

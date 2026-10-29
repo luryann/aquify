@@ -42,3 +42,10 @@ export function formatEventLabel(ev: EventLike | undefined | null): string {
   const qualifier = [ev.gender ?? '', formatAgeGroup(ev.min_age, ev.max_age, ev.age_group)].filter(Boolean).join(' ')
   return qualifier ? `${name} (${qualifier})` : name
 }
+
+/** Full course names keyed by course code. */
+export const COURSE_LABELS: Record<string, string> = {
+  SCY: 'Short Course Yards',
+  SCM: 'Short Course Meters',
+  LCM: 'Long Course Meters',
+}

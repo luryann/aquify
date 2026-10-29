@@ -3,6 +3,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "${ROOT_DIR}/scripts/lib/evidence-api.sh"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 EVIDENCE_DIR="${EVIDENCE_DIR:-${ROOT_DIR}/evidence/parallel-meet-cycles-${STAMP}}"
 API_BASE_URL="${API_BASE_URL:-}"
@@ -30,36 +31,10 @@ fi
 
 mkdir -p "${EVIDENCE_DIR}"
 
-PYTHON_BIN="${PYTHON_BIN:-}"
-if [[ -z "${PYTHON_BIN}" ]]; then
-  if command -v python3 >/dev/null 2>&1; then
-    PYTHON_BIN="python3"
-  elif command -v python >/dev/null 2>&1; then
-    PYTHON_BIN="python"
-  else
-    echo "python3 or python is required to validate captured meet-cycle JSON." >&2
-    exit 1
-  fi
-fi
+PYTHON_BIN="$(evidence_python "validate captured meet-cycle JSON")"
 
 api() {
-  local path="$1"
-  local output="$2"
-  local code
-  code="$(curl -sS -o "${output}" -w "%{http_code}" \
-    "${API_BASE_URL}${path}" \
-    -H "Authorization: Bearer ${AUTH_TOKEN}" \
-    -H "X-Org-Id: ${ORG_ID}" \
-    -H "Accept: application/json")"
-  printf '%s' "${code}" > "${output}.status"
-  case "${code}" in
-    2*) return 0 ;;
-    *)
-      echo "Request ${path} failed with HTTP ${code}" >&2
-      cat "${output}" >&2 || true
-      return 1
-      ;;
-  esac
+  evidence_request GET "$1" "$2"
 }
 
 cat > "${EVIDENCE_DIR}/metadata.json" <<EOF
@@ -77,11 +52,9 @@ for raw_meet_id in "${meet_ids[@]}"; do
   meet_dir="${EVIDENCE_DIR}/meet-${meet_id}"
   mkdir -p "${meet_dir}"
   api "/api/v1/meets/${meet_id}" "${meet_dir}/meet.json"
-  api "/api/v1/meets/${meet_id}/sessions" "${meet_dir}/sessions.json"
-  api "/api/v1/meets/${meet_id}/events" "${meet_dir}/events.json"
-  api "/api/v1/meets/${meet_id}/commitments" "${meet_dir}/commitments.json"
-  api "/api/v1/meets/${meet_id}/entries" "${meet_dir}/entries.json"
-  api "/api/v1/meets/${meet_id}/exports" "${meet_dir}/exports.json"
+  for part in sessions events commitments entries exports; do
+    api "/api/v1/meets/${meet_id}/${part}" "${meet_dir}/${part}.json"
+  done
 done
 
 "${PYTHON_BIN}" - "$EVIDENCE_DIR" "${meet_ids[@]}" <<'PY'
@@ -98,38 +71,27 @@ def load(path):
     with path.open("r", encoding="utf-8") as handle:
         return json.load(handle)
 
-def count_collection(payload, keys):
-    for key in keys:
-        value = payload.get(key)
-        if isinstance(value, list):
-            return len(value)
+def count_collection(payload, key):
     if isinstance(payload, list):
         return len(payload)
-    return 0
+    value = payload.get(key)
+    return len(value) if isinstance(value, list) else 0
 
 for meet_id in meet_ids:
     meet_dir = root / f"meet-{meet_id}"
     meet_payload = load(meet_dir / "meet.json")
     meet = meet_payload.get("meet", meet_payload)
     status = str(meet.get("status", ""))
-    sessions = count_collection(load(meet_dir / "sessions.json"), ["sessions"])
-    events = count_collection(load(meet_dir / "events.json"), ["events"])
-    commitments = count_collection(load(meet_dir / "commitments.json"), ["commitments"])
-    entries = count_collection(load(meet_dir / "entries.json"), ["entries"])
-    exports = count_collection(load(meet_dir / "exports.json"), ["exports"])
-    rows.append((meet_id, status, sessions, events, commitments, entries, exports))
+    counts = {
+        name: count_collection(load(meet_dir / f"{name}.json"), name)
+        for name in ("sessions", "events", "commitments", "entries", "exports")
+    }
+    rows.append((meet_id, status, *counts.values()))
     if status not in {"completed", "archived"}:
         failures.append(f"{meet_id}: status {status!r} is not completed or archived")
-    if sessions <= 0:
-        failures.append(f"{meet_id}: no sessions captured")
-    if events <= 0:
-        failures.append(f"{meet_id}: no events captured")
-    if commitments <= 0:
-        failures.append(f"{meet_id}: no commitments captured")
-    if entries <= 0:
-        failures.append(f"{meet_id}: no entries captured")
-    if exports <= 0:
-        failures.append(f"{meet_id}: no export artifacts captured")
+    for name, count in counts.items():
+        if count <= 0:
+            failures.append(f"{meet_id}: no {name} captured" if name != "exports" else f"{meet_id}: no export artifacts captured")
 
 with (root / "cycle-validation-summary.md").open("w", encoding="utf-8") as handle:
     handle.write("# Parallel Meet Cycle Evidence\n\n")

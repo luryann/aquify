@@ -1,46 +1,32 @@
 /**
- * k6 Load Test — Import File Upload Flow
+ * k6 Load Test — Meet entry file parse
  *
- * Simulates 10 concurrent users uploading SD3 meet result files through the
- * full import pipeline: create job → get presigned upload URL → PUT file →
- * finalize import.
+ * Simulates 10 concurrent users uploading an SD3 file to the meet-creation
+ * parser (POST /api/v1/meets/parse-entry-file, multipart field "file").
  *
  * Usage:
  *   k6 run -e API_BASE_URL=http://localhost:8080 \
- *           -e AUTH_TOKEN=stub-admin-token \
- *           -e ORG_ID=org-demo \
+ *           -e AUTH_TOKEN=stub-admin \
+ *           -e ORG_ID=00000000-0000-0000-0000-00000000a001 \
  *           tests/load/k6/import-upload.js
  */
 
 import http from 'k6/http';
-import { check, group, sleep } from 'k6';
+import { check, sleep } from 'k6';
 import { Rate, Trend } from 'k6/metrics';
 
 // ---------------------------------------------------------------------------
 // Custom metrics
 // ---------------------------------------------------------------------------
 const errorRate = new Rate('errors');
-const createJobLatency = new Trend('create_job_latency', true);
-const uploadLatency = new Trend('upload_latency', true);
-const finalizeLatency = new Trend('finalize_latency', true);
-const e2eLatency = new Trend('import_e2e_latency', true);
+const parseLatency = new Trend('parse_latency', true);
 
-// ---------------------------------------------------------------------------
-// Test options
-// ---------------------------------------------------------------------------
 export const options = {
   vus: 10,
   duration: '3m',
-
   thresholds: {
-    // End-to-end p95 under 3 seconds
-    import_e2e_latency: ['p(95)<3000'],
-    // Error rate under 2%
     errors: ['rate<0.02'],
-    // Individual step thresholds
-    create_job_latency: ['p(95)<500'],
-    upload_latency: ['p(95)<2000'],
-    finalize_latency: ['p(95)<800'],
+    parse_latency: ['p(95)<2000'],
   },
 };
 
@@ -48,14 +34,13 @@ export const options = {
 // Configuration
 // ---------------------------------------------------------------------------
 const BASE_URL = __ENV.API_BASE_URL || 'http://localhost:8080';
-const ORG_ID = __ENV.ORG_ID || 'org-demo';
-const AUTH_TOKEN = __ENV.AUTH_TOKEN || 'stub-admin-token';
+const ORG_ID = __ENV.ORG_ID || '00000000-0000-0000-0000-00000000a001';
+const AUTH_TOKEN = __ENV.AUTH_TOKEN || 'stub-admin';
 
 function apiHeaders() {
   return {
     Authorization: `Bearer ${AUTH_TOKEN}`,
     'X-Org-Id': ORG_ID,
-    'Content-Type': 'application/json',
   };
 }
 
@@ -80,7 +65,7 @@ function generateTestSD3() {
 // Setup
 // ---------------------------------------------------------------------------
 export function setup() {
-  const res = http.get(`${BASE_URL}/health/live`);
+  const res = http.get(`${BASE_URL}/api/v1/health/live`);
   if (res.status !== 200) {
     throw new Error(`Health check failed: ${res.status}`);
   }
@@ -88,120 +73,20 @@ export function setup() {
 }
 
 // ---------------------------------------------------------------------------
-// Default function — full import pipeline per VU iteration
+// Default function — one parse request per VU iteration
 // ---------------------------------------------------------------------------
 export default function (data) {
-  const vuId = __VU;
-  const iterationId = __ITER;
-  const iterStart = Date.now();
+  const res = http.post(
+    `${BASE_URL}/api/v1/meets/parse-entry-file`,
+    { file: http.file(data.testFile, `load-test-vu${__VU}-iter${__ITER}.sd3`, 'application/octet-stream') },
+    { headers: apiHeaders(), tags: { endpoint: 'parse_entry_file' } }
+  );
 
-  let importId = null;
-  let uploadUrl = null;
-  let allOk = true;
-
-  // Step 1: Create import job
-  group('create_import_job', () => {
-    const payload = JSON.stringify({
-      filename: `load-test-vu${vuId}-iter${iterationId}.sd3`,
-      content_type: 'application/octet-stream',
-      file_size: data.testFile.length,
-      source_type: 'sd3',
-    });
-
-    const res = http.post(
-      `${BASE_URL}/api/v1/orgs/${ORG_ID}/imports`,
-      payload,
-      { headers: apiHeaders(), tags: { endpoint: 'create_import' } }
-    );
-
-    const ok = check(res, {
-      'create job 201': (r) => r.status === 201,
-      'has import id': (r) => {
-        try {
-          const body = JSON.parse(r.body);
-          return !!body.id;
-        } catch {
-          return false;
-        }
-      },
-      'has upload url': (r) => {
-        try {
-          const body = JSON.parse(r.body);
-          return !!body.upload_url;
-        } catch {
-          return false;
-        }
-      },
-    });
-
-    errorRate.add(!ok);
-    createJobLatency.add(res.timings.duration);
-
-    if (ok) {
-      try {
-        const body = JSON.parse(res.body);
-        importId = body.id;
-        uploadUrl = body.upload_url;
-      } catch {
-        allOk = false;
-      }
-    } else {
-      allOk = false;
-    }
+  const ok = check(res, {
+    'parse 200': (r) => r.status === 200,
   });
+  errorRate.add(!ok);
+  parseLatency.add(res.timings.duration);
 
-  if (!allOk || !importId || !uploadUrl) {
-    errorRate.add(1);
-    return;
-  }
-
-  sleep(0.5);
-
-  // Step 2: Upload file to presigned URL
-  group('upload_file', () => {
-    const uploadRes = http.put(uploadUrl, data.testFile, {
-      headers: {
-        'Content-Type': 'application/octet-stream',
-        'Content-Length': String(data.testFile.length),
-      },
-      tags: { endpoint: 'upload_file' },
-    });
-
-    // Presigned S3/MinIO PUTs return 200 or 204
-    const ok = check(uploadRes, {
-      'upload 200 or 204': (r) => r.status === 200 || r.status === 204,
-    });
-
-    errorRate.add(!ok);
-    uploadLatency.add(uploadRes.timings.duration);
-    if (!ok) allOk = false;
-  });
-
-  if (!allOk) {
-    errorRate.add(1);
-    return;
-  }
-
-  sleep(0.5);
-
-  // Step 3: Finalize import (triggers parsing)
-  group('finalize_import', () => {
-    const finalizeRes = http.post(
-      `${BASE_URL}/api/v1/orgs/${ORG_ID}/imports/${importId}/finalize`,
-      null,
-      { headers: apiHeaders(), tags: { endpoint: 'finalize_import' } }
-    );
-
-    const ok = check(finalizeRes, {
-      'finalize 200 or 202': (r) => r.status === 200 || r.status === 202,
-    });
-
-    errorRate.add(!ok);
-    finalizeLatency.add(finalizeRes.timings.duration);
-  });
-
-  // Record end-to-end elapsed time
-  e2eLatency.add(Date.now() - iterStart);
-
-  sleep(2);
+  sleep(1);
 }

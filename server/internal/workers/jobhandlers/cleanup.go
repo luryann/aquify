@@ -3,6 +3,7 @@ package jobhandlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -58,15 +59,15 @@ func PurgeExpiredFilesHandler(logger *slog.Logger, exportsService *exports.Servi
 
 		if exportsService != nil {
 			for _, artifact := range exportsService.ExpireArtifacts(cutoff) {
-				if artifact.StorageKey != "" {
-					_ = exportsService.DeleteArtifact(artifact.StorageKey)
+				if err := exportsService.DeleteArtifact(artifact.StorageKey); err != nil { // blank keys are ignored
+					logger.Warn("purge expired files: delete export artifact failed", "storage_key", artifact.StorageKey, "error", err)
 				}
 			}
 		}
 		if reportsService != nil {
 			for _, artifact := range reportsService.ExpireArtifacts(cutoff) {
-				if artifact.StorageKey != "" {
-					_ = reportsService.DeleteArtifact(artifact.StorageKey)
+				if err := reportsService.DeleteArtifact(artifact.StorageKey); err != nil { // blank keys are ignored
+					logger.Warn("purge expired files: delete report artifact failed", "storage_key", artifact.StorageKey, "error", err)
 				}
 			}
 		}
@@ -123,6 +124,11 @@ func ProcessDataExportHandler(logger *slog.Logger, complianceService *compliance
 			return fmt.Errorf("process data export: mark processing: %w", err)
 		}
 
+		fail := func(err error) error {
+			_, _ = complianceService.FailDataExport(p.OrgID, p.RequestID)
+			return err
+		}
+
 		generatedAt := time.Now().UTC()
 		artifact := map[string]any{
 			"request_id":   req.ID,
@@ -135,33 +141,28 @@ func ProcessDataExportHandler(logger *slog.Logger, complianceService *compliance
 		}
 		householdData, err := complianceService.CollectHouseholdData(p.OrgID, p.HouseholdID)
 		if err != nil {
-			_, _ = complianceService.FailDataExport(p.OrgID, p.RequestID)
-			return fmt.Errorf("process data export: collect household data: %w", err)
+			return fail(fmt.Errorf("process data export: collect household data: %w", err))
 		}
 		if householdData != nil {
 			artifact["data"] = householdData
 		}
 		data, err := json.MarshalIndent(artifact, "", "  ")
 		if err != nil {
-			_, _ = complianceService.FailDataExport(p.OrgID, p.RequestID)
-			return fmt.Errorf("process data export: marshal artifact: %w", err)
+			return fail(fmt.Errorf("process data export: marshal artifact: %w", err))
 		}
 
 		key := complianceExportStorageKey(p.OrgID, p.RequestID)
 		if err := store.PutObject(ctx, key, "application/json; charset=utf-8", data); err != nil {
-			_, _ = complianceService.FailDataExport(p.OrgID, p.RequestID)
-			return fmt.Errorf("process data export: store artifact %s: %w", key, err)
+			return fail(fmt.Errorf("process data export: store artifact %s: %w", key, err))
 		}
 		downloadURL, err := store.PresignedGetURL(key, complianceExportTTL)
 		if err != nil {
-			_, _ = complianceService.FailDataExport(p.OrgID, p.RequestID)
-			return fmt.Errorf("process data export: presign artifact %s: %w", key, err)
+			return fail(fmt.Errorf("process data export: presign artifact %s: %w", key, err))
 		}
 
 		expiresAt := generatedAt.Add(complianceExportTTL)
 		if _, err := complianceService.CompleteDataExport(p.OrgID, p.RequestID, downloadURL, expiresAt); err != nil {
-			_, _ = complianceService.FailDataExport(p.OrgID, p.RequestID)
-			return fmt.Errorf("process data export: complete request %s: %w", p.RequestID, err)
+			return fail(fmt.Errorf("process data export: complete request %s: %w", p.RequestID, err))
 		}
 
 		logger.Info("process data export: completed", "request_id", p.RequestID, "storage_key", key)
@@ -231,16 +232,14 @@ func ProcessDataDeletionHandler(
 			return fmt.Errorf("process data deletion: %s: %w", step, cause)
 		}
 
-		// Capture cross-domain identifiers BEFORE anonymizing the household —
-		// AnonymizeHousehold clears household.KeycloakUserID and every
-		// contact's Email, which are needed to erase comms/auth records.
+		// The household's identifiers (Keycloak user IDs, contact emails) are
+		// what the other erasure steps are keyed on, and AnonymizeHousehold
+		// destroys them. So anonymization runs last: if any step fails the
+		// request is retried with the identifiers still intact, and every step
+		// below is safe to repeat.
 		erasureCtx, err := membersService.GetHouseholdErasureContext(p.OrgID, p.HouseholdID)
 		if err != nil {
 			return fail("capture erasure context", err)
-		}
-
-		if err := membersService.AnonymizeHousehold(p.OrgID, p.HouseholdID); err != nil {
-			return fail(fmt.Sprintf("anonymize household %s", p.HouseholdID), err)
 		}
 
 		var purgedObjectKeys []string
@@ -277,10 +276,14 @@ func ProcessDataDeletionHandler(
 				if userID == "" {
 					continue
 				}
-				if err := kcClient.DeleteUser(ctx, userID); err != nil {
+				if err := kcClient.DeleteUser(ctx, userID); err != nil && !errors.Is(err, keycloak.ErrUserNotFound) {
 					return fail(fmt.Sprintf("delete keycloak user %s", userID), err)
 				}
 			}
+		}
+
+		if err := membersService.AnonymizeHousehold(p.OrgID, p.HouseholdID); err != nil {
+			return fail(fmt.Sprintf("anonymize household %s", p.HouseholdID), err)
 		}
 
 		if _, err := complianceService.CompleteDataDeletion(p.OrgID, p.RequestID, "Household PII anonymized (members domain); comms, document submissions, object-storage files, and Keycloak login account(s) fully erased; billing/financial ledger records retained per tax/audit requirements (household link anonymized only)."); err != nil {

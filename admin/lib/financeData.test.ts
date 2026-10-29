@@ -25,6 +25,10 @@ test('discount tier descriptions', () => {
   assert.equal(describeDiscount({ discount_type: 'fixed', percent_bps: 0, amount_cents: 2500 }), '$25.00 off')
   assert.equal(describeTier({ min_position: 2, max_position: 2 }), '2nd swimmer')
   assert.equal(describeTier({ min_position: 3, max_position: null }), '3rd+ swimmer')
+  assert.equal(describeTier({ min_position: 1, max_position: 1 }), '1st swimmer')
+  assert.equal(describeTier({ min_position: 4, max_position: 12 }), '4th–12th swimmers')
+  assert.equal(describeTier({ min_position: 21, max_position: null }), '21st+ swimmer')
+  assert.equal(describeTier({ min_position: 11, max_position: 13 }), '11th–13th swimmers')
 })
 
 test('agingShares handles empty and populated totals', () => {

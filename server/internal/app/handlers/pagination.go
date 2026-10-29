@@ -1,6 +1,10 @@
 package handlers
 
-import "net/http"
+import (
+	"net/http"
+
+	"github.com/dareaquatics/aquify/server/internal/app/httpx"
+)
 
 const (
 	defaultListLimit = 100
@@ -75,4 +79,17 @@ func parseNonNegativeInt(raw string, fallback int) int {
 		value = value*10 + int(ch-'0')
 	}
 	return value
+}
+
+// writePagedList answers 200 with the standard list envelope (status, count,
+// total, limit, offset) plus the page of items under key.
+func writePagedList[T any](w http.ResponseWriter, key string, items []T, total int, p listPagination) {
+	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"status": "ok",
+		"count":  len(items),
+		"total":  total,
+		"limit":  p.Limit,
+		"offset": p.Offset,
+		key:      items,
+	})
 }

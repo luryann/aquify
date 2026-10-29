@@ -33,6 +33,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -248,29 +249,29 @@ func (s *Service) ListDataExportRequests(orgID, householdID string) ([]DataExpor
 }
 
 func (s *Service) MarkDataExportProcessing(orgID, requestID string) (*DataExportRequest, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	req, ok := s.exports[requestID]
-	if !ok || req.OrgID != orgID {
-		return nil, ErrExportNotFound
-	}
-	if req.Status != "pending" && req.Status != "failed" {
-		return nil, ErrInvalidTransition
-	}
-	cp := *req
-	cp.Status = "processing"
-	cp.UpdatedAt = time.Now().UTC()
-	if s.repo != nil {
-		if err := s.repo.UpsertDataExportRequest(context.Background(), &cp); err != nil {
-			return nil, err
-		}
-	}
-	s.exports[requestID] = &cp
-	return &cp, nil
+	return s.transitionExport(orgID, requestID, []string{"pending", "failed"}, func(req *DataExportRequest, _ time.Time) {
+		req.Status = "processing"
+	})
 }
 
 func (s *Service) CompleteDataExport(orgID, requestID, downloadURL string, expiresAt time.Time) (*DataExportRequest, error) {
+	return s.transitionExport(orgID, requestID, []string{"processing"}, func(req *DataExportRequest, now time.Time) {
+		req.Status = "ready"
+		req.DownloadURL = strings.TrimSpace(downloadURL)
+		req.CompletedAt = &now
+		req.ExpiresAt = &expiresAt
+	})
+}
+
+func (s *Service) FailDataExport(orgID, requestID string) (*DataExportRequest, error) {
+	return s.transitionExport(orgID, requestID, []string{"processing"}, func(req *DataExportRequest, _ time.Time) {
+		req.Status = "failed"
+	})
+}
+
+// transitionExport moves a data export request out of one of the allowed
+// statuses: it applies the change to a copy, persists it, then updates the cache.
+func (s *Service) transitionExport(orgID, requestID string, from []string, apply func(req *DataExportRequest, now time.Time)) (*DataExportRequest, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -278,39 +279,13 @@ func (s *Service) CompleteDataExport(orgID, requestID, downloadURL string, expir
 	if !ok || req.OrgID != orgID {
 		return nil, ErrExportNotFound
 	}
-	if req.Status != "processing" {
+	if !slices.Contains(from, req.Status) {
 		return nil, ErrInvalidTransition
 	}
 	now := time.Now().UTC()
 	cp := *req
-	cp.Status = "ready"
-	cp.DownloadURL = strings.TrimSpace(downloadURL)
-	cp.CompletedAt = &now
-	cp.ExpiresAt = &expiresAt
+	apply(&cp, now)
 	cp.UpdatedAt = now
-	if s.repo != nil {
-		if err := s.repo.UpsertDataExportRequest(context.Background(), &cp); err != nil {
-			return nil, err
-		}
-	}
-	s.exports[requestID] = &cp
-	return &cp, nil
-}
-
-func (s *Service) FailDataExport(orgID, requestID string) (*DataExportRequest, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	req, ok := s.exports[requestID]
-	if !ok || req.OrgID != orgID {
-		return nil, ErrExportNotFound
-	}
-	if req.Status != "processing" {
-		return nil, ErrInvalidTransition
-	}
-	cp := *req
-	cp.Status = "failed"
-	cp.UpdatedAt = time.Now().UTC()
 	if s.repo != nil {
 		if err := s.repo.UpsertDataExportRequest(context.Background(), &cp); err != nil {
 			return nil, err
@@ -402,55 +377,43 @@ func (s *Service) RejectDataDeletion(orgID, requestID, reviewNotes string) (*Dat
 }
 
 func (s *Service) reviewDataDeletion(orgID, requestID, toStatus, reviewNotes string) (*DataDeletionRequest, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	req, ok := s.deletions[requestID]
-	if !ok || req.OrgID != orgID {
-		return nil, ErrDeletionNotFound
+	from := []string{"pending", "reviewing"}
+	if toStatus == "approved" {
+		// "failed" retries a failed erasure; "approved" lets the admin re-approve to
+		// re-queue a request whose erasure job could not be enqueued.
+		from = append(from, "failed", "approved")
 	}
-	if req.Status != "pending" && req.Status != "reviewing" && !(toStatus == "approved" && req.Status == "failed") {
-		return nil, ErrInvalidTransition
-	}
-	cp := *req
-	cp.Status = toStatus
-	if notes := strings.TrimSpace(reviewNotes); notes != "" {
-		cp.ReviewNotes = notes
-	}
-	cp.UpdatedAt = time.Now().UTC()
-	if s.repo != nil {
-		if err := s.repo.UpsertDataDeletionRequest(context.Background(), &cp); err != nil {
-			return nil, err
+	return s.transitionDeletion(orgID, requestID, from, func(req *DataDeletionRequest, _ time.Time) {
+		req.Status = toStatus
+		if notes := strings.TrimSpace(reviewNotes); notes != "" {
+			req.ReviewNotes = notes
 		}
-	}
-	s.deletions[requestID] = &cp
-	return &cp, nil
+	})
 }
 
 func (s *Service) MarkDataDeletionProcessing(orgID, requestID string) (*DataDeletionRequest, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	req, ok := s.deletions[requestID]
-	if !ok || req.OrgID != orgID {
-		return nil, ErrDeletionNotFound
-	}
-	if req.Status != "pending" && req.Status != "approved" && req.Status != "failed" {
-		return nil, ErrInvalidTransition
-	}
-	cp := *req
-	cp.Status = "processing"
-	cp.UpdatedAt = time.Now().UTC()
-	if s.repo != nil {
-		if err := s.repo.UpsertDataDeletionRequest(context.Background(), &cp); err != nil {
-			return nil, err
-		}
-	}
-	s.deletions[requestID] = &cp
-	return &cp, nil
+	return s.transitionDeletion(orgID, requestID, []string{"pending", "approved", "failed"}, func(req *DataDeletionRequest, _ time.Time) {
+		req.Status = "processing"
+	})
 }
 
 func (s *Service) CompleteDataDeletion(orgID, requestID, reviewNotes string) (*DataDeletionRequest, error) {
+	return s.transitionDeletion(orgID, requestID, []string{"processing"}, func(req *DataDeletionRequest, now time.Time) {
+		req.Status = "completed"
+		req.ReviewNotes = strings.TrimSpace(reviewNotes)
+		req.CompletedAt = &now
+	})
+}
+
+func (s *Service) FailDataDeletion(orgID, requestID, reviewNotes string) (*DataDeletionRequest, error) {
+	return s.transitionDeletion(orgID, requestID, []string{"processing"}, func(req *DataDeletionRequest, _ time.Time) {
+		req.Status = "failed"
+		req.ReviewNotes = strings.TrimSpace(reviewNotes)
+	})
+}
+
+// transitionDeletion is the data deletion counterpart of transitionExport.
+func (s *Service) transitionDeletion(orgID, requestID string, from []string, apply func(req *DataDeletionRequest, now time.Time)) (*DataDeletionRequest, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -458,39 +421,13 @@ func (s *Service) CompleteDataDeletion(orgID, requestID, reviewNotes string) (*D
 	if !ok || req.OrgID != orgID {
 		return nil, ErrDeletionNotFound
 	}
-	if req.Status != "processing" {
+	if !slices.Contains(from, req.Status) {
 		return nil, ErrInvalidTransition
 	}
 	now := time.Now().UTC()
 	cp := *req
-	cp.Status = "completed"
-	cp.ReviewNotes = strings.TrimSpace(reviewNotes)
-	cp.CompletedAt = &now
+	apply(&cp, now)
 	cp.UpdatedAt = now
-	if s.repo != nil {
-		if err := s.repo.UpsertDataDeletionRequest(context.Background(), &cp); err != nil {
-			return nil, err
-		}
-	}
-	s.deletions[requestID] = &cp
-	return &cp, nil
-}
-
-func (s *Service) FailDataDeletion(orgID, requestID, reviewNotes string) (*DataDeletionRequest, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	req, ok := s.deletions[requestID]
-	if !ok || req.OrgID != orgID {
-		return nil, ErrDeletionNotFound
-	}
-	if req.Status != "processing" {
-		return nil, ErrInvalidTransition
-	}
-	cp := *req
-	cp.Status = "failed"
-	cp.ReviewNotes = strings.TrimSpace(reviewNotes)
-	cp.UpdatedAt = time.Now().UTC()
 	if s.repo != nil {
 		if err := s.repo.UpsertDataDeletionRequest(context.Background(), &cp); err != nil {
 			return nil, err

@@ -11,7 +11,7 @@ import { useSession } from '@/lib/session'
 import { useStaffNames } from '@/lib/useStaffNames'
 import { useApiClient } from '@/lib/api'
 import { canAccess } from '@/lib/roles'
-import { formatDateOnly, parseBackendDate } from '@/lib/dates'
+import { formatDateOnly, formatDateTime } from '@/lib/dates'
 import {
   fetchHousehold,
   fetchInvoice,
@@ -38,19 +38,9 @@ import {
 } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
-
-function formatCents(cents: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100)
-}
+import { formatCents } from '@/lib/financeData'
 
 const formatDate = formatDateOnly
-
-function formatDateTime(value?: string | null) {
-  if (!value) return '—'
-  const parsed = parseBackendDate(value)
-  if (Number.isNaN(parsed.getTime())) return value
-  return parsed.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-}
 
 function StatusBadge({ status }: { status: string }) {
   const cfg: Record<string, { color: string; bg: string }> = {
@@ -135,13 +125,15 @@ function buildRefundCols(nameFor: (id?: string | null) => string): Column<Refund
   ]
 }
 
-const LEDGER_COLS: Column<LedgerEventRecord>[] = [
+function buildLedgerCols(nameFor: (id?: string | null) => string): Column<LedgerEventRecord>[] {
+  return [
   { key: 'event_type', label: 'Action', render: (row) => <span className="u-fs-fs-sm u-fw-600" style={{ color: 'var(--text)' }}>{row.event_type.replaceAll('_', ' ')}</span> },
   { key: 'amount_cents', label: 'Amount', align: 'right', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: row.amount_cents < 0 ? 'var(--success)' : 'var(--text)' }}>{formatCents(row.amount_cents)}</span> },
   { key: 'description', label: 'Memo', render: (row) => <span className="u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{row.description || '—'}</span> },
-  { key: 'actor_id', label: 'Actor', render: (row) => <span className="u-ff-font-body u-fs-fs-xs" style={{ color: 'var(--text-muted)' }}>{row.actor_id || 'system'}</span> },
+  { key: 'actor_id', label: 'Actor', render: (row) => <span className="u-fs-fs-xs" style={{ color: 'var(--text-muted)' }}>{row.actor_id ? nameFor(row.actor_id) : 'System'}</span> },
   { key: 'created_at', label: 'Occurred', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>{formatDateTime(row.created_at)}</span> },
-]
+  ]
+}
 
 const INPUT_STYLE = { width: '100%' }
 
@@ -229,9 +221,7 @@ function IssueRefundPanel({
       ) : (
         <form onSubmit={(e) => void handleSubmit(e)} className="u-gap-16px" style={{ display: 'grid' }}>
           {error && (
-            <div className="u-p-12px-16px u-fs-fs-base" style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px' }}>
-              {error}
-            </div>
+            <div role="alert" className="form-banner-error">{error}</div>
           )}
           <div>
             <label className="form-label form-label-required">Payment to refund</label>
@@ -352,9 +342,7 @@ function AddInvoiceItemPanel({
       ) : (
         <form onSubmit={(e) => void handleSubmit(e)} className="u-gap-16px" style={{ display: 'grid' }}>
           {error && (
-            <div className="u-p-12px-16px u-fs-fs-base" style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px' }}>
-              {error}
-            </div>
+            <div role="alert" className="form-banner-error">{error}</div>
           )}
           <div>
             <label className="form-label form-label-required">Description</label>
@@ -441,9 +429,7 @@ function RecordPaymentPanel({
       ) : (
         <form onSubmit={(e) => void handleSubmit(e)} className="u-gap-16px" style={{ display: 'grid' }}>
           {error && (
-            <div className="u-p-12px-16px u-fs-fs-base" style={{ background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px' }}>
-              {error}
-            </div>
+            <div role="alert" className="form-banner-error">{error}</div>
           )}
           <div className="cols-2 u-gap-16px" >
             <div>
@@ -507,6 +493,7 @@ export default function InvoiceDetailPage() {
   const staffName = useStaffNames(api, session?.user.orgId)
   const paymentCols = useMemo(() => buildPaymentCols(staffName), [staffName])
   const refundCols = useMemo(() => buildRefundCols(staffName), [staffName])
+  const ledgerCols = useMemo(() => buildLedgerCols(staffName), [staffName])
   const [activeTab, setActiveTab] = useState('items')
   const [invoice, setInvoice] = useState<InvoiceRecord | null>(null)
   const [household, setHousehold] = useState<HouseholdRecord | null>(null)
@@ -552,7 +539,7 @@ export default function InvoiceDetailPage() {
       const artifact = await downloadReportArtifact(
         api,
         session.user.orgId,
-        `/api/v1/reports/invoice-detail?invoice_id=${invoiceId}&format=csv`,
+        `/api/v1/reports/invoice-detail?invoice_id=${encodeURIComponent(invoiceId)}&format=csv`,
       )
       if (artifact?.download_url) {
         window.open(artifact.download_url, '_blank', 'noopener,noreferrer')
@@ -628,7 +615,7 @@ export default function InvoiceDetailPage() {
     if (!ok) return
     deleteInvoiceItem(api, session.user.orgId, invoiceId, item.id)
       .then(() => setReloadKey((k) => k + 1))
-      .catch((err) => setError(uiErrorMessage(err, 'Couldn’t remove line item. Try again.')))
+      .catch((err) => setLifecycleError(uiErrorMessage(err, 'Couldn’t remove line item. Try again.')))
   } : null), [swimmerNameById, isDraft, api, session?.user.orgId, invoiceId, confirm])
 
   if (loading) {
@@ -738,7 +725,7 @@ export default function InvoiceDetailPage() {
           <Table columns={refundCols} data={refunds} emptyTitle="No refunds" emptyDescription="No refunds have been recorded for this invoice." />
         </>
       ) : null}
-      {activeTab === 'ledger' ? <Table columns={LEDGER_COLS} data={ledger} emptyTitle="No ledger activity" emptyDescription="No ledger events were returned for this invoice." /> : null}
+      {activeTab === 'ledger' ? <Table columns={ledgerCols} data={ledger} emptyTitle="No ledger activity" emptyDescription="No ledger events were returned for this invoice." /> : null}
     </div>
   )
 }

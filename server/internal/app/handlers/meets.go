@@ -158,7 +158,7 @@ func mapCreateMeetSignupSettings(item *createMeetSignupSettingsRequest) *meets.C
 }
 
 func (h *MeetsHandlers) parseEntryFile(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := meetScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -190,12 +190,9 @@ func (h *MeetsHandlers) parseEntryFile(w http.ResponseWriter, r *http.Request) {
 		Data:     data,
 	})
 	if err != nil {
-		switch {
-		case errors.Is(err, meets.ErrForbidden):
+		if errors.Is(err, meets.ErrForbidden) {
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to parse meet files.", nil)
-		case errors.Is(err, meets.ErrInvalidMeetFile):
-			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_meet_file", err.Error(), nil)
-		default:
+		} else {
 			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_meet_file", err.Error(), nil)
 		}
 		return
@@ -207,7 +204,7 @@ func (h *MeetsHandlers) parseEntryFile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *MeetsHandlers) createMeet(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := meetScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -249,7 +246,7 @@ func (h *MeetsHandlers) createMeet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *MeetsHandlers) listMeets(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := meetScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -267,32 +264,25 @@ func (h *MeetsHandlers) listMeets(w http.ResponseWriter, r *http.Request) {
 	pagination := parseListPagination(r, listPaginationOptions{})
 	result, total := paginateSlice(result, pagination)
 
-	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"status": "ok",
-		"count":  len(result),
-		"total":  total,
-		"limit":  pagination.Limit,
-		"offset": pagination.Offset,
-		"meets":  result,
-	})
+	writePagedList(w, "meets", result, total, pagination)
 }
 
 func (h *MeetsHandlers) getMeet(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := meetScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
 
-	meetID := strings.TrimSpace(chi.URLParam(r, "meetID"))
-	if !validateID(meetID) {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_id", "Meet ID is required.", nil)
+	meetID, ok := meetIDParam(w, r)
+	if !ok {
 		return
 	}
 	meet, err := h.service.GetMeet(principal, orgID, meetID)
 	if err != nil {
+		if writeMeetNotFound(w, r, err) {
+			return
+		}
 		switch {
-		case errors.Is(err, meets.ErrMeetNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "meet_not_found", "Meet was not found.", nil)
 		case errors.Is(err, meets.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to view this meet.", nil)
 		default:
@@ -307,12 +297,65 @@ func (h *MeetsHandlers) getMeet(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// writeMeetNotFound answers the 404 for any missing meets-domain record and reports whether it did.
+func writeMeetNotFound(w http.ResponseWriter, r *http.Request, err error) bool {
+	switch {
+	case errors.Is(err, meets.ErrMeetNotFound):
+		httpx.WriteError(w, r, http.StatusNotFound, "meet_not_found", "Meet was not found.", nil)
+	case errors.Is(err, meets.ErrCommitmentNotFound):
+		httpx.WriteError(w, r, http.StatusNotFound, "commitment_not_found", "Commitment was not found.", nil)
+	case errors.Is(err, meets.ErrEventNotFound):
+		httpx.WriteError(w, r, http.StatusNotFound, "event_not_found", "Meet event was not found.", nil)
+	case errors.Is(err, meets.ErrSelectionNotFound):
+		httpx.WriteError(w, r, http.StatusNotFound, "selection_not_found", "Event selection was not found.", nil)
+	case errors.Is(err, meets.ErrSessionNotFound):
+		httpx.WriteError(w, r, http.StatusNotFound, "session_not_found", "Session was not found.", nil)
+	case errors.Is(err, meets.ErrEntryNotFound):
+		httpx.WriteError(w, r, http.StatusNotFound, "entry_not_found", "Entry was not found.", nil)
+	default:
+		return false
+	}
+	return true
+}
+
+// meetIDParam reads the {meetID} route parameter, answering 400 when it is blank.
+func meetIDParam(w http.ResponseWriter, r *http.Request) (string, bool) {
+	meetID := strings.TrimSpace(chi.URLParam(r, "meetID"))
+	if !validateID(meetID) {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_id", "Meet ID is required.", nil)
+		return "", false
+	}
+	return meetID, true
+}
+
+// commitmentIDParams reads {meetID} and {commitmentID}, answering 400 when either is blank.
+func commitmentIDParams(w http.ResponseWriter, r *http.Request) (meetID, commitmentID string, ok bool) {
+	meetID = strings.TrimSpace(chi.URLParam(r, "meetID"))
+	commitmentID = strings.TrimSpace(chi.URLParam(r, "commitmentID"))
+	if !validateID(meetID) || !validateID(commitmentID) {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_id", "Meet ID and commitment ID are required.", nil)
+		return "", "", false
+	}
+	return meetID, commitmentID, true
+}
+
+// entryIDParams reads {meetID} and {entryID}, answering 400 when either is blank.
+func entryIDParams(w http.ResponseWriter, r *http.Request) (meetID, entryID string, ok bool) {
+	meetID = strings.TrimSpace(chi.URLParam(r, "meetID"))
+	entryID = strings.TrimSpace(chi.URLParam(r, "entryID"))
+	if !validateID(meetID) || !validateID(entryID) {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_id", "Meet ID and entry ID are required.", nil)
+		return "", "", false
+	}
+	return meetID, entryID, true
+}
+
 type transitionMeetRequest struct {
 	Status string `json:"status" validate:"required"`
 }
 
 func (h *MeetsHandlers) transitionMeet(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := meetScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -322,16 +365,16 @@ func (h *MeetsHandlers) transitionMeet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	meetID := strings.TrimSpace(chi.URLParam(r, "meetID"))
-	if !validateID(meetID) {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_id", "Meet ID is required.", nil)
+	meetID, ok := meetIDParam(w, r)
+	if !ok {
 		return
 	}
 	meet, auditEvent, err := h.service.TransitionMeetStatus(principal, orgID, meetID, req.Status)
 	if err != nil {
+		if writeMeetNotFound(w, r, err) {
+			return
+		}
 		switch {
-		case errors.Is(err, meets.ErrMeetNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "meet_not_found", "Meet was not found.", nil)
 		case errors.Is(err, meets.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to transition this meet.", nil)
 		case errors.Is(err, meets.ErrInvalidTransition):
@@ -361,7 +404,7 @@ type createMeetSessionRequest struct {
 }
 
 func (h *MeetsHandlers) createMeetSession(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := meetScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -371,9 +414,8 @@ func (h *MeetsHandlers) createMeetSession(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	meetID := strings.TrimSpace(chi.URLParam(r, "meetID"))
-	if !validateID(meetID) {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_id", "Meet ID is required.", nil)
+	meetID, ok := meetIDParam(w, r)
+	if !ok {
 		return
 	}
 	session, auditEvent, err := h.service.CreateMeetSession(principal, orgID, meetID, meets.CreateMeetSessionInput{
@@ -385,9 +427,10 @@ func (h *MeetsHandlers) createMeetSession(w http.ResponseWriter, r *http.Request
 		Notes:         req.Notes,
 	})
 	if err != nil {
+		if writeMeetNotFound(w, r, err) {
+			return
+		}
 		switch {
-		case errors.Is(err, meets.ErrMeetNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "meet_not_found", "Meet was not found.", nil)
 		case errors.Is(err, meets.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to add sessions.", nil)
 		default:
@@ -403,25 +446,33 @@ func (h *MeetsHandlers) createMeetSession(w http.ResponseWriter, r *http.Request
 	})
 }
 
-func (h *MeetsHandlers) listMeetSessions(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := meetScopeFromRequest(w, r)
+// listMeetChildren serves the paginated list routes under /meets/{meetID}
+// (sessions, events, commitments, entries). noun names the collection in the
+// forbidden message and is also the JSON key of the returned page.
+func listMeetChildren[T any](
+	w http.ResponseWriter,
+	r *http.Request,
+	noun string,
+	list func(principal *appmiddleware.Principal, orgID, meetID string) ([]T, error),
+) {
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
 
-	meetID := strings.TrimSpace(chi.URLParam(r, "meetID"))
-	if !validateID(meetID) {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_id", "Meet ID is required.", nil)
+	meetID, ok := meetIDParam(w, r)
+	if !ok {
 		return
 	}
 
-	result, err := h.service.ListMeetSessions(principal, orgID, meetID)
+	result, err := list(principal, orgID, meetID)
 	if err != nil {
+		if writeMeetNotFound(w, r, err) {
+			return
+		}
 		switch {
-		case errors.Is(err, meets.ErrMeetNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "meet_not_found", "Meet was not found.", nil)
 		case errors.Is(err, meets.ErrForbidden):
-			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to list sessions.", nil)
+			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to list "+noun+".", nil)
 		default:
 			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
 		}
@@ -430,14 +481,11 @@ func (h *MeetsHandlers) listMeetSessions(w http.ResponseWriter, r *http.Request)
 	pagination := parseListPagination(r, listPaginationOptions{})
 	result, total := paginateSlice(result, pagination)
 
-	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"status":   "ok",
-		"count":    len(result),
-		"total":    total,
-		"limit":    pagination.Limit,
-		"offset":   pagination.Offset,
-		"sessions": result,
-	})
+	writePagedList(w, noun, result, total, pagination)
+}
+
+func (h *MeetsHandlers) listMeetSessions(w http.ResponseWriter, r *http.Request) {
+	listMeetChildren(w, r, "sessions", h.service.ListMeetSessions)
 }
 
 // ─── Events ───────────────────────────────────────────────────────────────────
@@ -456,7 +504,7 @@ type createMeetEventRequest struct {
 }
 
 func (h *MeetsHandlers) createMeetEvent(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := meetScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -466,9 +514,8 @@ func (h *MeetsHandlers) createMeetEvent(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	meetID := strings.TrimSpace(chi.URLParam(r, "meetID"))
-	if !validateID(meetID) {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_id", "Meet ID is required.", nil)
+	meetID, ok := meetIDParam(w, r)
+	if !ok {
 		return
 	}
 	meetEvent, auditEvent, err := h.service.CreateMeetEvent(principal, orgID, meetID, meets.CreateMeetEventInput{
@@ -484,11 +531,10 @@ func (h *MeetsHandlers) createMeetEvent(w http.ResponseWriter, r *http.Request) 
 		IsRelay:       req.IsRelay,
 	})
 	if err != nil {
+		if writeMeetNotFound(w, r, err) {
+			return
+		}
 		switch {
-		case errors.Is(err, meets.ErrMeetNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "meet_not_found", "Meet was not found.", nil)
-		case errors.Is(err, meets.ErrSessionNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "session_not_found", "Session was not found.", nil)
 		case errors.Is(err, meets.ErrEventNumberConflict):
 			httpx.WriteError(w, r, http.StatusConflict, "event_number_conflict", err.Error(), nil)
 		case errors.Is(err, meets.ErrForbidden):
@@ -507,59 +553,27 @@ func (h *MeetsHandlers) createMeetEvent(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *MeetsHandlers) listMeetEvents(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := meetScopeFromRequest(w, r)
-	if !ok {
-		return
-	}
-
-	meetID := strings.TrimSpace(chi.URLParam(r, "meetID"))
-	if !validateID(meetID) {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_id", "Meet ID is required.", nil)
-		return
-	}
-	result, err := h.service.ListMeetEvents(principal, orgID, meetID)
-	if err != nil {
-		switch {
-		case errors.Is(err, meets.ErrMeetNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "meet_not_found", "Meet was not found.", nil)
-		case errors.Is(err, meets.ErrForbidden):
-			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to list events.", nil)
-		default:
-			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
-		}
-		return
-	}
-	pagination := parseListPagination(r, listPaginationOptions{})
-	result, total := paginateSlice(result, pagination)
-
-	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"status": "ok",
-		"count":  len(result),
-		"total":  total,
-		"limit":  pagination.Limit,
-		"offset": pagination.Offset,
-		"events": result,
-	})
+	listMeetChildren(w, r, "events", h.service.ListMeetEvents)
 }
 
 // ─── Commitment request ───────────────────────────────────────────────────────
 
 func (h *MeetsHandlers) publishCommitmentRequest(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := meetScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
 
-	meetID := strings.TrimSpace(chi.URLParam(r, "meetID"))
-	if !validateID(meetID) {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_id", "Meet ID is required.", nil)
+	meetID, ok := meetIDParam(w, r)
+	if !ok {
 		return
 	}
 	meet, commitments, auditEvent, err := h.service.PublishCommitmentRequest(principal, orgID, meetID)
 	if err != nil {
+		if writeMeetNotFound(w, r, err) {
+			return
+		}
 		switch {
-		case errors.Is(err, meets.ErrMeetNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "meet_not_found", "Meet was not found.", nil)
 		case errors.Is(err, meets.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to publish commitment requests.", nil)
 		case errors.Is(err, meets.ErrInvalidTransition):
@@ -581,39 +595,7 @@ func (h *MeetsHandlers) publishCommitmentRequest(w http.ResponseWriter, r *http.
 // ─── Commitments ─────────────────────────────────────────────────────────────
 
 func (h *MeetsHandlers) listCommitments(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := meetScopeFromRequest(w, r)
-	if !ok {
-		return
-	}
-
-	meetID := strings.TrimSpace(chi.URLParam(r, "meetID"))
-	if !validateID(meetID) {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_id", "Meet ID is required.", nil)
-		return
-	}
-	result, err := h.service.ListCommitments(principal, orgID, meetID)
-	if err != nil {
-		switch {
-		case errors.Is(err, meets.ErrMeetNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "meet_not_found", "Meet was not found.", nil)
-		case errors.Is(err, meets.ErrForbidden):
-			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to list commitments.", nil)
-		default:
-			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
-		}
-		return
-	}
-	pagination := parseListPagination(r, listPaginationOptions{})
-	result, total := paginateSlice(result, pagination)
-
-	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"status":      "ok",
-		"count":       len(result),
-		"total":       total,
-		"limit":       pagination.Limit,
-		"offset":      pagination.Offset,
-		"commitments": result,
-	})
+	listMeetChildren(w, r, "commitments", h.service.ListCommitments)
 }
 
 type respondToCommitmentRequest struct {
@@ -622,7 +604,7 @@ type respondToCommitmentRequest struct {
 }
 
 func (h *MeetsHandlers) respondToCommitment(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := meetScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -632,10 +614,8 @@ func (h *MeetsHandlers) respondToCommitment(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	meetID := strings.TrimSpace(chi.URLParam(r, "meetID"))
-	commitmentID := strings.TrimSpace(chi.URLParam(r, "commitmentID"))
-	if !validateID(meetID) || !validateID(commitmentID) {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_id", "Meet ID and commitment ID are required.", nil)
+	meetID, commitmentID, ok := commitmentIDParams(w, r)
+	if !ok {
 		return
 	}
 	commitment, auditEvent, err := h.service.RespondToCommitment(principal, orgID, meetID, commitmentID, meets.CommitmentRespondInput{
@@ -643,11 +623,10 @@ func (h *MeetsHandlers) respondToCommitment(w http.ResponseWriter, r *http.Reque
 		Notes:    req.Notes,
 	})
 	if err != nil {
+		if writeMeetNotFound(w, r, err) {
+			return
+		}
 		switch {
-		case errors.Is(err, meets.ErrMeetNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "meet_not_found", "Meet was not found.", nil)
-		case errors.Is(err, meets.ErrCommitmentNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "commitment_not_found", "Commitment was not found.", nil)
 		case errors.Is(err, meets.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", err.Error(), nil)
 		case errors.Is(err, meets.ErrInvalidTransition):
@@ -673,7 +652,7 @@ type selectCommitmentEventRequest struct {
 }
 
 func (h *MeetsHandlers) selectCommitmentEvent(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := meetScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -683,10 +662,8 @@ func (h *MeetsHandlers) selectCommitmentEvent(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	meetID := strings.TrimSpace(chi.URLParam(r, "meetID"))
-	commitmentID := strings.TrimSpace(chi.URLParam(r, "commitmentID"))
-	if !validateID(meetID) || !validateID(commitmentID) {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_id", "Meet ID and commitment ID are required.", nil)
+	meetID, commitmentID, ok := commitmentIDParams(w, r)
+	if !ok {
 		return
 	}
 	selection, err := h.service.SelectCommitmentEvent(principal, orgID, meetID, commitmentID, meets.SelectEventInput{
@@ -694,13 +671,10 @@ func (h *MeetsHandlers) selectCommitmentEvent(w http.ResponseWriter, r *http.Req
 		SeedTimeMs:  req.SeedTimeMs,
 	})
 	if err != nil {
+		if writeMeetNotFound(w, r, err) {
+			return
+		}
 		switch {
-		case errors.Is(err, meets.ErrMeetNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "meet_not_found", "Meet was not found.", nil)
-		case errors.Is(err, meets.ErrCommitmentNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "commitment_not_found", "Commitment was not found.", nil)
-		case errors.Is(err, meets.ErrEventNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "event_not_found", "Meet event was not found.", nil)
 		case errors.Is(err, meets.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", err.Error(), nil)
 		case errors.Is(err, meets.ErrCommitmentLocked):
@@ -722,24 +696,21 @@ func (h *MeetsHandlers) selectCommitmentEvent(w http.ResponseWriter, r *http.Req
 }
 
 func (h *MeetsHandlers) listCommitmentEventSelections(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := meetScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
 
-	meetID := strings.TrimSpace(chi.URLParam(r, "meetID"))
-	commitmentID := strings.TrimSpace(chi.URLParam(r, "commitmentID"))
-	if !validateID(meetID) || !validateID(commitmentID) {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_id", "Meet ID and commitment ID are required.", nil)
+	meetID, commitmentID, ok := commitmentIDParams(w, r)
+	if !ok {
 		return
 	}
 	result, err := h.service.ListCommitmentEventSelections(principal, orgID, meetID, commitmentID)
 	if err != nil {
+		if writeMeetNotFound(w, r, err) {
+			return
+		}
 		switch {
-		case errors.Is(err, meets.ErrMeetNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "meet_not_found", "Meet was not found.", nil)
-		case errors.Is(err, meets.ErrCommitmentNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "commitment_not_found", "Commitment was not found.", nil)
 		case errors.Is(err, meets.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", err.Error(), nil)
 		default:
@@ -750,18 +721,11 @@ func (h *MeetsHandlers) listCommitmentEventSelections(w http.ResponseWriter, r *
 	pagination := parseListPagination(r, listPaginationOptions{})
 	result, total := paginateSlice(result, pagination)
 
-	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"status":     "ok",
-		"count":      len(result),
-		"total":      total,
-		"limit":      pagination.Limit,
-		"offset":     pagination.Offset,
-		"selections": result,
-	})
+	writePagedList(w, "selections", result, total, pagination)
 }
 
 func (h *MeetsHandlers) removeCommitmentEventSelection(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := meetScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -776,13 +740,10 @@ func (h *MeetsHandlers) removeCommitmentEventSelection(w http.ResponseWriter, r 
 
 	err := h.service.RemoveCommitmentEventSelection(principal, orgID, meetID, commitmentID, selectionID)
 	if err != nil {
+		if writeMeetNotFound(w, r, err) {
+			return
+		}
 		switch {
-		case errors.Is(err, meets.ErrMeetNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "meet_not_found", "Meet was not found.", nil)
-		case errors.Is(err, meets.ErrCommitmentNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "commitment_not_found", "Commitment was not found.", nil)
-		case errors.Is(err, meets.ErrSelectionNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "selection_not_found", "Event selection was not found.", nil)
 		case errors.Is(err, meets.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", err.Error(), nil)
 		case errors.Is(err, meets.ErrCommitmentLocked):
@@ -801,21 +762,21 @@ func (h *MeetsHandlers) removeCommitmentEventSelection(w http.ResponseWriter, r 
 // ─── Lock commitments ─────────────────────────────────────────────────────────
 
 func (h *MeetsHandlers) lockCommitments(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := meetScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
 
-	meetID := strings.TrimSpace(chi.URLParam(r, "meetID"))
-	if !validateID(meetID) {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_id", "Meet ID is required.", nil)
+	meetID, ok := meetIDParam(w, r)
+	if !ok {
 		return
 	}
 	meet, auditEvent, err := h.service.LockCommitments(principal, orgID, meetID)
 	if err != nil {
+		if writeMeetNotFound(w, r, err) {
+			return
+		}
 		switch {
-		case errors.Is(err, meets.ErrMeetNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "meet_not_found", "Meet was not found.", nil)
 		case errors.Is(err, meets.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to lock commitments.", nil)
 		case errors.Is(err, meets.ErrInvalidTransition):
@@ -826,17 +787,7 @@ func (h *MeetsHandlers) lockCommitments(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if h.auditService != nil {
-		_, _ = h.auditService.Append(audit.AppendRequest{
-			OrgID:        orgID,
-			ActorUserID:  principal.UserID,
-			ActorRoles:   principal.Roles,
-			Action:       audit.ActionMeetCommitmentsLock,
-			ResourceType: "meet",
-			ResourceID:   meetID,
-			After:        meet,
-		})
-	}
+	recordAudit(h.auditService, principal, orgID, audit.ActionMeetCommitmentsLock, "meet", meetID, nil, meet, nil)
 
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":      "commitments_locked",
@@ -848,39 +799,7 @@ func (h *MeetsHandlers) lockCommitments(w http.ResponseWriter, r *http.Request) 
 // ─── Entries ──────────────────────────────────────────────────────────────────
 
 func (h *MeetsHandlers) listEntries(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := meetScopeFromRequest(w, r)
-	if !ok {
-		return
-	}
-
-	meetID := strings.TrimSpace(chi.URLParam(r, "meetID"))
-	if !validateID(meetID) {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_id", "Meet ID is required.", nil)
-		return
-	}
-	result, err := h.service.ListEntries(principal, orgID, meetID)
-	if err != nil {
-		switch {
-		case errors.Is(err, meets.ErrMeetNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "meet_not_found", "Meet was not found.", nil)
-		case errors.Is(err, meets.ErrForbidden):
-			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to list entries.", nil)
-		default:
-			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
-		}
-		return
-	}
-	pagination := parseListPagination(r, listPaginationOptions{})
-	result, total := paginateSlice(result, pagination)
-
-	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"status":  "ok",
-		"count":   len(result),
-		"total":   total,
-		"limit":   pagination.Limit,
-		"offset":  pagination.Offset,
-		"entries": result,
-	})
+	listMeetChildren(w, r, "entries", h.service.ListEntries)
 }
 
 type proposeEntryRequest struct {
@@ -894,7 +813,7 @@ type proposeEntryRequest struct {
 }
 
 func (h *MeetsHandlers) proposeEntry(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := meetScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -904,9 +823,8 @@ func (h *MeetsHandlers) proposeEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	meetID := strings.TrimSpace(chi.URLParam(r, "meetID"))
-	if !validateID(meetID) {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_id", "Meet ID is required.", nil)
+	meetID, ok := meetIDParam(w, r)
+	if !ok {
 		return
 	}
 	entry, auditEvent, err := h.service.ProposeEntry(principal, orgID, meetID, meets.ProposeEntryInput{
@@ -919,13 +837,10 @@ func (h *MeetsHandlers) proposeEntry(w http.ResponseWriter, r *http.Request) {
 		OverrideReason:      req.OverrideReason,
 	})
 	if err != nil {
+		if writeMeetNotFound(w, r, err) {
+			return
+		}
 		switch {
-		case errors.Is(err, meets.ErrMeetNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "meet_not_found", "Meet was not found.", nil)
-		case errors.Is(err, meets.ErrEventNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "event_not_found", "Meet event was not found.", nil)
-		case errors.Is(err, meets.ErrCommitmentNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "commitment_not_found", "Commitment was not found.", nil)
 		case errors.Is(err, meets.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to propose entries.", nil)
 		case errors.Is(err, meets.ErrDuplicateEntry):
@@ -954,7 +869,7 @@ type overrideEntryRequest struct {
 }
 
 func (h *MeetsHandlers) overrideEntry(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := meetScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -964,10 +879,8 @@ func (h *MeetsHandlers) overrideEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	meetID := strings.TrimSpace(chi.URLParam(r, "meetID"))
-	entryID := strings.TrimSpace(chi.URLParam(r, "entryID"))
-	if !validateID(meetID) || !validateID(entryID) {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_id", "Meet ID and entry ID are required.", nil)
+	meetID, entryID, ok := entryIDParams(w, r)
+	if !ok {
 		return
 	}
 	entry, auditEvent, err := h.service.OverrideEntry(principal, orgID, meetID, entryID, meets.OverrideEntryInput{
@@ -976,13 +889,10 @@ func (h *MeetsHandlers) overrideEntry(w http.ResponseWriter, r *http.Request) {
 		Reason:         req.Reason,
 	})
 	if err != nil {
+		if writeMeetNotFound(w, r, err) {
+			return
+		}
 		switch {
-		case errors.Is(err, meets.ErrMeetNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "meet_not_found", "Meet was not found.", nil)
-		case errors.Is(err, meets.ErrEntryNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "entry_not_found", "Entry was not found.", nil)
-		case errors.Is(err, meets.ErrEventNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "event_not_found", "Meet event was not found.", nil)
 		case errors.Is(err, meets.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to override entries.", nil)
 		case errors.Is(err, meets.ErrDuplicateEntry):
@@ -999,18 +909,7 @@ func (h *MeetsHandlers) overrideEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.auditService != nil {
-		_, _ = h.auditService.Append(audit.AppendRequest{
-			OrgID:        orgID,
-			ActorUserID:  principal.UserID,
-			ActorRoles:   principal.Roles,
-			Action:       audit.ActionMeetEntryOverride,
-			ResourceType: "entry",
-			ResourceID:   entryID,
-			After:        entry,
-			Metadata:     map[string]string{"meet_id": meetID, "reason": req.Reason},
-		})
-	}
+	recordAudit(h.auditService, principal, orgID, audit.ActionMeetEntryOverride, "entry", entryID, nil, entry, map[string]string{"meet_id": meetID, "reason": req.Reason})
 
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":      "overridden",
@@ -1020,24 +919,21 @@ func (h *MeetsHandlers) overrideEntry(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *MeetsHandlers) approveEntry(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := meetScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
 
-	meetID := strings.TrimSpace(chi.URLParam(r, "meetID"))
-	entryID := strings.TrimSpace(chi.URLParam(r, "entryID"))
-	if !validateID(meetID) || !validateID(entryID) {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_id", "Meet ID and entry ID are required.", nil)
+	meetID, entryID, ok := entryIDParams(w, r)
+	if !ok {
 		return
 	}
 	entry, auditEvent, err := h.service.ApproveEntry(principal, orgID, meetID, entryID)
 	if err != nil {
+		if writeMeetNotFound(w, r, err) {
+			return
+		}
 		switch {
-		case errors.Is(err, meets.ErrMeetNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "meet_not_found", "Meet was not found.", nil)
-		case errors.Is(err, meets.ErrEntryNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "entry_not_found", "Entry was not found.", nil)
 		case errors.Is(err, meets.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to approve entries.", nil)
 		case errors.Is(err, meets.ErrInvalidTransition):
@@ -1050,18 +946,7 @@ func (h *MeetsHandlers) approveEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.auditService != nil {
-		_, _ = h.auditService.Append(audit.AppendRequest{
-			OrgID:        orgID,
-			ActorUserID:  principal.UserID,
-			ActorRoles:   principal.Roles,
-			Action:       audit.ActionMeetEntryApprove,
-			ResourceType: "entry",
-			ResourceID:   entryID,
-			After:        entry,
-			Metadata:     map[string]string{"meet_id": meetID},
-		})
-	}
+	recordAudit(h.auditService, principal, orgID, audit.ActionMeetEntryApprove, "entry", entryID, nil, entry, map[string]string{"meet_id": meetID})
 
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":      "approved",
@@ -1074,26 +959,23 @@ func (h *MeetsHandlers) approveEntry(w http.ResponseWriter, r *http.Request) {
 // marked "scratched" so it is excluded from reports/exports. An optional
 // ?reason= query param is recorded on the audit event.
 func (h *MeetsHandlers) scratchEntry(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := meetScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
 
-	meetID := strings.TrimSpace(chi.URLParam(r, "meetID"))
-	entryID := strings.TrimSpace(chi.URLParam(r, "entryID"))
-	if !validateID(meetID) || !validateID(entryID) {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_id", "Meet ID and entry ID are required.", nil)
+	meetID, entryID, ok := entryIDParams(w, r)
+	if !ok {
 		return
 	}
 	reason := strings.TrimSpace(r.URL.Query().Get("reason"))
 
 	entry, auditEvent, err := h.service.ScratchEntry(principal, orgID, meetID, entryID, reason)
 	if err != nil {
+		if writeMeetNotFound(w, r, err) {
+			return
+		}
 		switch {
-		case errors.Is(err, meets.ErrMeetNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "meet_not_found", "Meet was not found.", nil)
-		case errors.Is(err, meets.ErrEntryNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "entry_not_found", "Entry was not found.", nil)
 		case errors.Is(err, meets.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to scratch entries.", nil)
 		case errors.Is(err, meets.ErrEntryAlreadyScratched):
@@ -1108,18 +990,7 @@ func (h *MeetsHandlers) scratchEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.auditService != nil {
-		_, _ = h.auditService.Append(audit.AppendRequest{
-			OrgID:        orgID,
-			ActorUserID:  principal.UserID,
-			ActorRoles:   principal.Roles,
-			Action:       audit.ActionMeetEntryScratch,
-			ResourceType: "entry",
-			ResourceID:   entryID,
-			After:        entry,
-			Metadata:     map[string]string{"meet_id": meetID, "reason": reason},
-		})
-	}
+	recordAudit(h.auditService, principal, orgID, audit.ActionMeetEntryScratch, "entry", entryID, nil, entry, map[string]string{"meet_id": meetID, "reason": reason})
 
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":      "scratched",
@@ -1131,20 +1002,10 @@ func (h *MeetsHandlers) scratchEntry(w http.ResponseWriter, r *http.Request) {
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
 func (h *MeetsHandlers) decodeAndValidate(w http.ResponseWriter, r *http.Request, dst any) bool {
-	return decodeAndValidateJSON(w, r, dst, h.validate, decodeAndValidateOptions{
-		InvalidStatus:     http.StatusBadRequest,
-		InvalidCode:       "invalid_request_body",
-		ValidationStatus:  http.StatusBadRequest,
-		ValidationCode:    "validation_failed",
-		ValidationMessage: "One or more request fields are invalid.",
-	})
+	return decodeAndValidateBadRequest(w, r, dst, h.validate)
 }
 
 // validateID returns true if the given path parameter value is non-empty.
 func validateID(v string) bool {
 	return len(v) > 0
-}
-
-func meetScopeFromRequest(w http.ResponseWriter, r *http.Request) (*appmiddleware.Principal, string, bool) {
-	return scopedRequestFromContext(w, r)
 }

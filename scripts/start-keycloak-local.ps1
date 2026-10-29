@@ -120,7 +120,7 @@ Write-Host ""
 Write-Host "Starting Keycloak $kcVersion on http://localhost:$Port" -ForegroundColor Green
 Write-Host "  Admin console: http://localhost:$Port/admin  ($($env:KC_BOOTSTRAP_ADMIN_USERNAME)/$($env:KC_BOOTSTRAP_ADMIN_PASSWORD))"
 Write-Host "  Realm:         aquify"
-Write-Host "  Seed users:    owner@dare.local (and admin/coach/parent/swimmer/billing/readonly) — password: ChangeMe123!"
+Write-Host "  Seed users:    owner@dare.local (and admin/coach/parent/swimmer/billing) — password: ChangeMe123!"
 Write-Host ""
 
 & $kcBat start-dev --http-port=$Port --import-realm

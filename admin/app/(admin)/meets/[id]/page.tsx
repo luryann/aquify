@@ -8,7 +8,8 @@ import { Tabs } from '@/components/ui/Tabs'
 import { Table, type Column } from '@/components/ui/Table'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
-import { parseBackendDate } from '@/lib/dates'
+import { formatDateOnly, parseBackendDate } from '@/lib/dates'
+import { formatSwimTime } from '@/lib/performanceData'
 import { useApiClient } from '@/lib/api'
 import { ReportsPanel } from './ReportsPanel'
 import { AddMeetEventForm } from './AddMeetEventForm'
@@ -67,13 +68,6 @@ type EntryRow = {
   status: string
 }
 
-function formatDate(value?: string | null) {
-  if (!value) return '—'
-  const parsed = parseBackendDate(value)
-  if (Number.isNaN(parsed.getTime())) return value
-  return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
 function formatTime(value?: string | null) {
   if (!value) return '—'
   const parsed = parseBackendDate(value)
@@ -83,15 +77,13 @@ function formatTime(value?: string | null) {
   return value
 }
 
-function formatSeedTime(ms?: number) {
-  if (ms == null) return 'NT'
-  const seconds = ms / 1000
-  if (seconds >= 60) {
-    const minutes = Math.floor(seconds / 60)
-    const remainder = (seconds % 60).toFixed(2).padStart(5, '0')
-    return `${minutes}:${remainder}`
+function countBy<T>(items: T[], key: (item: T) => string | null | undefined): Record<string, number> {
+  const counts: Record<string, number> = {}
+  for (const item of items) {
+    const k = key(item)
+    if (k) counts[k] = (counts[k] ?? 0) + 1
   }
-  return seconds.toFixed(2)
+  return counts
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -116,7 +108,7 @@ function StatusBadge({ status }: { status: string }) {
 
 const SESSION_COLS: Column<SessionRow>[] = [
   { key: 'name', label: 'Session', render: (row) => <span className="u-fs-fs-base u-fw-600" style={{ color: 'var(--text)' }}>{row.name}</span> },
-  { key: 'date', label: 'Date', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{formatDate(row.date)}</span> },
+  { key: 'date', label: 'Date', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{formatDateOnly(row.date)}</span> },
   { key: 'warmupTime', label: 'Warm-up', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>{formatTime(row.warmupTime)}</span> },
   { key: 'startTime', label: 'Start', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text)' }}>{formatTime(row.startTime)}</span> },
   { key: 'eventCount', label: 'Events', align: 'right', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text)' }}>{row.eventCount}</span> },
@@ -336,10 +328,13 @@ function MeetDetailPageContent() {
         const swimmerById = new Map(swimmers.map((swimmer) => [swimmer.id, swimmer]))
         const householdById = new Map(households.map((household) => [household.id, household.household_name]))
         const sessionById = new Map(rawSessions.map((session) => [session.id, session]))
-        const entryCountByEvent = rawEntries.reduce<Record<string, number>>((acc, entry) => {
-          if (entry.meet_event_id) acc[entry.meet_event_id] = (acc[entry.meet_event_id] ?? 0) + 1
-          return acc
-        }, {})
+        const eventById = new Map(rawEvents.map((event) => [event.id, event]))
+        const swimmerName = (swimmerId: string) => {
+          const swimmer = swimmerById.get(swimmerId)
+          return swimmer ? `${swimmer.preferred_name || swimmer.first_name} ${swimmer.last_name}`.trim() : swimmerId
+        }
+        const eventCountBySession = countBy(rawEvents, (event) => event.session_id)
+        const entryCountByEvent = countBy(rawEntries, (entry) => entry.meet_event_id)
 
         setMeet(nextMeet)
         setSessions(rawSessions.map((meetSession) => ({
@@ -348,7 +343,7 @@ function MeetDetailPageContent() {
           date: meetSession.session_date || meetSession.scheduled_date || '',
           warmupTime: meetSession.warmup_time || meetSession.warmup_at || '',
           startTime: meetSession.start_time || meetSession.start_at || '',
-          eventCount: rawEvents.filter((event) => event.session_id === meetSession.id).length,
+          eventCount: eventCountBySession[meetSession.id] ?? 0,
         })).sort((a, b) => a.date.localeCompare(b.date)))
         setEvents(rawEvents.map((event) => ({
           id: event.id,
@@ -364,19 +359,18 @@ function MeetDetailPageContent() {
           const swimmer = swimmerById.get(commitment.swimmer_id)
           return {
             id: commitment.id,
-            swimmer: swimmer ? `${swimmer.preferred_name || swimmer.first_name} ${swimmer.last_name}`.trim() : commitment.swimmer_id,
+            swimmer: swimmerName(commitment.swimmer_id),
             household: swimmer ? (householdById.get(swimmer.household_id) || 'Unknown household') : 'Unknown household',
             status: commitment.status,
           }
         }).sort((a, b) => a.swimmer.localeCompare(b.swimmer)))
         setEntries(rawEntries.map((entry) => {
-          const swimmer = swimmerById.get(entry.swimmer_id)
-          const event = rawEvents.find((candidate) => candidate.id === entry.meet_event_id)
+          const event = eventById.get(entry.meet_event_id ?? '')
           return {
             id: entry.id,
-            swimmer: swimmer ? `${swimmer.preferred_name || swimmer.first_name} ${swimmer.last_name}`.trim() : entry.swimmer_id,
+            swimmer: swimmerName(entry.swimmer_id),
             event: event ? `${event.distance || ''} ${formatStroke(event.stroke)} ${event.gender || ''} ${formatAgeGroup(event.min_age, event.max_age, event.age_group)}`.trim() : 'Meet event',
-            seedTime: formatSeedTime(entry.seed_time_ms),
+            seedTime: formatSwimTime(entry.seed_time_ms),
             status: entry.status,
           }
         }).sort((a, b) => a.swimmer.localeCompare(b.swimmer)))
@@ -498,10 +492,10 @@ function MeetDetailPageContent() {
             <h3 className="card-title u-mb-16px" >Dates &amp; host</h3>
             <div className="u-gap-12px" style={{ display: 'flex', flexDirection: 'column' }}>
               {[
-                { label: 'Start date', value: formatDate(meet.start_date) },
-                { label: 'End date', value: formatDate(meet.end_date || meet.start_date) },
-                { label: 'Commit deadline', value: formatDate(meet.commitment_deadline) },
-                { label: 'Entry deadline', value: formatDate(meet.entry_deadline) },
+                { label: 'Start date', value: formatDateOnly(meet.start_date) },
+                { label: 'End date', value: formatDateOnly(meet.end_date || meet.start_date) },
+                { label: 'Commit deadline', value: formatDateOnly(meet.commitment_deadline) },
+                { label: 'Entry deadline', value: formatDateOnly(meet.entry_deadline) },
                 { label: 'Host', value: meet.host_org || '—' },
               ].map((row) => (
                 <div key={row.label} className="u-fs-fs-base u-pb-12px" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)' }}>

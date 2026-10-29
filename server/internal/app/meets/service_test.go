@@ -67,3 +67,53 @@ func TestMeetCommitmentEventSelectionLifecycle(t *testing.T) {
 		t.Fatalf("SelectCommitmentEvent() duplicate error = %v, want %v", err, ErrDuplicateSelection)
 	}
 }
+
+func TestSwimmerCanReadButNotChangeOwnHouseholdSelections(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService()
+	admin := &appmiddleware.Principal{UserID: "admin-1", Roles: []string{"admin"}}
+	parent := &appmiddleware.Principal{UserID: "parent-1", HouseholdID: "household-1", Roles: []string{"parent"}}
+	swimmer := &appmiddleware.Principal{UserID: "swimmer-1", HouseholdID: "household-1", Roles: []string{"swimmer"}}
+	otherSwimmer := &appmiddleware.Principal{UserID: "swimmer-2", HouseholdID: "household-2", Roles: []string{"swimmer"}}
+
+	svc.SeedSwimmer("org-a", "swimmer-1", "household-1")
+	svc.SeedParentHousehold(parent.UserID, "household-1")
+	meet, _, err := svc.CreateMeet(admin, "org-a", CreateMeetInput{
+		Name: "Invite", MeetType: "invitational", Course: "SCY", StartDate: "2026-07-10", EndDate: "2026-07-10",
+		Sessions: []CreateMeetSessionInput{{SessionNumber: 1, Name: "AM"}},
+		Events:   []CreateMeetEventDraftInput{{SessionNumber: 1, EventNumber: "1", Stroke: "freestyle", Distance: 100, Course: "SCY", Gender: "O"}},
+	})
+	if err != nil {
+		t.Fatalf("CreateMeet: %v", err)
+	}
+	if _, _, err := svc.TransitionMeetStatus(admin, "org-a", meet.ID, "published"); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	_, commitments, _, err := svc.PublishCommitmentRequest(admin, "org-a", meet.ID)
+	if err != nil || len(commitments) != 1 {
+		t.Fatalf("PublishCommitmentRequest: %v %v", commitments, err)
+	}
+	cmt := commitments[0]
+	if _, _, err := svc.RespondToCommitment(parent, "org-a", meet.ID, cmt.ID, CommitmentRespondInput{Response: "committed_yes"}); err != nil {
+		t.Fatalf("parent respond: %v", err)
+	}
+	events, _ := svc.ListMeetEvents(parent, "org-a", meet.ID)
+	if _, err := svc.SelectCommitmentEvent(parent, "org-a", meet.ID, cmt.ID, SelectEventInput{MeetEventID: events[0].ID}); err != nil {
+		t.Fatalf("parent select: %v", err)
+	}
+
+	got, err := svc.ListCommitmentEventSelections(swimmer, "org-a", meet.ID, cmt.ID)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("swimmer should read own household selections, got %v err %v", got, err)
+	}
+	if _, err := svc.ListCommitmentEventSelections(otherSwimmer, "org-a", meet.ID, cmt.ID); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("swimmer from another household must be forbidden, got %v", err)
+	}
+	if _, _, err := svc.RespondToCommitment(swimmer, "org-a", meet.ID, cmt.ID, CommitmentRespondInput{Response: "committed_no"}); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("swimmer must not change commitments, got %v", err)
+	}
+	if _, err := svc.SelectCommitmentEvent(swimmer, "org-a", meet.ID, cmt.ID, SelectEventInput{MeetEventID: events[0].ID}); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("swimmer must not change selections, got %v", err)
+	}
+}

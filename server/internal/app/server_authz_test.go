@@ -361,26 +361,43 @@ func TestMFAEnrollContractAcceptsOnlyImplementedFactors(t *testing.T) {
 	}
 }
 
-func issueSessionToken(t *testing.T, router http.Handler, orgID string, roles []string, mfaAuthenticated bool) string {
+// sessionSpec describes the principal a test session is issued for.
+type sessionSpec struct {
+	UserID      string
+	OrgID       string
+	HouseholdID string
+	Roles       []string
+	MFA         bool
+}
+
+// issueSession issues a dev session through the real endpoint and returns the access token.
+func issueSession(t *testing.T, router http.Handler, spec sessionSpec) string {
 	t.Helper()
 
 	payload := map[string]any{
-		"user_id":           "test-admin-user",
-		"org_id":            orgID,
-		"roles":             roles,
-		"mfa_authenticated": mfaAuthenticated,
+		"user_id": spec.UserID,
+		"org_id":  spec.OrgID,
+		"roles":   spec.Roles,
+	}
+	if spec.HouseholdID != "" {
+		payload["household_id"] = spec.HouseholdID
+	}
+	if spec.MFA {
+		payload["mfa_authenticated"] = true
 	}
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/sessions/issue", encodeJSONBody(t, payload))
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
-
 	router.ServeHTTP(rr, req)
-
 	if rr.Code != http.StatusCreated {
-		t.Fatalf("expected session issue status %d, got %d", http.StatusCreated, rr.Code)
+		t.Fatalf("issue session for %s: want %d, got %d: %s", spec.UserID, http.StatusCreated, rr.Code, rr.Body.String())
 	}
-
 	return issuedAccessTokenFromResponse(t, rr)
+}
+
+func issueSessionToken(t *testing.T, router http.Handler, orgID string, roles []string, mfaAuthenticated bool) string {
+	t.Helper()
+	return issueSession(t, router, sessionSpec{UserID: "test-admin-user", OrgID: orgID, Roles: roles, MFA: mfaAuthenticated})
 }
 
 func encodeJSONBody(t *testing.T, payload any) *bytes.Reader {

@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -55,17 +54,11 @@ func (h *DocumentHandlers) RegisterRoutes(router chi.Router) {
 	router.Post("/documents/{id}/reject", h.rejectSubmission)
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-func docScopeFromRequest(w http.ResponseWriter, r *http.Request) (*appmiddleware.Principal, string, bool) {
-	return scopedRequestFromContext(w, r)
-}
-
 // ─── Document Types ───────────────────────────────────────────────────────────
 
 // listDocumentTypes handles GET /api/v1/document-types
 func (h *DocumentHandlers) listDocumentTypes(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := docScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -95,7 +88,7 @@ type createDocumentTypeBody struct {
 
 // createDocumentType handles POST /api/v1/document-types
 func (h *DocumentHandlers) createDocumentType(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := docScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -105,12 +98,7 @@ func (h *DocumentHandlers) createDocumentType(w http.ResponseWriter, r *http.Req
 	}
 
 	var body createDocumentTypeBody
-	if err := decodeJSONBody(w, r, &body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", nil)
-		return
-	}
-	if err := h.validate.Struct(body); err != nil {
-		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "validation_error", "Validation failed.", httpx.FormatValidationErrors(err))
+	if !decodeAndValidateLegacy(w, r, &body, h.validate, "Validation failed.") {
 		return
 	}
 
@@ -132,17 +120,7 @@ func (h *DocumentHandlers) createDocumentType(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if h.auditService != nil {
-		_, _ = h.auditService.Append(audit.AppendRequest{
-			OrgID:        orgID,
-			ActorUserID:  principal.UserID,
-			ActorRoles:   principal.Roles,
-			Action:       "document_type.create",
-			ResourceType: "document_type",
-			ResourceID:   dt.ID,
-			After:        dt,
-		})
-	}
+	recordAudit(h.auditService, principal, orgID, "document_type.create", "document_type", dt.ID, nil, dt, nil)
 
 	httpx.WriteJSON(w, http.StatusCreated, map[string]interface{}{"document_type": dt})
 }
@@ -159,7 +137,7 @@ type updateDocumentTypeBody struct {
 
 // updateDocumentType handles PUT /api/v1/document-types/{typeID}
 func (h *DocumentHandlers) updateDocumentType(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := docScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -212,24 +190,14 @@ func (h *DocumentHandlers) updateDocumentType(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if h.auditService != nil {
-		_, _ = h.auditService.Append(audit.AppendRequest{
-			OrgID:        orgID,
-			ActorUserID:  principal.UserID,
-			ActorRoles:   principal.Roles,
-			Action:       "document_type.updated",
-			ResourceType: "document_type",
-			ResourceID:   dt.ID,
-			After:        dt,
-		})
-	}
+	recordAudit(h.auditService, principal, orgID, "document_type.updated", "document_type", dt.ID, nil, dt, nil)
 
 	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{"document_type": dt})
 }
 
 // deleteDocumentType handles DELETE /api/v1/document-types/{typeID}
 func (h *DocumentHandlers) deleteDocumentType(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := docScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -248,16 +216,7 @@ func (h *DocumentHandlers) deleteDocumentType(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if h.auditService != nil {
-		_, _ = h.auditService.Append(audit.AppendRequest{
-			OrgID:        orgID,
-			ActorUserID:  principal.UserID,
-			ActorRoles:   principal.Roles,
-			Action:       "document_type.deleted",
-			ResourceType: "document_type",
-			ResourceID:   typeID,
-		})
-	}
+	recordAudit(h.auditService, principal, orgID, "document_type.deleted", "document_type", typeID, nil, nil, nil)
 
 	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{"deleted": true})
 }
@@ -266,7 +225,7 @@ func (h *DocumentHandlers) deleteDocumentType(w http.ResponseWriter, r *http.Req
 
 // listSubmissions handles GET /api/v1/documents
 func (h *DocumentHandlers) listSubmissions(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := docScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -306,7 +265,7 @@ type createSubmissionBody struct {
 
 // createSubmission handles POST /api/v1/documents
 func (h *DocumentHandlers) createSubmission(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := docScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -316,21 +275,14 @@ func (h *DocumentHandlers) createSubmission(w http.ResponseWriter, r *http.Reque
 	}
 
 	var body createSubmissionBody
-	if err := decodeJSONBody(w, r, &body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", nil)
-		return
-	}
-	if err := h.validate.Struct(body); err != nil {
-		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "validation_error", "Validation failed.", httpx.FormatValidationErrors(err))
+	if !decodeAndValidateLegacy(w, r, &body, h.validate, "Validation failed.") {
 		return
 	}
 
 	// Parents may only create submissions for their own household.
-	if hasAnyRole(principal, "parent") && !hasAnyRole(principal, "admin") {
-		if principal.HouseholdID == "" || principal.HouseholdID != body.HouseholdID {
-			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Parents may only submit documents for their own household.", nil)
-			return
-		}
+	if parentOutsideHousehold(principal, body.HouseholdID) {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Parents may only submit documents for their own household.", nil)
+		return
 	}
 
 	sub, err := h.service.CreateSubmission(orgID, body.DocumentTypeID, body.HouseholdID, body.SwimmerID, principal.UserID)
@@ -343,24 +295,14 @@ func (h *DocumentHandlers) createSubmission(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if h.auditService != nil {
-		_, _ = h.auditService.Append(audit.AppendRequest{
-			OrgID:        orgID,
-			ActorUserID:  principal.UserID,
-			ActorRoles:   principal.Roles,
-			Action:       "document.create",
-			ResourceType: "document_submission",
-			ResourceID:   sub.ID,
-			After:        sub,
-		})
-	}
+	recordAudit(h.auditService, principal, orgID, "document.create", "document_submission", sub.ID, nil, sub, nil)
 
 	httpx.WriteJSON(w, http.StatusCreated, map[string]interface{}{"document": sub})
 }
 
 // getSubmission handles GET /api/v1/documents/{id}
 func (h *DocumentHandlers) getSubmission(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := docScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -456,7 +398,7 @@ func validateDocumentObjectKey(orgID, submissionID, objectKey string) error {
 
 // requestUploadURL handles POST /api/v1/documents/{id}/upload-url
 func (h *DocumentHandlers) requestUploadURL(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := docScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -477,12 +419,7 @@ func (h *DocumentHandlers) requestUploadURL(w http.ResponseWriter, r *http.Reque
 	}
 
 	var body documentUploadURLBody
-	if err := decodeJSONBody(w, r, &body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", nil)
-		return
-	}
-	if err := h.validate.Struct(body); err != nil {
-		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "validation_error", "Validation failed.", httpx.FormatValidationErrors(err))
+	if !decodeAndValidateLegacy(w, r, &body, h.validate, "Validation failed.") {
 		return
 	}
 	fileName, err := sanitizeDocumentFilename(body.FileName)
@@ -518,7 +455,7 @@ func (h *DocumentHandlers) requestUploadURL(w http.ResponseWriter, r *http.Reque
 
 // attachFile handles POST /api/v1/documents/{id}/attach
 func (h *DocumentHandlers) attachFile(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := docScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -535,12 +472,7 @@ func (h *DocumentHandlers) attachFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body attachFileBody
-	if err := decodeJSONBody(w, r, &body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", nil)
-		return
-	}
-	if err := h.validate.Struct(body); err != nil {
-		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "validation_error", "Validation failed.", httpx.FormatValidationErrors(err))
+	if !decodeAndValidateLegacy(w, r, &body, h.validate, "Validation failed.") {
 		return
 	}
 	fileName, err := sanitizeDocumentFilename(body.FileName)
@@ -561,7 +493,7 @@ func (h *DocumentHandlers) attachFile(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, http.StatusServiceUnavailable, "storage_unavailable", "Object storage is not configured.", nil)
 		return
 	}
-	exists, err := h.store.Exists(context.Background(), body.FileObjectKey)
+	exists, err := h.store.Exists(r.Context(), body.FileObjectKey)
 	if err != nil {
 		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to validate uploaded file.", err)
 		return
@@ -573,7 +505,7 @@ func (h *DocumentHandlers) attachFile(w http.ResponseWriter, r *http.Request) {
 	// The presigned PUT URL is not size/type-constrained, so caller-declared
 	// metadata cannot be trusted. Enforce the actual stored object size
 	// before accepting the submission.
-	actualSize, err := h.store.ObjectSize(context.Background(), body.FileObjectKey)
+	actualSize, err := h.store.ObjectSize(r.Context(), body.FileObjectKey)
 	if err != nil {
 		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to validate uploaded file.", err)
 		return
@@ -593,17 +525,7 @@ func (h *DocumentHandlers) attachFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.auditService != nil {
-		_, _ = h.auditService.Append(audit.AppendRequest{
-			OrgID:        orgID,
-			ActorUserID:  principal.UserID,
-			ActorRoles:   principal.Roles,
-			Action:       "document.submit",
-			ResourceType: "document_submission",
-			ResourceID:   sub.ID,
-			After:        sub,
-		})
-	}
+	recordAudit(h.auditService, principal, orgID, "document.submit", "document_submission", sub.ID, nil, sub, nil)
 
 	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{"document": sub})
 }
@@ -614,59 +536,22 @@ type reviewBody struct {
 
 // verifySubmission handles POST /api/v1/documents/{id}/verify
 func (h *DocumentHandlers) verifySubmission(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := docScopeFromRequest(w, r)
-	if !ok {
-		return
-	}
-	if !hasAnyRole(principal, "admin") {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only admin may verify documents.", nil)
-		return
-	}
-	submissionID := chi.URLParam(r, "id")
-
-	var body reviewBody
-	if err := decodeOptionalJSONBody(w, r, &body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", nil)
-		return
-	}
-
-	sub, err := h.service.VerifySubmission(orgID, submissionID, principal.UserID, body.ReviewNotes)
-	if err != nil {
-		if errors.Is(err, documents.ErrSubmissionNotFound) {
-			httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Document submission not found.", nil)
-			return
-		}
-		if errors.Is(err, documents.ErrInvalidTransition) {
-			httpx.WriteError(w, r, http.StatusConflict, "invalid_transition", "Cannot verify a submission in its current state.", nil)
-			return
-		}
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to verify submission.", err)
-		return
-	}
-
-	if h.auditService != nil {
-		_, _ = h.auditService.Append(audit.AppendRequest{
-			OrgID:        orgID,
-			ActorUserID:  principal.UserID,
-			ActorRoles:   principal.Roles,
-			Action:       "document.verify",
-			ResourceType: "document_submission",
-			ResourceID:   sub.ID,
-			After:        sub,
-		})
-	}
-
-	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{"document": sub})
+	h.reviewSubmission(w, r, "verify", h.service.VerifySubmission)
 }
 
 // rejectSubmission handles POST /api/v1/documents/{id}/reject
 func (h *DocumentHandlers) rejectSubmission(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := docScopeFromRequest(w, r)
+	h.reviewSubmission(w, r, "reject", h.service.RejectSubmission)
+}
+
+// reviewSubmission is the admin-only verify/reject flow; verb names the action in messages and the audit trail.
+func (h *DocumentHandlers) reviewSubmission(w http.ResponseWriter, r *http.Request, verb string, review func(orgID, submissionID, reviewerID, notes string) (*documents.DocumentSubmission, error)) {
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
 	if !hasAnyRole(principal, "admin") {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only admin may reject documents.", nil)
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only admin may "+verb+" documents.", nil)
 		return
 	}
 	submissionID := chi.URLParam(r, "id")
@@ -677,31 +562,21 @@ func (h *DocumentHandlers) rejectSubmission(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	sub, err := h.service.RejectSubmission(orgID, submissionID, principal.UserID, body.ReviewNotes)
+	sub, err := review(orgID, submissionID, principal.UserID, body.ReviewNotes)
 	if err != nil {
 		if errors.Is(err, documents.ErrSubmissionNotFound) {
 			httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Document submission not found.", nil)
 			return
 		}
 		if errors.Is(err, documents.ErrInvalidTransition) {
-			httpx.WriteError(w, r, http.StatusConflict, "invalid_transition", "Cannot reject a submission in its current state.", nil)
+			httpx.WriteError(w, r, http.StatusConflict, "invalid_transition", "Cannot "+verb+" a submission in its current state.", nil)
 			return
 		}
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to reject submission.", err)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to "+verb+" submission.", err)
 		return
 	}
 
-	if h.auditService != nil {
-		_, _ = h.auditService.Append(audit.AppendRequest{
-			OrgID:        orgID,
-			ActorUserID:  principal.UserID,
-			ActorRoles:   principal.Roles,
-			Action:       "document.reject",
-			ResourceType: "document_submission",
-			ResourceID:   sub.ID,
-			After:        sub,
-		})
-	}
+	recordAudit(h.auditService, principal, orgID, "document."+verb, "document_submission", sub.ID, nil, sub, nil)
 
 	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{"document": sub})
 }

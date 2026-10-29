@@ -23,8 +23,7 @@ import {
   type SwimmerRecord,
 } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
-
-const QUICK_REACTIONS = ['👍', '❤️', '😂', '🎉', '😮', '😢']
+import { QUICK_REACTIONS } from '@/lib/message-format'
 
 function formatDateTime(value?: string) {
   if (!value) return '—'

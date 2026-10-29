@@ -9,11 +9,13 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/dareaquatics/aquify/server/internal/app/billing"
 	"github.com/dareaquatics/aquify/server/internal/app/httpx"
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
 	stripelib "github.com/dareaquatics/aquify/server/internal/stripe"
+	"github.com/dareaquatics/aquify/server/internal/telemetry"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
 )
@@ -36,7 +38,12 @@ type StripeHandlers struct {
 	// this app's own trusted origins, so a tampered API call cannot redirect
 	// a post-payment browser to an attacker-controlled host.
 	allowedReturnOrigins []string
+	// metrics, when set, receives webhook receipt-to-processing lag.
+	metrics *telemetry.Metrics
 }
+
+// SetMetrics enables recording of dare_webhook_processing_lag_seconds.
+func (h *StripeHandlers) SetMetrics(m *telemetry.Metrics) { h.metrics = m }
 
 // NewStripeHandlers returns a new StripeHandlers.
 func NewStripeHandlers(
@@ -144,17 +151,7 @@ const stripeIdempotencyHeader = "Idempotency-Key"
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 func (h *StripeHandlers) decodeAndValidate(w http.ResponseWriter, r *http.Request, dst any) bool {
-	return decodeAndValidateJSON(w, r, dst, h.validate, decodeAndValidateOptions{
-		InvalidStatus:     http.StatusBadRequest,
-		InvalidCode:       "invalid_request_body",
-		ValidationStatus:  http.StatusUnprocessableEntity,
-		ValidationCode:    "validation_error",
-		ValidationMessage: "Request validation failed.",
-	})
-}
-
-func stripeScopeFromRequest(w http.ResponseWriter, r *http.Request) (*appmiddleware.Principal, string, bool) {
-	return scopedRequestFromContext(w, r)
+	return decodeAndValidateUnprocessable(w, r, dst, h.validate)
 }
 
 // stripeMetadata merges caller metadata under the trusted routing keys, which
@@ -178,31 +175,37 @@ func stripeIdempotencyKeyFromRequest(w http.ResponseWriter, r *http.Request) (st
 	return key, true
 }
 
-func (h *StripeHandlers) authorizeCheckoutSessionPrincipal(principal *appmiddleware.Principal, orgID string, req *createCheckoutSessionRequest) (*billing.Invoice, bool) {
+// errCheckoutDenied means the principal may not pay this invoice for this amount.
+var errCheckoutDenied = errors.New("checkout denied")
+
+// authorizeCheckoutSessionPrincipal returns the invoice when the principal may
+// pay it for req.AmountCents. Errors are either errCheckoutDenied, the billing
+// lookup error (ErrInvoiceNotFound or an infrastructure failure).
+func (h *StripeHandlers) authorizeCheckoutSessionPrincipal(principal *appmiddleware.Principal, staff bool, orgID string, req *createCheckoutSessionRequest) (*billing.Invoice, error) {
 	invoice, err := h.billing.GetInvoice(orgID, principal, req.InvoiceID)
 	if err != nil {
-		return nil, false
+		return nil, err
 	}
-	if err := h.billing.RequireBillingWriteAccess(principal); err == nil {
+	if staff {
 		// Staff may pay down part of a balance, but never more than is due. This
 		// is a precheck only: invoice state can change before the session pays, and
 		// the webhook routes any resulting overpayment to household account credit.
-		return invoice, invoice.AmountDueCents > 0 && req.AmountCents <= invoice.AmountDueCents
+		if invoice.AmountDueCents > 0 && req.AmountCents <= invoice.AmountDueCents {
+			return invoice, nil
+		}
+		return nil, errCheckoutDenied
 	}
-	if invoice.AmountDueCents <= 0 {
-		return nil, false
+	if invoice.AmountDueCents <= 0 || req.AmountCents != invoice.AmountDueCents {
+		return nil, errCheckoutDenied
 	}
-	if req.AmountCents != invoice.AmountDueCents {
-		return nil, false
-	}
-	return invoice, true
+	return invoice, nil
 }
 
 // ─── Protected handlers ───────────────────────────────────────────────────────
 
 // createPaymentIntent creates a Stripe PaymentIntent for an invoice.
 func (h *StripeHandlers) createPaymentIntent(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := stripeScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -253,7 +256,7 @@ func (h *StripeHandlers) createPaymentIntent(w http.ResponseWriter, r *http.Requ
 
 // createCheckoutSession creates a Stripe Checkout Session for an invoice.
 func (h *StripeHandlers) createCheckoutSession(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := stripeScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -266,17 +269,19 @@ func (h *StripeHandlers) createCheckoutSession(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
-	invoice, ok := h.authorizeCheckoutSessionPrincipal(principal, orgID, &req)
-	if !ok {
+	staff := h.billing.RequireBillingWriteAccess(principal) == nil
+	invoice, err := h.authorizeCheckoutSessionPrincipal(principal, staff, orgID, &req)
+	if err != nil {
 		// Staff may learn that an invoice doesn't exist; other roles get a
 		// uniform 403 so invoice IDs can't be probed.
-		if h.billing.RequireBillingWriteAccess(principal) == nil {
-			if _, err := h.billing.GetInvoice(orgID, principal, req.InvoiceID); errors.Is(err, billing.ErrInvoiceNotFound) {
-				httpx.WriteError(w, r, http.StatusNotFound, "invoice_not_found", "Invoice not found.", nil)
-				return
-			}
+		switch {
+		case staff && errors.Is(err, billing.ErrInvoiceNotFound):
+			httpx.WriteError(w, r, http.StatusNotFound, "invoice_not_found", "Invoice not found.", nil)
+		case errors.Is(err, errCheckoutDenied), !staff:
+			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient permissions.", nil)
+		default:
+			httpx.WriteError(w, r, http.StatusInternalServerError, "invoice_lookup_failed", "Failed to load invoice.", err)
 		}
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient permissions.", nil)
 		return
 	}
 	if !isAllowedReturnURL(req.SuccessURL, h.allowedReturnOrigins) || !isAllowedReturnURL(req.CancelURL, h.allowedReturnOrigins) {
@@ -315,7 +320,7 @@ func (h *StripeHandlers) createCheckoutSession(w http.ResponseWriter, r *http.Re
 
 // listWebhookEvents returns persisted Stripe webhook event records.
 func (h *StripeHandlers) listWebhookEvents(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := stripeScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -326,7 +331,7 @@ func (h *StripeHandlers) listWebhookEvents(w http.ResponseWriter, r *http.Reques
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient permissions.", nil)
 			return
 		}
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to list webhook events.", nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to list webhook events.", err)
 		return
 	}
 
@@ -339,7 +344,7 @@ func (h *StripeHandlers) listWebhookEvents(w http.ResponseWriter, r *http.Reques
 // reconcile runs an on-demand reconciliation between the internal billing ledger
 // and the Stripe balance report. Returns a ReconciliationReport.
 func (h *StripeHandlers) reconcile(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := stripeScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -357,7 +362,7 @@ func (h *StripeHandlers) reconcile(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient permissions.", nil)
 			return
 		}
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Reconciliation failed.", nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Reconciliation failed.", err)
 		return
 	}
 
@@ -393,6 +398,7 @@ func (h *StripeHandlers) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	receivedAt := time.Now()
 	sigHeader := r.Header.Get("Stripe-Signature")
 
 	// Parse + verify webhook. Stub client skips signature check; real client enforces it.
@@ -430,11 +436,14 @@ func (h *StripeHandlers) handleWebhook(w http.ResponseWriter, r *http.Request) {
 
 	// Dispatch to the appropriate domain handler.
 	processErr := h.dispatchWebhookEvent(r.Context(), event)
+	if h.metrics != nil {
+		h.metrics.WebhookProcessingLag.WithLabelValues(event.Type).Observe(time.Since(receivedAt).Seconds())
+	}
 
 	// Permanent failures (bad metadata, unknown/unpayable invoice) are stored
 	// and acknowledged: a retry could never succeed. Anything else is treated
 	// as transient so Stripe redelivers and the event is processed again.
-	retryable := processErr != nil && !isPermanentWebhookError(processErr)
+	retryable := processErr != nil && !isPermanentWebhookError(processErr, event.Created)
 	if err := h.billing.MarkWebhookProcessed("stripe", event.ID, processErr, retryable); err != nil {
 		httpx.WriteError(w, r, http.StatusInternalServerError, "webhook_outcome_failed", "Failed to persist webhook outcome; retry later.", err)
 		return
@@ -458,12 +467,17 @@ func (h *StripeHandlers) handleWebhook(w http.ResponseWriter, r *http.Request) {
 
 var errWebhookUnattributable = errors.New("webhook event cannot be attributed")
 
+// webhookLagGrace bounds how long a not-found outcome stays retryable. In a
+// multi-instance deployment the instance that receives a webhook may not have
+// seen the invoice or payment yet, so those errors are retried. Once the event
+// is older than this, the record is genuinely missing and the event is
+// acknowledged instead of retried for Stripe's full redelivery window.
+const webhookLagGrace = time.Hour
+
 // permanentWebhookErrors are domain outcomes a redelivery can never change.
 // Anything outside this set (database, storage, context errors) is treated as
-// transient so Stripe redelivers it. ErrInvoiceNotFound and ErrPaymentNotFound
-// are deliberately absent: in a multi-instance deployment the instance that
-// received the webhook may not have seen the invoice or payment yet, and
-// dropping the event would lose a captured payment.
+// transient so Stripe redelivers it. Not-found errors are handled separately
+// by isPermanentWebhookError, with the lag grace above.
 var permanentWebhookErrors = []error{
 	errWebhookUnattributable,
 	billing.ErrInvoiceItemNotFound,
@@ -481,7 +495,10 @@ var permanentWebhookErrors = []error{
 	billing.ErrInsufficientCredit,
 }
 
-func isPermanentWebhookError(err error) bool {
+func isPermanentWebhookError(err error, createdUnix int64) bool {
+	if errors.Is(err, billing.ErrInvoiceNotFound) || errors.Is(err, billing.ErrPaymentNotFound) {
+		return createdUnix > 0 && time.Since(time.Unix(createdUnix, 0)) > webhookLagGrace
+	}
 	for _, permanent := range permanentWebhookErrors {
 		if errors.Is(err, permanent) {
 			return true
@@ -507,6 +524,19 @@ func (h *StripeHandlers) dispatchWebhookEvent(ctx context.Context, event *stripe
 	}
 }
 
+// webhookRouting returns the org and invoice a payment event was created for
+// (the metadata set when the intent or session was made). Events without them
+// cannot be attributed and are a permanent failure needing manual follow-up.
+func (h *StripeHandlers) webhookRouting(event *stripelib.WebhookEventData, paymentIntentID string) (orgID, invoiceID string, err error) {
+	orgID, invoiceID = event.Metadata["org_id"], event.Metadata["invoice_id"]
+	if orgID == "" || invoiceID == "" {
+		h.logger.Error("stripe webhook: event missing routing metadata; it cannot be attributed",
+			"event_type", event.Type, "payment_intent_id", paymentIntentID)
+		return "", "", fmt.Errorf("%w: %s event (payment_intent %s) missing org_id or invoice_id metadata — manual attribution required", errWebhookUnattributable, event.Type, paymentIntentID)
+	}
+	return orgID, invoiceID, nil
+}
+
 // onPaymentIntentSucceeded handles a payment_intent.succeeded event.
 func (h *StripeHandlers) onPaymentIntentSucceeded(_ context.Context, event *stripelib.WebhookEventData) error {
 	paymentIntentID, _ := event.Object["id"].(string)
@@ -515,16 +545,12 @@ func (h *StripeHandlers) onPaymentIntentSucceeded(_ context.Context, event *stri
 	}
 
 	amountCents := int(objectInt64(event.Object, "amount"))
-	orgID := event.Metadata["org_id"]
-	invoiceID := event.Metadata["invoice_id"]
-
-	if orgID == "" || invoiceID == "" {
-		h.logger.Error("stripe webhook: payment_intent.succeeded missing metadata; payment cannot be attributed",
-			"payment_intent_id", paymentIntentID)
-		return fmt.Errorf("%w: payment_intent.succeeded event %s missing org_id or invoice_id metadata — manual attribution required", errWebhookUnattributable, paymentIntentID)
+	orgID, invoiceID, err := h.webhookRouting(event, paymentIntentID)
+	if err != nil {
+		return err
 	}
 
-	_, _, err := h.billing.HandleStripePaymentIntentSucceeded(
+	_, _, err = h.billing.HandleStripePaymentIntentSucceeded(
 		orgID, paymentIntentID, invoiceID, amountCents, "stripe-webhook",
 	)
 	return err
@@ -548,19 +574,15 @@ func (h *StripeHandlers) onChargeRefunded(_ context.Context, event *stripelib.We
 	}
 
 	amountRefunded := int(objectInt64(event.Object, "amount_refunded"))
-	orgID := event.Metadata["org_id"]
-	invoiceID := event.Metadata["invoice_id"]
-
-	if orgID == "" || invoiceID == "" {
-		h.logger.Error("stripe webhook: charge.refunded missing metadata; refund cannot be attributed",
-			"payment_intent_id", paymentIntentID)
-		return fmt.Errorf("%w: charge.refunded event (payment_intent %s) missing org_id or invoice_id metadata — manual attribution required", errWebhookUnattributable, paymentIntentID)
+	orgID, invoiceID, err := h.webhookRouting(event, paymentIntentID)
+	if err != nil {
+		return err
 	}
 
 	// Extract the latest refund ID from the refunds list (if present).
 	stripeRefundID := extractLatestRefundID(event.Object)
 
-	_, _, err := h.billing.HandleStripeChargeRefunded(
+	_, _, err = h.billing.HandleStripeChargeRefunded(
 		orgID, paymentIntentID, invoiceID, amountRefunded,
 		stripeRefundID, "", "stripe-webhook",
 	)

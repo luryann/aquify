@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dareaquatics/aquify/server/internal/dbutil"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -59,7 +60,7 @@ func upsertWorkout(ctx context.Context, q querier, w *Workout) error {
 			updated_by     = EXCLUDED.updated_by
 		WHERE training_workouts.org_id = EXCLUDED.org_id`,
 		w.ID, w.OrgID, w.Title, w.Description, w.Course, w.IsTemplate, tags, sections,
-		w.Totals.Distance, nullableString(w.SourceWorkoutID), w.CreatedAt, w.UpdatedAt, w.CreatedBy, w.UpdatedBy,
+		w.Totals.Distance, dbutil.NullableString(w.SourceWorkoutID), w.CreatedAt, w.UpdatedAt, w.CreatedBy, w.UpdatedBy,
 	)
 	if err != nil {
 		return fmt.Errorf("training: upsert workout: %w", err)
@@ -109,16 +110,9 @@ func (r *Repository) ListWorkouts(ctx context.Context, orgID string, f WorkoutFi
 	if err != nil {
 		return nil, fmt.Errorf("training: list workouts: %w", err)
 	}
-	defer rows.Close()
-	out := []*Workout{}
-	for rows.Next() {
-		w, err := scanWorkout(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, w)
-	}
-	return out, rows.Err()
+	return dbutil.CollectRowsNonNil(rows, "training: scan workout", func(rows pgx.Rows) (*Workout, error) {
+		return scanWorkout(rows)
+	})
 }
 
 // WorkoutsByIDs loads the given workouts (org-scoped) keyed by ID.
@@ -131,15 +125,16 @@ func (r *Repository) WorkoutsByIDs(ctx context.Context, orgID string, ids []stri
 	if err != nil {
 		return nil, fmt.Errorf("training: load workouts: %w", err)
 	}
-	defer rows.Close()
-	for rows.Next() {
-		w, err := scanWorkout(rows)
-		if err != nil {
-			return nil, err
-		}
+	workouts, err := dbutil.CollectRows(rows, "training: scan workout", func(rows pgx.Rows) (*Workout, error) {
+		return scanWorkout(rows)
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, w := range workouts {
 		out[w.ID] = w
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 func escapeLike(s string) string {
@@ -148,9 +143,8 @@ func escapeLike(s string) string {
 
 // AttendanceForPractices returns attendance rows for the given practices.
 func (r *Repository) AttendanceForPractices(ctx context.Context, orgID string, practiceIDs []string) ([]*PracticeAttendance, error) {
-	out := []*PracticeAttendance{}
 	if len(practiceIDs) == 0 {
-		return out, nil
+		return []*PracticeAttendance{}, nil
 	}
 	rows, err := r.pool.Query(ctx, `
 		SELECT id::text, org_id, practice_id::text, swimmer_id::text, status,
@@ -160,16 +154,12 @@ func (r *Repository) AttendanceForPractices(ctx context.Context, orgID string, p
 	if err != nil {
 		return nil, fmt.Errorf("training: attendance for practices: %w", err)
 	}
-	defer rows.Close()
-	for rows.Next() {
+	return dbutil.CollectRowsNonNil(rows, "training: scan attendance", func(rows pgx.Rows) (*PracticeAttendance, error) {
 		rec := &PracticeAttendance{}
-		if err := rows.Scan(&rec.ID, &rec.OrgID, &rec.PracticeID, &rec.SwimmerID, &rec.Status,
-			&rec.MarkedAt, &rec.MarkedBy, &rec.CreatedAt, &rec.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("training: scan attendance: %w", err)
-		}
-		out = append(out, rec)
-	}
-	return out, rows.Err()
+		err := rows.Scan(&rec.ID, &rec.OrgID, &rec.PracticeID, &rec.SwimmerID, &rec.Status,
+			&rec.MarkedAt, &rec.MarkedBy, &rec.CreatedAt, &rec.UpdatedAt)
+		return rec, err
+	})
 }
 
 // ─── Plan phases ──────────────────────────────────────────────────────────────
@@ -197,16 +187,9 @@ func listPhases(ctx context.Context, q querier, orgID, seasonID string) ([]*Plan
 	if err != nil {
 		return nil, fmt.Errorf("training: list phases: %w", err)
 	}
-	defer rows.Close()
-	out := []*PlanPhase{}
-	for rows.Next() {
-		p, err := scanPhase(rows)
-		if err != nil {
-			return nil, fmt.Errorf("training: scan phase: %w", err)
-		}
-		out = append(out, p)
-	}
-	return out, rows.Err()
+	return dbutil.CollectRowsNonNil(rows, "training: scan phase", func(rows pgx.Rows) (*PlanPhase, error) {
+		return scanPhase(rows)
+	})
 }
 
 func getPhase(ctx context.Context, q querier, orgID, id string) (*PlanPhase, error) {

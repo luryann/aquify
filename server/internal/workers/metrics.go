@@ -54,14 +54,6 @@ func (m *JobMetrics) counters(taskType string) *typeCounters {
 	return c
 }
 
-// countersRead returns the typeCounters for a task type using a read lock.
-// Returns nil if the key does not exist. Use in read-only paths like TypeSnapshot.
-func (m *JobMetrics) countersRead(taskType string) *typeCounters {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.byType[taskType]
-}
-
 // RecordEnqueue increments the enqueued counter for the task type.
 func (m *JobMetrics) RecordEnqueue(taskType string) {
 	m.counters(taskType).enqueued.Add(1)
@@ -97,18 +89,9 @@ func (m *JobMetrics) appendHistory(exec JobExecution) {
 // TypeSnapshot returns a point-in-time snapshot of counters per task type.
 func (m *JobMetrics) TypeSnapshot() map[string]TypeMetricSnapshot {
 	m.mu.RLock()
-	keys := make([]string, 0, len(m.byType))
-	for k := range m.byType {
-		keys = append(keys, k)
-	}
-	m.mu.RUnlock()
-
-	out := make(map[string]TypeMetricSnapshot, len(keys))
-	for _, k := range keys {
-		c := m.countersRead(k)
-		if c == nil {
-			continue
-		}
+	defer m.mu.RUnlock()
+	out := make(map[string]TypeMetricSnapshot, len(m.byType))
+	for k, c := range m.byType {
 		out[k] = TypeMetricSnapshot{
 			Enqueued:  c.enqueued.Load(),
 			Succeeded: c.succeeded.Load(),

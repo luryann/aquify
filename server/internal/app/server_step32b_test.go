@@ -138,19 +138,6 @@ func TestDurableJobsSurviveAPIRestart(t *testing.T) {
 func TestBuildWorkersRegistersFullProductionHandlerSet(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	commsService := comms.NewService()
-	campaign, err := commsService.CreateCampaign(comms.CreateCampaignInput{
-		OrgID:     "org-step32b",
-		Name:      "Step 32B Campaign",
-		Subject:   "Practice update",
-		BodyHTML:  "<p>Practice update</p>",
-		FromName:  "DARE Aquatics",
-		FromEmail: "noreply@example.com",
-		Audience:  "all",
-		CreatedBy: "test",
-	})
-	if err != nil {
-		t.Fatalf("CreateCampaign: %v", err)
-	}
 	complianceService := compliance.NewService()
 	exportRequest, err := complianceService.CreateDataExportRequest("org-step32b", "hh-step32b", "admin-user")
 	if err != nil {
@@ -193,18 +180,6 @@ func TestBuildWorkersRegistersFullProductionHandlerSet(t *testing.T) {
 			payload: map[string]string{
 				"export_id": "exp-full-set",
 				"meet_id":   "meet-step32b",
-			},
-		},
-		{
-			name:     "send campaign batch",
-			taskType: workers.TypeSendCampaignBatch,
-			queue:    workers.QueueEmail,
-			payload: map[string]any{
-				"campaign_id": campaign.ID,
-				"org_id":      "org-step32b",
-				"recipients":  []string{"parent@example.com"},
-				"batch_index": 0,
-				"batch_total": 1,
 			},
 		},
 		{

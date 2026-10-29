@@ -14,6 +14,37 @@ type PortalDocumentActionInput = {
 
 export type PortalDocumentActionKind = 'upload' | 'none'
 
+/** Status shown to families for a document requirement; 'missing' means nothing was submitted. */
+export type DocumentStatus = 'verified' | 'submitted' | 'pending' | 'rejected' | 'expired' | 'missing'
+
+/** Derives the display status from the latest submission, treating a lapsed, unverified document as expired. */
+export function resolveDocumentStatus(
+  submission: { status: string; expires_at?: string | null } | null,
+  now: Date = new Date(),
+): DocumentStatus {
+  if (!submission) return 'missing'
+  if (submission.expires_at && new Date(submission.expires_at).getTime() < now.getTime() && submission.status !== 'verified') {
+    return 'expired'
+  }
+  switch (submission.status) {
+    case 'verified':
+    case 'submitted':
+    case 'pending':
+    case 'rejected':
+      return submission.status
+    default:
+      return 'pending'
+  }
+}
+
+/**
+ * True when the family still has to upload something. 'pending' means a
+ * submission exists with no attached file (an interrupted upload).
+ */
+export function documentNeedsAction(status: string): boolean {
+  return status === 'missing' || status === 'pending' || status === 'rejected' || status === 'expired'
+}
+
 function normalizeSwimmerId(swimmerId?: string | null): string {
   return (swimmerId ?? '').trim()
 }
@@ -50,16 +81,9 @@ export function selectLatestSubmission<T extends SubmissionLike>(
     return null
   }
 
-  return matches
-    .slice()
-    .sort((a, b) => submissionTimestamp(b) - submissionTimestamp(a))[0] ?? null
+  return matches.reduce((latest, next) => (submissionTimestamp(next) > submissionTimestamp(latest) ? next : latest))
 }
 
 export function getPortalDocumentAction({ effectiveStatus }: PortalDocumentActionInput): PortalDocumentActionKind {
-  // 'pending' means a submission exists with no attached file (an interrupted
-  // upload), so the family still needs to upload.
-  if (effectiveStatus === 'missing' || effectiveStatus === 'pending' || effectiveStatus === 'rejected' || effectiveStatus === 'expired') {
-    return 'upload'
-  }
-  return 'none'
+  return documentNeedsAction(effectiveStatus) ? 'upload' : 'none'
 }

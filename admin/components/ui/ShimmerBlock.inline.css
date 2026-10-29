@@ -1,0 +1,1 @@
+.shimmer-block { background: linear-gradient(90deg, var(--bg-elevated) 25%, var(--border-strong) 50%, var(--bg-elevated) 75%); background-size: 200% 100%; animation: shimmerSweep 1.5s infinite; }

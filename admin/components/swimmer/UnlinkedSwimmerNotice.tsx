@@ -11,16 +11,12 @@ import './UnlinkedSwimmerNotice.inline.css'
 // Swimmer portal colours — resolved from the [data-portal="swim"] token overrides in globals.css
 const C = {
   text:       'var(--text)',
-  subtle:     'var(--text-subtle)',
   warn:       'var(--warning)',
   warnBg:     'var(--warning-bg)',
   warnBorder: 'var(--warning-border)',
-  accent:     'var(--accent)',
   success:    'var(--accent)',
   successBg:  'var(--accent-subtle)',
   successBorder: 'var(--accent-border)',
-  inputBg:     'rgba(0,0,0,0.25)',
-  inputBorder: 'var(--warning-border)',
 }
 
 // Renders the "no swimmer linked" warning shown across the swimmer portal,
@@ -100,14 +96,12 @@ export function UnlinkedSwimmerNotice() {
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Your full name"
-          
         />
         <input
           aria-label="Note for your admin"
           value={note}
           onChange={(e) => setNote(e.target.value)}
           placeholder="Anything else your admin should know? (optional)"
-          
         />
         {error && <p className="is-d8318c5">{error}</p>}
         <button type="button"

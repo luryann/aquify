@@ -8,10 +8,19 @@ import (
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
 )
 
-func scopedRequestFromContext(w http.ResponseWriter, r *http.Request) (*appmiddleware.Principal, string, bool) {
+// requirePrincipal returns the authenticated principal or writes a 401.
+func requirePrincipal(w http.ResponseWriter, r *http.Request) (*appmiddleware.Principal, bool) {
 	principal, ok := appmiddleware.PrincipalFromContext(r.Context())
 	if !ok || principal == nil {
 		httpx.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Authentication context is missing.", nil)
+		return nil, false
+	}
+	return principal, true
+}
+
+func scopedRequestFromContext(w http.ResponseWriter, r *http.Request) (*appmiddleware.Principal, string, bool) {
+	principal, ok := requirePrincipal(w, r)
+	if !ok {
 		return nil, "", false
 	}
 
@@ -22,6 +31,21 @@ func scopedRequestFromContext(w http.ResponseWriter, r *http.Request) (*appmiddl
 	}
 
 	return principal, orgID, true
+}
+
+// hasAnyRole reports whether the principal holds any of the roles (case-insensitive).
+func hasAnyRole(principal *appmiddleware.Principal, roles ...string) bool {
+	if principal == nil {
+		return false
+	}
+	for _, pr := range principal.Roles {
+		for _, allowed := range roles {
+			if strings.EqualFold(pr, allowed) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func validateBodyOrgScope(w http.ResponseWriter, r *http.Request, headerOrgID, bodyOrgID string) bool {

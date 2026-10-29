@@ -13,6 +13,7 @@ import {
   type SeasonRecord,
 } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
+import { FIELD_INPUT_STYLE } from '@/lib/form-styles'
 
 type SeasonStatus = SeasonRecord['status']
 
@@ -45,8 +46,6 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
     </label>
   )
 }
-
-const inputStyle: React.CSSProperties = { width: '100%' }
 
 type SeasonDraft = {
   name: string
@@ -127,7 +126,7 @@ function SeasonCard({
             <input
               value={draft.name}
               onChange={(e) => u('name', e.target.value)}
-              style={{ ...inputStyle, fontWeight: 'var(--display-weight)', width: '240px' }}
+              style={{ ...FIELD_INPUT_STYLE, fontWeight: 'var(--display-weight)', width: '240px' }}
             />
           ) : (
             <h2 className="section-title">
@@ -154,7 +153,7 @@ function SeasonCard({
           <FieldLabel>Start date</FieldLabel>
           {editing ? (
             <input type="date" value={draft.startDate} onChange={(e) => u('startDate', e.target.value)}
-              style={inputStyle}
+              style={FIELD_INPUT_STYLE}
             />
           ) : (
             <p className="u-fs-fs-md u-ff-font-body" style={{ color: startDate ? 'var(--text)' : 'var(--text-muted)' }}>
@@ -166,7 +165,7 @@ function SeasonCard({
           <FieldLabel>End date</FieldLabel>
           {editing ? (
             <input type="date" value={draft.endDate} onChange={(e) => u('endDate', e.target.value)}
-              style={inputStyle}
+              style={FIELD_INPUT_STYLE}
             />
           ) : (
             <p className="u-fs-fs-md u-ff-font-body" style={{ color: endDate ? 'var(--text)' : 'var(--text-muted)' }}>
@@ -414,15 +413,15 @@ export default function SeasonsPage() {
           <div className="cols-2 u-gap-16px u-mb-16px" >
             <div style={{ gridColumn: '1 / -1' }}>
               <FieldLabel>Name</FieldLabel>
-              <input aria-label="2026–2027 Season" value={createDraft.name} onChange={(e) => setCreateDraft((d) => ({ ...d, name: e.target.value }))} placeholder="2026–2027 Season" style={inputStyle} />
+              <input aria-label="2026–2027 Season" value={createDraft.name} onChange={(e) => setCreateDraft((d) => ({ ...d, name: e.target.value }))} placeholder="2026–2027 Season" style={FIELD_INPUT_STYLE} />
             </div>
             <div>
               <FieldLabel>Start date</FieldLabel>
-              <input type="date" value={createDraft.startDate} onChange={(e) => setCreateDraft((d) => ({ ...d, startDate: e.target.value }))} style={inputStyle} />
+              <input type="date" value={createDraft.startDate} onChange={(e) => setCreateDraft((d) => ({ ...d, startDate: e.target.value }))} style={FIELD_INPUT_STYLE} />
             </div>
             <div>
               <FieldLabel>End date</FieldLabel>
-              <input type="date" value={createDraft.endDate} onChange={(e) => setCreateDraft((d) => ({ ...d, endDate: e.target.value }))} style={inputStyle} />
+              <input type="date" value={createDraft.endDate} onChange={(e) => setCreateDraft((d) => ({ ...d, endDate: e.target.value }))} style={FIELD_INPUT_STYLE} />
             </div>
           </div>
           <div className="u-mb-16px" >

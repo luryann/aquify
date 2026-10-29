@@ -15,19 +15,7 @@ import (
 
 func issueVolunteerToken(t *testing.T, router http.Handler, userID, orgID, role, householdID string) string {
 	t.Helper()
-	payload := map[string]any{"user_id": userID, "org_id": orgID, "roles": []string{role}}
-	if householdID != "" {
-		payload["household_id"] = householdID
-	}
-	raw, _ := json.Marshal(payload)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/sessions/issue", bytes.NewReader(raw))
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, req)
-	if rr.Code != http.StatusCreated {
-		t.Fatalf("issue token: %d %s", rr.Code, rr.Body.String())
-	}
-	return issuedAccessTokenFromResponse(t, rr)
+	return issueSession(t, router, sessionSpec{UserID: userID, OrgID: orgID, HouseholdID: householdID, Roles: []string{role}})
 }
 
 func volunteerReq(t *testing.T, router http.Handler, method, path, token, orgID string, body any) *httptest.ResponseRecorder {

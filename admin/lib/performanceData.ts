@@ -1,20 +1,8 @@
 import type { ApiClient } from '@/lib/api'
+import { orgHeaders, queryString } from '@/lib/api'
 
 // Team records, top times, goals, relay builder and progress reports.
 // Backend: server/internal/app/handlers/performance_extensions.go.
-
-function org(orgId: string) {
-  return { 'X-Org-Id': orgId }
-}
-
-function qs(params: Record<string, string | number | undefined | null>) {
-  const q = new URLSearchParams()
-  for (const [k, v] of Object.entries(params)) {
-    if (v !== undefined && v !== null && v !== '') q.set(k, String(v))
-  }
-  const s = q.toString()
-  return s ? `?${s}` : ''
-}
 
 export type Course = 'SCY' | 'SCM' | 'LCM'
 export type IndividualStroke = 'free' | 'back' | 'breast' | 'fly' | 'im'
@@ -60,7 +48,7 @@ export function parseSwimTime(raw: string): number | null {
   return ms > 0 ? ms : null
 }
 
-/** "+1.23" for a drop (faster), "−0.40" when slower. */
+/** Signed change in time: a drop (faster swim, positive `ms`) reads "−1.23"; a slower swim reads "+0.40". */
 export function formatDrop(ms: number): string {
   const sign = ms >= 0 ? '−' : '+'
   return `${sign}${formatSwimTime(Math.abs(ms))}`
@@ -120,17 +108,6 @@ export type RecordHistory = {
   progression: RecordEntry[]
   pending: RecordEntry[]
   rejected: RecordEntry[]
-}
-
-export type RecordBreak = {
-  entry_id: string
-  label: string
-  age_group: AgeGroup
-  time_ms: number
-  previous_time_ms?: number
-  previous_holder?: string
-  swimmer_name: string
-  status: 'accepted' | 'pending'
 }
 
 export type TopTimeEntry = {
@@ -254,17 +231,17 @@ export type ProgressReport = {
 // ─── Records ─────────────────────────────────────────────────────────────────
 
 export async function fetchTeamRecords(api: ApiClient, orgId: string, params: { course?: string; gender?: string; age_group?: string } = {}) {
-  const res = await api.get<{ records?: TeamRecord[] }>(`/api/v1/performance/records${qs(params)}`, undefined, org(orgId))
+  const res = await api.get<{ records?: TeamRecord[] }>(`/api/v1/performance/records${queryString(params)}`, undefined, orgHeaders(orgId))
   return res.records ?? []
 }
 
 export async function fetchRecordHistory(api: ApiClient, orgId: string, key: { course: string; gender: string; age_group: string; distance: number; stroke: string }) {
-  const res = await api.get<{ history: RecordHistory }>(`/api/v1/performance/records/history${qs(key)}`, undefined, org(orgId))
+  const res = await api.get<{ history: RecordHistory }>(`/api/v1/performance/records/history${queryString(key)}`, undefined, orgHeaders(orgId))
   return res.history
 }
 
 export async function fetchPendingRecords(api: ApiClient, orgId: string) {
-  const res = await api.get<{ entries?: RecordEntry[] }>('/api/v1/performance/records/pending', undefined, org(orgId))
+  const res = await api.get<{ entries?: RecordEntry[] }>('/api/v1/performance/records/pending', undefined, orgHeaders(orgId))
   return res.entries ?? []
 }
 
@@ -274,68 +251,68 @@ export type ManualRecordInput = {
 }
 
 export async function createManualRecord(api: ApiClient, orgId: string, input: ManualRecordInput) {
-  const res = await api.post<{ entry: RecordEntry }>('/api/v1/performance/records', input, org(orgId))
+  const res = await api.post<{ entry: RecordEntry }>('/api/v1/performance/records', input, orgHeaders(orgId))
   return res.entry
 }
 
 export async function updateRecordEntry(api: ApiClient, orgId: string, entryId: string, patch: Partial<Pick<RecordEntry, 'locked' | 'verified' | 'notes'>>) {
-  const res = await api.patch<{ entry: RecordEntry }>(`/api/v1/performance/records/${encodeURIComponent(entryId)}`, patch, org(orgId))
+  const res = await api.patch<{ entry: RecordEntry }>(`/api/v1/performance/records/${encodeURIComponent(entryId)}`, patch, orgHeaders(orgId))
   return res.entry
 }
 
 export async function decideRecordEntry(api: ApiClient, orgId: string, entryId: string, decision: 'approve' | 'reject') {
-  const res = await api.post<{ entry: RecordEntry }>(`/api/v1/performance/records/${encodeURIComponent(entryId)}/${decision}`, {}, org(orgId))
+  const res = await api.post<{ entry: RecordEntry }>(`/api/v1/performance/records/${encodeURIComponent(entryId)}/${decision}`, {}, orgHeaders(orgId))
   return res.entry
 }
 
 export async function deleteManualRecord(api: ApiClient, orgId: string, entryId: string) {
-  await api.delete(`/api/v1/performance/records/${encodeURIComponent(entryId)}`, org(orgId))
+  await api.delete(`/api/v1/performance/records/${encodeURIComponent(entryId)}`, orgHeaders(orgId))
 }
 
 export async function rebuildRecords(api: ApiClient, orgId: string) {
-  const res = await api.post<{ summary: { entries_created: number; entries_removed: number; slots_skipped_locked: number } }>('/api/v1/performance/records/rebuild', {}, org(orgId))
+  const res = await api.post<{ summary: { entries_created: number; entries_removed: number; slots_skipped_locked: number } }>('/api/v1/performance/records/rebuild', {}, orgHeaders(orgId))
   return res.summary
 }
 
 export async function draftRecordAnnouncement(api: ApiClient, orgId: string, entryId: string) {
-  const res = await api.post<{ announcement: { id: string } }>(`/api/v1/performance/records/${encodeURIComponent(entryId)}/announcement`, {}, org(orgId))
+  const res = await api.post<{ announcement: { id: string } }>(`/api/v1/performance/records/${encodeURIComponent(entryId)}/announcement`, {}, orgHeaders(orgId))
   return res.announcement
 }
 
 // ─── Top times ───────────────────────────────────────────────────────────────
 
 export async function fetchTopTimes(api: ApiClient, orgId: string, params: { course: string; gender?: string; age_group?: string; distance?: number; stroke?: string; from?: string; to?: string; limit?: number }) {
-  const res = await api.get<{ lists?: TopTimesList[] }>(`/api/v1/performance/top-times${qs(params)}`, undefined, org(orgId))
+  const res = await api.get<{ lists?: TopTimesList[] }>(`/api/v1/performance/top-times${queryString(params)}`, undefined, orgHeaders(orgId))
   return res.lists ?? []
 }
 
 // ─── Goals ───────────────────────────────────────────────────────────────────
 
 export async function fetchSwimmerGoals(api: ApiClient, orgId: string, swimmerId: string) {
-  const res = await api.get<{ goals?: Goal[] }>(`/api/v1/swimmers/${encodeURIComponent(swimmerId)}/goals`, undefined, org(orgId))
+  const res = await api.get<{ goals?: Goal[] }>(`/api/v1/swimmers/${encodeURIComponent(swimmerId)}/goals`, undefined, orgHeaders(orgId))
   return res.goals ?? []
 }
 
 export type GoalInput = { distance: number; stroke: string; course: string; target_time_ms: number; deadline?: string; notes?: string }
 
 export async function createSwimmerGoal(api: ApiClient, orgId: string, swimmerId: string, input: GoalInput) {
-  const res = await api.post<{ goal: Goal }>(`/api/v1/swimmers/${encodeURIComponent(swimmerId)}/goals`, input, org(orgId))
+  const res = await api.post<{ goal: Goal }>(`/api/v1/swimmers/${encodeURIComponent(swimmerId)}/goals`, input, orgHeaders(orgId))
   return res.goal
 }
 
 export async function deleteSwimmerGoal(api: ApiClient, orgId: string, swimmerId: string, goalId: string) {
-  await api.delete(`/api/v1/swimmers/${encodeURIComponent(swimmerId)}/goals/${encodeURIComponent(goalId)}`, org(orgId))
+  await api.delete(`/api/v1/swimmers/${encodeURIComponent(swimmerId)}/goals/${encodeURIComponent(goalId)}`, orgHeaders(orgId))
 }
 
 // ─── Relays ──────────────────────────────────────────────────────────────────
 
 export async function optimizeRelays(api: ApiClient, orgId: string, input: RelayOptimizeRequest) {
-  const res = await api.post<{ proposal: RelayProposal }>('/api/v1/performance/relays/optimize', input, org(orgId))
+  const res = await api.post<{ proposal: RelayProposal }>('/api/v1/performance/relays/optimize', input, orgHeaders(orgId))
   return res.proposal
 }
 
 export async function fetchRelayLineups(api: ApiClient, orgId: string, meetId: string) {
-  const res = await api.get<{ lineups?: RelayLineup[] }>(`/api/v1/performance/relay-lineups${qs({ meet_id: meetId, limit: 200 })}`, undefined, org(orgId))
+  const res = await api.get<{ lineups?: RelayLineup[] }>(`/api/v1/performance/relay-lineups${queryString({ meet_id: meetId, limit: 200 })}`, undefined, orgHeaders(orgId))
   return res.lineups ?? []
 }
 
@@ -345,17 +322,17 @@ export async function saveRelayLineup(api: ApiClient, orgId: string, proposal: R
     relay_type: proposal.relay_type, distance: proposal.distance,
     teams: proposal.teams.map((t) => ({ label: t.label, total_ms: t.total_ms, legs: t.legs })),
   }
-  const res = await api.post<{ lineup: RelayLineup }>('/api/v1/performance/relay-lineups', body, org(orgId))
+  const res = await api.post<{ lineup: RelayLineup }>('/api/v1/performance/relay-lineups', body, orgHeaders(orgId))
   return res.lineup
 }
 
 export async function deleteRelayLineup(api: ApiClient, orgId: string, lineupId: string) {
-  await api.delete(`/api/v1/performance/relay-lineups/${encodeURIComponent(lineupId)}`, org(orgId))
+  await api.delete(`/api/v1/performance/relay-lineups/${encodeURIComponent(lineupId)}`, orgHeaders(orgId))
 }
 
 // ─── Progress ────────────────────────────────────────────────────────────────
 
 export async function fetchProgressReport(api: ApiClient, orgId: string, params: { from_a: string; to_a: string; from_b: string; to_b: string; group_code?: string; course?: string; limit?: number }) {
-  const res = await api.get<{ report: ProgressReport }>(`/api/v1/performance/progress-report${qs(params)}`, undefined, org(orgId))
+  const res = await api.get<{ report: ProgressReport }>(`/api/v1/performance/progress-report${queryString(params)}`, undefined, orgHeaders(orgId))
   return res.report
 }

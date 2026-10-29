@@ -26,7 +26,9 @@ func TestComplianceRequestsAreProcessedByWorkers(t *testing.T) {
 	adminMFA := issue("admin-mfa", "admin", true)
 	adminNoMFA := issue("admin-plain", "admin", false)
 
-	var hh struct{ Household struct{ ID string } `json:"household"` }
+	var hh struct {
+		Household struct{ ID string } `json:"household"`
+	}
 	rr := doStep16Req(router, http.MethodPost, "/api/v1/members/households", adminMFA, step16Body(map[string]any{"org_id": "org-demo", "household_name": "Erase Me"}))
 	if err := json.Unmarshal(rr.Body.Bytes(), &hh); err != nil || hh.Household.ID == "" {
 		t.Fatalf("household: %d %s", rr.Code, rr.Body.String())
@@ -45,7 +47,9 @@ func TestComplianceRequestsAreProcessedByWorkers(t *testing.T) {
 	}
 
 	// Export: the worker builds the archive and marks the request ready.
-	var exp struct{ ID string `json:"id"` }
+	var exp struct {
+		ID string `json:"id"`
+	}
 	rr = doStep16Req(router, http.MethodPost, "/api/v1/compliance/data-export-requests", adminMFA, step16Body(map[string]any{"household_id": hh.Household.ID}))
 	_ = json.Unmarshal(rr.Body.Bytes(), &exp)
 	waitFor("export ready", func() bool {
@@ -64,7 +68,9 @@ func TestComplianceRequestsAreProcessedByWorkers(t *testing.T) {
 	}
 
 	// Deletion review: rejection needs notes; approval needs MFA.
-	var del struct{ ID string `json:"id"` }
+	var del struct {
+		ID string `json:"id"`
+	}
 	rr = doStep16Req(router, http.MethodPost, "/api/v1/compliance/data-deletion-requests", adminMFA, step16Body(map[string]any{"household_id": hh.Household.ID, "reason": "Family left the club"}))
 	_ = json.Unmarshal(rr.Body.Bytes(), &del)
 	if del.ID == "" {

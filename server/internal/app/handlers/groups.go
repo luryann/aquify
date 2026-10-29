@@ -2,13 +2,13 @@ package handlers
 
 import (
 	"errors"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/dareaquatics/aquify/server/internal/app/groups"
 	"github.com/dareaquatics/aquify/server/internal/app/httpx"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
 )
@@ -17,6 +17,26 @@ import (
 type GroupsHandlers struct {
 	service  *groups.Service
 	validate *validator.Validate
+	// clientAddress resolves the caller's IP for waiver evidence; wired with the
+	// trusted-proxy rule in server.go, otherwise the direct peer address is used.
+	clientAddress func(*http.Request) string
+}
+
+// SetClientAddressResolver wires the trusted-proxy-aware client IP resolver.
+func (h *GroupsHandlers) SetClientAddressResolver(resolve func(*http.Request) string) {
+	h.clientAddress = resolve
+}
+
+// waiverIP is the caller's address as seen by the server, never a client-supplied value.
+func (h *GroupsHandlers) waiverIP(r *http.Request) string {
+	if h.clientAddress != nil {
+		return h.clientAddress(r)
+	}
+	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
+	if err != nil {
+		return strings.TrimSpace(r.RemoteAddr)
+	}
+	return host
 }
 
 // NewGroupsHandlers returns a new GroupsHandlers.
@@ -60,7 +80,7 @@ type createGroupRequest struct {
 }
 
 func (h *GroupsHandlers) createGroup(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := groupScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -109,7 +129,7 @@ type updateGroupRequest struct {
 }
 
 func (h *GroupsHandlers) updateGroup(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := groupScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -130,9 +150,10 @@ func (h *GroupsHandlers) updateGroup(w http.ResponseWriter, r *http.Request) {
 		IsActive:    req.IsActive,
 	})
 	if err != nil {
+		if writeGroupsNotFound(w, r, err) {
+			return
+		}
 		switch {
-		case errors.Is(err, groups.ErrGroupNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "group_not_found", "Group was not found.", nil)
 		case errors.Is(err, groups.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to update groups.", nil)
 		default:
@@ -149,7 +170,7 @@ func (h *GroupsHandlers) updateGroup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *GroupsHandlers) getGroup(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := groupScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -157,9 +178,10 @@ func (h *GroupsHandlers) getGroup(w http.ResponseWriter, r *http.Request) {
 	groupID := strings.TrimSpace(chi.URLParam(r, "groupID"))
 	group, err := h.service.GetGroup(principal, orgID, groupID)
 	if err != nil {
+		if writeGroupsNotFound(w, r, err) {
+			return
+		}
 		switch {
-		case errors.Is(err, groups.ErrGroupNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "group_not_found", "Group was not found.", nil)
 		case errors.Is(err, groups.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to view groups.", nil)
 		default:
@@ -175,7 +197,7 @@ func (h *GroupsHandlers) getGroup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *GroupsHandlers) listGroups(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := groupScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -194,14 +216,7 @@ func (h *GroupsHandlers) listGroups(w http.ResponseWriter, r *http.Request) {
 	pagination := parseListPagination(r, listPaginationOptions{})
 	result, total := paginateSlice(result, pagination)
 
-	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"status": "ok",
-		"count":  len(result),
-		"total":  total,
-		"limit":  pagination.Limit,
-		"offset": pagination.Offset,
-		"groups": result,
-	})
+	writePagedList(w, "groups", result, total, pagination)
 }
 
 // ─── Eligibility ─────────────────────────────────────────────────────────────
@@ -212,7 +227,7 @@ type attachEligibilityRuleRequest struct {
 }
 
 func (h *GroupsHandlers) attachEligibilityRule(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := groupScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -228,9 +243,10 @@ func (h *GroupsHandlers) attachEligibilityRule(w http.ResponseWriter, r *http.Re
 		Parameters: req.Parameters,
 	})
 	if err != nil {
+		if writeGroupsNotFound(w, r, err) {
+			return
+		}
 		switch {
-		case errors.Is(err, groups.ErrGroupNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "group_not_found", "Group was not found.", nil)
 		case errors.Is(err, groups.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only admin can attach eligibility rules.", nil)
 		default:
@@ -247,7 +263,7 @@ func (h *GroupsHandlers) attachEligibilityRule(w http.ResponseWriter, r *http.Re
 }
 
 func (h *GroupsHandlers) listEligibilityRules(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := groupScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -255,9 +271,10 @@ func (h *GroupsHandlers) listEligibilityRules(w http.ResponseWriter, r *http.Req
 	groupID := strings.TrimSpace(chi.URLParam(r, "groupID"))
 	rules, err := h.service.ListEligibilityRules(principal, orgID, groupID)
 	if err != nil {
+		if writeGroupsNotFound(w, r, err) {
+			return
+		}
 		switch {
-		case errors.Is(err, groups.ErrGroupNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "group_not_found", "Group was not found.", nil)
 		case errors.Is(err, groups.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to view eligibility rules.", nil)
 		default:
@@ -278,7 +295,7 @@ func (h *GroupsHandlers) listEligibilityRules(w http.ResponseWriter, r *http.Req
 }
 
 func (h *GroupsHandlers) evaluateEligibility(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := groupScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -288,11 +305,10 @@ func (h *GroupsHandlers) evaluateEligibility(w http.ResponseWriter, r *http.Requ
 
 	result, err := h.service.EvaluateSwimmerEligibility(principal, orgID, groupID, swimmerID)
 	if err != nil {
+		if writeGroupsNotFound(w, r, err) {
+			return
+		}
 		switch {
-		case errors.Is(err, groups.ErrGroupNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "group_not_found", "Group was not found.", nil)
-		case errors.Is(err, groups.ErrSwimmerNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "swimmer_not_found", "Swimmer was not found.", nil)
 		case errors.Is(err, groups.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to evaluate eligibility.", nil)
 		default:
@@ -308,32 +324,29 @@ func (h *GroupsHandlers) evaluateEligibility(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *GroupsHandlers) listRegistrations(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := groupScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
 
-	if !hasRegistrationListAccess(principal) {
+	if !hasAnyRole(principal, "admin", "coach", "parent") {
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to list registrations.", nil)
 		return
 	}
 
 	registrations, err := h.service.ListRegistrations(principal, orgID)
 	if err != nil {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to list registrations.", nil)
+		if errors.Is(err, groups.ErrForbidden) {
+			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to list registrations.", nil)
+		} else {
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)
+		}
 		return
 	}
 	pagination := parseListPagination(r, listPaginationOptions{})
 	registrations, total := paginateSlice(registrations, pagination)
 
-	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"status":        "ok",
-		"count":         len(registrations),
-		"total":         total,
-		"limit":         pagination.Limit,
-		"offset":        pagination.Offset,
-		"registrations": registrations,
-	})
+	writePagedList(w, "registrations", registrations, total, pagination)
 }
 
 // ─── Registrations ───────────────────────────────────────────────────────────
@@ -348,7 +361,7 @@ type createRegistrationRequest struct {
 }
 
 func (h *GroupsHandlers) createRegistration(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := groupScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -367,15 +380,12 @@ func (h *GroupsHandlers) createRegistration(w http.ResponseWriter, r *http.Reque
 		Notes:            req.Notes,
 	})
 	if err != nil {
+		if writeGroupsNotFound(w, r, err) {
+			return
+		}
 		switch {
 		case errors.Is(err, groups.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to create registrations.", nil)
-		case errors.Is(err, groups.ErrGroupNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "group_not_found", "Group was not found.", nil)
-		case errors.Is(err, groups.ErrSwimmerNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "swimmer_not_found", "Swimmer was not found.", nil)
-		case errors.Is(err, groups.ErrHouseholdNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "household_not_found", "Household was not found.", nil)
 		case errors.Is(err, groups.ErrDuplicateRegistration):
 			httpx.WriteError(w, r, http.StatusConflict, "duplicate_registration", err.Error(), nil)
 		default:
@@ -395,7 +405,7 @@ type transitionRegistrationRequest struct {
 }
 
 func (h *GroupsHandlers) transitionRegistration(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := groupScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -408,9 +418,10 @@ func (h *GroupsHandlers) transitionRegistration(w http.ResponseWriter, r *http.R
 	registrationID := strings.TrimSpace(chi.URLParam(r, "registrationID"))
 	reg, auditEvent, err := h.service.TransitionRegistrationStatus(principal, orgID, registrationID, req.Status)
 	if err != nil {
+		if writeGroupsNotFound(w, r, err) {
+			return
+		}
 		switch {
-		case errors.Is(err, groups.ErrRegistrationNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "registration_not_found", "Registration was not found.", nil)
 		case errors.Is(err, groups.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", err.Error(), nil)
 		case errors.Is(err, groups.ErrInvalidTransition):
@@ -430,11 +441,13 @@ func (h *GroupsHandlers) transitionRegistration(w http.ResponseWriter, r *http.R
 
 type acceptWaiverRequest struct {
 	WaiverType string `json:"waiver_type" validate:"required"`
-	IPAddress  string `json:"ip_address"`
+	// IPAddress is accepted for older clients but ignored: the recorded address
+	// is the one the server observed (see waiverIP).
+	IPAddress string `json:"ip_address"`
 }
 
 func (h *GroupsHandlers) acceptWaiver(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := groupScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -447,12 +460,13 @@ func (h *GroupsHandlers) acceptWaiver(w http.ResponseWriter, r *http.Request) {
 	registrationID := strings.TrimSpace(chi.URLParam(r, "registrationID"))
 	waiver, err := h.service.AcceptWaiver(principal, orgID, registrationID, groups.AcceptWaiverInput{
 		WaiverType: req.WaiverType,
-		IPAddress:  req.IPAddress,
+		IPAddress:  h.waiverIP(r),
 	})
 	if err != nil {
+		if writeGroupsNotFound(w, r, err) {
+			return
+		}
 		switch {
-		case errors.Is(err, groups.ErrRegistrationNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "registration_not_found", "Registration was not found.", nil)
 		case errors.Is(err, groups.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to accept waivers.", nil)
 		case errors.Is(err, groups.ErrWaiverAlreadyAccepted):
@@ -471,29 +485,23 @@ func (h *GroupsHandlers) acceptWaiver(w http.ResponseWriter, r *http.Request) {
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
-func (h *GroupsHandlers) decodeAndValidate(w http.ResponseWriter, r *http.Request, dst any) bool {
-	return decodeAndValidateJSON(w, r, dst, h.validate, decodeAndValidateOptions{
-		InvalidStatus:     http.StatusBadRequest,
-		InvalidCode:       "invalid_request_body",
-		ValidationStatus:  http.StatusBadRequest,
-		ValidationCode:    "validation_failed",
-		ValidationMessage: "One or more request fields are invalid.",
-	})
-}
-
-func groupScopeFromRequest(w http.ResponseWriter, r *http.Request) (*appmiddleware.Principal, string, bool) {
-	return scopedRequestFromContext(w, r)
-}
-
-func hasRegistrationListAccess(principal *appmiddleware.Principal) bool {
-	if principal == nil {
+// writeGroupsNotFound answers the 404 for a missing groups-domain record and reports whether it did.
+func writeGroupsNotFound(w http.ResponseWriter, r *http.Request, err error) bool {
+	switch {
+	case errors.Is(err, groups.ErrGroupNotFound):
+		httpx.WriteError(w, r, http.StatusNotFound, "group_not_found", "Group was not found.", nil)
+	case errors.Is(err, groups.ErrSwimmerNotFound):
+		httpx.WriteError(w, r, http.StatusNotFound, "swimmer_not_found", "Swimmer was not found.", nil)
+	case errors.Is(err, groups.ErrHouseholdNotFound):
+		httpx.WriteError(w, r, http.StatusNotFound, "household_not_found", "Household was not found.", nil)
+	case errors.Is(err, groups.ErrRegistrationNotFound):
+		httpx.WriteError(w, r, http.StatusNotFound, "registration_not_found", "Registration was not found.", nil)
+	default:
 		return false
 	}
-	for _, role := range principal.Roles {
-		switch strings.TrimSpace(strings.ToLower(role)) {
-		case "admin", "coach", "parent":
-			return true
-		}
-	}
-	return false
+	return true
+}
+
+func (h *GroupsHandlers) decodeAndValidate(w http.ResponseWriter, r *http.Request, dst any) bool {
+	return decodeAndValidateBadRequest(w, r, dst, h.validate)
 }

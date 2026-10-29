@@ -22,17 +22,17 @@
 // Package comms provides the in-memory service for announcements, email
 // campaigns, email delivery tracking, and the suppression list.
 //
-// Production note: all data is held in-memory maps protected by a RWMutex.
-// Replace with sqlc/pgx queries when the DB layer is wired.
+// Data is held in in-memory maps protected by a RWMutex; with a database pool
+// every write persists through the repository first.
 package comms
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -41,6 +41,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/dareaquatics/aquify/server/internal/dbutil"
 	"github.com/dareaquatics/aquify/server/internal/postmark"
 	"github.com/dareaquatics/aquify/server/internal/storage"
 )
@@ -267,12 +268,12 @@ type AttachmentInput struct {
 
 // CreateMessageInput holds fields for sending a message into a household+swimmer thread.
 type CreateMessageInput struct {
-	OrgID        string `json:"org_id"       validate:"required"`
-	HouseholdID  string `json:"household_id" validate:"required"`
-	SwimmerID    string `json:"swimmer_id"   validate:"required"`
-	Body         string `json:"body"         validate:"required,max=4000"`
-	SenderUserID string `json:"-"`
-	SenderRole   string `json:"-"`
+	OrgID        string            `json:"org_id"       validate:"required"`
+	HouseholdID  string            `json:"household_id" validate:"required"`
+	SwimmerID    string            `json:"swimmer_id"   validate:"required"`
+	Body         string            `json:"body"         validate:"required,max=4000"`
+	SenderUserID string            `json:"-"`
+	SenderRole   string            `json:"-"`
 	Attachments  []AttachmentInput `json:"-"`
 }
 
@@ -492,18 +493,10 @@ func (s *Service) newID() string {
 	if s.repo != nil {
 		return uuid.New().String()
 	}
-	return newID()
+	return dbutil.NewHexID()
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-func newID() string {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		panic(fmt.Errorf("secure random unavailable for communications ID generation: %w", err))
-	}
-	return hex.EncodeToString(b)
-}
 
 func suppressionKey(orgID, email string) string {
 	return orgID + "|" + strings.ToLower(strings.TrimSpace(email))
@@ -561,9 +554,10 @@ func (s *Service) ReplaceNotificationPreferences(orgID, userID, householdID, act
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// Validate every setting before writing any, so a bad request changes nothing.
 	seen := make(map[string]struct{}, len(settings))
-	now := time.Now().UTC()
-	for _, setting := range settings {
+	definitions := make([]notificationPreferenceDefinition, len(settings))
+	for i, setting := range settings {
 		definition, ok := notificationPreferenceDefinitionByID(setting.EventID)
 		if !ok {
 			return nil, fmt.Errorf("unsupported notification event %q", setting.EventID)
@@ -572,16 +566,18 @@ func (s *Service) ReplaceNotificationPreferences(orgID, userID, householdID, act
 			return nil, fmt.Errorf("duplicate notification event %q", definition.EventID)
 		}
 		seen[definition.EventID] = struct{}{}
+		definitions[i] = definition
+	}
 
+	now := time.Now().UTC()
+	for i, setting := range settings {
+		definition := definitions[i]
 		key := notificationPreferenceKey(orgID, userID, definition.EventID)
-		pref, exists := s.preferences[key]
-		if !exists || pref == nil {
-			pref = &NotificationPreference{
-				ID:        s.newID(),
-				OrgID:     orgID,
-				UserID:    userID,
-				CreatedAt: now,
-			}
+		// Edit a copy; the cached preference is replaced only after it is saved.
+		pref := &NotificationPreference{ID: s.newID(), OrgID: orgID, UserID: userID, CreatedAt: now}
+		if existing := s.preferences[key]; existing != nil {
+			cp := *existing
+			pref = &cp
 		}
 		pref.HouseholdID = strings.TrimSpace(householdID)
 		pref.EventID = definition.EventID
@@ -690,32 +686,32 @@ func (s *Service) ListPublicAnnouncements(orgID string) []Announcement {
 
 // PublishAnnouncement transitions an announcement from draft → published.
 func (s *Service) PublishAnnouncement(orgID, id, actorID string) (*Announcement, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	a, ok := s.announcements[id]
-	if !ok || a.OrgID != orgID {
-		return nil, ErrAnnouncementNotFound
-	}
-	if a.Status != "draft" {
-		return nil, ErrInvalidTransition
-	}
-
-	now := time.Now().UTC()
-	a.Status = "published"
-	a.PublishedAt = &now
-	a.UpdatedAt = now
-	a.UpdatedBy = actorID
-	if s.repo != nil {
-		if err := s.repo.UpsertAnnouncement(context.Background(), a); err != nil {
-			return nil, fmt.Errorf("persist published announcement: %w", err)
-		}
-	}
-	return a, nil
+	return s.transitionAnnouncement(orgID, id, actorID, "published",
+		func(status string) bool { return status == "draft" },
+		func(a *Announcement, now time.Time) {
+			a.Status = "published"
+			a.PublishedAt = &now
+		})
 }
 
 // ArchiveAnnouncement transitions an announcement to archived.
 func (s *Service) ArchiveAnnouncement(orgID, id, actorID string) (*Announcement, error) {
+	return s.transitionAnnouncement(orgID, id, actorID, "archived",
+		func(status string) bool { return status != "archived" },
+		func(a *Announcement, now time.Time) {
+			a.Status = "archived"
+			a.ArchivedAt = &now
+		})
+}
+
+// transitionAnnouncement applies a status change to a copy of the announcement
+// and persists it before the cached record is replaced, so a failed write
+// leaves the in-memory state unchanged. label names the new state in errors.
+func (s *Service) transitionAnnouncement(
+	orgID, id, actorID, label string,
+	allowed func(status string) bool,
+	apply func(a *Announcement, now time.Time),
+) (*Announcement, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -723,21 +719,22 @@ func (s *Service) ArchiveAnnouncement(orgID, id, actorID string) (*Announcement,
 	if !ok || a.OrgID != orgID {
 		return nil, ErrAnnouncementNotFound
 	}
-	if a.Status == "archived" {
+	if !allowed(a.Status) {
 		return nil, ErrInvalidTransition
 	}
 
 	now := time.Now().UTC()
-	a.Status = "archived"
-	a.ArchivedAt = &now
-	a.UpdatedAt = now
-	a.UpdatedBy = actorID
+	cp := *a
+	apply(&cp, now)
+	cp.UpdatedAt = now
+	cp.UpdatedBy = actorID
 	if s.repo != nil {
-		if err := s.repo.UpsertAnnouncement(context.Background(), a); err != nil {
-			return nil, fmt.Errorf("persist archived announcement: %w", err)
+		if err := s.repo.UpsertAnnouncement(context.Background(), &cp); err != nil {
+			return nil, fmt.Errorf("persist %s announcement: %w", label, err)
 		}
 	}
-	return a, nil
+	s.announcements[id] = &cp
+	return &cp, nil
 }
 
 // GetAnnouncement returns a single announcement.
@@ -749,7 +746,8 @@ func (s *Service) GetAnnouncement(orgID, id string) (*Announcement, error) {
 	if !ok || a.OrgID != orgID {
 		return nil, ErrAnnouncementNotFound
 	}
-	return a, nil
+	cp := *a // callers must not share the cached record that later writes replace
+	return &cp, nil
 }
 
 // ListAnnouncements returns all announcements for an org, newest first.
@@ -766,7 +764,8 @@ func (s *Service) ListAnnouncements(orgID, statusFilter string) ([]*Announcement
 		if statusFilter != "" && a.Status != statusFilter {
 			continue
 		}
-		out = append(out, a)
+		cp := *a
+		out = append(out, &cp)
 	}
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].CreatedAt.After(out[j].CreatedAt)
@@ -837,15 +836,18 @@ func (s *Service) SendMessage(inp CreateMessageInput) (*Message, error) {
 	view := s.buildMessageView(m, inp.SenderUserID)
 	s.mu.Unlock()
 
-	if broadcaster != nil {
-		broadcaster.Publish(context.Background(), inp.OrgID, MessageEvent{
-			Type:        "message.created",
-			HouseholdID: m.HouseholdID,
-			SwimmerID:   m.SwimmerID,
-			Message:     view,
-		})
-	}
+	publishMessageEvent(broadcaster, inp.OrgID, "message.created", m, view)
 	return m, nil
+}
+
+// publishMessageEvent pushes a realtime event for m's thread (Publish ignores a nil broadcaster).
+func publishMessageEvent(b *MessageBroadcaster, orgID, eventType string, m *Message, view MessageView) {
+	b.Publish(context.Background(), orgID, MessageEvent{
+		Type:        eventType,
+		HouseholdID: m.HouseholdID,
+		SwimmerID:   m.SwimmerID,
+		Message:     view,
+	})
 }
 
 // buildMessageView enriches a Message with its reactions and attachments for API
@@ -956,12 +958,12 @@ func (s *Service) ListMessageThreads(orgID, viewerUserID string) []MessageThread
 func (s *Service) EditMessage(orgID, messageID, userID, newBody string) (*Message, error) {
 	s.mu.Lock()
 
-	m, ok := s.messages[messageID]
-	if !ok || m.OrgID != orgID {
+	current, ok := s.messages[messageID]
+	if !ok || current.OrgID != orgID {
 		s.mu.Unlock()
 		return nil, ErrMessageNotFound
 	}
-	if m.SenderUserID != userID {
+	if current.SenderUserID != userID {
 		s.mu.Unlock()
 		return nil, ErrForbidden
 	}
@@ -969,11 +971,14 @@ func (s *Service) EditMessage(orgID, messageID, userID, newBody string) (*Messag
 	now := time.Now().UTC()
 	edit := &MessageEdit{
 		ID:           s.newID(),
-		MessageID:    m.ID,
-		PreviousBody: m.Body,
+		MessageID:    current.ID,
+		PreviousBody: current.Body,
 		EditedAt:     now,
 		EditedBy:     userID,
 	}
+	// Edit a copy so a failed write leaves the cached message untouched.
+	m := new(Message)
+	*m = *current
 	m.Body = strings.TrimSpace(newBody)
 	m.EditedAt = &now
 	m.UpdatedAt = now
@@ -988,19 +993,13 @@ func (s *Service) EditMessage(orgID, messageID, userID, newBody string) (*Messag
 			return nil, fmt.Errorf("persist message body: %w", err)
 		}
 	}
+	s.messages[messageID] = m
 	s.messageEdits[edit.ID] = edit
 	broadcaster := s.broadcaster
 	view := s.buildMessageView(m, userID)
 	s.mu.Unlock()
 
-	if broadcaster != nil {
-		broadcaster.Publish(context.Background(), orgID, MessageEvent{
-			Type:        "message.updated",
-			HouseholdID: m.HouseholdID,
-			SwimmerID:   m.SwimmerID,
-			Message:     view,
-		})
-	}
+	publishMessageEvent(broadcaster, orgID, "message.updated", m, view)
 	return m, nil
 }
 
@@ -1035,14 +1034,7 @@ func (s *Service) AddReaction(orgID, messageID, userID, emoji string) error {
 	view := s.buildMessageView(m, userID)
 	s.mu.Unlock()
 
-	if broadcaster != nil {
-		broadcaster.Publish(context.Background(), orgID, MessageEvent{
-			Type:        "message.reaction_added",
-			HouseholdID: m.HouseholdID,
-			SwimmerID:   m.SwimmerID,
-			Message:     view,
-		})
-	}
+	publishMessageEvent(broadcaster, orgID, "message.reaction_added", m, view)
 	return nil
 }
 
@@ -1055,29 +1047,22 @@ func (s *Service) RemoveReaction(orgID, messageID, userID, emoji string) error {
 		s.mu.Unlock()
 		return ErrMessageNotFound
 	}
-	for id, react := range s.messageReactions {
-		if react.MessageID == messageID && react.UserID == userID && react.Emoji == emoji {
-			delete(s.messageReactions, id)
-		}
-	}
 	if s.repo != nil {
 		if err := s.repo.DeleteMessageReaction(context.Background(), messageID, userID, emoji); err != nil {
 			s.mu.Unlock()
 			return fmt.Errorf("delete reaction: %w", err)
 		}
 	}
+	for id, react := range s.messageReactions {
+		if react.MessageID == messageID && react.UserID == userID && react.Emoji == emoji {
+			delete(s.messageReactions, id)
+		}
+	}
 	broadcaster := s.broadcaster
 	view := s.buildMessageView(m, userID)
 	s.mu.Unlock()
 
-	if broadcaster != nil {
-		broadcaster.Publish(context.Background(), orgID, MessageEvent{
-			Type:        "message.reaction_removed",
-			HouseholdID: m.HouseholdID,
-			SwimmerID:   m.SwimmerID,
-			Message:     view,
-		})
-	}
+	publishMessageEvent(broadcaster, orgID, "message.reaction_removed", m, view)
 	return nil
 }
 
@@ -1156,7 +1141,8 @@ func (s *Service) GetCampaign(orgID, id string) (*EmailCampaign, error) {
 	if !ok || c.OrgID != orgID {
 		return nil, ErrCampaignNotFound
 	}
-	return c, nil
+	cp := *c // the send path mutates the cached campaign in place
+	return &cp, nil
 }
 
 // ListCampaigns returns all campaigns for an org, newest first.
@@ -1167,7 +1153,8 @@ func (s *Service) ListCampaigns(orgID string) ([]*EmailCampaign, error) {
 	out := make([]*EmailCampaign, 0)
 	for _, c := range s.campaigns {
 		if c.OrgID == orgID {
-			out = append(out, c)
+			cp := *c
+			out = append(out, &cp)
 		}
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -1300,14 +1287,15 @@ func (s *Service) SendCampaign(ctx context.Context, orgID, campaignID string, in
 	c.SuppressedCount = suppressedCount
 	c.UpdatedAt = now
 	c.UpdatedBy = inp.ActorID
+	result := *c // hand back a copy; the cached campaign stays under the service lock
 	s.mu.Unlock()
 
 	if s.repo != nil {
-		if err := s.repo.UpsertCampaign(context.Background(), c); err != nil {
+		if err := s.repo.UpsertCampaign(context.Background(), &result); err != nil {
 			return nil, fmt.Errorf("persist sent campaign: %w", err)
 		}
 	}
-	return c, nil
+	return &result, nil
 }
 
 // ListDeliveries returns all delivery records for a campaign.
@@ -1375,9 +1363,13 @@ func (s *Service) ApplyPostmarkEvent(inp PostmarkEventInput) error {
 			}
 		}
 		return nil
-	case "Bounce":
+	case "Bounce", "SpamComplaint":
 		if delivery == nil && (orgID == "" || email == "") {
 			return ErrDeliveryNotFound
+		}
+		reason, label := "bounce", "bounced"
+		if recordType == "SpamComplaint" {
+			reason, label = "complaint", "complained"
 		}
 		now := occurredAtOrNow(inp.OccurredAt)
 		if delivery != nil {
@@ -1387,32 +1379,12 @@ func (s *Service) ApplyPostmarkEvent(inp PostmarkEventInput) error {
 			delivery.ErrorMessage = inp.Details
 			if s.repo != nil {
 				if err := s.repo.UpsertDelivery(context.Background(), delivery); err != nil {
-					return fmt.Errorf("persist bounced email delivery: %w", err)
+					return fmt.Errorf("persist %s email delivery: %w", label, err)
 				}
 			}
 		}
 		if orgID != "" && email != "" {
-			s.upsertSuppressionLocked(orgID, email, "bounce", "postmark-webhook")
-		}
-		return nil
-	case "SpamComplaint":
-		if delivery == nil && (orgID == "" || email == "") {
-			return ErrDeliveryNotFound
-		}
-		now := occurredAtOrNow(inp.OccurredAt)
-		if delivery != nil {
-			delivery.Status = "bounced"
-			delivery.BouncedAt = &now
-			delivery.UpdatedAt = now
-			delivery.ErrorMessage = inp.Details
-			if s.repo != nil {
-				if err := s.repo.UpsertDelivery(context.Background(), delivery); err != nil {
-					return fmt.Errorf("persist complained email delivery: %w", err)
-				}
-			}
-		}
-		if orgID != "" && email != "" {
-			s.upsertSuppressionLocked(orgID, email, "complaint", "postmark-webhook")
+			s.upsertSuppressionLocked(orgID, email, reason, "postmark-webhook")
 		}
 		return nil
 	case "SubscriptionChange":
@@ -1483,7 +1455,7 @@ func (s *Service) addSuppressionLocked(orgID, email, reason, createdBy string) (
 		return nil, ErrDuplicateSuppression
 	}
 	entry := &SuppressionEntry{
-		ID:        newID(),
+		ID:        s.newID(),
 		OrgID:     orgID,
 		Email:     email,
 		Reason:    reason,
@@ -1614,11 +1586,7 @@ func (s *Service) EraseHouseholdData(ctx context.Context, orgID, householdID str
 		if err := s.repo.DeleteNotificationPreferencesByHousehold(ctx, orgID, householdID); err != nil {
 			return objectKeys, fmt.Errorf("erase household notification preferences: %w", err)
 		}
-		lowerEmails := make([]string, 0, len(emailSet))
-		for e := range emailSet {
-			lowerEmails = append(lowerEmails, e)
-		}
-		if err := s.repo.DeleteEmailDeliveriesByRecipientEmails(ctx, orgID, lowerEmails); err != nil {
+		if err := s.repo.DeleteEmailDeliveriesByRecipientEmails(ctx, orgID, slices.Collect(maps.Keys(emailSet))); err != nil {
 			return objectKeys, fmt.Errorf("erase household email deliveries: %w", err)
 		}
 	}

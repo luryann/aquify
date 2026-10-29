@@ -92,13 +92,6 @@ export default function LogoutPage() {
     <div
       className="is-44ea83d"
     >
-      <style>{`
-        @keyframes logoutSpin { to { transform: rotate(360deg); } }
-        @keyframes logoutFade { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-        @media (prefers-reduced-motion: reduce) {
-          @keyframes logoutFade { from { opacity: 0; } to { opacity: 1; } }
-        }
-      `}</style>
 
       <div
         style={{
@@ -153,9 +146,7 @@ export default function LogoutPage() {
                 }
                 router.push(redirectTarget)
               }}
-              className="is-a7494a5"
-              onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--border-strong)'; e.currentTarget.style.color = 'var(--text)' }}
-              onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-subtle)' }}
+              className="is-a7494a5 hv-d1a323"
             >
               Sign in again
             </button>

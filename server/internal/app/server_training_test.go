@@ -1,12 +1,10 @@
 package app
 
 import (
-	"bytes"
 	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/dareaquatics/aquify/server/internal/app/training"
@@ -28,35 +26,7 @@ func newTrainingRouter(t *testing.T, svc *training.Service) http.Handler {
 
 func issueTrainingToken(t *testing.T, router http.Handler, userID, orgID, role string) string {
 	t.Helper()
-	raw, _ := json.Marshal(map[string]any{
-		"user_id": userID,
-		"org_id":  orgID,
-		"roles":   []string{role},
-	})
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/sessions/issue", bytes.NewReader(raw))
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, req)
-	if rr.Code != http.StatusCreated {
-		t.Fatalf("issueTrainingToken: want 201, got %d: %s", rr.Code, rr.Body.String())
-	}
-	return issuedAccessTokenFromResponse(t, rr)
-}
-
-func doTrainingReq(router http.Handler, method, path, token, orgID, body string) *httptest.ResponseRecorder {
-	var b *bytes.Reader
-	if body != "" {
-		b = bytes.NewReader([]byte(body))
-	} else {
-		b = bytes.NewReader(nil)
-	}
-	req := httptest.NewRequest(method, path, b)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("X-Org-Id", orgID)
-	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, req)
-	return rr
+	return issueSession(t, router, sessionSpec{UserID: userID, OrgID: orgID, Roles: []string{role}})
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -80,7 +50,7 @@ func TestPracticeCRUD(t *testing.T) {
 		"attendance": 12,
 		"strokes": {"free": 3000, "back": 600, "breast": 400, "fly": 600, "im": 400}
 	}`
-	rr := doTrainingReq(router, http.MethodPost, "/api/v1/practices", coachToken, orgID, body)
+	rr := doOrgRequest(router, http.MethodPost, "/api/v1/practices", coachToken, orgID, body)
 	if rr.Code != http.StatusCreated {
 		t.Fatalf("create practice: want 201, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -111,7 +81,7 @@ func TestPracticeCRUD(t *testing.T) {
 	practiceID := createResp.Practice.ID
 
 	// List
-	rr = doTrainingReq(router, http.MethodGet, "/api/v1/practices", coachToken, orgID, "")
+	rr = doOrgRequest(router, http.MethodGet, "/api/v1/practices", coachToken, orgID, "")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("list practices: want 200, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -126,14 +96,14 @@ func TestPracticeCRUD(t *testing.T) {
 	}
 
 	// Get
-	rr = doTrainingReq(router, http.MethodGet, "/api/v1/practices/"+practiceID, coachToken, orgID, "")
+	rr = doOrgRequest(router, http.MethodGet, "/api/v1/practices/"+practiceID, coachToken, orgID, "")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("get practice: want 200, got %d", rr.Code)
 	}
 
 	// Update
 	updateBody := `{"description": "Updated — sprint set 20x50"}`
-	rr = doTrainingReq(router, http.MethodPut, "/api/v1/practices/"+practiceID, coachToken, orgID, updateBody)
+	rr = doOrgRequest(router, http.MethodPut, "/api/v1/practices/"+practiceID, coachToken, orgID, updateBody)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("update practice: want 200, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -148,13 +118,13 @@ func TestPracticeCRUD(t *testing.T) {
 	}
 
 	// Delete
-	rr = doTrainingReq(router, http.MethodDelete, "/api/v1/practices/"+practiceID, coachToken, orgID, "")
+	rr = doOrgRequest(router, http.MethodDelete, "/api/v1/practices/"+practiceID, coachToken, orgID, "")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("delete practice: want 200, got %d: %s", rr.Code, rr.Body.String())
 	}
 
 	// Verify gone
-	rr = doTrainingReq(router, http.MethodGet, "/api/v1/practices/"+practiceID, coachToken, orgID, "")
+	rr = doOrgRequest(router, http.MethodGet, "/api/v1/practices/"+practiceID, coachToken, orgID, "")
 	if rr.Code != http.StatusNotFound {
 		t.Errorf("get after delete: want 404, got %d", rr.Code)
 	}
@@ -173,7 +143,7 @@ func TestPracticeRoleEnforcement(t *testing.T) {
 
 	// Coach creates a practice
 	body := `{"date":"2026-03-25","group_id":"grp1","type":"dryland","description":"Core circuit"}`
-	rr := doTrainingReq(router, http.MethodPost, "/api/v1/practices", coachToken, orgID, body)
+	rr := doOrgRequest(router, http.MethodPost, "/api/v1/practices", coachToken, orgID, body)
 	if rr.Code != http.StatusCreated {
 		t.Fatalf("coach create: want 201, got %d", rr.Code)
 	}
@@ -186,37 +156,37 @@ func TestPracticeRoleEnforcement(t *testing.T) {
 	id := resp.Practice.ID
 
 	// Parent can list
-	rr = doTrainingReq(router, http.MethodGet, "/api/v1/practices", parentToken, orgID, "")
+	rr = doOrgRequest(router, http.MethodGet, "/api/v1/practices", parentToken, orgID, "")
 	if rr.Code != http.StatusOK {
 		t.Errorf("parent list: want 200, got %d", rr.Code)
 	}
 
 	// Swimmer can list
-	rr = doTrainingReq(router, http.MethodGet, "/api/v1/practices", swimToken, orgID, "")
+	rr = doOrgRequest(router, http.MethodGet, "/api/v1/practices", swimToken, orgID, "")
 	if rr.Code != http.StatusOK {
 		t.Errorf("swimmer list: want 200, got %d", rr.Code)
 	}
 
 	// Parent cannot create
-	rr = doTrainingReq(router, http.MethodPost, "/api/v1/practices", parentToken, orgID, body)
+	rr = doOrgRequest(router, http.MethodPost, "/api/v1/practices", parentToken, orgID, body)
 	if rr.Code != http.StatusForbidden {
 		t.Errorf("parent create: want 403, got %d", rr.Code)
 	}
 
 	// Swimmer cannot create
-	rr = doTrainingReq(router, http.MethodPost, "/api/v1/practices", swimToken, orgID, body)
+	rr = doOrgRequest(router, http.MethodPost, "/api/v1/practices", swimToken, orgID, body)
 	if rr.Code != http.StatusForbidden {
 		t.Errorf("swimmer create: want 403, got %d", rr.Code)
 	}
 
 	// Parent cannot update
-	rr = doTrainingReq(router, http.MethodPut, "/api/v1/practices/"+id, parentToken, orgID, `{"description":"hacked"}`)
+	rr = doOrgRequest(router, http.MethodPut, "/api/v1/practices/"+id, parentToken, orgID, `{"description":"hacked"}`)
 	if rr.Code != http.StatusForbidden {
 		t.Errorf("parent update: want 403, got %d", rr.Code)
 	}
 
 	// Parent cannot delete
-	rr = doTrainingReq(router, http.MethodDelete, "/api/v1/practices/"+id, parentToken, orgID, "")
+	rr = doOrgRequest(router, http.MethodDelete, "/api/v1/practices/"+id, parentToken, orgID, "")
 	if rr.Code != http.StatusForbidden {
 		t.Errorf("parent delete: want 403, got %d", rr.Code)
 	}
@@ -236,13 +206,13 @@ func TestPracticeOrgIsolation(t *testing.T) {
 
 	// Org A creates practice
 	body := `{"date":"2026-03-26","type":"video","description":"Team meeting"}`
-	rr := doTrainingReq(router, http.MethodPost, "/api/v1/practices", tokenA, orgA, body)
+	rr := doOrgRequest(router, http.MethodPost, "/api/v1/practices", tokenA, orgA, body)
 	if rr.Code != http.StatusCreated {
 		t.Fatalf("org A create: want 201, got %d", rr.Code)
 	}
 
 	// Org B sees empty list
-	rr = doTrainingReq(router, http.MethodGet, "/api/v1/practices", tokenB, orgB, "")
+	rr = doOrgRequest(router, http.MethodGet, "/api/v1/practices", tokenB, orgB, "")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("org B list: want 200, got %d", rr.Code)
 	}
@@ -264,7 +234,7 @@ func TestPracticeInvalidType(t *testing.T) {
 
 	token := issueTrainingToken(t, router, "coach-1", orgID, "coach")
 
-	rr := doTrainingReq(router, http.MethodPost, "/api/v1/practices", token, orgID,
+	rr := doOrgRequest(router, http.MethodPost, "/api/v1/practices", token, orgID,
 		`{"date":"2026-03-27","type":"swim","description":"bad type"}`)
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("invalid type: want 400, got %d: %s", rr.Code, rr.Body.String())

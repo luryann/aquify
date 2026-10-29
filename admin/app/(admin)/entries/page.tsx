@@ -25,10 +25,11 @@ import {
 import { formatMeetEntriesSaveError, saveMeetEntriesBatch } from '@/lib/meet-entry-save'
 import { isSwimmerEligibleForEvent } from '@/lib/event-eligibility'
 import { formatEventLabel } from '@/lib/meet-events'
-import { parseBackendDate } from '@/lib/dates'
+import { formatDateOnly } from '@/lib/dates'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { useConfirm, useConfirmReason } from '@/components/ui/ConfirmDialog'
 import { useDialogA11y } from '@/components/ui/useDialogA11y'
+import './page.inline.css'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -75,10 +76,6 @@ const ENTRY_STATUSES = new Set(['commitment_open', 'commitment_closed', 'entry_f
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function formatDate(iso: string) {
-  return parseBackendDate(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
 function formatSeedTime(ms: number | undefined): string {
   if (!ms || ms <= 0) return 'NT'
   const totalHundredths = Math.round(ms / 10)
@@ -89,10 +86,6 @@ function formatSeedTime(ms: number | undefined): string {
   if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(cs).padStart(2, '0')}`
   if (m > 0) return `${m}:${String(s).padStart(2, '0')}.${String(cs).padStart(2, '0')}`
   return `${s}.${String(cs).padStart(2, '0')}`
-}
-
-function formatEvent(ev: MeetEventRecord | undefined): string {
-  return formatEventLabel(ev)
 }
 
 // ─── Add Entry Panel ──────────────────────────────────────────────────────────
@@ -126,18 +119,13 @@ function AddEntryPanel({
 
   const eligibleMeets = meets.filter((m) => ENTRY_STATUSES.has(m.status))
 
-  const loadEvents = async (meet: MeetRecord) => {
-    setLoadingEvents(true)
-    const evs = await fetchMeetEvents(api, orgId, meet.id).catch(() => [] as MeetEventRecord[])
-    setEvents(evs)
-    setLoadingEvents(false)
-  }
-
   const handleSelectMeet = async (meet: MeetRecord) => {
     setSelectedMeet(meet)
     setSelectedEvents(new Set())
     setSaveError(null)
-    await loadEvents(meet)
+    setLoadingEvents(true)
+    setEvents(await fetchMeetEvents(api, orgId, meet.id).catch(() => [] as MeetEventRecord[]))
+    setLoadingEvents(false)
     setStep(3)
   }
 
@@ -176,27 +164,18 @@ function AddEntryPanel({
     }
   }
 
-  // Group events by session
-  const sessionGroups = useMemo(() => {
+  // Filter events to what the swimmer can enter (gender + age at the meet), grouped by session
+  const eligibleSessionGroups = useMemo(() => {
     const map = new Map<string, MeetEventRecord[]>()
     for (const ev of events) {
+      if (selectedSwimmer && !isSwimmerEligibleForEvent(selectedSwimmer, ev, selectedMeet?.start_date)) continue
       const sid = ev.session_id ?? 'main'
       const bucket = map.get(sid) ?? []
       bucket.push(ev)
       map.set(sid, bucket)
     }
     return [...map.entries()].map(([id, evs]) => ({ id, events: evs }))
-  }, [events])
-
-  // Filter events to what the swimmer can enter (gender + age at the meet)
-  const eligibleEvents = useMemo(() => {
-    if (!selectedSwimmer) return events
-    return events.filter((ev) => isSwimmerEligibleForEvent(selectedSwimmer, ev, selectedMeet?.start_date))
   }, [events, selectedSwimmer, selectedMeet])
-
-  const eligibleSessionGroups = sessionGroups
-    .map((g) => ({ ...g, events: g.events.filter((e) => eligibleEvents.includes(e)) }))
-    .filter((g) => g.events.length > 0)
 
   return (
     <>
@@ -312,7 +291,7 @@ function AddEntryPanel({
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div className="u-fs-fs-base u-fw-600" style={{ color: 'var(--text)' }}>{m.name}</div>
                       <div className="u-fs-fs-xs u-ff-font-body" style={{ color: 'var(--text-muted)' }}>
-                        {m.start_date ? formatDate(m.start_date) : '—'} · {m.status.replace(/_/g, ' ')}
+                        {m.start_date ? formatDateOnly(m.start_date) : '—'} · {m.status.replace(/_/g, ' ')}
                       </div>
                     </div>
                     <Icon name="chevron-right" size={14} color="var(--text-muted)" style={{ flexShrink: 0 } as CSSProperties} />
@@ -369,7 +348,7 @@ function AddEntryPanel({
                                     {isSelected && <svg viewBox="0 0 10 8" fill="none" width="9" height="9"><path d="M1 4l3 3 5-6" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
                                   </div>
                                   <span className="u-fs-fs-base" style={{ color: isSelected ? 'var(--text)' : 'var(--text-subtle)', flex: 1, fontWeight: isSelected ? 600 : 400 }}>
-                                    {formatEvent(ev)}
+                                    {formatEventLabel(ev)}
                                   </span>
                                   {ev.event_number && (
                                     <span className="u-fs-fs-xs u-ff-font-body" style={{ color: 'var(--text-muted)' }}>#{ev.event_number}</span>
@@ -418,13 +397,6 @@ function AddEntryPanel({
         </div>
       </div>
 
-      <style>{`
-        @keyframes slideInRight {
-          from { transform: translateX(100%); opacity: 0; }
-          to   { transform: translateX(0);    opacity: 1; }
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
-      `}</style>
     </>
   )
 }
@@ -496,7 +468,7 @@ function EntriesPageContent() {
             meetId: meet.id,
             meetName: meet.name,
             meetDate: meet.start_date ?? '',
-            event: formatEvent(meetEvent),
+            event: formatEventLabel(meetEvent),
             seedTime: formatSeedTime(e.seed_time_ms),
             status: e.status as EntryStatus,
             override: !!e.override_reason,
@@ -585,7 +557,7 @@ function EntriesPageContent() {
     setOverrideDraft(null)
     void overrideEntry(api, orgId, d.meetId, d.entryId, { new_meet_event_id: target.id, reason })
       .then((updated) => setRows((prev) => prev.map((e) => e.id === d.entryId
-        ? { ...e, event: formatEvent(target), override: true, overrideNote: updated.override_reason ?? reason }
+        ? { ...e, event: formatEventLabel(target), override: true, overrideNote: updated.override_reason ?? reason }
         : e)))
       .catch((err) => setError(uiErrorMessage(err, 'Couldn’t override entry. Try again.')))
   }, [api, session?.user.orgId, overrideDraft])
@@ -685,7 +657,7 @@ function EntriesPageContent() {
           </Link>
           {r.meetDate && (
             <div className="u-fs-fs-xs u-ff-font-body u-mt-1px" style={{ color: 'var(--text-muted)' }}>
-              {formatDate(r.meetDate)}
+              {formatDateOnly(r.meetDate)}
             </div>
           )}
         </div>
@@ -695,7 +667,7 @@ function EntriesPageContent() {
       key: 'status',
       label: 'Status',
       render: (r) => {
-        const c = STATUS_CFG[r.status] ?? STATUS_CFG['draft']
+        const c = STATUS_CFG[r.status] ?? STATUS_CFG.draft
         return (
           <div className="u-gap-4px" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
             <span className="badge" style={{ background: c.bg, color: c.color }}>
@@ -777,8 +749,7 @@ function EntriesPageContent() {
 
   return (
     <div className="page">
-      <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }`}</style>
-
+      
       {lockedMeetId && (
         <Link href={`/meets/${lockedMeetId}`} className="u-gap-4px u-fs-fs-base u-mb-16px" style={{ display: 'inline-flex', alignItems: 'center', color: 'var(--text-subtle)', textDecoration: 'none' }}>
           <Icon name="chevron-left" size={14} /> Back to meet
@@ -919,7 +890,7 @@ function EntriesPageContent() {
             <div>
               <label htmlFor="override-event" className="form-label">Change to event</label>
               <select id="override-event" className="form-input" style={{ width: '100%' }} value={overrideDraft.eventId} onChange={(e) => setOverrideDraft({ ...overrideDraft, eventId: e.target.value })}>
-                {overrideDraft.events.map((ev) => <option key={ev.id} value={ev.id}>{formatEvent(ev)}</option>)}
+                {overrideDraft.events.map((ev) => <option key={ev.id} value={ev.id}>{formatEventLabel(ev)}</option>)}
               </select>
             </div>
             <div>

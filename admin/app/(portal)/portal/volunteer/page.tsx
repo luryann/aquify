@@ -22,7 +22,8 @@ import {
   localDayKey,
   shiftLabel,
 } from '@/lib/volunteer-state'
-import { HoursMeter, InlineNotice, LoadErrorBanner, SpotPips } from '@/components/volunteer/VolunteerPrimitives'
+import { HoursMeter, InlineNotice, SpotPips } from '@/components/volunteer/VolunteerPrimitives'
+import { LoadErrorBanner } from '@/components/ui/LoadErrorBanner'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import './page.inline.css'
 

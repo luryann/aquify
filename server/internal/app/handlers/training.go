@@ -9,7 +9,6 @@ import (
 	"github.com/dareaquatics/aquify/server/internal/app/groups"
 	"github.com/dareaquatics/aquify/server/internal/app/httpx"
 	"github.com/dareaquatics/aquify/server/internal/app/members"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
 	"github.com/dareaquatics/aquify/server/internal/app/seasons"
 	"github.com/dareaquatics/aquify/server/internal/app/training"
 	"github.com/go-chi/chi/v5"
@@ -61,17 +60,11 @@ func (h *TrainingHandlers) RegisterRoutes(router chi.Router) {
 	h.registerWorkoutRoutes(router)
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-func trainingScopeFromRequest(w http.ResponseWriter, r *http.Request) (*appmiddleware.Principal, string, bool) {
-	return scopedRequestFromContext(w, r)
-}
-
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
 // listPractices handles GET /api/v1/practices
 func (h *TrainingHandlers) listPractices(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := trainingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -113,6 +106,10 @@ type practiceStrokesBody struct {
 	IM     int `json:"im"`
 }
 
+func (b practiceStrokesBody) toStrokes() training.PracticeStrokes {
+	return training.PracticeStrokes{Free: b.Free, Back: b.Back, Breast: b.Breast, Fly: b.Fly, IM: b.IM}
+}
+
 type createPracticeBody struct {
 	Date          string              `json:"date"           validate:"required"`
 	GroupID       string              `json:"group_id"`
@@ -126,7 +123,7 @@ type createPracticeBody struct {
 
 // createPractice handles POST /api/v1/practices
 func (h *TrainingHandlers) createPractice(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := trainingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -136,22 +133,11 @@ func (h *TrainingHandlers) createPractice(w http.ResponseWriter, r *http.Request
 	}
 
 	var body createPracticeBody
-	if err := decodeJSONBody(w, r, &body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", nil)
-		return
-	}
-	if err := h.validate.Struct(body); err != nil {
-		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "validation_error", "Validation failed.", httpx.FormatValidationErrors(err))
+	if !decodeAndValidateLegacy(w, r, &body, h.validate, "Validation failed.") {
 		return
 	}
 
-	strokes := training.PracticeStrokes{
-		Free:   body.Strokes.Free,
-		Back:   body.Strokes.Back,
-		Breast: body.Strokes.Breast,
-		Fly:    body.Strokes.Fly,
-		IM:     body.Strokes.IM,
-	}
+	strokes := body.Strokes.toStrokes()
 
 	p, err := h.service.Create(
 		orgID, body.Date, body.GroupID, body.Type, body.Description,
@@ -166,24 +152,14 @@ func (h *TrainingHandlers) createPractice(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if h.auditService != nil {
-		_, _ = h.auditService.Append(audit.AppendRequest{
-			OrgID:        orgID,
-			ActorUserID:  principal.UserID,
-			ActorRoles:   principal.Roles,
-			Action:       "practice.create",
-			ResourceType: "practice",
-			ResourceID:   p.ID,
-			After:        p,
-		})
-	}
+	recordAudit(h.auditService, principal, orgID, "practice.create", "practice", p.ID, nil, p, nil)
 
 	httpx.WriteJSON(w, http.StatusCreated, map[string]interface{}{"practice": p})
 }
 
 // getPractice handles GET /api/v1/practices/{id}
 func (h *TrainingHandlers) getPractice(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := trainingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -214,7 +190,7 @@ type updatePracticeBody struct {
 
 // updatePractice handles PUT /api/v1/practices/{id}
 func (h *TrainingHandlers) updatePractice(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := trainingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -240,13 +216,7 @@ func (h *TrainingHandlers) updatePractice(w http.ResponseWriter, r *http.Request
 		Notes:         body.Notes,
 	}
 	if body.Strokes != nil {
-		s := training.PracticeStrokes{
-			Free:   body.Strokes.Free,
-			Back:   body.Strokes.Back,
-			Breast: body.Strokes.Breast,
-			Fly:    body.Strokes.Fly,
-			IM:     body.Strokes.IM,
-		}
+		s := body.Strokes.toStrokes()
 		updates.Strokes = &s
 	}
 
@@ -264,24 +234,14 @@ func (h *TrainingHandlers) updatePractice(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if h.auditService != nil {
-		_, _ = h.auditService.Append(audit.AppendRequest{
-			OrgID:        orgID,
-			ActorUserID:  principal.UserID,
-			ActorRoles:   principal.Roles,
-			Action:       "practice.update",
-			ResourceType: "practice",
-			ResourceID:   p.ID,
-			After:        p,
-		})
-	}
+	recordAudit(h.auditService, principal, orgID, "practice.update", "practice", p.ID, nil, p, nil)
 
 	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{"practice": p})
 }
 
 // deletePractice handles DELETE /api/v1/practices/{id}
 func (h *TrainingHandlers) deletePractice(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := trainingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -300,16 +260,7 @@ func (h *TrainingHandlers) deletePractice(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if h.auditService != nil {
-		_, _ = h.auditService.Append(audit.AppendRequest{
-			OrgID:        orgID,
-			ActorUserID:  principal.UserID,
-			ActorRoles:   principal.Roles,
-			Action:       "practice.delete",
-			ResourceType: "practice",
-			ResourceID:   id,
-		})
-	}
+	recordAudit(h.auditService, principal, orgID, "practice.delete", "practice", id, nil, nil, nil)
 
 	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{"deleted": true})
 }
@@ -326,7 +277,7 @@ type attendanceRosterEntry struct {
 
 // getAttendance handles GET /api/v1/practices/{id}/attendance
 func (h *TrainingHandlers) getAttendance(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := trainingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -341,7 +292,7 @@ func (h *TrainingHandlers) getAttendance(w http.ResponseWriter, r *http.Request)
 		if errors.Is(err, training.ErrNotFound) {
 			httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Practice not found.", nil)
 		} else {
-			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to get practice.", nil)
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to get practice.", err)
 		}
 		return
 	}
@@ -357,12 +308,12 @@ func (h *TrainingHandlers) getAttendance(w http.ResponseWriter, r *http.Request)
 	if h.membersService != nil && groupCode != "" {
 		links, err := h.membersService.ListSwimmerGroupLinks(principal, orgID)
 		if err != nil {
-			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load group roster.", nil)
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load group roster.", err)
 			return
 		}
 		swimmers, err := h.membersService.ListSwimmers(principal, orgID, members.ListSwimmersInput{})
 		if err != nil {
-			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load swimmers.", nil)
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load swimmers.", err)
 			return
 		}
 		swimmersByID := make(map[string]members.SwimmerView, len(swimmers))
@@ -387,7 +338,7 @@ func (h *TrainingHandlers) getAttendance(w http.ResponseWriter, r *http.Request)
 
 	records, err := h.service.ListAttendance(orgID, id)
 	if err != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load attendance.", nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load attendance.", err)
 		return
 	}
 	recordsBySwimmer := make(map[string]*training.PracticeAttendance, len(records))
@@ -411,7 +362,7 @@ type setAttendanceBody struct {
 
 // setAttendance handles PUT /api/v1/practices/{id}/attendance/{swimmerID}
 func (h *TrainingHandlers) setAttendance(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := trainingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -423,13 +374,16 @@ func (h *TrainingHandlers) setAttendance(w http.ResponseWriter, r *http.Request)
 	swimmerID := chi.URLParam(r, "swimmerID")
 
 	var body setAttendanceBody
-	if err := decodeJSONBody(w, r, &body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", nil)
+	if !decodeAndValidateLegacy(w, r, &body, h.validate, "Validation failed.") {
 		return
 	}
-	if err := h.validate.Struct(body); err != nil {
-		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "validation_error", "Validation failed.", httpx.FormatValidationErrors(err))
-		return
+
+	// Attendance may only be recorded for a swimmer of this org.
+	if h.membersService != nil {
+		if _, known := h.membersService.SwimmerHouseholdID(orgID, swimmerID); !known {
+			httpx.WriteError(w, r, http.StatusNotFound, "swimmer_not_found", "Swimmer was not found.", nil)
+			return
+		}
 	}
 
 	rec, err := h.service.SetAttendance(orgID, practiceID, swimmerID, body.Status, principal.UserID)
@@ -446,17 +400,7 @@ func (h *TrainingHandlers) setAttendance(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if h.auditService != nil {
-		_, _ = h.auditService.Append(audit.AppendRequest{
-			OrgID:        orgID,
-			ActorUserID:  principal.UserID,
-			ActorRoles:   principal.Roles,
-			Action:       "practice.attendance.update",
-			ResourceType: "practice_attendance",
-			ResourceID:   rec.ID,
-			After:        rec,
-		})
-	}
+	recordAudit(h.auditService, principal, orgID, "practice.attendance.update", "practice_attendance", rec.ID, nil, rec, nil)
 
 	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{"attendance": rec})
 }

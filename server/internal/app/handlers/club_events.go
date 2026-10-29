@@ -161,6 +161,25 @@ func (h *ClubEventsHandlers) buildView(v *viewer, e *events.Event, rsvps []*even
 	return view
 }
 
+// visibleEvent loads the {eventID} event for a viewer, answering 404 (not 403) when it is outside their audience.
+func (h *ClubEventsHandlers) visibleEvent(w http.ResponseWriter, r *http.Request, principal *appmiddleware.Principal, orgID string) (*events.Event, *viewer, bool) {
+	e, err := h.service.Get(orgID, chi.URLParam(r, "eventID"))
+	if err != nil {
+		h.writeServiceError(w, r, err, "Failed to load event.")
+		return nil, nil, false
+	}
+	v, err := h.resolveViewer(principal, orgID)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to resolve household scope.", err)
+		return nil, nil, false
+	}
+	if !v.canSee(e) {
+		httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Event not found.", nil)
+		return nil, nil, false
+	}
+	return e, v, true
+}
+
 func parseTimeParam(raw string, endOfDay bool) (*time.Time, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -201,25 +220,12 @@ func (h *ClubEventsHandlers) writeServiceError(w http.ResponseWriter, r *http.Re
 	case errors.Is(err, events.ErrFeedTokenMissing):
 		httpx.WriteError(w, r, http.StatusNotFound, "not_found", "No active calendar feed.", nil)
 	default:
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", fallback, nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", fallback, err)
 	}
 }
 
 func (h *ClubEventsHandlers) appendAudit(principal *appmiddleware.Principal, orgID, action, resourceType, resourceID string, before, after any, meta map[string]string) {
-	if h.auditService == nil || principal == nil {
-		return
-	}
-	_, _ = h.auditService.Append(audit.AppendRequest{
-		OrgID:        orgID,
-		ActorUserID:  principal.UserID,
-		ActorRoles:   principal.Roles,
-		Action:       action,
-		ResourceType: resourceType,
-		ResourceID:   resourceID,
-		Before:       before,
-		After:        after,
-		Metadata:     meta,
-	})
+	recordAudit(h.auditService, principal, orgID, action, resourceType, resourceID, before, after, meta)
 }
 
 // ─── Events CRUD ──────────────────────────────────────────────────────────────
@@ -245,7 +251,7 @@ func (h *ClubEventsHandlers) listEvents(w http.ResponseWriter, r *http.Request) 
 	}
 	v, err := h.resolveViewer(principal, orgID)
 	if err != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to resolve household scope.", nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to resolve household scope.", err)
 		return
 	}
 	list, err := h.service.List(orgID, events.ListFilter{From: from, To: to})
@@ -292,19 +298,8 @@ func (h *ClubEventsHandlers) getEvent(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role.", nil)
 		return
 	}
-	e, err := h.service.Get(orgID, chi.URLParam(r, "eventID"))
-	if err != nil {
-		h.writeServiceError(w, r, err, "Failed to load event.")
-		return
-	}
-	v, err := h.resolveViewer(principal, orgID)
-	if err != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to resolve household scope.", nil)
-		return
-	}
-	if !v.canSee(e) {
-		// Do not reveal events outside the family's audience.
-		httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Event not found.", nil)
+	e, v, ok := h.visibleEvent(w, r, principal, orgID)
+	if !ok {
 		return
 	}
 	rsvps, err := h.service.ListRSVPs(orgID, e.ID)
@@ -477,18 +472,8 @@ func (h *ClubEventsHandlers) listRSVPs(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role.", nil)
 		return
 	}
-	e, err := h.service.Get(orgID, chi.URLParam(r, "eventID"))
-	if err != nil {
-		h.writeServiceError(w, r, err, "Failed to load event.")
-		return
-	}
-	v, err := h.resolveViewer(principal, orgID)
-	if err != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to resolve household scope.", nil)
-		return
-	}
-	if !v.canSee(e) {
-		httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Event not found.", nil)
+	e, v, ok := h.visibleEvent(w, r, principal, orgID)
+	if !ok {
 		return
 	}
 	all, err := h.service.ListRSVPs(orgID, e.ID)
@@ -504,7 +489,7 @@ func (h *ClubEventsHandlers) listRSVPs(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := h.rosterRows(orgID, scoped)
 	if err != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load roster names.", nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load roster names.", err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
@@ -534,18 +519,8 @@ func (h *ClubEventsHandlers) respondRSVP(w http.ResponseWriter, r *http.Request)
 	if !decodeAndValidateJSON(w, r, &body, h.validate, decodeAndValidateOptions{}) {
 		return
 	}
-	e, err := h.service.Get(orgID, chi.URLParam(r, "eventID"))
-	if err != nil {
-		h.writeServiceError(w, r, err, "Failed to load event.")
-		return
-	}
-	v, err := h.resolveViewer(principal, orgID)
-	if err != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to resolve household scope.", nil)
-		return
-	}
-	if !v.canSee(e) {
-		httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Event not found.", nil)
+	e, v, ok := h.visibleEvent(w, r, principal, orgID)
+	if !ok {
 		return
 	}
 
@@ -561,7 +536,7 @@ func (h *ClubEventsHandlers) respondRSVP(w http.ResponseWriter, r *http.Request)
 		enforceWindow = false
 		allSwimmers, err := h.directory.Swimmers(orgID)
 		if err != nil {
-			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load roster.", nil)
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load roster.", err)
 			return
 		}
 		if in.SwimmerID != "" {
@@ -643,7 +618,7 @@ func (h *ClubEventsHandlers) exportRSVPs(w http.ResponseWriter, r *http.Request)
 	}
 	rows, err := h.rosterRows(orgID, rsvps)
 	if err != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load roster names.", nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load roster names.", err)
 		return
 	}
 	var buf bytes.Buffer
@@ -716,7 +691,7 @@ func (h *ClubEventsHandlers) feedHousehold(w http.ResponseWriter, r *http.Reques
 		if requested != "" {
 			names, err := h.directory.HouseholdNames(orgID)
 			if err != nil {
-				httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load households.", nil)
+				httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load households.", err)
 				return "", false
 			}
 			if _, exists := names[requested]; !exists {
@@ -732,7 +707,7 @@ func (h *ClubEventsHandlers) feedHousehold(w http.ResponseWriter, r *http.Reques
 	}
 	ids, err := h.directory.HouseholdIDsForPrincipal(principal, orgID)
 	if err != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to resolve household scope.", nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to resolve household scope.", err)
 		return "", false
 	}
 	if requested == "" {
@@ -826,13 +801,13 @@ func (h *ClubEventsHandlers) serveFeed(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Calendar feed not found.", nil)
 			return
 		}
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Calendar feed unavailable.", nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Calendar feed unavailable.", err)
 		return
 	}
 	orgID := tok.OrgID
 	allSwimmers, err := h.directory.Swimmers(orgID)
 	if err != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Calendar feed unavailable.", nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Calendar feed unavailable.", err)
 		return
 	}
 	household := roster.SwimmersInHousehold(allSwimmers, tok.HouseholdID)
@@ -844,14 +819,14 @@ func (h *ClubEventsHandlers) serveFeed(w http.ResponseWriter, r *http.Request) {
 	if h.feedSource != nil {
 		extra, err := h.feedSource(orgID, household, from, to)
 		if err != nil {
-			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Calendar feed unavailable.", nil)
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Calendar feed unavailable.", err)
 			return
 		}
 		items = append(items, extra...)
 	}
 	list, err := h.service.List(orgID, events.ListFilter{From: &from, To: &to})
 	if err != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Calendar feed unavailable.", nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Calendar feed unavailable.", err)
 		return
 	}
 	for _, e := range list {

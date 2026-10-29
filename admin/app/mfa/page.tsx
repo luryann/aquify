@@ -3,11 +3,12 @@
 import { AuthBackdrop } from '@/components/auth/AuthBackdrop'
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { getCSRFCookieValue, useSession } from '@/lib/session'
+import { useSession } from '@/lib/session'
 import { destinationForRole } from '@/lib/auth-routing'
 import { resolveMfaBootstrapState, type MfaFactorSummary } from '@/lib/mfa-flow'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import './page.inline.css'
+import { rawRequestAuthHeaders } from '@/lib/api'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -265,9 +266,7 @@ export default function MfaPage() {
   }, [stage])
 
   const enrollTotpFactor = useCallback(async () => {
-    const csrf = getCSRFCookieValue()
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-    if (csrf) headers['X-CSRF-Token'] = csrf
+    const headers = { 'Content-Type': 'application/json', ...rawRequestAuthHeaders(undefined, 'POST') }
 
     const res = await fetch('/api/v1/auth/mfa/enroll', {
       method: 'POST',
@@ -312,9 +311,7 @@ export default function MfaPage() {
   }, [])
 
   const enrollBackupFactor = useCallback(async () => {
-    const csrf = getCSRFCookieValue()
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-    if (csrf) headers['X-CSRF-Token'] = csrf
+    const headers = { 'Content-Type': 'application/json', ...rawRequestAuthHeaders(undefined, 'POST') }
 
     const res = await fetch('/api/v1/auth/mfa/enroll', {
       method: 'POST',
@@ -458,9 +455,7 @@ export default function MfaPage() {
     setLoading(true)
     setError('')
     try {
-      const csrf = getCSRFCookieValue()
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      if (csrf) headers['X-CSRF-Token'] = csrf
+      const headers = { 'Content-Type': 'application/json', ...rawRequestAuthHeaders(undefined, 'POST') }
 
       const res = await fetch('/api/v1/auth/mfa/challenge', {
         method: 'POST',
@@ -556,15 +551,7 @@ export default function MfaPage() {
     <div className="is-c749c16">
       <button type="button"
         onClick={handleCancel}
-        className="is-208f141"
-        onMouseEnter={(e) => {
-          e.currentTarget.style.color = 'var(--text-subtle)'
-          e.currentTarget.style.textDecorationColor = 'var(--text-subtle)'
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.color = 'var(--text-muted)'
-          e.currentTarget.style.textDecorationColor = 'transparent'
-        }}
+        className="is-208f141 hv-ce78c9"
       >
         Cancel and return to sign in
       </button>
@@ -694,9 +681,7 @@ export default function MfaPage() {
               <button
                 type="button"
                 onClick={() => setShowManualKey((v) => !v)}
-                className="is-b26264f"
-                onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-subtle)' }}
-                onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}
+                className="is-b26264f hv-5b662a"
               >
                 <svg width="11" height="11" viewBox="0 0 16 16" fill="none"
                   style={{ transform: showManualKey ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }}>
@@ -718,9 +703,7 @@ export default function MfaPage() {
             <button
               type="button"
               onClick={() => { setDigits(Array(6).fill('')); setError(''); setStage('setup-verify') }}
-              className="is-10570e9"
-              onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.88' }}
-              onMouseLeave={(e) => { e.currentTarget.style.opacity = '1' }}
+              className="is-10570e9 hv-669692"
             >
               I&apos;ve scanned it — Continue
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
@@ -764,15 +747,7 @@ export default function MfaPage() {
               <button
                 type="button"
                 onClick={() => { setError(''); setStage('setup-scan') }}
-                className="is-208f141"
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.color = 'var(--text-subtle)'
-                  e.currentTarget.style.textDecorationColor = 'var(--text-subtle)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.color = 'var(--text-muted)'
-                  e.currentTarget.style.textDecorationColor = 'transparent'
-                }}
+                className="is-208f141 hv-ce78c9"
               >
                 ← Back to QR code
               </button>

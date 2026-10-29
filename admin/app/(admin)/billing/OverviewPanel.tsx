@@ -15,6 +15,7 @@ import {
   type PaymentRecord,
 } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
+import { formatCents } from '@/lib/financeData'
 
 type InvoiceWithHousehold = InvoiceRecord & {
   household_name: string
@@ -23,10 +24,6 @@ type InvoiceWithHousehold = InvoiceRecord & {
 type PaymentWithContext = PaymentRecord & {
   household_name: string
   invoice_number: string
-}
-
-function formatCurrency(cents: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100)
 }
 
 export function OverviewPanel({ onNavigateTab }: { onNavigateTab: (tab: 'invoices' | 'ledger') => void }) {
@@ -137,9 +134,9 @@ export function OverviewPanel({ onNavigateTab }: { onNavigateTab: (tab: 'invoice
           <div className="cols-4 u-gap-12px" >
             {[
               { label: 'Households', value: String(households.length) },
-              { label: 'Receivables', value: formatCurrency(metrics.totalReceivables) },
-              { label: 'Outstanding', value: formatCurrency(metrics.outstanding) },
-              { label: 'Collected (30d)', value: formatCurrency(metrics.collected30d) },
+              { label: 'Receivables', value: formatCents(metrics.totalReceivables) },
+              { label: 'Outstanding', value: formatCents(metrics.outstanding) },
+              { label: 'Collected (30d)', value: formatCents(metrics.collected30d) },
             ].map((stat) => (
               <div key={stat.label} className="card-elevated u-p-16px-16px" >
                 <div className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ color: 'var(--text-muted)' }}>{stat.label}</div>
@@ -154,7 +151,7 @@ export function OverviewPanel({ onNavigateTab }: { onNavigateTab: (tab: 'invoice
                 {reconciliation.unreconciled_row_count > 0 ? 'Some payments need review' : 'All payments are accounted for'}
               </div>
               <div className="u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>
-                {formatCurrency(reconciliation.net_collected_cents)} collected across {reconciliation.row_count} payment{reconciliation.row_count === 1 ? '' : 's'} in the last 30 days. {reconciliation.unreconciled_row_count} payment{reconciliation.unreconciled_row_count === 1 ? '' : 's'} still need matching to an invoice.
+                {formatCents(reconciliation.net_collected_cents)} collected across {reconciliation.row_count} payment{reconciliation.row_count === 1 ? '' : 's'} in the last 30 days. {reconciliation.unreconciled_row_count} payment{reconciliation.unreconciled_row_count === 1 ? '' : 's'} still need matching to an invoice.
               </div>
             </div>
           ) : null}
@@ -173,10 +170,10 @@ export function OverviewPanel({ onNavigateTab }: { onNavigateTab: (tab: 'invoice
                     <div key={payment.id} className="u-p-16px-20px" style={{ borderBottom: index < recentPayments.length - 1 ? '1px solid var(--border)' : 'none' }}>
                       <div className="u-gap-12px u-mb-4px" style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span className="u-fs-fs-base" style={{ color: 'var(--text)' }}>{payment.household_name}</span>
-                        <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--accent-text, var(--accent))' }}>{formatCurrency(payment.amount_cents)}</span>
+                        <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--accent-text, var(--accent))' }}>{formatCents(payment.amount_cents)}</span>
                       </div>
                       <div className="u-fs-fs-xs" style={{ color: 'var(--text-muted)' }}>
-                        {payment.invoice_number} · {payment.method} · {payment.paid_at ? new Date(payment.paid_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Pending'}
+                        {payment.invoice_number} · {payment.method} · {formatDateOnly(payment.paid_at, undefined, 'Pending')}
                       </div>
                     </div>
                   ))}
@@ -197,7 +194,7 @@ export function OverviewPanel({ onNavigateTab }: { onNavigateTab: (tab: 'invoice
                     <div key={invoice.id} className="u-p-16px-20px" style={{ borderBottom: index < Math.min(metrics.overdueInvoices.length, 8) - 1 ? '1px solid var(--border)' : 'none' }}>
                       <div className="u-gap-12px u-mb-4px" style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span className="u-fs-fs-base" style={{ color: 'var(--text)' }}>{invoice.household_name}</span>
-                        <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--error)' }}>{formatCurrency(invoice.amount_due_cents)}</span>
+                        <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--error)' }}>{formatCents(invoice.amount_due_cents)}</span>
                       </div>
                       <div className="u-fs-fs-xs" style={{ color: 'var(--text-muted)' }}>
                         {invoice.invoice_number} · Due {formatDateOnly(invoice.due_date)} · Status {invoice.status}

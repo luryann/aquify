@@ -3,7 +3,10 @@ package performance
 import (
 	"context"
 	"fmt"
+	"time"
 
+	"github.com/dareaquatics/aquify/server/internal/dbutil"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -16,13 +19,6 @@ func newRepository(pool *pgxpool.Pool) *Repository {
 	return &Repository{pool: pool}
 }
 
-func nullableString(s string) interface{} {
-	if s == "" {
-		return nil
-	}
-	return s
-}
-
 // ─── Results ─────────────────────────────────────────────────────────────────
 
 func (r *Repository) UpsertResult(ctx context.Context, res *Result) error {
@@ -30,7 +26,10 @@ func (r *Repository) UpsertResult(ctx context.Context, res *Result) error {
 	if res.FinTimeMs != nil {
 		finTimeMs = *res.FinTimeMs
 	}
-	var heat, lane, place interface{}
+	var heat, lane, place, seedTimeMs interface{}
+	if res.SeedTimeMs != nil {
+		seedTimeMs = *res.SeedTimeMs
+	}
 	if res.Heat != nil {
 		heat = *res.Heat
 	}
@@ -42,8 +41,10 @@ func (r *Repository) UpsertResult(ctx context.Context, res *Result) error {
 	}
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO results (id, org_id, swimmer_id, meet_id, distance, stroke, course, gender,
-		                     fin_time_ms, is_official, status, heat, lane, place, dq, dq_code, dq_note, created_at, updated_at)
-		VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+		                     fin_time_ms, is_official, status, heat, lane, place, dq, dq_code, dq_note, created_at, updated_at,
+		                     meet_event_id, event_number, seed_time_ms)
+		VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19,
+		        (SELECT id FROM meet_events WHERE id::text = $20), $21, $22)
 		ON CONFLICT (id) DO UPDATE SET
 		  fin_time_ms = EXCLUDED.fin_time_ms,
 		  is_official = EXCLUDED.is_official,
@@ -56,21 +57,49 @@ func (r *Repository) UpsertResult(ctx context.Context, res *Result) error {
 		  dq_note     = EXCLUDED.dq_note,
 		  updated_at  = EXCLUDED.updated_at`,
 		res.ID, res.OrgID, res.SwimmerID,
-		nullableString(res.MeetID),
+		dbutil.NullableString(res.MeetID),
 		res.Distance, res.Stroke, res.Course, res.Gender,
 		finTimeMs, res.IsOfficial,
 		res.Status,
 		heat, lane, place,
 		res.DQ,
-		nullableString(res.DQCode), nullableString(res.DQNote),
+		dbutil.NullableString(res.DQCode), dbutil.NullableString(res.DQNote),
 		res.CreatedAt, res.UpdatedAt,
+		res.MeetEventID, dbutil.NullableString(res.EventNumber), seedTimeMs,
 	)
 	return err
+}
+
+// UpsertSplits stores a result's splits in one transaction.
+func (r *Repository) UpsertSplits(ctx context.Context, splits []*Split) error {
+	if len(splits) == 0 {
+		return nil
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	for _, sp := range splits {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO splits (id, org_id, result_id, split_number, split_distance, split_time_ms, cumulative_time_ms, created_at, updated_at)
+			VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8, $9)
+			ON CONFLICT (result_id, split_number) DO UPDATE SET
+			  split_distance = EXCLUDED.split_distance,
+			  split_time_ms = EXCLUDED.split_time_ms,
+			  cumulative_time_ms = EXCLUDED.cumulative_time_ms,
+			  updated_at = EXCLUDED.updated_at`,
+			sp.ID, sp.OrgID, sp.ResultID, sp.SplitNumber, sp.SplitDistance, sp.SplitTimeMs, sp.CumulativeTimeMs, sp.CreatedAt, sp.UpdatedAt); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 func (r *Repository) LoadResults(ctx context.Context) ([]*Result, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id::text, org_id::text, swimmer_id::text, COALESCE(meet_id::text, ''),
+		       COALESCE(meet_event_id::text, ''), COALESCE(event_number, ''), seed_time_ms,
 		       distance, stroke, course, gender,
 		       fin_time_ms, is_official, status,
 		       heat, lane, place, dq, COALESCE(dq_code, ''), COALESCE(dq_note, ''),
@@ -79,29 +108,27 @@ func (r *Repository) LoadResults(ctx context.Context) ([]*Result, error) {
 	if err != nil {
 		return nil, fmt.Errorf("performance: load results: %w", err)
 	}
-	defer rows.Close()
-	var out []*Result
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "performance: scan result", func(rows pgx.Rows) (*Result, error) {
 		res := &Result{}
 		var finTimeMs *int
 		var heat, lane, place *int
 		if err := rows.Scan(
 			&res.ID, &res.OrgID, &res.SwimmerID, &res.MeetID,
+			&res.MeetEventID, &res.EventNumber, &res.SeedTimeMs,
 			&res.Distance, &res.Stroke, &res.Course, &res.Gender,
 			&finTimeMs, &res.IsOfficial, &res.Status,
 			&heat, &lane, &place,
 			&res.DQ, &res.DQCode, &res.DQNote,
 			&res.CreatedAt, &res.UpdatedAt,
 		); err != nil {
-			return nil, fmt.Errorf("performance: scan result: %w", err)
+			return res, err
 		}
 		res.FinTimeMs = finTimeMs
 		res.Heat = heat
 		res.Lane = lane
 		res.Place = place
-		out = append(out, res)
-	}
-	return out, rows.Err()
+		return res, nil
+	})
 }
 
 // ─── Best Times ───────────────────────────────────────────────────────────────
@@ -123,7 +150,7 @@ func (r *Repository) UpsertBestTime(ctx context.Context, bt *BestTime) error {
 		bt.ID, bt.OrgID, bt.SwimmerID,
 		bt.EventDistance, bt.Stroke, bt.Course,
 		bestTimeMs,
-		nullableString(bt.ResultID), bt.RecordedAt,
+		dbutil.NullableString(bt.ResultID), bt.RecordedAt,
 		bt.CreatedAt, bt.UpdatedAt,
 	)
 	return err
@@ -137,9 +164,7 @@ func (r *Repository) LoadBestTimes(ctx context.Context) ([]*BestTime, error) {
 	if err != nil {
 		return nil, fmt.Errorf("performance: load best_times: %w", err)
 	}
-	defer rows.Close()
-	var out []*BestTime
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "performance: scan best_time", func(rows pgx.Rows) (*BestTime, error) {
 		bt := &BestTime{}
 		var bestTimeMs *int
 		if err := rows.Scan(
@@ -148,12 +173,11 @@ func (r *Repository) LoadBestTimes(ctx context.Context) ([]*BestTime, error) {
 			&bestTimeMs, &bt.ResultID, &bt.RecordedAt,
 			&bt.CreatedAt, &bt.UpdatedAt,
 		); err != nil {
-			return nil, fmt.Errorf("performance: scan best_time: %w", err)
+			return bt, err
 		}
 		bt.BestTimeMs = bestTimeMs
-		out = append(out, bt)
-	}
-	return out, rows.Err()
+		return bt, nil
+	})
 }
 
 // ─── Time Standards ───────────────────────────────────────────────────────────
@@ -167,47 +191,54 @@ func (r *Repository) UpsertTimeStandard(ctx context.Context, ts *TimeStandard) e
 		ageMax = *ts.AgeMax
 	}
 	_, err := r.pool.Exec(ctx, `
-		INSERT INTO time_standards (id, org_id, name, standard_code, gender, age_min, age_max,
-		                            event_distance, stroke, course, time_ms, season_year, created_at, updated_at)
-		VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+		INSERT INTO time_standards (id, org_id, name, standard_code, description, gender, age_min, age_max,
+		                            event_distance, stroke, course, time_ms, season_year, is_active, created_at, updated_at)
+		VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 		ON CONFLICT (id) DO UPDATE SET
 		  name          = EXCLUDED.name,
 		  standard_code = EXCLUDED.standard_code,
+		  description   = EXCLUDED.description,
 		  time_ms       = EXCLUDED.time_ms,
+		  is_active     = EXCLUDED.is_active,
 		  updated_at    = EXCLUDED.updated_at`,
-		ts.ID, ts.OrgID, ts.Name, ts.StandardCode, ts.Gender,
+		ts.ID, ts.OrgID, ts.Name, ts.StandardCode, dbutil.NullableString(ts.Description), ts.Gender,
 		ageMin, ageMax,
 		ts.EventDistance, ts.Stroke, ts.Course, ts.TimeMs,
-		ts.SeasonYear,
+		ts.SeasonYear, ts.IsActive,
 		ts.CreatedAt, ts.UpdatedAt,
+	)
+	return err
+}
+
+// SoftDeleteTimeStandard marks a time standard deleted so it is not reloaded.
+func (r *Repository) SoftDeleteTimeStandard(ctx context.Context, orgID, id string, deletedAt time.Time) error {
+	_, err := r.pool.Exec(ctx, `
+		UPDATE time_standards SET deleted_at = $3, updated_at = $3
+		WHERE id = $1::uuid AND org_id = $2::uuid AND deleted_at IS NULL`,
+		id, orgID, deletedAt,
 	)
 	return err
 }
 
 func (r *Repository) LoadTimeStandards(ctx context.Context) ([]*TimeStandard, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id::text, org_id::text, name, COALESCE(standard_code, ''), gender,
+		SELECT id::text, org_id::text, name, COALESCE(standard_code, ''), COALESCE(description, ''), gender,
 		       age_min, age_max, event_distance, stroke, course, time_ms, season_year,
 		       is_active, created_at, updated_at
 		FROM time_standards WHERE deleted_at IS NULL`)
 	if err != nil {
 		return nil, fmt.Errorf("performance: load time_standards: %w", err)
 	}
-	defer rows.Close()
-	var out []*TimeStandard
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "performance: scan time_standard", func(rows pgx.Rows) (*TimeStandard, error) {
 		ts := &TimeStandard{}
-		if err := rows.Scan(
-			&ts.ID, &ts.OrgID, &ts.Name, &ts.StandardCode, &ts.Gender,
+		err := rows.Scan(
+			&ts.ID, &ts.OrgID, &ts.Name, &ts.StandardCode, &ts.Description, &ts.Gender,
 			&ts.AgeMin, &ts.AgeMax, &ts.EventDistance, &ts.Stroke, &ts.Course, &ts.TimeMs,
 			&ts.SeasonYear, &ts.IsActive,
 			&ts.CreatedAt, &ts.UpdatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("performance: scan time_standard: %w", err)
-		}
-		out = append(out, ts)
-	}
-	return out, rows.Err()
+		)
+		return ts, err
+	})
 }
 
 // ─── Batch load ───────────────────────────────────────────────────────────────

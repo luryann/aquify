@@ -9,7 +9,6 @@ import (
 	"github.com/dareaquatics/aquify/server/internal/app/audit"
 	"github.com/dareaquatics/aquify/server/internal/app/httpx"
 	"github.com/dareaquatics/aquify/server/internal/app/members"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
 )
@@ -63,7 +62,7 @@ type createHouseholdRequest struct {
 }
 
 func (h *MembershipHandlers) createHousehold(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := membershipScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -101,7 +100,7 @@ func (h *MembershipHandlers) createHousehold(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *MembershipHandlers) listHouseholds(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := membershipScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -119,18 +118,11 @@ func (h *MembershipHandlers) listHouseholds(w http.ResponseWriter, r *http.Reque
 	pagination := parseListPagination(r, listPaginationOptions{})
 	households, total := paginateSlice(households, pagination)
 
-	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"status":     "ok",
-		"count":      len(households),
-		"total":      total,
-		"limit":      pagination.Limit,
-		"offset":     pagination.Offset,
-		"households": households,
-	})
+	writePagedList(w, "households", households, total, pagination)
 }
 
 func (h *MembershipHandlers) getHousehold(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := membershipScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -138,9 +130,10 @@ func (h *MembershipHandlers) getHousehold(w http.ResponseWriter, r *http.Request
 	householdID := strings.TrimSpace(chi.URLParam(r, "householdID"))
 	household, err := h.service.GetHousehold(principal, orgID, householdID)
 	if err != nil {
+		if writeMembersNotFound(w, r, err) {
+			return
+		}
 		switch {
-		case errors.Is(err, members.ErrHouseholdNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "household_not_found", "Household was not found.", nil)
 		case errors.Is(err, members.ErrParentHouseholdScope):
 			httpx.WriteError(w, r, http.StatusForbidden, "scope_violation", "Parent can only view own household.", nil)
 		case errors.Is(err, members.ErrForbidden):
@@ -166,7 +159,7 @@ type updateHouseholdRequest struct {
 }
 
 func (h *MembershipHandlers) updateHousehold(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := membershipScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -177,6 +170,12 @@ func (h *MembershipHandlers) updateHousehold(w http.ResponseWriter, r *http.Requ
 	}
 
 	householdID := strings.TrimSpace(chi.URLParam(r, "householdID"))
+	var beforeHousehold any
+	if h.auditService != nil {
+		if before, err := h.service.GetHousehold(principal, orgID, householdID); err == nil {
+			beforeHousehold = before
+		}
+	}
 	household, err := h.service.UpdateHousehold(principal, orgID, householdID, members.UpdateHouseholdInput{
 		HouseholdName:    req.HouseholdName,
 		PrimaryEmail:     req.PrimaryEmail,
@@ -185,9 +184,10 @@ func (h *MembershipHandlers) updateHousehold(w http.ResponseWriter, r *http.Requ
 		Notes:            req.Notes,
 	})
 	if err != nil {
+		if writeMembersNotFound(w, r, err) {
+			return
+		}
 		switch {
-		case errors.Is(err, members.ErrHouseholdNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "household_not_found", "Household was not found.", nil)
 		case errors.Is(err, members.ErrParentHouseholdScope):
 			httpx.WriteError(w, r, http.StatusForbidden, "scope_violation", "Parent can only modify own household.", nil)
 		case errors.Is(err, members.ErrForbidden):
@@ -197,6 +197,8 @@ func (h *MembershipHandlers) updateHousehold(w http.ResponseWriter, r *http.Requ
 		}
 		return
 	}
+
+	recordAudit(h.auditService, principal, orgID, audit.ActionMembersHouseholdUpdate, "household", householdID, beforeHousehold, household, nil)
 
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":    "updated",
@@ -218,7 +220,7 @@ type addContactRequest struct {
 }
 
 func (h *MembershipHandlers) deleteHousehold(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := membershipScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -226,9 +228,10 @@ func (h *MembershipHandlers) deleteHousehold(w http.ResponseWriter, r *http.Requ
 	householdID := strings.TrimSpace(chi.URLParam(r, "householdID"))
 	household, err := h.service.DeleteHousehold(principal, orgID, householdID)
 	if err != nil {
+		if writeMembersNotFound(w, r, err) {
+			return
+		}
 		switch {
-		case errors.Is(err, members.ErrHouseholdNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "household_not_found", "Household was not found.", nil)
 		case errors.Is(err, members.ErrHouseholdHasSwimmers):
 			httpx.WriteError(w, r, http.StatusConflict, "household_has_swimmers", "Household cannot be deleted while swimmers are still assigned to it.", nil)
 		case errors.Is(err, members.ErrForbidden):
@@ -239,17 +242,7 @@ func (h *MembershipHandlers) deleteHousehold(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if h.auditService != nil {
-		_, _ = h.auditService.Append(audit.AppendRequest{
-			OrgID:        orgID,
-			ActorUserID:  principal.UserID,
-			ActorRoles:   principal.Roles,
-			Action:       audit.ActionMembersHouseholdDelete,
-			ResourceType: "household",
-			ResourceID:   householdID,
-			Before:       map[string]any{"household": household},
-		})
-	}
+	recordAudit(h.auditService, principal, orgID, audit.ActionMembersHouseholdDelete, "household", householdID, map[string]any{"household": household}, nil, nil)
 
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status": "deleted",
@@ -258,7 +251,7 @@ func (h *MembershipHandlers) deleteHousehold(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *MembershipHandlers) addContact(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := membershipScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -282,9 +275,10 @@ func (h *MembershipHandlers) addContact(w http.ResponseWriter, r *http.Request) 
 		Notes:              req.Notes,
 	})
 	if err != nil {
+		if writeMembersNotFound(w, r, err) {
+			return
+		}
 		switch {
-		case errors.Is(err, members.ErrHouseholdNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "household_not_found", "Household was not found.", nil)
 		case errors.Is(err, members.ErrParentHouseholdScope):
 			httpx.WriteError(w, r, http.StatusForbidden, "scope_violation", "Parent can only modify own household.", nil)
 		case errors.Is(err, members.ErrForbidden):
@@ -302,7 +296,7 @@ func (h *MembershipHandlers) addContact(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *MembershipHandlers) listContacts(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := membershipScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -310,9 +304,10 @@ func (h *MembershipHandlers) listContacts(w http.ResponseWriter, r *http.Request
 	householdID := strings.TrimSpace(chi.URLParam(r, "householdID"))
 	contacts, err := h.service.ListContacts(principal, orgID, householdID)
 	if err != nil {
+		if writeMembersNotFound(w, r, err) {
+			return
+		}
 		switch {
-		case errors.Is(err, members.ErrHouseholdNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "household_not_found", "Household was not found.", nil)
 		case errors.Is(err, members.ErrParentHouseholdScope):
 			httpx.WriteError(w, r, http.StatusForbidden, "scope_violation", "Parent can only view contacts for own household.", nil)
 		case errors.Is(err, members.ErrForbidden):
@@ -350,7 +345,7 @@ type createSwimmerRequest struct {
 }
 
 func (h *MembershipHandlers) createSwimmer(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := membershipScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -377,9 +372,10 @@ func (h *MembershipHandlers) createSwimmer(w http.ResponseWriter, r *http.Reques
 		Notes:              req.Notes,
 	})
 	if err != nil {
+		if writeMembersNotFound(w, r, err) {
+			return
+		}
 		switch {
-		case errors.Is(err, members.ErrHouseholdNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "household_not_found", "Household was not found.", nil)
 		case errors.Is(err, members.ErrParentHouseholdScope):
 			httpx.WriteError(w, r, http.StatusForbidden, "scope_violation", "Parent can only create swimmers in own household.", nil)
 		case errors.Is(err, members.ErrMedicalFlagsRestricted):
@@ -402,7 +398,7 @@ func (h *MembershipHandlers) createSwimmer(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *MembershipHandlers) getSwimmer(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := membershipScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -411,9 +407,10 @@ func (h *MembershipHandlers) getSwimmer(w http.ResponseWriter, r *http.Request) 
 	includeMedical := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("include_medical")), "true")
 	swimmer, err := h.service.GetSwimmer(principal, orgID, swimmerID, includeMedical)
 	if err != nil {
+		if writeMembersNotFound(w, r, err) {
+			return
+		}
 		switch {
-		case errors.Is(err, members.ErrSwimmerNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "swimmer_not_found", "Swimmer was not found.", nil)
 		case errors.Is(err, members.ErrParentHouseholdScope):
 			httpx.WriteError(w, r, http.StatusForbidden, "scope_violation", "Parent can only view own household swimmers.", nil)
 		case errors.Is(err, members.ErrForbidden):
@@ -448,7 +445,7 @@ type updateSwimmerRequest struct {
 }
 
 func (h *MembershipHandlers) updateSwimmer(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := membershipScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -476,9 +473,10 @@ func (h *MembershipHandlers) updateSwimmer(w http.ResponseWriter, r *http.Reques
 		Allergies:                    req.Allergies,
 	})
 	if err != nil {
+		if writeMembersNotFound(w, r, err) {
+			return
+		}
 		switch {
-		case errors.Is(err, members.ErrSwimmerNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "swimmer_not_found", "Swimmer was not found.", nil)
 		case errors.Is(err, members.ErrParentHouseholdScope):
 			httpx.WriteError(w, r, http.StatusForbidden, "scope_violation", "Parent can only update own household swimmers.", nil)
 		case errors.Is(err, members.ErrMedicalFlagsRestricted):
@@ -493,18 +491,7 @@ func (h *MembershipHandlers) updateSwimmer(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if h.auditService != nil {
-		_, _ = h.auditService.Append(audit.AppendRequest{
-			OrgID:        orgID,
-			ActorUserID:  principal.UserID,
-			ActorRoles:   principal.Roles,
-			Action:       audit.ActionMembersSwimmerUpdate,
-			ResourceType: "swimmer",
-			ResourceID:   swimmerID,
-			Before:       auditEvent.Before,
-			After:        swimmer,
-		})
-	}
+	recordAudit(h.auditService, principal, orgID, audit.ActionMembersSwimmerUpdate, "swimmer", swimmerID, auditEvent.Before, swimmer, nil)
 
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":      "updated",
@@ -514,7 +501,7 @@ func (h *MembershipHandlers) updateSwimmer(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *MembershipHandlers) deleteSwimmer(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := membershipScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -537,17 +524,7 @@ func (h *MembershipHandlers) deleteSwimmer(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if h.auditService != nil {
-		_, _ = h.auditService.Append(audit.AppendRequest{
-			OrgID:        orgID,
-			ActorUserID:  principal.UserID,
-			ActorRoles:   principal.Roles,
-			Action:       audit.ActionMembersSwimmerDelete,
-			ResourceType: "swimmer",
-			ResourceID:   swimmerID,
-			Before:       map[string]any{"swimmer": swimmer},
-		})
-	}
+	recordAudit(h.auditService, principal, orgID, audit.ActionMembersSwimmerDelete, "swimmer", swimmerID, map[string]any{"swimmer": swimmer}, nil, nil)
 
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status": "deleted",
@@ -573,7 +550,7 @@ type assignSwimmerGroupRequest struct {
 }
 
 func (h *MembershipHandlers) assignSwimmerGroup(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := membershipScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -589,9 +566,10 @@ func (h *MembershipHandlers) assignSwimmerGroup(w http.ResponseWriter, r *http.R
 		IsPrimary: req.IsPrimary,
 	})
 	if err != nil {
+		if writeMembersNotFound(w, r, err) {
+			return
+		}
 		switch {
-		case errors.Is(err, members.ErrSwimmerNotFound):
-			httpx.WriteError(w, r, http.StatusNotFound, "swimmer_not_found", "Swimmer was not found.", nil)
 		case errors.Is(err, members.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only admin/coach can assign swimmer groups.", nil)
 		default:
@@ -600,6 +578,9 @@ func (h *MembershipHandlers) assignSwimmerGroup(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	recordAudit(h.auditService, principal, orgID, audit.ActionMembersSwimmerGroupAssign, "swimmer", swimmerID, nil, assignment,
+		map[string]string{"group_code": req.GroupCode})
+
 	_ = httpx.WriteJSON(w, http.StatusCreated, map[string]any{
 		"status":     "assigned",
 		"assignment": assignment,
@@ -607,7 +588,7 @@ func (h *MembershipHandlers) assignSwimmerGroup(w http.ResponseWriter, r *http.R
 }
 
 func (h *MembershipHandlers) listSwimmers(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := membershipScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -633,18 +614,11 @@ func (h *MembershipHandlers) listSwimmers(w http.ResponseWriter, r *http.Request
 	pagination := parseListPagination(r, listPaginationOptions{})
 	swimmers, total := paginateSlice(swimmers, pagination)
 
-	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"status":   "ok",
-		"count":    len(swimmers),
-		"total":    total,
-		"limit":    pagination.Limit,
-		"offset":   pagination.Offset,
-		"swimmers": swimmers,
-	})
+	writePagedList(w, "swimmers", swimmers, total, pagination)
 }
 
 func (h *MembershipHandlers) listSwimmerGroupLinks(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := membershipScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -657,26 +631,22 @@ func (h *MembershipHandlers) listSwimmerGroupLinks(w http.ResponseWriter, r *htt
 	pagination := parseListPagination(r, listPaginationOptions{})
 	links, total := paginateSlice(links, pagination)
 
-	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"status":         "ok",
-		"count":          len(links),
-		"total":          total,
-		"limit":          pagination.Limit,
-		"offset":         pagination.Offset,
-		"swimmer_groups": links,
-	})
+	writePagedList(w, "swimmer_groups", links, total, pagination)
+}
+
+// writeMembersNotFound answers the 404 for a missing members-domain record and reports whether it did.
+func writeMembersNotFound(w http.ResponseWriter, r *http.Request, err error) bool {
+	switch {
+	case errors.Is(err, members.ErrHouseholdNotFound):
+		httpx.WriteError(w, r, http.StatusNotFound, "household_not_found", "Household was not found.", nil)
+	case errors.Is(err, members.ErrSwimmerNotFound):
+		httpx.WriteError(w, r, http.StatusNotFound, "swimmer_not_found", "Swimmer was not found.", nil)
+	default:
+		return false
+	}
+	return true
 }
 
 func (h *MembershipHandlers) decodeAndValidate(w http.ResponseWriter, r *http.Request, dst any) bool {
-	return decodeAndValidateJSON(w, r, dst, h.validate, decodeAndValidateOptions{
-		InvalidStatus:     http.StatusBadRequest,
-		InvalidCode:       "invalid_request_body",
-		ValidationStatus:  http.StatusBadRequest,
-		ValidationCode:    "validation_failed",
-		ValidationMessage: "One or more request fields are invalid.",
-	})
-}
-
-func membershipScopeFromRequest(w http.ResponseWriter, r *http.Request) (*appmiddleware.Principal, string, bool) {
-	return scopedRequestFromContext(w, r)
+	return decodeAndValidateBadRequest(w, r, dst, h.validate)
 }

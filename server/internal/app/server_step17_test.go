@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -30,20 +29,7 @@ func newStep17Router(t *testing.T, ws workers.Backend) http.Handler {
 
 func issueStep17Token(t *testing.T, router http.Handler, role string) string {
 	t.Helper()
-	body, _ := json.Marshal(map[string]any{
-		"user_id": "user-step17",
-		"org_id":  "org-step17",
-		"roles":   []string{role},
-	})
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/sessions/issue", strings.NewReader(string(body)))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Org-Id", "org-step17")
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-	if w.Code != http.StatusOK && w.Code != http.StatusCreated {
-		t.Fatalf("issue token: status %d body %s", w.Code, w.Body.String())
-	}
-	return issuedAccessTokenFromResponse(t, w)
+	return issueSession(t, router, sessionSpec{UserID: "user-step17", OrgID: "org-step17", Roles: []string{role}})
 }
 
 // ─── Worker unit tests ────────────────────────────────────────────────────────
@@ -403,7 +389,6 @@ func buildTestWorkerServer(t *testing.T) *workers.Server {
 	srv := workers.NewServer(workers.ServerConfig{Concurrency: 1})
 	srv.RegisterHandler(workers.TypeParseImport, func(ctx context.Context, _ *workers.Task) error { return nil })
 	srv.RegisterHandler(workers.TypeGenerateExport, func(ctx context.Context, _ *workers.Task) error { return nil })
-	srv.RegisterHandler(workers.TypeSendCampaignBatch, func(ctx context.Context, _ *workers.Task) error { return nil })
 	srv.RegisterHandler(workers.TypeBillingReconcile, func(ctx context.Context, _ *workers.Task) error { return nil })
 	srv.RegisterHandler(workers.TypeNightlyIntegrity, func(ctx context.Context, _ *workers.Task) error { return nil })
 	srv.RegisterHandler(workers.TypePurgeExpiredFiles, func(ctx context.Context, _ *workers.Task) error { return nil })

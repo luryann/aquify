@@ -9,10 +9,6 @@ export function PortalShell({ children }: { children: ReactNode }) {
   const { session } = useSession()
   const router = useRouter()
 
-  const handleSignOut = () => {
-    router.push('/logout')
-  }
-
   if (!session) return null
 
   return (
@@ -48,7 +44,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
       <PortalNav
         userName={session.user.name}
         avatarInitials={session.user.avatarInitials ?? session.user.name?.slice(0, 2) ?? '?'}
-        onSignOut={handleSignOut}
+        onSignOut={() => router.push('/logout')}
       />
 
       <main className="portal-frame portal-main">

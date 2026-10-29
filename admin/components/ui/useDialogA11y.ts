@@ -4,7 +4,7 @@ import { useEffect, type RefObject } from 'react'
 
 /**
  * Escape-to-close, Tab focus trap, initial focus and focus restore for
- * hand-built overlays (drawers, sheets). Modal.tsx covers the centered case.
+ * hand-built overlays (drawers, sheets). Modal.tsx wraps it for the centered case.
  */
 export function useDialogA11y(ref: RefObject<HTMLElement | null>, onClose: () => void, active = true) {
   useEffect(() => {

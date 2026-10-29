@@ -17,19 +17,8 @@ import {
   type AnnouncementRecord,
 } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
-
-function formatDateTime(value?: string) {
-  if (!value) return '—'
-  return new Date(value).toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
-const FIELD_INPUT_STYLE: React.CSSProperties = { width: '100%' }
+import { formatDateTime } from '@/lib/dates'
+import { FIELD_INPUT_STYLE } from '@/lib/form-styles'
 
 export default function AnnouncementsPage() {
   const toast = useToast()
@@ -119,19 +108,21 @@ export default function AnnouncementsPage() {
     }
   }
 
-  async function handlePublish(id: string) {
+  async function runAction(id: string, action: (orgId: string) => Promise<unknown>, failureMessage: string) {
     if (!session?.user.orgId) return
     setActionId(id)
     setError(null)
     try {
-      await publishAnnouncement(api, session.user.orgId, id)
+      await action(session.user.orgId)
       await loadAnnouncements()
     } catch (err) {
-      setError(uiErrorMessage(err, 'Couldn’t publish announcement. Try again.'))
+      setError(uiErrorMessage(err, failureMessage))
     } finally {
       setActionId(null)
     }
   }
+
+  const handlePublish = (id: string) => runAction(id, (orgId) => publishAnnouncement(api, orgId, id), 'Couldn’t publish announcement. Try again.')
 
   async function handleTogglePublic(id: string, next: boolean) {
     if (!session?.user.orgId) return
@@ -154,19 +145,7 @@ export default function AnnouncementsPage() {
     }
   }
 
-  async function handleArchive(id: string) {
-    if (!session?.user.orgId) return
-    setActionId(id)
-    setError(null)
-    try {
-      await archiveAnnouncement(api, session.user.orgId, id)
-      await loadAnnouncements()
-    } catch (err) {
-      setError(uiErrorMessage(err, 'Couldn’t archive announcement. Try again.'))
-    } finally {
-      setActionId(null)
-    }
-  }
+  const handleArchive = (id: string) => runAction(id, (orgId) => archiveAnnouncement(api, orgId, id), 'Couldn’t archive announcement. Try again.')
 
   if (!session) {
     return <div className="u-p-32px" ><EmptyState icon="megaphone" title="Sign in required" description="Authenticate to manage live announcements." /></div>
@@ -199,7 +178,7 @@ export default function AnnouncementsPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search announcements…"
-            style={{ ...FIELD_INPUT_STYLE }}
+            style={FIELD_INPUT_STYLE}
           />
         </div>
         <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} style={{ ...FIELD_INPUT_STYLE, width: 'auto' }}>

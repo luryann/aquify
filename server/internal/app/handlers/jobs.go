@@ -1,11 +1,11 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/dareaquatics/aquify/server/internal/app/httpx"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
 	"github.com/dareaquatics/aquify/server/internal/workers"
 	"github.com/go-chi/chi/v5"
 )
@@ -31,16 +31,23 @@ func (h *JobsHandlers) RegisterRoutes(router chi.Router) {
 	router.Delete("/jobs/dlq/{taskID}", h.deleteDLQTask)
 }
 
+// requireAdmin writes 401/403 unless the caller is an authenticated admin.
+func requireAdmin(w http.ResponseWriter, r *http.Request, forbiddenMessage string) bool {
+	principal, ok := requirePrincipal(w, r)
+	if !ok {
+		return false
+	}
+	if !hasAnyRole(principal, "admin") {
+		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", forbiddenMessage, nil)
+		return false
+	}
+	return true
+}
+
 // listJobs handles GET /api/v1/jobs
 // Query params: queue (optional), status (optional)
 func (h *JobsHandlers) listJobs(w http.ResponseWriter, r *http.Request) {
-	principal, ok := appmiddleware.PrincipalFromContext(r.Context())
-	if !ok || principal == nil {
-		httpx.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Authentication context is missing.", nil)
-		return
-	}
-	if !hasAnyRole(principal, "admin") {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Job visibility requires admin role.", nil)
+	if !requireAdmin(w, r, "Job visibility requires admin role.") {
 		return
 	}
 
@@ -53,7 +60,7 @@ func (h *JobsHandlers) listJobs(w http.ResponseWriter, r *http.Request) {
 
 	tasks, err := h.server.ListTasks(queue, status)
 	if err != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load jobs.", nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load jobs.", err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
@@ -64,19 +71,13 @@ func (h *JobsHandlers) listJobs(w http.ResponseWriter, r *http.Request) {
 
 // queueStats handles GET /api/v1/jobs/queues
 func (h *JobsHandlers) queueStats(w http.ResponseWriter, r *http.Request) {
-	principal, ok := appmiddleware.PrincipalFromContext(r.Context())
-	if !ok || principal == nil {
-		httpx.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Authentication context is missing.", nil)
-		return
-	}
-	if !hasAnyRole(principal, "admin") {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Queue stats requires admin role.", nil)
+	if !requireAdmin(w, r, "Queue stats requires admin role.") {
 		return
 	}
 
 	queues, err := h.server.QueueStats()
 	if err != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load queue stats.", nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load queue stats.", err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
@@ -86,38 +87,26 @@ func (h *JobsHandlers) queueStats(w http.ResponseWriter, r *http.Request) {
 
 // jobMetrics handles GET /api/v1/jobs/metrics
 func (h *JobsHandlers) jobMetrics(w http.ResponseWriter, r *http.Request) {
-	principal, ok := appmiddleware.PrincipalFromContext(r.Context())
-	if !ok || principal == nil {
-		httpx.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Authentication context is missing.", nil)
-		return
-	}
-	if !hasAnyRole(principal, "admin") {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Job metrics requires admin role.", nil)
+	if !requireAdmin(w, r, "Job metrics requires admin role.") {
 		return
 	}
 
 	m := h.server.Metrics()
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"by_type":            m.TypeSnapshot(),
-		"recent_executions":  m.RecentExecutions(50),
+		"by_type":           m.TypeSnapshot(),
+		"recent_executions": m.RecentExecutions(50),
 	})
 }
 
 // listDLQ handles GET /api/v1/jobs/dlq
 func (h *JobsHandlers) listDLQ(w http.ResponseWriter, r *http.Request) {
-	principal, ok := appmiddleware.PrincipalFromContext(r.Context())
-	if !ok || principal == nil {
-		httpx.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Authentication context is missing.", nil)
-		return
-	}
-	if !hasAnyRole(principal, "admin") {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "DLQ access requires admin role.", nil)
+	if !requireAdmin(w, r, "DLQ access requires admin role.") {
 		return
 	}
 
 	tasks, err := h.server.DLQTasks()
 	if err != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load dead-letter queue.", nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load dead-letter queue.", err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
@@ -128,13 +117,7 @@ func (h *JobsHandlers) listDLQ(w http.ResponseWriter, r *http.Request) {
 
 // retryDLQTask handles POST /api/v1/jobs/dlq/{taskID}/retry
 func (h *JobsHandlers) retryDLQTask(w http.ResponseWriter, r *http.Request) {
-	principal, ok := appmiddleware.PrincipalFromContext(r.Context())
-	if !ok || principal == nil {
-		httpx.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Authentication context is missing.", nil)
-		return
-	}
-	if !hasAnyRole(principal, "admin") {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "DLQ retry requires admin role.", nil)
+	if !requireAdmin(w, r, "DLQ retry requires admin role.") {
 		return
 	}
 
@@ -145,11 +128,11 @@ func (h *JobsHandlers) retryDLQTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.server.RetryDLQTask(r.Context(), taskID); err != nil {
-		if err == workers.ErrTaskNotFound {
+		if errors.Is(err, workers.ErrTaskNotFound) {
 			httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Task not found in DLQ.", nil)
 			return
 		}
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to retry task.", nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to retry task.", err)
 		return
 	}
 
@@ -161,13 +144,7 @@ func (h *JobsHandlers) retryDLQTask(w http.ResponseWriter, r *http.Request) {
 
 // deleteDLQTask handles DELETE /api/v1/jobs/dlq/{taskID}
 func (h *JobsHandlers) deleteDLQTask(w http.ResponseWriter, r *http.Request) {
-	principal, ok := appmiddleware.PrincipalFromContext(r.Context())
-	if !ok || principal == nil {
-		httpx.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Authentication context is missing.", nil)
-		return
-	}
-	if !hasAnyRole(principal, "admin") {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "DLQ delete requires admin role.", nil)
+	if !requireAdmin(w, r, "DLQ delete requires admin role.") {
 		return
 	}
 
@@ -178,11 +155,11 @@ func (h *JobsHandlers) deleteDLQTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.server.DeleteDLQTask(taskID); err != nil {
-		if err == workers.ErrTaskNotFound {
+		if errors.Is(err, workers.ErrTaskNotFound) {
 			httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Task not found in DLQ.", nil)
 			return
 		}
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to delete task.", nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to delete task.", err)
 		return
 	}
 

@@ -12,6 +12,9 @@ if [[ -z "${API_BASE_URL}" || -z "${AUTH_TOKEN}" || -z "${ORG_ID}" ]]; then
   exit 1
 fi
 
+BODY_FILE="$(mktemp)"
+trap 'rm -f "${BODY_FILE}"' EXIT
+
 check() {
   local name="$1"
   local url="$2"
@@ -19,15 +22,13 @@ check() {
   local headers=("${@:4}")
 
   local code
-  code="$(curl -sS -o /tmp/cutover-smoke-body.$$ -w "%{http_code}" "${headers[@]}" "${url}")"
+  code="$(curl -sS -o "${BODY_FILE}" -w "%{http_code}" ${headers[@]+"${headers[@]}"} "${url}")"
   if [[ "${code}" != "${expected}" ]]; then
     echo "FAIL ${name}: expected ${expected}, got ${code}" >&2
-    cat /tmp/cutover-smoke-body.$$ >&2
-    rm -f /tmp/cutover-smoke-body.$$
+    cat "${BODY_FILE}" >&2
     exit 1
   fi
   echo "PASS ${name}"
-  rm -f /tmp/cutover-smoke-body.$$
 }
 
 check "health live" "${API_BASE_URL}/api/v1/health/live"

@@ -677,7 +677,7 @@ func (s *Service) DeleteRelayLineup(orgID, actorID string, principal *appmiddlew
 		return ErrRelayLineupNotFound
 	}
 	if s.repo != nil {
-		if err := s.repo.DeleteRelayLineup(context.Background(), lineupID); err != nil {
+		if err := s.repo.DeleteRelayLineup(context.Background(), orgID, lineupID); err != nil {
 			return fmt.Errorf("delete relay lineup: %w", err)
 		}
 	}

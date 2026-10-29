@@ -148,7 +148,7 @@ export default function NewRegistrationPage() {
       const swimmerIds = [...selectedSwimmers]
       const swimmerName = (id: string) => {
         const s = swimmerOptions.find((swimmer) => swimmer.id === id)
-        return s ? `${s.first_name} ${s.last_name}` : id
+        return s ? `${s.first_name} ${s.last_name}` : 'a swimmer'
       }
 
       const registrationResults = await Promise.allSettled(
@@ -194,6 +194,11 @@ export default function NewRegistrationPage() {
           parts.push(`Waiver acceptance failed for: ${failedWaiverSwimmerNames.join(', ')} (registration was created; please retry accepting waivers from the Registrations page).`)
         }
         setError(parts.join(' '))
+        // Swimmers that did register must drop out of the selection, or a retry
+        // would try to create their registrations a second time.
+        if (createdRegistrations.length > 0) {
+          void fetchRegistrations(api, orgId).then(setRegistrations).catch(() => {})
+        }
         return
       }
 

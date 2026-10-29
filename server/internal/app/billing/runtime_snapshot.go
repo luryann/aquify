@@ -1,6 +1,10 @@
 package billing
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/dareaquatics/aquify/server/internal/runtimepersist"
+)
 
 type runtimeSnapshot struct {
 	Invoices        map[string]*Invoice                 `json:"invoices"`
@@ -17,13 +21,13 @@ func (s *Service) ExportRuntimeSnapshot() ([]byte, error) {
 	defer s.mu.RUnlock()
 
 	snapshot := runtimeSnapshot{
-		Invoices:        cloneInvoices(s.invoices),
-		Items:           cloneInvoiceItemLists(s.items),
-		Payments:        clonePaymentLists(s.payments),
-		Refunds:         cloneRefundLists(s.refunds),
-		Ledger:          cloneLedgerEvents(s.ledger),
-		WebhookEvents:   cloneWebhookEvents(s.webhookEvents),
-		AutopayProfiles: cloneAutopayProfiles(s.autopayProfiles),
+		Invoices:        runtimepersist.ClonePtrMap(s.invoices),
+		Items:           runtimepersist.ClonePtrListMap(s.items),
+		Payments:        runtimepersist.ClonePtrListMap(s.payments),
+		Refunds:         runtimepersist.ClonePtrListMap(s.refunds),
+		Ledger:          runtimepersist.ClonePtrs(s.ledger),
+		WebhookEvents:   runtimepersist.ClonePtrMap(s.webhookEvents),
+		AutopayProfiles: runtimepersist.ClonePtrMap(s.autopayProfiles),
 	}
 	return json.Marshal(snapshot)
 }
@@ -40,13 +44,13 @@ func (s *Service) LoadRuntimeSnapshot(data []byte) error {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.invoices = cloneInvoices(snapshot.Invoices)
-	s.items = cloneInvoiceItemLists(snapshot.Items)
-	s.payments = clonePaymentLists(snapshot.Payments)
-	s.refunds = cloneRefundLists(snapshot.Refunds)
-	s.ledger = cloneLedgerEvents(snapshot.Ledger)
-	s.webhookEvents = cloneWebhookEvents(snapshot.WebhookEvents)
-	s.autopayProfiles = cloneAutopayProfiles(snapshot.AutopayProfiles)
+	s.invoices = runtimepersist.ClonePtrMap(snapshot.Invoices)
+	s.items = runtimepersist.ClonePtrListMap(snapshot.Items)
+	s.payments = runtimepersist.ClonePtrListMap(snapshot.Payments)
+	s.refunds = runtimepersist.ClonePtrListMap(snapshot.Refunds)
+	s.ledger = runtimepersist.ClonePtrs(snapshot.Ledger)
+	s.webhookEvents = runtimepersist.ClonePtrMap(snapshot.WebhookEvents)
+	s.autopayProfiles = runtimepersist.ClonePtrMap(snapshot.AutopayProfiles)
 
 	s.itemsByID = make(map[string]*InvoiceItem)
 	for _, items := range s.items {
@@ -87,107 +91,4 @@ func (s *Service) LoadRuntimeSnapshot(data []byte) error {
 		}
 	}
 	return nil
-}
-
-func cloneInvoices(in map[string]*Invoice) map[string]*Invoice {
-	out := make(map[string]*Invoice, len(in))
-	for k, v := range in {
-		if v == nil {
-			out[k] = nil
-			continue
-		}
-		cp := *v
-		out[k] = &cp
-	}
-	return out
-}
-
-func cloneInvoiceItemLists(in map[string][]*InvoiceItem) map[string][]*InvoiceItem {
-	out := make(map[string][]*InvoiceItem, len(in))
-	for k, values := range in {
-		cloned := make([]*InvoiceItem, 0, len(values))
-		for _, value := range values {
-			if value == nil {
-				cloned = append(cloned, nil)
-				continue
-			}
-			cp := *value
-			cloned = append(cloned, &cp)
-		}
-		out[k] = cloned
-	}
-	return out
-}
-
-func clonePaymentLists(in map[string][]*Payment) map[string][]*Payment {
-	out := make(map[string][]*Payment, len(in))
-	for k, values := range in {
-		cloned := make([]*Payment, 0, len(values))
-		for _, value := range values {
-			if value == nil {
-				cloned = append(cloned, nil)
-				continue
-			}
-			cp := *value
-			cloned = append(cloned, &cp)
-		}
-		out[k] = cloned
-	}
-	return out
-}
-
-func cloneRefundLists(in map[string][]*Refund) map[string][]*Refund {
-	out := make(map[string][]*Refund, len(in))
-	for k, values := range in {
-		cloned := make([]*Refund, 0, len(values))
-		for _, value := range values {
-			if value == nil {
-				cloned = append(cloned, nil)
-				continue
-			}
-			cp := *value
-			cloned = append(cloned, &cp)
-		}
-		out[k] = cloned
-	}
-	return out
-}
-
-func cloneLedgerEvents(in []*LedgerEvent) []*LedgerEvent {
-	out := make([]*LedgerEvent, 0, len(in))
-	for _, value := range in {
-		if value == nil {
-			out = append(out, nil)
-			continue
-		}
-		cp := *value
-		out = append(out, &cp)
-	}
-	return out
-}
-
-func cloneWebhookEvents(in map[string]*WebhookEventRecord) map[string]*WebhookEventRecord {
-	out := make(map[string]*WebhookEventRecord, len(in))
-	for k, v := range in {
-		if v == nil {
-			out[k] = nil
-			continue
-		}
-		cp := *v
-		out[k] = &cp
-	}
-	return out
-}
-
-func cloneAutopayProfiles(in map[string]*HouseholdAutopayProfile) map[string]*HouseholdAutopayProfile {
-	out := make(map[string]*HouseholdAutopayProfile, len(in))
-	for k, v := range in {
-		if v == nil {
-			out[k] = nil
-			continue
-		}
-		cp := *v
-		out[k] = &cp
-	}
-	return out
 }

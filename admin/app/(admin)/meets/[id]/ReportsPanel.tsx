@@ -15,6 +15,7 @@ import {
   type EntryReportGrouping,
 } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
+import { formatDateOnly } from '@/lib/dates'
 
 type ExportStatus = 'pending' | 'generating' | 'ready' | 'failed' | 'expired'
 
@@ -71,7 +72,7 @@ const COLUMNS: Column<ReportRow>[] = [
     },
   },
   { key: 'fileSizeKb', label: 'Size', align: 'right', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>{row.fileSizeKb != null ? `${row.fileSizeKb} KB` : '—'}</span> },
-  { key: 'createdAt', label: 'Created', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>{new Date(row.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span> },
+  { key: 'createdAt', label: 'Created', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>{formatDateOnly(row.createdAt)}</span> },
   {
     key: 'id',
     label: '',
@@ -86,6 +87,19 @@ const COLUMNS: Column<ReportRow>[] = [
       ),
   },
 ]
+
+function mapRows(exports: ExportRecord[]): ReportRow[] {
+  return exports.map((item) => ({
+    id: item.id,
+    reportType: item.export_type,
+    status: item.status as ExportStatus,
+    filename: item.filename,
+    fileSizeKb: item.size_bytes ? Math.round(item.size_bytes / 1024) : null,
+    createdBy: item.created_by,
+    createdAt: item.created_at,
+    downloadUrl: item.download_url || null,
+  })).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+}
 
 const INPUT_STYLE: React.CSSProperties = { width: '100%' }
 
@@ -107,19 +121,6 @@ export function ReportsPanel({ meetId }: { meetId: string }) {
     if (!session?.user.orgId) return
     const exports = await fetchExportsForMeet(api, session.user.orgId, meetId)
     setRows(mapRows(exports))
-  }
-
-  function mapRows(exports: ExportRecord[]): ReportRow[] {
-    return exports.map((item) => ({
-      id: item.id,
-      reportType: item.export_type,
-      status: item.status as ExportStatus,
-      filename: item.filename,
-      fileSizeKb: item.size_bytes ? Math.round(item.size_bytes / 1024) : null,
-      createdBy: item.created_by,
-      createdAt: item.created_at,
-      downloadUrl: item.download_url || null,
-    })).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   }
 
   useEffect(() => {
@@ -190,7 +191,7 @@ export function ReportsPanel({ meetId }: { meetId: string }) {
         <Table columns={COLUMNS} data={rows} pageSize={10} emptyTitle="No reports yet" emptyDescription="Generate a report to see it here." />
       )}
 
-      <Modal open={Boolean(showNew)} onClose={() => setShowNew(false)} title="Generate report" width={440}>
+      <Modal open={showNew} onClose={() => setShowNew(false)} title="Generate report" width={440}>
             {genError && <div role="alert" className="form-banner-error u-mb-16px">{genError}</div>}
             <form onSubmit={handleGenerate} className="u-gap-16px" style={{ display: 'flex', flexDirection: 'column' }}>
               <div>

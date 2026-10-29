@@ -3,6 +3,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "${ROOT_DIR}/scripts/lib/evidence-api.sh"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 EVIDENCE_DIR="${EVIDENCE_DIR:-${ROOT_DIR}/evidence/provider-validation-${STAMP}}"
 API_BASE_URL="${API_BASE_URL:-}"
@@ -41,38 +42,6 @@ fi
 
 mkdir -p "${EVIDENCE_DIR}"
 
-api() {
-  local method="$1"
-  local path="$2"
-  local output="$3"
-  local body="${4:-}"
-  local code
-  if [[ -n "${body}" ]]; then
-    code="$(curl -sS -o "${output}" -w "%{http_code}" \
-      -X "${method}" "${API_BASE_URL}${path}" \
-      -H "Authorization: Bearer ${AUTH_TOKEN}" \
-      -H "X-Org-Id: ${ORG_ID}" \
-      -H "Accept: application/json" \
-      -H "Content-Type: application/json" \
-      --data "${body}")"
-  else
-    code="$(curl -sS -o "${output}" -w "%{http_code}" \
-      -X "${method}" "${API_BASE_URL}${path}" \
-      -H "Authorization: Bearer ${AUTH_TOKEN}" \
-      -H "X-Org-Id: ${ORG_ID}" \
-      -H "Accept: application/json")"
-  fi
-  printf '%s' "${code}" > "${output}.status"
-  case "${code}" in
-    2*) return 0 ;;
-    *)
-      echo "Request ${method} ${path} failed with HTTP ${code}" >&2
-      cat "${output}" >&2 || true
-      return 1
-      ;;
-  esac
-}
-
 cat > "${EVIDENCE_DIR}/metadata.json" <<EOF
 {
   "generated_at": "${STAMP}",
@@ -89,13 +58,13 @@ cat > "${EVIDENCE_DIR}/metadata.json" <<EOF
 }
 EOF
 
-api GET "/api/v1/health/ready" "${EVIDENCE_DIR}/health-ready.json"
-api GET "/api/v1/stripe/reconciliation" "${EVIDENCE_DIR}/stripe-reconciliation.json"
+evidence_request GET "/api/v1/health/ready" "${EVIDENCE_DIR}/health-ready.json"
+evidence_request GET "/api/v1/stripe/reconciliation" "${EVIDENCE_DIR}/stripe-reconciliation.json"
 if ! grep -Eq '"stripe_reported_cents"[[:space:]]*:' "${EVIDENCE_DIR}/stripe-reconciliation.json"; then
   echo "Stripe reconciliation response did not include stripe_reported_cents." >&2
   exit 1
 fi
-api GET "/api/v1/stripe/webhook-events" "${EVIDENCE_DIR}/stripe-webhook-events.json"
+evidence_request GET "/api/v1/stripe/webhook-events" "${EVIDENCE_DIR}/stripe-webhook-events.json"
 
 stripe_webhook_result="not_requested"
 if [[ -n "${EXPECT_STRIPE_WEBHOOK_EVENT_ID}" ]]; then
@@ -113,7 +82,7 @@ if [[ "${CONFIRM_STRIPE_REFUND}" == "true" ]]; then
     echo "REFUND_INVOICE_ID, REFUND_PAYMENT_ID, and REFUND_AMOUNT_CENTS are required when CONFIRM_STRIPE_REFUND=true." >&2
     exit 1
   fi
-  api POST "/api/v1/invoices/${REFUND_INVOICE_ID}/refunds" "${EVIDENCE_DIR}/stripe-refund.json" \
+  evidence_request POST "/api/v1/invoices/${REFUND_INVOICE_ID}/refunds" "${EVIDENCE_DIR}/stripe-refund.json" \
     "{\"payment_id\":\"${REFUND_PAYMENT_ID}\",\"amount_cents\":${REFUND_AMOUNT_CENTS},\"reason\":\"staging provider validation refund\"}"
   stripe_refund_result="executed"
 fi
@@ -121,12 +90,12 @@ fi
 postmark_result="not_requested"
 if [[ -n "${POSTMARK_CAMPAIGN_ID}" ]]; then
   if [[ "${CONFIRM_POSTMARK_SEND}" == "true" ]]; then
-    api POST "/api/v1/email-campaigns/${POSTMARK_CAMPAIGN_ID}/send" "${EVIDENCE_DIR}/postmark-send.json" "{}"
+    evidence_request POST "/api/v1/email-campaigns/${POSTMARK_CAMPAIGN_ID}/send" "${EVIDENCE_DIR}/postmark-send.json" "{}"
     postmark_result="send_executed"
   else
     postmark_result="delivery_check_only"
   fi
-  api GET "/api/v1/email-campaigns/${POSTMARK_CAMPAIGN_ID}/deliveries" "${EVIDENCE_DIR}/postmark-deliveries.json"
+  evidence_request GET "/api/v1/email-campaigns/${POSTMARK_CAMPAIGN_ID}/deliveries" "${EVIDENCE_DIR}/postmark-deliveries.json"
   if [[ "${CONFIRM_POSTMARK_SEND}" == "true" ]]; then
     if ! grep -Eq '"provider_message_id"[[:space:]]*:[[:space:]]*"[^"]+"' "${EVIDENCE_DIR}/postmark-deliveries.json"; then
       echo "Postmark deliveries response did not include a provider_message_id after send." >&2

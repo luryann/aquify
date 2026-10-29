@@ -98,15 +98,6 @@ export function ComplianceBadge({ status }: { status: ComplianceStatus }) {
   return <span className={COMPLIANCE_BADGE[status]}>{COMPLIANCE_LABELS[status]}</span>
 }
 
-export function LoadErrorBanner({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <div role="alert" className="u-gap-12px u-p-12px-16px u-mb-16px u-fs-fs-base" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', borderRadius: 'var(--r-md, 8px)', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)' }}>
-      <span>{message}</span>
-      <button type="button" className="btn btn-secondary btn-sm" onClick={onRetry}>Retry</button>
-    </div>
-  )
-}
-
 export function InlineNotice({ tone, children }: { tone: 'error' | 'success'; children: React.ReactNode }) {
   return (
     <div role={tone === 'error' ? 'alert' : 'status'} className="u-p-12px-12px u-mb-12px u-fs-fs-base" style={{ borderRadius: 'var(--r-md, 8px)', background: `var(--${tone}-bg)`, border: `1px solid var(--${tone}-border)`, color: `var(--${tone})` }}>

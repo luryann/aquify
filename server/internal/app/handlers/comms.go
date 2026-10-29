@@ -119,36 +119,11 @@ func (h *CommsHandlers) RegisterRoutes(router chi.Router) {
 
 // ─── Scope helper ─────────────────────────────────────────────────────────────
 
-func commsScopeFromRequest(w http.ResponseWriter, r *http.Request) (*appmiddleware.Principal, string, bool) {
-	return scopedRequestFromContext(w, r)
-}
-
-// hasAnyRole returns true when the principal holds at least one of the allowed roles.
-func hasAnyRole(principal *appmiddleware.Principal, roles ...string) bool {
-	for _, pr := range principal.Roles {
-		for _, allowed := range roles {
-			if strings.EqualFold(pr, allowed) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 func (h *CommsHandlers) emitAudit(principal *appmiddleware.Principal, action, resourceType, resourceID string, metadata map[string]string, after any) {
-	if h.auditService == nil || principal == nil {
+	if principal == nil {
 		return
 	}
-	_, _ = h.auditService.Append(audit.AppendRequest{
-		OrgID:        principal.OrgID,
-		ActorUserID:  principal.UserID,
-		ActorRoles:   append([]string{}, principal.Roles...),
-		Action:       action,
-		ResourceType: resourceType,
-		ResourceID:   resourceID,
-		After:        after,
-		Metadata:     metadata,
-	})
+	recordAudit(h.auditService, principal, principal.OrgID, action, resourceType, resourceID, nil, after, metadata)
 }
 
 func (h *CommsHandlers) verifyPostmarkWebhook(r *http.Request) bool {
@@ -300,7 +275,7 @@ func (h *CommsHandlers) handlePostmarkWebhook(w http.ResponseWriter, r *http.Req
 		SuppressSending:   body.SuppressSending,
 	})
 	if err != nil && !errors.Is(err, comms.ErrDeliveryNotFound) {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "webhook_apply_failed", "Failed to apply Postmark webhook.", nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "webhook_apply_failed", "Failed to apply Postmark webhook.", err)
 		return
 	}
 
@@ -311,10 +286,19 @@ func (h *CommsHandlers) handlePostmarkWebhook(w http.ResponseWriter, r *http.Req
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": status})
 }
 
-// ─── Announcement handlers ────────────────────────────────────────────────────
+// decodeBody decodes and validates a JSON request body, answering failures with
+// the comms domain's invalid_body / validation_error responses.
+func (h *CommsHandlers) decodeBody(w http.ResponseWriter, r *http.Request, dst any) bool {
+	return decodeAndValidateJSON(w, r, dst, h.validate, decodeAndValidateOptions{
+		InvalidCode:    "invalid_body",
+		InvalidMessage: "Could not parse request body.",
+	})
+}
+
+// ─── Notification preferences ─────────────────────────────────────────────────
 
 func (h *CommsHandlers) listNotificationPreferences(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := commsScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -323,7 +307,7 @@ func (h *CommsHandlers) listNotificationPreferences(w http.ResponseWriter, r *ht
 }
 
 func (h *CommsHandlers) updateNotificationPreferences(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := commsScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -331,12 +315,7 @@ func (h *CommsHandlers) updateNotificationPreferences(w http.ResponseWriter, r *
 	var body struct {
 		Preferences []comms.NotificationPreferenceSetting `json:"preferences" validate:"required,min=1,dive"`
 	}
-	if err := decodeJSONBody(w, r, &body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Could not parse request body.", nil)
-		return
-	}
-	if err := h.validate.Struct(body); err != nil {
-		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "validation_error", "Request validation failed.", httpx.FormatValidationErrors(err))
+	if !h.decodeBody(w, r, &body) {
 		return
 	}
 
@@ -423,7 +402,7 @@ type sendMessageAttachmentBody struct {
 }
 
 func (h *CommsHandlers) sendMessage(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := commsScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -434,12 +413,7 @@ func (h *CommsHandlers) sendMessage(w http.ResponseWriter, r *http.Request) {
 		Body        string                      `json:"body"         validate:"required,max=4000"`
 		Attachments []sendMessageAttachmentBody `json:"attachments"`
 	}
-	if err := decodeJSONBody(w, r, &body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Could not parse request body.", nil)
-		return
-	}
-	if err := h.validate.Struct(body); err != nil {
-		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "validation_error", "Request validation failed.", httpx.FormatValidationErrors(err))
+	if !h.decodeBody(w, r, &body) {
 		return
 	}
 
@@ -504,7 +478,7 @@ func (h *CommsHandlers) sendMessage(w http.ResponseWriter, r *http.Request) {
 		Attachments:  attachments,
 	})
 	if err != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "send_failed", err.Error(), nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "send_failed", "An internal error occurred.", err)
 		return
 	}
 
@@ -517,7 +491,7 @@ func (h *CommsHandlers) sendMessage(w http.ResponseWriter, r *http.Request) {
 
 // requestMessageUploadURL handles POST /api/v1/messages/upload-url
 func (h *CommsHandlers) requestMessageUploadURL(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := commsScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -533,12 +507,7 @@ func (h *CommsHandlers) requestMessageUploadURL(w http.ResponseWriter, r *http.R
 		FileMIME      string `json:"file_mime"        validate:"required"`
 		FileSizeBytes int64  `json:"file_size_bytes"  validate:"required,gt=0"`
 	}
-	if err := decodeJSONBody(w, r, &body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", nil)
-		return
-	}
-	if err := h.validate.Struct(body); err != nil {
-		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "validation_error", "Validation failed.", httpx.FormatValidationErrors(err))
+	if !decodeAndValidateLegacy(w, r, &body, h.validate, "Validation failed.") {
 		return
 	}
 	if !h.authorizeMessageThread(principal, orgID, body.HouseholdID, body.SwimmerID) {
@@ -577,7 +546,7 @@ func (h *CommsHandlers) requestMessageUploadURL(w http.ResponseWriter, r *http.R
 }
 
 func (h *CommsHandlers) listMessages(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := commsScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -597,7 +566,7 @@ func (h *CommsHandlers) listMessages(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *CommsHandlers) listMessageThreads(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := commsScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -612,7 +581,7 @@ func (h *CommsHandlers) listMessageThreads(w http.ResponseWriter, r *http.Reques
 
 // editMessage handles PATCH /api/v1/messages/{messageID} — sender-only, unrestricted.
 func (h *CommsHandlers) editMessage(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := commsScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -621,12 +590,7 @@ func (h *CommsHandlers) editMessage(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Body string `json:"body" validate:"required,max=4000"`
 	}
-	if err := decodeJSONBody(w, r, &body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Could not parse request body.", nil)
-		return
-	}
-	if err := h.validate.Struct(body); err != nil {
-		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "validation_error", "Request validation failed.", httpx.FormatValidationErrors(err))
+	if !h.decodeBody(w, r, &body) {
 		return
 	}
 
@@ -638,7 +602,7 @@ func (h *CommsHandlers) editMessage(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, comms.ErrForbidden):
 			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You may only edit your own messages.", nil)
 		default:
-			httpx.WriteError(w, r, http.StatusInternalServerError, "edit_failed", err.Error(), nil)
+			httpx.WriteError(w, r, http.StatusInternalServerError, "edit_failed", "An internal error occurred.", err)
 		}
 		return
 	}
@@ -650,20 +614,13 @@ func (h *CommsHandlers) editMessage(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"message": message})
 }
 
-// messageThreadForID looks up which household+swimmer thread a message belongs
-// to, so reaction/read endpoints (addressed by message ID, not thread) can run
-// the same thread-scoped authorization as the rest of the messages API.
-func (h *CommsHandlers) messageThreadForID(orgID, messageID string) (householdID, swimmerID string, ok bool) {
-	return h.service.MessageThread(orgID, messageID)
-}
-
 func (h *CommsHandlers) addReaction(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := commsScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
 	messageID := chi.URLParam(r, "messageID")
-	householdID, swimmerID, found := h.messageThreadForID(orgID, messageID)
+	householdID, swimmerID, found := h.service.MessageThread(orgID, messageID) // addressed by message ID, so recover the thread to authorize against
 	if !found || !h.authorizeMessageThread(principal, orgID, householdID, swimmerID) {
 		httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Message not found.", nil)
 		return
@@ -681,26 +638,26 @@ func (h *CommsHandlers) addReaction(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "invalid_reaction", "That emoji is not supported.", nil)
 			return
 		}
-		httpx.WriteError(w, r, http.StatusInternalServerError, "reaction_failed", err.Error(), nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "reaction_failed", "An internal error occurred.", err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"ok": true})
 }
 
 func (h *CommsHandlers) removeReaction(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := commsScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
 	messageID := chi.URLParam(r, "messageID")
 	emoji := chi.URLParam(r, "emoji")
-	householdID, swimmerID, found := h.messageThreadForID(orgID, messageID)
+	householdID, swimmerID, found := h.service.MessageThread(orgID, messageID)
 	if !found || !h.authorizeMessageThread(principal, orgID, householdID, swimmerID) {
 		httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Message not found.", nil)
 		return
 	}
 	if err := h.service.RemoveReaction(orgID, messageID, principal.UserID, emoji); err != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "reaction_failed", err.Error(), nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "reaction_failed", "An internal error occurred.", err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
@@ -708,7 +665,7 @@ func (h *CommsHandlers) removeReaction(w http.ResponseWriter, r *http.Request) {
 
 // markThreadRead handles POST /api/v1/messages/read?household_id=&swimmer_id=
 func (h *CommsHandlers) markThreadRead(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := commsScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -723,7 +680,7 @@ func (h *CommsHandlers) markThreadRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.service.MarkThreadRead(orgID, householdID, swimmerID, principal.UserID); err != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "mark_read_failed", err.Error(), nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "mark_read_failed", "An internal error occurred.", err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
@@ -735,7 +692,7 @@ func (h *CommsHandlers) markThreadRead(w http.ResponseWriter, r *http.Request) {
 // broadcaster is configured (e.g. REDIS_URL unset), so environments without
 // Redis keep working exactly as before, just without live push.
 func (h *CommsHandlers) streamMessages(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := commsScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -795,7 +752,7 @@ func (h *CommsHandlers) streamMessages(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *CommsHandlers) createAnnouncement(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := commsScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -811,12 +768,7 @@ func (h *CommsHandlers) createAnnouncement(w http.ResponseWriter, r *http.Reques
 		GroupID  string `json:"group_id"`
 		Public   bool   `json:"public"`
 	}
-	if err := decodeJSONBody(w, r, &body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Could not parse request body.", nil)
-		return
-	}
-	if err := h.validate.Struct(body); err != nil {
-		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "validation_error", "Request validation failed.", httpx.FormatValidationErrors(err))
+	if !h.decodeBody(w, r, &body) {
 		return
 	}
 
@@ -840,21 +792,21 @@ func (h *CommsHandlers) createAnnouncement(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *CommsHandlers) listAnnouncements(w http.ResponseWriter, r *http.Request) {
-	_, orgID, ok := commsScopeFromRequest(w, r)
+	_, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
 	statusFilter := r.URL.Query().Get("status")
 	announcements, err := h.service.ListAnnouncements(orgID, statusFilter)
 	if err != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "list_failed", err.Error(), nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "list_failed", "An internal error occurred.", err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{"announcements": announcements})
 }
 
 func (h *CommsHandlers) getAnnouncement(w http.ResponseWriter, r *http.Request) {
-	_, orgID, ok := commsScopeFromRequest(w, r)
+	_, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -865,14 +817,14 @@ func (h *CommsHandlers) getAnnouncement(w http.ResponseWriter, r *http.Request) 
 			httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Announcement not found.", nil)
 			return
 		}
-		httpx.WriteError(w, r, http.StatusInternalServerError, "get_failed", err.Error(), nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "get_failed", "An internal error occurred.", err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, ann)
 }
 
 func (h *CommsHandlers) setAnnouncementPublic(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := commsScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -883,12 +835,7 @@ func (h *CommsHandlers) setAnnouncementPublic(w http.ResponseWriter, r *http.Req
 	var body struct {
 		Public *bool `json:"public" validate:"required"`
 	}
-	if err := decodeJSONBody(w, r, &body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Could not parse request body.", nil)
-		return
-	}
-	if err := h.validate.Struct(body); err != nil {
-		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "validation_error", "Request validation failed.", httpx.FormatValidationErrors(err))
+	if !h.decodeBody(w, r, &body) {
 		return
 	}
 	ann, err := h.service.SetAnnouncementPublic(orgID, chi.URLParam(r, "announcementID"), principal.UserID, *body.Public)
@@ -907,7 +854,7 @@ func (h *CommsHandlers) setAnnouncementPublic(w http.ResponseWriter, r *http.Req
 }
 
 func (h *CommsHandlers) publishAnnouncement(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := commsScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -926,7 +873,7 @@ func (h *CommsHandlers) publishAnnouncement(w http.ResponseWriter, r *http.Reque
 			httpx.WriteError(w, r, http.StatusConflict, "invalid_transition", "Announcement cannot be published from its current state.", nil)
 			return
 		}
-		httpx.WriteError(w, r, http.StatusInternalServerError, "publish_failed", err.Error(), nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "publish_failed", "An internal error occurred.", err)
 		return
 	}
 	h.emitAudit(principal, audit.ActionCommsAnnouncementPublish, "announcement", ann.ID, nil, ann)
@@ -934,7 +881,7 @@ func (h *CommsHandlers) publishAnnouncement(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *CommsHandlers) archiveAnnouncement(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := commsScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -953,7 +900,7 @@ func (h *CommsHandlers) archiveAnnouncement(w http.ResponseWriter, r *http.Reque
 			httpx.WriteError(w, r, http.StatusConflict, "invalid_transition", "Announcement is already archived.", nil)
 			return
 		}
-		httpx.WriteError(w, r, http.StatusInternalServerError, "archive_failed", err.Error(), nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "archive_failed", "An internal error occurred.", err)
 		return
 	}
 	h.emitAudit(principal, audit.ActionCommsAnnouncementArchive, "announcement", ann.ID, nil, ann)
@@ -963,7 +910,7 @@ func (h *CommsHandlers) archiveAnnouncement(w http.ResponseWriter, r *http.Reque
 // ─── Campaign handlers ────────────────────────────────────────────────────────
 
 func (h *CommsHandlers) createCampaign(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := commsScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -982,12 +929,7 @@ func (h *CommsHandlers) createCampaign(w http.ResponseWriter, r *http.Request) {
 		Audience  string `json:"audience"   validate:"required,oneof=all group"`
 		GroupID   string `json:"group_id"`
 	}
-	if err := decodeJSONBody(w, r, &body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Could not parse request body.", nil)
-		return
-	}
-	if err := h.validate.Struct(body); err != nil {
-		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "validation_error", "Request validation failed.", httpx.FormatValidationErrors(err))
+	if !h.decodeBody(w, r, &body) {
 		return
 	}
 
@@ -1014,7 +956,7 @@ func (h *CommsHandlers) createCampaign(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *CommsHandlers) listCampaigns(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := commsScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -1024,14 +966,14 @@ func (h *CommsHandlers) listCampaigns(w http.ResponseWriter, r *http.Request) {
 	}
 	campaigns, err := h.service.ListCampaigns(orgID)
 	if err != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "list_failed", err.Error(), nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "list_failed", "An internal error occurred.", err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{"campaigns": campaigns})
 }
 
 func (h *CommsHandlers) getCampaign(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := commsScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -1046,14 +988,14 @@ func (h *CommsHandlers) getCampaign(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Campaign not found.", nil)
 			return
 		}
-		httpx.WriteError(w, r, http.StatusInternalServerError, "get_failed", err.Error(), nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "get_failed", "An internal error occurred.", err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, campaign)
 }
 
 func (h *CommsHandlers) sendCampaign(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := commsScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -1076,13 +1018,13 @@ func (h *CommsHandlers) sendCampaign(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Campaign not found.", nil)
 			return
 		}
-		httpx.WriteError(w, r, http.StatusInternalServerError, "send_failed", err.Error(), nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "send_failed", "An internal error occurred.", err)
 		return
 	}
 
 	recipients, err := h.resolveCampaignRecipients(orgID, campaignRecord)
 	if err != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "recipient_resolution_failed", err.Error(), nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "recipient_resolution_failed", "An internal error occurred.", err)
 		return
 	}
 	if len(recipients) == 0 {
@@ -1103,7 +1045,7 @@ func (h *CommsHandlers) sendCampaign(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, http.StatusConflict, "campaign_not_draft", "Campaign must be in draft status to send.", nil)
 			return
 		}
-		httpx.WriteError(w, r, http.StatusInternalServerError, "send_failed", err.Error(), nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "send_failed", "An internal error occurred.", err)
 		return
 	}
 	h.emitAudit(principal, audit.ActionCommsCampaignSend, "campaign", campaign.ID, map[string]string{
@@ -1113,7 +1055,7 @@ func (h *CommsHandlers) sendCampaign(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *CommsHandlers) listDeliveries(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := commsScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -1128,7 +1070,7 @@ func (h *CommsHandlers) listDeliveries(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Campaign not found.", nil)
 			return
 		}
-		httpx.WriteError(w, r, http.StatusInternalServerError, "list_failed", err.Error(), nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "list_failed", "An internal error occurred.", err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{"deliveries": deliveries})
@@ -1137,7 +1079,7 @@ func (h *CommsHandlers) listDeliveries(w http.ResponseWriter, r *http.Request) {
 // ─── Suppression handlers ─────────────────────────────────────────────────────
 
 func (h *CommsHandlers) addSuppression(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := commsScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -1150,12 +1092,7 @@ func (h *CommsHandlers) addSuppression(w http.ResponseWriter, r *http.Request) {
 		Email  string `json:"email"  validate:"required,email"`
 		Reason string `json:"reason" validate:"required,oneof=bounce complaint manual"`
 	}
-	if err := decodeJSONBody(w, r, &body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Could not parse request body.", nil)
-		return
-	}
-	if err := h.validate.Struct(body); err != nil {
-		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "validation_error", "Request validation failed.", httpx.FormatValidationErrors(err))
+	if !h.decodeBody(w, r, &body) {
 		return
 	}
 
@@ -1180,7 +1117,7 @@ func (h *CommsHandlers) addSuppression(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *CommsHandlers) listSuppression(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := commsScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -1190,14 +1127,14 @@ func (h *CommsHandlers) listSuppression(w http.ResponseWriter, r *http.Request) 
 	}
 	entries, err := h.service.ListSuppression(orgID)
 	if err != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "list_failed", err.Error(), nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "list_failed", "An internal error occurred.", err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{"suppression": entries})
 }
 
 func (h *CommsHandlers) removeSuppression(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := commsScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -1211,7 +1148,7 @@ func (h *CommsHandlers) removeSuppression(w http.ResponseWriter, r *http.Request
 			httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Suppression entry not found.", nil)
 			return
 		}
-		httpx.WriteError(w, r, http.StatusInternalServerError, "remove_failed", err.Error(), nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "remove_failed", "An internal error occurred.", err)
 		return
 	}
 	h.emitAudit(principal, audit.ActionCommsSuppressionRemove, "suppression", id, nil, nil)

@@ -191,3 +191,17 @@ Cooldown:
 		t.Fatalf("round trip mismatch\nfirst  %+v\nsecond %+v\ntext:\n%s", first.Sections, second.Sections, rendered)
 	}
 }
+
+func TestParseQuickEntryNonASCIIHeaderDoesNotPanic(t *testing.T) {
+	res := ParseQuickEntry("wu: İİİİİİİİ\n3rounds\n  50 free")
+	if len(res.Sections) == 0 {
+		t.Fatalf("expected sections, got %+v", res)
+	}
+	for _, sec := range res.Sections {
+		for _, set := range sec.Sets {
+			if set.IsRound() && set.Repeats != 3 {
+				t.Fatalf("round repeats = %d, want 3", set.Repeats)
+			}
+		}
+	}
+}

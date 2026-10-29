@@ -32,6 +32,24 @@ function formatDateTime(value?: string) {
   })
 }
 
+type JobsSnapshot = {
+  tasks: WorkerTaskRecord[]
+  queues: QueueStatsRecord[]
+  metrics: Record<string, JobMetricsTypeRecord>
+  executions: JobExecutionRecord[]
+  dlq: WorkerTaskRecord[]
+}
+
+async function loadSnapshot(api: ReturnType<typeof useApiClient>, orgId: string): Promise<JobsSnapshot> {
+  const [tasks, queues, metricSnapshot, dlq] = await Promise.all([
+    fetchJobs(api, orgId),
+    fetchQueueStats(api, orgId),
+    fetchJobMetrics(api, orgId),
+    fetchDLQTasks(api, orgId),
+  ])
+  return { tasks, queues, metrics: metricSnapshot.by_type, executions: metricSnapshot.recent_executions, dlq }
+}
+
 export default function JobsPage() {
   return (
     <AuthGuard requiredRoles={['admin']}>
@@ -53,6 +71,14 @@ function JobsPageContent() {
   const [error, setError] = useState<string | null>(null)
   const [workingTask, setWorkingTask] = useState<string | null>(null)
 
+  function applySnapshot(snapshot: JobsSnapshot) {
+    setTasks(snapshot.tasks)
+    setQueues(snapshot.queues)
+    setMetrics(snapshot.metrics)
+    setExecutions(snapshot.executions)
+    setDlq(snapshot.dlq)
+  }
+
   useEffect(() => {
     let cancelled = false
 
@@ -64,18 +90,9 @@ function JobsPageContent() {
       try {
         setLoading(true)
         setError(null)
-        const [jobList, queueStats, metricSnapshot, dlqTasks] = await Promise.all([
-          fetchJobs(api, orgId),
-          fetchQueueStats(api, orgId),
-          fetchJobMetrics(api, orgId),
-          fetchDLQTasks(api, orgId),
-        ])
+        const snapshot = await loadSnapshot(api, orgId)
         if (cancelled) return
-        setTasks(jobList)
-        setQueues(queueStats)
-        setMetrics(metricSnapshot.by_type)
-        setExecutions(metricSnapshot.recent_executions)
-        setDlq(dlqTasks)
+        applySnapshot(snapshot)
       } catch (err) {
         if (!cancelled) {
           setError(uiErrorMessage(err, 'Couldn’t load background jobs. Try again.'))
@@ -101,17 +118,7 @@ function JobsPageContent() {
 
   async function refreshAll() {
     try {
-      const [jobList, queueStats, metricSnapshot, dlqTasks] = await Promise.all([
-        fetchJobs(api, orgId),
-        fetchQueueStats(api, orgId),
-        fetchJobMetrics(api, orgId),
-        fetchDLQTasks(api, orgId),
-      ])
-      setTasks(jobList)
-      setQueues(queueStats)
-      setMetrics(metricSnapshot.by_type)
-      setExecutions(metricSnapshot.recent_executions)
-      setDlq(dlqTasks)
+      applySnapshot(await loadSnapshot(api, orgId))
     } catch (err) {
       setError(uiErrorMessage(err, 'Couldn’t refresh background jobs. Try again.'))
     }

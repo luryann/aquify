@@ -5,8 +5,8 @@
  *
  * Usage:
  *   k6 run -e API_BASE_URL=http://localhost:8080 \
- *           -e AUTH_TOKEN=stub-admin-token \
- *           -e ORG_ID=org-demo \
+ *           -e AUTH_TOKEN=stub-admin \
+ *           -e ORG_ID=00000000-0000-0000-0000-00000000a001 \
  *           tests/load/k6/admin-browse.js
  */
 
@@ -49,8 +49,8 @@ export const options = {
 // Configuration
 // ---------------------------------------------------------------------------
 const BASE_URL = __ENV.API_BASE_URL || 'http://localhost:8080';
-const ORG_ID = __ENV.ORG_ID || 'org-demo';
-const DEFAULT_TOKEN = __ENV.AUTH_TOKEN || 'stub-admin-token';
+const ORG_ID = __ENV.ORG_ID || '00000000-0000-0000-0000-00000000a001';
+const DEFAULT_TOKEN = __ENV.AUTH_TOKEN || 'stub-admin';
 
 function authHeaders(token) {
   return {
@@ -64,7 +64,7 @@ function authHeaders(token) {
 // Setup — verify connectivity and obtain token
 // ---------------------------------------------------------------------------
 export function setup() {
-  const res = http.get(`${BASE_URL}/health/live`);
+  const res = http.get(`${BASE_URL}/api/v1/health/live`);
   if (res.status !== 200) {
     throw new Error(`Health check failed: ${res.status} — is the API running at ${BASE_URL}?`);
   }
@@ -82,7 +82,7 @@ export default function (data) {
 
   group('list_households', () => {
     const res = http.get(
-      `${BASE_URL}/api/v1/orgs/${ORG_ID}/members/households?limit=25`,
+      `${BASE_URL}/api/v1/members/households?limit=25`,
       { headers, tags: { endpoint: 'households' } }
     );
     const ok = check(res, {
@@ -96,7 +96,7 @@ export default function (data) {
 
   group('list_swimmers', () => {
     const res = http.get(
-      `${BASE_URL}/api/v1/orgs/${ORG_ID}/members/swimmers?limit=25`,
+      `${BASE_URL}/api/v1/members/swimmers?limit=25`,
       { headers, tags: { endpoint: 'swimmers' } }
     );
     const ok = check(res, {
@@ -110,7 +110,7 @@ export default function (data) {
 
   group('list_meets', () => {
     const res = http.get(
-      `${BASE_URL}/api/v1/orgs/${ORG_ID}/meets?limit=25`,
+      `${BASE_URL}/api/v1/meets?limit=25`,
       { headers, tags: { endpoint: 'meets' } }
     );
     const ok = check(res, {
@@ -124,7 +124,7 @@ export default function (data) {
 
   group('list_invoices', () => {
     const res = http.get(
-      `${BASE_URL}/api/v1/orgs/${ORG_ID}/billing/invoices?limit=25`,
+      `${BASE_URL}/api/v1/invoices?limit=25`,
       { headers, tags: { endpoint: 'invoices' } }
     );
     const ok = check(res, {
@@ -138,7 +138,7 @@ export default function (data) {
 
   group('list_audit_events', () => {
     const res = http.get(
-      `${BASE_URL}/api/v1/orgs/${ORG_ID}/audit?limit=25`,
+      `${BASE_URL}/api/v1/audit-events?limit=25`,
       { headers, tags: { endpoint: 'audit' } }
     );
     const ok = check(res, {

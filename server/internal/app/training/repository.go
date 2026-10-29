@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/dareaquatics/aquify/server/internal/dbutil"
 	"time"
 
 	"github.com/google/uuid"
@@ -73,9 +74,9 @@ func upsertPractice(ctx context.Context, q querier, p *Practice) error {
 			updated_at     = EXCLUDED.updated_at,
 			updated_by     = EXCLUDED.updated_by,
 			workout_id     = EXCLUDED.workout_id`,
-		p.ID, p.OrgID, p.Date, nullableString(p.GroupID), p.Type, p.Description, p.YardageTarget,
+		p.ID, p.OrgID, p.Date, dbutil.NullableString(p.GroupID), p.Type, p.Description, p.YardageTarget,
 		p.Attendance, p.Strokes.Free, p.Strokes.Back, p.Strokes.Breast, p.Strokes.Fly, p.Strokes.IM,
-		p.Notes, p.CreatedAt, p.UpdatedAt, p.CreatedBy, p.UpdatedBy, nullableString(p.WorkoutID),
+		p.Notes, p.CreatedAt, p.UpdatedAt, p.CreatedBy, p.UpdatedBy, dbutil.NullableString(p.WorkoutID),
 	)
 	return err
 }
@@ -212,36 +213,22 @@ func (r *Repository) ListAttendanceForPractice(ctx context.Context, orgID, pract
 	if err != nil {
 		return nil, fmt.Errorf("training: list attendance: %w", err)
 	}
-	defer rows.Close()
-
-	out := []*PracticeAttendance{}
-	for rows.Next() {
+	return dbutil.CollectRowsNonNil(rows, "training: scan attendance", func(rows pgx.Rows) (*PracticeAttendance, error) {
 		rec := &PracticeAttendance{}
-		if err := rows.Scan(
+		err := rows.Scan(
 			&rec.ID, &rec.OrgID, &rec.PracticeID, &rec.SwimmerID, &rec.Status,
 			&rec.MarkedAt, &rec.MarkedBy, &rec.CreatedAt, &rec.UpdatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("training: scan attendance: %w", err)
-		}
-		out = append(out, rec)
-	}
-	return out, rows.Err()
+		)
+		return rec, err
+	})
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-func nullableString(s string) interface{} {
-	if s == "" {
-		return nil
-	}
-	return s
-}
-
 func scanPractices(rows pgx.Rows) ([]*Practice, error) {
-	var out []*Practice
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "training: scan practice", func(rows pgx.Rows) (*Practice, error) {
 		p := &Practice{}
-		if err := rows.Scan(
+		err := rows.Scan(
 			&p.ID, &p.OrgID, &p.Date, &p.GroupID, &p.Type,
 			&p.Description, &p.YardageTarget,
 			&p.Attendance,
@@ -250,10 +237,7 @@ func scanPractices(rows pgx.Rows) ([]*Practice, error) {
 			&p.CreatedAt, &p.UpdatedAt,
 			&p.CreatedBy, &p.UpdatedBy,
 			&p.WorkoutID,
-		); err != nil {
-			return nil, fmt.Errorf("training: scan practice: %w", err)
-		}
-		out = append(out, p)
-	}
-	return out, rows.Err()
+		)
+		return p, err
+	})
 }

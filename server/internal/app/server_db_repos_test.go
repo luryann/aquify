@@ -13,8 +13,10 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -82,7 +84,6 @@ func TestDBRepoMembers_RoundTrip(t *testing.T) {
 	_ = testutil.RequireDBHarness(t)
 
 	admin := dbAdminPrincipal(t, pool)
-	parent := testutil.ParentPrincipal("db-repo-parent", "")
 
 	// Truncate to ensure clean slate for this test's org data.
 	cleanupMembersFixtures(t, pool, testOrgID)
@@ -122,10 +123,7 @@ func TestDBRepoMembers_RoundTrip(t *testing.T) {
 		t.Errorf("expected household_name 'DBRepo Family', got %q", got.HouseholdName)
 	}
 
-	swimmers, err := svc2.ListSwimmers(parent, testOrgID, members.ListSwimmersInput{HouseholdID: household.ID})
-	_ = err
-	// parent doesn't have household association, use admin
-	swimmers, err = svc2.ListSwimmers(admin, testOrgID, members.ListSwimmersInput{HouseholdID: household.ID})
+	swimmers, err := svc2.ListSwimmers(admin, testOrgID, members.ListSwimmersInput{HouseholdID: household.ID})
 	if err != nil {
 		t.Fatalf("ListSwimmers after reload: %v", err)
 	}
@@ -201,6 +199,144 @@ func TestDBRepoMembers_CrossInstanceVisibilityWithoutRestart(t *testing.T) {
 	if !found || linked.ID != household.ID {
 		t.Fatalf("expected linked household %q from second instance, got found=%t id=%q", household.ID, found, linked.ID)
 	}
+}
+
+// A write must never be wiped from memory by a concurrent request that loaded
+// its snapshot from Postgres just before the write committed.
+func TestDBRepoMembers_ConcurrentSyncDoesNotLoseWrites(t *testing.T) {
+	// Not parallel: DB repo tests share testOrgID fixtures and clean them up.
+	pool := openTestPool(t)
+	_ = testutil.RequireDBHarness(t)
+
+	admin := dbAdminPrincipal(t, pool)
+	admin.OrgID = testOrgID
+	cleanupMembersFixtures(t, pool, testOrgID)
+
+	svc := members.NewServiceWithPool(pool)
+	stop := make(chan struct{})
+	var readers sync.WaitGroup
+	for i := 0; i < 12; i++ {
+		readers.Add(1)
+		go func() {
+			defer readers.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					_, _ = svc.ListHouseholds(admin, testOrgID)
+				}
+			}
+		}()
+	}
+	defer func() { close(stop); readers.Wait() }()
+
+	for i := 0; i < 60; i++ {
+		household, err := svc.CreateHousehold(admin, members.CreateHouseholdInput{OrgID: testOrgID, HouseholdName: "Race Family"})
+		if err != nil {
+			t.Fatalf("CreateHousehold %d: %v", i, err)
+		}
+		// Snapshot reads memory without syncing, so it exposes a write that a
+		// concurrent stale reload wiped.
+		found := false
+		for _, h := range svc.SnapshotHouseholds(testOrgID) {
+			found = found || h.ID == household.ID
+		}
+		if !found {
+			t.Fatalf("household %s created in iteration %d is missing from memory right after the write", household.ID, i)
+		}
+	}
+}
+
+// writeInsideSyncWindow returns a sync hook that, the first time it fires while
+// armed, runs write on another goroutine and waits up to 300ms for it. Against
+// a reload that reads Postgres before taking the lock the write finishes inside
+// that window and the stale snapshot then replaces it; against a reload that
+// holds the lock while reading, the write is blocked until the reload is done.
+// wait blocks until the write has finished either way.
+func writeInsideSyncWindow(armed *atomic.Bool, write func()) (hook func(), wait func()) {
+	done := make(chan struct{})
+	started := make(chan struct{})
+	hook = func() {
+		if !armed.CompareAndSwap(true, false) {
+			return
+		}
+		close(started)
+		go func() { write(); close(done) }()
+		select {
+		case <-done:
+		case <-time.After(300 * time.Millisecond):
+		}
+	}
+	wait = func() {
+		select {
+		case <-started:
+			<-done
+		default:
+		}
+	}
+	return hook, wait
+}
+
+func TestDBRepoMembers_WriteInsideReloadWindowSurvives(t *testing.T) {
+	pool := openTestPool(t)
+	_ = testutil.RequireDBHarness(t)
+	admin := dbAdminPrincipal(t, pool)
+	admin.OrgID = testOrgID
+	cleanupMembersFixtures(t, pool, testOrgID)
+
+	svc := members.NewServiceWithPool(pool)
+	var armed atomic.Bool
+	var created members.Household
+	var createErr error
+	hook, wait := writeInsideSyncWindow(&armed, func() {
+		created, createErr = svc.CreateHousehold(admin, members.CreateHouseholdInput{OrgID: testOrgID, HouseholdName: "Window Family"})
+	})
+	svc.SetSyncHookForTest(hook)
+
+	armed.Store(true)
+	_, _ = svc.ListHouseholds(admin, testOrgID) // reload that the write lands inside
+	wait()
+	if createErr != nil {
+		t.Fatalf("CreateHousehold: %v", createErr)
+	}
+	for _, h := range svc.SnapshotHouseholds(testOrgID) {
+		if h.ID == created.ID {
+			return
+		}
+	}
+	t.Fatalf("household %s written during a reload is missing from memory", created.ID)
+}
+
+func TestDBRepoMeets_WriteInsideReloadWindowSurvives(t *testing.T) {
+	pool := openTestPool(t)
+	_ = testutil.RequireDBHarness(t)
+	admin := dbAdminPrincipal(t, pool)
+	admin.OrgID = testOrgID
+	cleanupMembersFixtures(t, pool, testOrgID)
+	cleanupMeetsFixtures(t, pool, testOrgID)
+
+	svc := meets.NewServiceWithPool(pool)
+	var armed atomic.Bool
+	var created meets.Meet
+	var createErr error
+	hook, wait := writeInsideSyncWindow(&armed, func() {
+		created, _, createErr = svc.CreateMeet(admin, testOrgID, meets.CreateMeetInput{Name: "Window Meet", MeetType: "invitational", Course: "SCY"})
+	})
+	svc.SetSyncHookForTest(hook)
+
+	armed.Store(true)
+	_, _ = svc.ListMeets(admin, testOrgID)
+	wait()
+	if createErr != nil {
+		t.Fatalf("CreateMeet: %v", createErr)
+	}
+	for _, m := range svc.SnapshotMeets(testOrgID) {
+		if m.ID == created.ID {
+			return
+		}
+	}
+	t.Fatalf("meet %s written during a reload is missing from memory", created.ID)
 }
 
 func TestDBRepoMembers_DeleteSwimmerRejectsWhenDependenciesExist(t *testing.T) {
@@ -536,12 +672,129 @@ func TestDBRepoTraining_CrossInstanceVisibilityWithoutRestart(t *testing.T) {
 func cleanupPracticesFixtures(t *testing.T, pool *pgxpool.Pool, orgID string) {
 	t.Helper()
 	ctx := context.Background()
-	if _, err := pool.Exec(ctx, `DELETE FROM practices WHERE org_id = $1::uuid`, orgID); err != nil {
+	if _, err := pool.Exec(ctx, `DELETE FROM practices WHERE org_id = $1`, orgID); err != nil {
 		t.Logf("cleanup warning (DELETE FROM practices): %v", err)
 	}
 }
 
 // ─── Meets ──────────────────────────────────────────────────────────────────
+
+// Same lost-write guard as the members test: concurrent syncing readers must
+// never wipe a just-committed write from memory.
+func TestDBRepoGroups_ConcurrentSyncDoesNotLoseWrites(t *testing.T) {
+	pool := openTestPool(t)
+	_ = testutil.RequireDBHarness(t)
+
+	admin := dbAdminPrincipal(t, pool)
+	cleanupGroupsFixtures(t, pool, testOrgID)
+
+	svc := groups.NewServiceWithPool(pool)
+	stop := make(chan struct{})
+	var readers sync.WaitGroup
+	for i := 0; i < 12; i++ {
+		readers.Add(1)
+		go func() {
+			defer readers.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					_, _ = svc.ListGroups(admin, testOrgID, true)
+				}
+			}
+		}()
+	}
+	defer func() { close(stop); readers.Wait() }()
+
+	for i := 0; i < 300; i++ {
+		group, _, err := svc.CreateGroup(admin, testOrgID, groups.CreateGroupInput{Code: fmt.Sprintf("RACE%03d", i), Name: "Race Group"})
+		if err != nil {
+			t.Fatalf("CreateGroup %d: %v", i, err)
+		}
+		found := false
+		for _, g := range svc.SnapshotGroups(testOrgID) {
+			found = found || g.ID == group.ID
+		}
+		if !found {
+			t.Fatalf("group %s created in iteration %d is missing from memory right after the write", group.ID, i)
+		}
+	}
+}
+
+// A meet written through one API instance must be usable on another without a
+// restart (every meets entry point re-syncs from Postgres).
+func TestDBRepoMeets_CrossInstanceVisibilityWithoutRestart(t *testing.T) {
+	pool := openTestPool(t)
+	_ = testutil.RequireDBHarness(t)
+
+	admin := dbAdminPrincipal(t, pool)
+	admin.OrgID = testOrgID
+	cleanupMembersFixtures(t, pool, testOrgID)
+	cleanupMeetsFixtures(t, pool, testOrgID)
+
+	svc1 := meets.NewServiceWithPool(pool)
+	svc2 := meets.NewServiceWithPool(pool)
+
+	meet, _, err := svc1.CreateMeet(admin, testOrgID, meets.CreateMeetInput{Name: "Cross Instance Meet", MeetType: "invitational", Course: "SCY"})
+	if err != nil {
+		t.Fatalf("CreateMeet: %v", err)
+	}
+	listed, err := svc2.ListMeets(admin, testOrgID)
+	if err != nil || len(listed) != 1 || listed[0].ID != meet.ID {
+		t.Fatalf("second instance ListMeets = %+v, err %v; want the meet created on the first", listed, err)
+	}
+	if _, _, err := svc2.TransitionMeetStatus(admin, testOrgID, meet.ID, "published"); err != nil {
+		t.Fatalf("second instance cannot act on a meet the first created: %v", err)
+	}
+	got, err := svc1.GetMeet(admin, testOrgID, meet.ID)
+	if err != nil || got.Status != "published" {
+		t.Fatalf("first instance GetMeet = %+v, err %v; want status published from the second instance's write", got, err)
+	}
+}
+
+func TestDBRepoMeets_ConcurrentSyncDoesNotLoseWrites(t *testing.T) {
+	pool := openTestPool(t)
+	_ = testutil.RequireDBHarness(t)
+
+	admin := dbAdminPrincipal(t, pool)
+	admin.OrgID = testOrgID
+	cleanupMembersFixtures(t, pool, testOrgID)
+	cleanupMeetsFixtures(t, pool, testOrgID)
+
+	svc := meets.NewServiceWithPool(pool)
+	stop := make(chan struct{})
+	var readers sync.WaitGroup
+	for i := 0; i < 4; i++ {
+		readers.Add(1)
+		go func() {
+			defer readers.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					_, _ = svc.ListCommitments(admin, testOrgID, "race-probe") // syncs from Postgres before it looks the meet up
+				}
+			}
+		}()
+	}
+	defer func() { close(stop); readers.Wait() }()
+
+	for i := 0; i < 300; i++ {
+		meet, _, err := svc.CreateMeet(admin, testOrgID, meets.CreateMeetInput{Name: fmt.Sprintf("Race Meet %d", i), MeetType: "invitational", Course: "SCY"})
+		if err != nil {
+			t.Fatalf("CreateMeet %d: %v", i, err)
+		}
+		found := false
+		for _, m := range svc.SnapshotMeets(testOrgID) {
+			found = found || m.ID == meet.ID
+		}
+		if !found {
+			t.Fatalf("meet %s created in iteration %d is missing from memory right after the write", meet.ID, i)
+		}
+	}
+}
 
 func TestDBRepoMeets_RoundTrip(t *testing.T) {
 	// Not parallel: DB repo tests share testOrgID fixtures and clean them up.
@@ -670,22 +923,39 @@ func TestDBRepoPerformance_RoundTrip(t *testing.T) {
 
 	svc := performance.NewServiceWithPool(pool)
 
-	finTime := 34000
+	finTime, seedTime := 34000, 35000
 	_, err := svc.UpsertResult(testOrgID, admin.UserID, admin, performance.UpsertResultInput{
-		SwimmerID:  swimmerID,
-		MeetID:     meetID,
-		Distance:   50,
-		Stroke:     "free",
-		Course:     "SCY",
-		Gender:     "F",
-		FinTimeMs:  &finTime,
-		IsOfficial: true,
+		SwimmerID:   swimmerID,
+		MeetID:      meetID,
+		Distance:    50,
+		Stroke:      "free",
+		Course:      "SCY",
+		Gender:      "F",
+		FinTimeMs:   &finTime,
+		IsOfficial:  true,
+		EventNumber: "12",
+		SeedTimeMs:  &seedTime,
+		Splits: []performance.SplitInput{
+			{SplitNumber: 1, SplitDistance: 25, SplitTimeMs: 16000, CumulativeTimeMs: 16000},
+			{SplitNumber: 2, SplitDistance: 25, SplitTimeMs: 18000, CumulativeTimeMs: 34000},
+		},
 	})
 	if err != nil {
 		t.Fatalf("UpsertResult: %v", err)
 	}
 
 	svc2 := performance.NewServiceWithPool(pool)
+	progression, err := svc2.ListProgression(testOrgID, admin, swimmerID, performance.ListResultsFilters{})
+	if err != nil || len(progression) != 1 {
+		t.Fatalf("ListProgression after reload = %d rows, err %v", len(progression), err)
+	}
+	if progression[0].EventNumber != "12" || progression[0].SeedTimeMs == nil || *progression[0].SeedTimeMs != seedTime {
+		t.Fatalf("event number / seed time lost on reload: %+v", progression[0])
+	}
+	var splitCount int
+	if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM splits WHERE result_id = $1::uuid`, progression[0].ID).Scan(&splitCount); err != nil || splitCount != 2 {
+		t.Fatalf("persisted splits = %d, err %v; want 2", splitCount, err)
+	}
 	bestTimes, err := svc2.ListBestTimes(testOrgID, admin, swimmerID, performance.ListBestTimesFilters{})
 	if err != nil {
 		t.Fatalf("ListBestTimes after reload: %v", err)
@@ -783,6 +1053,10 @@ func cleanupBillingFixtures(t *testing.T, pool *pgxpool.Pool, orgID string) {
 		"DELETE FROM payments WHERE org_id = $1::uuid",
 		"DELETE FROM invoice_items WHERE org_id = $1::uuid",
 		"DELETE FROM invoices WHERE org_id = $1::uuid",
+		"DELETE FROM results WHERE org_id = $1::uuid",
+		"DELETE FROM best_times WHERE org_id = $1::uuid",
+		"DELETE FROM swimmer_groups WHERE org_id = $1::uuid",
+		"DELETE FROM swimmers WHERE org_id = $1::uuid",
 		"DELETE FROM households WHERE org_id = $1::uuid",
 	} {
 		if _, err := pool.Exec(ctx, q, orgID); err != nil {
@@ -889,8 +1163,8 @@ func cleanupComplianceFixtures(t *testing.T, pool *pgxpool.Pool, orgID string) {
 	t.Helper()
 	ctx := context.Background()
 	for _, q := range []string{
-		"DELETE FROM data_deletion_requests WHERE org_id = $1::uuid",
-		"DELETE FROM data_export_requests WHERE org_id = $1::uuid",
+		"DELETE FROM data_deletion_requests WHERE org_id = $1",
+		"DELETE FROM data_export_requests WHERE org_id = $1",
 	} {
 		if _, err := pool.Exec(ctx, q, orgID); err != nil {
 			t.Logf("cleanup warning (%s): %v", q, err)

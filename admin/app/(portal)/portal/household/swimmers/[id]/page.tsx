@@ -19,15 +19,13 @@ import {
   type BestTimeRecord,
   type SwimmerActivityRecord,
 } from '@/lib/adminData'
-import { parseBackendDate } from '@/lib/dates'
+import { formatDateOnly, parseBackendDate } from '@/lib/dates'
 import './page.inline.css'
+import { SWIMMER_AVATAR_COLOR } from '@/lib/avatar-colors'
+import { LoadErrorBanner } from '@/components/ui/LoadErrorBanner'
+import { ShimmerBlock } from '@/components/ui/ShimmerBlock'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
-function fmtDOB(iso?: string): string {
-  if (!iso) return '—'
-  return parseBackendDate(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
 function calcAge(iso: string | undefined | null): number | null {
   if (!iso) return null
   const d = parseBackendDate(iso)
@@ -72,26 +70,6 @@ function pivotBestTimes(records: BestTimeRecord[]): TimeRow[] {
     }
   }
   return Array.from(byEvent.entries()).map(([event, times]) => ({ event, ...times }))
-}
-
-const GRADIENTS = [
-  'var(--accent-text)',
-  'var(--accent-text)',
-  'var(--accent-text)',
-  'var(--accent-text)',
-]
-
-function Skeleton({ w = '100%', h = 16, r = 8 }: { w?: string | number; h?: number; r?: number }) {
-  return (
-    <div
-      style={{
-        width: w, height: h, borderRadius: r,
-        background: 'linear-gradient(90deg, var(--bg-elevated) 25%, var(--border-strong) 50%, var(--bg-elevated) 75%)',
-        backgroundSize: '200% 100%',
-        animation: 'shimmer 1.5s infinite',
-      }}
-    />
-  )
 }
 
 const STATUS_CONFIG: Record<string, { label: string; bg: string; color: string }> = {
@@ -260,17 +238,13 @@ export default function SwimmerProfilePage() {
     : '?'
   const age = calcAge(swimmer?.date_of_birth)
   const statusKey = swimmer?.registration_status ?? 'active'
-  const statusCfg = STATUS_CONFIG[statusKey] ?? STATUS_CONFIG['active']
-  const gradient = GRADIENTS[0]
+  const statusCfg = STATUS_CONFIG[statusKey] ?? STATUS_CONFIG.active
+  const gradient = SWIMMER_AVATAR_COLOR
 
 
   return (
     <div className="page">
-      <style>{`
-        @keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
-      `}</style>
-
+      
       {/* Breadcrumb */}
       <nav className="is-90f3963">
         <Link href="/portal/household" style={{ color: 'var(--text-muted)', textDecoration: 'none' }}>
@@ -283,31 +257,17 @@ export default function SwimmerProfilePage() {
       </nav>
 
       {loadError && (
-        <div
-          className="is-d01e931"
-        >
-          <div className="is-730b6a7">
-            <Icon name="alert-circle" size={15} style={{ color: 'var(--warning)', marginTop: '1px', flexShrink: 0 }} />
-            <p className="is-51a00ce">{loadError}</p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setReloadKey((key) => key + 1)}
-            className="is-889d44c"
-          >
-            Retry
-          </button>
-        </div>
+        <LoadErrorBanner message={loadError} onRetry={() => setReloadKey((key) => key + 1)} />
       )}
 
       {/* Header Card */}
       <div className="card is-466f0ca" >
         {loading ? (
           <>
-            <Skeleton w={72} h={72} r={36} />
+            <ShimmerBlock w={72} h={72} r={36} />
             <div className="is-e933947">
-              <Skeleton w="40%" h={26} />
-              <Skeleton w="65%" h={14} />
+              <ShimmerBlock w="40%" h={26} />
+              <ShimmerBlock w="65%" h={14} />
             </div>
           </>
         ) : (
@@ -376,12 +336,12 @@ export default function SwimmerProfilePage() {
 
             {loading ? (
               <div className="is-824b1f4">
-                {[0, 1, 2, 3, 4].map((i) => <Skeleton key={i} w={`${60 + i * 5}%`} h={14} />)}
+                {[0, 1, 2, 3, 4].map((i) => <ShimmerBlock key={i} w={`${60 + i * 5}%`} h={14} />)}
               </div>
             ) : (
               [
                 { label: 'Full name',           value: fullName },
-                { label: 'Date of birth',        value: fmtDOB(swimmer?.date_of_birth) },
+                { label: 'Date of birth',        value: formatDateOnly(swimmer?.date_of_birth) },
                 { label: 'Age',                  value: age !== null ? `${age} years old` : '—' },
                 { label: 'Gender',               value: swimmer?.gender ?? '—' },
                 { label: 'External ID',          value: swimmer?.swimmer_external_id ?? '—', mono: true },
@@ -427,7 +387,7 @@ export default function SwimmerProfilePage() {
                     </div>
                   )}
                 </div>
-                <button type="button" onClick={() => setEditingName(!editingName)} className="is-57031ea" onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(235,93,30,0.06)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
+                <button type="button" onClick={() => setEditingName(!editingName)} className="is-57031ea hv-76554a">
                   <Icon name="edit" size={12} />
                   {editingName ? 'Cancel' : 'Edit'}
                 </button>
@@ -456,7 +416,7 @@ export default function SwimmerProfilePage() {
                     Visible to coaches and club staff during meets and practices.
                   </div>
                 </div>
-                <button type="button" onClick={() => setEditingNotes(!editingNotes)} className="is-b347197" onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(235,93,30,0.06)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
+                <button type="button" onClick={() => setEditingNotes(!editingNotes)} className="is-b347197 hv-76554a">
                   <Icon name="edit" size={12} />
                   {editingNotes ? 'Cancel' : 'Edit'}
                 </button>
@@ -520,7 +480,7 @@ export default function SwimmerProfilePage() {
                     </div>
                   )}
                 </div>
-                <button type="button" onClick={() => setEditingEmergencyContact(!editingEmergencyContact)} className="is-b347197" onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(235,93,30,0.06)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
+                <button type="button" onClick={() => setEditingEmergencyContact(!editingEmergencyContact)} className="is-b347197 hv-76554a">
                   <Icon name="edit" size={12} />
                   {editingEmergencyContact ? 'Cancel' : 'Edit'}
                 </button>
@@ -588,7 +548,7 @@ export default function SwimmerProfilePage() {
 
             {loading ? (
               <div className="is-6455ae6">
-                {[0, 1, 2, 3].map((i) => <Skeleton key={i} h={14} />)}
+                {[0, 1, 2, 3].map((i) => <ShimmerBlock key={i} h={14} />)}
               </div>
             ) : bestTimes.length === 0 ? (
               <div className="is-7f65358">
@@ -625,7 +585,7 @@ export default function SwimmerProfilePage() {
             </div>
             {loading ? (
               <div className="is-824b1f4">
-                {[0, 1, 2].map((i) => <Skeleton key={i} h={42} r={10} />)}
+                {[0, 1, 2].map((i) => <ShimmerBlock key={i} h={42} r={10} />)}
               </div>
             ) : activity.length === 0 ? (
               <div className="is-7f23ed8">

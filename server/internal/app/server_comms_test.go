@@ -1,7 +1,6 @@
 package app
 
 import (
-	"bytes"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -40,23 +39,7 @@ func issueCommsToken(t *testing.T, router http.Handler, role string) string {
 
 func issueScopedCommsToken(t *testing.T, router http.Handler, userID, role, householdID, orgID string) string {
 	t.Helper()
-	payload := map[string]any{
-		"user_id": userID,
-		"org_id":  orgID,
-		"roles":   []string{role},
-	}
-	if householdID != "" {
-		payload["household_id"] = householdID
-	}
-	raw, _ := json.Marshal(payload)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/sessions/issue", bytes.NewReader(raw))
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, req)
-	if rr.Code != http.StatusCreated {
-		t.Fatalf("issueCommsToken: want 201, got %d: %s", rr.Code, rr.Body.String())
-	}
-	return issuedAccessTokenFromResponse(t, rr)
+	return issueSession(t, router, sessionSpec{UserID: userID, OrgID: orgID, HouseholdID: householdID, Roles: []string{role}})
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

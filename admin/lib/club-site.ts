@@ -85,7 +85,7 @@ export function groupRecordsByAge(records: PublicRecord[], f: RecordFilter): { a
   return out
 }
 
-/** Strips a trailing age-group prefix/suffix so rows read as just the event ("100 Freestyle"). */
+/** Event label for a record row, e.g. "100 Freestyle" (underscores in the stroke become spaces). */
 export function eventName(r: Pick<PublicRecord, 'distance' | 'stroke'>): string {
   const stroke = r.stroke.replace(/_/g, ' ')
   return `${r.distance} ${stroke.charAt(0).toUpperCase()}${stroke.slice(1)}`

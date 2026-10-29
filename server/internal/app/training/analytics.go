@@ -40,26 +40,27 @@ func PlannedYards(p *Practice, w *Workout) int {
 	return p.YardageTarget
 }
 
-func zoneYards(w *Workout) map[string]int {
-	out := map[string]int{}
-	if w == nil {
-		return out
-	}
-	for zone, d := range w.Totals.ByZone {
-		out[zone] = ToYards(d, w.Course)
+// scaledYards converts a per-key distance map (zone or stroke) to yards.
+func scaledYards(distances map[string]int, course string) map[string]int {
+	out := make(map[string]int, len(distances))
+	for key, d := range distances {
+		out[key] = ToYards(d, course)
 	}
 	return out
 }
 
-func strokeYards(w *Workout) map[string]int {
-	out := map[string]int{}
+func zoneYards(w *Workout) map[string]int {
 	if w == nil {
-		return out
+		return map[string]int{}
 	}
-	for stroke, d := range w.Totals.ByStroke {
-		out[stroke] = ToYards(d, w.Course)
+	return scaledYards(w.Totals.ByZone, w.Course)
+}
+
+func strokeYards(w *Workout) map[string]int {
+	if w == nil {
+		return map[string]int{}
 	}
-	return out
+	return scaledYards(w.Totals.ByStroke, w.Course)
 }
 
 // practicesInRange returns the org's practices dated within [from, to] plus

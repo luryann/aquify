@@ -5,13 +5,8 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
-import { fetchAuditEvents, fetchUsers, type AuditEventRecord, type UserRecord } from '@/lib/adminData'
+import { displayNameForUser, fetchAuditEvents, fetchUsers, type AuditEventRecord } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
-
-function displayNameForUser(user: UserRecord): string {
-  const name = `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim()
-  return name || user.email || user.id
-}
 
 function formatDateTime(value: string) {
   return new Date(value).toLocaleString('en-US', {
@@ -95,19 +90,14 @@ export default function AuditLogPage() {
       try {
         setLoading(true)
         setError(null)
-        const response = await fetchAuditEvents(api, session.user.orgId, { limit: '200' })
-        if (!cancelled) setEvents(response.events)
-
         // Best-effort actor-name resolution so the log reads as "who did what"
         // instead of raw UUIDs. Failure here shouldn't block the audit log itself.
-        try {
-          const { users } = await fetchUsers(api, session.user.orgId, { limit: 200 })
-          if (!cancelled) {
-            setActorNames(Object.fromEntries(users.map((u) => [u.id, displayNameForUser(u)])))
-          }
-        } catch {
-          // Name resolution is a display nicety; leave actorNames empty and fall
-          // back to raw IDs rather than failing the whole page load.
+        const usersRequest = fetchUsers(api, session.user.orgId, { limit: 200 }).catch(() => null)
+        const response = await fetchAuditEvents(api, session.user.orgId, { limit: '200' })
+        if (!cancelled) setEvents(response.events)
+        const resolved = await usersRequest
+        if (!cancelled && resolved) {
+          setActorNames(Object.fromEntries(resolved.users.map((u) => [u.id, displayNameForUser(u)])))
         }
       } catch (err) {
         if (!cancelled) {
@@ -125,20 +115,22 @@ export default function AuditLogPage() {
     }
   }, [api, session?.user.orgId])
 
-  const filtered = useMemo(() => events.filter((event) => {
+  const filtered = useMemo(() => {
     const query = search.trim().toLowerCase()
-    if (actionFilter && !event.action.startsWith(actionFilter)) return false
-    if (resourceFilter && event.resource_type !== resourceFilter) return false
-    if (!query) return true
-    return [
-      event.action,
-      event.resource_type,
-      event.resource_id,
-      event.actor_user_id,
-      actorNames[event.actor_user_id] ?? '',
-      JSON.stringify(event.metadata ?? {}),
-    ].join(' ').toLowerCase().includes(query)
-  }), [actionFilter, actorNames, events, resourceFilter, search])
+    return events.filter((event) => {
+      if (actionFilter && !event.action.startsWith(actionFilter)) return false
+      if (resourceFilter && event.resource_type !== resourceFilter) return false
+      if (!query) return true
+      return [
+        event.action,
+        event.resource_type,
+        event.resource_id,
+        event.actor_user_id,
+        actorNames[event.actor_user_id] ?? '',
+        JSON.stringify(event.metadata ?? {}),
+      ].join(' ').toLowerCase().includes(query)
+    })
+  }, [actionFilter, actorNames, events, resourceFilter, search])
 
   const families = Array.from(new Set(events.map((event) => family(event.action)))).sort()
   const resources = Array.from(new Set(events.map((event) => event.resource_type))).sort()

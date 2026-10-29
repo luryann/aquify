@@ -24,8 +24,9 @@ import {
   type SwimmerGroupLinkRecord,
   type SwimmerRecord,
 } from '@/lib/adminData'
-import { parseBackendDate } from '@/lib/dates'
+import { formatDateOnly } from '@/lib/dates'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
+import { formatCents } from '@/lib/financeData'
 
 type SwimmerRow = {
   id: string
@@ -53,17 +54,6 @@ type InvoiceRow = {
   status: string
   issuedAt: string
   dueAt: string
-}
-
-function formatCurrency(cents: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100)
-}
-
-function formatDate(value?: string | null) {
-  if (!value) return '—'
-  const parsed = parseBackendDate(value)
-  if (Number.isNaN(parsed.getTime())) return value
-  return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -104,7 +94,7 @@ const SWIMMER_COLS: Column<SwimmerRow>[] = [
       </div>
     ),
   },
-  { key: 'dob', label: 'DOB', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{formatDate(row.dob)}</span> },
+  { key: 'dob', label: 'DOB', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{formatDateOnly(row.dob)}</span> },
   { key: 'gender', label: 'Gender', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{row.gender}</span> },
   {
     key: 'groups',
@@ -156,9 +146,9 @@ const INVOICE_COLS: Column<InvoiceRow>[] = [
       </Link>
     ),
   },
-  { key: 'amountCents', label: 'Amount', align: 'right', render: (row) => <span className="u-ff-font-body u-fs-fs-base u-fw-600" style={{ color: 'var(--text)' }}>{formatCurrency(row.amountCents)}</span> },
+  { key: 'amountCents', label: 'Amount', align: 'right', render: (row) => <span className="u-ff-font-body u-fs-fs-base u-fw-600" style={{ color: 'var(--text)' }}>{formatCents(row.amountCents)}</span> },
   { key: 'status', label: 'Status', render: (row) => <StatusBadge status={row.status} /> },
-  { key: 'dueAt', label: 'Due', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{formatDate(row.dueAt)}</span> },
+  { key: 'dueAt', label: 'Due', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{formatDateOnly(row.dueAt)}</span> },
 ]
 
 function buildSwimmerRows(swimmers: SwimmerRecord[], groups: GroupRecord[], links: SwimmerGroupLinkRecord[]): SwimmerRow[] {
@@ -335,10 +325,10 @@ export default function HouseholdDetailPage() {
 
       <div className="cols-4 u-gap-12px u-mb-24px" >
         {[
-          { label: 'Invoice total', value: formatCurrency(totalBalanceCents), color: 'var(--text)' },
+          { label: 'Invoice total', value: formatCents(totalBalanceCents), color: 'var(--text)' },
           { label: 'Swimmers', value: swimmers.length.toString(), color: 'var(--text)' },
           { label: 'Additional contacts', value: contacts.length.toString(), color: 'var(--text)' },
-          { label: 'Member since', value: formatDate(household.created_at), color: 'var(--text-subtle)' },
+          { label: 'Member since', value: formatDateOnly(household.created_at), color: 'var(--text-subtle)' },
         ].map((stat) => (
           <div key={stat.label} className="card u-p-16px-16px" >
             <div className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ color: 'var(--text-muted)' }}>{stat.label}</div>
@@ -360,7 +350,7 @@ export default function HouseholdDetailPage() {
                 { label: 'Primary email', value: household.primary_email || '—' },
                 { label: 'Primary phone', value: household.primary_phone_e164 || '—' },
                 { label: 'Open invoices', value: `${outstandingCount}` },
-                { label: 'Created', value: formatDate(household.created_at) },
+                { label: 'Created', value: formatDateOnly(household.created_at) },
               ].map((row) => (
                 <div key={row.label} className="u-fs-fs-base u-pb-12px" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)' }}>
                   <span style={{ color: 'var(--text-muted)' }}>{row.label}</span>

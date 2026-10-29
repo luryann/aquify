@@ -42,6 +42,30 @@
 
 set -euo pipefail
 
+# libpq does not expand a connection URI from PGDATABASE (only from a dbname
+# argument), so split DATABASE_URL into the PG* variables the tools read. This
+# keeps the embedded password out of `ps` output, which --dbname would expose.
+pg_env_from_url() {
+  local url="$1"
+  local re='^postgres(ql)?://(([^:@/]*)(:([^@]*))?@)?([^:/?]*)(:([0-9]+))?(/([^?]*))?(\?(.*))?$'
+  if [[ ! "${url}" =~ ${re} ]]; then
+    echo "DATABASE_URL must be a postgres:// URL" >&2
+    return 1
+  fi
+  local user="${BASH_REMATCH[3]}" pass="${BASH_REMATCH[5]}" host="${BASH_REMATCH[6]}"
+  local port="${BASH_REMATCH[8]}" db="${BASH_REMATCH[10]}" query="${BASH_REMATCH[12]}"
+  local sslmode=""
+  if [[ "${query}" =~ (^|&)sslmode=([^&]*) ]]; then sslmode="${BASH_REMATCH[2]}"; fi
+  _pg_urldecode() { local v="${1//\\/\\\\}"; printf '%b' "${v//%/\\x}"; }
+  [[ -n "${host}" ]] && export PGHOST="${host}"
+  [[ -n "${port}" ]] && export PGPORT="${port}"
+  [[ -n "${user}" ]] && export PGUSER="$(_pg_urldecode "${user}")"
+  [[ -n "${pass}" ]] && export PGPASSWORD="$(_pg_urldecode "${pass}")"
+  [[ -n "${db}" ]] && export PGDATABASE="$(_pg_urldecode "${db}")"
+  [[ -n "${sslmode}" ]] && export PGSSLMODE="${sslmode}"
+  return 0
+}
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -157,14 +181,12 @@ backup_postgres() {
   fi
 
   log "INFO" "Running pg_dump (custom format, compression level 9)..."
-  # Pass the DSN via PGDATABASE (libpq accepts a full connection URI there)
-  # instead of as a command-line argument, so the embedded password never
-  # appears in `ps` output visible to other local users.
-  if PGDATABASE="${DATABASE_URL}" pg_dump \
+  # Connection settings travel as PG* variables (see pg_env_from_url), not argv.
+  if ( pg_env_from_url "${DATABASE_URL}" && pg_dump \
       --format=custom \
       --compress=9 \
       --no-password \
-      > "${dump_file}" 2>> "${BACKUP_LOG}"; then
+      > "${dump_file}" 2>> "${BACKUP_LOG}" ); then
     local sz
     sz="$(du -sh "${dump_file}" | cut -f1)"
     log "INFO" "pg_dump complete: ${dump_file} (${sz})"

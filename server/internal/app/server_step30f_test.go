@@ -1,12 +1,11 @@
 package app
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/dareaquatics/aquify/server/internal/app/audit"
@@ -15,63 +14,19 @@ import (
 
 // ─── Router helpers ───────────────────────────────────────────────────────────
 
-func newStep30FRouter(t *testing.T, kc keycloak.Client) http.Handler {
-	t.Helper()
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewRouterWithServices(
-		Config{Auth: AuthConfig{EnableDevStubTokens: true}},
-		logger,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		audit.NewService(), nil, nil, nil, nil,
-		kc)
-}
-
 func issueStep30FToken(t *testing.T, router http.Handler, userID, orgID string, roles []string) string {
 	t.Helper()
-	payload := map[string]any{
-		"user_id": userID,
-		"org_id":  orgID,
-		"roles":   roles,
-	}
-	raw, _ := json.Marshal(payload)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/sessions/issue", bytes.NewReader(raw))
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, req)
-	if rr.Code != http.StatusCreated {
-		t.Fatalf("issueStep30FToken: want 201, got %d: %s", rr.Code, rr.Body.String())
-	}
-	return issuedAccessTokenFromResponse(t, rr)
-}
-
-func do30F(router http.Handler, method, path, token, body, orgID string) *httptest.ResponseRecorder {
-	var bodyReader io.Reader
-	if body != "" {
-		bodyReader = bytes.NewBufferString(body)
-	}
-	req := httptest.NewRequest(method, path, bodyReader)
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-	if orgID != "" {
-		req.Header.Set("X-Org-Id", orgID)
-	}
-	if body != "" {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, req)
-	return rr
+	return issueSession(t, router, sessionSpec{UserID: userID, OrgID: orgID, Roles: roles})
 }
 
 // ─── POST /api/v1/register (public self-registration) ─────────────────────────
 
 func TestSelfRegister_Success(t *testing.T) {
 	kc := keycloak.NewStubClient()
-	router := newStep30FRouter(t, kc)
+	router := newStep30BRouter(t, kc)
 
 	body := `{"first_name":"Jane","last_name":"Doe","email":"jane@example.com","org_id":"org-1","requested_role":"coach","club_code":"dare2026","note":"Parent volunteer"}`
-	rr := do30F(router, http.MethodPost, "/api/v1/register", "", body, "")
+	rr := doRequest(router, http.MethodPost, "/api/v1/register", "", body, "")
 
 	if rr.Code != http.StatusCreated {
 		t.Fatalf("want 201, got %d: %s", rr.Code, rr.Body.String())
@@ -87,7 +42,7 @@ func TestSelfRegister_Success(t *testing.T) {
 
 	// Verify registration_status attribute was set.
 	userID := resp["user_id"].(string)
-	u, err := kc.GetUser(nil, userID) //nolint:staticcheck — nil ctx fine for stub
+	u, err := kc.GetUser(context.Background(), userID)
 	if err != nil {
 		t.Fatalf("GetUser: %v", err)
 	}
@@ -117,10 +72,10 @@ func TestSelfRegister_DuplicateEmail_Returns409(t *testing.T) {
 			"org_id": {"org-1"},
 		},
 	})
-	router := newStep30FRouter(t, kc)
+	router := newStep30BRouter(t, kc)
 
 	body := `{"first_name":"Jane","last_name":"Doe","email":"jane@example.com","org_id":"org-1"}`
-	rr := do30F(router, http.MethodPost, "/api/v1/register", "", body, "")
+	rr := doRequest(router, http.MethodPost, "/api/v1/register", "", body, "")
 
 	if rr.Code != http.StatusConflict {
 		t.Fatalf("want 409, got %d: %s", rr.Code, rr.Body.String())
@@ -129,10 +84,10 @@ func TestSelfRegister_DuplicateEmail_Returns409(t *testing.T) {
 
 func TestSelfRegister_MissingEmail_Returns400(t *testing.T) {
 	kc := keycloak.NewStubClient()
-	router := newStep30FRouter(t, kc)
+	router := newStep30BRouter(t, kc)
 
 	body := `{"first_name":"Jane","org_id":"org-1"}`
-	rr := do30F(router, http.MethodPost, "/api/v1/register", "", body, "")
+	rr := doRequest(router, http.MethodPost, "/api/v1/register", "", body, "")
 
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("want 400, got %d: %s", rr.Code, rr.Body.String())
@@ -141,10 +96,10 @@ func TestSelfRegister_MissingEmail_Returns400(t *testing.T) {
 
 func TestSelfRegister_MissingOrgID_Returns400(t *testing.T) {
 	kc := keycloak.NewStubClient()
-	router := newStep30FRouter(t, kc)
+	router := newStep30BRouter(t, kc)
 
 	body := `{"first_name":"Jane","last_name":"Doe","email":"jane@example.com"}`
-	rr := do30F(router, http.MethodPost, "/api/v1/register", "", body, "")
+	rr := doRequest(router, http.MethodPost, "/api/v1/register", "", body, "")
 
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("want 400, got %d: %s", rr.Code, rr.Body.String())
@@ -175,10 +130,10 @@ func TestListUsers_PendingApprovalFilter(t *testing.T) {
 		},
 	})
 
-	router := newStep30FRouter(t, kc)
+	router := newStep30BRouter(t, kc)
 	token := issueStep30FToken(t, router, "admin-1", "org-1", []string{"admin"})
 
-	rr := do30F(router, http.MethodGet, "/api/v1/users?status=pending_approval", token, "", "org-1")
+	rr := doRequest(router, http.MethodGet, "/api/v1/users?status=pending_approval", token, "", "org-1")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -213,10 +168,10 @@ func TestApproveUser_Success(t *testing.T) {
 		},
 	})
 
-	router := newStep30FRouter(t, kc)
+	router := newStep30BRouter(t, kc)
 	token := issueStep30FToken(t, router, "admin-1", "org-1", []string{"admin"})
 
-	rr := do30F(router, http.MethodPost, "/api/v1/users/pending-user/approve", token, "", "org-1")
+	rr := doRequest(router, http.MethodPost, "/api/v1/users/pending-user/approve", token, "", "org-1")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -227,7 +182,7 @@ func TestApproveUser_Success(t *testing.T) {
 	}
 
 	// Verify user is now enabled.
-	u, _ := kc.GetUser(nil, "pending-user") //nolint:staticcheck
+	u, _ := kc.GetUser(context.Background(), "pending-user")
 	if !u.Enabled {
 		t.Error("expected user to be enabled after approval")
 	}
@@ -238,7 +193,7 @@ func TestApproveUser_Success(t *testing.T) {
 	if got := u.Attributes["registration_note"][0]; got != "Volunteer family" {
 		t.Errorf("expected registration metadata to be preserved, got %q", got)
 	}
-	roles, err := kc.GetUserRealmRoles(nil, "pending-user") //nolint:staticcheck
+	roles, err := kc.GetUserRealmRoles(context.Background(), "pending-user")
 	if err != nil {
 		t.Fatalf("GetUserRealmRoles: %v", err)
 	}
@@ -257,10 +212,10 @@ func TestApproveUser_NonAdmin_Returns403(t *testing.T) {
 		},
 	})
 
-	router := newStep30FRouter(t, kc)
+	router := newStep30BRouter(t, kc)
 	token := issueStep30FToken(t, router, "coach-1", "org-1", []string{"coach"})
 
-	rr := do30F(router, http.MethodPost, "/api/v1/users/pending-user/approve", token, "", "org-1")
+	rr := doRequest(router, http.MethodPost, "/api/v1/users/pending-user/approve", token, "", "org-1")
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("want 403, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -280,11 +235,11 @@ func TestRejectUser_Success(t *testing.T) {
 		},
 	})
 
-	router := newStep30FRouter(t, kc)
+	router := newStep30BRouter(t, kc)
 	token := issueStep30FToken(t, router, "admin-1", "org-1", []string{"admin"})
 
 	body := `{"reason":"Not a club member"}`
-	rr := do30F(router, http.MethodPost, "/api/v1/users/pending-user/reject", token, body, "org-1")
+	rr := doRequest(router, http.MethodPost, "/api/v1/users/pending-user/reject", token, body, "org-1")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -295,7 +250,7 @@ func TestRejectUser_Success(t *testing.T) {
 	}
 
 	// Verify user is disabled.
-	u, _ := kc.GetUser(nil, "pending-user") //nolint:staticcheck
+	u, _ := kc.GetUser(context.Background(), "pending-user")
 	if u.Enabled {
 		t.Error("expected user to be disabled after rejection")
 	}
@@ -317,10 +272,10 @@ func TestRejectUser_WithoutReason_Success(t *testing.T) {
 		},
 	})
 
-	router := newStep30FRouter(t, kc)
+	router := newStep30BRouter(t, kc)
 	token := issueStep30FToken(t, router, "admin-1", "org-1", []string{"admin"})
 
-	rr := do30F(router, http.MethodPost, "/api/v1/users/pending-user2/reject", token, "", "org-1")
+	rr := doRequest(router, http.MethodPost, "/api/v1/users/pending-user2/reject", token, "", "org-1")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -336,11 +291,11 @@ func TestRejectUser_NonAdmin_Returns403(t *testing.T) {
 		},
 	})
 
-	router := newStep30FRouter(t, kc)
+	router := newStep30BRouter(t, kc)
 	token := issueStep30FToken(t, router, "coach-1", "org-1", []string{"coach"})
 
 	body := `{"reason":"no"}`
-	rr := do30F(router, http.MethodPost, "/api/v1/users/pending-user/reject", token, body, "org-1")
+	rr := doRequest(router, http.MethodPost, "/api/v1/users/pending-user/reject", token, body, "org-1")
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("want 403, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -370,7 +325,7 @@ func TestApproveUser_EmitsAuditEvent(t *testing.T) {
 		kc)
 
 	token := issueStep30FToken(t, router, "admin-1", "org-1", []string{"admin"})
-	do30F(router, http.MethodPost, "/api/v1/users/pending-audit/approve", token, "", "org-1")
+	doRequest(router, http.MethodPost, "/api/v1/users/pending-audit/approve", token, "", "org-1")
 
 	events, _ := auditSvc.Query(audit.Filter{OrgID: "org-1", Action: "auth.user.approve"})
 	if len(events) == 0 {
@@ -400,7 +355,7 @@ func TestRejectUser_EmitsAuditEvent(t *testing.T) {
 		kc)
 
 	token := issueStep30FToken(t, router, "admin-1", "org-1", []string{"admin"})
-	do30F(router, http.MethodPost, "/api/v1/users/pending-reject-audit/reject", token, `{"reason":"test"}`, "org-1")
+	doRequest(router, http.MethodPost, "/api/v1/users/pending-reject-audit/reject", token, `{"reason":"test"}`, "org-1")
 
 	events, _ := auditSvc.Query(audit.Filter{OrgID: "org-1", Action: "auth.user.reject"})
 	if len(events) == 0 {

@@ -14,17 +14,7 @@ import {
   type AnnouncementRecord,
 } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
-
-function formatDateTime(value?: string) {
-  if (!value) return '—'
-  return new Date(value).toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
+import { formatDateTime } from '@/lib/dates'
 
 export default function AnnouncementDetailPage() {
   const params = useParams<{ id: string }>()

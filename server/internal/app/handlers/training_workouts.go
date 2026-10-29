@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/app/audit"
 	"github.com/dareaquatics/aquify/server/internal/app/httpx"
 	"github.com/dareaquatics/aquify/server/internal/app/members"
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
@@ -62,20 +61,7 @@ func requireStaff(w http.ResponseWriter, r *http.Request, principal *appmiddlewa
 }
 
 func (h *TrainingHandlers) audit(principal *appmiddleware.Principal, orgID, action, resourceType, resourceID string, before, after any, metadata map[string]string) {
-	if h.auditService == nil {
-		return
-	}
-	_, _ = h.auditService.Append(audit.AppendRequest{
-		OrgID:        orgID,
-		ActorUserID:  principal.UserID,
-		ActorRoles:   principal.Roles,
-		Action:       action,
-		ResourceType: resourceType,
-		ResourceID:   resourceID,
-		Before:       before,
-		After:        after,
-		Metadata:     metadata,
-	})
+	recordAudit(h.auditService, principal, orgID, action, resourceType, resourceID, before, after, metadata)
 }
 
 // writeTrainingError maps training-domain errors onto HTTP responses.
@@ -119,24 +105,25 @@ func (h *TrainingHandlers) groupIndex(orgID string) (func(string) string, func(s
 			byKey[strings.ToUpper(strings.TrimSpace(g.Code))] = g.ID
 		}
 	}
-	canon := func(v string) string {
+	lookup := func(v string) (string, bool) {
 		v = strings.TrimSpace(v)
 		if id, ok := byKey[v]; ok {
+			return id, true
+		}
+		id, ok := byKey[strings.ToUpper(v)]
+		return id, ok
+	}
+	canon := func(v string) string {
+		if id, ok := lookup(v); ok {
 			return id
 		}
-		if id, ok := byKey[strings.ToUpper(v)]; ok {
-			return id
-		}
-		return v
+		return strings.TrimSpace(v)
 	}
 	known := func(v string) bool {
 		if h.groupsService == nil {
 			return true
 		}
-		_, ok := byKey[strings.TrimSpace(v)]
-		if !ok {
-			_, ok = byKey[strings.ToUpper(strings.TrimSpace(v))]
-		}
+		_, ok := lookup(v)
 		return ok
 	}
 	return canon, known
@@ -231,7 +218,7 @@ func (b workoutBody) input(defaultTemplate bool) training.WorkoutInput {
 
 // listWorkouts handles GET /api/v1/workouts
 func (h *TrainingHandlers) listWorkouts(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := trainingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok || !requireStaff(w, r, principal, "browse the workout library") {
 		return
 	}
@@ -260,7 +247,7 @@ func (h *TrainingHandlers) listWorkouts(w http.ResponseWriter, r *http.Request) 
 
 // createWorkout handles POST /api/v1/workouts
 func (h *TrainingHandlers) createWorkout(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := trainingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok || !requireStaff(w, r, principal, "create workouts") {
 		return
 	}
@@ -284,7 +271,7 @@ type parseWorkoutBody struct {
 
 // parseWorkoutText handles POST /api/v1/workouts/parse (no persistence).
 func (h *TrainingHandlers) parseWorkoutText(w http.ResponseWriter, r *http.Request) {
-	principal, _, ok := trainingScopeFromRequest(w, r)
+	principal, _, ok := scopedRequestFromContext(w, r)
 	if !ok || !requireStaff(w, r, principal, "parse workouts") {
 		return
 	}
@@ -313,7 +300,7 @@ type previewWorkoutBody struct {
 
 // previewWorkout handles POST /api/v1/workouts/preview (no persistence).
 func (h *TrainingHandlers) previewWorkout(w http.ResponseWriter, r *http.Request) {
-	principal, _, ok := trainingScopeFromRequest(w, r)
+	principal, _, ok := scopedRequestFromContext(w, r)
 	if !ok || !requireStaff(w, r, principal, "preview workouts") {
 		return
 	}
@@ -341,7 +328,7 @@ func (h *TrainingHandlers) previewWorkout(w http.ResponseWriter, r *http.Request
 
 // getWorkout handles GET /api/v1/workouts/{id}
 func (h *TrainingHandlers) getWorkout(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := trainingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok || !requireStaff(w, r, principal, "view library workouts") {
 		return
 	}
@@ -355,7 +342,7 @@ func (h *TrainingHandlers) getWorkout(w http.ResponseWriter, r *http.Request) {
 
 // updateWorkout handles PUT /api/v1/workouts/{id}
 func (h *TrainingHandlers) updateWorkout(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := trainingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok || !requireStaff(w, r, principal, "update workouts") {
 		return
 	}
@@ -380,7 +367,7 @@ func (h *TrainingHandlers) updateWorkout(w http.ResponseWriter, r *http.Request)
 
 // deleteWorkout handles DELETE /api/v1/workouts/{id}
 func (h *TrainingHandlers) deleteWorkout(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := trainingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok || !requireStaff(w, r, principal, "delete workouts") {
 		return
 	}
@@ -405,7 +392,7 @@ type duplicateWorkoutBody struct {
 
 // duplicateWorkout handles POST /api/v1/workouts/{id}/duplicate
 func (h *TrainingHandlers) duplicateWorkout(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := trainingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok || !requireStaff(w, r, principal, "duplicate workouts") {
 		return
 	}
@@ -432,7 +419,7 @@ type assignWorkoutBody struct {
 
 // assignWorkout handles POST /api/v1/workouts/{id}/assign
 func (h *TrainingHandlers) assignWorkout(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := trainingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok || !requireStaff(w, r, principal, "assign workouts") {
 		return
 	}
@@ -466,7 +453,7 @@ func (h *TrainingHandlers) assignWorkout(w http.ResponseWriter, r *http.Request)
 
 // getPracticeWorkout handles GET /api/v1/practices/{id}/workout
 func (h *TrainingHandlers) getPracticeWorkout(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := trainingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -489,7 +476,7 @@ func (h *TrainingHandlers) getPracticeWorkout(w http.ResponseWriter, r *http.Req
 
 // setPracticeWorkout handles PUT /api/v1/practices/{id}/workout
 func (h *TrainingHandlers) setPracticeWorkout(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := trainingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok || !requireStaff(w, r, principal, "edit practice workouts") {
 		return
 	}
@@ -513,7 +500,7 @@ func (h *TrainingHandlers) setPracticeWorkout(w http.ResponseWriter, r *http.Req
 
 // clearPracticeWorkout handles DELETE /api/v1/practices/{id}/workout
 func (h *TrainingHandlers) clearPracticeWorkout(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := trainingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok || !requireStaff(w, r, principal, "remove practice workouts") {
 		return
 	}
@@ -553,7 +540,7 @@ type scheduleItem struct {
 
 // trainingSchedule handles GET /api/v1/training/schedule
 func (h *TrainingHandlers) trainingSchedule(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := trainingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -603,7 +590,7 @@ func (h *TrainingHandlers) trainingSchedule(w http.ResponseWriter, r *http.Reque
 
 // trainingAnalytics handles GET /api/v1/training/analytics
 func (h *TrainingHandlers) trainingAnalytics(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := trainingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok || !requireStaff(w, r, principal, "view training analytics") {
 		return
 	}
@@ -613,10 +600,7 @@ func (h *TrainingHandlers) trainingAnalytics(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	canon, _ := h.groupIndex(orgID)
-	groupFilter := ""
-	if g := strings.TrimSpace(r.URL.Query().Get("group_id")); g != "" {
-		groupFilter = canon(g)
-	}
+	groupFilter := canon(r.URL.Query().Get("group_id")) // canon trims; empty stays empty
 	out, err := h.service.GroupAnalytics(orgID, from, to, groupFilter, canon)
 	if err != nil {
 		writeTrainingError(w, r, err, "Failed to compute training analytics.")
@@ -627,7 +611,7 @@ func (h *TrainingHandlers) trainingAnalytics(w http.ResponseWriter, r *http.Requ
 
 // swimmerTrainingAnalytics handles GET /api/v1/training/analytics/swimmers/{swimmerID}
 func (h *TrainingHandlers) swimmerTrainingAnalytics(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := trainingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -728,7 +712,7 @@ func (h *TrainingHandlers) phaseInput(w http.ResponseWriter, r *http.Request, or
 
 // listTrainingPhases handles GET /api/v1/seasons/{id}/training-phases
 func (h *TrainingHandlers) listTrainingPhases(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := trainingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok || !requireStaff(w, r, principal, "view season plans") {
 		return
 	}
@@ -746,7 +730,7 @@ func (h *TrainingHandlers) listTrainingPhases(w http.ResponseWriter, r *http.Req
 
 // createTrainingPhase handles POST /api/v1/seasons/{id}/training-phases
 func (h *TrainingHandlers) createTrainingPhase(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := trainingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok || !requireStaff(w, r, principal, "edit season plans") {
 		return
 	}
@@ -773,7 +757,7 @@ func (h *TrainingHandlers) createTrainingPhase(w http.ResponseWriter, r *http.Re
 
 // updateTrainingPhase handles PUT /api/v1/training-phases/{phaseID}
 func (h *TrainingHandlers) updateTrainingPhase(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := trainingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok || !requireStaff(w, r, principal, "edit season plans") {
 		return
 	}
@@ -805,7 +789,7 @@ func (h *TrainingHandlers) updateTrainingPhase(w http.ResponseWriter, r *http.Re
 
 // deleteTrainingPhase handles DELETE /api/v1/training-phases/{phaseID}
 func (h *TrainingHandlers) deleteTrainingPhase(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := trainingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok || !requireStaff(w, r, principal, "edit season plans") {
 		return
 	}
@@ -825,7 +809,7 @@ func (h *TrainingHandlers) deleteTrainingPhase(w http.ResponseWriter, r *http.Re
 
 // seasonTrainingPlan handles GET /api/v1/seasons/{id}/training-plan
 func (h *TrainingHandlers) seasonTrainingPlan(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := trainingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok || !requireStaff(w, r, principal, "view season plans") {
 		return
 	}
@@ -834,10 +818,7 @@ func (h *TrainingHandlers) seasonTrainingPlan(w http.ResponseWriter, r *http.Req
 		return
 	}
 	canon, _ := h.groupIndex(orgID)
-	groupFilter := ""
-	if g := strings.TrimSpace(r.URL.Query().Get("group_id")); g != "" {
-		groupFilter = canon(g)
-	}
+	groupFilter := canon(r.URL.Query().Get("group_id")) // canon trims; empty stays empty
 	plan, err := h.service.SeasonPlan(orgID, season, groupFilter, canon)
 	if err != nil {
 		writeTrainingError(w, r, err, "Failed to build season plan.")

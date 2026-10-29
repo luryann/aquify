@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/dareaquatics/aquify/server/internal/app/audit"
 	"github.com/dareaquatics/aquify/server/internal/app/groups"
 	"github.com/dareaquatics/aquify/server/internal/app/members"
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
@@ -1198,24 +1199,7 @@ func TestSwimmerExternalIDUniquenessIsCaseInsensitive(t *testing.T) {
 
 func issueSessionTokenForUser(t *testing.T, router http.Handler, userID, orgID string, roles []string, mfaAuthenticated bool) string {
 	t.Helper()
-
-	payload := map[string]any{
-		"user_id":           userID,
-		"org_id":            orgID,
-		"roles":             roles,
-		"mfa_authenticated": mfaAuthenticated,
-	}
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/sessions/issue", encodeJSONBody(t, payload))
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-
-	router.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusCreated {
-		t.Fatalf("expected session issue status %d, got %d", http.StatusCreated, rr.Code)
-	}
-
-	return issuedAccessTokenFromResponse(t, rr)
+	return issueSession(t, router, sessionSpec{UserID: userID, OrgID: orgID, Roles: roles, MFA: mfaAuthenticated})
 }
 
 func TestSwimmerGroupCodesMatchGroupCodeCasing(t *testing.T) {
@@ -1264,13 +1248,21 @@ func TestApprovingRegistrationAddsSwimmerToGroupRoster(t *testing.T) {
 		router.ServeHTTP(rr, req)
 		return rr
 	}
-	var hh struct{ Household struct{ ID string } `json:"household"` }
+	var hh struct {
+		Household struct{ ID string } `json:"household"`
+	}
 	_ = json.Unmarshal(do(http.MethodPost, "/api/v1/members/households", map[string]any{"org_id": "org-roster", "household_name": "Roster"}).Body.Bytes(), &hh)
-	var sw struct{ Swimmer struct{ ID string } `json:"swimmer"` }
+	var sw struct {
+		Swimmer struct{ ID string } `json:"swimmer"`
+	}
 	_ = json.Unmarshal(do(http.MethodPost, "/api/v1/members/swimmers", map[string]any{"org_id": "org-roster", "household_id": hh.Household.ID, "first_name": "R", "last_name": "S", "date_of_birth": "2012-01-01", "gender": "male"}).Body.Bytes(), &sw)
-	var grp struct{ Group struct{ ID, Code string } `json:"group"` }
+	var grp struct {
+		Group struct{ ID, Code string } `json:"group"`
+	}
 	_ = json.Unmarshal(do(http.MethodPost, "/api/v1/groups", map[string]any{"code": "gold", "name": "Gold"}).Body.Bytes(), &grp)
-	var reg struct{ Registration struct{ ID string } `json:"registration"` }
+	var reg struct {
+		Registration struct{ ID string } `json:"registration"`
+	}
 	rr := do(http.MethodPost, "/api/v1/registrations", map[string]any{"household_id": hh.Household.ID, "swimmer_id": sw.Swimmer.ID, "group_id": grp.Group.ID, "season": "2026-27"})
 	if err := json.Unmarshal(rr.Body.Bytes(), &reg); err != nil || reg.Registration.ID == "" {
 		t.Fatalf("registration: %d %s", rr.Code, rr.Body.String())
@@ -1282,5 +1274,40 @@ func TestApprovingRegistrationAddsSwimmerToGroupRoster(t *testing.T) {
 	links, _ := membersSvc.ListSwimmerGroupLinks(&appmiddleware.Principal{UserID: "admin-user", OrgID: "org-roster", Roles: []string{"admin"}}, "org-roster")
 	if len(links) != 1 || links[0].SwimmerID != sw.Swimmer.ID || links[0].GroupCode != grp.Group.Code || !links[0].IsPrimary {
 		t.Fatalf("expected primary roster link to %q, got %+v", grp.Group.Code, links)
+	}
+}
+
+func TestHouseholdUpdateEmitsAuditEvent(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	auditSvc := audit.NewService()
+	router := NewRouterWithServices(Config{}, logger, nil, members.NewService(), nil, nil, nil, nil, nil, nil, nil, auditSvc, nil, nil, nil, nil, nil)
+	token := issueSessionTokenForUser(t, router, "admin-household-audit", "org-demo", []string{"admin"}, false)
+
+	do := func(method, path string, body any) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, encodeJSONBody(t, body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Org-Id", "org-demo")
+		req.Header.Set("Authorization", "Bearer "+token)
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		return rr
+	}
+	created := do(http.MethodPost, "/api/v1/members/households", map[string]any{"org_id": "org-demo", "household_name": "Audit Family"})
+	var env householdEnvelope
+	if err := json.Unmarshal(created.Body.Bytes(), &env); err != nil || env.Household.ID == "" {
+		t.Fatalf("create household: %d %s", created.Code, created.Body.String())
+	}
+	if rr := do(http.MethodPatch, "/api/v1/members/households/"+env.Household.ID, map[string]any{"household_name": "Renamed Family"}); rr.Code != http.StatusOK {
+		t.Fatalf("update household: %d %s", rr.Code, rr.Body.String())
+	}
+
+	events, err := auditSvc.Query(audit.Filter{OrgID: "org-demo", Action: "members.household.update"})
+	if err != nil {
+		t.Fatalf("audit query: %v", err)
+	}
+	if len(events) != 1 || events[0].ResourceID != env.Household.ID {
+		t.Fatalf("expected one members.household.update event for %s, got %#v", env.Household.ID, events)
 	}
 }

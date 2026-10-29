@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
+import './not-found.inline.css'
 
 export default function NotFound() {
   const [mounted, setMounted] = useState(false)
@@ -23,12 +24,6 @@ export default function NotFound() {
         overflow: 'hidden',
       }}
     >
-      <style>{`
-        @keyframes notFoundFloat {
-          0%, 100% { transform: translateY(0px); }
-          50%       { transform: translateY(-8px); }
-        }
-      `}</style>
 
       {/* Background elements */}
       <div aria-hidden style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>

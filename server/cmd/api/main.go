@@ -45,6 +45,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"os"
@@ -161,51 +162,24 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := app.ValidateAppEnvConfig(cfg); err != nil {
-		logger.Error("startup config error", "error", err)
-		os.Exit(1)
+	exitOnError := func(msg string, err error) {
+		if err != nil {
+			logger.Error(msg, "error", err)
+			os.Exit(1)
+		}
 	}
-
-	if err := app.ValidateDevAuthConfig(cfg); err != nil {
-		logger.Error("startup config error", "error", err)
-		os.Exit(1)
-	}
-
-	if err := app.ValidateOIDCLogoutConfig(cfg, logger); err != nil {
-		logger.Error("startup config error", "error", err)
-		os.Exit(1)
-	}
-
-	if err := app.ValidateKeycloakAdminConfig(cfg); err != nil {
-		logger.Error("startup config error", "error", err)
-		os.Exit(1)
-	}
-
-	if err := app.ValidateWorkerConfig(cfg); err != nil {
-		logger.Error("startup config error", "error", err)
-		os.Exit(1)
-	}
-
-	if err := app.ValidateProviderConfig(cfg); err != nil {
-		logger.Error("startup config error", "error", err)
-		os.Exit(1)
-	}
-	if err := app.ValidateMetricsConfig(cfg, logger); err != nil {
-		logger.Error("startup config error", "error", err)
-		os.Exit(1)
-	}
-
-	if err := app.ValidateKeycloakStartup(cfg, logger); err != nil {
-		logger.Error("keycloak startup validation failed", "error", err)
-		os.Exit(1)
-	}
+	exitOnError("startup config error", app.ValidateAppEnvConfig(cfg))
+	exitOnError("startup config error", app.ValidateDevAuthConfig(cfg))
+	exitOnError("startup config error", app.ValidateOIDCLogoutConfig(cfg, logger))
+	exitOnError("startup config error", app.ValidateKeycloakAdminConfig(cfg))
+	exitOnError("startup config error", app.ValidateWorkerConfig(cfg))
+	exitOnError("startup config error", app.ValidateProviderConfig(cfg))
+	exitOnError("startup config error", app.ValidateMetricsConfig(cfg, logger))
+	exitOnError("keycloak startup validation failed", app.ValidateKeycloakStartup(cfg, logger))
 
 	startupCtx, startupCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer startupCancel()
-	if err := app.ValidateStartupDependencies(startupCtx, cfg, logger); err != nil {
-		logger.Error("startup dependency validation failed", "error", err)
-		os.Exit(1)
-	}
+	exitOnError("startup dependency validation failed", app.ValidateStartupDependencies(startupCtx, cfg, logger))
 
 	var backend *workers.RedisBackend
 	if strings.TrimSpace(cfg.Worker.RedisURL) != "" {
@@ -231,35 +205,7 @@ func main() {
 	}
 
 	if mode == "worker" {
-		if backend == nil {
-			logger.Error("worker mode requires REDIS_URL")
-			os.Exit(1)
-		}
-		app.NewRouterWithServices(cfg, logger,
-			nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-			nil,
-			backend,
-			nil,
-		)
-		app.RegisterDurableScheduledJobs(backend, cfg)
-		if err := backend.Start(); err != nil {
-			logger.Error("worker start failed", "error", err)
-			os.Exit(1)
-		}
-
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
-		sig := <-sigCh
-		logger.Info("worker shutdown signal received", "signal", sig)
-
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer shutdownCancel()
-		if err := backend.Stop(shutdownCtx); err != nil {
-			logger.Error("worker shutdown error", "error", err)
-		}
-		if flushErr := telShutdown(shutdownCtx); flushErr != nil {
-			logger.Warn("telemetry shutdown error", "error", flushErr)
-		}
+		runWorker(cfg, logger, backend, telShutdown)
 		return
 	}
 
@@ -298,7 +244,11 @@ func main() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 
+	// ListenAndServe returns as soon as Shutdown starts; main must wait for the
+	// drain and telemetry flush below to finish before it exits.
+	shutdownDone := make(chan struct{})
 	go func() {
+		defer close(shutdownDone)
 		sig := <-sigCh
 		logger.Info("shutdown signal received", "signal", sig)
 
@@ -323,14 +273,75 @@ func main() {
 	if metricsServer != nil {
 		go func() {
 			logger.Info("metrics listening", "addr", metricsServer.Addr)
-			if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			if err := metricsServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				logger.Error("metrics server failed", "error", err)
 			}
 		}()
 	}
 
 	logger.Info("api listening", "addr", cfg.Addr)
-	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		logger.Error("server failed", "error", err)
+		return
+	}
+	<-shutdownDone
+}
+
+// runWorker serves the durable job queue until a termination signal arrives,
+// then drains in-flight jobs and flushes telemetry.
+func runWorker(cfg app.Config, logger *slog.Logger, backend *workers.RedisBackend, telShutdown func(context.Context) error) {
+	if backend == nil {
+		logger.Error("worker mode requires REDIS_URL")
+		os.Exit(1)
+	}
+	// The worker process records job executions; it serves them on METRICS_ADDR
+	// the same way the API does so Prometheus can scrape both.
+	metrics := telemetry.NewMetrics()
+	var metricsServer *http.Server
+	if strings.TrimSpace(cfg.Telemetry.MetricsAddr) != "" {
+		metricsServer = &http.Server{
+			Addr:              cfg.Telemetry.MetricsAddr,
+			Handler:           metrics.Handler(),
+			ReadHeaderTimeout: 10 * time.Second,
+			ReadTimeout:       15 * time.Second,
+			WriteTimeout:      30 * time.Second,
+			IdleTimeout:       120 * time.Second,
+		}
+		go func() {
+			logger.Info("worker metrics listening", "addr", metricsServer.Addr)
+			if err := metricsServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				logger.Error("worker metrics server failed", "error", err)
+			}
+		}()
+	}
+	app.NewRouterWithServicesAndMetrics(cfg, logger, metrics, false,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil,
+		backend,
+		nil,
+	)
+	app.RegisterDurableScheduledJobs(backend, cfg)
+	if err := backend.Start(); err != nil {
+		logger.Error("worker start failed", "error", err)
+		os.Exit(1)
+	}
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+	sig := <-sigCh
+	logger.Info("worker shutdown signal received", "signal", sig)
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer shutdownCancel()
+	if err := backend.Stop(shutdownCtx); err != nil {
+		logger.Error("worker shutdown error", "error", err)
+	}
+	if metricsServer != nil {
+		if err := metricsServer.Shutdown(shutdownCtx); err != nil {
+			logger.Error("worker metrics shutdown error", "error", err)
+		}
+	}
+	if flushErr := telShutdown(shutdownCtx); flushErr != nil {
+		logger.Warn("telemetry shutdown error", "error", flushErr)
 	}
 }

@@ -73,8 +73,7 @@ export default function StripePage() {
 
   return (
     <div className="page">
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } } @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }`}</style>
-
+      
       {/* Header */}
       <div className="u-mb-24px" >
         <div className="u-gap-12px" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>

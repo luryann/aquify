@@ -136,6 +136,7 @@ function deriveRows(swimmers: SwimmerRecord[], households: HouseholdRecord[], gr
 }
 
 const INPUT_STYLE: React.CSSProperties = { width: '100%' }
+const EMPTY_FORM = { first_name: '', last_name: '', household_id: '', date_of_birth: '', gender: 'female', usa_swimming_id: '', registration_status: 'active' }
 
 export function SwimmersPanel() {
   const { session } = useSession()
@@ -153,7 +154,7 @@ export function SwimmersPanel() {
   const [showNew, setShowNew] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
-  const [form, setForm] = useState({ first_name: '', last_name: '', household_id: '', date_of_birth: '', gender: 'female', usa_swimming_id: '', registration_status: 'active' })
+  const [form, setForm] = useState(EMPTY_FORM)
 
   useEffect(() => {
     let cancelled = false
@@ -212,8 +213,6 @@ export function SwimmersPanel() {
     female: rows.filter((row) => row.gender === 'female').length,
   }), [rows])
 
-  const selectStyle: React.CSSProperties = {}
-
   async function handleCreateSwimmer(e: React.FormEvent) {
     e.preventDefault()
     if (!session?.user.orgId) return
@@ -222,7 +221,7 @@ export function SwimmersPanel() {
     try {
       await createSwimmer(api, session.user.orgId, form)
       setShowNew(false)
-      setForm({ first_name: '', last_name: '', household_id: '', date_of_birth: '', gender: 'female', usa_swimming_id: '', registration_status: 'active' })
+      setForm(EMPTY_FORM)
       const [swimmers, hhs, grps, swimmerGroups] = await Promise.all([
         fetchSwimmers(api, session.user.orgId),
         fetchHouseholds(api, session.user.orgId),
@@ -266,21 +265,21 @@ export function SwimmersPanel() {
           <Icon name="search" size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
           <input aria-label="Search swimmers or households..." type="text" placeholder="Search swimmers or households..." value={search} onChange={(e) => setSearch(e.target.value)} className="u-p-8px-12px-8px-32px u-fs-fs-base" style={{ width: '100%' }} />
         </div>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={selectStyle}>
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="all">All statuses</option>
           <option value="active">Active</option>
           <option value="pending">Pending</option>
           <option value="inactive">Inactive</option>
           <option value="archived">Archived</option>
         </select>
-        <select value={genderFilter} onChange={(e) => setGenderFilter(e.target.value)} style={selectStyle}>
+        <select value={genderFilter} onChange={(e) => setGenderFilter(e.target.value)}>
           <option value="all">All genders</option>
           <option value="female">{GENDER_LABEL.female}</option>
           <option value="male">{GENDER_LABEL.male}</option>
           <option value="non_binary">{GENDER_LABEL.non_binary}</option>
           <option value="undisclosed">{GENDER_LABEL.undisclosed}</option>
         </select>
-        <select value={groupFilter} onChange={(e) => setGroupFilter(e.target.value)} style={selectStyle}>
+        <select value={groupFilter} onChange={(e) => setGroupFilter(e.target.value)}>
           <option value="all">All groups</option>
           {groups.map((group) => <option key={group} value={group}>{group}</option>)}
         </select>

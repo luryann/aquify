@@ -13,6 +13,7 @@ import type { Role } from './roles'
 import { ROLE_HIERARCHY } from './roles'
 import { DEV_STUB_TOKENS_ENABLED } from './featureFlags'
 import { LOCAL_DEV_USERS } from './localDev'
+import { getCSRFToken } from './api'
 
 export type User = {
   id: string
@@ -90,8 +91,7 @@ function deriveInitials(name: string, email: string, userID: string): string {
   return source.slice(0, 2).toUpperCase() || 'DA'
 }
 
-function resolvePrimaryRole(roles: string[]): Role {
-  const knownRoles = roles.filter((role): role is Role => role in ROLE_HIERARCHY)
+function resolvePrimaryRole(knownRoles: Role[]): Role {
   if (knownRoles.length === 0) return 'parent'
   return [...knownRoles].sort((a, b) => ROLE_HIERARCHY[b] - ROLE_HIERARCHY[a])[0]
 }
@@ -119,18 +119,8 @@ function sessionFromCurrentResponse(payload: CurrentSessionResponse): Session {
   }
 }
 
-export function getCSRFCookieValue(): string | null {
-  if (typeof document === 'undefined') return null
-  const cookie = document.cookie
-    .split('; ')
-    .find((entry) => entry.startsWith('aquify_csrf_token='))
-  if (!cookie) return null
-  const [, value = ''] = cookie.split('=')
-  return decodeURIComponent(value) || null
-}
-
 async function attemptRefresh(): Promise<boolean> {
-  const csrf = getCSRFCookieValue()
+  const csrf = getCSRFToken()
   if (!csrf) return false
 
   const res = await fetch('/api/v1/auth/sessions/refresh', {
@@ -279,8 +269,3 @@ export function useSession(): SessionContextValue {
   return ctx
 }
 
-export function useRequiredSession(): Session {
-  const { session } = useSession()
-  if (!session) throw new Error('No active session')
-  return session
-}

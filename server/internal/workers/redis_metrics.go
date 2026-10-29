@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strconv"
 	"time"
 
@@ -27,8 +26,8 @@ func NewRedisJobMetrics(client redis.UniversalClient, prefix string) *RedisJobMe
 	return &RedisJobMetrics{client: client, prefix: prefix}
 }
 
-func (m *RedisJobMetrics) typeSetKey() string  { return m.prefix + ":types" }
-func (m *RedisJobMetrics) historyKey() string  { return m.prefix + ":history" }
+func (m *RedisJobMetrics) typeSetKey() string { return m.prefix + ":types" }
+func (m *RedisJobMetrics) historyKey() string { return m.prefix + ":history" }
 func (m *RedisJobMetrics) countersKey(taskType string) string {
 	return fmt.Sprintf("%s:type:%s", m.prefix, taskType)
 }
@@ -38,13 +37,15 @@ func (m *RedisJobMetrics) RecordEnqueue(taskType string) {
 }
 
 func (m *RedisJobMetrics) RecordSuccess(exec JobExecution) {
-	m.incrementCounter(context.Background(), exec.Type, "succeeded")
-	m.appendHistory(context.Background(), exec)
+	ctx := context.Background()
+	m.incrementCounter(ctx, exec.Type, "succeeded")
+	m.appendHistory(ctx, exec)
 }
 
 func (m *RedisJobMetrics) RecordFailure(exec JobExecution) {
-	m.incrementCounter(context.Background(), exec.Type, "failed")
-	m.appendHistory(context.Background(), exec)
+	ctx := context.Background()
+	m.incrementCounter(ctx, exec.Type, "failed")
+	m.appendHistory(ctx, exec)
 }
 
 func (m *RedisJobMetrics) RecordDLQ(taskType string) {
@@ -84,7 +85,6 @@ func (m *RedisJobMetrics) TypeSnapshot() map[string]TypeMetricSnapshot {
 	if err != nil || len(types) == 0 {
 		return map[string]TypeMetricSnapshot{}
 	}
-	sort.Strings(types)
 	pipe := m.client.Pipeline()
 	cmds := make(map[string]*redis.MapStringStringCmd, len(types))
 	for _, taskType := range types {
@@ -132,13 +132,7 @@ func (m *RedisJobMetrics) RecentExecutions(limit int) []JobExecution {
 }
 
 func parseMetricInt(raw string) int64 {
-	if raw == "" {
-		return 0
-	}
-	n, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil {
-		return 0
-	}
+	n, _ := strconv.ParseInt(raw, 10, 64) // empty or malformed counts read as 0
 	return n
 }
 

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ApiClient } from '@/lib/api'
 import type { GroupRecord } from '@/lib/adminData'
-import { parseBackendDate } from '@/lib/dates'
+import { formatShortDate, localToday } from '@/lib/dates'
 import { fetchTrainingAnalytics, type TrainingAnalytics } from '@/lib/trainingData'
 import { ZONES, ZONE_LABELS, addDaysISO, weekStartOf, zoneColor } from '@/lib/workout-format'
 import { WeeklyBars } from '@/components/training/WeeklyBars'
@@ -11,7 +11,6 @@ import { errorText } from './WorkoutComposer'
 
 const RANGES = [4, 8, 12, 26] as const
 
-const shortDate = (iso: string) => parseBackendDate(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 
 function Stat({ value, label }: { value: string; label: string }) {
   return (
@@ -31,7 +30,7 @@ export function TrainingAnalyticsPanel({ api, orgId, groups }: { api: ApiClient;
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localToday()
     const to = addDaysISO(weekStartOf(today), 6)
     const from = addDaysISO(weekStartOf(today), -7 * (weeks - 1))
     try {
@@ -84,7 +83,7 @@ export function TrainingAnalyticsPanel({ api, orgId, groups }: { api: ApiClient;
       {data && totals && (
         <div className="u-gap-20px" style={{ display: 'flex', flexDirection: 'column', opacity: loading ? 0.6 : 1, transition: 'opacity var(--dur)' }}>
           <div className="card u-p-20px u-gap-20px" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}>
-            <Stat value={`${(totals.planned / 1000).toFixed(1)}k yd`} label={`planned since ${shortDate(data.from)}`} />
+            <Stat value={`${(totals.planned / 1000).toFixed(1)}k yd`} label={`planned since ${formatShortDate(data.from)}`} />
             <Stat value={`${(totals.swimmer / 1000).toFixed(0)}k yd`} label="swum by swimmers marked present" />
             <Stat value={totals.pct == null ? 'Not taken' : `${totals.pct}%`} label="attendance, excused excluded" />
             <Stat value={`${data.structured_practices} of ${data.total_practices}`} label="practices with a structured workout" />
@@ -108,7 +107,7 @@ export function TrainingAnalyticsPanel({ api, orgId, groups }: { api: ApiClient;
                     ariaLabel={`${groupName(g.group_id)} planned yards per week`}
                     max={peak}
                     data={data.weeks.filter((w) => w.group_id === g.group_id).map((w) => ({
-                      key: w.week_start, label: shortDate(w.week_start), value: w.planned_yards,
+                      key: w.week_start, label: formatShortDate(w.week_start), value: w.planned_yards,
                       detail: `${w.practices} practices, ${w.swimmer_yards.toLocaleString('en-US')} swimmer-yd${w.attendance_pct == null ? '' : `, ${Math.round(w.attendance_pct)}% present`}`,
                     }))}
                   />

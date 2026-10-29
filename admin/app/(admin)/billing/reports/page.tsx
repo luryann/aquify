@@ -15,21 +15,18 @@ import {
   type RevenueReport,
 } from '@/lib/financeData'
 import { formatDateOnly } from '@/lib/dates'
+import { localToday } from '@/lib/wellness-scale'
 import { Banner, Field, Money, ScrollTable, numStyle, sectionTitle, tableStyle, tdStyle, thStyle, useFinanceContext } from '../financeUi'
 
 // Sequential ramp (one hue, light → dark) from the brand accent: older debt reads heavier.
 const AGING_RAMP = ['#f4b48a', '#ee8546', '#eb5d1e', '#b8420f', '#7a2a08']
 
-function iso(d: Date) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
 export default function FinanceReportsPage() {
   const { api, orgId, token } = useFinanceContext()
   const now = new Date()
-  const [asOf, setAsOf] = useState(iso(now))
-  const [from, setFrom] = useState(iso(new Date(now.getFullYear(), now.getMonth() - 11, 1)))
-  const [to, setTo] = useState(iso(now))
+  const [asOf, setAsOf] = useState(localToday(now))
+  const [from, setFrom] = useState(localToday(new Date(now.getFullYear(), now.getMonth() - 11, 1)))
+  const [to, setTo] = useState(localToday(now))
   const [period, setPeriod] = useState<'day' | 'week' | 'month'>('month')
   const [aging, setAging] = useState<AgingReport | null>(null)
   const [revenue, setRevenue] = useState<RevenueReport | null>(null)

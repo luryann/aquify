@@ -11,6 +11,7 @@ import { fetchHouseholds, fetchInvoicesForHousehold, createInvoice, type Invoice
 import { formatDateOnly, parseBackendDate } from '@/lib/dates'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { Modal } from '@/components/ui/Modal'
+import { formatCents } from '@/lib/financeData'
 
 type InvoiceStatus = 'draft' | 'issued' | 'partially_paid' | 'paid' | 'refunded_partial' | 'refunded_full' | 'voided' | 'written_off'
 
@@ -37,10 +38,6 @@ const STATUS_CFG: Record<InvoiceStatus, { label: string; color: string; bg: stri
   refunded_full: { label: 'Refunded', color: 'var(--accent-text, var(--accent))', bg: 'var(--accent-subtle)' },
   voided: { label: 'Voided', color: 'var(--text-muted)', bg: 'var(--bg-elevated)' },
   written_off: { label: 'Written off', color: 'var(--text-muted)', bg: 'var(--bg-elevated)' },
-}
-
-function formatCents(cents: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100)
 }
 
 function isOverdue(invoice: InvoiceRow) {
@@ -92,14 +89,14 @@ const COLUMNS: Column<InvoiceRow>[] = [
   { key: 'dueDate', label: 'Due', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: isOverdue(row) ? 'var(--error)' : 'var(--text-muted)' }}>{formatDateOnly(row.dueDate)}</span> },
 ]
 
-async function loadInvoices(api: ReturnType<typeof useApiClient>, orgId: string): Promise<InvoiceRow[]> {
+async function loadInvoices(api: ReturnType<typeof useApiClient>, orgId: string): Promise<{ rows: InvoiceRow[]; households: HouseholdRecord[] }> {
   const households = await fetchHouseholds(api, orgId)
   const invoicesByHousehold = await Promise.all(households.map(async (household) => ({
     household,
     invoices: await fetchInvoicesForHousehold(api, orgId, household.id).catch(() => []),
   })))
 
-  return invoicesByHousehold.flatMap(({ household, invoices }) => invoices.map((invoice: InvoiceRecord) => ({
+  const rows = invoicesByHousehold.flatMap(({ household, invoices }) => invoices.map((invoice: InvoiceRecord) => ({
     id: invoice.id,
     invoiceNumber: invoice.invoice_number,
     household: household.household_name,
@@ -112,6 +109,7 @@ async function loadInvoices(api: ReturnType<typeof useApiClient>, orgId: string)
     createdAt: invoice.created_at,
     description: invoice.notes || null,
   }))).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  return { rows, households }
 }
 
 const INPUT_STYLE: React.CSSProperties = { width: '100%' }
@@ -142,8 +140,8 @@ export function InvoicesPanel() {
       try {
         setLoading(true)
         setError(null)
-        const [invoices, householdsData] = await Promise.all([loadInvoices(api, session.user.orgId), fetchHouseholds(api, session.user.orgId)])
-        if (!cancelled) { setRows(invoices); setHouseholds(householdsData) }
+        const next = await loadInvoices(api, session.user.orgId)
+        if (!cancelled) { setRows(next.rows); setHouseholds(next.households) }
       } catch (err) {
         if (!cancelled) {
           setError(uiErrorMessage(err, 'Couldn’t load invoices. Try again.'))
@@ -176,8 +174,8 @@ export function InvoicesPanel() {
       await createInvoice(api, session.user.orgId, { household_id: form.household_id || undefined, invoice_number: form.invoice_number, due_date: form.due_date || undefined, notes: form.notes || undefined })
       setShowNew(false)
       setForm({ household_id: '', invoice_number: '', due_date: '', notes: '' })
-      const [invoices, householdsData] = await Promise.all([loadInvoices(api, session.user.orgId), fetchHouseholds(api, session.user.orgId)])
-      setRows(invoices); setHouseholds(householdsData)
+      const next = await loadInvoices(api, session.user.orgId)
+      setRows(next.rows); setHouseholds(next.households)
     } catch (err) {
       setFormError(uiErrorMessage(err, 'Couldn’t create invoice. Try again.'))
     } finally {

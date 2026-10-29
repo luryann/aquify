@@ -1710,3 +1710,14 @@ input.input-search { padding-left: 34px; }
 .u-pl-32px { padding-left: 32px !important; }
 .u-pt-16px { padding-top: 16px !important; }
 .u-pt-6px { padding-top: 6px !important; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+/* Wide shimmer for skeleton blocks that size their own gradient (background-size: 200%). */
+@keyframes shimmerSweep {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}

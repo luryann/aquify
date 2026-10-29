@@ -14,7 +14,7 @@ import (
 func TestRunnerDryRunImportsPrimaryStep24Domains(t *testing.T) {
 	dir := t.TempDir()
 	writeCSVFixture(t, dir, "households.csv", "legacy_household_id,household_name,primary_email,status\nhh-1,Smith Family,smith@example.com,active\n")
-	writeCSVFixture(t, dir, "swimmers.csv", "legacy_swimmer_id,legacy_household_id,first_name,last_name,date_of_birth,gender,registration_status\nsw-1,hh-1,Ava,Smith,2012-05-01,F,active\n")
+	writeCSVFixture(t, dir, "swimmers.csv", "legacy_swimmer_id,legacy_household_id,first_name,last_name,date_of_birth,gender,registration_status,usa_swimming_id\nsw-1,hh-1,Ava,Smith,2012-05-01,F,active,0501AVASMIT\n")
 	writeCSVFixture(t, dir, "groups.csv", "legacy_group_code,name,type\nsenior,Senior,competitive\n")
 	writeCSVFixture(t, dir, "historical_best_times.csv", "legacy_best_time_key,legacy_swimmer_id,distance,stroke,course,best_time_ms,recorded_at\nbt-1,sw-1,100,free,SCY,65000,2025-02-01\n")
 	writeCSVFixture(t, dir, "open_invoices.csv", "legacy_invoice_id,invoice_number,legacy_household_id,total_amount_cents,outstanding_amount_cents,due_date\ninv-1,INV-100,hh-1,12000,2000,2026-03-01\n")
@@ -38,6 +38,9 @@ func TestRunnerDryRunImportsPrimaryStep24Domains(t *testing.T) {
 	swimmers := runner.MembersService().SnapshotSwimmers(testutil.DefaultOrgID)
 	if len(swimmers) != 1 {
 		t.Fatalf("expected 1 swimmer, got %d", len(swimmers))
+	}
+	if swimmers[0].USASwimmingID != "0501AVASMIT" {
+		t.Fatalf("expected usa_swimming_id to be migrated, got %q", swimmers[0].USASwimmingID)
 	}
 
 	groupRows := runner.GroupsService().SnapshotGroups(testutil.DefaultOrgID)
@@ -326,5 +329,25 @@ func TestOpenInvoicesAllowsOmittedOptionalTotal(t *testing.T) {
 	invoices := runner.BillingService().SnapshotInvoices(testutil.DefaultOrgID)
 	if len(invoices) != 1 || invoices[0].AmountDueCents != 2000 {
 		t.Fatalf("unexpected invoices: %+v", invoices)
+	}
+}
+
+func TestNormalizeGroupTypeMapsLegacyTypesToAllowedOnes(t *testing.T) {
+	t.Parallel()
+	allowed := map[string]bool{"competitive": true, "recreational": true, "developmental": true, "masters": true, "other": true}
+	cases := map[string]string{
+		"Competitive":     "competitive",
+		"pre_competitive": "developmental",
+		"Pre-Competitive": "developmental",
+		"lesson":          "recreational",
+		"masters":         "masters",
+		"mystery":         "competitive",
+		"":                "competitive",
+	}
+	for in, want := range cases {
+		got := normalizeGroupType(in)
+		if got != want || !allowed[got] {
+			t.Errorf("normalizeGroupType(%q) = %q, want %q (an allowed group type)", in, got, want)
+		}
 	}
 }

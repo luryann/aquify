@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/dareaquatics/aquify/server/internal/dbutil"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -36,15 +38,18 @@ func (r *Repository) Upsert(ctx context.Context, s *Season) error {
 			goals      = EXCLUDED.goals,
 			updated_at = EXCLUDED.updated_at,
 			updated_by = EXCLUDED.updated_by`,
-		s.ID, s.OrgID, s.Name, nullableString(s.StartDate), nullableString(s.EndDate), s.Status, s.Goals,
+		s.ID, s.OrgID, s.Name, dbutil.NullableString(s.StartDate), dbutil.NullableString(s.EndDate), s.Status, s.Goals,
 		s.CreatedAt, s.UpdatedAt, s.CreatedBy, s.UpdatedBy,
 	)
 	return err
 }
 
-// Delete permanently removes a season by ID.
-func (r *Repository) Delete(ctx context.Context, id string) error {
-	tag, err := r.pool.Exec(ctx, `DELETE FROM seasons WHERE id = $1::uuid`, id)
+// Delete permanently removes a season by (org_id, id).
+func (r *Repository) Delete(ctx context.Context, orgID, id string) error {
+	if _, err := uuid.Parse(id); err != nil {
+		return ErrNotFound
+	}
+	tag, err := r.pool.Exec(ctx, `DELETE FROM seasons WHERE id = $1::uuid AND org_id = $2`, id, orgID)
 	if err != nil {
 		return err
 	}
@@ -73,6 +78,9 @@ func (r *Repository) ListByOrg(ctx context.Context, orgID string) ([]*Season, er
 }
 
 func (r *Repository) GetByID(ctx context.Context, orgID, id string) (*Season, error) {
+	if _, err := uuid.Parse(id); err != nil {
+		return nil, ErrNotFound
+	}
 	row := r.pool.QueryRow(ctx, `
 		SELECT id::text, org_id, name,
 		       COALESCE(start_date::text, ''), COALESCE(end_date::text, ''),
@@ -119,27 +127,16 @@ func (r *Repository) LoadAll(ctx context.Context) ([]*Season, error) {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-func nullableString(s string) interface{} {
-	if s == "" {
-		return nil
-	}
-	return s
-}
-
 func scanSeasons(rows pgx.Rows) ([]*Season, error) {
-	var out []*Season
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "seasons: scan season", func(rows pgx.Rows) (*Season, error) {
 		s := &Season{}
-		if err := rows.Scan(
+		err := rows.Scan(
 			&s.ID, &s.OrgID, &s.Name,
 			&s.StartDate, &s.EndDate,
 			&s.Status, &s.Goals,
 			&s.CreatedAt, &s.UpdatedAt,
 			&s.CreatedBy, &s.UpdatedBy,
-		); err != nil {
-			return nil, fmt.Errorf("seasons: scan season: %w", err)
-		}
-		out = append(out, s)
-	}
-	return out, rows.Err()
+		)
+		return s, err
+	})
 }

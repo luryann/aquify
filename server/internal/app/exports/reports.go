@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/go-pdf/fpdf"
 )
@@ -83,13 +85,13 @@ type ReportEntry struct {
 
 // ReportInput is the fully-assembled data for one report, produced server-side.
 type ReportInput struct {
-	ReportType string        `json:"report_type"`
-	Grouping   string        `json:"grouping"`
-	Team       ReportTeam    `json:"team"`
-	Meet       ReportMeet    `json:"meet"`
-	Events     []ReportEvent `json:"events"`
-	Entries    []ReportEntry `json:"entries"`
-	GeneratedAt time.Time    `json:"generated_at"`
+	ReportType  string        `json:"report_type"`
+	Grouping    string        `json:"grouping"`
+	Team        ReportTeam    `json:"team"`
+	Meet        ReportMeet    `json:"meet"`
+	Events      []ReportEvent `json:"events"`
+	Entries     []ReportEntry `json:"entries"`
+	GeneratedAt time.Time     `json:"generated_at"`
 }
 
 func validateReportInput(in ReportInput) error {
@@ -136,6 +138,24 @@ const (
 	pdfMarginT = 15.0
 )
 
+// pdfDoc wraps the PDF so every string drawn or measured goes through the core
+// font's cp1252 translator; without it accented names (José, Núñez) and the
+// bullets/dashes used in headings render as mojibake in Helvetica.
+type pdfDoc struct {
+	*fpdf.Fpdf
+	tr func(string) string
+}
+
+func newPDFDoc(pdf *fpdf.Fpdf) pdfDoc {
+	return pdfDoc{Fpdf: pdf, tr: pdf.UnicodeTranslatorFromDescriptor("")}
+}
+
+func (d pdfDoc) CellFormat(w, h float64, txt, border string, ln int, align string, fill bool, link int, linkStr string) {
+	d.Fpdf.CellFormat(w, h, d.tr(txt), border, ln, align, fill, link, linkStr)
+}
+
+func (d pdfDoc) GetStringWidth(s string) float64 { return d.Fpdf.GetStringWidth(d.tr(s)) }
+
 func buildReportPDF(in ReportInput) ([]byte, string, error) {
 	if err := validateReportInput(in); err != nil {
 		return nil, "", err
@@ -144,7 +164,7 @@ func buildReportPDF(in ReportInput) ([]byte, string, error) {
 		in.GeneratedAt = time.Now().UTC()
 	}
 
-	pdf := fpdf.New("P", "mm", "Letter", "")
+	pdf := newPDFDoc(fpdf.New("P", "mm", "Letter", ""))
 	pdf.SetMargins(pdfMarginL, pdfMarginT, pdfMarginR)
 	pdf.SetAutoPageBreak(true, 15)
 	title := reportTitle(in.ReportType)
@@ -180,7 +200,7 @@ func reportTitle(reportType string) string {
 	}
 }
 
-func registerHeaderFooter(pdf *fpdf.Fpdf, in ReportInput, title string) {
+func registerHeaderFooter(pdf pdfDoc, in ReportInput, title string) {
 	pageW, _ := pdf.GetPageSize()
 	contentW := pageW - pdfMarginL - pdfMarginR
 
@@ -228,7 +248,7 @@ func registerHeaderFooter(pdf *fpdf.Fpdf, in ReportInput, title string) {
 
 // ─── Event report: swimmers grouped under each event, sorted by seed time ────
 
-func renderEventReport(pdf *fpdf.Fpdf, in ReportInput) {
+func renderEventReport(pdf pdfDoc, in ReportInput) {
 	byEvent := entriesByEvent(in.Entries)
 	events := sortedEvents(in.Events)
 
@@ -269,7 +289,7 @@ func renderEventReport(pdf *fpdf.Fpdf, in ReportInput) {
 
 // ─── Eligibility report: per event, each swimmer's eligibility status ─────────
 
-func renderEligibilityReport(pdf *fpdf.Fpdf, in ReportInput) {
+func renderEligibilityReport(pdf pdfDoc, in ReportInput) {
 	byEvent := entriesByEvent(in.Entries)
 	events := sortedEvents(in.Events)
 
@@ -327,7 +347,7 @@ func renderEligibilityReport(pdf *fpdf.Fpdf, in ReportInput) {
 
 // ─── Entry report: one row per (swimmer, event), grouped per toggle ───────────
 
-func renderEntryReport(pdf *fpdf.Fpdf, in ReportInput) {
+func renderEntryReport(pdf pdfDoc, in ReportInput) {
 	if len(in.Entries) == 0 {
 		renderEmpty(pdf, "No approved entries.")
 		return
@@ -359,7 +379,7 @@ func renderEntryReport(pdf *fpdf.Fpdf, in ReportInput) {
 	}
 }
 
-func renderEntryReportBy(pdf *fpdf.Fpdf, in ReportInput, keyFn func(ReportEntry) (string, string), byEventOrder bool) {
+func renderEntryReportBy(pdf pdfDoc, in ReportInput, keyFn func(ReportEntry) (string, string), byEventOrder bool) {
 	groups := map[string][]ReportEntry{}
 	labels := map[string]string{}
 	var order []string
@@ -382,13 +402,13 @@ func renderEntryReportBy(pdf *fpdf.Fpdf, in ReportInput, keyFn func(ReportEntry)
 	}
 }
 
-func renderEntryReportFlat(pdf *fpdf.Fpdf, entries []ReportEntry) {
+func renderEntryReportFlat(pdf pdfDoc, entries []ReportEntry) {
 	rows := append([]ReportEntry(nil), entries...)
 	sortEntryRows(rows, false)
 	entryRowsTable(pdf, rows)
 }
 
-func entryRowsTable(pdf *fpdf.Fpdf, entries []ReportEntry) {
+func entryRowsTable(pdf pdfDoc, entries []ReportEntry) {
 	cols := []tableCol{
 		{"Swimmer", 58, "L"},
 		{"Age", 12, "R"},
@@ -433,7 +453,7 @@ type tableCol struct {
 	align string
 }
 
-func sectionHeading(pdf *fpdf.Fpdf, title, right string) {
+func sectionHeading(pdf pdfDoc, title, right string) {
 	pdf.Ln(1)
 	pdf.SetFont("Helvetica", "B", 11)
 	pdf.SetTextColor(20, 20, 20)
@@ -450,7 +470,7 @@ func sectionHeading(pdf *fpdf.Fpdf, title, right string) {
 	pdf.SetTextColor(20, 20, 20)
 }
 
-func tableHeader(pdf *fpdf.Fpdf, cols []tableCol) {
+func tableHeader(pdf pdfDoc, cols []tableCol) {
 	pdf.SetFont("Helvetica", "B", 8)
 	pdf.SetTextColor(255, 255, 255)
 	pdf.SetFillColor(60, 60, 70)
@@ -461,12 +481,12 @@ func tableHeader(pdf *fpdf.Fpdf, cols []tableCol) {
 	pdf.SetTextColor(20, 20, 20)
 }
 
-func tableRow(pdf *fpdf.Fpdf, cols []tableCol, values []string, rowIndex int) {
+func tableRow(pdf pdfDoc, cols []tableCol, values []string, rowIndex int) {
 	pdf.SetFont("Helvetica", "", 9)
 	tableRowCells(pdf, cols, values, rowIndex)
 }
 
-func tableRowCells(pdf *fpdf.Fpdf, cols []tableCol, values []string, rowIndex int) {
+func tableRowCells(pdf pdfDoc, cols []tableCol, values []string, rowIndex int) {
 	fill := rowIndex%2 == 1
 	if fill {
 		pdf.SetFillColor(244, 244, 246)
@@ -483,14 +503,14 @@ func tableRowCells(pdf *fpdf.Fpdf, cols []tableCol, values []string, rowIndex in
 	pdf.Ln(-1)
 }
 
-func mutedLine(pdf *fpdf.Fpdf, text string) {
+func mutedLine(pdf pdfDoc, text string) {
 	pdf.SetFont("Helvetica", "I", 9)
 	pdf.SetTextColor(150, 150, 150)
 	pdf.CellFormat(0, 5, text, "", 1, "L", false, 0, "")
 	pdf.SetTextColor(20, 20, 20)
 }
 
-func renderEmpty(pdf *fpdf.Fpdf, text string) {
+func renderEmpty(pdf pdfDoc, text string) {
 	pdf.Ln(6)
 	pdf.SetFont("Helvetica", "I", 11)
 	pdf.SetTextColor(140, 140, 140)
@@ -498,14 +518,15 @@ func renderEmpty(pdf *fpdf.Fpdf, text string) {
 	pdf.SetTextColor(20, 20, 20)
 }
 
-func truncateToWidth(pdf *fpdf.Fpdf, s string, maxW float64) string {
+func truncateToWidth(pdf pdfDoc, s string, maxW float64) string {
 	if pdf.GetStringWidth(s) <= maxW {
 		return s
 	}
-	for len(s) > 1 {
-		s = s[:len(s)-1]
-		if pdf.GetStringWidth(s+"…") <= maxW {
-			return s + "…"
+	runes := []rune(s)
+	for len(runes) > 1 {
+		runes = runes[:len(runes)-1]
+		if candidate := string(runes) + "…"; pdf.GetStringWidth(candidate) <= maxW {
+			return candidate
 		}
 	}
 	return s
@@ -551,10 +572,7 @@ func eventHeading(ev ReportEvent) string {
 	if ev.EventNumber != "" {
 		parts = append(parts, "Event "+ev.EventNumber)
 	}
-	label := eventGenderLabel(ev.Gender) + " " + eventAgeLabel(ev.MinAge, ev.MaxAge)
-	label = strings.TrimSpace(label)
-	dist := eventDistanceStroke(ev.Distance, ev.Stroke, ev.Course)
-	segment := strings.TrimSpace(strings.Join([]string{label, dist}, " "))
+	segment := strings.TrimSpace(eventRuleLabel(ev) + " " + eventDistanceStroke(ev.Distance, ev.Stroke, ev.Course))
 	if segment != "" {
 		parts = append(parts, segment)
 	}
@@ -597,8 +615,18 @@ func strokeLabel(stroke string) string {
 		if stroke == "" {
 			return ""
 		}
-		return strings.Title(strings.ToLower(stroke))
+		return titleWords(strings.ToLower(stroke))
 	}
+}
+
+// titleWords upper-cases the first letter of each whitespace-separated word.
+func titleWords(s string) string {
+	words := strings.Fields(s)
+	for i, w := range words {
+		r, size := utf8.DecodeRuneInString(w)
+		words[i] = string(unicode.ToUpper(r)) + w[size:]
+	}
+	return strings.Join(words, " ")
 }
 
 func courseShort(course string) string {
@@ -707,7 +735,7 @@ func dateRange(start, end string) string {
 		return s.Format("Jan 2, 2006")
 	case s == nil && e != nil:
 		return e.Format("Jan 2, 2006")
-	case s.Year() == e.Year() && s.Month() == e.Month() && s.Day() == e.Day():
+	case s.Equal(*e):
 		return s.Format("Jan 2, 2006")
 	case s.Year() == e.Year():
 		return fmt.Sprintf("%s - %s", s.Format("Jan 2"), e.Format("Jan 2, 2006"))

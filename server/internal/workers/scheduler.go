@@ -60,7 +60,6 @@ func (s *Scheduler) Start() {
 		if job.Interval <= 0 {
 			continue
 		}
-		job := job // capture loop var
 		s.wg.Add(1)
 		go func() {
 			defer s.wg.Done()

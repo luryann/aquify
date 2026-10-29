@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/dareaquatics/aquify/server/internal/dbutil"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -14,13 +16,6 @@ type Repository struct {
 
 func newRepository(pool *pgxpool.Pool) *Repository {
 	return &Repository{pool: pool}
-}
-
-func nullableString(s string) interface{} {
-	if s == "" {
-		return nil
-	}
-	return s
 }
 
 // ─── Data Export Requests ─────────────────────────────────────────────────────
@@ -37,7 +32,7 @@ func (r *Repository) UpsertDataExportRequest(ctx context.Context, req *DataExpor
 		  completed_at = EXCLUDED.completed_at,
 		  updated_at   = EXCLUDED.updated_at`,
 		req.ID, req.OrgID, req.HouseholdID, req.RequestedBy, req.Status,
-		nullableString(req.DownloadURL), req.RequestedAt, req.CompletedAt, req.ExpiresAt,
+		dbutil.NullableString(req.DownloadURL), req.RequestedAt, req.CompletedAt, req.ExpiresAt,
 		req.CreatedAt, req.UpdatedAt,
 	)
 	return err
@@ -52,20 +47,15 @@ func (r *Repository) LoadDataExportRequests(ctx context.Context) ([]*DataExportR
 	if err != nil {
 		return nil, fmt.Errorf("compliance: load data_export_requests: %w", err)
 	}
-	defer rows.Close()
-	var out []*DataExportRequest
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "compliance: scan data_export_request", func(rows pgx.Rows) (*DataExportRequest, error) {
 		req := &DataExportRequest{}
-		if err := rows.Scan(
+		err := rows.Scan(
 			&req.ID, &req.OrgID, &req.HouseholdID, &req.RequestedBy, &req.Status,
 			&req.DownloadURL, &req.RequestedAt, &req.CompletedAt, &req.ExpiresAt,
 			&req.CreatedAt, &req.UpdatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("compliance: scan data_export_request: %w", err)
-		}
-		out = append(out, req)
-	}
-	return out, rows.Err()
+		)
+		return req, err
+	})
 }
 
 // ─── Data Deletion Requests ───────────────────────────────────────────────────
@@ -82,7 +72,7 @@ func (r *Repository) UpsertDataDeletionRequest(ctx context.Context, req *DataDel
 		  completed_at = EXCLUDED.completed_at,
 		  updated_at   = EXCLUDED.updated_at`,
 		req.ID, req.OrgID, req.HouseholdID, req.RequestedBy, req.Status,
-		nullableString(req.Reason), nullableString(req.ReviewNotes),
+		dbutil.NullableString(req.Reason), dbutil.NullableString(req.ReviewNotes),
 		req.RequestedAt, req.CompletedAt, req.ExpiresAt,
 		req.CreatedAt, req.UpdatedAt,
 	)
@@ -99,21 +89,16 @@ func (r *Repository) LoadDataDeletionRequests(ctx context.Context) ([]*DataDelet
 	if err != nil {
 		return nil, fmt.Errorf("compliance: load data_deletion_requests: %w", err)
 	}
-	defer rows.Close()
-	var out []*DataDeletionRequest
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "compliance: scan data_deletion_request", func(rows pgx.Rows) (*DataDeletionRequest, error) {
 		req := &DataDeletionRequest{}
-		if err := rows.Scan(
+		err := rows.Scan(
 			&req.ID, &req.OrgID, &req.HouseholdID, &req.RequestedBy, &req.Status,
 			&req.Reason, &req.ReviewNotes,
 			&req.RequestedAt, &req.CompletedAt, &req.ExpiresAt,
 			&req.CreatedAt, &req.UpdatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("compliance: scan data_deletion_request: %w", err)
-		}
-		out = append(out, req)
-	}
-	return out, rows.Err()
+		)
+		return req, err
+	})
 }
 
 // ─── Batch load ───────────────────────────────────────────────────────────────

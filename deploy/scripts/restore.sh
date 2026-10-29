@@ -35,6 +35,30 @@
 
 set -euo pipefail
 
+# libpq does not expand a connection URI from PGDATABASE (only from a dbname
+# argument), so split DATABASE_URL into the PG* variables the tools read. This
+# keeps the embedded password out of `ps` output, which --dbname would expose.
+pg_env_from_url() {
+  local url="$1"
+  local re='^postgres(ql)?://(([^:@/]*)(:([^@]*))?@)?([^:/?]*)(:([0-9]+))?(/([^?]*))?(\?(.*))?$'
+  if [[ ! "${url}" =~ ${re} ]]; then
+    echo "DATABASE_URL must be a postgres:// URL" >&2
+    return 1
+  fi
+  local user="${BASH_REMATCH[3]}" pass="${BASH_REMATCH[5]}" host="${BASH_REMATCH[6]}"
+  local port="${BASH_REMATCH[8]}" db="${BASH_REMATCH[10]}" query="${BASH_REMATCH[12]}"
+  local sslmode=""
+  if [[ "${query}" =~ (^|&)sslmode=([^&]*) ]]; then sslmode="${BASH_REMATCH[2]}"; fi
+  _pg_urldecode() { local v="${1//\\/\\\\}"; printf '%b' "${v//%/\\x}"; }
+  [[ -n "${host}" ]] && export PGHOST="${host}"
+  [[ -n "${port}" ]] && export PGPORT="${port}"
+  [[ -n "${user}" ]] && export PGUSER="$(_pg_urldecode "${user}")"
+  [[ -n "${pass}" ]] && export PGPASSWORD="$(_pg_urldecode "${pass}")"
+  [[ -n "${db}" ]] && export PGDATABASE="$(_pg_urldecode "${db}")"
+  [[ -n "${sslmode}" ]] && export PGSSLMODE="${sslmode}"
+  return 0
+}
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -194,9 +218,9 @@ if [[ -z "${ARCHIVE_FILE}" && ! -d "${SNAPSHOT_DIR}" ]]; then
     log "INFO" "[dry-run] Would attempt rclone copy from ${RCLONE_REMOTE}/*/ for ${BACKUP_TIMESTAMP}"
   else
     # Try all tiers (daily/weekly/monthly)
-    local found_offsite=false
+    found_offsite=false
     for tier in daily weekly monthly; do
-      local remote_path="${RCLONE_REMOTE}/${tier}/dare-backup-${BACKUP_TIMESTAMP}.tar.gz.gpg"
+      remote_path="${RCLONE_REMOTE}/${tier}/dare-backup-${BACKUP_TIMESTAMP}.tar.gz.gpg"
       log "INFO" "Trying: rclone copy '${remote_path}' ${BACKUP_DIR}/"
       if rclone copy "${remote_path}" "${BACKUP_DIR}/" 2>> "${RESTORE_LOG}"; then
         ARCHIVE_FILE="${BACKUP_DIR}/dare-backup-${BACKUP_TIMESTAMP}.tar.gz.gpg"
@@ -318,18 +342,23 @@ if [[ "${DRY_RUN}" == "true" ]]; then
   log "INFO" "[dry-run] Would run pg_restore --clean --if-exists from ${PG_DUMP}"
 else
   log "INFO" "Restoring from ${PG_DUMP}..."
-  # Pass the DSN via PGDATABASE (libpq accepts a full connection URI there)
-  # instead of --dbname, so the embedded password never appears in `ps` output.
-  if PGDATABASE="${DATABASE_URL}" pg_restore \
+  # Only this run's log lines count when looking for pg_restore errors; the log
+  # also holds earlier restores.
+  log_lines_before="$(wc -l < "${RESTORE_LOG}")"
+  # Host, user and password travel as PG* variables (see pg_env_from_url), not
+  # argv; pg_restore (unlike pg_dump) ignores PGDATABASE, so only the database
+  # name is passed explicitly.
+  if ( pg_env_from_url "${DATABASE_URL}" && pg_restore \
+      --dbname "${PGDATABASE:-}" \
       --clean \
       --if-exists \
       --no-password \
       --verbose \
-      "${PG_DUMP}" 2>> "${RESTORE_LOG}"; then
+      "${PG_DUMP}" 2>> "${RESTORE_LOG}" ); then
     log "INFO" "PostgreSQL restore complete"
   else
     # pg_restore exits non-zero for ignorable warnings — check for actual errors
-    if grep -q "ERROR:" "${RESTORE_LOG}" 2>/dev/null; then
+    if tail -n "+$((log_lines_before + 1))" "${RESTORE_LOG}" 2>/dev/null | grep -q "ERROR:"; then
       die "pg_restore reported errors — see ${RESTORE_LOG}"
     else
       log "WARN" "pg_restore exited non-zero but no ERROR lines found — likely warnings only"

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"slices"
 	"strings"
 	"time"
 
@@ -61,18 +60,7 @@ func NewExportsHandlersWithAudit(service *exports.Service, meetsService *meets.S
 }
 
 func (h *ExportsHandlers) emitAudit(principal *appmiddleware.Principal, action, resourceType, resourceID string, metadata map[string]string) {
-	if h.auditService == nil || principal == nil {
-		return
-	}
-	_, _ = h.auditService.Append(audit.AppendRequest{
-		OrgID:        principal.OrgID,
-		ActorUserID:  principal.UserID,
-		ActorRoles:   append([]string{}, principal.Roles...),
-		Action:       action,
-		ResourceType: resourceType,
-		ResourceID:   resourceID,
-		Metadata:     metadata,
-	})
+	recordAudit(h.auditService, principal, principal.OrgID, action, resourceType, resourceID, nil, nil, metadata)
 }
 
 // RegisterRoutes mounts all export routes on the given router.
@@ -100,27 +88,11 @@ type generateReportBody struct {
 
 // ─── Scope helper ─────────────────────────────────────────────────────────────
 
-func exportScopeFromRequest(w http.ResponseWriter, r *http.Request) (*appmiddleware.Principal, string, bool) {
-	return scopedRequestFromContext(w, r)
-}
-
-func exportPrincipalHasAnyRole(principal *appmiddleware.Principal, roles ...string) bool {
-	if principal == nil {
-		return false
-	}
-	for _, role := range principal.Roles {
-		if slices.Contains(roles, role) {
-			return true
-		}
-	}
-	return false
-}
-
 func (h *ExportsHandlers) authorizeMeetExportListing(principal *appmiddleware.Principal, orgID, meetID string) error {
-	if exportPrincipalHasAnyRole(principal, "admin", "coach") {
+	if hasAnyRole(principal, "admin", "coach") {
 		return nil
 	}
-	if !exportPrincipalHasAnyRole(principal, "parent", "swimmer") {
+	if !hasAnyRole(principal, "parent", "swimmer") {
 		return exports.ErrForbidden
 	}
 	if h.meetsService == nil {
@@ -145,25 +117,19 @@ func (h *ExportsHandlers) authorizeMeetExportListing(principal *appmiddleware.Pr
 }
 
 func (h *ExportsHandlers) decodeAndValidate(w http.ResponseWriter, r *http.Request, dst any) bool {
-	return decodeAndValidateJSON(w, r, dst, h.validate, decodeAndValidateOptions{
-		InvalidStatus:     http.StatusBadRequest,
-		InvalidCode:       "invalid_request_body",
-		ValidationStatus:  http.StatusBadRequest,
-		ValidationCode:    "validation_failed",
-		ValidationMessage: "One or more request fields are invalid.",
-	})
+	return decodeAndValidateBadRequest(w, r, dst, h.validate)
 }
 
 // ─── POST /meets/{meetID}/exports ─────────────────────────────────────────────
 
 func (h *ExportsHandlers) generateExport(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := exportScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
 	// Gate on role before touching meet data so unauthorized callers can't probe
 	// meet existence via the report endpoint.
-	if !exportPrincipalHasAnyRole(principal, "admin", "coach") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient permissions to generate reports.", nil)
 		return
 	}
@@ -186,12 +152,12 @@ func (h *ExportsHandlers) generateExport(w http.ResponseWriter, r *http.Request)
 		case errors.Is(err, meets.ErrMeetNotFound):
 			httpx.WriteError(w, r, http.StatusNotFound, "meet_not_found", "Meet was not found.", nil)
 		default:
-			httpx.WriteError(w, r, http.StatusInternalServerError, "report_assembly_failed", fmt.Sprintf("Failed to assemble report: %s", err.Error()), nil)
+			httpx.WriteError(w, r, http.StatusInternalServerError, "report_assembly_failed", "Failed to assemble the report.", err)
 		}
 		return
 	}
 
-	job, audit, err := h.service.GenerateExport(principal, orgID, meetID, input)
+	job, auditEvent, err := h.service.GenerateExport(principal, orgID, meetID, input)
 	if err != nil {
 		switch {
 		case errors.Is(err, exports.ErrForbidden):
@@ -199,7 +165,7 @@ func (h *ExportsHandlers) generateExport(w http.ResponseWriter, r *http.Request)
 		case errors.Is(err, exports.ErrInvalidExportType):
 			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_report_type", err.Error(), nil)
 		default:
-			httpx.WriteError(w, r, http.StatusInternalServerError, "report_failed", fmt.Sprintf("Report generation failed: %s", err.Error()), nil)
+			httpx.WriteError(w, r, http.StatusInternalServerError, "report_failed", "Report generation failed.", err)
 		}
 		return
 	}
@@ -211,14 +177,14 @@ func (h *ExportsHandlers) generateExport(w http.ResponseWriter, r *http.Request)
 
 	_ = httpx.WriteJSON(w, http.StatusCreated, map[string]any{
 		"export":      job,
-		"audit_event": audit,
+		"audit_event": auditEvent,
 	})
 }
 
 // ─── GET /meets/{meetID}/exports ──────────────────────────────────────────────
 
 func (h *ExportsHandlers) listMeetExports(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := exportScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -231,7 +197,7 @@ func (h *ExportsHandlers) listMeetExports(w http.ResponseWriter, r *http.Request
 		case errors.Is(err, exports.ErrExportNotFound):
 			httpx.WriteError(w, r, http.StatusNotFound, "meet_not_found", "Meet was not found.", nil)
 		default:
-			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to authorize meet file access.", nil)
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to authorize meet file access.", err)
 		}
 		return
 	}
@@ -241,7 +207,7 @@ func (h *ExportsHandlers) listMeetExports(w http.ResponseWriter, r *http.Request
 	// Parent/swimmer household access to a meet's files must not expose
 	// staff-only reports (e.g. eligibility_report can include other
 	// swimmers' age/eligibility detail). Only admin/coach see every type.
-	if !exportPrincipalHasAnyRole(principal, "admin", "coach") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		filtered := list[:0:0]
 		for _, ex := range list {
 			if ex.ExportType == "eligibility_report" {
@@ -261,7 +227,7 @@ func (h *ExportsHandlers) listMeetExports(w http.ResponseWriter, r *http.Request
 // ─── GET /exports/{exportID} ──────────────────────────────────────────────────
 
 func (h *ExportsHandlers) getExport(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := exportScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -277,7 +243,7 @@ func (h *ExportsHandlers) getExport(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, exports.ErrExportExpired):
 			httpx.WriteError(w, r, http.StatusGone, "export_expired", "Export artifact has expired.", nil)
 		default:
-			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to get export.", nil)
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to get export.", err)
 		}
 		return
 	}
@@ -288,7 +254,7 @@ func (h *ExportsHandlers) getExport(w http.ResponseWriter, r *http.Request) {
 // ─── GET /exports/{exportID}/download ────────────────────────────────────────
 
 func (h *ExportsHandlers) downloadExport(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := exportScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -306,7 +272,7 @@ func (h *ExportsHandlers) downloadExport(w http.ResponseWriter, r *http.Request)
 		case errors.Is(err, exports.ErrExportExpired):
 			httpx.WriteError(w, r, http.StatusGone, "export_expired", "Export artifact has expired.", nil)
 		default:
-			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to download export.", nil)
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to download export.", err)
 		}
 		return
 	}
@@ -316,6 +282,32 @@ func (h *ExportsHandlers) downloadExport(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(content)))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(content)
+}
+
+// swimmersByID indexes the org's swimmers; empty when members is not wired.
+func (h *ExportsHandlers) swimmersByID(orgID string) map[string]members.Swimmer {
+	out := map[string]members.Swimmer{}
+	if h.membersService == nil {
+		return out
+	}
+	for _, sw := range h.membersService.SnapshotSwimmers(orgID) {
+		out[sw.ID] = sw
+	}
+	return out
+}
+
+func eventsByID(events []meets.MeetEvent) map[string]meets.MeetEvent {
+	out := make(map[string]meets.MeetEvent, len(events))
+	for _, ev := range events {
+		out[ev.ID] = ev
+	}
+	return out
+}
+
+// entryIsExportable: reports and the SD3 file include approved (and already
+// exported) entries only; scratched and unreviewed ones are left out.
+func entryIsExportable(e meets.Entry) bool {
+	return e.Status == "approved" || e.Status == "exported"
 }
 
 // ─── Server-side report assembly ──────────────────────────────────────────────
@@ -345,12 +337,9 @@ func (h *ExportsHandlers) assembleReportInput(principal *appmiddleware.Principal
 		return exports.ReportInput{}, err
 	}
 
-	swimmerByID := map[string]members.Swimmer{}
+	swimmerByID := h.swimmersByID(orgID)
 	primaryGroup := map[string]string{}
 	if h.membersService != nil {
-		for _, sw := range h.membersService.SnapshotSwimmers(orgID) {
-			swimmerByID[sw.ID] = sw
-		}
 		for _, link := range h.membersService.SnapshotSwimmerGroupLinks(orgID) {
 			if link.IsPrimary {
 				primaryGroup[link.SwimmerID] = link.GroupCode
@@ -364,10 +353,7 @@ func (h *ExportsHandlers) assembleReportInput(principal *appmiddleware.Principal
 	for _, s := range sessions {
 		sessionName[s.ID] = s.Name
 	}
-	eventByID := make(map[string]meets.MeetEvent, len(events))
-	for _, ev := range events {
-		eventByID[ev.ID] = ev
-	}
+	eventByID := eventsByID(events)
 
 	var team exports.ReportTeam
 	if h.orgSettings != nil {
@@ -392,8 +378,7 @@ func (h *ExportsHandlers) assembleReportInput(principal *appmiddleware.Principal
 
 	usedEvents := map[string]bool{}
 	for _, e := range entries {
-		// Reports include approved (and already exported), non-scratched entries only.
-		if e.Status != "approved" && e.Status != "exported" {
+		if !entryIsExportable(e) {
 			continue
 		}
 		ev, ok := eventByID[e.MeetEventID]
@@ -484,11 +469,11 @@ func evaluateReportEligibility(sw members.Swimmer, ev meets.MeetEvent, meetStart
 var sd3ExportableMeetStatuses = map[string]bool{"entry_finalized": true, "completed": true}
 
 func (h *ExportsHandlers) exportEntriesSD3(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := exportScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
-	if !exportPrincipalHasAnyRole(principal, "admin", "coach") {
+	if !hasAnyRole(principal, "admin", "coach") {
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Only admin or coach can export entry files.", nil)
 		return
 	}
@@ -526,16 +511,8 @@ func (h *ExportsHandlers) exportEntriesSD3(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	swimmerByID := map[string]members.Swimmer{}
-	if h.membersService != nil {
-		for _, sw := range h.membersService.SnapshotSwimmers(orgID) {
-			swimmerByID[sw.ID] = sw
-		}
-	}
-	eventByID := make(map[string]meets.MeetEvent, len(events))
-	for _, ev := range events {
-		eventByID[ev.ID] = ev
-	}
+	swimmerByID := h.swimmersByID(orgID)
+	eventByID := eventsByID(events)
 
 	input := sdif.ExportInput{
 		MeetName:      meet.Name,
@@ -555,10 +532,48 @@ func (h *ExportsHandlers) exportEntriesSD3(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	var exportedIDs []string
-	skippedRelays := 0
+	exportedIDs, skippedRelays := appendSD3IndividualEntries(&input, entries, eventByID, swimmerByID)
+	if len(input.IndividualEntries) == 0 {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "no_exportable_entries", "There are no approved individual entries to export.", nil)
+		return
+	}
+
+	var payload []byte
+	if variant == string(sdif.ExportVariantStandard) {
+		payload, err = sdif.ExportStandardSD3(input)
+	} else {
+		payload, err = sdif.ExportExtendedSD3(input)
+	}
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "sd3_export_failed", err.Error(), nil)
+		return
+	}
+
+	marked, _, err := h.meetsService.MarkEntriesExported(principal, orgID, meetID, exportedIDs)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "entry_export_state_failed", "Failed to record exported entries.", err)
+		return
+	}
+	h.emitAudit(principal, "meet.entries_sd3_exported", "meet", meetID, map[string]string{
+		"variant":        variant,
+		"entry_count":    fmt.Sprintf("%d", len(exportedIDs)),
+		"newly_exported": fmt.Sprintf("%d", marked),
+		"skipped_relays": fmt.Sprintf("%d", skippedRelays),
+	})
+
+	w.Header().Set("Content-Type", "text/plain; charset=us-ascii")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", sd3Filename(meet.Name, meet.StartDate)))
+	w.Header().Set("X-Entry-Count", fmt.Sprintf("%d", len(exportedIDs)))
+	w.Header().Set("X-Skipped-Relays", fmt.Sprintf("%d", skippedRelays))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(payload)
+}
+
+// appendSD3IndividualEntries adds every approved/exported individual entry to input and
+// returns their IDs plus the number of relay entries skipped.
+func appendSD3IndividualEntries(input *sdif.ExportInput, entries []meets.Entry, eventByID map[string]meets.MeetEvent, swimmerByID map[string]members.Swimmer) (exportedIDs []string, skippedRelays int) {
 	for _, e := range entries {
-		if e.Status != "approved" && e.Status != "exported" {
+		if !entryIsExportable(e) {
 			continue
 		}
 		ev, ok := eventByID[e.MeetEventID]
@@ -600,40 +615,7 @@ func (h *ExportsHandlers) exportEntriesSD3(w http.ResponseWriter, r *http.Reques
 		})
 		exportedIDs = append(exportedIDs, e.ID)
 	}
-	if len(input.IndividualEntries) == 0 {
-		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "no_exportable_entries", "There are no approved individual entries to export.", nil)
-		return
-	}
-
-	var payload []byte
-	if variant == string(sdif.ExportVariantStandard) {
-		payload, err = sdif.ExportStandardSD3(input)
-	} else {
-		payload, err = sdif.ExportExtendedSD3(input)
-	}
-	if err != nil {
-		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "sd3_export_failed", err.Error(), nil)
-		return
-	}
-
-	marked, _, err := h.meetsService.MarkEntriesExported(principal, orgID, meetID, exportedIDs)
-	if err != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "entry_export_state_failed", "Failed to record exported entries.", nil)
-		return
-	}
-	h.emitAudit(principal, "meet.entries_sd3_exported", "meet", meetID, map[string]string{
-		"variant":        variant,
-		"entry_count":    fmt.Sprintf("%d", len(exportedIDs)),
-		"newly_exported": fmt.Sprintf("%d", marked),
-		"skipped_relays": fmt.Sprintf("%d", skippedRelays),
-	})
-
-	w.Header().Set("Content-Type", "text/plain; charset=us-ascii")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", sd3Filename(meet.Name, meet.StartDate)))
-	w.Header().Set("X-Entry-Count", fmt.Sprintf("%d", len(exportedIDs)))
-	w.Header().Set("X-Skipped-Relays", fmt.Sprintf("%d", skippedRelays))
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(payload)
+	return exportedIDs, skippedRelays
 }
 
 func writeSD3MeetError(w http.ResponseWriter, r *http.Request, err error) {

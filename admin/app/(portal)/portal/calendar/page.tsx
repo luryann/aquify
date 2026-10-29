@@ -15,6 +15,8 @@ import { fetchTrainingSchedule, type Workout } from '@/lib/trainingData'
 import { addDaysISO } from '@/lib/workout-format'
 import { WorkoutSheet } from '@/components/training/WorkoutSheet'
 import './page.inline.css'
+import { LoadErrorBanner } from '@/components/ui/LoadErrorBanner'
+import { localToday } from '@/lib/dates'
 
 // ── Types ───────────────────────────────────────────────────────────────────
 type EventType = 'meet' | 'practice' | 'deadline' | 'holiday' | 'event'
@@ -181,6 +183,14 @@ function EventChip({ ev }: { ev: CalEvent }) {
 
 const UPCOMING_MAX = 15
 
+function NavArrowButton({ direction, onClick }: { direction: 'prev' | 'next'; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} aria-label={direction === 'prev' ? 'Previous month' : 'Next month'} className="cal-nav-btn">
+      <Icon name={direction === 'prev' ? 'chevron-left' : 'chevron-right'} size={15} />
+    </button>
+  )
+}
+
 // Rows stay two lines at most: long practice titles clamp instead of stacking
 // one word per line in the narrow side column.
 const clampLines = (lines: number): React.CSSProperties => ({
@@ -206,9 +216,7 @@ function UpcomingEventRow({ ev }: { ev: CalEvent }) {
   const content = (
     <div
       title={ev.title}
-      className="is-955ade5"
-      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-wash)')}
-      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+      className="is-955ade5 upcoming-row"
     >
       <div className="is-508b578">
         <span className="is-2dd2301">{when.day}</span>
@@ -297,7 +305,7 @@ export default function CalendarPage() {
       fetchPractices(api, orgId),
       fetchGroups(api, orgId),
       // Structured sets for nearby practices; the calendar still renders if unavailable.
-      fetchTrainingSchedule(api, orgId, addDaysISO(new Date().toISOString().slice(0, 10), -30), addDaysISO(new Date().toISOString().slice(0, 10), 90)).catch(() => []),
+      fetchTrainingSchedule(api, orgId, addDaysISO(localToday(), -30), addDaysISO(localToday(), 90)).catch(() => []),
     ])
       .then(([meets, practices, groups, scheduleItems]) => {
         const groupNameById = new Map<string, string>(groups.map((g: GroupRecord) => [g.id, g.name]))
@@ -369,10 +377,10 @@ export default function CalendarPage() {
     .sort((a, b) => a.date.localeCompare(b.date))
     .slice(0, UPCOMING_MAX)
 
-  // Selected date events
-  const selectedEvents = selectedDate
-    ? (eventsByDate[selectedDate] ?? []).filter((ev) => typeFilter === 'all' || ev.type === typeFilter)
-    : []
+  const visibleEventsOn = (dateStr: string) =>
+    (eventsByDate[dateStr] ?? []).filter((ev) => typeFilter === 'all' || ev.type === typeFilter)
+
+  const selectedEvents = selectedDate ? visibleEventsOn(selectedDate) : []
 
   // Week view helpers — derive weekStart from selectedDate if available,
   // otherwise anchor to the first week of the currently viewed month.
@@ -448,21 +456,7 @@ export default function CalendarPage() {
       )}
 
       {loadError && (
-        <div
-          className="is-154e8a6"
-        >
-          <div className="is-730b6a7">
-            <Icon name="alert-circle" size={15} style={{ color: 'var(--warning)', marginTop: '1px', flexShrink: 0 }} />
-            <span className="is-d827c78">{loadError}</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setReloadKey((key) => key + 1)}
-            className="is-889d44c"
-          >
-            Retry
-          </button>
-        </div>
+        <LoadErrorBanner message={loadError} onRetry={() => setReloadKey((key) => key + 1)} />
       )}
 
       {/* Legend + type filter */}
@@ -527,27 +521,7 @@ export default function CalendarPage() {
           <div
             className="is-044825a"
           >
-            <button type="button"
-              onClick={goToPrev}
-              aria-label="Previous month"
-              style={{
-                width: '32px',
-                height: '32px',
-                borderRadius: '8px',
-                border: '1px solid var(--border)',
-                background: 'transparent',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: 'var(--text-subtle)',
-                transition: 'background 120ms ease',
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-wash)')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-            >
-              <Icon name="chevron-left" size={15} />
-            </button>
+            <NavArrowButton direction="prev" onClick={goToPrev} />
 
             <div className="is-e2ff0fd">
               <h2 className="section-title"
@@ -556,41 +530,13 @@ export default function CalendarPage() {
               </h2>
               <button type="button"
                 onClick={goToToday}
-                className="is-68b99f7"
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'var(--bg-wash)'
-                  e.currentTarget.style.color = 'var(--text)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent'
-                  e.currentTarget.style.color = 'var(--text-subtle)'
-                }}
+                className="is-68b99f7 cal-today-btn"
               >
                 Today
               </button>
             </div>
 
-            <button type="button"
-              onClick={goToNext}
-              aria-label="Next month"
-              style={{
-                width: '32px',
-                height: '32px',
-                borderRadius: '8px',
-                border: '1px solid var(--border)',
-                background: 'transparent',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: 'var(--text-subtle)',
-                transition: 'background 120ms ease',
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-wash)')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-            >
-              <Icon name="chevron-right" size={15} />
-            </button>
+            <NavArrowButton direction="next" onClick={goToNext} />
           </div>
 
           {isMobile ? (
@@ -603,9 +549,7 @@ export default function CalendarPage() {
                 ? Array.from({ length: daysInMonth }, (_, i) => toDateStr(viewYear, viewMonth, i + 1))
                 : weekDays.map((wd) => wd.date)
               ).map((dateStr) => {
-                const dayEvents = (eventsByDate[dateStr] ?? []).filter(
-                  (ev) => typeFilter === 'all' || ev.type === typeFilter
-                )
+                const dayEvents = visibleEventsOn(dateStr)
                 if (view === 'month' && dayEvents.length === 0) return null
                 const isToday = dateStr === todayStr
                 const isSelected = dateStr === selectedDate
@@ -706,9 +650,7 @@ export default function CalendarPage() {
                 {Array.from({ length: daysInMonth }, (_, i) => {
                   const day = i + 1
                   const dateStr = toDateStr(viewYear, viewMonth, day)
-                  const dayEvents = (eventsByDate[dateStr] ?? []).filter(
-                    (ev) => typeFilter === 'all' || ev.type === typeFilter
-                  )
+                  const dayEvents = visibleEventsOn(dateStr)
                   const isToday = dateStr === todayStr
                   const isSelected = dateStr === selectedDate
                   const colIndex = (firstDow + i) % 7
@@ -717,21 +659,14 @@ export default function CalendarPage() {
                     <div
                       key={day}
                       onClick={() => setSelectedDate(dateStr === selectedDate ? null : dateStr)}
+                      className="cal-day"
+                      data-selected={isSelected}
                       style={{
                         minHeight: '172px',
                         borderRight: colIndex < 6 ? '1px solid var(--border)' : 'none',
                         borderBottom: '1px solid var(--border)',
                         padding: '12px 8px 8px',
-                        cursor: 'pointer',
-                        background: isSelected ? 'rgba(235,93,30,0.04)' : 'transparent',
-                        transition: 'background 100ms ease',
                         position: 'relative',
-                      }}
-                      onMouseEnter={(e) => {
-                        if (!isSelected) (e.currentTarget as HTMLDivElement).style.background = 'var(--bg-wash)'
-                      }}
-                      onMouseLeave={(e) => {
-                        if (!isSelected) (e.currentTarget as HTMLDivElement).style.background = 'transparent'
                       }}
                     >
                       {/* Day number */}
@@ -822,9 +757,7 @@ export default function CalendarPage() {
                 }}
               >
                 {weekDays.map((wd, idx) => {
-                  const dayEvents = (eventsByDate[wd.date] ?? []).filter(
-                    (ev) => typeFilter === 'all' || ev.type === typeFilter
-                  )
+                  const dayEvents = visibleEventsOn(wd.date)
                   return (
                     <div
                       key={wd.date}
@@ -898,9 +831,7 @@ export default function CalendarPage() {
                 <p className="is-8fb176a">No upcoming events</p>
               </div>
             ) : (
-              <>
-                <UpcomingScroller events={upcomingEvents} />
-              </>
+              <UpcomingScroller events={upcomingEvents} />
             )}
           </div>
         </div>

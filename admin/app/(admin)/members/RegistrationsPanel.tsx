@@ -9,6 +9,7 @@ import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
 import { fetchHouseholds, fetchRegistrations, fetchSwimmers, fetchGroups, createRegistration, transitionRegistration, type HouseholdRecord, type RegistrationRecord, type SwimmerRecord, type GroupRecord } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
+import { formatDateOnly } from '@/lib/dates'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { Modal } from '@/components/ui/Modal'
 
@@ -90,7 +91,7 @@ function buildColumns(
     key: 'submittedAt',
     label: 'Submitted',
     sortable: true,
-    render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{row.submittedAt ? new Date(row.submittedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span>,
+    render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{formatDateOnly(row.submittedAt)}</span>,
   },
   {
     key: 'status',
@@ -165,6 +166,11 @@ function deriveRows(
 
 const INPUT_STYLE: React.CSSProperties = { width: '100%' }
 
+function emptyForm() {
+  const year = new Date().getFullYear()
+  return { household_id: '', swimmer_id: '', group_id: '', season: `${year}-${(year + 1).toString().slice(-2)}` }
+}
+
 export function RegistrationsPanel() {
   const { session } = useSession()
   const api = useApiClient(session?.token)
@@ -182,7 +188,7 @@ export function RegistrationsPanel() {
   const [showNew, setShowNew] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
-  const [form, setForm] = useState({ household_id: '', swimmer_id: '', group_id: '', season: new Date().getFullYear().toString() + '-' + (new Date().getFullYear() + 1).toString().slice(-2) })
+  const [form, setForm] = useState(emptyForm)
 
   useEffect(() => {
     let cancelled = false
@@ -243,8 +249,6 @@ export function RegistrationsPanel() {
     }
   }, [rows, seasonFilter])
 
-  const selectStyle: React.CSSProperties = {}
-
   const filteredSwimmers = useMemo(() => form.household_id ? swimmers.filter((s) => s.household_id === form.household_id) : swimmers, [swimmers, form.household_id])
 
   const [transitioningId, setTransitioningId] = useState<string | null>(null)
@@ -283,7 +287,7 @@ export function RegistrationsPanel() {
     try {
       await createRegistration(api, session.user.orgId, { household_id: form.household_id, swimmer_id: form.swimmer_id, group_id: form.group_id, season: form.season })
       setShowNew(false)
-      setForm({ household_id: '', swimmer_id: '', group_id: '', season: new Date().getFullYear().toString() + '-' + (new Date().getFullYear() + 1).toString().slice(-2) })
+      setForm(emptyForm())
       const registrations = await fetchRegistrations(api, session.user.orgId)
       setRows(deriveRows(registrations, households, swimmers, groupsList))
     } catch (err) {
@@ -320,11 +324,11 @@ export function RegistrationsPanel() {
           <Icon name="search" size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
           <input aria-label="Search households..." type="text" placeholder="Search households..." value={search} onChange={(e) => setSearch(e.target.value)} className="u-p-8px-12px-8px-32px u-fs-fs-base" style={{ width: '100%' }} />
         </div>
-        <select value={seasonFilter} onChange={(e) => setSeasonFilter(e.target.value)} style={selectStyle}>
+        <select value={seasonFilter} onChange={(e) => setSeasonFilter(e.target.value)}>
           <option value="all">All seasons</option>
           {seasons.map((season) => <option key={season} value={season}>{season}</option>)}
         </select>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={selectStyle}>
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="all">All statuses</option>
           <option value="pending">Pending</option>
           <option value="active">Active</option>

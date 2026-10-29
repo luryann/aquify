@@ -3,9 +3,11 @@ package training
 import (
 	"context"
 	"errors"
+	"github.com/google/uuid"
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 var (
@@ -107,7 +109,7 @@ func (s *Service) CreateWorkout(orgID string, in WorkoutInput, actor string) (*W
 	if err != nil {
 		return nil, err
 	}
-	w := buildWorkout(orgID, newID(), norm, actor, time.Now().UTC())
+	w := buildWorkout(orgID, uuid.NewString(), norm, actor, time.Now().UTC())
 	if s.repo != nil {
 		if err := upsertWorkout(context.Background(), s.repo.pool, w); err != nil {
 			return nil, err
@@ -273,8 +275,10 @@ func (s *Service) DuplicateWorkout(orgID, id string, in DuplicateInput, actor st
 	if in.Title != nil && strings.TrimSpace(*in.Title) != "" {
 		title = *in.Title
 	}
-	if len(title) > MaxTitleLength {
-		title = title[:MaxTitleLength]
+	title = strings.TrimSpace(title)
+	for len(title) > MaxTitleLength {
+		_, size := utf8.DecodeLastRuneInString(title)
+		title = title[:len(title)-size]
 	}
 	isTemplate := src.IsTemplate
 	if in.IsTemplate != nil {
@@ -287,7 +291,7 @@ func (s *Service) DuplicateWorkout(orgID, id string, in DuplicateInput, actor st
 	if err != nil {
 		return nil, err
 	}
-	w := buildWorkout(orgID, newID(), norm, actor, time.Now().UTC())
+	w := buildWorkout(orgID, uuid.NewString(), norm, actor, time.Now().UTC())
 	w.SourceWorkoutID = src.ID
 	if s.repo != nil {
 		if err := upsertWorkout(context.Background(), s.repo.pool, w); err != nil {
@@ -328,7 +332,7 @@ func (s *Service) AssignWorkout(orgID, workoutID string, in AssignInput, actor s
 	}
 	now := time.Now().UTC()
 	instance := cloneWorkout(src)
-	instance.ID = newID()
+	instance.ID = uuid.NewString()
 	instance.IsTemplate = false
 	instance.SourceWorkoutID = src.ID
 	instance.CreatedAt, instance.UpdatedAt = now, now
@@ -336,7 +340,7 @@ func (s *Service) AssignWorkout(orgID, workoutID string, in AssignInput, actor s
 
 	newPractice := func() *Practice {
 		return &Practice{
-			ID: newID(), OrgID: orgID, Date: in.Date, GroupID: strings.TrimSpace(in.GroupID),
+			ID: uuid.NewString(), OrgID: orgID, Date: in.Date, GroupID: strings.TrimSpace(in.GroupID),
 			Type: practiceType, Description: src.Title,
 			CreatedAt: now, UpdatedAt: now, CreatedBy: actor, UpdatedBy: actor,
 		}
@@ -443,7 +447,7 @@ func (s *Service) SetPracticeWorkout(orgID, practiceID string, in WorkoutInput, 
 		return nil, nil, err
 	}
 	now := time.Now().UTC()
-	instance := buildWorkout(orgID, newID(), norm, actor, now)
+	instance := buildWorkout(orgID, uuid.NewString(), norm, actor, now)
 	return s.linkInstance(orgID, practiceID, nil, instance, actor, now)
 }
 

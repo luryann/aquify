@@ -2,10 +2,11 @@
 
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { useMemo, useState, useRef, useCallback, useEffect, type CSSProperties } from 'react'
-import { filterNavItems, groupNavItems, ROLE_LABELS, type Role } from '@/lib/roles'
+import { useMemo, useState, useRef, useCallback, useEffect } from 'react'
+import { filterNavItems, groupNavItems, NAV_SECTIONS, ROLE_LABELS, type Role } from '@/lib/roles'
 import { Icon, type IconName } from '@/components/ui/icons'
 import { pendingApprovalsRequestInit, shouldFetchPendingApprovals } from '@/lib/sidebar-badge'
+import './Sidebar.inline.css'
 
 type SidebarProps = {
   role: Role
@@ -15,19 +16,6 @@ type SidebarProps = {
   orgId?: string
   token?: string
 }
-
-const SECTION_ORDER = [
-  'Overview',
-  'Members',
-  'Competition',
-  'Training',
-  'Performance',
-  'Billing',
-  'Communications',
-  'Compliance',
-  'System',
-  'Advanced',
-]
 
 const MIN_WIDTH = 160
 const MAX_WIDTH = 380
@@ -77,15 +65,12 @@ export function Sidebar({ role, roles, userName, onSignOut, orgId, token }: Side
     if (!shouldFetchPendingApprovals(roles, orgId)) return
     const controller = new AbortController()
 
+    const getJson = <T,>(path: string): Promise<T | null> =>
+      fetch(path, { ...pendingApprovalsRequestInit(orgId, token), signal: controller.signal }).then((r) => (r.ok ? (r.json() as Promise<T>) : null))
+
     Promise.all([
-      fetch('/api/v1/users?status=pending_approval', {
-        ...pendingApprovalsRequestInit(orgId, token),
-        signal: controller.signal,
-      }).then((r) => (r.ok ? r.json() : null)) as Promise<{ count?: number; users?: unknown[] } | null>,
-      fetch('/api/v1/users/swimmer-link-requests', {
-        ...pendingApprovalsRequestInit(orgId, token),
-        signal: controller.signal,
-      }).then((r) => (r.ok ? r.json() : null)) as Promise<{ requests?: unknown[] } | null>,
+      getJson<{ count?: number; users?: unknown[] }>('/api/v1/users?status=pending_approval'),
+      getJson<{ requests?: unknown[] }>('/api/v1/users/swimmer-link-requests'),
     ])
       .then(([approvals, linkRequests]) => {
         const approvalsCount = approvals
@@ -206,7 +191,7 @@ export function Sidebar({ role, roles, userName, onSignOut, orgId, token }: Side
         className="u-p-8px-0" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}
         aria-label="Main navigation"
       >
-        {SECTION_ORDER.filter((s) => grouped[s]?.length).map((section) => (
+        {NAV_SECTIONS.filter((s) => grouped[s]?.length).map((section) => (
           <div
             key={section}
             className="u-mb-2px" 
@@ -221,27 +206,15 @@ export function Sidebar({ role, roles, userName, onSignOut, orgId, token }: Side
 
             {grouped[section]!.map((item) => {
               const active = isActive(item.path)
-              const baseStyle: CSSProperties = {
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: collapsed ? '8px 0' : '8px 12px',
-                justifyContent: collapsed ? 'center' : 'flex-start',
-                textDecoration: 'none',
-                color: active ? 'var(--text)' : 'var(--text-subtle)',
-                background: active ? 'var(--accent-subtle)' : 'transparent',
-                borderRadius: collapsed ? '0' : 'var(--r-sm)',
-                margin: collapsed ? '0' : '0 8px',
-                fontSize: 'var(--fs-base)',
-                fontWeight: active ? 700 : 400,
-                transition:
-                  'background var(--dur-fast), color var(--dur-fast)',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-              }
-
-              const iconAndLabel = (
-                <>
+              return (
+                <Link
+                  key={item.id}
+                  href={item.path}
+                  title={collapsed ? item.label : undefined}
+                  className="sidebar-link"
+                  data-active={active}
+                  data-collapsed={collapsed}
+                >
                   <Icon
                     name={item.icon as IconName}
                     size={15}
@@ -257,29 +230,6 @@ export function Sidebar({ role, roles, userName, onSignOut, orgId, token }: Side
                       {pendingCount > 99 ? '99+' : pendingCount}
                     </span>
                   )}
-                </>
-              )
-
-              return (
-                <Link
-                  key={item.id}
-                  href={item.path}
-                  title={collapsed ? item.label : undefined}
-                  style={baseStyle}
-                  onMouseEnter={(e) => {
-                    if (!active) {
-                      e.currentTarget.style.background = 'var(--bg-surface)'
-                      e.currentTarget.style.color = 'var(--text)'
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!active) {
-                      e.currentTarget.style.background = 'transparent'
-                      e.currentTarget.style.color = 'var(--text-subtle)'
-                    }
-                  }}
-                >
-                  {iconAndLabel}
                 </Link>
               )
             })}
@@ -331,23 +281,8 @@ export function Sidebar({ role, roles, userName, onSignOut, orgId, token }: Side
       {!collapsed && (
         <div
           onMouseDown={handleResizeMouseDown}
-          style={{
-            position: 'absolute',
-            top: 0,
-            right: 0,
-            width: '4px',
-            height: '100%',
-            cursor: 'col-resize',
-            zIndex: 20,
-            background: isDragging ? 'var(--accent)' : 'transparent',
-            transition: 'background 150ms ease',
-          }}
-          onMouseEnter={(e) => {
-            if (!isDragging) e.currentTarget.style.background = 'var(--accent-border)'
-          }}
-          onMouseLeave={(e) => {
-            if (!isDragging) e.currentTarget.style.background = 'transparent'
-          }}
+          className="sidebar-resize"
+          data-dragging={isDragging}
           title="Drag to resize sidebar"
         />
       )}

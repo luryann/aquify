@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { getPortalDocumentAction, selectLatestSubmission } from './document-submissions.ts'
+import { documentNeedsAction, getPortalDocumentAction, resolveDocumentStatus, selectLatestSubmission } from './document-submissions.ts'
 
 test('selectLatestSubmission prefers the newest matching submission for a swimmer scope', () => {
   const latest = selectLatestSubmission([
@@ -57,4 +57,18 @@ test('getPortalDocumentAction only exposes a CTA for actionable document statuse
   assert.equal(getPortalDocumentAction({ effectiveStatus: 'submitted', typeCategory: 'waiver' }), 'none')
   assert.equal(getPortalDocumentAction({ effectiveStatus: 'verified', typeCategory: 'medical' }), 'none')
   assert.equal(getPortalDocumentAction({ effectiveStatus: 'pending', typeCategory: 'insurance' }), 'upload')
+})
+
+test('resolveDocumentStatus reports missing, expired and known statuses', () => {
+  const now = new Date('2026-07-01T00:00:00Z')
+  assert.equal(resolveDocumentStatus(null, now), 'missing')
+  assert.equal(resolveDocumentStatus({ status: 'submitted', expires_at: '2026-06-30T00:00:00Z' }, now), 'expired')
+  assert.equal(resolveDocumentStatus({ status: 'verified', expires_at: '2026-06-30T00:00:00Z' }, now), 'verified')
+  assert.equal(resolveDocumentStatus({ status: 'rejected' }, now), 'rejected')
+  assert.equal(resolveDocumentStatus({ status: 'something_new' }, now), 'pending')
+})
+
+test('documentNeedsAction is true only for statuses that still need an upload', () => {
+  for (const status of ['missing', 'pending', 'rejected', 'expired']) assert.equal(documentNeedsAction(status), true)
+  for (const status of ['verified', 'submitted']) assert.equal(documentNeedsAction(status), false)
 })

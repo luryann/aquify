@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dareaquatics/aquify/server/internal/storage"
 )
 
 const (
@@ -140,6 +142,11 @@ type StorageConfig struct {
 	Region    string
 }
 
+// ClientConfig converts the app-level storage settings into the object storage client's config.
+func (c StorageConfig) ClientConfig() storage.Config {
+	return storage.Config(c)
+}
+
 func (c StorageConfig) BaseURL() string {
 	scheme := "http"
 	if c.UseSSL {
@@ -211,7 +218,7 @@ func LoadConfig() Config {
 	// Default to empty (production-safe) when APP_ENV is not explicitly set.
 	// Dev auth flags are only enabled when the environment is explicitly
 	// "development", "local", or "test".
-	appEnv := strings.ToLower(strings.TrimSpace(getEnv("APP_ENV", "")))
+	appEnv := strings.ToLower(getEnvTrimmed("APP_ENV", ""))
 	enableDevStubTokensDefault := isExplicitDevelopmentEnv(appEnv)
 	metricsAddrDefault := ""
 	if isExplicitDevelopmentEnv(appEnv) {
@@ -221,7 +228,7 @@ func LoadConfig() Config {
 		Addr:           getEnv("API_ADDR", defaultAPIAddr),
 		AllowedOrigins: splitCSV(getEnv("API_ALLOWED_ORIGINS", defaultAllowedOrigin)),
 		AppEnv:         appEnv,
-		DatabaseURL:    strings.TrimSpace(getEnv("DATABASE_URL", "")),
+		DatabaseURL:    getEnvTrimmed("DATABASE_URL", ""),
 		Storage: StorageConfig{
 			Endpoint:  strings.TrimSpace(firstEnvWithFallback("localhost:9000", "STORAGE_ENDPOINT", "S3_ENDPOINT")),
 			AccessKey: strings.TrimSpace(firstEnvWithFallback("", "STORAGE_ACCESS_KEY", "S3_ACCESS_KEY_ID")),
@@ -234,33 +241,33 @@ func LoadConfig() Config {
 			EnableDevStubTokens:  getEnvBool("AUTH_ENABLE_DEV_STUB_TOKENS", enableDevStubTokensDefault),
 			AllowDevSessionIssue: getEnvBool("AUTH_ALLOW_DEV_SESSION_ISSUE", enableDevStubTokensDefault),
 			OIDC: OIDCConfig{
-				AuthorizeURL:          strings.TrimSpace(getEnv("OIDC_AUTHORIZE_URL", "")),
-				TokenURL:              strings.TrimSpace(getEnv("OIDC_TOKEN_URL", "")),
-				JWKSURL:               strings.TrimSpace(getEnv("OIDC_JWKS_URL", "")),
-				EndSessionURL:         strings.TrimSpace(getEnv("OIDC_END_SESSION_URL", "")),
-				RedirectURL:           strings.TrimSpace(getEnv("OIDC_REDIRECT_URL", "")),
-				PostLogoutRedirectURL: strings.TrimSpace(getEnv("OIDC_POST_LOGOUT_REDIRECT_URL", "")),
-				ClientID:              strings.TrimSpace(getEnv("OIDC_CLIENT_ID", "")),
-				ClientSecret:          strings.TrimSpace(getEnv("OIDC_CLIENT_SECRET", "")),
-				ExpectedIssuer:        strings.TrimSpace(getEnv("OIDC_EXPECTED_ISSUER", "")),
-				StateSigningKey:       strings.TrimSpace(getEnv("OIDC_STATE_SIGNING_KEY", "")),
+				AuthorizeURL:          getEnvTrimmed("OIDC_AUTHORIZE_URL", ""),
+				TokenURL:              getEnvTrimmed("OIDC_TOKEN_URL", ""),
+				JWKSURL:               getEnvTrimmed("OIDC_JWKS_URL", ""),
+				EndSessionURL:         getEnvTrimmed("OIDC_END_SESSION_URL", ""),
+				RedirectURL:           getEnvTrimmed("OIDC_REDIRECT_URL", ""),
+				PostLogoutRedirectURL: getEnvTrimmed("OIDC_POST_LOGOUT_REDIRECT_URL", ""),
+				ClientID:              getEnvTrimmed("OIDC_CLIENT_ID", ""),
+				ClientSecret:          getEnvTrimmed("OIDC_CLIENT_SECRET", ""),
+				ExpectedIssuer:        getEnvTrimmed("OIDC_EXPECTED_ISSUER", ""),
+				StateSigningKey:       getEnvTrimmed("OIDC_STATE_SIGNING_KEY", ""),
 				HTTPTimeout:           getEnvDuration("OIDC_HTTP_TIMEOUT", 10*time.Second),
 			},
 		},
 		Stripe: StripeConfig{
-			SecretKey:                         strings.TrimSpace(getEnv("STRIPE_SECRET_KEY", "")),
-			WebhookSecret:                     strings.TrimSpace(getEnv("STRIPE_WEBHOOK_SECRET", "")),
-			Currency:                          strings.ToLower(strings.TrimSpace(getEnv("STRIPE_CURRENCY", "usd"))),
+			SecretKey:                         getEnvTrimmed("STRIPE_SECRET_KEY", ""),
+			WebhookSecret:                     getEnvTrimmed("STRIPE_WEBHOOK_SECRET", ""),
+			Currency:                          strings.ToLower(getEnvTrimmed("STRIPE_CURRENCY", "usd")),
 			ReconciliationAlertThresholdCents: getEnvInt("STRIPE_RECONCILIATION_ALERT_THRESHOLD_CENTS", 100),
 		},
 		Postmark: PostmarkConfig{
-			ServerToken:            strings.TrimSpace(getEnv("POSTMARK_SERVER_TOKEN", "")),
-			FromName:               strings.TrimSpace(getEnv("POSTMARK_FROM_NAME", "")),
-			FromEmail:              strings.TrimSpace(getEnv("POSTMARK_FROM_EMAIL", "")),
-			WebhookAuthHeaderName:  strings.TrimSpace(getEnv("POSTMARK_WEBHOOK_AUTH_HEADER_NAME", "")),
-			WebhookAuthHeaderValue: strings.TrimSpace(getEnv("POSTMARK_WEBHOOK_AUTH_HEADER_VALUE", "")),
-			WebhookBasicUser:       strings.TrimSpace(getEnv("POSTMARK_WEBHOOK_BASIC_USER", "")),
-			WebhookBasicPass:       strings.TrimSpace(getEnv("POSTMARK_WEBHOOK_BASIC_PASS", "")),
+			ServerToken:            getEnvTrimmed("POSTMARK_SERVER_TOKEN", ""),
+			FromName:               getEnvTrimmed("POSTMARK_FROM_NAME", ""),
+			FromEmail:              getEnvTrimmed("POSTMARK_FROM_EMAIL", ""),
+			WebhookAuthHeaderName:  getEnvTrimmed("POSTMARK_WEBHOOK_AUTH_HEADER_NAME", ""),
+			WebhookAuthHeaderValue: getEnvTrimmed("POSTMARK_WEBHOOK_AUTH_HEADER_VALUE", ""),
+			WebhookBasicUser:       getEnvTrimmed("POSTMARK_WEBHOOK_BASIC_USER", ""),
+			WebhookBasicPass:       getEnvTrimmed("POSTMARK_WEBHOOK_BASIC_PASS", ""),
 		},
 		Compliance: ComplianceConfig{
 			AuditRetentionDays: getEnvInt("AUDIT_RETENTION_DAYS", 2555),
@@ -268,7 +275,7 @@ func LoadConfig() Config {
 			DeletionReviewDays: getEnvInt("COMPLIANCE_DELETION_REVIEW_DAYS", 30),
 		},
 		Worker: WorkerConfig{
-			RedisURL:                  strings.TrimSpace(getEnv("REDIS_URL", "")),
+			RedisURL:                  getEnvTrimmed("REDIS_URL", ""),
 			ConcurrencyPerQueue:       getEnvInt("WORKER_CONCURRENCY_PER_QUEUE", 2),
 			ReconcileInterval:         getEnv("WORKER_RECONCILE_INTERVAL", "24h"),
 			IntegrityInterval:         getEnv("WORKER_INTEGRITY_INTERVAL", "24h"),
@@ -277,7 +284,7 @@ func LoadConfig() Config {
 			ScheduledOrgIDs:           splitCSV(getEnv("WORKER_SCHEDULED_ORG_IDS", "")),
 		},
 		Security: SecurityConfig{
-			CSRFHeaderName: strings.TrimSpace(getEnv("SECURITY_CSRF_HEADER_NAME", "X-CSRF-Token")),
+			CSRFHeaderName: getEnvTrimmed("SECURITY_CSRF_HEADER_NAME", "X-CSRF-Token"),
 			RateLimit: RateLimitConfig{
 				GlobalRequests:    getEnvInt("SECURITY_RATE_LIMIT_GLOBAL_REQUESTS", 1200),
 				GlobalWindow:      getEnvDuration("SECURITY_RATE_LIMIT_GLOBAL_WINDOW", time.Minute),
@@ -297,17 +304,17 @@ func LoadConfig() Config {
 			},
 		},
 		Telemetry: TelemetryConfig{
-			ServiceName:    strings.TrimSpace(getEnv("OTEL_SERVICE_NAME", "dare-api")),
-			ServiceVersion: strings.TrimSpace(getEnv("OTEL_SERVICE_VERSION", "dev")),
-			OTLPEndpoint:   strings.TrimSpace(getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "")),
+			ServiceName:    getEnvTrimmed("OTEL_SERVICE_NAME", "dare-api"),
+			ServiceVersion: getEnvTrimmed("OTEL_SERVICE_VERSION", "dev"),
+			OTLPEndpoint:   getEnvTrimmed("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
 			SampleRate:     getEnvFloat64("OTEL_TRACES_SAMPLER_ARG", 1.0),
-			MetricsAddr:    strings.TrimSpace(getEnv("METRICS_ADDR", metricsAddrDefault)),
+			MetricsAddr:    getEnvTrimmed("METRICS_ADDR", metricsAddrDefault),
 		},
 		Keycloak: KeycloakAdminConfig{
-			AdminURL:     strings.TrimSpace(getEnv("KEYCLOAK_ADMIN_URL", "")),
-			Realm:        strings.TrimSpace(getEnv("KEYCLOAK_REALM", "")),
-			ClientID:     strings.TrimSpace(getEnv("KEYCLOAK_ADMIN_CLIENT_ID", "")),
-			ClientSecret: strings.TrimSpace(getEnv("KEYCLOAK_ADMIN_CLIENT_SECRET", "")),
+			AdminURL:     getEnvTrimmed("KEYCLOAK_ADMIN_URL", ""),
+			Realm:        getEnvTrimmed("KEYCLOAK_REALM", ""),
+			ClientID:     getEnvTrimmed("KEYCLOAK_ADMIN_CLIENT_ID", ""),
+			ClientSecret: getEnvTrimmed("KEYCLOAK_ADMIN_CLIENT_SECRET", ""),
 		},
 	}
 }
@@ -367,66 +374,43 @@ func firstEnvWithFallback(fallback string, keys ...string) string {
 	return fallback
 }
 
-func getEnvBool(key string, fallback bool) bool {
-	value := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+// getEnvTrimmed is getEnv with surrounding whitespace removed from the result.
+func getEnvTrimmed(key, fallback string) string {
+	return strings.TrimSpace(getEnv(key, fallback))
+}
+
+// parseEnv reads and parses an environment variable, returning fallback when
+// it is unset, blank, or fails to parse.
+func parseEnv[T any](key string, fallback T, parse func(string) (T, error)) T {
+	value := strings.TrimSpace(os.Getenv(key))
 	if value == "" {
 		return fallback
 	}
-
-	parsed, err := strconv.ParseBool(value)
+	parsed, err := parse(value)
 	if err != nil {
 		return fallback
 	}
 	return parsed
+}
+
+func getEnvBool(key string, fallback bool) bool {
+	return parseEnv(key, fallback, func(v string) (bool, error) { return strconv.ParseBool(strings.ToLower(v)) })
 }
 
 func getEnvDuration(key string, fallback time.Duration) time.Duration {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return fallback
-	}
-
-	parsed, err := time.ParseDuration(value)
-	if err != nil {
-		return fallback
-	}
-	return parsed
+	return parseEnv(key, fallback, time.ParseDuration)
 }
 
 func getEnvInt(key string, fallback int) int {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return fallback
-	}
-	parsed, err := strconv.Atoi(value)
-	if err != nil {
-		return fallback
-	}
-	return parsed
+	return parseEnv(key, fallback, strconv.Atoi)
 }
 
 func getEnvInt64(key string, fallback int64) int64 {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return fallback
-	}
-	parsed, err := strconv.ParseInt(value, 10, 64)
-	if err != nil {
-		return fallback
-	}
-	return parsed
+	return parseEnv(key, fallback, func(v string) (int64, error) { return strconv.ParseInt(v, 10, 64) })
 }
 
 func getEnvFloat64(key string, fallback float64) float64 {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return fallback
-	}
-	var parsed float64
-	if _, err := fmt.Sscanf(value, "%f", &parsed); err != nil {
-		return fallback
-	}
-	return parsed
+	return parseEnv(key, fallback, func(v string) (float64, error) { return strconv.ParseFloat(v, 64) })
 }
 
 func splitCSV(value string) []string {

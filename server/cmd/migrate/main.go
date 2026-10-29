@@ -67,34 +67,36 @@ func runDryRun(args []string) {
 		SourceBillingTotalCents: sourceBillingTotal,
 	})
 
-	report, err := runner.DryRun(context.Background(), *inputDir)
-	if err != nil {
-		if writeErr := runner.WriteReport(*reportPath, report); writeErr != nil {
-			fmt.Fprintf(os.Stderr, "dry-run error: %v\nreport write error: %v\n", err, writeErr)
-			os.Exit(1)
-		}
-		if *remediationLogPath != "" {
-			if writeErr := runner.WriteRemediationLog(*remediationLogPath, report); writeErr != nil {
-				fmt.Fprintf(os.Stderr, "dry-run error: %v\nremediation log write error: %v\n", err, writeErr)
-				os.Exit(1)
-			}
-		}
+	report, runErr := runner.DryRun(context.Background(), *inputDir)
+	writeErr := writeDryRunOutputs(runner, report, *reportPath, *remediationLogPath)
+	switch {
+	case runErr != nil && writeErr != nil:
+		fmt.Fprintf(os.Stderr, "dry-run error: %v\n%v\n", runErr, writeErr)
+		os.Exit(1)
+	case runErr != nil:
 		fmt.Fprintf(os.Stderr, "dry-run completed with errors; report written to %s\n", *reportPath)
 		os.Exit(1)
-	}
-
-	if err := runner.WriteReport(*reportPath, report); err != nil {
-		fmt.Fprintf(os.Stderr, "write report: %v\n", err)
+	case writeErr != nil:
+		fmt.Fprintln(os.Stderr, writeErr)
 		os.Exit(1)
-	}
-	if *remediationLogPath != "" {
-		if err := runner.WriteRemediationLog(*remediationLogPath, report); err != nil {
-			fmt.Fprintf(os.Stderr, "write remediation log: %v\n", err)
-			os.Exit(1)
-		}
 	}
 
 	fmt.Printf("dry-run completed successfully; report written to %s\n", *reportPath)
+}
+
+// writeDryRunOutputs saves the dry-run report and, when a path is given, the
+// remediation log. It runs whether or not the dry run itself succeeded so the
+// operator always gets the evidence.
+func writeDryRunOutputs(runner *migration.Runner, report migration.Report, reportPath, remediationLogPath string) error {
+	if err := runner.WriteReport(reportPath, report); err != nil {
+		return fmt.Errorf("write report: %w", err)
+	}
+	if remediationLogPath != "" {
+		if err := runner.WriteRemediationLog(remediationLogPath, report); err != nil {
+			return fmt.Errorf("write remediation log: %w", err)
+		}
+	}
+	return nil
 }
 
 func usage() {

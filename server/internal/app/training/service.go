@@ -146,10 +146,6 @@ func (s *Service) loadFromDB(ctx context.Context) error {
 	return nil
 }
 
-func newID() string {
-	return uuid.New().String()
-}
-
 // ─── CRUD ─────────────────────────────────────────────────────────────────────
 
 // Create persists a new practice record.
@@ -163,7 +159,7 @@ func (s *Service) Create(
 	if !validTypes[practiceType] {
 		return nil, ErrInvalidType
 	}
-	id := newID()
+	id := uuid.NewString()
 	now := time.Now().UTC()
 	p := &Practice{
 		ID:            id,
@@ -420,7 +416,7 @@ func (s *Service) SetAttendance(orgID, practiceID, swimmerID, status, markedBy s
 	}
 	existing, ok := s.attendance[practiceID][swimmerID]
 	rec := &PracticeAttendance{
-		ID:         newID(),
+		ID:         uuid.NewString(),
 		OrgID:      orgID,
 		PracticeID: practiceID,
 		SwimmerID:  swimmerID,

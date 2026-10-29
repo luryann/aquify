@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react'
 import { Icon } from '@/components/ui/icons'
 import { NAV_ITEMS } from '@/lib/roles'
 import { OPEN_COMMAND_PALETTE_EVENT } from '@/components/layout/CommandPalette'
+import './Topbar.inline.css'
 
 type TopbarProps = {
   actions?: ReactNode
@@ -24,7 +25,7 @@ function useBreadcrumb() {
   // them as a crumb only adds a kicker above the title, so the trail starts at
   // the first real page.
   // Record IDs are UUIDs when DB-backed, or `<prefix>_<hex>` in in-memory mode.
-  const isUUID = (value: string) =>
+  const isRecordId = (value: string) =>
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value) || /^[a-z]+_[0-9a-f]{12,}$/i.test(value)
 
   let built = ''
@@ -33,13 +34,10 @@ function useBreadcrumb() {
     const match = NAV_ITEMS.find((i) => i.path === built)
     if (match) {
       crumbs.push({ label: match.label, path: built })
-    } else if (isUUID(seg)) {
+    } else if (!isRecordId(seg)) {
       // Dynamic record IDs (e.g. /meets/{id}) aren't human-readable — the page's
-      // own heading already shows the record's name, so skip adding a crumb for it.
-      continue
-    } else {
-      const decoded = decodeURIComponent(seg)
-      const label = decoded.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+      // own heading already shows the record's name, so they get no crumb.
+      const label = decodeURIComponent(seg).replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
       crumbs.push({ label, path: built })
     }
   }
@@ -73,21 +71,7 @@ function ThemeToggle() {
     <button type="button"
       onClick={toggle}
       title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-      style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        width: '30px', height: '30px', borderRadius: 'var(--r-md)',
-        background: 'transparent', border: '1px solid var(--border)',
-        cursor: 'pointer', color: 'var(--text-muted)',
-        transition: 'all var(--dur-fast)',
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.background = 'var(--bg-elevated)'
-        e.currentTarget.style.color = 'var(--text)'
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.background = 'transparent'
-        e.currentTarget.style.color = 'var(--text-muted)'
-      }}
+      className="theme-toggle"
     >
       {!mounted ? (
         <span style={{ width: '14px', height: '14px', display: 'block' }} />
@@ -164,19 +148,8 @@ export function Topbar({ actions, onOpenMobileNav }: TopbarProps) {
                 >
                   {crumb.label}
                 </span>
-              ) : crumb.path === '#' ? (
-                <span
-                  className="u-fs-fs-base" style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap' }}
-                >
-                  {crumb.label}
-                </span>
               ) : (
-                <Link
-                  href={crumb.path}
-                  className="u-fs-fs-base" style={{ color: 'var(--text-subtle)', whiteSpace: 'nowrap', textDecoration: 'none', transition: 'color var(--dur-fast)' }}
-                  onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text)')}
-                  onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-subtle)')}
-                >
+                <Link href={crumb.path} className="u-fs-fs-base crumb-link">
                   {crumb.label}
                 </Link>
               )}

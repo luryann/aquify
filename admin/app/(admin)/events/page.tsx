@@ -17,7 +17,7 @@ import {
   RSVP_LABELS, clubEventDateKey, clubEventInputFromDraft, draftFromClubEvent, emptyClubEventDraft,
   formatClubEventWhen, formatFee, type ClubEventDraft,
 } from '@/lib/club-events'
-import { parseBackendDate } from '@/lib/dates'
+import { parseBackendDate, localToday } from '@/lib/dates'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 
 const label: React.CSSProperties = { display: 'block', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginBottom: 6 }
@@ -164,7 +164,7 @@ export default function AdminEventsPage() {
 
   useEffect(() => { if (selected) loadRoster(selected) }, [selected, loadRoster])
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localToday()
   const visible = useMemo(() => {
     const list = events.filter((e) => (showPast ? clubEventDateKey(e) < today : clubEventDateKey(e) >= today))
     return showPast ? [...list].reverse() : list

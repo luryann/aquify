@@ -171,10 +171,9 @@ func (r *bufferedResponse) Write(p []byte) (int, error) {
 }
 
 func (r *bufferedResponse) FlushTo(w http.ResponseWriter) {
+	// Merge rather than replace: headers set by outer middleware (request ID,
+	// security headers) were written to w before the handler ran.
 	dst := w.Header()
-	for key := range dst {
-		dst.Del(key)
-	}
 	for key, values := range r.header {
 		copied := append([]string{}, values...)
 		dst[key] = copied

@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // ─── Quick-entry parser ───────────────────────────────────────────────────────
@@ -93,7 +94,7 @@ var equipmentAliases = map[string]string{
 
 var fillerWords = map[string]bool{"w/": true, "with": true, "on": true, "the": true, "of": true, "swim": true, "and": true, "&": true, "+": true}
 
-var sectionKindForHeader = func(h string) string {
+func sectionKindForHeader(h string) string {
 	h = strings.ToLower(h)
 	switch {
 	case strings.HasPrefix(h, "warm") && !strings.Contains(h, "down"), h == "wu":
@@ -246,7 +247,7 @@ func (p *quickParser) parseLine(text string, indent, lineNo int) {
 			return
 		}
 		if rest := strings.TrimSpace(text[1:]); rest != "" {
-			p.applyRoundModifiers(p.lastClosed, rest, lineNo)
+			p.applyRoundModifiers(p.lastClosed, rest)
 		}
 		return
 	}
@@ -262,7 +263,7 @@ func (p *quickParser) parseLine(text string, indent, lineNo int) {
 			content = m[3]
 		}
 		if content = strings.TrimSpace(content); content != "" {
-			p.parseLine(text[len(text)-len(content):], indent+1, lineNo)
+			p.parseLine(originalTail(text, content), indent+1, lineNo)
 		}
 		return
 	}
@@ -281,7 +282,7 @@ func (p *quickParser) parseLine(text string, indent, lineNo int) {
 	if m := reRoundHead.FindStringSubmatch(lower); m != nil {
 		reps, _ := strconv.Atoi(m[1])
 		opener := m[2]
-		restText := text[len(text)-len(m[3]):]
+		restText := originalTail(text, m[3])
 		round := p.addSet(WorkoutSet{Repeats: reps, Sets: []WorkoutSet{}})
 		if opener == ":" {
 			p.stack = append(p.stack, &roundFrame{set: round, indent: indent})
@@ -290,11 +291,7 @@ func (p *quickParser) parseLine(text string, indent, lineNo int) {
 			}
 			return
 		}
-		closer := byte('}')
-		if opener == "(" {
-			closer = ')'
-		}
-		inner, after, closed := splitBalanced(restText, opener[0], closer)
+		inner, after, closed := splitBalanced(restText)
 		p.stack = append(p.stack, &roundFrame{set: round, brace: true})
 		for _, piece := range splitTopLevel(inner) {
 			p.parseLine(piece, indent+1, lineNo)
@@ -302,13 +299,13 @@ func (p *quickParser) parseLine(text string, indent, lineNo int) {
 		if closed {
 			p.popBrace()
 			if strings.TrimSpace(after) != "" {
-				p.applyRoundModifiers(round, after, lineNo)
+				p.applyRoundModifiers(round, after)
 			}
 		}
 		return
 	}
-	if reRoundHeadNL.MatchString(lower) {
-		reps, _ := strconv.Atoi(strings.TrimRight(strings.Fields(lower)[0], "x×*"))
+	if m := reRoundHeadNL.FindStringSubmatch(lower); m != nil {
+		reps, _ := strconv.Atoi(m[1])
 		round := p.addSet(WorkoutSet{Repeats: reps, Sets: []WorkoutSet{}})
 		p.stack = append(p.stack, &roundFrame{set: round, indent: indent})
 		return
@@ -324,6 +321,20 @@ func (p *quickParser) parseLine(text string, indent, lineNo int) {
 	p.addSet(set)
 }
 
+// originalTail returns the part of text that corresponds to lowerTail, a
+// suffix of strings.ToLower(text). Lowercasing can change byte lengths for
+// some non-ASCII runes, but it maps rune for rune, so the suffix is located by
+// rune count rather than by byte offset.
+func originalTail(text, lowerTail string) string {
+	n := utf8.RuneCountInString(lowerTail)
+	i := len(text)
+	for ; n > 0 && i > 0; n-- {
+		_, size := utf8.DecodeLastRuneInString(text[:i])
+		i -= size
+	}
+	return text[i:]
+}
+
 func (p *quickParser) popBrace() bool {
 	for i := len(p.stack) - 1; i >= 0; i-- {
 		if p.stack[i].brace {
@@ -335,7 +346,7 @@ func (p *quickParser) popBrace() bool {
 	return false
 }
 
-func (p *quickParser) applyRoundModifiers(round *WorkoutSet, text string, lineNo int) {
+func (p *quickParser) applyRoundModifiers(round *WorkoutSet, text string) {
 	if round == nil {
 		return
 	}
@@ -353,15 +364,14 @@ func (p *quickParser) applyRoundModifiers(round *WorkoutSet, text string, lineNo
 	}
 	round.Equipment = mergeEquipment(round.Equipment, mods.equipment)
 	if mods.notes != "" {
-		round.Notes = strings.TrimSpace(strings.TrimSpace(round.Notes + " " + mods.notes))
+		round.Notes = strings.TrimSpace(round.Notes + " " + mods.notes)
 	}
-	_ = lineNo
 }
 
 // splitBalanced returns the text inside the first balanced open/close pair
 // (s starts just after the opener), the remainder after the closer, and
 // whether a closer was found.
-func splitBalanced(s string, open, close byte) (string, string, bool) {
+func splitBalanced(s string) (string, string, bool) {
 	depth := 1
 	for i := 0; i < len(s); i++ {
 		switch s[i] {
@@ -374,8 +384,6 @@ func splitBalanced(s string, open, close byte) (string, string, bool) {
 			}
 		}
 	}
-	_ = open
-	_ = close
 	return s, "", false
 }
 
@@ -413,7 +421,6 @@ type modifiers struct {
 	rest      int
 	equipment []string
 	notes     string
-	errs      []string
 }
 
 func parseModifiers(text string) modifiers {
@@ -449,16 +456,13 @@ func parseModifiers(text string) modifiers {
 			m.interval = secs
 		}
 	})
-	mask(reRestBefore, func(v string) {
-		if secs, err := parseClock(v); err == nil && m.rest == 0 {
-			m.rest = secs
-		}
-	})
-	mask(reRestAfter, func(v string) {
-		if secs, err := parseClock(v); err == nil && m.rest == 0 {
-			m.rest = secs
-		}
-	})
+	for _, re := range []*regexp.Regexp{reRestBefore, reRestAfter} {
+		mask(re, func(v string) {
+			if secs, err := parseClock(v); err == nil && m.rest == 0 {
+				m.rest = secs
+			}
+		})
+	}
 
 	lowerWords := strings.Fields(work)
 	origWords := strings.Fields(original)

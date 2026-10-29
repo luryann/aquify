@@ -4,6 +4,7 @@ import { useState, useMemo, useCallback, type ReactNode, type CSSProperties } fr
 import { Icon } from './icons'
 import { EmptyState } from './EmptyState'
 import { SkeletonTable } from './Skeleton'
+import './Table.inline.css'
 
 // ─────────────────────────────────────────────
 // Types
@@ -140,7 +141,7 @@ function Pagination({ page, totalPages, onPageChange }: PaginationProps) {
           ) : (
             <button type="button"
               key={p}
-              onClick={() => onPageChange(p as number)}
+              onClick={() => onPageChange(p)}
               style={btnStyle(p === page)}
             >
               {p}
@@ -199,13 +200,7 @@ function ColumnHeader<T>({
       </span>
       {col.sortable && (
         <span style={{ opacity: isActive ? 1 : 0.4, flexShrink: 0 }}>
-          {dir === 'asc' ? (
-            <Icon name="arrow-up" size={11} />
-          ) : dir === 'desc' ? (
-            <Icon name="arrow-down" size={11} />
-          ) : (
-            <Icon name="arrow-down" size={11} />
-          )}
+          <Icon name={dir === 'asc' ? 'arrow-up' : 'arrow-down'} size={11} />
         </span>
       )}
     </div>
@@ -246,26 +241,23 @@ export function Table<T extends Record<string, unknown>>({
   style,
   className,
 }: TableProps<T>) {
-  const [internalSort, setInternalSort] = useState<SortState | null>(defaultSort ?? null)
+  const [sort, setSort] = useState<SortState | null>(defaultSort ?? null)
   const [internalPage, setInternalPage] = useState(1)
 
-  const sort = internalSort
   const page = controlledPage ?? internalPage
   const isServerPaginated = controlledPage !== undefined
 
   // ── Sort handler
   const handleSort = useCallback(
     (key: string) => {
-      setInternalSort((prev) => {
-        const next: SortState =
-          prev?.key === key
-            ? { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' }
-            : { key, direction: 'asc' }
-        onSortChange?.(next)
-        return next
-      })
+      const next: SortState =
+        sort?.key === key
+          ? { key, direction: sort.direction === 'asc' ? 'desc' : 'asc' }
+          : { key, direction: 'asc' }
+      setSort(next)
+      onSortChange?.(next)
     },
-    [onSortChange],
+    [sort, onSortChange],
   )
 
   // ── Client-side sort
@@ -285,13 +277,11 @@ export function Table<T extends Record<string, unknown>>({
   const totalCount = totalItems ?? sortedData.length
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize))
 
-  const pagedData = useMemo(() => {
+  const displayData = useMemo(() => {
     if (!paginated || isServerPaginated) return sortedData
     const start = (page - 1) * pageSize
     return sortedData.slice(start, start + pageSize)
   }, [sortedData, paginated, isServerPaginated, page, pageSize])
-
-  const displayData = pagedData
 
   const handlePageChange = useCallback(
     (p: number) => {
@@ -372,13 +362,7 @@ export function Table<T extends Record<string, unknown>>({
             minWidth: '480px',
           }}
         >
-          <thead
-            style={{
-              ...(stickyHeader
-                ? { position: 'sticky', top: 0, zIndex: 1, background: 'var(--bg-surface)' }
-                : {}),
-            }}
-          >
+          <thead style={stickyHeader ? { position: 'sticky', top: 0, zIndex: 1, background: 'var(--bg-surface)' } : undefined}>
             <tr style={{ borderBottom: '1px solid var(--border)' }}>
               {selectable && (
                 <th style={{ width: '40px', padding: thPadding, textAlign: 'center' }}>
@@ -416,32 +400,20 @@ export function Table<T extends Record<string, unknown>>({
           </thead>
 
           <tbody>
-            {displayData.length === 0 ? null : (
-              displayData.map((row, rowIdx) => {
+            {displayData.map((row, rowIdx) => {
                 const rowKey = keyField ? String(row[keyField]) : String(rowIdx)
                 const isSelected = selectedKeys?.has(rowKey) ?? false
 
                 return (
                   <tr
                     key={rowKey}
-                    className={highlightKey !== undefined && rowKey === highlightKey ? 'row-focus' : undefined}
+                    className={highlightKey !== undefined && rowKey === highlightKey ? 'table-row row-focus' : 'table-row'}
+                    data-selected={isSelected}
                     ref={highlightKey !== undefined && rowKey === highlightKey ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}
                     onClick={onRowClick ? () => onRowClick(row) : undefined}
                     style={{
                       borderBottom: rowIdx < displayData.length - 1 ? '1px solid var(--border)' : 'none',
-                      background: isSelected ? 'var(--accent-subtle)' : 'transparent',
                       cursor: onRowClick ? 'pointer' : 'default',
-                      transition: 'background var(--dur-fast)',
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!isSelected)
-                        (e.currentTarget as HTMLTableRowElement).style.background =
-                          'rgba(255,255,255,0.025)'
-                    }}
-                    onMouseLeave={(e) => {
-                      ;(e.currentTarget as HTMLTableRowElement).style.background = isSelected
-                        ? 'var(--accent-subtle)'
-                        : 'transparent'
                     }}
                   >
                     {selectable && (
@@ -482,8 +454,7 @@ export function Table<T extends Record<string, unknown>>({
                     })}
                   </tr>
                 )
-              })
-            )}
+              })}
           </tbody>
         </table>
       </div>

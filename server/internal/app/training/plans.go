@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
 	"sort"
 	"strings"
 	"time"
@@ -154,7 +155,7 @@ func (s *Service) CreatePhase(orgID string, season SeasonWindow, in PhaseInput, 
 	}
 	now := time.Now().UTC()
 	p := &PlanPhase{
-		ID: newID(), OrgID: orgID, SeasonID: season.ID, GroupID: norm.GroupID, Phase: norm.Phase,
+		ID: uuid.NewString(), OrgID: orgID, SeasonID: season.ID, GroupID: norm.GroupID, Phase: norm.Phase,
 		Name: norm.Name, StartDate: norm.StartDate, EndDate: norm.EndDate,
 		WeeklyYardageTarget: norm.WeeklyYardageTarget, Focus: norm.Focus,
 		CreatedAt: now, UpdatedAt: now, CreatedBy: actor, UpdatedBy: actor,

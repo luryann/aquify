@@ -54,6 +54,26 @@ func clampDays(raw string, def, max int) int {
 	return d
 }
 
+// readableSwimmer resolves the {swimmerID} route swimmer for a read: staff may
+// read anyone, family members their own household. It writes the 404/403/500
+// itself; what names the data in the household-scope message.
+func readableSwimmer(w http.ResponseWriter, r *http.Request, dir roster.Directory, principal *appmiddleware.Principal, orgID, what string) (roster.Swimmer, bool) {
+	sw, allowed, err := householdSwimmer(dir, principal, orgID, chi.URLParam(r, "swimmerID"))
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to resolve swimmer.", err)
+		return roster.Swimmer{}, false
+	}
+	if sw.ID == "" {
+		httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Swimmer not found.", nil)
+		return roster.Swimmer{}, false
+	}
+	if !allowed && !hasAnyRole(principal, "admin", "coach") {
+		httpx.WriteError(w, r, http.StatusForbidden, "household_scope_violation", "You can only view "+what+" for your own household.", nil)
+		return roster.Swimmer{}, false
+	}
+	return sw, true
+}
+
 // householdSwimmer resolves a swimmer the principal may read/write as a
 // household member (parent of the household, or the swimmer themself).
 func householdSwimmer(dir roster.Directory, principal *appmiddleware.Principal, orgID, swimmerID string) (roster.Swimmer, bool, error) {
@@ -117,7 +137,7 @@ func (h *WellnessHandlers) upsertCheckIn(w http.ResponseWriter, r *http.Request)
 	}
 	sw, allowed, err := householdSwimmer(h.directory, principal, orgID, swimmerID)
 	if err != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to resolve household scope.", nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to resolve household scope.", err)
 		return
 	}
 	if !allowed {
@@ -146,7 +166,7 @@ func (h *WellnessHandlers) upsertCheckIn(w http.ResponseWriter, r *http.Request)
 			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "validation_error", verr.Error(), []httpx.ValidationIssue{{Field: verr.Field, Message: verr.Message}})
 			return
 		}
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to save check-in.", nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to save check-in.", err)
 		return
 	}
 	status := http.StatusOK
@@ -165,18 +185,8 @@ func (h *WellnessHandlers) swimmerTrend(w http.ResponseWriter, r *http.Request) 
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role.", nil)
 		return
 	}
-	swimmerID := chi.URLParam(r, "swimmerID")
-	sw, allowed, err := householdSwimmer(h.directory, principal, orgID, swimmerID)
-	if err != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to resolve swimmer.", nil)
-		return
-	}
-	if sw.ID == "" {
-		httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Swimmer not found.", nil)
-		return
-	}
-	if !allowed && !hasAnyRole(principal, "admin", "coach") {
-		httpx.WriteError(w, r, http.StatusForbidden, "household_scope_violation", "You can only view wellness for your own household.", nil)
+	sw, ok := readableSwimmer(w, r, h.directory, principal, orgID, "wellness")
+	if !ok {
 		return
 	}
 	days := clampDays(r.URL.Query().Get("days"), wellnessDefaultTrendDays, wellnessMaxTrendDays)
@@ -186,7 +196,7 @@ func (h *WellnessHandlers) swimmerTrend(w http.ResponseWriter, r *http.Request) 
 	// timezones ahead of UTC.
 	checkins, err := h.service.List(orgID, []string{sw.ID}, from, nextISODate(to))
 	if err != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load check-ins.", nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load check-ins.", err)
 		return
 	}
 	var todays *wellness.CheckIn
@@ -244,7 +254,7 @@ func (h *WellnessHandlers) heatmap(w http.ResponseWriter, r *http.Request) {
 
 	all, err := h.directory.Swimmers(orgID)
 	if err != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load roster.", nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load roster.", err)
 		return
 	}
 	swimmers := []roster.Swimmer{}
@@ -258,7 +268,7 @@ func (h *WellnessHandlers) heatmap(w http.ResponseWriter, r *http.Request) {
 	}
 	checkins, err := h.service.List(orgID, ids, from, to)
 	if err != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load check-ins.", nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load check-ins.", err)
 		return
 	}
 	bySwimmer := map[string][]*wellness.CheckIn{}
@@ -299,7 +309,11 @@ func (h *WellnessHandlers) heatmap(w http.ResponseWriter, r *http.Request) {
 	// Flagged swimmers first, then by name, so the coach sees who needs
 	// attention without scrolling.
 	sort.SliceStable(rows, func(i, j int) bool {
-		return len(rows[i].Flags) > 0 && len(rows[j].Flags) == 0
+		fi, fj := len(rows[i].Flags) > 0, len(rows[j].Flags) > 0
+		if fi != fj {
+			return fi
+		}
+		return strings.ToLower(rows[i].DisplayName) < strings.ToLower(rows[j].DisplayName)
 	})
 	daily := make([]heatmapDay, 0, len(dates))
 	for _, d := range dates {

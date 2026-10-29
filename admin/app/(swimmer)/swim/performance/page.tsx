@@ -24,6 +24,8 @@ import {
   describeCutQualification,
 } from '@/lib/swimmer-performance-cuts'
 import './page.inline.css'
+import { fetchSwimmerGoals, formatSwimTime, type Goal } from '@/lib/performanceData'
+import { SkeletonLine } from '@/components/ui/SkeletonLine'
 
 // ── Design tokens ──────────────────────────────────────────────────────────
 const C = {
@@ -37,45 +39,15 @@ const C = {
   border:      'var(--border)',
 }
 
-const STANDARD_COLOR: Record<string, string> = {
-  AAA: 'var(--accent)',
-  AA:  'var(--info)',
-  A:   'var(--water)',
-  BB:  'var(--warning)',
-  B:   'var(--text-muted)',
-}
-
 // ── Helpers ────────────────────────────────────────────────────────────────
-function fmtTime(ms: number): string {
-  const s = ms / 1000
-  const m = Math.floor(s / 60)
-  const rem = s % 60
-  return m > 0 ? `${m}:${rem.toFixed(2).padStart(5, '0')}` : rem.toFixed(2)
-}
-
 function eventName(distance: number, stroke: string): string {
   const cap = stroke.charAt(0).toUpperCase() + stroke.slice(1)
   return `${distance} ${cap}`
 }
 
-function parseGoalTimeInput(value: string): number | null {
-  const trimmed = value.trim()
-  if (!trimmed) return null
-  const secondsOnly = /^\d{1,2}(\.\d{1,2})?$/
-  const minutesSeconds = /^\d+:\d{2}(\.\d{1,2})?$/
-  if (secondsOnly.test(trimmed)) return Number.parseFloat(trimmed)
-  if (minutesSeconds.test(trimmed)) {
-    const [minutes, seconds] = trimmed.split(':')
-    return Number.parseInt(minutes, 10) * 60 + Number.parseFloat(seconds)
-  }
-  return Number.NaN
-}
-
+/** Seconds as a swim-time label ("58.12", "1:02.34"). */
 function fmtSec(s: number): string {
-  if (s < 60) return s.toFixed(2)
-  const m = Math.floor(s / 60)
-  const rem = (s % 60).toFixed(2).padStart(5, '0')
-  return `${m}:${rem}`
+  return formatSwimTime(Math.round(s * 1000))
 }
 
 function toneColors(tone: 'success' | 'warning' | 'muted') {
@@ -127,7 +99,7 @@ function pivotBestTimes(records: BestTimeRecord[]): BestTimeRow[] {
     const row = map.get(ev)!
     const course = r.course?.toUpperCase() as Course
     const entry: PivotEntry = {
-      time: fmtTime(r.best_time_ms),
+      time: formatSwimTime(r.best_time_ms),
       date: r.recorded_at ? new Date(r.recorded_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '',
       ms: r.best_time_ms,
     }
@@ -163,12 +135,6 @@ function buildProgressionData(records: BestTimeRecord[], eventKey: string): Arra
 }
 
 // ── Skeleton ───────────────────────────────────────────────────────────────
-function SkeletonLine({ width = '100%', height = '14px' }: { width?: string; height?: string }) {
-  return (
-    <div style={{ width, height, background: 'var(--border)', borderRadius: '6px', animation: 'pulse 1.5s ease-in-out infinite' }} />
-  )
-}
-
 // ── Components ─────────────────────────────────────────────────────────────
 function CourseCell({ entry }: { entry?: PivotEntry }) {
   if (!entry) {
@@ -216,13 +182,9 @@ export default function PerformancePage() {
   const [cutLoading, setCutLoading] = useState(true)
   const [cutError, setCutError] = useState<string | null>(null)
 
-  const [courseFilter, setCourseFilter] = useState<Course>('SCY')
   const [tab, setTab] = useState<'times' | 'cuts' | 'progression'>('times')
   const [progressEvent, setProgressEvent] = useState('')
-  const [goalTime, setGoalTime] = useState<Record<string, string>>({})
-  const [goalInput, setGoalInput] = useState<Record<string, string>>({})
-  const [editingGoal, setEditingGoal] = useState(false)
-  const [goalError, setGoalError] = useState<string | null>(null)
+  const [goals, setGoals] = useState<Goal[]>([])
   const [viewMode, setViewMode] = useState<'chart' | 'table' | 'monthly'>('chart')
   const [retryKey, setRetryKey] = useState(0)
   const [noLinkedSwimmer, setNoLinkedSwimmer] = useState(false)
@@ -325,6 +287,17 @@ export default function PerformancePage() {
     }
   }, [api, orgId, householdId, swimmerId, retryKey])
 
+  // Goals are saved through GoalsPanel below; re-read them whenever the
+  // Progression tab opens so the goal line reflects changes made there.
+  useEffect(() => {
+    if (tab !== 'progression' || !orgId || !swimmerId) return
+    let cancelled = false
+    fetchSwimmerGoals(api, orgId, swimmerId)
+      .then((next) => { if (!cancelled) setGoals(next) })
+      .catch(() => { if (!cancelled) setGoals([]) })
+    return () => { cancelled = true }
+  }, [api, orgId, swimmerId, tab])
+
   const pivotedRows = pivotBestTimes(rawRecords)
   const cutsView = buildSwimmerCutsViewModel({
     loading: cutLoading,
@@ -348,10 +321,8 @@ export default function PerformancePage() {
   const latestTime = allTimes[allTimes.length - 1] ?? 0
   const improvement = allTimes.length > 1 ? allTimes[0] - latestTime : 0
 
-  const goalSec = (() => {
-    const parsed = parseGoalTimeInput(goalTime[progressEvent] ?? '')
-    return parsed === null || Number.isNaN(parsed) ? null : parsed
-  })()
+  const activeGoal = goals.find((g) => g.status === 'active' && `${eventName(g.distance, g.stroke)} ${g.course}` === progressEvent)
+  const goalSec = activeGoal ? activeGoal.target_time_ms / 1000 : null
   const toGoal = goalSec ? latestTime - goalSec : null
 
   // Monthly grouping
@@ -364,10 +335,7 @@ export default function PerformancePage() {
   if (!loading && noLinkedSwimmer) {
     return (
       <div>
-        <style>{`
-          @keyframes slideUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
-        `}</style>
-        <div className="is-bb27019">
+                <div className="is-bb27019">
           <h1 className="page-title">
             Performance
           </h1>
@@ -380,11 +348,7 @@ export default function PerformancePage() {
   if (!loading && loadError) {
     return (
       <div>
-        <style>{`
-          @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.45} }
-          @keyframes slideUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
-        `}</style>
-        <div className="is-bb27019">
+                <div className="is-bb27019">
           <h1 className="page-title">
             Performance
           </h1>
@@ -409,11 +373,7 @@ export default function PerformancePage() {
 
   return (
     <div>
-      <style>{`
-        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.45} }
-        @keyframes slideUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
-      `}</style>
-
+      
       {/* Page header */}
       <div className="is-bb27019">
         <h1 className="page-title"
@@ -458,30 +418,6 @@ export default function PerformancePage() {
       {/* ── BEST TIMES TAB ─────────────────────────────────────────── */}
       {tab === 'times' && (
         <div style={{ animation: 'slideUp 0.25s cubic-bezier(0.16,1,0.3,1) both' }}>
-          {/* Course filter */}
-          <div className="is-7785aac">
-            {(['SCY', 'SCM', 'LCM'] as Course[]).map((course) => (
-              <button type="button"
-                key={course}
-                onClick={() => setCourseFilter(course)}
-                style={{
-                  padding: '6px 16px',
-                  borderRadius: '8px',
-                  border: `1px solid ${courseFilter === course ? C.accentBorder : C.border}`,
-                  background: courseFilter === course ? C.accentDim : 'transparent',
-                  color: courseFilter === course ? C.accent : C.subtle,
-                  fontSize: 'var(--fs-sm)',
-                  fontWeight: 600,
-                  fontFamily: 'var(--font-body)',
-                  cursor: 'pointer',
-                  transition: 'all 120ms ease',
-                }}
-              >
-                {course}
-              </button>
-            ))}
-          </div>
-
           {/* Best times table */}
           <div className="card" style={{ overflow: 'hidden' }}>
             {/* Header */}
@@ -526,20 +462,6 @@ export default function PerformancePage() {
                 </div>
               ))
             )}
-          </div>
-
-          {/* Standard legend */}
-          <div className="is-656ccfc">
-            {Object.entries(STANDARD_COLOR).map(([std, color]) => (
-              <div key={std} className="is-df7e073">
-                <span style={{ fontSize: 'var(--fs-2xs)', fontFamily: 'var(--font-body)', fontWeight: 700, color, background: `${color}18`, padding: '2px 8px', borderRadius: '4px' }}>
-                  {std}
-                </span>
-                <span style={{ fontSize: 'var(--fs-xs)', color: C.muted }}>
-                  {std === 'AAA' ? 'National Qualifying' : std === 'AA' ? 'Junior National' : std === 'A' ? 'Regional' : std === 'BB' ? 'Sectional' : 'Divisional'}
-                </span>
-              </div>
-            ))}
           </div>
         </div>
       )}
@@ -605,11 +527,11 @@ export default function PerformancePage() {
                         <div style={{ minWidth: '170px', textAlign: 'right' }}>
                           <div style={{ fontSize: 'var(--fs-sm)', color: C.muted, fontFamily: 'var(--font-body)', marginBottom: '4px' }}>Cut time</div>
                           <div style={{ fontSize: 'var(--fs-xl)', fontFamily: 'var(--font-body)', fontWeight: 700, color: C.text, marginBottom: '8px' }}>
-                            {fmtTime(standard.time_ms)}
+                            {formatSwimTime(standard.time_ms)}
                           </div>
                           <div style={{ fontSize: 'var(--fs-sm)', color: C.muted, fontFamily: 'var(--font-body)', marginBottom: '4px' }}>Best time</div>
                           <div style={{ fontSize: 'var(--fs-md)', fontFamily: 'var(--font-body)', fontWeight: 700, color: qualification.best_time_ms != null ? colors.text : C.muted }}>
-                            {qualification.best_time_ms != null ? fmtTime(qualification.best_time_ms) : 'No time yet'}
+                            {qualification.best_time_ms != null ? formatSwimTime(qualification.best_time_ms) : 'No time yet'}
                           </div>
                         </div>
                       </div>
@@ -675,7 +597,7 @@ export default function PerformancePage() {
                 {[
                   { label: 'Current best', value: latestTime ? fmtSec(latestTime) : '—', color: C.accent, sub: eventData[eventData.length - 1]?.meet ?? '' },
                   { label: 'Total drop', value: improvement > 0 ? `-${improvement.toFixed(2)}s` : '—', color: improvement > 0 ? C.accent : C.muted, sub: `over ${eventData.length} data points` },
-                  { label: 'My goal', value: goalSec ? fmtSec(goalSec) : 'Not set', color: goalSec ? 'var(--warning)' : C.muted, sub: toGoal !== null ? (toGoal > 0 ? `${toGoal.toFixed(2)}s to go` : `Beat by ${Math.abs(toGoal).toFixed(2)}s!`) : 'Tap to set a goal' },
+                  { label: 'My goal', value: goalSec ? fmtSec(goalSec) : 'Not set', color: goalSec ? 'var(--warning)' : C.muted, sub: toGoal !== null ? (toGoal > 0 ? `${toGoal.toFixed(2)}s to go` : `Beat by ${Math.abs(toGoal).toFixed(2)}s!`) : 'Set one under Goals below' },
                   { label: 'Data points', value: String(eventData.length), color: C.subtle, sub: 'recorded swims' },
                 ].map((s) => (
                   <div key={s.label} className="card is-e402fee" >
@@ -684,48 +606,6 @@ export default function PerformancePage() {
                     <div style={{ fontSize: 'var(--fs-2xs)', color: C.muted }}>{s.sub}</div>
                   </div>
                 ))}
-              </div>
-
-              {/* Goal editor */}
-              <div className="is-ea42ac4">
-                <Icon name="zap" size={16} style={{ color: 'var(--warning)', flexShrink: 0 }} />
-                <div style={{ flex: 1 }}>
-                  <p style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: C.text, marginBottom: '2px' }}>Goal for {progressEvent}</p>
-                  {editingGoal ? (
-                    <div className="is-53b81f5">
-                      <input aria-label="Target time"
-                        value={goalInput[progressEvent] ?? ''}
-                        onChange={(e) => {
-                          setGoalInput({ ...goalInput, [progressEvent]: e.target.value })
-                          setGoalError(null)
-                        }}
-                        placeholder="e.g. 58.50 or 1:58.00"
-                        style={{ width: '160px' }}
-                      />
-                      <button type="button"
-                        onClick={() => {
-                          const parsed = parseGoalTimeInput(goalInput[progressEvent] ?? '')
-                          if (parsed === null || Number.isNaN(parsed)) { setGoalError('Enter goal time as SS.ss or M:SS.ss.'); return }
-                          setGoalTime({ ...goalTime, [progressEvent]: (goalInput[progressEvent] ?? '').trim() })
-                          setEditingGoal(false)
-                          setGoalError(null)
-                        }}
-                        className="btn btn-primary btn-sm"
-                      >Save</button>
-                    </div>
-                  ) : (
-                    <p style={{ fontSize: 'var(--fs-xs)', color: C.muted }}>{goalTime[progressEvent] ? `Target: ${goalTime[progressEvent]}` : 'No goal set for this event.'}</p>
-                  )}
-                  {goalError && <p className="is-fd8fe04">{goalError}</p>}
-                </div>
-                {!editingGoal && (
-                  <button type="button"
-                    onClick={() => { setGoalInput({ ...goalInput, [progressEvent]: goalTime[progressEvent] ?? '' }); setGoalError(null); setEditingGoal(true) }}
-                    className="is-57f178a"
-                  >
-                    {goalTime[progressEvent] ? 'Edit Goal' : 'Set Goal'}
-                  </button>
-                )}
               </div>
 
               {eventData.length === 0 ? (

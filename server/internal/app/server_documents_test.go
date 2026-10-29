@@ -1,7 +1,6 @@
 package app
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -43,45 +42,13 @@ func newDocRouterWithStore(t *testing.T, svc *documents.Service, store storage.O
 
 func issueDocToken(t *testing.T, router http.Handler, userID, orgID, role, householdID string) string {
 	t.Helper()
-	payload := map[string]any{
-		"user_id": userID,
-		"org_id":  orgID,
-		"roles":   []string{role},
-	}
-	if householdID != "" {
-		payload["household_id"] = householdID
-	}
-	raw, _ := json.Marshal(payload)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/sessions/issue", bytes.NewReader(raw))
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, req)
-	if rr.Code != http.StatusCreated {
-		t.Fatalf("issueDocToken: want 201, got %d: %s", rr.Code, rr.Body.String())
-	}
-	return issuedAccessTokenFromResponse(t, rr)
-}
-
-func doDocReq(router http.Handler, method, path, token, orgID, body string) *httptest.ResponseRecorder {
-	var b *bytes.Reader
-	if body != "" {
-		b = bytes.NewReader([]byte(body))
-	} else {
-		b = bytes.NewReader(nil)
-	}
-	req := httptest.NewRequest(method, path, b)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("X-Org-Id", orgID)
-	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, req)
-	return rr
+	return issueSession(t, router, sessionSpec{UserID: userID, OrgID: orgID, HouseholdID: householdID, Roles: []string{role}})
 }
 
 func requestDocumentUpload(t *testing.T, router http.Handler, token, orgID, submissionID, fileName, fileMIME string, fileSize int64) string {
 	t.Helper()
 
-	rr := doDocReq(router, http.MethodPost, "/api/v1/documents/"+submissionID+"/upload-url", token, orgID, `{
+	rr := doOrgRequest(router, http.MethodPost, "/api/v1/documents/"+submissionID+"/upload-url", token, orgID, `{
 		"file_name": "`+fileName+`",
 		"file_mime": "`+fileMIME+`",
 		"file_size_bytes": `+strconv.FormatInt(fileSize, 10)+`
@@ -110,7 +77,7 @@ func attachUploadedDocument(t *testing.T, router http.Handler, store storage.Obj
 		t.Fatalf("seed uploaded object: %v", err)
 	}
 
-	rr := doDocReq(router, http.MethodPost, "/api/v1/documents/"+submissionID+"/attach", token, orgID, `{
+	rr := doOrgRequest(router, http.MethodPost, "/api/v1/documents/"+submissionID+"/attach", token, orgID, `{
 		"file_object_key": "`+objectKey+`",
 		"file_name": "`+fileName+`",
 		"file_mime": "`+fileMIME+`",
@@ -131,7 +98,7 @@ func TestDocumentTypeCRUD(t *testing.T) {
 	adminToken := issueDocToken(t, router, "admin-user", orgID, "admin", "")
 
 	// Create
-	rr := doDocReq(router, http.MethodPost, "/api/v1/document-types", adminToken, orgID, `{
+	rr := doOrgRequest(router, http.MethodPost, "/api/v1/document-types", adminToken, orgID, `{
 		"name": "Season Liability Waiver",
 		"category": "waiver",
 		"description": "Annual liability release",
@@ -163,7 +130,7 @@ func TestDocumentTypeCRUD(t *testing.T) {
 	}
 
 	// List
-	rr = doDocReq(router, http.MethodGet, "/api/v1/document-types?active_only=true", adminToken, orgID, "")
+	rr = doOrgRequest(router, http.MethodGet, "/api/v1/document-types?active_only=true", adminToken, orgID, "")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("list doc types: want 200, got %d", rr.Code)
 	}
@@ -178,7 +145,7 @@ func TestDocumentTypeCRUD(t *testing.T) {
 	}
 
 	// Update (make inactive)
-	rr = doDocReq(router, http.MethodPut, "/api/v1/document-types/"+typeID, adminToken, orgID, `{"is_active": false}`)
+	rr = doOrgRequest(router, http.MethodPut, "/api/v1/document-types/"+typeID, adminToken, orgID, `{"is_active": false}`)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("update doc type: want 200, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -193,7 +160,7 @@ func TestDocumentTypeCRUD(t *testing.T) {
 	}
 
 	// Delete
-	rr = doDocReq(router, http.MethodDelete, "/api/v1/document-types/"+typeID, adminToken, orgID, "")
+	rr = doOrgRequest(router, http.MethodDelete, "/api/v1/document-types/"+typeID, adminToken, orgID, "")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("delete doc type: want 200, got %d", rr.Code)
 	}
@@ -208,7 +175,7 @@ func TestDocumentUploadURLAndAttachValidateObjectStorage(t *testing.T) {
 	adminToken := issueDocToken(t, router, "admin-user", orgID, "admin", "")
 	parentToken := issueDocToken(t, router, "parent-user", orgID, "parent", "hh-001")
 
-	typeResp := doDocReq(router, http.MethodPost, "/api/v1/document-types", adminToken, orgID, `{
+	typeResp := doOrgRequest(router, http.MethodPost, "/api/v1/document-types", adminToken, orgID, `{
 		"name": "Medical Form",
 		"category": "medical",
 		"is_required": true,
@@ -225,7 +192,7 @@ func TestDocumentUploadURLAndAttachValidateObjectStorage(t *testing.T) {
 	}
 	json.NewDecoder(typeResp.Body).Decode(&createdType)
 
-	createResp := doDocReq(router, http.MethodPost, "/api/v1/documents", parentToken, orgID, `{
+	createResp := doOrgRequest(router, http.MethodPost, "/api/v1/documents", parentToken, orgID, `{
 		"document_type_id": "`+createdType.DocumentType.ID+`",
 		"household_id": "hh-001"
 	}`)
@@ -239,7 +206,7 @@ func TestDocumentUploadURLAndAttachValidateObjectStorage(t *testing.T) {
 	}
 	json.NewDecoder(createResp.Body).Decode(&createdSub)
 
-	uploadResp := doDocReq(router, http.MethodPost, "/api/v1/documents/"+createdSub.Document.ID+"/upload-url", parentToken, orgID, `{
+	uploadResp := doOrgRequest(router, http.MethodPost, "/api/v1/documents/"+createdSub.Document.ID+"/upload-url", parentToken, orgID, `{
 		"file_name": "medical.pdf",
 		"file_mime": "application/pdf",
 		"file_size_bytes": 1234
@@ -255,7 +222,7 @@ func TestDocumentUploadURLAndAttachValidateObjectStorage(t *testing.T) {
 		t.Fatal("expected object key in upload response")
 	}
 
-	missingAttachResp := doDocReq(router, http.MethodPost, "/api/v1/documents/"+createdSub.Document.ID+"/attach", parentToken, orgID, `{
+	missingAttachResp := doOrgRequest(router, http.MethodPost, "/api/v1/documents/"+createdSub.Document.ID+"/attach", parentToken, orgID, `{
 		"file_object_key": "`+uploadPayload.ObjectKey+`",
 		"file_name": "medical.pdf",
 		"file_mime": "application/pdf",
@@ -269,7 +236,7 @@ func TestDocumentUploadURLAndAttachValidateObjectStorage(t *testing.T) {
 		t.Fatalf("seed uploaded object: %v", err)
 	}
 
-	attachResp := doDocReq(router, http.MethodPost, "/api/v1/documents/"+createdSub.Document.ID+"/attach", parentToken, orgID, `{
+	attachResp := doOrgRequest(router, http.MethodPost, "/api/v1/documents/"+createdSub.Document.ID+"/attach", parentToken, orgID, `{
 		"file_object_key": "`+uploadPayload.ObjectKey+`",
 		"file_name": "medical.pdf",
 		"file_mime": "application/pdf",
@@ -289,7 +256,7 @@ func TestDocumentAttachRejectsObjectKeyOutsideSubmissionScope(t *testing.T) {
 	adminToken := issueDocToken(t, router, "admin-user", orgID, "admin", "")
 	parentToken := issueDocToken(t, router, "parent-user", orgID, "parent", "hh-001")
 
-	typeResp := doDocReq(router, http.MethodPost, "/api/v1/document-types", adminToken, orgID, `{
+	typeResp := doOrgRequest(router, http.MethodPost, "/api/v1/document-types", adminToken, orgID, `{
 		"name": "Insurance Card",
 		"category": "insurance",
 		"is_required": true,
@@ -303,7 +270,7 @@ func TestDocumentAttachRejectsObjectKeyOutsideSubmissionScope(t *testing.T) {
 	}
 	json.NewDecoder(typeResp.Body).Decode(&createdType)
 
-	createResp := doDocReq(router, http.MethodPost, "/api/v1/documents", parentToken, orgID, `{
+	createResp := doOrgRequest(router, http.MethodPost, "/api/v1/documents", parentToken, orgID, `{
 		"document_type_id": "`+createdType.DocumentType.ID+`",
 		"household_id": "hh-001"
 	}`)
@@ -319,7 +286,7 @@ func TestDocumentAttachRejectsObjectKeyOutsideSubmissionScope(t *testing.T) {
 		t.Fatalf("seed foreign object: %v", err)
 	}
 
-	attachResp := doDocReq(router, http.MethodPost, "/api/v1/documents/"+createdSub.Document.ID+"/attach", parentToken, orgID, `{
+	attachResp := doOrgRequest(router, http.MethodPost, "/api/v1/documents/"+createdSub.Document.ID+"/attach", parentToken, orgID, `{
 		"file_object_key": "`+foreignObjectKey+`",
 		"file_name": "foreign.pdf",
 		"file_mime": "application/pdf",
@@ -340,7 +307,7 @@ func TestDocumentTypeForbiddenForNonAdmin(t *testing.T) {
 	parentToken := issueDocToken(t, router, "parent-user", orgID, "parent", "hh-001")
 
 	// Parent should NOT be able to create types
-	rr := doDocReq(router, http.MethodPost, "/api/v1/document-types", parentToken, orgID, `{
+	rr := doOrgRequest(router, http.MethodPost, "/api/v1/document-types", parentToken, orgID, `{
 		"name": "Waiver", "category": "waiver", "is_required": true, "is_active": true
 	}`)
 	if rr.Code != http.StatusForbidden {
@@ -361,7 +328,7 @@ func TestDocumentSubmissionWorkflow(t *testing.T) {
 	parentToken := issueDocToken(t, router, "parent-user", orgID, "parent", householdID)
 
 	// Admin creates a document type
-	rr := doDocReq(router, http.MethodPost, "/api/v1/document-types", adminToken, orgID, `{
+	rr := doOrgRequest(router, http.MethodPost, "/api/v1/document-types", adminToken, orgID, `{
 		"name": "Medical Authorization",
 		"category": "medical",
 		"is_required": true,
@@ -380,7 +347,7 @@ func TestDocumentSubmissionWorkflow(t *testing.T) {
 	typeID := typeResp.DocumentType.ID
 
 	// Parent creates a submission
-	rr = doDocReq(router, http.MethodPost, "/api/v1/documents", parentToken, orgID, `{
+	rr = doOrgRequest(router, http.MethodPost, "/api/v1/documents", parentToken, orgID, `{
 		"document_type_id": "`+typeID+`",
 		"household_id": "`+householdID+`"
 	}`)
@@ -410,7 +377,7 @@ func TestDocumentSubmissionWorkflow(t *testing.T) {
 	}
 
 	// Admin verifies
-	rr = doDocReq(router, http.MethodPost, "/api/v1/documents/"+subID+"/verify", adminToken, orgID, `{"review_notes": "Looks good!"}`)
+	rr = doOrgRequest(router, http.MethodPost, "/api/v1/documents/"+subID+"/verify", adminToken, orgID, `{"review_notes": "Looks good!"}`)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("verify: %d %s", rr.Code, rr.Body.String())
 	}
@@ -433,7 +400,7 @@ func TestDocumentRejectAndResubmit(t *testing.T) {
 	parentToken := issueDocToken(t, router, "parent-user", orgID, "parent", householdID)
 
 	// Create type
-	rr := doDocReq(router, http.MethodPost, "/api/v1/document-types", adminToken, orgID, `{
+	rr := doOrgRequest(router, http.MethodPost, "/api/v1/document-types", adminToken, orgID, `{
 		"name": "Insurance Card", "category": "insurance", "is_required": true, "is_active": true
 	}`)
 	var tr struct {
@@ -444,7 +411,7 @@ func TestDocumentRejectAndResubmit(t *testing.T) {
 	json.NewDecoder(rr.Body).Decode(&tr)
 
 	// Parent submits
-	rr = doDocReq(router, http.MethodPost, "/api/v1/documents", parentToken, orgID, `{
+	rr = doOrgRequest(router, http.MethodPost, "/api/v1/documents", parentToken, orgID, `{
 		"document_type_id": "`+tr.DocumentType.ID+`",
 		"household_id": "`+householdID+`"
 	}`)
@@ -463,7 +430,7 @@ func TestDocumentRejectAndResubmit(t *testing.T) {
 	}
 
 	// Admin rejects
-	rr = doDocReq(router, http.MethodPost, "/api/v1/documents/"+subID+"/reject", adminToken, orgID, `{"review_notes": "Image is too blurry"}`)
+	rr = doOrgRequest(router, http.MethodPost, "/api/v1/documents/"+subID+"/reject", adminToken, orgID, `{"review_notes": "Image is too blurry"}`)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("reject: %d %s", rr.Code, rr.Body.String())
 	}
@@ -500,7 +467,7 @@ func TestDocumentHouseholdScopeEnforcement(t *testing.T) {
 	parent2Token := issueDocToken(t, router, "parent-2", orgID, "parent", "hh-002")
 
 	// Create type
-	rr := doDocReq(router, http.MethodPost, "/api/v1/document-types", adminToken, orgID, `{
+	rr := doOrgRequest(router, http.MethodPost, "/api/v1/document-types", adminToken, orgID, `{
 		"name": "Photo Release", "category": "release", "is_required": false, "is_active": true
 	}`)
 	var tr struct {
@@ -512,7 +479,7 @@ func TestDocumentHouseholdScopeEnforcement(t *testing.T) {
 	typeID := tr.DocumentType.ID
 
 	// Parent 1 creates a submission
-	rr = doDocReq(router, http.MethodPost, "/api/v1/documents", parent1Token, orgID, `{
+	rr = doOrgRequest(router, http.MethodPost, "/api/v1/documents", parent1Token, orgID, `{
 		"document_type_id": "`+typeID+`", "household_id": "hh-001"
 	}`)
 	if rr.Code != http.StatusCreated {
@@ -527,19 +494,19 @@ func TestDocumentHouseholdScopeEnforcement(t *testing.T) {
 	subID := sr.Document.ID
 
 	// Parent 2 tries to view parent 1's submission — should get 404
-	rr = doDocReq(router, http.MethodGet, "/api/v1/documents/"+subID, parent2Token, orgID, "")
+	rr = doOrgRequest(router, http.MethodGet, "/api/v1/documents/"+subID, parent2Token, orgID, "")
 	if rr.Code != http.StatusNotFound {
 		t.Errorf("parent2 accessing parent1 submission: want 404, got %d", rr.Code)
 	}
 
 	// Parent 2 tries to list with parent 1's household_id — must be rejected with 403
-	rr = doDocReq(router, http.MethodGet, "/api/v1/documents?household_id=hh-001", parent2Token, orgID, "")
+	rr = doOrgRequest(router, http.MethodGet, "/api/v1/documents?household_id=hh-001", parent2Token, orgID, "")
 	if rr.Code != http.StatusForbidden {
 		t.Errorf("parent2 listing parent1 docs: expected 403, got %d", rr.Code)
 	}
 
 	// Parent 1 lists their own — should see 1
-	rr = doDocReq(router, http.MethodGet, "/api/v1/documents", parent1Token, orgID, "")
+	rr = doOrgRequest(router, http.MethodGet, "/api/v1/documents", parent1Token, orgID, "")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("parent1 list own docs: want 200, got %d", rr.Code)
 	}
@@ -568,7 +535,7 @@ func TestGetSubmissionRoleEnforcement(t *testing.T) {
 	readOnlyToken := issueDocToken(t, router, "readonly-user", orgID, "read_only", "")
 
 	// Admin creates a type
-	rr := doDocReq(router, http.MethodPost, "/api/v1/document-types", adminToken, orgID, `{
+	rr := doOrgRequest(router, http.MethodPost, "/api/v1/document-types", adminToken, orgID, `{
 		"name": "Role Check Waiver", "category": "waiver", "is_required": true, "is_active": true
 	}`)
 	var tr struct {
@@ -579,7 +546,7 @@ func TestGetSubmissionRoleEnforcement(t *testing.T) {
 	json.NewDecoder(rr.Body).Decode(&tr)
 
 	// Parent creates a submission
-	rr = doDocReq(router, http.MethodPost, "/api/v1/documents", parentToken, orgID, `{
+	rr = doOrgRequest(router, http.MethodPost, "/api/v1/documents", parentToken, orgID, `{
 		"document_type_id": "`+tr.DocumentType.ID+`", "household_id": "`+householdID+`"
 	}`)
 	var sr struct {
@@ -591,19 +558,19 @@ func TestGetSubmissionRoleEnforcement(t *testing.T) {
 	subID := sr.Document.ID
 
 	// Swimmer role must get 403
-	rr = doDocReq(router, http.MethodGet, "/api/v1/documents/"+subID, swimmerToken, orgID, "")
+	rr = doOrgRequest(router, http.MethodGet, "/api/v1/documents/"+subID, swimmerToken, orgID, "")
 	if rr.Code != http.StatusForbidden {
 		t.Errorf("swimmer GET document: want 403, got %d", rr.Code)
 	}
 
 	// read_only role must get 403
-	rr = doDocReq(router, http.MethodGet, "/api/v1/documents/"+subID, readOnlyToken, orgID, "")
+	rr = doOrgRequest(router, http.MethodGet, "/api/v1/documents/"+subID, readOnlyToken, orgID, "")
 	if rr.Code != http.StatusForbidden {
 		t.Errorf("read_only GET document: want 403, got %d", rr.Code)
 	}
 
 	// Admin must still succeed
-	rr = doDocReq(router, http.MethodGet, "/api/v1/documents/"+subID, adminToken, orgID, "")
+	rr = doOrgRequest(router, http.MethodGet, "/api/v1/documents/"+subID, adminToken, orgID, "")
 	if rr.Code != http.StatusOK {
 		t.Errorf("admin GET document: want 200, got %d", rr.Code)
 	}
@@ -621,7 +588,7 @@ func TestDocumentVerifyRequiresAdmin(t *testing.T) {
 	parentToken := issueDocToken(t, router, "parent-user", orgID, "parent", householdID)
 
 	// Create type + submission
-	rr := doDocReq(router, http.MethodPost, "/api/v1/document-types", adminToken, orgID, `{
+	rr := doOrgRequest(router, http.MethodPost, "/api/v1/document-types", adminToken, orgID, `{
 		"name": "USS Registration", "category": "registration", "is_required": true, "is_active": true
 	}`)
 	var tr struct {
@@ -631,7 +598,7 @@ func TestDocumentVerifyRequiresAdmin(t *testing.T) {
 	}
 	json.NewDecoder(rr.Body).Decode(&tr)
 
-	rr = doDocReq(router, http.MethodPost, "/api/v1/documents", parentToken, orgID, `{
+	rr = doOrgRequest(router, http.MethodPost, "/api/v1/documents", parentToken, orgID, `{
 		"document_type_id": "`+tr.DocumentType.ID+`", "household_id": "`+householdID+`"
 	}`)
 	var sr struct {
@@ -642,18 +609,18 @@ func TestDocumentVerifyRequiresAdmin(t *testing.T) {
 	json.NewDecoder(rr.Body).Decode(&sr)
 	subID := sr.Document.ID
 
-	doDocReq(router, http.MethodPost, "/api/v1/documents/"+subID+"/attach", parentToken, orgID, `{
+	doOrgRequest(router, http.MethodPost, "/api/v1/documents/"+subID+"/attach", parentToken, orgID, `{
 		"file_object_key": "uploads/uss.pdf", "file_name": "uss.pdf"
 	}`)
 
 	// Parent tries to verify — must be forbidden
-	rr = doDocReq(router, http.MethodPost, "/api/v1/documents/"+subID+"/verify", parentToken, orgID, `{}`)
+	rr = doOrgRequest(router, http.MethodPost, "/api/v1/documents/"+subID+"/verify", parentToken, orgID, `{}`)
 	if rr.Code != http.StatusForbidden {
 		t.Errorf("parent verify: want 403, got %d", rr.Code)
 	}
 
 	// Parent tries to reject — must be forbidden
-	rr = doDocReq(router, http.MethodPost, "/api/v1/documents/"+subID+"/reject", parentToken, orgID, `{}`)
+	rr = doOrgRequest(router, http.MethodPost, "/api/v1/documents/"+subID+"/reject", parentToken, orgID, `{}`)
 	if rr.Code != http.StatusForbidden {
 		t.Errorf("parent reject: want 403, got %d", rr.Code)
 	}

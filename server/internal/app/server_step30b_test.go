@@ -1,7 +1,7 @@
 package app
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -29,41 +29,7 @@ func newStep30BRouter(t *testing.T, kc keycloak.Client) http.Handler {
 
 func issueStep30BToken(t *testing.T, router http.Handler, userID, orgID string, roles []string, mfa bool) string {
 	t.Helper()
-	payload := map[string]any{
-		"user_id":           userID,
-		"org_id":            orgID,
-		"roles":             roles,
-		"mfa_authenticated": mfa,
-	}
-	raw, _ := json.Marshal(payload)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/sessions/issue", bytes.NewReader(raw))
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, req)
-	if rr.Code != http.StatusCreated {
-		t.Fatalf("issueStep30BToken: want 201, got %d: %s", rr.Code, rr.Body.String())
-	}
-	return issuedAccessTokenFromResponse(t, rr)
-}
-
-func do30B(router http.Handler, method, path, token, body, orgID string) *httptest.ResponseRecorder {
-	var bodyReader io.Reader
-	if body != "" {
-		bodyReader = bytes.NewBufferString(body)
-	}
-	req := httptest.NewRequest(method, path, bodyReader)
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-	if orgID != "" {
-		req.Header.Set("X-Org-Id", orgID)
-	}
-	if body != "" {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, req)
-	return rr
+	return issueSession(t, router, sessionSpec{UserID: userID, OrgID: orgID, Roles: roles, MFA: mfa})
 }
 
 // ─── List users ───────────────────────────────────────────────────────────────
@@ -77,7 +43,7 @@ func TestUserMgmt_ListUsers_AdminCanList(t *testing.T) {
 	router := newStep30BRouter(t, kc)
 	token := issueStep30BToken(t, router, "admin1", "org-test", []string{"admin"}, false)
 
-	rr := do30B(router, http.MethodGet, "/api/v1/users", token, "", "org-test")
+	rr := doRequest(router, http.MethodGet, "/api/v1/users", token, "", "org-test")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -107,7 +73,7 @@ func TestUserMgmt_ListUsers_SeedsDevStubUsersAndIncludesSourceMetadata(t *testin
 		nil)
 	token := issueStep30BToken(t, router, authn.LocalDevAdminUserID, authn.LocalDevOrgID, []string{"admin"}, false)
 
-	rr := do30B(router, http.MethodGet, "/api/v1/users", token, "", authn.LocalDevOrgID)
+	rr := doRequest(router, http.MethodGet, "/api/v1/users", token, "", authn.LocalDevOrgID)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -137,7 +103,7 @@ func TestUserMgmt_ListUsers_CoachForbidden(t *testing.T) {
 	router := newStep30BRouter(t, kc)
 	token := issueStep30BToken(t, router, "coach1", "org-test", []string{"coach"}, false)
 
-	rr := do30B(router, http.MethodGet, "/api/v1/users", token, "", "org-test")
+	rr := doRequest(router, http.MethodGet, "/api/v1/users", token, "", "org-test")
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("want 403, got %d", rr.Code)
 	}
@@ -145,7 +111,7 @@ func TestUserMgmt_ListUsers_CoachForbidden(t *testing.T) {
 
 func TestUserMgmt_ListUsers_NoAuth(t *testing.T) {
 	router := newStep30BRouter(t, keycloak.NewStubClient())
-	rr := do30B(router, http.MethodGet, "/api/v1/users", "", "", "org-test")
+	rr := doRequest(router, http.MethodGet, "/api/v1/users", "", "", "org-test")
 	if rr.Code != http.StatusUnauthorized {
 		t.Fatalf("want 401, got %d", rr.Code)
 	}
@@ -159,7 +125,7 @@ func TestUserMgmt_ListUsers_ClampsPaginationLimit(t *testing.T) {
 	router := newStep30BRouter(t, kc)
 	token := issueStep30BToken(t, router, "admin1", "org-test", []string{"admin"}, false)
 
-	rr := do30B(router, http.MethodGet, "/api/v1/users?limit=999&offset=1", token, "", "org-test")
+	rr := doRequest(router, http.MethodGet, "/api/v1/users?limit=999&offset=1", token, "", "org-test")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -195,7 +161,7 @@ func TestUserMgmt_GetUser_Found(t *testing.T) {
 	router := newStep30BRouter(t, kc)
 	token := issueStep30BToken(t, router, "admin1", "org-test", []string{"admin"}, false)
 
-	rr := do30B(router, http.MethodGet, "/api/v1/users/u1", token, "", "org-test")
+	rr := doRequest(router, http.MethodGet, "/api/v1/users/u1", token, "", "org-test")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -205,7 +171,7 @@ func TestUserMgmt_GetUser_NotFound(t *testing.T) {
 	router := newStep30BRouter(t, keycloak.NewStubClient())
 	token := issueStep30BToken(t, router, "admin1", "org-test", []string{"admin"}, false)
 
-	rr := do30B(router, http.MethodGet, "/api/v1/users/nonexistent", token, "", "org-test")
+	rr := doRequest(router, http.MethodGet, "/api/v1/users/nonexistent", token, "", "org-test")
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("want 404, got %d", rr.Code)
 	}
@@ -220,7 +186,7 @@ func TestUserMgmt_GetUser_WrongOrg(t *testing.T) {
 	router := newStep30BRouter(t, kc)
 	token := issueStep30BToken(t, router, "admin1", "org-test", []string{"admin"}, false)
 
-	rr := do30B(router, http.MethodGet, "/api/v1/users/u1", token, "", "org-test")
+	rr := doRequest(router, http.MethodGet, "/api/v1/users/u1", token, "", "org-test")
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("want 403 (wrong org), got %d", rr.Code)
 	}
@@ -234,7 +200,7 @@ func TestUserMgmt_Invite_Success(t *testing.T) {
 	token := issueStep30BToken(t, router, "admin1", "org-test", []string{"admin"}, false)
 
 	body := `{"first_name":"Bob","last_name":"Smith","email":"bob@example.com","role":"coach"}`
-	rr := do30B(router, http.MethodPost, "/api/v1/users/invite", token, body, "org-test")
+	rr := doRequest(router, http.MethodPost, "/api/v1/users/invite", token, body, "org-test")
 	if rr.Code != http.StatusCreated {
 		t.Fatalf("want 201, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -263,7 +229,7 @@ func TestUserMgmt_Invite_DuplicateEmail(t *testing.T) {
 	token := issueStep30BToken(t, router, "admin1", "org-test", []string{"admin"}, false)
 
 	body := `{"email":"bob@example.com"}`
-	rr := do30B(router, http.MethodPost, "/api/v1/users/invite", token, body, "org-test")
+	rr := doRequest(router, http.MethodPost, "/api/v1/users/invite", token, body, "org-test")
 	if rr.Code != http.StatusConflict {
 		t.Fatalf("want 409, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -275,7 +241,7 @@ func TestUserMgmt_Invite_NonAdminForbidden(t *testing.T) {
 	token := issueStep30BToken(t, router, "parent1", "org-test", []string{"parent"}, false)
 
 	body := `{"email":"new@example.com"}`
-	rr := do30B(router, http.MethodPost, "/api/v1/users/invite", token, body, "org-test")
+	rr := doRequest(router, http.MethodPost, "/api/v1/users/invite", token, body, "org-test")
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("want 403, got %d", rr.Code)
 	}
@@ -303,7 +269,7 @@ func TestUserMgmt_CreateUser_NoSilentStubFallbackWhenRealOIDCConfigured(t *testi
 	token := issueStep30BToken(t, router, "admin1", "org-test", []string{"admin"}, false)
 
 	body := `{"first_name":"Bob","last_name":"Smith","email":"bob@example.com","password":"ChangeMe123!","role":"parent"}`
-	rr := do30B(router, http.MethodPost, "/api/v1/users", token, body, "org-test")
+	rr := doRequest(router, http.MethodPost, "/api/v1/users", token, body, "org-test")
 	if rr.Code != http.StatusServiceUnavailable {
 		t.Fatalf("want 503, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -329,7 +295,7 @@ func TestUserMgmt_UpdateUser_Success(t *testing.T) {
 	token := issueStep30BToken(t, router, "admin1", "org-test", []string{"admin"}, false)
 
 	body := `{"first_name":"Alice","last_name":"Updated"}`
-	rr := do30B(router, http.MethodPut, "/api/v1/users/u1", token, body, "org-test")
+	rr := doRequest(router, http.MethodPut, "/api/v1/users/u1", token, body, "org-test")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -346,12 +312,12 @@ func TestUserMgmt_DisableEnable_Success(t *testing.T) {
 	router := newStep30BRouter(t, kc)
 	token := issueStep30BToken(t, router, "admin1", "org-test", []string{"admin"}, false)
 
-	rr := do30B(router, http.MethodPost, "/api/v1/users/u1/disable", token, "", "org-test")
+	rr := doRequest(router, http.MethodPost, "/api/v1/users/u1/disable", token, "", "org-test")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("disable: want 200, got %d: %s", rr.Code, rr.Body.String())
 	}
 
-	rr = do30B(router, http.MethodPost, "/api/v1/users/u1/enable", token, "", "org-test")
+	rr = doRequest(router, http.MethodPost, "/api/v1/users/u1/enable", token, "", "org-test")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("enable: want 200, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -368,7 +334,7 @@ func TestUserMgmt_DeleteUser_RequiresMFA(t *testing.T) {
 	// admin but no MFA
 	token := issueStep30BToken(t, router, "admin1", "org-test", []string{"admin"}, false)
 
-	rr := do30B(router, http.MethodDelete, "/api/v1/users/u1", token, "", "org-test")
+	rr := doRequest(router, http.MethodDelete, "/api/v1/users/u1", token, "", "org-test")
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("want 403 (mfa required), got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -382,7 +348,7 @@ func TestUserMgmt_DeleteUser_WithMFA_Success(t *testing.T) {
 	router := newStep30BRouter(t, kc)
 	token := issueStep30BToken(t, router, "admin1", "org-test", []string{"admin"}, true)
 
-	rr := do30B(router, http.MethodDelete, "/api/v1/users/u1", token, "", "org-test")
+	rr := doRequest(router, http.MethodDelete, "/api/v1/users/u1", token, "", "org-test")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -394,12 +360,12 @@ func TestUserMgmt_DeleteUser_LastAdminBlocked(t *testing.T) {
 	kc.AddUser(keycloak.User{
 		ID: "u1", Attributes: map[string][]string{"org_id": {"org-test"}},
 	})
-	_ = kc.AssignRealmRole(nil, "u1", "admin") //nolint
+	_ = kc.AssignRealmRole(context.Background(), "u1", "admin")
 
 	router := newStep30BRouter(t, kc)
 	token := issueStep30BToken(t, router, "admin1", "org-test", []string{"admin"}, true)
 
-	rr := do30B(router, http.MethodDelete, "/api/v1/users/u1", token, "", "org-test")
+	rr := doRequest(router, http.MethodDelete, "/api/v1/users/u1", token, "", "org-test")
 	if rr.Code != http.StatusConflict {
 		t.Fatalf("want 409 (last admin), got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -411,16 +377,16 @@ func TestUserMgmt_DeleteUser_NonAdminTargetAllowedEvenAsSoleAdminOrg(t *testing.
 	kc.AddUser(keycloak.User{
 		ID: "u1", Attributes: map[string][]string{"org_id": {"org-test"}},
 	})
-	_ = kc.AssignRealmRole(nil, "u1", "admin") //nolint
+	_ = kc.AssignRealmRole(context.Background(), "u1", "admin")
 	kc.AddUser(keycloak.User{
 		ID: "u2", Attributes: map[string][]string{"org_id": {"org-test"}},
 	})
-	_ = kc.AssignRealmRole(nil, "u2", "coach") //nolint
+	_ = kc.AssignRealmRole(context.Background(), "u2", "coach")
 
 	router := newStep30BRouter(t, kc)
 	token := issueStep30BToken(t, router, "admin1", "org-test", []string{"admin"}, true)
 
-	rr := do30B(router, http.MethodDelete, "/api/v1/users/u2", token, "", "org-test")
+	rr := doRequest(router, http.MethodDelete, "/api/v1/users/u2", token, "", "org-test")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("want 200 (deleting non-admin doesn't need the last-admin guard), got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -436,7 +402,7 @@ func TestUserMgmt_ListRoles_Success(t *testing.T) {
 	router := newStep30BRouter(t, kc)
 	token := issueStep30BToken(t, router, "admin1", "org-test", []string{"admin"}, false)
 
-	rr := do30B(router, http.MethodGet, "/api/v1/users/u1/roles", token, "", "org-test")
+	rr := doRequest(router, http.MethodGet, "/api/v1/users/u1/roles", token, "", "org-test")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -451,7 +417,7 @@ func TestUserMgmt_AssignRole_Success(t *testing.T) {
 	token := issueStep30BToken(t, router, "admin1", "org-test", []string{"admin"}, true)
 
 	body := `{"role":"coach"}`
-	rr := do30B(router, http.MethodPost, "/api/v1/users/u1/roles", token, body, "org-test")
+	rr := doRequest(router, http.MethodPost, "/api/v1/users/u1/roles", token, body, "org-test")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -466,15 +432,15 @@ func TestUserMgmt_RemoveRole_Success(t *testing.T) {
 	kc.AddUser(keycloak.User{
 		ID: "u2", Attributes: map[string][]string{"org_id": {"org-test"}},
 	})
-	_ = kc.AssignRealmRole(nil, "u1", "coach") //nolint
-	_ = kc.AssignRealmRole(nil, "u2", "admin") //nolint
-	_ = kc.AssignRealmRole(nil, "u1", "admin") //nolint
+	_ = kc.AssignRealmRole(context.Background(), "u1", "coach")
+	_ = kc.AssignRealmRole(context.Background(), "u2", "admin")
+	_ = kc.AssignRealmRole(context.Background(), "u1", "admin")
 
 	router := newStep30BRouter(t, kc)
 	token := issueStep30BToken(t, router, "admin1", "org-test", []string{"admin"}, true)
 
 	// Remove coach role (not the last admin)
-	rr := do30B(router, http.MethodDelete, "/api/v1/users/u1/roles/coach", token, "", "org-test")
+	rr := doRequest(router, http.MethodDelete, "/api/v1/users/u1/roles/coach", token, "", "org-test")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -486,12 +452,12 @@ func TestUserMgmt_RemoveRole_LastAdminBlocked(t *testing.T) {
 	kc.AddUser(keycloak.User{
 		ID: "u1", Attributes: map[string][]string{"org_id": {"org-test"}},
 	})
-	_ = kc.AssignRealmRole(nil, "u1", "admin") //nolint
+	_ = kc.AssignRealmRole(context.Background(), "u1", "admin")
 
 	router := newStep30BRouter(t, kc)
 	token := issueStep30BToken(t, router, "admin1", "org-test", []string{"admin"}, true)
 
-	rr := do30B(router, http.MethodDelete, "/api/v1/users/u1/roles/admin", token, "", "org-test")
+	rr := doRequest(router, http.MethodDelete, "/api/v1/users/u1/roles/admin", token, "", "org-test")
 	if rr.Code != http.StatusConflict {
 		t.Fatalf("want 409 (last admin), got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -507,7 +473,7 @@ func TestUserMgmt_PasswordReset_Success(t *testing.T) {
 	router := newStep30BRouter(t, kc)
 	token := issueStep30BToken(t, router, "admin1", "org-test", []string{"admin"}, false)
 
-	rr := do30B(router, http.MethodPost, "/api/v1/users/u1/password-reset", token, "", "org-test")
+	rr := doRequest(router, http.MethodPost, "/api/v1/users/u1/password-reset", token, "", "org-test")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -521,7 +487,7 @@ func TestUserMgmt_PasswordReset_NonAdminForbidden(t *testing.T) {
 	router := newStep30BRouter(t, kc)
 	token := issueStep30BToken(t, router, "parent1", "org-test", []string{"parent"}, false)
 
-	rr := do30B(router, http.MethodPost, "/api/v1/users/u1/password-reset", token, "", "org-test")
+	rr := doRequest(router, http.MethodPost, "/api/v1/users/u1/password-reset", token, "", "org-test")
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("want 403, got %d", rr.Code)
 	}
@@ -555,7 +521,7 @@ func TestUserMgmt_RBACMatrix(t *testing.T) {
 	for _, role := range nonAdminRoles {
 		token := issueStep30BToken(t, router, "user1", "org-test", []string{role}, false)
 		for _, route := range routes {
-			rr := do30B(router, route.method, route.path, token, "{}", "org-test")
+			rr := doRequest(router, route.method, route.path, token, "{}", "org-test")
 			if rr.Code != http.StatusForbidden {
 				t.Errorf("role=%s %s %s: want 403, got %d", role, route.method, route.path, rr.Code)
 			}
@@ -588,7 +554,7 @@ func TestUserMgmt_OrgIsolation(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		rr := do30B(router, tt.method, tt.path, token, `{"role":"coach"}`, "org-test")
+		rr := doRequest(router, tt.method, tt.path, token, `{"role":"coach"}`, "org-test")
 		if rr.Code != http.StatusForbidden {
 			t.Errorf("%s %s: want 403 (org isolation), got %d", tt.method, tt.path, rr.Code)
 		}
@@ -627,7 +593,7 @@ func TestUserMgmt_AuditEvents_InviteEmitsEvent(t *testing.T) {
 	token := issueStep30BToken(t, router, "admin1", "org-test", []string{"admin"}, false)
 
 	body := `{"email":"new@example.com","first_name":"New","last_name":"User"}`
-	rr := do30B(router, http.MethodPost, "/api/v1/users/invite", token, body, "org-test")
+	rr := doRequest(router, http.MethodPost, "/api/v1/users/invite", token, body, "org-test")
 	if rr.Code != http.StatusCreated {
 		t.Fatalf("want 201, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -661,7 +627,7 @@ func TestUserMgmt_AuditEvents_DisableEmitsEvent(t *testing.T) {
 		kc)
 	token := issueStep30BToken(t, router, "admin1", "org-test", []string{"admin"}, false)
 
-	rr := do30B(router, http.MethodPost, "/api/v1/users/u1/disable", token, "", "org-test")
+	rr := doRequest(router, http.MethodPost, "/api/v1/users/u1/disable", token, "", "org-test")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -701,7 +667,7 @@ func TestUserMgmt_ListStaff_CoachSeesOnlyStaffNames(t *testing.T) {
 	router := newStep30BRouter(t, kc)
 	token := issueStep30BToken(t, router, "coach1", "org-test", []string{"coach"}, false)
 
-	rr := do30B(router, http.MethodGet, "/api/v1/users/staff", token, "", "org-test")
+	rr := doRequest(router, http.MethodGet, "/api/v1/users/staff", token, "", "org-test")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -728,7 +694,7 @@ func TestUserMgmt_ListStaff_ParentForbidden(t *testing.T) {
 	router := newStep30BRouter(t, keycloak.NewStubClient())
 	token := issueStep30BToken(t, router, "parent1", "org-test", []string{"parent"}, false)
 
-	rr := do30B(router, http.MethodGet, "/api/v1/users/staff", token, "", "org-test")
+	rr := doRequest(router, http.MethodGet, "/api/v1/users/staff", token, "", "org-test")
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("want 403, got %d: %s", rr.Code, rr.Body.String())
 	}

@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -92,6 +91,9 @@ func NewServiceWithStorage(store storage.ObjectStorage) *Service {
 // data from Postgres into memory on startup.
 func NewServiceWithPool(pool *pgxpool.Pool, store storage.ObjectStorage) *Service {
 	s := NewServiceWithStorage(store)
+	if pool == nil {
+		return s
+	}
 	s.repo = newRepository(pool)
 	if err := s.loadFromDB(context.Background()); err != nil {
 		slog.Error("exports: failed to load from DB", "err", err)
@@ -135,7 +137,7 @@ func (s *Service) ConfigureArtifactTTL(ttl time.Duration) {
 }
 
 func (s *Service) GenerateExport(principal *appmiddleware.Principal, orgID, meetID string, input ReportInput) (*FileExport, *ExportAuditEvent, error) {
-	if !hasAnyRole(principal, "admin", "coach") {
+	if !appmiddleware.HasAnyRole(principal, "admin", "coach") {
 		return nil, nil, ErrForbidden
 	}
 	if err := validateReportInput(input); err != nil {
@@ -262,7 +264,7 @@ func (s *Service) FailExport(exportID string, cause error) {
 }
 
 func (s *Service) ListExports(principal *appmiddleware.Principal, orgID, meetID string) ([]FileExport, error) {
-	if !hasAnyRole(principal, "admin", "coach") {
+	if !appmiddleware.HasAnyRole(principal, "admin", "coach") {
 		return nil, ErrForbidden
 	}
 	return s.ListExportsForAuthorizedMeet(orgID, meetID), nil
@@ -289,7 +291,7 @@ func (s *Service) ListExportsForAuthorizedMeet(orgID, meetID string) []FileExpor
 }
 
 func (s *Service) GetExport(principal *appmiddleware.Principal, orgID, exportID string) (*FileExport, error) {
-	if !hasAnyRole(principal, "admin", "coach") {
+	if !appmiddleware.HasAnyRole(principal, "admin", "coach") {
 		return nil, ErrForbidden
 	}
 	s.mu.RLock()
@@ -303,7 +305,7 @@ func (s *Service) GetExport(principal *appmiddleware.Principal, orgID, exportID 
 }
 
 func (s *Service) DownloadExport(principal *appmiddleware.Principal, orgID, exportID string) (*FileExport, []byte, error) {
-	if !hasAnyRole(principal, "admin", "coach") {
+	if !appmiddleware.HasAnyRole(principal, "admin", "coach") {
 		return nil, nil, ErrForbidden
 	}
 
@@ -350,6 +352,11 @@ func (s *Service) ExpireArtifacts(cutoff time.Time) []FileExport {
 		ex.Status = "expired"
 		ex.DownloadURL = ""
 		ex.UpdatedAt = cutoff.UTC()
+		if s.repo != nil {
+			if err := s.repo.UpsertFileExport(context.Background(), ex); err != nil {
+				slog.Error("exports: persist expired file export", "export_id", ex.ID, "err", err)
+			}
+		}
 		expired = append(expired, *ex)
 	}
 	return expired
@@ -378,18 +385,6 @@ func (s *Service) cloneForResponse(ex *FileExport) *FileExport {
 
 type GenerateExportTaskPayload struct {
 	ExportID string `json:"export_id"`
-}
-
-func hasAnyRole(principal *appmiddleware.Principal, required ...string) bool {
-	if principal == nil {
-		return false
-	}
-	for _, role := range principal.Roles {
-		if slices.Contains(required, role) {
-			return true
-		}
-	}
-	return false
 }
 
 func randomToken(byteLen int) string {
@@ -438,4 +433,3 @@ func sanitizeFilename(input string) string {
 	}
 	return out
 }
-

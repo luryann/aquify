@@ -1,10 +1,8 @@
 // Structured workouts, season periodization and training analytics.
 // Backend: server/internal/app/training + handlers/training_workouts.go.
 import type { ApiClient } from '#lib/api'
+import { orgHeaders, queryString } from '#lib/api'
 import type { PracticeRecord } from './adminData.ts'
-
-const org = (orgId: string) => ({ 'X-Org-Id': orgId })
-const qs = (params: Record<string, string>) => `?${new URLSearchParams(params).toString()}`
 
 export type Course = 'SCY' | 'SCM' | 'LCM'
 export type SectionKind = 'warmup' | 'pre_set' | 'main' | 'kick' | 'pull' | 'drill' | 'cooldown' | 'custom'
@@ -68,48 +66,48 @@ export async function fetchWorkouts(api: ApiClient, orgId: string, params: { q?:
   const query: Record<string, string> = { scope: 'templates', limit: '200' }
   if (params.q) query.q = params.q
   if (params.tag) query.tag = params.tag
-  const res = await api.get<{ workouts?: Workout[] }>(`/api/v1/workouts${qs(query)}`, undefined, org(orgId))
+  const res = await api.get<{ workouts?: Workout[] }>(`/api/v1/workouts${queryString(query)}`, undefined, orgHeaders(orgId))
   return res.workouts ?? []
 }
 
 export async function fetchWorkout(api: ApiClient, orgId: string, id: string): Promise<{ workout: Workout; text: string }> {
-  return api.get<{ workout: Workout; text: string }>(`/api/v1/workouts/${id}`, undefined, org(orgId))
+  return api.get<{ workout: Workout; text: string }>(`/api/v1/workouts/${id}`, undefined, orgHeaders(orgId))
 }
 
 export async function parseWorkoutText(api: ApiClient, orgId: string, text: string, course: Course): Promise<ParsedWorkout> {
-  return api.post<ParsedWorkout>('/api/v1/workouts/parse', { text, course }, org(orgId))
+  return api.post<ParsedWorkout>('/api/v1/workouts/parse', { text, course }, orgHeaders(orgId))
 }
 
 export async function createWorkout(api: ApiClient, orgId: string, body: WorkoutInput): Promise<Workout> {
-  return (await api.post<{ workout: Workout }>('/api/v1/workouts', body, org(orgId))).workout
+  return (await api.post<{ workout: Workout }>('/api/v1/workouts', body, orgHeaders(orgId))).workout
 }
 
 export async function updateWorkout(api: ApiClient, orgId: string, id: string, body: WorkoutInput): Promise<Workout> {
-  return (await api.put<{ workout: Workout }>(`/api/v1/workouts/${id}`, body, org(orgId))).workout
+  return (await api.put<{ workout: Workout }>(`/api/v1/workouts/${id}`, body, orgHeaders(orgId))).workout
 }
 
 export async function deleteWorkout(api: ApiClient, orgId: string, id: string): Promise<void> {
-  await api.delete(`/api/v1/workouts/${id}`, org(orgId))
+  await api.delete(`/api/v1/workouts/${id}`, orgHeaders(orgId))
 }
 
 export async function duplicateWorkout(api: ApiClient, orgId: string, id: string, body: { title?: string; is_template?: boolean } = {}): Promise<Workout> {
-  return (await api.post<{ workout: Workout }>(`/api/v1/workouts/${id}/duplicate`, body, org(orgId))).workout
+  return (await api.post<{ workout: Workout }>(`/api/v1/workouts/${id}/duplicate`, body, orgHeaders(orgId))).workout
 }
 
 export async function assignWorkout(api: ApiClient, orgId: string, id: string, body: { practice_id?: string; date?: string; group_id?: string }): Promise<{ practice: TrainingPractice; workout: Workout }> {
-  return api.post<{ practice: TrainingPractice; workout: Workout }>(`/api/v1/workouts/${id}/assign`, body, org(orgId))
+  return api.post<{ practice: TrainingPractice; workout: Workout }>(`/api/v1/workouts/${id}/assign`, body, orgHeaders(orgId))
 }
 
 export async function savePracticeWorkout(api: ApiClient, orgId: string, practiceId: string, body: WorkoutInput): Promise<{ practice: TrainingPractice; workout: Workout }> {
-  return api.put<{ practice: TrainingPractice; workout: Workout }>(`/api/v1/practices/${practiceId}/workout`, { ...body, is_template: false }, org(orgId))
+  return api.put<{ practice: TrainingPractice; workout: Workout }>(`/api/v1/practices/${practiceId}/workout`, { ...body, is_template: false }, orgHeaders(orgId))
 }
 
 export async function clearPracticeWorkout(api: ApiClient, orgId: string, practiceId: string): Promise<void> {
-  await api.delete(`/api/v1/practices/${practiceId}/workout`, org(orgId))
+  await api.delete(`/api/v1/practices/${practiceId}/workout`, orgHeaders(orgId))
 }
 
 export async function fetchTrainingSchedule(api: ApiClient, orgId: string, from: string, to: string): Promise<ScheduleItem[]> {
-  const res = await api.get<{ items?: ScheduleItem[] }>(`/api/v1/training/schedule${qs({ from, to })}`, undefined, org(orgId))
+  const res = await api.get<{ items?: ScheduleItem[] }>(`/api/v1/training/schedule${queryString({ from, to })}`, undefined, orgHeaders(orgId))
   return res.items ?? []
 }
 
@@ -140,11 +138,7 @@ export type SwimmerTrainingAnalytics = Counts & {
 }
 
 export async function fetchTrainingAnalytics(api: ApiClient, orgId: string, from: string, to: string): Promise<TrainingAnalytics> {
-  return api.get<TrainingAnalytics>(`/api/v1/training/analytics${qs({ from, to })}`, undefined, org(orgId))
-}
-
-export async function fetchSwimmerTrainingAnalytics(api: ApiClient, orgId: string, swimmerId: string, from: string, to: string): Promise<SwimmerTrainingAnalytics> {
-  return api.get<SwimmerTrainingAnalytics>(`/api/v1/training/analytics/swimmers/${swimmerId}${qs({ from, to })}`, undefined, org(orgId))
+  return api.get<TrainingAnalytics>(`/api/v1/training/analytics${queryString({ from, to })}`, undefined, orgHeaders(orgId))
 }
 
 // ── Periodization ────────────────────────────────────────────────────────────
@@ -179,14 +173,14 @@ export type PlanWeek = {
 export type SeasonPlan = { season_id: string; start_date: string; end_date: string; phases: TrainingPhase[]; weeks: PlanWeek[] }
 
 export async function fetchSeasonPlan(api: ApiClient, orgId: string, seasonId: string, groupId?: string): Promise<SeasonPlan> {
-  const res = await api.get<{ plan: SeasonPlan }>(`/api/v1/seasons/${seasonId}/training-plan${groupId ? qs({ group_id: groupId }) : ''}`, undefined, org(orgId))
+  const res = await api.get<{ plan: SeasonPlan }>(`/api/v1/seasons/${seasonId}/training-plan${groupId ? queryString({ group_id: groupId }) : ''}`, undefined, orgHeaders(orgId))
   return res.plan
 }
 
 export async function createTrainingPhase(api: ApiClient, orgId: string, seasonId: string, body: TrainingPhaseInput): Promise<TrainingPhase> {
-  return (await api.post<{ phase: TrainingPhase }>(`/api/v1/seasons/${seasonId}/training-phases`, body, org(orgId))).phase
+  return (await api.post<{ phase: TrainingPhase }>(`/api/v1/seasons/${seasonId}/training-phases`, body, orgHeaders(orgId))).phase
 }
 
 export async function deleteTrainingPhase(api: ApiClient, orgId: string, phaseId: string): Promise<void> {
-  await api.delete(`/api/v1/training-phases/${phaseId}`, org(orgId))
+  await api.delete(`/api/v1/training-phases/${phaseId}`, orgHeaders(orgId))
 }

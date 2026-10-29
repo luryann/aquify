@@ -148,12 +148,15 @@ func (b *RedisBackend) enqueue(ctx context.Context, processAt time.Time, task *T
 		asynqOpts = append(asynqOpts, asynq.ProcessIn(o.ProcessIn))
 	}
 	if o.UniqueKey != "" {
-		asynqOpts = append(asynqOpts, asynq.Unique(24*time.Hour))
+		// asynq.Unique keys on type+payload and only for a fixed TTL, so it
+		// ignores the caller's key and lapses before a long-delayed task runs.
+		// A task ID is held for the task's whole life plus its retention.
+		asynqOpts = append(asynqOpts, asynq.TaskID(o.UniqueKey))
 	}
 
 	info, err := b.client.EnqueueContext(ctx, asynqTask, asynqOpts...)
 	if err != nil {
-		if errors.Is(err, asynq.ErrDuplicateTask) {
+		if errors.Is(err, asynq.ErrDuplicateTask) || errors.Is(err, asynq.ErrTaskIDConflict) {
 			return nil, ErrDuplicateTask
 		}
 		return nil, err
@@ -188,37 +191,25 @@ func (b *RedisBackend) QueueStats() ([]QueueStats, error) {
 	}
 	out := make([]QueueStats, 0, len(queues))
 	for _, q := range queues {
-		pending, err := b.collectTaskInfos(q, b.inspector.ListPendingTasks)
-		if err != nil {
-			return nil, err
+		var counts [6]int
+		for i, list := range []taskLister{
+			b.inspector.ListPendingTasks, b.inspector.ListScheduledTasks, b.inspector.ListActiveTasks,
+			b.inspector.ListRetryTasks, b.inspector.ListCompletedTasks, b.inspector.ListArchivedTasks,
+		} {
+			items, err := b.collectTaskInfos(q, list)
+			if err != nil {
+				return nil, err
+			}
+			counts[i] = len(items)
 		}
-		scheduled, err := b.collectTaskInfos(q, b.inspector.ListScheduledTasks)
-		if err != nil {
-			return nil, err
-		}
-		active, err := b.collectTaskInfos(q, b.inspector.ListActiveTasks)
-		if err != nil {
-			return nil, err
-		}
-		retrying, err := b.collectTaskInfos(q, b.inspector.ListRetryTasks)
-		if err != nil {
-			return nil, err
-		}
-		completed, err := b.collectTaskInfos(q, b.inspector.ListCompletedTasks)
-		if err != nil {
-			return nil, err
-		}
-		archived, err := b.collectTaskInfos(q, b.inspector.ListArchivedTasks)
-		if err != nil {
-			return nil, err
-		}
+		pending, scheduled, active, retrying, completed, archived := counts[0], counts[1], counts[2], counts[3], counts[4], counts[5]
 		out = append(out, QueueStats{
 			Name:       q,
-			Pending:    len(pending) + len(scheduled) + len(retrying),
-			Active:     len(active),
-			Completed:  len(completed),
-			Failed:     len(retrying),
-			DeadLetter: len(archived),
+			Pending:    pending + scheduled + retrying,
+			Active:     active,
+			Completed:  completed,
+			Failed:     retrying,
+			DeadLetter: archived,
 		})
 	}
 	return out, nil
@@ -390,87 +381,44 @@ func (b *RedisBackend) wrapHandler(taskType string, handler Handler) func(contex
 	}
 }
 
-func (b *RedisBackend) listQueueTasks(queue string, status TaskStatus) ([]TaskInfo, error) {
-	var batches [][]*asynq.TaskInfo
+// taskLister is one of the asynq inspector's per-state list calls.
+type taskLister = func(string, ...asynq.ListOption) ([]*asynq.TaskInfo, error)
+
+// listersFor maps a task status to the asynq states that make it up; an empty
+// or unknown status covers every state.
+func (b *RedisBackend) listersFor(status TaskStatus) []taskLister {
+	in := b.inspector
 	switch status {
 	case StatusPending:
-		pending, err := b.collectTaskInfos(queue, b.inspector.ListPendingTasks)
-		if err != nil {
-			return nil, err
-		}
-		scheduled, err := b.collectTaskInfos(queue, b.inspector.ListScheduledTasks)
-		if err != nil {
-			return nil, err
-		}
-		batches = append(batches, pending, scheduled)
+		return []taskLister{in.ListPendingTasks, in.ListScheduledTasks}
 	case StatusActive:
-		items, err := b.collectTaskInfos(queue, b.inspector.ListActiveTasks)
-		if err != nil {
-			return nil, err
-		}
-		batches = append(batches, items)
-	case StatusRetrying:
-		items, err := b.collectTaskInfos(queue, b.inspector.ListRetryTasks)
-		if err != nil {
-			return nil, err
-		}
-		batches = append(batches, items)
+		return []taskLister{in.ListActiveTasks}
+	case StatusRetrying, StatusFailed:
+		return []taskLister{in.ListRetryTasks}
 	case StatusCompleted:
-		items, err := b.collectTaskInfos(queue, b.inspector.ListCompletedTasks)
-		if err != nil {
-			return nil, err
-		}
-		batches = append(batches, items)
+		return []taskLister{in.ListCompletedTasks}
 	case StatusDeadLetter:
-		items, err := b.collectTaskInfos(queue, b.inspector.ListArchivedTasks)
-		if err != nil {
-			return nil, err
-		}
-		batches = append(batches, items)
-	case StatusFailed:
-		items, err := b.collectTaskInfos(queue, b.inspector.ListRetryTasks)
-		if err != nil {
-			return nil, err
-		}
-		batches = append(batches, items)
+		return []taskLister{in.ListArchivedTasks}
 	default:
-		pending, err := b.collectTaskInfos(queue, b.inspector.ListPendingTasks)
-		if err != nil {
-			return nil, err
-		}
-		scheduled, err := b.collectTaskInfos(queue, b.inspector.ListScheduledTasks)
-		if err != nil {
-			return nil, err
-		}
-		active, err := b.collectTaskInfos(queue, b.inspector.ListActiveTasks)
-		if err != nil {
-			return nil, err
-		}
-		retrying, err := b.collectTaskInfos(queue, b.inspector.ListRetryTasks)
-		if err != nil {
-			return nil, err
-		}
-		completed, err := b.collectTaskInfos(queue, b.inspector.ListCompletedTasks)
-		if err != nil {
-			return nil, err
-		}
-		archived, err := b.collectTaskInfos(queue, b.inspector.ListArchivedTasks)
-		if err != nil {
-			return nil, err
-		}
-		batches = append(batches, pending, scheduled, active, retrying, completed, archived)
+		return []taskLister{in.ListPendingTasks, in.ListScheduledTasks, in.ListActiveTasks, in.ListRetryTasks, in.ListCompletedTasks, in.ListArchivedTasks}
 	}
+}
 
+func (b *RedisBackend) listQueueTasks(queue string, status TaskStatus) ([]TaskInfo, error) {
 	out := make([]TaskInfo, 0)
-	for _, batch := range batches {
-		for _, item := range batch {
+	for _, list := range b.listersFor(status) {
+		items, err := b.collectTaskInfos(queue, list)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range items {
 			out = append(out, *convertAsynqTaskInfo(item))
 		}
 	}
 	return out, nil
 }
 
-func (b *RedisBackend) collectTaskInfos(queue string, listFn func(string, ...asynq.ListOption) ([]*asynq.TaskInfo, error)) ([]*asynq.TaskInfo, error) {
+func (b *RedisBackend) collectTaskInfos(queue string, listFn taskLister) ([]*asynq.TaskInfo, error) {
 	var out []*asynq.TaskInfo
 	page := 0
 	for {
@@ -542,9 +490,7 @@ func convertAsynqTaskInfo(info *asynq.TaskInfo) *TaskInfo {
 		Retried:    info.Retried,
 		LastErr:    info.LastErr,
 	}
-	if completedAt := normalizeTimestamp(info.CompletedAt); completedAt != nil {
-		out.CompletedAt = completedAt
-	}
+	out.CompletedAt = normalizeTimestamp(info.CompletedAt)
 	return out
 }
 

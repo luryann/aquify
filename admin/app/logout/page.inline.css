@@ -8,3 +8,11 @@
 .is-c45f24a.is-c45f24a { width: 56px; height: 56px; border-radius: 50%; background: var(--error-bg); border: 1px solid var(--error-border); display: flex; align-items: center; justify-content: center; margin: 0 auto 24px; }
 .is-a32f9ad.is-a32f9ad { font-size: var(--fs-sm); font-family: var(--font-body); color: var(--text-muted); letter-spacing: 0.04em; max-width: 320px; }
 .is-d6e9bd3.is-d6e9bd3 { margin-top: 24px; padding: 8px 24px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; color: var(--text-subtle); font-size: var(--fs-sm); font-family: var(--font-body); cursor: pointer; }
+.hv-d1a323.hv-d1a323:hover { border-color: var(--border-strong); color: var(--text); }
+
+        @keyframes logoutSpin { to { transform: rotate(360deg); } }
+        @keyframes logoutFade { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+        @media (prefers-reduced-motion: reduce) {
+          @keyframes logoutFade { from { opacity: 0; } to { opacity: 1; } }
+        }
+      

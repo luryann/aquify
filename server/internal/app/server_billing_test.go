@@ -30,11 +30,6 @@ type invoiceEnvelope struct {
 	} `json:"invoice"`
 }
 
-type invoiceWithLedgerEnvelope struct {
-	Invoice     invoiceEnvelope  `json:"invoice"`
-	LedgerEvent ledgerEvEnvelope `json:"ledger_event"`
-}
-
 type invoiceItemEnvelope struct {
 	Item struct {
 		ID              string `json:"id"`
@@ -1487,5 +1482,26 @@ func TestGetInvoiceCoachForbidden(t *testing.T) {
 	router.ServeHTTP(rr, req)
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("expected 403 for coach, got %d", rr.Code)
+	}
+}
+
+func TestRecordPaymentEmitsAuditEvent(t *testing.T) {
+	t.Parallel()
+	svc := billing.NewService()
+	auditSvc := audit.NewService()
+	router := newBillingRouterWithAudit(t, svc, auditSvc)
+	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, true)
+
+	inv := createInvoice(t, router, token, "org-demo", "INV-AUDIT-PAY")
+	addItem(t, router, token, "org-demo", inv.Invoice.ID, 12000)
+	issueInvoiceReq(t, router, token, "org-demo", inv.Invoice.ID)
+	pay := recordPaymentReq(t, router, token, "org-demo", inv.Invoice.ID, 12000)
+
+	events, err := auditSvc.Query(audit.Filter{OrgID: "org-demo", Action: "billing.payment.record"})
+	if err != nil {
+		t.Fatalf("audit query: %v", err)
+	}
+	if len(events) != 1 || events[0].ResourceID != pay.Payment.ID || events[0].Metadata["invoice_id"] != inv.Invoice.ID {
+		t.Fatalf("expected one billing.payment.record event for payment %s, got %#v", pay.Payment.ID, events)
 	}
 }

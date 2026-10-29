@@ -187,25 +187,7 @@ func createMeetEvent(t *testing.T, router http.Handler, orgID, token, meetID, ev
 
 func issueMeetSessionTokenWithHousehold(t *testing.T, router http.Handler, userID, orgID, householdID string, roles []string, mfaAuthenticated bool) string {
 	t.Helper()
-
-	payload := map[string]any{
-		"user_id":           userID,
-		"org_id":            orgID,
-		"household_id":      householdID,
-		"roles":             roles,
-		"mfa_authenticated": mfaAuthenticated,
-	}
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/sessions/issue", encodeJSONBody(t, payload))
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-
-	router.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusCreated {
-		t.Fatalf("expected session issue status %d, got %d", http.StatusCreated, rr.Code)
-	}
-
-	return issuedAccessTokenFromResponse(t, rr)
+	return issueSession(t, router, sessionSpec{UserID: userID, OrgID: orgID, HouseholdID: householdID, Roles: roles, MFA: mfaAuthenticated})
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────

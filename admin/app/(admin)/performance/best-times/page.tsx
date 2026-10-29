@@ -9,21 +9,13 @@ import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
 import { fetchPerformanceBestTimes, fetchSwimmers, type BestTimeRecord, type SwimmerRecord } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
-
-function formatSwimTime(milliseconds?: number | null) {
-  if (milliseconds == null) return 'NT'
-  const totalSeconds = milliseconds / 1000
-  if (totalSeconds < 60) return totalSeconds.toFixed(2)
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = (totalSeconds % 60).toFixed(2).padStart(5, '0')
-  return `${minutes}:${seconds}`
-}
+import { FIELD_INPUT_STYLE } from '@/lib/form-styles'
+import { formatSwimTime } from '@/lib/performanceData'
+import { LoadErrorBanner } from '@/components/ui/LoadErrorBanner'
 
 const COURSE_OPTIONS = ['SCY', 'SCM', 'LCM']
 const STROKE_OPTIONS = ['free', 'back', 'breast', 'fly', 'im']
 const DISTANCE_OPTIONS = [25, 50, 100, 200, 400, 500, 800, 1000, 1500, 1650]
-
-const FIELD_INPUT_STYLE: React.CSSProperties = { width: '100%' }
 
 type LeaderboardRow = BestTimeRecord & { swimmerName: string }
 
@@ -157,11 +149,7 @@ export default function BestTimesPage() {
         <h1 className="page-title">Best times</h1>
       </div>
 
-      {error ? (
-        <div className="u-mb-20px u-p-12px-16px u-fs-fs-sm" style={{ borderRadius: '8px', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)' }}>
-          {error}
-        </div>
-      ) : null}
+      {error ? <LoadErrorBanner message={error} /> : null}
 
       <div className="u-gap-12px u-mb-16px" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', flex: '1 1 200px', maxWidth: '280px' }}>

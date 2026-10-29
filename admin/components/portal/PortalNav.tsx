@@ -91,29 +91,8 @@ export function PortalNav({ userName, avatarInitials, onSignOut }: PortalNavProp
               <Link
                 key={link.path}
                 href={link.path}
-                style={{
-                  padding: '6px 12px',
-                  borderRadius: '8px',
-                  fontSize: 'var(--fs-base)',
-                  fontWeight: active ? 600 : 450,
-                  color: active ? 'var(--text)' : 'var(--text-subtle)',
-                  background: active ? 'rgba(235,93,30,0.08)' : 'transparent',
-                  textDecoration: 'none',
-                  transition: 'background 120ms ease, color 120ms ease',
-                  whiteSpace: 'nowrap',
-                }}
-                onMouseEnter={(e) => {
-                  if (!active) {
-                    e.currentTarget.style.background = 'var(--bg-wash)'
-                    e.currentTarget.style.color = 'var(--text)'
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!active) {
-                    e.currentTarget.style.background = 'transparent'
-                    e.currentTarget.style.color = 'var(--text-subtle)'
-                  }
-                }}
+                className="pn-link"
+                data-active={active || undefined}
               >
                 {link.label}
               </Link>
@@ -125,32 +104,8 @@ export function PortalNav({ userName, avatarInitials, onSignOut }: PortalNavProp
               onClick={() => setMoreOpen((v) => !v)}
               aria-expanded={moreOpen}
               aria-haspopup="menu"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '6px 12px 6px 12px',
-                borderRadius: '8px',
-                border: 'none',
-                fontSize: 'var(--fs-base)',
-                fontWeight: activeMore ? 600 : 450,
-                color: activeMore ? 'var(--text)' : 'var(--text-subtle)',
-                background: activeMore ? 'rgba(235,93,30,0.08)' : 'transparent',
-                whiteSpace: 'nowrap',
-                transition: 'background 120ms ease, color 120ms ease',
-              }}
-              onMouseEnter={(e) => {
-                if (!activeMore) {
-                  e.currentTarget.style.background = 'var(--bg-wash)'
-                  e.currentTarget.style.color = 'var(--text)'
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!activeMore) {
-                  e.currentTarget.style.background = 'transparent'
-                  e.currentTarget.style.color = 'var(--text-subtle)'
-                }
-              }}
+              className="pn-link pn-link--more"
+              data-active={activeMore ? true : undefined}
             >
               {activeMore?.label ?? 'More'}
               <Icon name="chevron-down" size={13} style={{ color: 'var(--text-muted)' }} />
@@ -171,15 +126,8 @@ export function PortalNav({ userName, avatarInitials, onSignOut }: PortalNavProp
                         href={link.path}
                         role="menuitem"
                         onClick={() => setMoreOpen(false)}
-                        style={{
-                          padding: '8px 12px',
-                          borderRadius: '8px',
-                          fontSize: 'var(--fs-base)',
-                          fontWeight: active ? 600 : 450,
-                          color: active ? 'var(--text)' : 'var(--text-subtle)',
-                          background: active ? 'rgba(235,93,30,0.08)' : 'transparent',
-                          textDecoration: 'none',
-                        }}
+                        className="pn-link pn-link--menu"
+                        data-active={active || undefined}
                       >
                         {link.label}
                       </Link>
@@ -206,15 +154,7 @@ export function PortalNav({ userName, avatarInitials, onSignOut }: PortalNavProp
             onClick={() => setUserMenuOpen((v) => !v)}
             aria-label="User menu"
             aria-expanded={userMenuOpen}
-            className="is-8d90a6f"
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'var(--bg-wash)'
-              e.currentTarget.style.borderColor = 'var(--border-strong)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent'
-              e.currentTarget.style.borderColor = 'var(--border)'
-            }}
+            className="is-8d90a6f hv-06286c"
           >
             {/* Avatar */}
             <div
@@ -245,9 +185,7 @@ export function PortalNav({ userName, avatarInitials, onSignOut }: PortalNavProp
                 <Link
                   href="/portal/household"
                   onClick={() => setUserMenuOpen(false)}
-                  className="is-0561fd1"
-                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-wash)')}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  className="is-0561fd1 hv-d97df4"
                 >
                   <Icon name="home" size={15} style={{ color: 'var(--text-subtle)' }} />
                   Household Profile
@@ -257,9 +195,7 @@ export function PortalNav({ userName, avatarInitials, onSignOut }: PortalNavProp
                 />
                 <button type="button"
                   onClick={() => { setUserMenuOpen(false); onSignOut?.() }}
-                  className="is-31cee2f"
-                  onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(220,38,38,0.06)')}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  className="is-31cee2f hv-dcf8ee"
                 >
                   <Icon name="log-out" size={15} style={{ color: 'var(--error)' }} />
                   Sign out
@@ -297,15 +233,8 @@ export function PortalNav({ userName, avatarInitials, onSignOut }: PortalNavProp
                   key={link.path}
                   href={link.path}
                   onClick={() => setMobileNavOpen(false)}
-                  style={{
-                    padding: '12px 12px',
-                    borderRadius: '8px',
-                    fontSize: 'var(--fs-md)',
-                    fontWeight: active ? 600 : 450,
-                    color: active ? 'var(--text)' : 'var(--text-subtle)',
-                    background: active ? 'rgba(235,93,30,0.08)' : 'transparent',
-                    textDecoration: 'none',
-                  }}
+                  className="pn-link pn-link--drawer"
+                  data-active={active || undefined}
                 >
                   {link.label}
                 </Link>

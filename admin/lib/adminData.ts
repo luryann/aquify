@@ -1,6 +1,6 @@
 'use client'
 
-import { ApiError, rawRequestAuthHeaders, type ApiClient } from '#lib/api'
+import { ApiError, rawRequestAuthHeaders, type ApiClient, orgHeaders } from '#lib/api'
 
 export type HouseholdRecord = {
   id: string
@@ -817,31 +817,37 @@ export type CutQualificationRecord = {
   margin_ms?: number
 }
 
-function withOrgHeaders(orgId: string) {
-  return { 'X-Org-Id': orgId }
-}
-
 // Paginated list routes return at most 200 rows per request (100 by default),
 // so a single unparameterised GET silently truncates large clubs. Walk the
 // offsets until the server-reported `total` has been collected.
 const LIST_PAGE_SIZE = 200
 
-export async function fetchAllPages<T>(api: ApiClient, path: string, key: string, orgId: string): Promise<T[]> {
+export async function fetchAllPagesWithMeta<T>(
+  api: ApiClient,
+  path: string,
+  key: string,
+  orgId: string,
+): Promise<{ items: T[]; raw: Record<string, unknown> }> {
   const items: T[] = []
   const sep = path.includes('?') ? '&' : '?'
   let offset = 0
+  let raw: Record<string, unknown> = {}
   for (;;) {
-    const res = await api.get<Record<string, unknown>>(
+    raw = await api.get<Record<string, unknown>>(
       `${path}${sep}limit=${LIST_PAGE_SIZE}&offset=${offset}`,
       undefined,
-      withOrgHeaders(orgId),
+      orgHeaders(orgId),
     )
-    const page = (res[key] as T[] | undefined) ?? []
+    const page = (raw[key] as T[] | undefined) ?? []
     items.push(...page)
     offset += page.length
-    if (page.length === 0 || typeof res.total !== 'number' || offset >= res.total) break
+    if (page.length === 0 || typeof raw.total !== 'number' || offset >= raw.total) break
   }
-  return items
+  return { items, raw }
+}
+
+export async function fetchAllPages<T>(api: ApiClient, path: string, key: string, orgId: string): Promise<T[]> {
+  return (await fetchAllPagesWithMeta<T>(api, path, key, orgId)).items
 }
 
 export async function fetchHouseholds(api: ApiClient, orgId: string): Promise<HouseholdRecord[]> {
@@ -849,12 +855,12 @@ export async function fetchHouseholds(api: ApiClient, orgId: string): Promise<Ho
 }
 
 export async function fetchHousehold(api: ApiClient, orgId: string, householdId: string): Promise<HouseholdRecord> {
-  const res = await api.get<{ household: HouseholdRecord }>(`/api/v1/members/households/${householdId}`, undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ household: HouseholdRecord }>(`/api/v1/members/households/${householdId}`, undefined, orgHeaders(orgId))
   return res.household
 }
 
 export async function fetchHouseholdContacts(api: ApiClient, orgId: string, householdId: string): Promise<ContactRecord[]> {
-  const res = await api.get<{ contacts?: ContactRecord[] }>(`/api/v1/members/households/${householdId}/contacts`, undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ contacts?: ContactRecord[] }>(`/api/v1/members/households/${householdId}/contacts`, undefined, orgHeaders(orgId))
   return res.contacts ?? []
 }
 
@@ -864,7 +870,7 @@ export async function addHouseholdContact(
   householdId: string,
   input: { relationship: string; first_name: string; last_name: string; email?: string; phone_e164?: string; is_primary?: boolean },
 ): Promise<ContactRecord> {
-  const res = await api.post<{ contact: ContactRecord }>(`/api/v1/members/households/${householdId}/contacts`, input, withOrgHeaders(orgId))
+  const res = await api.post<{ contact: ContactRecord }>(`/api/v1/members/households/${householdId}/contacts`, input, orgHeaders(orgId))
   return res.contact
 }
 
@@ -883,7 +889,7 @@ export async function fetchSwimmers(api: ApiClient, orgId: string): Promise<Swim
 }
 
 export async function fetchSwimmer(api: ApiClient, orgId: string, swimmerId: string): Promise<SwimmerRecord> {
-  const res = await api.get<{ swimmer: SwimmerRecord }>(`/api/v1/members/swimmers/${swimmerId}`, undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ swimmer: SwimmerRecord }>(`/api/v1/members/swimmers/${swimmerId}`, undefined, orgHeaders(orgId))
   return res.swimmer
 }
 
@@ -896,12 +902,12 @@ export async function fetchGroups(api: ApiClient, orgId: string): Promise<GroupR
 }
 
 export async function fetchGroup(api: ApiClient, orgId: string, groupId: string): Promise<GroupRecord> {
-  const res = await api.get<{ group: GroupRecord }>(`/api/v1/groups/${groupId}`, undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ group: GroupRecord }>(`/api/v1/groups/${groupId}`, undefined, orgHeaders(orgId))
   return res.group
 }
 
 export async function fetchGroupEligibilityRules(api: ApiClient, orgId: string, groupId: string): Promise<EligibilityRuleRecord[]> {
-  const res = await api.get<{ rules?: EligibilityRuleRecord[] }>(`/api/v1/groups/${groupId}/eligibility-rules`, undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ rules?: EligibilityRuleRecord[] }>(`/api/v1/groups/${groupId}/eligibility-rules`, undefined, orgHeaders(orgId))
   return res.rules ?? []
 }
 
@@ -914,17 +920,17 @@ export async function fetchMeets(api: ApiClient, orgId: string): Promise<MeetRec
 }
 
 export async function fetchMeet(api: ApiClient, orgId: string, meetId: string): Promise<MeetRecord> {
-  const res = await api.get<{ meet: MeetRecord }>(`/api/v1/meets/${meetId}`, undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ meet: MeetRecord }>(`/api/v1/meets/${meetId}`, undefined, orgHeaders(orgId))
   return res.meet
 }
 
 export async function transitionMeet(api: ApiClient, orgId: string, meetId: string, status: string): Promise<MeetRecord> {
-  const res = await api.post<{ meet: MeetRecord }>(`/api/v1/meets/${meetId}/transition`, { status }, withOrgHeaders(orgId))
+  const res = await api.post<{ meet: MeetRecord }>(`/api/v1/meets/${meetId}/transition`, { status }, orgHeaders(orgId))
   return res.meet
 }
 
 export async function openMeetCommitments(api: ApiClient, orgId: string, meetId: string): Promise<MeetRecord> {
-  const res = await api.post<{ meet: MeetRecord }>(`/api/v1/meets/${meetId}/commitment-request`, {}, withOrgHeaders(orgId))
+  const res = await api.post<{ meet: MeetRecord }>(`/api/v1/meets/${meetId}/commitment-request`, {}, orgHeaders(orgId))
   return res.meet
 }
 
@@ -955,7 +961,7 @@ export async function createMeetEntry(api: ApiClient, orgId: string, meetId: str
   const res = await api.post<{ entry: EntryRecord }>(
     `/api/v1/meets/${meetId}/entries`,
     input,
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return res.entry
 }
@@ -967,18 +973,18 @@ export async function respondToMeetCommitment(api: ApiClient, orgId: string, mee
   const res = await api.post<{ commitment: CommitmentRecord }>(
     `/api/v1/meets/${meetId}/commitments/${commitmentId}/respond`,
     input,
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return res.commitment
 }
 
 export async function fetchExportsForMeet(api: ApiClient, orgId: string, meetId: string): Promise<ExportRecord[]> {
-  const res = await api.get<{ exports?: ExportRecord[] }>(`/api/v1/meets/${meetId}/exports`, undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ exports?: ExportRecord[] }>(`/api/v1/meets/${meetId}/exports`, undefined, orgHeaders(orgId))
   return res.exports ?? []
 }
 
 export async function fetchInvoicesForHousehold(api: ApiClient, orgId: string, householdId: string): Promise<InvoiceRecord[]> {
-  const res = await api.get<{ invoices?: InvoiceRecord[] }>(`/api/v1/households/${householdId}/invoices`, undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ invoices?: InvoiceRecord[] }>(`/api/v1/households/${householdId}/invoices`, undefined, orgHeaders(orgId))
   return res.invoices ?? []
 }
 
@@ -986,7 +992,7 @@ export async function fetchHouseholdAutopay(api: ApiClient, orgId: string, house
   const res = await api.get<{ autopay: HouseholdAutopayStatusRecord }>(
     `/api/v1/households/${householdId}/autopay`,
     undefined,
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return res.autopay
 }
@@ -1004,7 +1010,7 @@ export async function fetchHouseholdAutopayStatuses(
   const res = await api.get<{ autopay?: HouseholdAutopayStatusRecord[] }>(
     `/api/v1/autopay/households${query ? `?${query}` : ''}`,
     undefined,
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return res.autopay ?? []
 }
@@ -1027,7 +1033,7 @@ export async function upsertHouseholdAutopay(
   const res = await api.put<{ autopay: HouseholdAutopayStatusRecord }>(
     `/api/v1/households/${householdId}/autopay`,
     input,
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return res.autopay
 }
@@ -1036,19 +1042,19 @@ export async function optOutHouseholdAutopay(api: ApiClient, orgId: string, hous
   const res = await api.post<{ autopay: HouseholdAutopayStatusRecord }>(
     `/api/v1/households/${householdId}/autopay/opt-out`,
     undefined,
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return res.autopay
 }
 
 export async function fetchInvoices(api: ApiClient, orgId: string, params: Record<string, string> = {}): Promise<InvoiceRecord[]> {
   const query = new URLSearchParams(params).toString()
-  const res = await api.get<{ invoices?: InvoiceRecord[] }>(`/api/v1/invoices${query ? `?${query}` : ''}`, undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ invoices?: InvoiceRecord[] }>(`/api/v1/invoices${query ? `?${query}` : ''}`, undefined, orgHeaders(orgId))
   return res.invoices ?? []
 }
 
 export async function fetchInvoice(api: ApiClient, orgId: string, invoiceId: string): Promise<InvoiceRecord> {
-  const res = await api.get<{ invoice: InvoiceRecord }>(`/api/v1/invoices/${invoiceId}`, undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ invoice: InvoiceRecord }>(`/api/v1/invoices/${invoiceId}`, undefined, orgHeaders(orgId))
   return res.invoice
 }
 
@@ -1074,7 +1080,7 @@ export async function createInvoiceCheckoutSession(
       cancel_url: input.cancel_url,
     },
     {
-      ...withOrgHeaders(orgId),
+      ...orgHeaders(orgId),
       'Idempotency-Key': input.idempotency_key,
     },
   )
@@ -1082,23 +1088,23 @@ export async function createInvoiceCheckoutSession(
 }
 
 export async function fetchInvoiceItems(api: ApiClient, orgId: string, invoiceId: string): Promise<InvoiceItemRecord[]> {
-  const res = await api.get<{ items?: InvoiceItemRecord[] }>(`/api/v1/invoices/${invoiceId}/items`, undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ items?: InvoiceItemRecord[] }>(`/api/v1/invoices/${invoiceId}/items`, undefined, orgHeaders(orgId))
   return res.items ?? []
 }
 
 export async function fetchInvoicePayments(api: ApiClient, orgId: string, invoiceId: string): Promise<PaymentRecord[]> {
-  const res = await api.get<{ payments?: PaymentRecord[] }>(`/api/v1/invoices/${invoiceId}/payments`, undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ payments?: PaymentRecord[] }>(`/api/v1/invoices/${invoiceId}/payments`, undefined, orgHeaders(orgId))
   return res.payments ?? []
 }
 
 export async function fetchPayments(api: ApiClient, orgId: string, params: Record<string, string> = {}): Promise<PaymentRecord[]> {
   const query = new URLSearchParams(params).toString()
-  const res = await api.get<{ payments?: PaymentRecord[] }>(`/api/v1/payments${query ? `?${query}` : ''}`, undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ payments?: PaymentRecord[] }>(`/api/v1/payments${query ? `?${query}` : ''}`, undefined, orgHeaders(orgId))
   return res.payments ?? []
 }
 
 export async function fetchInvoiceRefunds(api: ApiClient, orgId: string, invoiceId: string): Promise<RefundRecord[]> {
-  const res = await api.get<{ refunds?: RefundRecord[] }>(`/api/v1/invoices/${invoiceId}/refunds`, undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ refunds?: RefundRecord[] }>(`/api/v1/invoices/${invoiceId}/refunds`, undefined, orgHeaders(orgId))
   return res.refunds ?? []
 }
 
@@ -1111,51 +1117,51 @@ export async function createRefund(
   const res = await api.post<{ refund: RefundRecord }>(
     `/api/v1/invoices/${invoiceId}/refunds`,
     input,
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return res.refund
 }
 
 export async function fetchSwimmerBestTimes(api: ApiClient, orgId: string, swimmerId: string): Promise<BestTimeRecord[]> {
-  const res = await api.get<{ best_times?: BestTimeRecord[] }>(`/api/v1/swimmers/${swimmerId}/best-times`, undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ best_times?: BestTimeRecord[] }>(`/api/v1/swimmers/${swimmerId}/best-times`, undefined, orgHeaders(orgId))
   return res.best_times ?? []
 }
 
 export async function fetchSwimmerProgression(api: ApiClient, orgId: string, swimmerId: string): Promise<ProgressionResultRecord[]> {
-  const res = await api.get<{ results?: ProgressionResultRecord[] }>(`/api/v1/swimmers/${swimmerId}/progression`, undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ results?: ProgressionResultRecord[] }>(`/api/v1/swimmers/${swimmerId}/progression`, undefined, orgHeaders(orgId))
   return res.results ?? []
 }
 
 export async function fetchSwimmerActivity(api: ApiClient, orgId: string, swimmerId: string): Promise<SwimmerActivityRecord[]> {
-  const res = await api.get<{ activities?: SwimmerActivityRecord[] }>(`/api/v1/swimmers/${swimmerId}/activity`, undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ activities?: SwimmerActivityRecord[] }>(`/api/v1/swimmers/${swimmerId}/activity`, undefined, orgHeaders(orgId))
   return res.activities ?? []
 }
 
 export async function fetchPerformanceBestTimes(api: ApiClient, orgId: string, params: Record<string, string> = {}): Promise<BestTimeRecord[]> {
   const query = new URLSearchParams(params).toString()
-  const res = await api.get<{ best_times?: BestTimeRecord[] }>(`/api/v1/performance/best-times${query ? `?${query}` : ''}`, undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ best_times?: BestTimeRecord[] }>(`/api/v1/performance/best-times${query ? `?${query}` : ''}`, undefined, orgHeaders(orgId))
   return res.best_times ?? []
 }
 
 export async function fetchPerformanceProgression(api: ApiClient, orgId: string, params: Record<string, string> = {}): Promise<ProgressionResultRecord[]> {
   const query = new URLSearchParams(params).toString()
-  const res = await api.get<{ results?: ProgressionResultRecord[] }>(`/api/v1/performance/progression${query ? `?${query}` : ''}`, undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ results?: ProgressionResultRecord[] }>(`/api/v1/performance/progression${query ? `?${query}` : ''}`, undefined, orgHeaders(orgId))
   return res.results ?? []
 }
 
 export async function fetchLedgerEvents(api: ApiClient, orgId: string): Promise<LedgerEventRecord[]> {
-  const res = await api.get<{ events?: LedgerEventRecord[] }>('/api/v1/ledger-events', undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ events?: LedgerEventRecord[] }>('/api/v1/ledger-events', undefined, orgHeaders(orgId))
   return res.events ?? []
 }
 
 export async function fetchLedgerEventsForInvoice(api: ApiClient, orgId: string, invoiceId: string): Promise<LedgerEventRecord[]> {
   const query = new URLSearchParams({ invoice_id: invoiceId }).toString()
-  const res = await api.get<{ events?: LedgerEventRecord[] }>(`/api/v1/ledger-events?${query}`, undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ events?: LedgerEventRecord[] }>(`/api/v1/ledger-events?${query}`, undefined, orgHeaders(orgId))
   return res.events ?? []
 }
 
 export async function fetchRoleAssignments(api: ApiClient, orgId: string): Promise<RoleAssignmentRecord[]> {
-  const res = await api.get<{ assignments?: RoleAssignmentRecord[] }>('/api/v1/auth/roles/assignments', undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ assignments?: RoleAssignmentRecord[] }>('/api/v1/auth/roles/assignments', undefined, orgHeaders(orgId))
   return res.assignments ?? []
 }
 
@@ -1169,33 +1175,33 @@ export async function assignRole(api: ApiClient, orgId: string, input: {
   const res = await api.post<{ assignment: RoleAssignmentRecord }>('/api/v1/auth/roles/assign', {
     org_id: orgId,
     ...input,
-  }, withOrgHeaders(orgId))
+  }, orgHeaders(orgId))
   return res.assignment
 }
 
 export async function fetchMFAFactors(api: ApiClient, orgId: string): Promise<MFAFactorRecord[]> {
-  const res = await api.get<{ factors?: MFAFactorRecord[] }>('/api/v1/auth/mfa/factors', undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ factors?: MFAFactorRecord[] }>('/api/v1/auth/mfa/factors', undefined, orgHeaders(orgId))
   return res.factors ?? []
 }
 
 export async function fetchRuntimeSettings(api: ApiClient, orgId: string): Promise<RuntimeSettingsRecord> {
-  const res = await api.get<{ settings: RuntimeSettingsRecord }>('/api/v1/settings/runtime', undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ settings: RuntimeSettingsRecord }>('/api/v1/settings/runtime', undefined, orgHeaders(orgId))
   return res.settings
 }
 
 export async function fetchMembershipStatusReport(api: ApiClient, orgId: string): Promise<MembershipStatusReportRecord> {
-  const res = await api.get<{ report: MembershipStatusReportRecord }>('/api/v1/reports/membership-status', undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ report: MembershipStatusReportRecord }>('/api/v1/reports/membership-status', undefined, orgHeaders(orgId))
   return res.report
 }
 
 export async function fetchMeetFeesReport(api: ApiClient, orgId: string): Promise<MeetFeesReportRecord> {
-  const res = await api.get<{ report: MeetFeesReportRecord }>('/api/v1/reports/meet-fees', undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ report: MeetFeesReportRecord }>('/api/v1/reports/meet-fees', undefined, orgHeaders(orgId))
   return res.report
 }
 
 export async function fetchInvoiceAgingReport(api: ApiClient, orgId: string, asOf?: string): Promise<InvoiceAgingReportRecord> {
   const query = asOf ? `?${new URLSearchParams({ as_of: asOf }).toString()}` : ''
-  const res = await api.get<{ report: InvoiceAgingReportRecord }>(`/api/v1/reports/invoice-aging${query}`, undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ report: InvoiceAgingReportRecord }>(`/api/v1/reports/invoice-aging${query}`, undefined, orgHeaders(orgId))
   return res.report
 }
 
@@ -1203,61 +1209,61 @@ export async function fetchPaymentReconciliationReport(api: ApiClient, orgId: st
   const params = new URLSearchParams()
   if (typeof stripeReportedCents === 'number') params.set('stripe_reported_cents', String(stripeReportedCents))
   const query = params.toString()
-  const res = await api.get<{ report: PaymentReconciliationReportRecord }>(`/api/v1/reports/payment-reconciliation${query ? `?${query}` : ''}`, undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ report: PaymentReconciliationReportRecord }>(`/api/v1/reports/payment-reconciliation${query ? `?${query}` : ''}`, undefined, orgHeaders(orgId))
   return res.report
 }
 
 export async function fetchRegistrationStatusReport(api: ApiClient, orgId: string): Promise<RegistrationStatusReportRecord> {
-  const res = await api.get<{ report: RegistrationStatusReportRecord }>('/api/v1/reports/registration-status', undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ report: RegistrationStatusReportRecord }>('/api/v1/reports/registration-status', undefined, orgHeaders(orgId))
   return res.report
 }
 
 export async function downloadReportArtifact(api: ApiClient, orgId: string, path: string): Promise<ReportArtifactRecord | null> {
-  const res = await api.get<{ artifact?: ReportArtifactRecord }>(path, undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ artifact?: ReportArtifactRecord }>(path, undefined, orgHeaders(orgId))
   return res.artifact ?? null
 }
 
 export async function fetchAuditEvents(api: ApiClient, orgId: string, params: Record<string, string> = {}): Promise<{ events: AuditEventRecord[]; next_cursor?: string }> {
   const query = new URLSearchParams(params).toString()
-  return api.get<{ events: AuditEventRecord[]; next_cursor?: string }>(`/api/v1/audit-events${query ? `?${query}` : ''}`, undefined, withOrgHeaders(orgId))
+  return api.get<{ events: AuditEventRecord[]; next_cursor?: string }>(`/api/v1/audit-events${query ? `?${query}` : ''}`, undefined, orgHeaders(orgId))
 }
 
 export async function fetchJobs(api: ApiClient, orgId: string): Promise<WorkerTaskRecord[]> {
-  const res = await api.get<{ tasks?: WorkerTaskRecord[] }>('/api/v1/jobs', undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ tasks?: WorkerTaskRecord[] }>('/api/v1/jobs', undefined, orgHeaders(orgId))
   return res.tasks ?? []
 }
 
 export async function fetchQueueStats(api: ApiClient, orgId: string): Promise<QueueStatsRecord[]> {
-  const res = await api.get<{ queues?: QueueStatsRecord[] }>('/api/v1/jobs/queues', undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ queues?: QueueStatsRecord[] }>('/api/v1/jobs/queues', undefined, orgHeaders(orgId))
   return res.queues ?? []
 }
 
 export async function fetchJobMetrics(api: ApiClient, orgId: string): Promise<{ by_type: Record<string, JobMetricsTypeRecord>; recent_executions: JobExecutionRecord[] }> {
-  return api.get<{ by_type: Record<string, JobMetricsTypeRecord>; recent_executions: JobExecutionRecord[] }>('/api/v1/jobs/metrics', undefined, withOrgHeaders(orgId))
+  return api.get<{ by_type: Record<string, JobMetricsTypeRecord>; recent_executions: JobExecutionRecord[] }>('/api/v1/jobs/metrics', undefined, orgHeaders(orgId))
 }
 
 export async function fetchDLQTasks(api: ApiClient, orgId: string): Promise<WorkerTaskRecord[]> {
-  const res = await api.get<{ dead_letter_tasks?: WorkerTaskRecord[] }>('/api/v1/jobs/dlq', undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ dead_letter_tasks?: WorkerTaskRecord[] }>('/api/v1/jobs/dlq', undefined, orgHeaders(orgId))
   return res.dead_letter_tasks ?? []
 }
 
 export async function retryDLQTask(api: ApiClient, orgId: string, taskId: string): Promise<void> {
-  await api.post(`/api/v1/jobs/dlq/${taskId}/retry`, undefined, withOrgHeaders(orgId))
+  await api.post(`/api/v1/jobs/dlq/${taskId}/retry`, undefined, orgHeaders(orgId))
 }
 
 export async function deleteDLQTask(api: ApiClient, orgId: string, taskId: string): Promise<void> {
-  await api.delete(`/api/v1/jobs/dlq/${taskId}`, withOrgHeaders(orgId))
+  await api.delete(`/api/v1/jobs/dlq/${taskId}`, orgHeaders(orgId))
 }
 
 export async function fetchAnnouncements(api: ApiClient, orgId: string, status?: string): Promise<AnnouncementRecord[]> {
   const query = status ? `?${new URLSearchParams({ status }).toString()}` : ''
-  const res = await api.get<{ announcements?: AnnouncementRecord[] }>(`/api/v1/announcements${query}`, undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ announcements?: AnnouncementRecord[] }>(`/api/v1/announcements${query}`, undefined, orgHeaders(orgId))
   return res.announcements ?? []
 }
 
 export async function fetchMessages(api: ApiClient, orgId: string, householdId: string, swimmerId: string): Promise<MessageRecord[]> {
   const query = new URLSearchParams({ household_id: householdId, swimmer_id: swimmerId }).toString()
-  const res = await api.get<{ messages?: MessageRecord[] }>(`/api/v1/messages?${query}`, undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ messages?: MessageRecord[] }>(`/api/v1/messages?${query}`, undefined, orgHeaders(orgId))
   return res.messages ?? []
 }
 
@@ -1271,31 +1277,31 @@ export async function sendMessage(
     attachments?: { object_key: string; file_name: string; file_mime: string }[]
   },
 ): Promise<MessageRecord> {
-  const res = await api.post<{ message: MessageRecord }>('/api/v1/messages', input, withOrgHeaders(orgId))
+  const res = await api.post<{ message: MessageRecord }>('/api/v1/messages', input, orgHeaders(orgId))
   return res.message
 }
 
 export async function fetchMessageThreads(api: ApiClient, orgId: string): Promise<MessageThreadRecord[]> {
-  const res = await api.get<{ threads?: MessageThreadRecord[] }>('/api/v1/message-threads', undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ threads?: MessageThreadRecord[] }>('/api/v1/message-threads', undefined, orgHeaders(orgId))
   return res.threads ?? []
 }
 
 export async function editMessage(api: ApiClient, orgId: string, messageId: string, body: string): Promise<MessageRecord> {
-  const res = await api.patch<{ message: MessageRecord }>(`/api/v1/messages/${messageId}`, { body }, withOrgHeaders(orgId))
+  const res = await api.patch<{ message: MessageRecord }>(`/api/v1/messages/${messageId}`, { body }, orgHeaders(orgId))
   return res.message
 }
 
 export async function addReaction(api: ApiClient, orgId: string, messageId: string, emoji: string): Promise<void> {
-  await api.post(`/api/v1/messages/${messageId}/reactions`, { emoji }, withOrgHeaders(orgId))
+  await api.post(`/api/v1/messages/${messageId}/reactions`, { emoji }, orgHeaders(orgId))
 }
 
 export async function removeReaction(api: ApiClient, orgId: string, messageId: string, emoji: string): Promise<void> {
-  await api.delete(`/api/v1/messages/${messageId}/reactions/${encodeURIComponent(emoji)}`, withOrgHeaders(orgId))
+  await api.delete(`/api/v1/messages/${messageId}/reactions/${encodeURIComponent(emoji)}`, orgHeaders(orgId))
 }
 
 export async function markThreadRead(api: ApiClient, orgId: string, householdId: string, swimmerId: string): Promise<void> {
   const query = new URLSearchParams({ household_id: householdId, swimmer_id: swimmerId }).toString()
-  await api.post(`/api/v1/messages/read?${query}`, undefined, withOrgHeaders(orgId))
+  await api.post(`/api/v1/messages/read?${query}`, undefined, orgHeaders(orgId))
 }
 
 export async function requestMessageUploadURL(
@@ -1303,14 +1309,14 @@ export async function requestMessageUploadURL(
   orgId: string,
   input: { household_id: string; swimmer_id: string; file_name: string; file_mime: string; file_size_bytes: number },
 ): Promise<{ upload_url: string; object_key: string; expected_file_name: string }> {
-  return api.post('/api/v1/messages/upload-url', input, withOrgHeaders(orgId))
+  return api.post('/api/v1/messages/upload-url', input, orgHeaders(orgId))
 }
 
 export async function fetchCommunicationPreferences(api: ApiClient, orgId: string): Promise<CommunicationPreferenceRecord[]> {
   const res = await api.get<{ preferences?: CommunicationPreferenceRecord[] }>(
     '/api/v1/communication-preferences',
     undefined,
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return res.preferences ?? []
 }
@@ -1327,13 +1333,13 @@ export async function updateCommunicationPreferences(
   const res = await api.put<{ preferences?: CommunicationPreferenceRecord[] }>(
     '/api/v1/communication-preferences',
     { preferences },
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return res.preferences ?? []
 }
 
 export async function fetchAnnouncement(api: ApiClient, orgId: string, announcementId: string): Promise<AnnouncementRecord> {
-  return api.get<AnnouncementRecord>(`/api/v1/announcements/${announcementId}`, undefined, withOrgHeaders(orgId))
+  return api.get<AnnouncementRecord>(`/api/v1/announcements/${announcementId}`, undefined, orgHeaders(orgId))
 }
 
 export async function createAnnouncement(api: ApiClient, orgId: string, input: {
@@ -1343,24 +1349,24 @@ export async function createAnnouncement(api: ApiClient, orgId: string, input: {
   group_id?: string
   public?: boolean
 }): Promise<AnnouncementRecord> {
-  return api.post<AnnouncementRecord>('/api/v1/announcements', input, withOrgHeaders(orgId))
+  return api.post<AnnouncementRecord>('/api/v1/announcements', input, orgHeaders(orgId))
 }
 
 export async function publishAnnouncement(api: ApiClient, orgId: string, announcementId: string): Promise<AnnouncementRecord> {
-  return api.post<AnnouncementRecord>(`/api/v1/announcements/${announcementId}/publish`, undefined, withOrgHeaders(orgId))
+  return api.post<AnnouncementRecord>(`/api/v1/announcements/${announcementId}/publish`, undefined, orgHeaders(orgId))
 }
 
 export async function archiveAnnouncement(api: ApiClient, orgId: string, announcementId: string): Promise<AnnouncementRecord> {
-  return api.post<AnnouncementRecord>(`/api/v1/announcements/${announcementId}/archive`, undefined, withOrgHeaders(orgId))
+  return api.post<AnnouncementRecord>(`/api/v1/announcements/${announcementId}/archive`, undefined, orgHeaders(orgId))
 }
 
 export async function fetchCampaigns(api: ApiClient, orgId: string): Promise<EmailCampaignRecord[]> {
-  const res = await api.get<{ campaigns?: EmailCampaignRecord[] }>('/api/v1/email-campaigns', undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ campaigns?: EmailCampaignRecord[] }>('/api/v1/email-campaigns', undefined, orgHeaders(orgId))
   return res.campaigns ?? []
 }
 
 export async function fetchCampaign(api: ApiClient, orgId: string, campaignId: string): Promise<EmailCampaignRecord> {
-  return api.get<EmailCampaignRecord>(`/api/v1/email-campaigns/${campaignId}`, undefined, withOrgHeaders(orgId))
+  return api.get<EmailCampaignRecord>(`/api/v1/email-campaigns/${campaignId}`, undefined, orgHeaders(orgId))
 }
 
 export async function createCampaign(api: ApiClient, orgId: string, input: {
@@ -1373,61 +1379,61 @@ export async function createCampaign(api: ApiClient, orgId: string, input: {
   audience: string
   group_id?: string
 }): Promise<EmailCampaignRecord> {
-  return api.post<EmailCampaignRecord>('/api/v1/email-campaigns', input, withOrgHeaders(orgId))
+  return api.post<EmailCampaignRecord>('/api/v1/email-campaigns', input, orgHeaders(orgId))
 }
 
 export async function sendCampaign(api: ApiClient, orgId: string, campaignId: string): Promise<EmailCampaignRecord> {
-  return api.post<EmailCampaignRecord>(`/api/v1/email-campaigns/${campaignId}/send`, undefined, withOrgHeaders(orgId))
+  return api.post<EmailCampaignRecord>(`/api/v1/email-campaigns/${campaignId}/send`, undefined, orgHeaders(orgId))
 }
 
 export async function fetchCampaignDeliveries(api: ApiClient, orgId: string, campaignId: string): Promise<EmailDeliveryRecord[]> {
-  const res = await api.get<{ deliveries?: EmailDeliveryRecord[] }>(`/api/v1/email-campaigns/${campaignId}/deliveries`, undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ deliveries?: EmailDeliveryRecord[] }>(`/api/v1/email-campaigns/${campaignId}/deliveries`, undefined, orgHeaders(orgId))
   return res.deliveries ?? []
 }
 
 export async function fetchSuppression(api: ApiClient, orgId: string): Promise<SuppressionRecord[]> {
-  const res = await api.get<{ suppression?: SuppressionRecord[] }>('/api/v1/suppression', undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ suppression?: SuppressionRecord[] }>('/api/v1/suppression', undefined, orgHeaders(orgId))
   return res.suppression ?? []
 }
 
 export async function createSuppression(api: ApiClient, orgId: string, input: { email: string; reason: string }): Promise<SuppressionRecord> {
-  return api.post<SuppressionRecord>('/api/v1/suppression', input, withOrgHeaders(orgId))
+  return api.post<SuppressionRecord>('/api/v1/suppression', input, orgHeaders(orgId))
 }
 
 export async function removeSuppression(api: ApiClient, orgId: string, suppressionId: string): Promise<void> {
-  await api.delete(`/api/v1/suppression/${suppressionId}`, withOrgHeaders(orgId))
+  await api.delete(`/api/v1/suppression/${suppressionId}`, orgHeaders(orgId))
 }
 
 export async function fetchDataExportRequests(api: ApiClient, orgId: string): Promise<DataExportRequestRecord[]> {
-  const res = await api.get<{ requests?: DataExportRequestRecord[] }>('/api/v1/compliance/data-export-requests', undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ requests?: DataExportRequestRecord[] }>('/api/v1/compliance/data-export-requests', undefined, orgHeaders(orgId))
   return res.requests ?? []
 }
 
 export async function createDataExportRequest(api: ApiClient, orgId: string, householdId: string): Promise<DataExportRequestRecord> {
-  return api.post<DataExportRequestRecord>('/api/v1/compliance/data-export-requests', { household_id: householdId }, withOrgHeaders(orgId))
+  return api.post<DataExportRequestRecord>('/api/v1/compliance/data-export-requests', { household_id: householdId }, orgHeaders(orgId))
 }
 
 export async function fetchDataDeletionRequests(api: ApiClient, orgId: string): Promise<DataDeletionRequestRecord[]> {
-  const res = await api.get<{ requests?: DataDeletionRequestRecord[] }>('/api/v1/compliance/data-deletion-requests', undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ requests?: DataDeletionRequestRecord[] }>('/api/v1/compliance/data-deletion-requests', undefined, orgHeaders(orgId))
   return res.requests ?? []
 }
 
 /** Approves erasure (admin + MFA); the household's data is erased by a background job. */
 export async function approveDataDeletionRequest(api: ApiClient, orgId: string, requestId: string, reviewNotes?: string): Promise<DataDeletionRequestRecord> {
-  return api.post<DataDeletionRequestRecord>(`/api/v1/compliance/data-deletion-requests/${requestId}/approve`, { review_notes: reviewNotes ?? '' }, withOrgHeaders(orgId))
+  return api.post<DataDeletionRequestRecord>(`/api/v1/compliance/data-deletion-requests/${requestId}/approve`, { review_notes: reviewNotes ?? '' }, orgHeaders(orgId))
 }
 
 export async function rejectDataDeletionRequest(api: ApiClient, orgId: string, requestId: string, reviewNotes: string): Promise<DataDeletionRequestRecord> {
-  return api.post<DataDeletionRequestRecord>(`/api/v1/compliance/data-deletion-requests/${requestId}/reject`, { review_notes: reviewNotes }, withOrgHeaders(orgId))
+  return api.post<DataDeletionRequestRecord>(`/api/v1/compliance/data-deletion-requests/${requestId}/reject`, { review_notes: reviewNotes }, orgHeaders(orgId))
 }
 
 export async function createDataDeletionRequest(api: ApiClient, orgId: string, input: { household_id: string; reason: string }): Promise<DataDeletionRequestRecord> {
-  return api.post<DataDeletionRequestRecord>('/api/v1/compliance/data-deletion-requests', input, withOrgHeaders(orgId))
+  return api.post<DataDeletionRequestRecord>('/api/v1/compliance/data-deletion-requests', input, orgHeaders(orgId))
 }
 
 export async function fetchTimeStandards(api: ApiClient, orgId: string, params: Record<string, string> = {}): Promise<TimeStandardRecord[]> {
   const query = new URLSearchParams(params).toString()
-  const res = await api.get<{ time_standards?: TimeStandardRecord[] }>(`/api/v1/time-standards${query ? `?${query}` : ''}`, undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ time_standards?: TimeStandardRecord[] }>(`/api/v1/time-standards${query ? `?${query}` : ''}`, undefined, orgHeaders(orgId))
   return res.time_standards ?? []
 }
 
@@ -1436,7 +1442,7 @@ export async function fetchSwimmerCutQualification(api: ApiClient, orgId: string
   const res = await api.get<{ qualification: CutQualificationRecord }>(
     `/api/v1/swimmers/${swimmerId}/cut-qualification?${query}`,
     undefined,
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return res.qualification
 }
@@ -1455,7 +1461,7 @@ export async function createTimeStandard(api: ApiClient, orgId: string, input: {
   time_ms: number
   is_active: boolean
 }): Promise<TimeStandardRecord> {
-  const res = await api.post<{ time_standard: TimeStandardRecord }>('/api/v1/time-standards', input, withOrgHeaders(orgId))
+  const res = await api.post<{ time_standard: TimeStandardRecord }>('/api/v1/time-standards', input, orgHeaders(orgId))
   return res.time_standard
 }
 
@@ -1465,18 +1471,18 @@ export async function updateTimeStandard(api: ApiClient, orgId: string, standard
   time_ms?: number
   is_active?: boolean
 }): Promise<TimeStandardRecord> {
-  const res = await api.put<{ time_standard: TimeStandardRecord }>(`/api/v1/time-standards/${standardId}`, input, withOrgHeaders(orgId))
+  const res = await api.put<{ time_standard: TimeStandardRecord }>(`/api/v1/time-standards/${standardId}`, input, orgHeaders(orgId))
   return res.time_standard
 }
 
 export async function deleteTimeStandard(api: ApiClient, orgId: string, standardId: string): Promise<void> {
-  await api.delete(`/api/v1/time-standards/${standardId}`, withOrgHeaders(orgId))
+  await api.delete(`/api/v1/time-standards/${standardId}`, orgHeaders(orgId))
 }
 
 // ── Document Center ───────────────────────────────────────────────────────────
 
 export async function fetchDocumentTypes(api: ApiClient, orgId: string, activeOnly = true): Promise<DocumentTypeRecord[]> {
-  const res = await api.get<{ document_types?: DocumentTypeRecord[] }>(`/api/v1/document-types?active_only=${activeOnly}`, undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ document_types?: DocumentTypeRecord[] }>(`/api/v1/document-types?active_only=${activeOnly}`, undefined, orgHeaders(orgId))
   return res.document_types ?? []
 }
 
@@ -1489,7 +1495,7 @@ export async function createDocumentType(api: ApiClient, orgId: string, input: {
   expiry_months?: number
   is_active: boolean
 }): Promise<DocumentTypeRecord> {
-  const res = await api.post<{ document_type: DocumentTypeRecord }>('/api/v1/document-types', input, withOrgHeaders(orgId))
+  const res = await api.post<{ document_type: DocumentTypeRecord }>('/api/v1/document-types', input, orgHeaders(orgId))
   return res.document_type
 }
 
@@ -1502,17 +1508,17 @@ export async function updateDocumentType(api: ApiClient, orgId: string, typeId: 
   expiry_months?: number
   is_active?: boolean
 }): Promise<DocumentTypeRecord> {
-  const res = await api.put<{ document_type: DocumentTypeRecord }>(`/api/v1/document-types/${typeId}`, input, withOrgHeaders(orgId))
+  const res = await api.put<{ document_type: DocumentTypeRecord }>(`/api/v1/document-types/${typeId}`, input, orgHeaders(orgId))
   return res.document_type
 }
 
 export async function deleteDocumentType(api: ApiClient, orgId: string, typeId: string): Promise<void> {
-  await api.delete(`/api/v1/document-types/${typeId}`, withOrgHeaders(orgId))
+  await api.delete(`/api/v1/document-types/${typeId}`, orgHeaders(orgId))
 }
 
 export async function fetchDocumentSubmissions(api: ApiClient, orgId: string, householdId?: string): Promise<DocumentSubmissionRecord[]> {
   const q = householdId ? `?household_id=${householdId}` : ''
-  const res = await api.get<{ documents?: DocumentSubmissionRecord[] }>(`/api/v1/documents${q}`, undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ documents?: DocumentSubmissionRecord[] }>(`/api/v1/documents${q}`, undefined, orgHeaders(orgId))
   return res.documents ?? []
 }
 
@@ -1521,7 +1527,7 @@ export async function createDocumentSubmission(api: ApiClient, orgId: string, in
   household_id: string
   swimmer_id?: string
 }): Promise<DocumentSubmissionRecord> {
-  const res = await api.post<{ document: DocumentSubmissionRecord }>('/api/v1/documents', input, withOrgHeaders(orgId))
+  const res = await api.post<{ document: DocumentSubmissionRecord }>('/api/v1/documents', input, orgHeaders(orgId))
   return res.document
 }
 
@@ -1531,7 +1537,7 @@ export async function attachDocumentFile(api: ApiClient, orgId: string, submissi
   file_mime?: string
   file_size_bytes?: number
 }): Promise<DocumentSubmissionRecord> {
-  const res = await api.post<{ document: DocumentSubmissionRecord }>(`/api/v1/documents/${submissionId}/attach`, input, withOrgHeaders(orgId))
+  const res = await api.post<{ document: DocumentSubmissionRecord }>(`/api/v1/documents/${submissionId}/attach`, input, orgHeaders(orgId))
   return res.document
 }
 
@@ -1543,17 +1549,17 @@ export async function requestDocumentUploadUrl(api: ApiClient, orgId: string, su
   return api.post<{ upload_url: string; object_key: string; upload_expires_at: string }>(
     `/api/v1/documents/${submissionId}/upload-url`,
     input,
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
 }
 
 export async function verifyDocumentSubmission(api: ApiClient, orgId: string, submissionId: string, reviewNotes?: string): Promise<DocumentSubmissionRecord> {
-  const res = await api.post<{ document: DocumentSubmissionRecord }>(`/api/v1/documents/${submissionId}/verify`, { review_notes: reviewNotes ?? '' }, withOrgHeaders(orgId))
+  const res = await api.post<{ document: DocumentSubmissionRecord }>(`/api/v1/documents/${submissionId}/verify`, { review_notes: reviewNotes ?? '' }, orgHeaders(orgId))
   return res.document
 }
 
 export async function rejectDocumentSubmission(api: ApiClient, orgId: string, submissionId: string, reviewNotes?: string): Promise<DocumentSubmissionRecord> {
-  const res = await api.post<{ document: DocumentSubmissionRecord }>(`/api/v1/documents/${submissionId}/reject`, { review_notes: reviewNotes ?? '' }, withOrgHeaders(orgId))
+  const res = await api.post<{ document: DocumentSubmissionRecord }>(`/api/v1/documents/${submissionId}/reject`, { review_notes: reviewNotes ?? '' }, orgHeaders(orgId))
   return res.document
 }
 
@@ -1577,7 +1583,7 @@ export type PracticeRecord = {
 }
 
 export async function fetchPractices(api: ApiClient, orgId: string): Promise<PracticeRecord[]> {
-  const res = await api.get<{ practices?: PracticeRecord[] }>('/api/v1/practices', undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ practices?: PracticeRecord[] }>('/api/v1/practices', undefined, orgHeaders(orgId))
   return res.practices ?? []
 }
 
@@ -1591,26 +1597,12 @@ export async function createPractice(api: ApiClient, orgId: string, body: {
   strokes?: { free: number; back: number; breast: number; fly: number; im: number }
   notes?: string
 }): Promise<PracticeRecord> {
-  const res = await api.post<{ practice: PracticeRecord }>('/api/v1/practices', body, withOrgHeaders(orgId))
-  return res.practice
-}
-
-export async function updatePractice(api: ApiClient, orgId: string, practiceId: string, body: Partial<{
-  date: string
-  group_id: string
-  type: string
-  description: string
-  yardage_target: number
-  attendance: number
-  strokes: { free: number; back: number; breast: number; fly: number; im: number }
-  notes: string
-}>): Promise<PracticeRecord> {
-  const res = await api.put<{ practice: PracticeRecord }>(`/api/v1/practices/${practiceId}`, body, withOrgHeaders(orgId))
+  const res = await api.post<{ practice: PracticeRecord }>('/api/v1/practices', body, orgHeaders(orgId))
   return res.practice
 }
 
 export async function deletePractice(api: ApiClient, orgId: string, practiceId: string): Promise<void> {
-  await api.delete(`/api/v1/practices/${practiceId}`, withOrgHeaders(orgId))
+  await api.delete(`/api/v1/practices/${practiceId}`, orgHeaders(orgId))
 }
 
 export type AttendanceStatus = 'present' | 'absent' | 'excused'
@@ -1643,22 +1635,22 @@ export async function createSwimmerLinkRequest(
   const res = await api.post<{ request: SwimmerLinkRequestRecord }>(
     '/api/v1/users/me/swimmer-link-requests',
     body,
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return res.request
 }
 
 export async function fetchSwimmerLinkRequests(api: ApiClient, orgId: string): Promise<SwimmerLinkRequestRecord[]> {
-  const res = await api.get<{ requests?: SwimmerLinkRequestRecord[] }>('/api/v1/users/swimmer-link-requests', undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ requests?: SwimmerLinkRequestRecord[] }>('/api/v1/users/swimmer-link-requests', undefined, orgHeaders(orgId))
   return res.requests ?? []
 }
 
 export async function resolveSwimmerLinkRequest(api: ApiClient, orgId: string, requestId: string, swimmerId: string): Promise<void> {
-  await api.post(`/api/v1/users/swimmer-link-requests/${requestId}/resolve`, { swimmer_id: swimmerId }, withOrgHeaders(orgId))
+  await api.post(`/api/v1/users/swimmer-link-requests/${requestId}/resolve`, { swimmer_id: swimmerId }, orgHeaders(orgId))
 }
 
 export async function fetchPracticeAttendance(api: ApiClient, orgId: string, practiceId: string): Promise<AttendanceRosterEntry[]> {
-  const res = await api.get<{ roster?: AttendanceRosterEntry[] }>(`/api/v1/practices/${practiceId}/attendance`, undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ roster?: AttendanceRosterEntry[] }>(`/api/v1/practices/${practiceId}/attendance`, undefined, orgHeaders(orgId))
   return res.roster ?? []
 }
 
@@ -1669,7 +1661,7 @@ export async function setPracticeAttendance(
   swimmerId: string,
   status: AttendanceStatus,
 ): Promise<void> {
-  await api.put(`/api/v1/practices/${practiceId}/attendance/${swimmerId}`, { status }, withOrgHeaders(orgId))
+  await api.put(`/api/v1/practices/${practiceId}/attendance/${swimmerId}`, { status }, orgHeaders(orgId))
 }
 
 // ── Seasons ───────────────────────────────────────────────────────────────────
@@ -1689,7 +1681,7 @@ export type SeasonRecord = {
 }
 
 export async function fetchSeasons(api: ApiClient, orgId: string): Promise<SeasonRecord[]> {
-  const res = await api.get<{ seasons?: SeasonRecord[] }>('/api/v1/seasons', undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ seasons?: SeasonRecord[] }>('/api/v1/seasons', undefined, orgHeaders(orgId))
   return res.seasons ?? []
 }
 
@@ -1700,7 +1692,7 @@ export async function createSeason(api: ApiClient, orgId: string, body: {
   status: string
   goals?: string
 }): Promise<SeasonRecord> {
-  const res = await api.post<{ season: SeasonRecord }>('/api/v1/seasons', body, withOrgHeaders(orgId))
+  const res = await api.post<{ season: SeasonRecord }>('/api/v1/seasons', body, orgHeaders(orgId))
   return res.season
 }
 
@@ -1711,12 +1703,12 @@ export async function updateSeason(api: ApiClient, orgId: string, seasonId: stri
   status: string
   goals: string
 }>): Promise<SeasonRecord> {
-  const res = await api.put<{ season: SeasonRecord }>(`/api/v1/seasons/${seasonId}`, body, withOrgHeaders(orgId))
+  const res = await api.put<{ season: SeasonRecord }>(`/api/v1/seasons/${seasonId}`, body, orgHeaders(orgId))
   return res.season
 }
 
 export async function deleteSeason(api: ApiClient, orgId: string, seasonId: string): Promise<void> {
-  await api.delete(`/api/v1/seasons/${seasonId}`, withOrgHeaders(orgId))
+  await api.delete(`/api/v1/seasons/${seasonId}`, orgHeaders(orgId))
 }
 
 // ── Commitment Event Selections ───────────────────────────────────────────────
@@ -1755,7 +1747,7 @@ export async function addCommitmentEventSelection(
   const res = await api.post<{ selection: CommitmentEventSelectionRecord }>(
     `/api/v1/meets/${meetId}/commitments/${commitmentId}/event-selections`,
     { meet_event_id: meetEventId },
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return res.selection
 }
@@ -1769,7 +1761,7 @@ export async function deleteCommitmentEventSelection(
 ): Promise<void> {
   await api.delete(
     `/api/v1/meets/${meetId}/commitments/${commitmentId}/event-selections/${selectionId}`,
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
 }
 
@@ -1782,7 +1774,7 @@ export async function approveEntry(
   const res = await api.post<{ entry: EntryRecord }>(
     `/api/v1/meets/${meetId}/entries/${entryId}/approve`,
     undefined,
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return res.entry
 }
@@ -1797,7 +1789,7 @@ export async function scratchEntry(
   const qs = reason && reason.trim() ? `?reason=${encodeURIComponent(reason.trim())}` : ''
   const res = await api.delete<{ entry: EntryRecord }>(
     `/api/v1/meets/${meetId}/entries/${entryId}${qs}`,
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return res.entry
 }
@@ -1810,7 +1802,7 @@ export async function overrideEntry(api: ApiClient, orgId: string, meetId: strin
   const res = await api.post<{ entry: EntryRecord }>(
     `/api/v1/meets/${meetId}/entries/${entryId}/override`,
     input,
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return res.entry
 }
@@ -1823,7 +1815,7 @@ export async function lockMeetCommitments(
   await api.post(
     `/api/v1/meets/${meetId}/lock-commitments`,
     undefined,
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
 }
 
@@ -1843,7 +1835,7 @@ export async function createHousehold(
   const res = await api.post<{ household: HouseholdRecord }>(
     '/api/v1/members/households',
     { org_id: orgId, ...input },
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return res.household
 }
@@ -1853,7 +1845,7 @@ export async function deleteHousehold(
   orgId: string,
   householdId: string,
 ): Promise<void> {
-  await api.delete(`/api/v1/members/households/${householdId}`, withOrgHeaders(orgId))
+  await api.delete(`/api/v1/members/households/${householdId}`, orgHeaders(orgId))
 }
 
 export async function deleteSwimmer(
@@ -1861,27 +1853,7 @@ export async function deleteSwimmer(
   orgId: string,
   swimmerId: string,
 ): Promise<void> {
-  await api.delete(`/api/v1/members/swimmers/${swimmerId}`, withOrgHeaders(orgId))
-}
-
-export async function updateHousehold(
-  api: ApiClient,
-  orgId: string,
-  householdId: string,
-  input: {
-    household_name?: string
-    primary_email?: string
-    primary_phone_e164?: string
-    status?: string
-    notes?: string
-  },
-): Promise<HouseholdRecord> {
-  const res = await api.patch<{ household: HouseholdRecord }>(
-    `/api/v1/members/households/${householdId}`,
-    input,
-    withOrgHeaders(orgId),
-  )
-  return res.household
+  await api.delete(`/api/v1/members/swimmers/${swimmerId}`, orgHeaders(orgId))
 }
 
 export async function createSwimmer(
@@ -1903,7 +1875,7 @@ export async function createSwimmer(
   const res = await api.post<{ swimmer: SwimmerRecord }>(
     '/api/v1/members/swimmers',
     { org_id: orgId, ...input },
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return res.swimmer
 }
@@ -1924,7 +1896,7 @@ export async function createGroup(
   const res = await api.post<{ group: GroupRecord }>(
     '/api/v1/groups',
     input,
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return res.group
 }
@@ -1943,7 +1915,7 @@ export async function updateGroup(
     is_active?: boolean
   },
 ): Promise<GroupRecord> {
-  const res = await api.patch<{ group: GroupRecord }>(`/api/v1/groups/${groupId}`, input, withOrgHeaders(orgId))
+  const res = await api.patch<{ group: GroupRecord }>(`/api/v1/groups/${groupId}`, input, orgHeaders(orgId))
   return res.group
 }
 
@@ -1953,7 +1925,7 @@ export async function attachGroupEligibilityRule(
   groupId: string,
   input: { rule_type: 'age_range' | 'gender' | 'registration_status'; parameters: Record<string, unknown> },
 ): Promise<EligibilityRuleRecord> {
-  const res = await api.post<{ rule: EligibilityRuleRecord }>(`/api/v1/groups/${groupId}/eligibility-rules`, input, withOrgHeaders(orgId))
+  const res = await api.post<{ rule: EligibilityRuleRecord }>(`/api/v1/groups/${groupId}/eligibility-rules`, input, orgHeaders(orgId))
   return res.rule
 }
 
@@ -1965,7 +1937,7 @@ export type StaffRecord = {
 
 /** Admin + coach directory (names only) — readable by coaches, unlike /users. */
 export async function fetchStaff(api: ApiClient, orgId: string): Promise<StaffRecord[]> {
-  const res = await api.get<{ staff?: StaffRecord[] }>('/api/v1/users/staff', undefined, withOrgHeaders(orgId))
+  const res = await api.get<{ staff?: StaffRecord[] }>('/api/v1/users/staff', undefined, orgHeaders(orgId))
   return res.staff ?? []
 }
 
@@ -1984,7 +1956,7 @@ export async function createRegistration(
   const res = await api.post<{ registration: RegistrationRecord }>(
     '/api/v1/registrations',
     input,
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return res.registration
 }
@@ -1998,7 +1970,7 @@ export async function transitionRegistration(
   const res = await api.post<{ registration: RegistrationRecord }>(
     `/api/v1/registrations/${registrationId}/transition`,
     { status },
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return res.registration
 }
@@ -2033,7 +2005,7 @@ export async function acceptRegistrationWaiver(
   } }>(
     `/api/v1/registrations/${registrationId}/waivers`,
     input,
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return res.waiver
 }
@@ -2050,7 +2022,7 @@ export async function assignSwimmerToGroup(
   const res = await api.post<{ assignment: SwimmerGroupLinkRecord }>(
     `/api/v1/members/swimmers/${swimmerId}/groups`,
     input,
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return res.assignment
 }
@@ -2078,29 +2050,9 @@ export async function updateSwimmer(
   const res = await api.patch<{ swimmer: SwimmerRecord }>(
     `/api/v1/members/swimmers/${swimmerId}`,
     input,
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return res.swimmer
-}
-
-export async function createMeetSession(
-  api: ApiClient,
-  orgId: string,
-  meetId: string,
-  input: {
-    session_number: number
-    name: string
-    session_date?: string
-    warmup_time?: string
-    start_time?: string
-  },
-): Promise<MeetSessionRecord> {
-  const res = await api.post<{ session: MeetSessionRecord }>(
-    `/api/v1/meets/${meetId}/sessions`,
-    input,
-    withOrgHeaders(orgId),
-  )
-  return res.session
 }
 
 export async function createMeetEvent(
@@ -2123,54 +2075,57 @@ export async function createMeetEvent(
   const res = await api.post<{ event: MeetEventRecord }>(
     `/api/v1/meets/${meetId}/events`,
     input,
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return res.event
+}
+
+/** Request body for `POST /api/v1/meets`. */
+export type CreateMeetPayload = {
+  name: string
+  meet_type?: string
+  course?: string
+  start_date?: string
+  end_date?: string
+  entry_deadline?: string
+  commitment_deadline?: string
+  host_org?: string
+  location?: string
+  sessions?: Array<{
+    session_number: number
+    name: string
+    session_date?: string
+    warmup_time?: string
+    start_time?: string
+    notes?: string
+  }>
+  events?: Array<{
+    session_number?: number
+    event_number: string
+    stroke: string
+    distance: number
+    course?: string
+    gender?: string
+    min_age?: number
+    max_age?: number
+    entry_fee_cents?: number
+    is_relay?: boolean
+  }>
+  signup_settings?: {
+    self_signup_enabled: boolean
+    max_entries_per_swimmer: number
+  }
 }
 
 export async function createMeet(
   api: ApiClient,
   orgId: string,
-  input: {
-    name: string
-    meet_type?: string
-    course?: string
-    start_date?: string
-    end_date?: string
-    entry_deadline?: string
-    commitment_deadline?: string
-    host_org?: string
-    location?: string
-    sessions?: Array<{
-      session_number: number
-      name: string
-      session_date?: string
-      warmup_time?: string
-      start_time?: string
-      notes?: string
-    }>
-    events?: Array<{
-      session_number?: number
-      event_number: string
-      stroke: string
-      distance: number
-      course?: string
-      gender?: string
-      min_age?: number
-      max_age?: number
-      entry_fee_cents?: number
-      is_relay?: boolean
-    }>
-    signup_settings?: {
-      self_signup_enabled: boolean
-      max_entries_per_swimmer: number
-    }
-  },
+  input: CreateMeetPayload,
 ): Promise<MeetRecord> {
   const res = await api.post<{ meet: MeetRecord }>(
     '/api/v1/meets',
     input,
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return res.meet
 }
@@ -2263,7 +2218,7 @@ export async function importMeetResults(
 }
 
 export async function deleteInvoiceItem(api: ApiClient, orgId: string, invoiceId: string, itemId: string): Promise<void> {
-  await api.delete(`/api/v1/invoices/${invoiceId}/items/${itemId}`, withOrgHeaders(orgId))
+  await api.delete(`/api/v1/invoices/${invoiceId}/items/${itemId}`, orgHeaders(orgId))
 }
 
 export async function createInvoice(
@@ -2280,7 +2235,7 @@ export async function createInvoice(
   const res = await api.post<{ invoice: InvoiceRecord }>(
     '/api/v1/invoices',
     input,
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return res.invoice
 }
@@ -2296,7 +2251,7 @@ export async function addInvoiceItem(api: ApiClient, orgId: string, invoiceId: s
   const res = await api.post<{ item: InvoiceItemRecord }>(
     `/api/v1/invoices/${invoiceId}/items`,
     input,
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return res.item
 }
@@ -2305,7 +2260,7 @@ export async function issueInvoice(api: ApiClient, orgId: string, invoiceId: str
   const res = await api.post<{ invoice: InvoiceRecord }>(
     `/api/v1/invoices/${invoiceId}/issue`,
     {},
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return res.invoice
 }
@@ -2314,7 +2269,7 @@ export async function voidInvoice(api: ApiClient, orgId: string, invoiceId: stri
   const res = await api.post<{ invoice: InvoiceRecord }>(
     `/api/v1/invoices/${invoiceId}/void`,
     {},
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return res.invoice
 }
@@ -2323,7 +2278,7 @@ export async function writeOffInvoice(api: ApiClient, orgId: string, invoiceId: 
   const res = await api.post<{ invoice: InvoiceRecord }>(
     `/api/v1/invoices/${invoiceId}/write-off`,
     {},
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return res.invoice
 }
@@ -2339,7 +2294,7 @@ export async function recordInvoicePayment(api: ApiClient, orgId: string, invoic
   const res = await api.post<{ payment: PaymentRecord }>(
     `/api/v1/invoices/${invoiceId}/payments`,
     input,
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return res.payment
 }
@@ -2362,7 +2317,7 @@ export async function generateReport(
   const res = await api.post<{ export: ExportRecord }>(
     `/api/v1/meets/${meetId}/exports`,
     input,
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return res.export
 }
@@ -2390,7 +2345,7 @@ export async function fetchOrgSettings(api: ApiClient, orgId: string): Promise<O
   const res = await api.get<{ org_settings: OrgSettingsRecord }>(
     '/api/v1/org-settings',
     undefined,
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return res.org_settings
 }
@@ -2403,7 +2358,7 @@ export async function updateOrgSettings(
   const res = await api.put<{ org_settings: OrgSettingsRecord }>(
     '/api/v1/org-settings',
     input,
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return res.org_settings
 }
@@ -2422,6 +2377,12 @@ export type UserRecord = {
   lastLoginAt?: string
   householdId?: string
   attributes?: Record<string, string[]>
+}
+
+/** Display name for a user, falling back to email, then id. */
+export function displayNameForUser(user: UserRecord): string {
+  const name = `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim()
+  return name || user.email || user.id
 }
 
 export type UserListSource = 'stub' | 'keycloak'
@@ -2447,7 +2408,7 @@ export async function fetchUsers(
   const res = await api.get<{ status: string; count: number; source?: UserListSource; is_stubbed?: boolean; users: UserRecord[] }>(
     `/api/v1/users${query}`,
     undefined,
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   const source = res.source === 'stub' ? 'stub' : 'keycloak'
   return { users: res.users ?? [], count: res.count ?? 0, source, isStubbed: res.is_stubbed ?? source === 'stub' }
@@ -2461,7 +2422,7 @@ export async function fetchUser(
   const res = await api.get<{ status: string; user: UserRecord; roles: UserRoleRecord[] }>(
     `/api/v1/users/${userId}`,
     undefined,
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return { user: res.user, roles: res.roles ?? [] }
 }
@@ -2474,7 +2435,7 @@ export async function createUser(
   const res = await api.post<{ status: string; user_id: string }>(
     '/api/v1/users',
     input,
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return { user_id: res.user_id }
 }
@@ -2487,7 +2448,7 @@ export async function inviteUser(
   const res = await api.post<{ status: string; user_id: string }>(
     '/api/v1/users/invite',
     input,
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return { user_id: res.user_id }
 }
@@ -2498,19 +2459,19 @@ export async function updateUser(
   userId: string,
   input: { first_name?: string; last_name?: string; email?: string },
 ): Promise<void> {
-  await api.put(`/api/v1/users/${userId}`, input, withOrgHeaders(orgId))
+  await api.put(`/api/v1/users/${userId}`, input, orgHeaders(orgId))
 }
 
 export async function disableUser(api: ApiClient, orgId: string, userId: string): Promise<void> {
-  await api.post(`/api/v1/users/${userId}/disable`, {}, withOrgHeaders(orgId))
+  await api.post(`/api/v1/users/${userId}/disable`, {}, orgHeaders(orgId))
 }
 
 export async function enableUser(api: ApiClient, orgId: string, userId: string): Promise<void> {
-  await api.post(`/api/v1/users/${userId}/enable`, {}, withOrgHeaders(orgId))
+  await api.post(`/api/v1/users/${userId}/enable`, {}, orgHeaders(orgId))
 }
 
 export async function deleteUser(api: ApiClient, orgId: string, userId: string): Promise<void> {
-  await api.delete(`/api/v1/users/${userId}`, withOrgHeaders(orgId))
+  await api.delete(`/api/v1/users/${userId}`, orgHeaders(orgId))
 }
 
 export async function assignUserRole(
@@ -2519,7 +2480,7 @@ export async function assignUserRole(
   userId: string,
   role: string,
 ): Promise<void> {
-  await api.post(`/api/v1/users/${userId}/roles`, { role }, withOrgHeaders(orgId))
+  await api.post(`/api/v1/users/${userId}/roles`, { role }, orgHeaders(orgId))
 }
 
 export async function removeUserRole(
@@ -2528,7 +2489,7 @@ export async function removeUserRole(
   userId: string,
   role: string,
 ): Promise<void> {
-  await api.delete(`/api/v1/users/${userId}/roles/${role}`, withOrgHeaders(orgId))
+  await api.delete(`/api/v1/users/${userId}/roles/${role}`, orgHeaders(orgId))
 }
 
 export async function sendPasswordReset(
@@ -2536,7 +2497,7 @@ export async function sendPasswordReset(
   orgId: string,
   userId: string,
 ): Promise<void> {
-  await api.post(`/api/v1/users/${userId}/password-reset`, {}, withOrgHeaders(orgId))
+  await api.post(`/api/v1/users/${userId}/password-reset`, {}, orgHeaders(orgId))
 }
 
 export async function fetchUserHousehold(
@@ -2547,7 +2508,7 @@ export async function fetchUserHousehold(
   const res = await api.get<{ status: string; household: HouseholdRecord | null }>(
     `/api/v1/users/${userId}/household`,
     undefined,
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return res.household ?? null
 }
@@ -2558,7 +2519,7 @@ export async function linkUserHousehold(
   userId: string,
   householdId: string,
 ): Promise<void> {
-  await api.post(`/api/v1/users/${userId}/household/link`, { household_id: householdId }, withOrgHeaders(orgId))
+  await api.post(`/api/v1/users/${userId}/household/link`, { household_id: householdId }, orgHeaders(orgId))
 }
 
 export async function unlinkUserHousehold(
@@ -2567,7 +2528,7 @@ export async function unlinkUserHousehold(
   userId: string,
   householdId: string,
 ): Promise<void> {
-  await api.post(`/api/v1/users/${userId}/household/unlink`, { household_id: householdId }, withOrgHeaders(orgId))
+  await api.post(`/api/v1/users/${userId}/household/unlink`, { household_id: householdId }, orgHeaders(orgId))
 }
 
 export async function fetchUserSwimmer(
@@ -2578,7 +2539,7 @@ export async function fetchUserSwimmer(
   const res = await api.get<{ status: string; swimmer: SwimmerRecord | null }>(
     `/api/v1/users/${userId}/swimmer`,
     undefined,
-    withOrgHeaders(orgId),
+    orgHeaders(orgId),
   )
   return res.swimmer ?? null
 }
@@ -2589,7 +2550,7 @@ export async function linkUserSwimmer(
   userId: string,
   swimmerId: string,
 ): Promise<void> {
-  await api.post(`/api/v1/users/${userId}/swimmer/link`, { swimmer_id: swimmerId }, withOrgHeaders(orgId))
+  await api.post(`/api/v1/users/${userId}/swimmer/link`, { swimmer_id: swimmerId }, orgHeaders(orgId))
 }
 
 export async function unlinkUserSwimmer(
@@ -2598,6 +2559,6 @@ export async function unlinkUserSwimmer(
   userId: string,
   swimmerId: string,
 ): Promise<void> {
-  await api.post(`/api/v1/users/${userId}/swimmer/unlink`, { swimmer_id: swimmerId }, withOrgHeaders(orgId))
+  await api.post(`/api/v1/users/${userId}/swimmer/unlink`, { swimmer_id: swimmerId }, orgHeaders(orgId))
 }
 

@@ -45,14 +45,7 @@ func (c appReadinessChecker) CheckReadiness(ctx context.Context) handlers.Readin
 }
 
 func buildReadinessChecker(cfg Config, dbPool *pgxpool.Pool, objectStore storage.ObjectStorage, stripeClient stripelib.Client, postmarkClient postmark.Client, workerBackend workers.Backend, kcClient keycloak.Client) handlers.ReadinessChecker {
-	storageCfg := storage.Config{
-		Endpoint:  cfg.Storage.Endpoint,
-		AccessKey: cfg.Storage.AccessKey,
-		SecretKey: cfg.Storage.SecretKey,
-		Bucket:    cfg.Storage.Bucket,
-		UseSSL:    cfg.Storage.UseSSL,
-		Region:    cfg.Storage.Region,
-	}
+	storageCfg := cfg.Storage.ClientConfig()
 
 	return appReadinessChecker{
 		checks: []dependencyReadinessCheck{
@@ -65,9 +58,7 @@ func buildReadinessChecker(cfg Config, dbPool *pgxpool.Pool, objectStore storage
 					if dbPool == nil {
 						return "", fmt.Errorf("database pool unavailable")
 					}
-					probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-					defer cancel()
-					return "ready", dbPool.Ping(probeCtx)
+					return probeReady(ctx, dbPool.Ping)
 				},
 			},
 			{
@@ -89,9 +80,7 @@ func buildReadinessChecker(cfg Config, dbPool *pgxpool.Pool, objectStore storage
 					if !ok || backend == nil {
 						return "", fmt.Errorf("durable redis backend not active")
 					}
-					probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-					defer cancel()
-					return "ready", backend.Ready(probeCtx)
+					return probeReady(ctx, backend.Ready)
 				},
 			},
 			{
@@ -113,9 +102,7 @@ func buildReadinessChecker(cfg Config, dbPool *pgxpool.Pool, objectStore storage
 					if !ok {
 						return "", fmt.Errorf("storage readiness probe unavailable")
 					}
-					probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-					defer cancel()
-					return "ready", prober.Ready(probeCtx)
+					return probeReady(ctx, prober.Ready)
 				},
 			},
 			{
@@ -130,19 +117,9 @@ func buildReadinessChecker(cfg Config, dbPool *pgxpool.Pool, objectStore storage
 					switch client := stripeClient.(type) {
 					case unavailableStripeClient:
 						return "", client.err
-					case *stripelib.StubClient:
-						if requiresStrictRuntimeDependencies(cfg.AppEnv) {
-							return "", fmt.Errorf("stub stripe client active in strict environment")
-						}
-						return "ready (stub)", nil
 					default:
-						prober, ok := stripeClient.(interface{ Ready(context.Context) error })
-						if !ok {
-							return "", fmt.Errorf("stripe readiness probe unavailable")
-						}
-						probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-						defer cancel()
-						return "ready", prober.Ready(probeCtx)
+						_, isStub := stripeClient.(*stripelib.StubClient)
+						return probeClient(ctx, "stripe", stripeClient, isStub, requiresStrictRuntimeDependencies(cfg.AppEnv))
 					}
 				},
 			},
@@ -158,19 +135,9 @@ func buildReadinessChecker(cfg Config, dbPool *pgxpool.Pool, objectStore storage
 					switch client := postmarkClient.(type) {
 					case unavailablePostmarkClient:
 						return "", client.err
-					case *postmark.StubClient:
-						if requiresStrictRuntimeDependencies(cfg.AppEnv) {
-							return "", fmt.Errorf("stub postmark client active in strict environment")
-						}
-						return "ready (stub)", nil
 					default:
-						prober, ok := postmarkClient.(interface{ Ready(context.Context) error })
-						if !ok {
-							return "", fmt.Errorf("postmark readiness probe unavailable")
-						}
-						probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-						defer cancel()
-						return "ready", prober.Ready(probeCtx)
+						_, isStub := postmarkClient.(*postmark.StubClient)
+						return probeClient(ctx, "postmark", postmarkClient, isStub, requiresStrictRuntimeDependencies(cfg.AppEnv))
 					}
 				},
 			},
@@ -190,9 +157,7 @@ func buildReadinessChecker(cfg Config, dbPool *pgxpool.Pool, objectStore storage
 						}
 						return "ready (stub)", nil
 					case interface{ Ready(context.Context) error }:
-						probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-						defer cancel()
-						return "ready", client.Ready(probeCtx)
+						return probeReady(ctx, client.Ready)
 					default:
 						return "", fmt.Errorf("keycloak readiness probe unavailable")
 					}
@@ -207,4 +172,32 @@ func keycloakAdminConfigured(cfg Config) bool {
 		strings.TrimSpace(cfg.Keycloak.Realm) != "" &&
 		strings.TrimSpace(cfg.Keycloak.ClientID) != "" &&
 		strings.TrimSpace(cfg.Keycloak.ClientSecret) != ""
+}
+
+// readinessProbeTimeout bounds each dependency probe so a hung dependency
+// cannot stall the readiness endpoint.
+const readinessProbeTimeout = 2 * time.Second
+
+// probeReady runs a dependency's Ready probe under readinessProbeTimeout and
+// reports "ready" alongside the probe's error.
+func probeReady(ctx context.Context, ready func(context.Context) error) (string, error) {
+	probeCtx, cancel := context.WithTimeout(ctx, readinessProbeTimeout)
+	defer cancel()
+	return "ready", ready(probeCtx)
+}
+
+// probeClient checks an external provider client: a stub is only acceptable
+// outside strict environments; anything else must expose a Ready probe.
+func probeClient(ctx context.Context, name string, client any, isStub, strict bool) (string, error) {
+	if isStub {
+		if strict {
+			return "", fmt.Errorf("stub %s client active in strict environment", name)
+		}
+		return "ready (stub)", nil
+	}
+	prober, ok := client.(interface{ Ready(context.Context) error })
+	if !ok {
+		return "", fmt.Errorf("%s readiness probe unavailable", name)
+	}
+	return probeReady(ctx, prober.Ready)
 }

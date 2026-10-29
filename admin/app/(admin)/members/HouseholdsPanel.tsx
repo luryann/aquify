@@ -10,6 +10,7 @@ import { useApiClient } from '@/lib/api'
 import { fetchHouseholds, fetchSwimmers, createHousehold, deleteHousehold, type HouseholdRecord, type SwimmerRecord } from '@/lib/adminData'
 import { normalizeHouseholdStatus, type HouseholdStatus } from '@/lib/household-status'
 import { canAccess } from '@/lib/roles'
+import { formatDateOnly } from '@/lib/dates'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { Modal } from '@/components/ui/Modal'
 
@@ -79,7 +80,7 @@ function buildColumns(onDelete: (row: HouseholdRow) => void, canDelete: boolean)
       key: 'joinedAt',
       label: 'Created',
       sortable: true,
-      render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{new Date(row.joinedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>,
+      render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{formatDateOnly(row.joinedAt)}</span>,
     },
     {
       key: 'id',
@@ -105,6 +106,11 @@ function buildColumns(onDelete: (row: HouseholdRow) => void, canDelete: boolean)
   ]
 }
 
+async function loadHouseholdRows(api: ReturnType<typeof useApiClient>, orgId: string) {
+  const [households, swimmers] = await Promise.all([fetchHouseholds(api, orgId), fetchSwimmers(api, orgId)])
+  return deriveHouseholdRows(households, swimmers)
+}
+
 function deriveHouseholdRows(households: HouseholdRecord[], swimmers: SwimmerRecord[]): HouseholdRow[] {
   const swimmerCountByHousehold = swimmers.reduce<Record<string, number>>((acc, swimmer) => {
     acc[swimmer.household_id] = (acc[swimmer.household_id] ?? 0) + 1
@@ -125,6 +131,7 @@ function deriveHouseholdRows(households: HouseholdRecord[], swimmers: SwimmerRec
 }
 
 const INPUT_STYLE: React.CSSProperties = { width: '100%' }
+const EMPTY_FORM = { household_name: '', primary_email: '', primary_phone_e164: '', status: 'active', notes: '' }
 
 export function HouseholdsPanel() {
   const { session } = useSession()
@@ -140,7 +147,7 @@ export function HouseholdsPanel() {
   const [showNew, setShowNew] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
-  const [form, setForm] = useState({ household_name: '', primary_email: '', primary_phone_e164: '', status: 'active', notes: '' })
+  const [form, setForm] = useState(EMPTY_FORM)
 
   // Delete confirmation
   const [deleteTarget, setDeleteTarget] = useState<HouseholdRow | null>(null)
@@ -159,11 +166,8 @@ export function HouseholdsPanel() {
       try {
         setLoading(true)
         setError(null)
-        const [households, swimmers] = await Promise.all([
-          fetchHouseholds(api, session.user.orgId),
-          fetchSwimmers(api, session.user.orgId),
-        ])
-        if (!cancelled) setRows(deriveHouseholdRows(households, swimmers))
+        const nextRows = await loadHouseholdRows(api, session.user.orgId)
+        if (!cancelled) setRows(nextRows)
       } catch (err) {
         if (!cancelled) {
           setError(uiErrorMessage(err, 'Couldn’t load households. Try again.'))
@@ -206,10 +210,8 @@ export function HouseholdsPanel() {
     try {
       await createHousehold(api, session.user.orgId, form)
       setShowNew(false)
-      setForm({ household_name: '', primary_email: '', primary_phone_e164: '', status: 'active', notes: '' })
-      // Reload
-      const [households, swimmers] = await Promise.all([fetchHouseholds(api, session.user.orgId), fetchSwimmers(api, session.user.orgId)])
-      setRows(deriveHouseholdRows(households, swimmers))
+      setForm(EMPTY_FORM)
+      setRows(await loadHouseholdRows(api, session.user.orgId))
     } catch (err) {
       setFormError(uiErrorMessage(err, 'Couldn’t create household. Try again.'))
     } finally {
@@ -224,8 +226,7 @@ export function HouseholdsPanel() {
     try {
       await deleteHousehold(api, session.user.orgId, deleteTarget.id)
       setDeleteTarget(null)
-      const [households, swimmers] = await Promise.all([fetchHouseholds(api, session.user.orgId), fetchSwimmers(api, session.user.orgId)])
-      setRows(deriveHouseholdRows(households, swimmers))
+      setRows(await loadHouseholdRows(api, session.user.orgId))
     } catch (err) {
       setDeleteError(uiErrorMessage(err, 'Couldn’t delete household. Try again.'))
     } finally {

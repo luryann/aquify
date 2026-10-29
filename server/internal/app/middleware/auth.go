@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/dareaquatics/aquify/server/internal/app/httpx"
@@ -81,4 +82,30 @@ func ExtractAuthToken(r *http.Request) (string, string, string) {
 func PrincipalFromContext(ctx context.Context) (*Principal, bool) {
 	principal, ok := ctx.Value(principalContextKey{}).(*Principal)
 	return principal, ok
+}
+
+// HasAnyRole reports whether the principal holds at least one of the required
+// roles (exact match). A nil principal holds no roles.
+// IsParentOnly reports whether the principal is a parent with no staff role,
+// so household scoping applies.
+func IsParentOnly(principal *Principal) bool {
+	return HasAnyRole(principal, "parent") && !HasAnyRole(principal, "admin", "coach")
+}
+
+// IsSwimmerOnly reports whether the principal is a swimmer with no staff or
+// parent role, so own-household scoping applies.
+func IsSwimmerOnly(principal *Principal) bool {
+	return HasAnyRole(principal, "swimmer") && !HasAnyRole(principal, "admin", "coach", "parent")
+}
+
+func HasAnyRole(principal *Principal, required ...string) bool {
+	if principal == nil {
+		return false
+	}
+	for _, role := range principal.Roles {
+		if slices.Contains(required, role) {
+			return true
+		}
+	}
+	return false
 }

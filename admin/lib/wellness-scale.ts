@@ -29,8 +29,4 @@ export const SCALE_QUESTIONS: { field: ScaleField; label: string; low: string; h
   { field: 'mood', label: 'Mood', low: 'Low', high: 'Great' },
 ]
 
-/** Today's date in the viewer's timezone (check-ins are per local day). */
-export function localToday(now = new Date()): string {
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`
-}
+export { localToday } from './dates.ts'

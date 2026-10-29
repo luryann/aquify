@@ -10,13 +10,8 @@ import { useApiClient } from '@/lib/api'
 import { fetchGroups, fetchRegistrations, fetchStaff, createGroup, type GroupRecord, type RegistrationRecord, type StaffRecord } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { Modal } from '@/components/ui/Modal'
-
-function formatAgeRange(minAge: number | null | undefined, maxAge: number | null | undefined) {
-  if (minAge == null && maxAge == null) return 'All ages'
-  if (minAge == null) return `Up to ${maxAge}`
-  if (maxAge == null) return `${minAge}+`
-  return `${minAge}-${maxAge}`
-}
+import { formatAgeRange } from '@/lib/group-format'
+import { FIELD_INPUT_STYLE } from '@/lib/form-styles'
 
 type GroupType = 'competitive' | 'recreational' | 'developmental' | 'masters' | 'other'
 
@@ -41,7 +36,7 @@ const TYPE_CONFIG: Record<GroupType, { label: string; color: string; bg: string 
 }
 
 function TypeBadge({ type }: { type: GroupType }) {
-  const c = TYPE_CONFIG[type]
+  const c = TYPE_CONFIG[type] ?? TYPE_CONFIG.other
   return <span className="badge" style={{ background: c.bg, color: c.color }}>{c.label}</span>
 }
 
@@ -99,7 +94,7 @@ function deriveRows(groups: GroupRecord[], registrations: RegistrationRecord[], 
       name: group.name,
       type: (group.type as GroupType) || 'other',
       swimmerCount: registrationCountByGroup[group.id] ?? 0,
-      coachName: group.coach_user_id ? (userNameById[group.coach_user_id] ?? group.coach_user_id) : null,
+      coachName: group.coach_user_id ? (userNameById[group.coach_user_id] ?? 'Unknown staff member') : null,
       minAge: group.min_age ?? null,
       maxAge: group.max_age ?? null,
       status: (group.is_active ? 'active' : 'archived') as 'active' | 'archived',
@@ -107,8 +102,6 @@ function deriveRows(groups: GroupRecord[], registrations: RegistrationRecord[], 
     }))
     .sort((a, b) => a.name.localeCompare(b.name))
 }
-
-const INPUT_STYLE: React.CSSProperties = { width: '100%' }
 
 export function GroupsPanel() {
   const { session } = useSession()
@@ -176,11 +169,15 @@ export function GroupsPanel() {
 
   const totalRegistrations = rows.filter((row) => row.status === 'active').reduce((acc, row) => acc + row.swimmerCount, 0)
 
-  const selectStyle: React.CSSProperties = {}
-
   async function handleCreateGroup(e: React.FormEvent) {
     e.preventDefault()
     if (!session?.user.orgId) return
+    const minAge = form.min_age ? parseInt(form.min_age, 10) : undefined
+    const maxAge = form.max_age ? parseInt(form.max_age, 10) : undefined
+    if (minAge != null && maxAge != null && minAge > maxAge) {
+      setFormError('Min age cannot be greater than max age.')
+      return
+    }
     setSubmitting(true)
     setFormError(null)
     try {
@@ -189,8 +186,8 @@ export function GroupsPanel() {
         name: form.name,
         description: form.description,
         type: form.type,
-        min_age: form.min_age ? parseInt(form.min_age) : undefined,
-        max_age: form.max_age ? parseInt(form.max_age) : undefined,
+        min_age: minAge,
+        max_age: maxAge,
         coach_user_id: form.coach_user_id || undefined,
       })
       setShowNew(false)
@@ -231,7 +228,7 @@ export function GroupsPanel() {
           <Icon name="search" size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
           <input aria-label="Search groups..." type="text" placeholder="Search groups..." value={search} onChange={(e) => setSearch(e.target.value)} className="u-p-8px-12px-8px-32px u-fs-fs-base" style={{ width: '100%' }} />
         </div>
-        <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} style={selectStyle}>
+        <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
           <option value="all">All types</option>
           <option value="competitive">Competitive</option>
           <option value="recreational">Recreational</option>
@@ -239,7 +236,7 @@ export function GroupsPanel() {
           <option value="masters">Masters</option>
           <option value="other">Other</option>
         </select>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={selectStyle}>
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="active">Active</option>
           <option value="archived">Archived</option>
           <option value="all">All</option>
@@ -262,17 +259,17 @@ export function GroupsPanel() {
               <div className="cols-2 u-gap-12px" >
                 <div>
                   <label className="form-label form-label-required">Code</label>
-                  <input aria-label="COMP-A" required style={INPUT_STYLE} value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value.toUpperCase() }))} placeholder="COMP-A" />
+                  <input aria-label="COMP-A" required style={FIELD_INPUT_STYLE} value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value.toUpperCase() }))} placeholder="COMP-A" />
                 </div>
                 <div>
                   <label className="form-label form-label-required">Name</label>
-                  <input aria-label="Competitive A" required style={INPUT_STYLE} value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="Competitive A" />
+                  <input aria-label="Competitive A" required style={FIELD_INPUT_STYLE} value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="Competitive A" />
                 </div>
               </div>
               <div className="cols-2 u-gap-12px" >
                 <div>
                   <label className="form-label">Type</label>
-                  <select style={INPUT_STYLE} value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}>
+                  <select style={FIELD_INPUT_STYLE} value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}>
                     <option value="competitive">Competitive</option>
                     <option value="recreational">Recreational</option>
                     <option value="developmental">Developmental</option>
@@ -282,7 +279,7 @@ export function GroupsPanel() {
                 </div>
                 <div>
                   <label className="form-label">Coach</label>
-                  <select style={INPUT_STYLE} value={form.coach_user_id} onChange={(e) => setForm((f) => ({ ...f, coach_user_id: e.target.value }))}>
+                  <select style={FIELD_INPUT_STYLE} value={form.coach_user_id} onChange={(e) => setForm((f) => ({ ...f, coach_user_id: e.target.value }))}>
                     <option value="">Unassigned</option>
                     {staff.map((member) => (
                       <option key={member.id} value={member.id}>{member.name}</option>
@@ -293,16 +290,16 @@ export function GroupsPanel() {
               <div className="cols-2 u-gap-12px" >
                 <div>
                   <label className="form-label">Min age</label>
-                  <input aria-label="9" type="number" min="0" max="99" style={INPUT_STYLE} value={form.min_age} onChange={(e) => setForm((f) => ({ ...f, min_age: e.target.value }))} placeholder="9" />
+                  <input aria-label="9" type="number" min="0" max="99" style={FIELD_INPUT_STYLE} value={form.min_age} onChange={(e) => setForm((f) => ({ ...f, min_age: e.target.value }))} placeholder="9" />
                 </div>
                 <div>
                   <label className="form-label">Max age</label>
-                  <input aria-label="14" type="number" min="0" max="99" style={INPUT_STYLE} value={form.max_age} onChange={(e) => setForm((f) => ({ ...f, max_age: e.target.value }))} placeholder="14" />
+                  <input aria-label="14" type="number" min="0" max="99" style={FIELD_INPUT_STYLE} value={form.max_age} onChange={(e) => setForm((f) => ({ ...f, max_age: e.target.value }))} placeholder="14" />
                 </div>
               </div>
               <div>
                 <label className="form-label">Description</label>
-                <textarea aria-label="Optional description..." style={{ ...INPUT_STYLE, resize: 'vertical' }} rows={2} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="Optional description..." />
+                <textarea aria-label="Optional description..." style={{ ...FIELD_INPUT_STYLE, resize: 'vertical' }} rows={2} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="Optional description..." />
               </div>
               <div className="form-actions">
                 <button type="button" className="btn" onClick={() => setShowNew(false)}>Cancel</button>

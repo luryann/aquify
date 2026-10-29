@@ -14,7 +14,9 @@ import {
   listCommitmentEventSelections,
   listMeetEvents,
   listRegistrations,
+  newAdminContext,
   newAuthedContext,
+  newParentContext,
   overrideBestTime,
   publishCommitmentRequest,
   respondToCommitment,
@@ -26,12 +28,7 @@ import { scenarioFixture } from './support/fixtures'
 test('parent portal registration wizard creates live registrations for multiple swimmers', async ({ browser }) => {
   const fixture = scenarioFixture(test.info())
   const orgId = fixture.orgId
-  const adminContext = await newAuthedContext(browser, {
-    userId: fixture.userId('admin-portal'),
-    orgId,
-    roles: ['admin'],
-    name: 'Portal Admin',
-  })
+  const adminContext = await newAdminContext(browser, fixture, 'admin-portal', 'Portal Admin')
 
   const household = await createHousehold(adminContext, orgId, fixture.text('Household Portal'))
   const swimmerOne = await createSwimmer(adminContext, orgId, household.id, {
@@ -49,13 +46,7 @@ test('parent portal registration wizard creates live registrations for multiple 
     name: 'Senior Bronze',
   })
 
-  const parentContext = await newAuthedContext(browser, {
-    userId: fixture.userId('parent-portal'),
-    orgId,
-    householdId: household.id,
-    roles: ['parent'],
-    name: 'Portal Parent',
-  })
+  const parentContext = await newParentContext(browser, fixture, 'parent-portal', household.id, 'Portal Parent')
 
   const parentPage = await parentContext.newPage()
   await parentPage.goto('/portal/registrations/new')
@@ -92,12 +83,7 @@ test('parent portal registration wizard creates live registrations for multiple 
 test('swimmer portal bio edits persist after refresh', async ({ browser }) => {
   const fixture = scenarioFixture(test.info())
   const orgId = fixture.orgId
-  const adminContext = await newAuthedContext(browser, {
-    userId: fixture.userId('admin-swimmer'),
-    orgId,
-    roles: ['admin'],
-    name: 'Swimmer Admin',
-  })
+  const adminContext = await newAdminContext(browser, fixture, 'admin-swimmer', 'Swimmer Admin')
 
   const household = await createHousehold(adminContext, orgId, fixture.text('Household Swim'))
   const swimmer = await createSwimmer(adminContext, orgId, household.id, {
@@ -148,21 +134,10 @@ test('parent portal communication preferences persist after refresh', async ({ b
   const fixture = scenarioFixture(test.info())
   const orgId = fixture.orgId
 
-  const adminContext = await newAuthedContext(browser, {
-    userId: fixture.userId('admin-comms'),
-    orgId,
-    roles: ['admin'],
-    name: 'Communications Admin',
-  })
+  const adminContext = await newAdminContext(browser, fixture, 'admin-comms', 'Communications Admin')
 
   const household = await createHousehold(adminContext, orgId, fixture.text('Household Comms'))
-  const parentContext = await newAuthedContext(browser, {
-    userId: fixture.userId('parent-comms'),
-    orgId,
-    householdId: household.id,
-    roles: ['parent'],
-    name: 'Portal Parent',
-  })
+  const parentContext = await newParentContext(browser, fixture, 'parent-comms', household.id, 'Portal Parent')
 
   const parentPage = await parentContext.newPage()
   await parentPage.goto('/portal/communications')
@@ -191,21 +166,10 @@ test('parent portal autopay settings persist after refresh', async ({ browser })
   const fixture = scenarioFixture(test.info())
   const orgId = fixture.orgId
 
-  const adminContext = await newAuthedContext(browser, {
-    userId: fixture.userId('admin-billing'),
-    orgId,
-    roles: ['admin'],
-    name: 'Billing Admin',
-  })
+  const adminContext = await newAdminContext(browser, fixture, 'admin-billing', 'Billing Admin')
 
   const household = await createHousehold(adminContext, orgId, fixture.text('Household Billing'))
-  const parentContext = await newAuthedContext(browser, {
-    userId: fixture.userId('parent-billing'),
-    orgId,
-    householdId: household.id,
-    roles: ['parent'],
-    name: 'Billing Parent',
-  })
+  const parentContext = await newParentContext(browser, fixture, 'parent-billing', household.id, 'Billing Parent')
 
   const parentPage = await parentContext.newPage()
   await parentPage.goto('/portal/billing')
@@ -243,12 +207,7 @@ test('swimmer portal cut qualifications render live time standard results', asyn
   const fixture = scenarioFixture(test.info())
   const orgId = fixture.orgId
 
-  const adminContext = await newAuthedContext(browser, {
-    userId: fixture.userId('admin-performance'),
-    orgId,
-    roles: ['admin'],
-    name: 'Performance Admin',
-  })
+  const adminContext = await newAdminContext(browser, fixture, 'admin-performance', 'Performance Admin')
 
   const household = await createHousehold(adminContext, orgId, fixture.text('Household Performance'))
   const swimmer = await createSwimmer(adminContext, orgId, household.id, {
@@ -305,12 +264,7 @@ test('parent portal meet event selections reload from live commitments', async (
   const fixture = scenarioFixture(test.info())
   const orgId = fixture.orgId
 
-  const adminContext = await newAuthedContext(browser, {
-    userId: fixture.userId('admin-meet-selection'),
-    orgId,
-    roles: ['admin'],
-    name: 'Meet Admin',
-  })
+  const adminContext = await newAdminContext(browser, fixture, 'admin-meet-selection', 'Meet Admin')
 
   const household = await createHousehold(adminContext, orgId, fixture.text('Household Meet Selection'))
   const swimmer = await createSwimmer(adminContext, orgId, household.id, {
@@ -329,13 +283,7 @@ test('parent portal meet event selections reload from live commitments', async (
   const events = await listMeetEvents(adminContext, orgId, meet.id)
   expect(events).toHaveLength(1)
 
-  const parentContext = await newAuthedContext(browser, {
-    userId: fixture.userId('parent-meet-selection'),
-    orgId,
-    householdId: household.id,
-    roles: ['parent'],
-    name: 'Meet Parent',
-  })
+  const parentContext = await newParentContext(browser, fixture, 'parent-meet-selection', household.id, 'Meet Parent')
 
   await respondToCommitment(parentContext, orgId, meet.id, commitment!.id, 'committed_yes')
   await selectCommitmentEvent(parentContext, orgId, meet.id, commitment!.id, events[0].id)
@@ -365,12 +313,7 @@ test('parent portal swimmer activity history renders live backend activity', asy
   const fixture = scenarioFixture(test.info())
   const orgId = fixture.orgId
 
-  const adminContext = await newAuthedContext(browser, {
-    userId: fixture.userId('admin-history'),
-    orgId,
-    roles: ['admin'],
-    name: 'History Admin',
-  })
+  const adminContext = await newAdminContext(browser, fixture, 'admin-history', 'History Admin')
 
   const household = await createHousehold(adminContext, orgId, fixture.text('Household History'))
   const swimmer = await createSwimmer(adminContext, orgId, household.id, {
@@ -386,13 +329,7 @@ test('parent portal swimmer activity history renders live backend activity', asy
     finTimeMs: 61_250,
   })
 
-  const parentContext = await newAuthedContext(browser, {
-    userId: fixture.userId('parent-history'),
-    orgId,
-    householdId: household.id,
-    roles: ['parent'],
-    name: 'History Parent',
-  })
+  const parentContext = await newParentContext(browser, fixture, 'parent-history', household.id, 'History Parent')
 
   const parentPage = await parentContext.newPage()
   await parentPage.goto(`/portal/household/swimmers/${swimmer.id}`)

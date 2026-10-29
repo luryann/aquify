@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/dareaquatics/aquify/server/internal/dbutil"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -101,17 +102,14 @@ func (r *Repository) loadWebhookEvents(ctx context.Context, orgID string, limit 
 	if err != nil {
 		return nil, fmt.Errorf("billing: load webhook events: %w", err)
 	}
-	defer rows.Close()
-	var out []*WebhookEventRecord
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "billing: scan webhook event", func(rows pgx.Rows) (*WebhookEventRecord, error) {
 		rec := &WebhookEventRecord{}
 		var payload string
 		if err := rows.Scan(&rec.ID, &rec.OrgID, &rec.Provider, &rec.EventID, &rec.EventType, &payload,
 			&rec.Processed, &rec.ProcessedAt, &rec.ErrorMessage, &rec.Retryable, &rec.CreatedAt); err != nil {
-			return nil, fmt.Errorf("billing: scan webhook event: %w", err)
+			return nil, err
 		}
 		rec.Payload = json.RawMessage(payload)
-		out = append(out, rec)
-	}
-	return out, rows.Err()
+		return rec, nil
+	})
 }

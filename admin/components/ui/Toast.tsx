@@ -6,11 +6,11 @@ import {
   useState,
   useCallback,
   useEffect,
-  useRef,
   useMemo,
   type ReactNode,
 } from 'react'
 import { Icon } from './icons'
+import './Toast.inline.css'
 
 // ─────────────────────────────────────────────
 // Types
@@ -118,7 +118,6 @@ function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) =
   const { variant, title, description, duration = 4500, id, action } = toast
   const cfg = VARIANT_CONFIG[variant]
   const [exiting, setExiting] = useState(false)
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const dismiss = useCallback(() => {
     setExiting(true)
@@ -127,8 +126,8 @@ function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) =
 
   useEffect(() => {
     if (duration <= 0) return
-    timerRef.current = setTimeout(dismiss, duration)
-    return () => { if (timerRef.current) clearTimeout(timerRef.current) }
+    const timer = setTimeout(dismiss, duration)
+    return () => clearTimeout(timer)
   }, [dismiss, duration])
 
   return (
@@ -169,9 +168,7 @@ function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) =
       <button
         onClick={dismiss}
         aria-label="Dismiss"
-        className="u-p-2px u-mt-1px" style={{ flexShrink: 0, background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', borderRadius: 'var(--r-xs)', display: 'flex', alignItems: 'center', transition: 'color var(--dur-fast)' }}
-        onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text)')}
-        onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
+        className="toast-dismiss"
       >
         <Icon name="x" size={14} />
       </button>
@@ -193,20 +190,6 @@ function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) =
         />
       )}
 
-      <style>{`
-        @keyframes toastSlideIn {
-          from { opacity: 0; transform: translateX(24px); }
-          to   { opacity: 1; transform: translateX(0); }
-        }
-        @keyframes toastSlideOut {
-          from { opacity: 1; transform: translateX(0); max-height: 200px; margin-bottom: 8px; }
-          to   { opacity: 0; transform: translateX(24px); max-height: 0; margin-bottom: 0; padding-top: 0; padding-bottom: 0; }
-        }
-        @keyframes toastProgress {
-          from { transform: scaleX(1); }
-          to   { transform: scaleX(0); }
-        }
-      `}</style>
     </div>
   )
 }

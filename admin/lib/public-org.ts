@@ -7,14 +7,7 @@ function parseStringMap(raw: string | undefined): Record<string, string> {
   try {
     const parsed = JSON.parse(raw) as unknown
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
-    return Object.fromEntries(
-      Object.entries(parsed).flatMap(([key, value]) => {
-        const normalizedKey = key.trim().toLowerCase()
-        const normalizedValue = typeof value === 'string' ? value.trim() : ''
-        if (!normalizedKey || !normalizedValue) return []
-        return [[normalizedKey, normalizedValue]]
-      }),
-    )
+    return normalizedMap(parsed as Record<string, unknown>)
   } catch {
     return {}
   }
@@ -63,13 +56,13 @@ function isLocalHost(host: string): boolean {
   return host === 'localhost' || host === '127.0.0.1' || host === '::1'
 }
 
-function normalizedMap(input: StringMap | null | undefined): StringMap {
+/** Lower-cases and trims keys, trims string values, and drops entries that end up empty. */
+function normalizedMap(input: Record<string, unknown> | null | undefined): StringMap {
   return Object.fromEntries(
     Object.entries(input ?? {}).flatMap(([key, value]) => {
       const normalizedKey = normalizedHost(key)
-      const normalizedValue = normalized(value)
-      if (!normalizedKey || !normalizedValue) return []
-      return [[normalizedKey, normalizedValue]]
+      const normalizedValue = typeof value === 'string' ? value.trim() : ''
+      return normalizedKey && normalizedValue ? [[normalizedKey, normalizedValue]] : []
     }),
   )
 }
@@ -109,21 +102,22 @@ export function resolvePublicOrg(input: {
     }
   }
 
+  const clubCode = formClubCode || queryClubCode
   const host = normalizedHost(input.host)
   if (host) {
     const mappedOrgID = hostOrgMap[host] ?? ''
     if (mappedOrgID) {
-      return { orgId: mappedOrgID, clubCode: formClubCode || queryClubCode, source: 'host' }
+      return { orgId: mappedOrgID, clubCode, source: 'host' }
     }
   }
 
   if (isLocalHost(host)) {
-    return { orgId: LOCAL_DEV_ORG_ID, clubCode: formClubCode || queryClubCode, source: 'local_dev' }
+    return { orgId: LOCAL_DEV_ORG_ID, clubCode, source: 'local_dev' }
   }
 
   if (defaultOrgID && !isUnsafeSharedDefaultOrgID(defaultOrgID)) {
-    return { orgId: defaultOrgID, clubCode: formClubCode || queryClubCode, source: 'default' }
+    return { orgId: defaultOrgID, clubCode, source: 'default' }
   }
 
-  return { orgId: '', clubCode: formClubCode || queryClubCode, source: 'none' }
+  return { orgId: '', clubCode, source: 'none' }
 }

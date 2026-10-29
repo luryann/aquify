@@ -7,7 +7,7 @@
  * Usage:
  *   k6 run -e API_BASE_URL=http://localhost:8080 \
  *           -e PARENT_TOKEN=stub-parent \
- *           -e ORG_ID=org-demo \
+ *           -e ORG_ID=00000000-0000-0000-0000-00000000a001 \
  *           tests/load/k6/portal-load.js
  */
 
@@ -46,7 +46,7 @@ export const options = {
 // Configuration
 // ---------------------------------------------------------------------------
 const BASE_URL = __ENV.API_BASE_URL || 'http://localhost:8080';
-const ORG_ID = __ENV.ORG_ID || 'org-demo';
+const ORG_ID = __ENV.ORG_ID || '00000000-0000-0000-0000-00000000a001';
 const PARENT_TOKEN = __ENV.PARENT_TOKEN || 'stub-parent';
 
 function portalHeaders() {
@@ -61,7 +61,7 @@ function portalHeaders() {
 // Setup
 // ---------------------------------------------------------------------------
 export function setup() {
-  const res = http.get(`${BASE_URL}/health/live`);
+  const res = http.get(`${BASE_URL}/api/v1/health/live`);
   if (res.status !== 200) {
     throw new Error(`Health check failed: ${res.status}`);
   }
@@ -83,7 +83,7 @@ export default function () {
     check(sessionRes, { 'session 200': (r) => r.status === 200 });
 
     const swimmersRes = http.get(
-      `${BASE_URL}/api/v1/orgs/${ORG_ID}/members/swimmers`,
+      `${BASE_URL}/api/v1/members/swimmers`,
       { headers, tags: { endpoint: 'portal_dashboard_swimmers' } }
     );
     const ok = check(swimmersRes, { 'dashboard swimmers 200': (r) => r.status === 200 });
@@ -96,7 +96,7 @@ export default function () {
   // Portal meets list
   group('portal_meets', () => {
     const res = http.get(
-      `${BASE_URL}/api/v1/orgs/${ORG_ID}/meets?limit=20`,
+      `${BASE_URL}/api/v1/meets?limit=20`,
       { headers, tags: { endpoint: 'portal_meets' } }
     );
     const ok = check(res, {
@@ -111,7 +111,7 @@ export default function () {
   // Portal invoices
   group('portal_invoices', () => {
     const res = http.get(
-      `${BASE_URL}/api/v1/orgs/${ORG_ID}/billing/invoices?limit=10`,
+      `${BASE_URL}/api/v1/invoices?limit=10`,
       { headers, tags: { endpoint: 'portal_invoices' } }
     );
     const ok = check(res, {
@@ -126,7 +126,7 @@ export default function () {
   // Calendar — fetches meets and practices together
   group('portal_calendar', () => {
     const meetsRes = http.get(
-      `${BASE_URL}/api/v1/orgs/${ORG_ID}/meets?limit=50`,
+      `${BASE_URL}/api/v1/meets?limit=50`,
       { headers, tags: { endpoint: 'portal_calendar_meets' } }
     );
     check(meetsRes, { 'calendar meets 200': (r) => r.status === 200 });

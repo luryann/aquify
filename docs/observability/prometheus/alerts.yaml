@@ -10,7 +10,7 @@ groups:
     rules:
       - alert: PaymentWebhookFailureSpike
         expr: |
-          sum(increase(dare_job_executions_total{type="billing_reconcile",status="failure"}[5m])) > 5
+          sum(increase(dare_job_executions_total{type="billing:reconcile",status="failure"}[5m])) > 5
         for: 2m
         labels:
           severity: critical

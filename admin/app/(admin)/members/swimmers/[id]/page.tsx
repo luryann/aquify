@@ -26,7 +26,8 @@ import {
   type SwimmerGroupLinkRecord,
   type SwimmerRecord,
 } from '@/lib/adminData'
-import { parseBackendDate } from '@/lib/dates'
+import { ageFromDob, formatDateOnly } from '@/lib/dates'
+import { formatSwimTime } from '@/lib/performanceData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 
 type BestTimeRow = {
@@ -45,34 +46,6 @@ type GroupMembershipRow = {
   status: string
 }
 
-function formatDate(value?: string | null) {
-  if (!value) return '—'
-  const parsed = parseBackendDate(value)
-  if (Number.isNaN(parsed.getTime())) return value
-  return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
-function formatMs(ms?: number | null) {
-  if (ms == null) return 'NT'
-  const totalHundredths = Math.round(ms / 10)
-  const minutes = Math.floor(totalHundredths / 6000)
-  const seconds = Math.floor((totalHundredths % 6000) / 100)
-  const hundredths = totalHundredths % 100
-  if (minutes > 0) return `${minutes}:${seconds.toString().padStart(2, '0')}.${hundredths.toString().padStart(2, '0')}`
-  return `${seconds}.${hundredths.toString().padStart(2, '0')}`
-}
-
-function computeAge(dob?: string) {
-  if (!dob) return '—'
-  const birth = parseBackendDate(dob)
-  if (Number.isNaN(birth.getTime())) return '—'
-  const now = new Date()
-  let age = now.getFullYear() - birth.getFullYear()
-  const birthdayPassed = now.getMonth() > birth.getMonth() || (now.getMonth() === birth.getMonth() && now.getDate() >= birth.getDate())
-  if (!birthdayPassed) age -= 1
-  return `${age}`
-}
-
 function StatusBadge({ status }: { status: string }) {
   const colors = status === 'active'
     ? { color: 'var(--success)', bg: 'var(--success-bg)' }
@@ -89,13 +62,13 @@ const BT_COLS: Column<BestTimeRow>[] = [
   { key: 'course', label: 'Course', render: (row) => <span className="u-ff-font-body u-fs-fs-sm u-p-2px-6px" style={{ color: 'var(--text-subtle)', background: 'var(--bg-elevated)', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)' }}>{row.course}</span> },
   { key: 'time', label: 'Best time', align: 'right', sortable: true, render: (row) => <span className="u-ff-font-body u-fs-fs-md u-fw-700" style={{ color: 'var(--accent-text, var(--accent))' }}>{row.time}</span> },
   { key: 'override', label: 'Source', render: (row) => <span className="u-fs-fs-sm" style={{ color: row.override ? 'var(--warning)' : 'var(--text-muted)' }}>{row.override ?? 'Imported result'}</span> },
-  { key: 'updatedAt', label: 'Updated', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>{formatDate(row.updatedAt)}</span> },
+  { key: 'updatedAt', label: 'Updated', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>{formatDateOnly(row.updatedAt)}</span> },
 ]
 
 const GROUP_COLS: Column<GroupMembershipRow>[] = [
   { key: 'groupName', label: 'Group', render: (row) => <span className="u-fs-fs-base u-fw-600" style={{ color: 'var(--text)' }}>{row.groupName}</span> },
   { key: 'groupType', label: 'Type', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{row.groupType}</span> },
-  { key: 'assignedAt', label: 'Assigned', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{formatDate(row.assignedAt)}</span> },
+  { key: 'assignedAt', label: 'Assigned', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{formatDateOnly(row.assignedAt)}</span> },
   { key: 'status', label: 'Status', render: (row) => <StatusBadge status={row.status} /> },
 ]
 
@@ -104,7 +77,7 @@ function buildBestTimeRows(bestTimes: BestTimeRecord[]): BestTimeRow[] {
     .map((bestTime) => ({
       event: `${bestTime.event_distance} ${bestTime.stroke}`,
       course: bestTime.course,
-      time: formatMs(bestTime.best_time_ms),
+      time: formatSwimTime(bestTime.best_time_ms),
       updatedAt: bestTime.recorded_at || bestTime.updated_at,
       override: bestTime.is_manual_override ? (bestTime.override_reason || 'Manual override') : null,
     }))
@@ -133,7 +106,7 @@ function buildHistoryRows(results: ProgressionResultRecord[]) {
       id: result.id,
       date: result.updated_at || result.created_at,
       event: `${result.distance} ${result.stroke} ${result.course}`,
-      detail: result.fin_time_ms != null ? `Finished in ${formatMs(result.fin_time_ms)}` : (result.override_reason || 'Recorded progression result'),
+      detail: result.fin_time_ms != null ? `Finished in ${formatSwimTime(result.fin_time_ms)}` : (result.override_reason || 'Recorded progression result'),
     }))
     .sort((a, b) => b.date.localeCompare(a.date))
 }
@@ -258,7 +231,7 @@ export default function SwimmerDetailPage() {
             <div className="u-fs-fs-sm u-ff-font-body u-gap-12px" style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
               <span>{swimmer.usa_swimming_id || swimmer.swimmer_external_id || 'No USA-S ID'}</span>
               <span>·</span>
-              <span>Age {computeAge(swimmer.date_of_birth)}</span>
+              <span>Age {ageFromDob(swimmer.date_of_birth)}</span>
               <span>·</span>
               <span>{swimmer.gender}</span>
               {household ? (
@@ -320,7 +293,7 @@ export default function SwimmerDetailPage() {
 
       <div className="cols-4 u-gap-12px u-mb-24px" >
         {[
-          { label: 'DOB', value: formatDate(swimmer.date_of_birth), color: 'var(--text)' },
+          { label: 'DOB', value: formatDateOnly(swimmer.date_of_birth), color: 'var(--text)' },
           { label: 'Best event', value: bestEvent?.event || '—', color: 'var(--accent-text, var(--accent))' },
           { label: 'Best time', value: bestEvent?.time || 'No time yet', color: 'var(--accent-text, var(--accent))' },
           { label: 'Current group', value: groupMemberships[0]?.groupName || '—', color: 'var(--text)' },
@@ -344,8 +317,8 @@ export default function SwimmerDetailPage() {
               {[
                 { label: 'USA Swimming ID', value: swimmer.usa_swimming_id || '—' },
                 { label: 'External ID', value: swimmer.swimmer_external_id || '—' },
-                { label: 'Date of birth', value: formatDate(swimmer.date_of_birth) },
-                { label: 'Age', value: computeAge(swimmer.date_of_birth) },
+                { label: 'Date of birth', value: formatDateOnly(swimmer.date_of_birth) },
+                { label: 'Age', value: ageFromDob(swimmer.date_of_birth) },
                 { label: 'Gender', value: swimmer.gender },
                 { label: 'Medical flags', value: swimmer.medical_flags_redacted ? 'Hidden from you (medical staff only)' : (swimmer.medical_flags?.join(', ') || 'None') },
               ].map((row) => (
@@ -379,7 +352,7 @@ export default function SwimmerDetailPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0px' }}>
           {history.length ? history.map((entry, index) => (
             <div key={entry.id} className="u-gap-16px u-p-16px-0" style={{ display: 'flex', borderBottom: index < history.length - 1 ? '1px solid var(--border)' : 'none', alignItems: 'flex-start' }}>
-              <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-muted)', flexShrink: 0, paddingTop: '2px', minWidth: '90px' }}>{formatDate(entry.date)}</span>
+              <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-muted)', flexShrink: 0, paddingTop: '2px', minWidth: '90px' }}>{formatDateOnly(entry.date)}</span>
               <div className="u-mt-6px" style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--border-strong)', flexShrink: 0 }} />
               <div>
                 <div className="u-fs-fs-base u-lh-1_5 u-fw-600" style={{ color: 'var(--text)' }}>{entry.event}</div>

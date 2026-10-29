@@ -9,19 +9,8 @@ import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
 import { approveDataDeletionRequest, createDataDeletionRequest, fetchDataDeletionRequests, rejectDataDeletionRequest, fetchHouseholds, type DataDeletionRequestRecord, type HouseholdRecord } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
-
-function formatDateTime(value?: string) {
-  if (!value) return '—'
-  return new Date(value).toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
-const FIELD_INPUT_STYLE: React.CSSProperties = { width: '100%' }
+import { formatDateTime } from '@/lib/dates'
+import { FIELD_INPUT_STYLE } from '@/lib/form-styles'
 
 type DeletionRow = DataDeletionRequestRecord & { householdName: string }
 
@@ -41,12 +30,17 @@ export default function DataDeletionsPage() {
   const [reviewing, setReviewing] = useState(false)
   const [reviewError, setReviewError] = useState<string | null>(null)
 
+  async function fetchSnapshot(orgId: string) {
+    const [nextRequests, nextHouseholds] = await Promise.all([
+      fetchDataDeletionRequests(api, orgId),
+      fetchHouseholds(api, orgId),
+    ])
+    return { nextRequests, nextHouseholds }
+  }
+
   async function loadData() {
     if (!session?.user.orgId) return
-    const [nextRequests, nextHouseholds] = await Promise.all([
-      fetchDataDeletionRequests(api, session.user.orgId),
-      fetchHouseholds(api, session.user.orgId),
-    ])
+    const { nextRequests, nextHouseholds } = await fetchSnapshot(session.user.orgId)
     setRequests(nextRequests)
     setHouseholds(nextHouseholds)
     if (!selectedHouseholdId && nextHouseholds[0]) {
@@ -65,10 +59,7 @@ export default function DataDeletionsPage() {
       try {
         setLoading(true)
         setError(null)
-        const [nextRequests, nextHouseholds] = await Promise.all([
-          fetchDataDeletionRequests(api, session.user.orgId),
-          fetchHouseholds(api, session.user.orgId),
-        ])
+        const { nextRequests, nextHouseholds } = await fetchSnapshot(session.user.orgId)
         if (cancelled) return
         setRequests(nextRequests)
         setHouseholds(nextHouseholds)

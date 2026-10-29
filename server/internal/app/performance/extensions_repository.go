@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/dareaquatics/aquify/server/internal/dbutil"
+	"github.com/jackc/pgx/v5"
 )
 
 // Persistence for team records, swimmer goals, and relay lineups. Postgres is
@@ -48,16 +51,16 @@ func (r *Repository) UpsertRecordEntry(ctx context.Context, e *RecordEntry) erro
 		  updated_at   = EXCLUDED.updated_at,
 		  updated_by   = EXCLUDED.updated_by`,
 		e.ID, e.OrgID, e.Course, e.Gender, e.AgeGroup, e.Distance, e.Stroke, e.TimeMs,
-		nullableString(e.SwimmerID), e.SwimmerName, nullableInt(e.SwimmerAge), e.SwimDate,
-		nullableString(e.MeetID), e.MeetName, nullableString(e.ResultID), e.Source, e.Status,
+		dbutil.NullableString(e.SwimmerID), e.SwimmerName, nullableInt(e.SwimmerAge), e.SwimDate,
+		dbutil.NullableString(e.MeetID), e.MeetName, dbutil.NullableString(e.ResultID), e.Source, e.Status,
 		e.Locked, e.Verified, e.VerifiedBy, e.VerifiedAt, e.Notes,
 		e.CreatedAt, e.UpdatedAt, e.CreatedBy, e.UpdatedBy,
 	)
 	return err
 }
 
-func (r *Repository) DeleteRecordEntry(ctx context.Context, id string) error {
-	_, err := r.pool.Exec(ctx, `DELETE FROM team_record_entries WHERE id = $1::uuid`, id)
+func (r *Repository) DeleteRecordEntry(ctx context.Context, orgID, id string) error {
+	_, err := r.pool.Exec(ctx, `DELETE FROM team_record_entries WHERE id = $1::uuid AND org_id = $2`, id, orgID)
 	return err
 }
 
@@ -71,20 +74,15 @@ func (r *Repository) LoadRecordEntries(ctx context.Context) ([]*RecordEntry, err
 	if err != nil {
 		return nil, fmt.Errorf("performance: load team_record_entries: %w", err)
 	}
-	defer rows.Close()
-	var out []*RecordEntry
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "performance: scan team_record_entry", func(rows pgx.Rows) (*RecordEntry, error) {
 		e := &RecordEntry{}
-		if err := rows.Scan(&e.ID, &e.OrgID, &e.Course, &e.Gender, &e.AgeGroup, &e.Distance, &e.Stroke, &e.TimeMs,
+		err := rows.Scan(&e.ID, &e.OrgID, &e.Course, &e.Gender, &e.AgeGroup, &e.Distance, &e.Stroke, &e.TimeMs,
 			&e.SwimmerID, &e.SwimmerName, &e.SwimmerAge, &e.SwimDate,
 			&e.MeetID, &e.MeetName, &e.ResultID, &e.Source, &e.Status,
 			&e.Locked, &e.Verified, &e.VerifiedBy, &e.VerifiedAt, &e.Notes,
-			&e.CreatedAt, &e.UpdatedAt, &e.CreatedBy, &e.UpdatedBy); err != nil {
-			return nil, fmt.Errorf("performance: scan team_record_entry: %w", err)
-		}
-		out = append(out, e)
-	}
-	return out, rows.Err()
+			&e.CreatedAt, &e.UpdatedAt, &e.CreatedBy, &e.UpdatedBy)
+		return e, err
+	})
 }
 
 // ─── Goals ───────────────────────────────────────────────────────────────────
@@ -108,8 +106,8 @@ func (r *Repository) UpsertGoal(ctx context.Context, g *Goal) error {
 	return err
 }
 
-func (r *Repository) DeleteGoal(ctx context.Context, id string) error {
-	_, err := r.pool.Exec(ctx, `DELETE FROM swimmer_goals WHERE id = $1::uuid`, id)
+func (r *Repository) DeleteGoal(ctx context.Context, orgID, id string) error {
+	_, err := r.pool.Exec(ctx, `DELETE FROM swimmer_goals WHERE id = $1::uuid AND org_id = $2`, id, orgID)
 	return err
 }
 
@@ -121,17 +119,12 @@ func (r *Repository) LoadGoals(ctx context.Context) ([]*Goal, error) {
 	if err != nil {
 		return nil, fmt.Errorf("performance: load swimmer_goals: %w", err)
 	}
-	defer rows.Close()
-	var out []*Goal
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "performance: scan swimmer_goal", func(rows pgx.Rows) (*Goal, error) {
 		g := &Goal{}
-		if err := rows.Scan(&g.ID, &g.OrgID, &g.SwimmerID, &g.Distance, &g.Stroke, &g.Course, &g.TargetTimeMs, &g.BaselineTimeMs,
-			&g.Deadline, &g.Notes, &g.Status, &g.CreatedAt, &g.UpdatedAt, &g.CreatedBy, &g.UpdatedBy); err != nil {
-			return nil, fmt.Errorf("performance: scan swimmer_goal: %w", err)
-		}
-		out = append(out, g)
-	}
-	return out, rows.Err()
+		err := rows.Scan(&g.ID, &g.OrgID, &g.SwimmerID, &g.Distance, &g.Stroke, &g.Course, &g.TargetTimeMs, &g.BaselineTimeMs,
+			&g.Deadline, &g.Notes, &g.Status, &g.CreatedAt, &g.UpdatedAt, &g.CreatedBy, &g.UpdatedBy)
+		return g, err
+	})
 }
 
 // ─── Relay lineups ───────────────────────────────────────────────────────────
@@ -163,8 +156,8 @@ func (r *Repository) UpsertRelayLineup(ctx context.Context, l *RelayLineup) erro
 	return err
 }
 
-func (r *Repository) DeleteRelayLineup(ctx context.Context, id string) error {
-	_, err := r.pool.Exec(ctx, `DELETE FROM relay_lineups WHERE id = $1::uuid`, id)
+func (r *Repository) DeleteRelayLineup(ctx context.Context, orgID, id string) error {
+	_, err := r.pool.Exec(ctx, `DELETE FROM relay_lineups WHERE id = $1::uuid AND org_id = $2`, id, orgID)
 	return err
 }
 
@@ -176,21 +169,18 @@ func (r *Repository) LoadRelayLineups(ctx context.Context) ([]*RelayLineup, erro
 	if err != nil {
 		return nil, fmt.Errorf("performance: load relay_lineups: %w", err)
 	}
-	defer rows.Close()
-	var out []*RelayLineup
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "performance: scan relay_lineup", func(rows pgx.Rows) (*RelayLineup, error) {
 		l := &RelayLineup{}
 		var teams string
 		if err := rows.Scan(&l.ID, &l.OrgID, &l.MeetID, &l.Name, &l.Course, &l.Gender, &l.AgeGroup, &l.RelayType, &l.Distance,
 			&teams, &l.Notes, &l.CreatedAt, &l.UpdatedAt, &l.CreatedBy, &l.UpdatedBy); err != nil {
-			return nil, fmt.Errorf("performance: scan relay_lineup: %w", err)
+			return nil, err
 		}
 		if err := json.Unmarshal([]byte(teams), &l.Teams); err != nil {
-			return nil, fmt.Errorf("performance: decode relay teams: %w", err)
+			return nil, fmt.Errorf("decode relay teams: %w", err)
 		}
-		out = append(out, l)
-	}
-	return out, rows.Err()
+		return l, nil
+	})
 }
 
 // loadExtensionsLocked hydrates records, goals and lineups. Caller holds s.mu.

@@ -6,7 +6,7 @@ import { useSession } from '@/lib/session'
 import { reportUIError } from '@/lib/frontend-telemetry'
 import { fetchVolunteerJobs, type VolunteerJobSummary, type VolunteerJobView } from '@/lib/volunteerData'
 import { fillPercent } from '@/lib/volunteer-state'
-import { LoadErrorBanner } from './VolunteerPrimitives'
+import { LoadErrorBanner } from '@/components/ui/LoadErrorBanner'
 import { NewJobsForm } from './NewJobsForm'
 import { StaffJobBoard } from './StaffJobBoard'
 

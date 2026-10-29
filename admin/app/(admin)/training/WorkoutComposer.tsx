@@ -5,6 +5,7 @@ import { ApiError, type ApiClient } from '@/lib/api'
 import { parseWorkoutText, type Course, type ParsedWorkout, type WorkoutInput } from '@/lib/trainingData'
 import { formatDistance, formatDuration, parseTags } from '@/lib/workout-format'
 import { WorkoutSheet, ZoneBar } from '@/components/training/WorkoutSheet'
+import './WorkoutComposer.inline.css'
 
 export type ComposerInitial = { title: string; course: Course; tags: string[]; text: string }
 
@@ -162,7 +163,6 @@ export function WorkoutComposer({
           </p>
         )}
       </div>
-      <style>{`@media (min-width: 960px) { .composer-grid { grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); } }`}</style>
     </div>
   )
 }

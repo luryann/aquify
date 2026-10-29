@@ -61,13 +61,6 @@ function DeckView() {
           </button>
         </>
       )}
-      <style>{`
-        @media print {
-          .deck { padding: 0 !important; background: #fff !important; color: #000 !important; }
-          .deck-print { display: none !important; }
-          .deck section { break-inside: avoid; }
-        }
-      `}</style>
     </main>
   )
 }

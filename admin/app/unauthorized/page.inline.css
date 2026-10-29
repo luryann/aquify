@@ -6,3 +6,13 @@
 .is-c2dfd00.is-c2dfd00 { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
 .is-2da28a3.is-2da28a3 { padding: 12px 24px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; color: var(--text-subtle); font-size: var(--fs-base); font-weight: 500; font-family: var(--font-body); cursor: pointer; display: flex; align-items: center; gap: 8px; transition: all 0.15s ease; }
 .is-2858c5e.is-2858c5e { padding: 12px 24px; background: var(--accent-fill, #c9460f); border: none; border-radius: 8px; color: #fff; font-size: var(--fs-base); font-weight: 600; font-family: var(--font-body); cursor: pointer; display: flex; align-items: center; gap: 8px; transition: background 0.15s ease; }
+.unauth-card { position: relative; text-align: center; max-width: 480px; padding: 0 24px; animation: unauthFade 0.5s var(--ease-out) both; }
+.is-2da28a3.is-2da28a3:hover { border-color: var(--border-strong); color: var(--text); }
+.is-2858c5e.is-2858c5e:hover { background: var(--accent-hover); }
+@keyframes unauthFade {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .unauth-card { animation: none; }
+}

@@ -367,6 +367,24 @@ func (c *AdminClient) adminURL(path string) string {
 	return fmt.Sprintf("%s/admin/realms/%s%s", c.cfg.AdminURL, c.cfg.Realm, path)
 }
 
+// userURL builds an admin URL for one user. Keycloak user IDs are UUIDs; an ID
+// with anything outside [A-Za-z0-9_.@-], or containing "..", (a "/", an encoded
+// slash, a traversal segment) is treated
+// as not found rather than being spliced into the path, where it could address a
+// different admin resource with the service account's credentials.
+func (c *AdminClient) userURL(userID, suffix string) (string, error) {
+	if userID == "" || strings.Contains(userID, "..") {
+		return "", ErrUserNotFound
+	}
+	for _, r := range userID {
+		ok := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.' || r == '@'
+		if !ok {
+			return "", ErrUserNotFound
+		}
+	}
+	return c.adminURL("/users/" + userID + suffix), nil
+}
+
 func (c *AdminClient) do(ctx context.Context, method, urlStr string, body any) (*http.Response, error) {
 	token, err := c.getToken(ctx)
 	if err != nil {
@@ -533,7 +551,11 @@ func (c *AdminClient) listUsersPage(ctx context.Context, search string, limit, o
 // ─── GetUser ──────────────────────────────────────────────────────────────────
 
 func (c *AdminClient) GetUser(ctx context.Context, userID string) (*User, error) {
-	resp, err := c.do(ctx, http.MethodGet, c.adminURL("/users/"+userID), nil)
+	urlStr, err := c.userURL(userID, "")
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.do(ctx, http.MethodGet, urlStr, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -606,7 +628,10 @@ func (c *AdminClient) SendPasswordResetEmail(ctx context.Context, userID string)
 }
 
 func (c *AdminClient) sendActionsEmail(ctx context.Context, userID string, actions []string) error {
-	urlStr := c.adminURL(fmt.Sprintf("/users/%s/execute-actions-email", userID))
+	urlStr, err := c.userURL(userID, "/execute-actions-email")
+	if err != nil {
+		return err
+	}
 	resp, err := c.do(ctx, http.MethodPut, urlStr, actions)
 	if err != nil {
 		return err
@@ -634,7 +659,10 @@ func (c *AdminClient) SetUserPassword(ctx context.Context, userID, password stri
 		"value":     password,
 		"temporary": temporary,
 	}
-	urlStr := c.adminURL(fmt.Sprintf("/users/%s/reset-password", userID))
+	urlStr, err := c.userURL(userID, "/reset-password")
+	if err != nil {
+		return err
+	}
 	resp, err := c.do(ctx, http.MethodPut, urlStr, payload)
 	if err != nil {
 		return err
@@ -677,7 +705,11 @@ func (c *AdminClient) UpdateUser(ctx context.Context, userID string, fields Upda
 		return nil // nothing to update
 	}
 
-	resp, err := c.do(ctx, http.MethodPut, c.adminURL("/users/"+userID), payload)
+	urlStr, err := c.userURL(userID, "")
+	if err != nil {
+		return err
+	}
+	resp, err := c.do(ctx, http.MethodPut, urlStr, payload)
 	if err != nil {
 		return err
 	}
@@ -697,7 +729,11 @@ func (c *AdminClient) UpdateUser(ctx context.Context, userID string, fields Upda
 // ─── DeleteUser ───────────────────────────────────────────────────────────────
 
 func (c *AdminClient) DeleteUser(ctx context.Context, userID string) error {
-	resp, err := c.do(ctx, http.MethodDelete, c.adminURL("/users/"+userID), nil)
+	urlStr, err := c.userURL(userID, "")
+	if err != nil {
+		return err
+	}
+	resp, err := c.do(ctx, http.MethodDelete, urlStr, nil)
 	if err != nil {
 		return err
 	}
@@ -730,7 +766,10 @@ func (c *AdminClient) EnableUser(ctx context.Context, userID string) error {
 
 // GetUserRealmRoles returns the realm roles assigned to the user.
 func (c *AdminClient) GetUserRealmRoles(ctx context.Context, userID string) ([]Role, error) {
-	urlStr := c.adminURL(fmt.Sprintf("/users/%s/role-mappings/realm", userID))
+	urlStr, err := c.userURL(userID, "/role-mappings/realm")
+	if err != nil {
+		return nil, err
+	}
 	resp, err := c.do(ctx, http.MethodGet, urlStr, nil)
 	if err != nil {
 		return nil, err
@@ -782,7 +821,10 @@ func (c *AdminClient) AssignRealmRole(ctx context.Context, userID, roleName stri
 	if err != nil {
 		return err
 	}
-	urlStr := c.adminURL(fmt.Sprintf("/users/%s/role-mappings/realm", userID))
+	urlStr, err := c.userURL(userID, "/role-mappings/realm")
+	if err != nil {
+		return err
+	}
 	resp, err := c.do(ctx, http.MethodPost, urlStr, []Role{*role})
 	if err != nil {
 		return err
@@ -806,7 +848,10 @@ func (c *AdminClient) RemoveRealmRole(ctx context.Context, userID, roleName stri
 	if err != nil {
 		return err
 	}
-	urlStr := c.adminURL(fmt.Sprintf("/users/%s/role-mappings/realm", userID))
+	urlStr, err := c.userURL(userID, "/role-mappings/realm")
+	if err != nil {
+		return err
+	}
 	resp, err := c.do(ctx, http.MethodDelete, urlStr, []Role{*role})
 	if err != nil {
 		return err

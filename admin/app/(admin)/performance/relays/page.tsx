@@ -12,7 +12,8 @@ import {
   deleteRelayLineup, fetchRelayLineups, formatSwimTime, optimizeRelays, saveRelayLineup,
   type RelayLineup, type RelayLock, type RelayProposal,
 } from '@/lib/performanceData'
-import { FIELD_STYLE, FilterRow, LoadErrorBanner, Notice, Segmented } from '@/components/performance/PerfControls'
+import { FIELD_STYLE, FilterRow, Notice, Segmented } from '@/components/performance/PerfControls'
+import { LoadErrorBanner } from '@/components/ui/LoadErrorBanner'
 import { relayLegLabel, toggleLock } from '@/lib/relay-builder'
 
 export default function RelaysPage() {

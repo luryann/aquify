@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, type CSSProperties, type Dispatch, type SetStateAction } from 'react'
+import { useEffect, useState, type Dispatch, type SetStateAction } from 'react'
 import { PortalStatement } from './PortalStatement'
 import Link from 'next/link'
 import { Icon } from '@/components/ui/icons'
@@ -27,28 +27,12 @@ import {
   type AutopayFormState,
 } from '@/lib/autopay'
 import './page.inline.css'
+import { FIELD_INPUT_STYLE } from '@/lib/form-styles'
+import { formatCents } from '@/lib/financeData'
+import { ShimmerBlock } from '@/components/ui/ShimmerBlock'
 
 function fmtDate(iso?: string): string {
   return formatDateOnly(iso)
-}
-
-function cents(n: number): string {
-  return (n / 100).toFixed(2)
-}
-
-function Skeleton({ w = '100%', h = 16, r = 8 }: { w?: string | number; h?: number; r?: number }) {
-  return (
-    <div
-      style={{
-        width: w,
-        height: h,
-        borderRadius: r,
-        background: 'linear-gradient(90deg, var(--bg-elevated) 25%, var(--border-strong) 50%, var(--bg-elevated) 75%)',
-        backgroundSize: '200% 100%',
-        animation: 'shimmer 1.5s infinite',
-      }}
-    />
-  )
 }
 
 const STATUS_CONFIG: Record<string, { label: string; bg: string; color: string }> = {
@@ -70,10 +54,6 @@ function fieldLabel(label: string) {
   )
 }
 
-function inputStyle(): CSSProperties {
-  return { width: '100%' }
-}
-
 function AutopayTab(props: {
   status: HouseholdAutopayStatusRecord | null
   form: AutopayFormState
@@ -90,23 +70,23 @@ function AutopayTab(props: {
   const { status, form, setForm, loading, saving, error, loadError, success, onSave, onOptOut, onRetry } = props
   const methodSummary = formatAutopayMethod(status)
   const nextCharge = status?.next_charge_date
-    ? `${fmtDate(status.next_charge_date)}${typeof status.next_charge_amount_cents === 'number' ? ` • $${cents(status.next_charge_amount_cents)}` : ''}`
+    ? `${fmtDate(status.next_charge_date)}${typeof status.next_charge_amount_cents === 'number' ? ` • ${formatCents(status.next_charge_amount_cents)}` : ''}`
     : 'No scheduled charge yet'
 
   if (loading) {
     return (
       <div className="is-8ef476f">
         <div className="card is-b516f27" >
-          <Skeleton w="40%" h={18} />
-          <div className="is-9c9cee2"><Skeleton w="75%" h={12} /></div>
+          <ShimmerBlock w="40%" h={18} />
+          <div className="is-9c9cee2"><ShimmerBlock w="75%" h={12} /></div>
         </div>
         <div className="card is-b516f27" >
-          <Skeleton w="28%" h={16} />
+          <ShimmerBlock w="28%" h={16} />
           <div className="cols-2 is-e31d992" >
-            <Skeleton h={42} />
-            <Skeleton h={42} />
-            <Skeleton h={42} />
-            <Skeleton h={42} />
+            <ShimmerBlock h={42} />
+            <ShimmerBlock h={42} />
+            <ShimmerBlock h={42} />
+            <ShimmerBlock h={42} />
           </div>
         </div>
       </div>
@@ -194,7 +174,7 @@ function AutopayTab(props: {
             <select aria-label="Payment type"
               value={form.paymentMethodType}
               onChange={(event) => setForm((current) => ({ ...current, paymentMethodType: event.target.value === 'ach' ? 'ach' : 'card' }))}
-              style={inputStyle()}
+              style={FIELD_INPUT_STYLE}
             >
               <option value="card">Card</option>
               <option value="ach">ACH</option>
@@ -206,7 +186,7 @@ function AutopayTab(props: {
               value={form.paymentMethodLabel}
               onChange={(event) => setForm((current) => ({ ...current, paymentMethodLabel: event.target.value }))}
               placeholder={form.paymentMethodType === 'ach' ? 'Checking account' : 'Visa •••• 4242'}
-              style={inputStyle()}
+              style={FIELD_INPUT_STYLE}
             />
           </div>
           <div>
@@ -215,7 +195,7 @@ function AutopayTab(props: {
               value={form.paymentMethodBrand}
               onChange={(event) => setForm((current) => ({ ...current, paymentMethodBrand: event.target.value }))}
               placeholder={form.paymentMethodType === 'ach' ? 'Chase Bank' : 'Visa'}
-              style={inputStyle()}
+              style={FIELD_INPUT_STYLE}
             />
           </div>
           <div>
@@ -228,7 +208,7 @@ function AutopayTab(props: {
                   : { ...current, paymentMethodLast4: event.target.value }
               ))}
               placeholder={form.paymentMethodType === 'ach' ? 'bank_12345' : '4242'}
-              style={inputStyle()}
+              style={FIELD_INPUT_STYLE}
             />
           </div>
           {form.paymentMethodType === 'card' ? (
@@ -239,7 +219,7 @@ function AutopayTab(props: {
                   value={form.paymentMethodExpMonth}
                   onChange={(event) => setForm((current) => ({ ...current, paymentMethodExpMonth: event.target.value }))}
                   placeholder="09"
-                  style={inputStyle()}
+                  style={FIELD_INPUT_STYLE}
                 />
               </div>
               <div>
@@ -248,7 +228,7 @@ function AutopayTab(props: {
                   value={form.paymentMethodExpYear}
                   onChange={(event) => setForm((current) => ({ ...current, paymentMethodExpYear: event.target.value }))}
                   placeholder="2028"
-                  style={inputStyle()}
+                  style={FIELD_INPUT_STYLE}
                 />
               </div>
             </>
@@ -481,10 +461,10 @@ export default function BillingPage() {
     }
   }
 
-  const openBalance = invoices
+  const openBalanceCents = invoices
     .filter((inv) => ['issued', 'partially_paid'].includes(inv.status))
-    .reduce((sum, inv) => sum + inv.amount_due_cents, 0) / 100
-  const totalPaid = invoices.reduce((sum, inv) => sum + inv.amount_paid_cents, 0) / 100
+    .reduce((sum, inv) => sum + inv.amount_due_cents, 0)
+  const totalPaidCents = invoices.reduce((sum, inv) => sum + inv.amount_paid_cents, 0)
   const nextDueInvoice = invoices
     .filter((inv) => ['issued', 'partially_paid'].includes(inv.status) && inv.due_date)
     .sort((a, b) => parseBackendDate(a.due_date!).getTime() - parseBackendDate(b.due_date!).getTime())[0]
@@ -492,11 +472,7 @@ export default function BillingPage() {
 
   return (
     <div>
-      <style>{`
-        @keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
-      `}</style>
-
+      
       <div className="page-heading">
         <h1 className="page-title">
           Billing
@@ -555,14 +531,14 @@ export default function BillingPage() {
             </div>
           ) : null}
 
-          {!loading && !billingError && openBalance > 0 && (
+          {!loading && !billingError && openBalanceCents > 0 && (
             <div
               className="is-c0206d4"
             >
               <div style={{ flex: 1 }}>
                 <div className="is-fc1270f">Outstanding balance</div>
                 <div className="is-3e1851c">
-                  ${openBalance.toFixed(2)}
+                  {formatCents(openBalanceCents)}
                 </div>
                 {nextDueInvoice?.due_date ? <div className="is-743adc2">Due by {fmtDate(nextDueInvoice.due_date)}</div> : null}
               </div>
@@ -579,8 +555,8 @@ export default function BillingPage() {
             {loading ? (
               [0, 1, 2].map((i) => (
                 <div key={i} className="card is-401e6d8" >
-                  <Skeleton w="60%" h={22} r={4} />
-                  <div className="is-36ca0af"><Skeleton w="80%" h={12} /></div>
+                  <ShimmerBlock w="60%" h={22} r={4} />
+                  <div className="is-36ca0af"><ShimmerBlock w="80%" h={12} /></div>
                 </div>
               ))
             ) : billingError ? (
@@ -592,8 +568,8 @@ export default function BillingPage() {
               ))
             ) : (
               [
-                { label: 'Paid this season', value: `$${totalPaid.toLocaleString()}`, color: 'var(--success)' },
-                { label: 'Open balance', value: `$${openBalance.toFixed(2)}`, color: 'var(--warning)' },
+                { label: 'Paid this season', value: formatCents(totalPaidCents), color: 'var(--success)' },
+                { label: 'Open balance', value: formatCents(openBalanceCents), color: 'var(--warning)' },
                 { label: 'Invoices', value: String(invoices.length), color: 'var(--info)' },
               ].map((stat) => (
                 <div key={stat.label} className="card is-401e6d8" >
@@ -622,13 +598,13 @@ export default function BillingPage() {
                 [0, 1, 2].map((i) => (
                   <div key={i} className="inv-row is-541f5a9" >
                     <div className="is-9808a21">
-                      <Skeleton w="70%" h={14} />
-                      <Skeleton w="40%" h={11} />
+                      <ShimmerBlock w="70%" h={14} />
+                      <ShimmerBlock w="40%" h={11} />
                     </div>
-                    <Skeleton w="80%" h={14} />
-                    <Skeleton w="80%" h={13} />
-                    <Skeleton w={60} h={24} r={999} />
-                    <Skeleton w={14} h={14} />
+                    <ShimmerBlock w="80%" h={14} />
+                    <ShimmerBlock w="80%" h={13} />
+                    <ShimmerBlock w={60} h={24} r={999} />
+                    <ShimmerBlock w={14} h={14} />
                   </div>
                 ))
               ) : billingError ? null : invoices.length === 0 ? (
@@ -657,7 +633,7 @@ export default function BillingPage() {
                         </div>
                       </div>
                       <span className="is-dbeeba1">
-                        ${cents(inv.total_cents)}
+                        {formatCents(inv.total_cents)}
                       </span>
                       <span className="is-83e0368">{fmtDate(inv.due_date)}</span>
                       <span style={{ display: 'inline-block', justifySelf: 'start', padding: '4px 8px', borderRadius: '999px', fontSize: 'var(--fs-xs)', fontWeight: 600, background: statusCfg.bg, color: statusCfg.color }}>
@@ -681,13 +657,13 @@ export default function BillingPage() {
                 [0, 1, 2].map((i) => (
                   <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: i < 2 ? '1px solid var(--border)' : 'none', gap: '12px' }}>
                     <div className="is-e2ff0fd">
-                      <Skeleton w={32} h={32} r={16} />
+                      <ShimmerBlock w={32} h={32} r={16} />
                       <div className="is-9808a21">
-                        <Skeleton w={160} h={14} />
-                        <Skeleton w={120} h={12} />
+                        <ShimmerBlock w={160} h={14} />
+                        <ShimmerBlock w={120} h={12} />
                       </div>
                     </div>
-                    <Skeleton w={60} h={14} />
+                    <ShimmerBlock w={60} h={14} />
                   </div>
                 ))
               ) : billingError ? null : payments.length === 0 ? (
@@ -710,7 +686,7 @@ export default function BillingPage() {
                       </div>
                     </div>
                     <span className="is-f8109cc">
-                      -${cents(payment.amount_cents)}
+                      −{formatCents(payment.amount_cents)}
                     </span>
                   </div>
                 ))

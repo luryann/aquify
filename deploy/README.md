@@ -87,6 +87,8 @@ chmod +x /opt/dare/scripts/*.sh
 ```bash
 sudo nano /opt/dare/.env.production
 # Fill in all secrets per deploy/secrets/README.md
+# Also set METRICS_ADDR=:9091 so Prometheus can scrape the API and worker
+# (deploy/prometheus/*.yml targets dare-api:9091 and dare-worker:9091).
 sudo chown root:dare /opt/dare/.env.production
 sudo chmod 640 /opt/dare/.env.production
 ```
@@ -138,7 +140,12 @@ docker exec dare-production-dare-api-1 /dare-api migrate up
 
 ## How CI/CD Promotes Code
 
-### Automatic staging deploys (on every push to `main`)
+### Automatic staging deploys (after CI passes on `main`)
+
+The deploy runs from a `workflow_run` trigger on the `CI` workflow, only when CI
+concluded successfully, and deploys the exact commit CI tested (`head_sha`). A
+failed CI run deploys nothing. It can still be started by hand with
+`workflow_dispatch`.
 
 1. GitHub Actions (`.github/workflows/deploy-staging.yml`) builds and pushes
    `ghcr.io/luryann/dare-api:sha-<short>` and `dare-admin:sha-<short>`.

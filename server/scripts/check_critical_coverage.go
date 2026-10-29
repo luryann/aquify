@@ -68,15 +68,21 @@ func runPackageCoverage(pkg string) (float64, string, error) {
 		return 0, output, err
 	}
 
+	coverage, err := parseCoverage(output)
+	return coverage, output, err
+}
+
+// parseCoverage extracts the statement coverage percentage from go test output.
+func parseCoverage(output string) (float64, error) {
 	matches := coveragePattern.FindStringSubmatch(output)
 	if len(matches) != 2 {
-		return 0, output, fmt.Errorf("coverage percentage not found in output: %s", strings.TrimSpace(output))
+		return 0, fmt.Errorf("coverage percentage not found in output: %s", strings.TrimSpace(output))
 	}
 	coverage, err := strconv.ParseFloat(matches[1], 64)
 	if err != nil {
-		return 0, output, fmt.Errorf("parse coverage %q: %w", matches[1], err)
+		return 0, fmt.Errorf("parse coverage %q: %w", matches[1], err)
 	}
-	return coverage, output, nil
+	return coverage, nil
 }
 
 func runPackageCoverageBinary(pkg, originalOutput string) (float64, string, error) {
@@ -108,13 +114,6 @@ func runPackageCoverageBinary(pkg, originalOutput string) (float64, string, erro
 	}
 
 	output := runOut.String()
-	matches := coveragePattern.FindStringSubmatch(output)
-	if len(matches) != 2 {
-		return 0, output, fmt.Errorf("coverage percentage not found in output: %s", strings.TrimSpace(output))
-	}
-	coverage, err := strconv.ParseFloat(matches[1], 64)
-	if err != nil {
-		return 0, output, fmt.Errorf("parse coverage %q: %w", matches[1], err)
-	}
-	return coverage, output, nil
+	coverage, err := parseCoverage(output)
+	return coverage, output, err
 }

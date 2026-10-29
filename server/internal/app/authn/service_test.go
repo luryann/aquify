@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -695,4 +696,27 @@ func bigEndianBytes(value int) []byte {
 		value >>= 8
 	}
 	return out
+}
+
+func TestChallengeMFALocksOutAfterRepeatedFailures(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(Config{EnableDevStubTokens: true})
+	factor, err := service.EnrollMFA(LocalDevAdminUserID, "admin@dare.local", LocalDevOrgID, "totp", "Primary authenticator")
+	if err != nil {
+		t.Fatalf("failed to enroll mfa factor: %v", err)
+	}
+	principal := &appmiddleware.Principal{UserID: LocalDevAdminUserID, OrgID: LocalDevOrgID, Roles: []string{"admin"}}
+
+	for i := 0; i < mfaMaxFailures; i++ {
+		if _, err := service.ChallengeMFA("", principal, factor.ID, "000000"); !errors.Is(err, ErrInvalidMFACode) {
+			t.Fatalf("attempt %d: expected invalid code, got %v", i+1, err)
+		}
+	}
+
+	// Even the correct code is refused while the factor is locked.
+	validCode := generateTOTP(factor.ChallengeHint, time.Now().UTC().Unix())
+	if _, err := service.ChallengeMFA("", principal, factor.ID, validCode); !errors.Is(err, ErrMFATooManyAttempts) {
+		t.Fatalf("expected lockout, got %v", err)
+	}
 }

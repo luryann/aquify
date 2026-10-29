@@ -35,9 +35,9 @@ type exportEnvelope struct {
 type exportListEnvelope struct {
 	Count   int `json:"count"`
 	Exports []struct {
-		ID         string `json:"id"`
-		ExportType string `json:"export_type"`
-		Status     string `json:"status"`
+		ID          string `json:"id"`
+		ExportType  string `json:"export_type"`
+		Status      string `json:"status"`
 		DownloadURL string `json:"download_url"`
 	} `json:"exports"`
 }

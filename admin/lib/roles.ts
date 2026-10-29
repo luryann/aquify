@@ -40,8 +40,6 @@ export const NAV_SECTIONS = [
   'Advanced',
 ] as const
 
-export type NavSection = (typeof NAV_SECTIONS)[number]
-
 export const NAV_ITEMS: NavItem[] = [
   // Overview
   {

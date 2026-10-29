@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
-import { parseBackendDate } from '@/lib/dates'
+import { ageFromDob, formatClockTime, formatDateOnly, parseBackendDate } from '@/lib/dates'
 import { ApiError, useApiClient } from '@/lib/api'
 import { reportUIError, uiErrorMessage } from '@/lib/frontend-telemetry'
 import { isSwimmerEligibleForEvent } from '@/lib/event-eligibility'
@@ -35,6 +35,9 @@ import {
   withRemovedPortalMeetSelection,
 } from '@/lib/portal-meet-event-selections'
 import './page.inline.css'
+import { formatMeetFileSize, formatMeetFileType } from '@/lib/meet-files'
+import { formatStroke } from '@/lib/meet-events'
+import { LoadErrorBanner } from '@/components/ui/LoadErrorBanner'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 type SwimmerState = PortalSwimmerCommitmentState
@@ -62,15 +65,6 @@ function swimmerDisplayName(s: SwimmerRecord): string {
   return `${s.preferred_name ?? s.first_name} ${s.last_name}`
 }
 
-function swimmerAge(s: SwimmerRecord): number {
-  const dob = parseBackendDate(s.date_of_birth)
-  const now = new Date()
-  let age = now.getFullYear() - dob.getFullYear()
-  const m = now.getMonth() - dob.getMonth()
-  if (m < 0 || (m === 0 && now.getDate() < dob.getDate())) age--
-  return age
-}
-
 const SWIMMER_GRADIENTS = [
   'var(--accent)',
   'var(--info)',
@@ -82,7 +76,7 @@ const SWIMMER_GRADIENTS = [
 function eventLabel(ev: MeetEventRecord): string {
   const parts: string[] = []
   if (ev.distance) parts.push(String(ev.distance))
-  if (ev.stroke) parts.push(ev.stroke.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()))
+  if (ev.stroke) parts.push(formatStroke(ev.stroke))
   return parts.length > 0 ? parts.join(' ') : `Event #${ev.event_number ?? ev.id.slice(-4)}`
 }
 
@@ -101,17 +95,45 @@ function eventAgeGroup(ev: MeetEventRecord): string {
   return parts.join(' ')
 }
 
-function formatMeetFileSize(sizeBytes?: number): string {
-  if (!sizeBytes) return 'Unknown size'
-  if (sizeBytes < 1024) return `${sizeBytes} B`
-  return `${Math.round(sizeBytes / 1024)} KB`
-}
+// ── Yes / No response button ─────────────────────────────────────────────────
+const RESPONSE_BUTTON = {
+  yes: { tone: 'success', icon: 'check-circle', label: 'Yes, we\'re going' },
+  no: { tone: 'error', icon: 'x-circle', label: 'Not this time' },
+} as const
 
-function formatMeetFileType(exportType: string): string {
-  if (exportType === 'eligibility_report') return 'Eligibility report'
-  if (exportType === 'entry_report') return 'Entry report'
-  if (exportType === 'event_report') return 'Event report'
-  return exportType.replace(/_/g, ' ')
+function ResponseButton({ answer, selected, disabled, busy, onClick }: {
+  answer: 'yes' | 'no'
+  selected: boolean
+  disabled: boolean
+  busy: boolean
+  onClick: () => void
+}) {
+  const { tone, icon, label } = RESPONSE_BUTTON[answer]
+  return (
+    <button type="button"
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        padding: '12px 24px',
+        borderRadius: '12px',
+        border: selected ? `2px solid var(--${tone})` : '1.5px solid var(--border-strong)',
+        background: selected ? `var(--${tone}-bg)` : 'var(--bg-elevated)',
+        color: selected ? `var(--${tone})` : 'var(--text)',
+        fontWeight: 600,
+        fontSize: 'var(--fs-md)',
+        cursor: 'pointer',
+        fontFamily: 'var(--font-body)',
+        transition: 'all 120ms ease',
+        opacity: disabled ? 0.6 : 1,
+      }}
+    >
+      <Icon name={icon} size={16} style={{ color: selected ? `var(--${tone})` : 'var(--text-muted)' }} />
+      {busy ? 'Saving…' : label}
+    </button>
+  )
 }
 
 // ── Loading skeleton ─────────────────────────────────────────────────────────
@@ -128,13 +150,7 @@ function LoadingSkeleton() {
           <div style={{ height: '14px', width: '140px', background: 'var(--bg-wash)', borderRadius: '4px' }} />
         </div>
       </div>
-      <style>{`
-        @keyframes slideUp {
-          from { opacity: 0; transform: translateY(12px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
-    </div>
+          </div>
   )
 }
 
@@ -251,21 +267,7 @@ export default function MeetDetailPage() {
           </Link>
         </nav>
         {loadError && (
-          <div
-            className="is-469b891"
-          >
-            <div className="is-730b6a7">
-              <Icon name="alert-circle" size={15} style={{ color: 'var(--warning)', marginTop: '1px', flexShrink: 0 }} />
-              <p className="is-51a00ce">{loadError}</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setReloadKey((key) => key + 1)}
-              className="is-889d44c"
-            >
-              Retry
-            </button>
-          </div>
+          <LoadErrorBanner message={loadError} onRetry={() => setReloadKey((key) => key + 1)} />
         )}
         <div
           className="card is-0acd099" 
@@ -293,6 +295,9 @@ export default function MeetDetailPage() {
     ? Math.max(0, Math.ceil((deadlineDate.getTime() - now.getTime()) / 86400000))
     : null
 
+  const deadlineUrgent = daysUntilDeadline !== null && daysUntilDeadline <= 3
+  const deadlineTone = deadlineUrgent ? 'error' : 'warning'
+
   const commitmentOpen = meet.status === 'commitment_open'
 
   const swimmer = swimmers.find((s) => s.id === activeSwimmer)
@@ -303,21 +308,14 @@ export default function MeetDetailPage() {
   const sessionNameById = new Map(sessions.map((s) => [s.id, s.name?.trim() || `Session ${s.session_number}`]))
   const sessionLabel = (sid: string) => (sid === 'main' ? 'Main Session' : sessionNameById.get(sid) ?? `Session ${sid.slice(-4)}`)
   const sessionById = new Map(sessions.map((s) => [s.id, s]))
-  const fmtClockTime = (value?: string) => {
-    if (!value) return null
-    const match = value.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/)
-    if (!match) return value
-    const d = new Date(2000, 0, 1, Number(match[1]), Number(match[2]))
-    return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-  }
   const sessionScheduleLabel = (sid: string) => {
     const s = sessionById.get(sid)
     if (!s) return null
     const date = s.session_date
       ? new Date(`${s.session_date}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
       : null
-    const warmup = fmtClockTime(s.warmup_time)
-    const start = fmtClockTime(s.start_time)
+    const warmup = formatClockTime(s.warmup_time)
+    const start = formatClockTime(s.start_time)
     const parts = [date, warmup ? `Warm-up ${warmup}` : null, start ? `Starts ${start}` : null].filter(Boolean)
     return parts.length > 0 ? parts.join(' · ') : null
   }
@@ -336,6 +334,11 @@ export default function MeetDetailPage() {
   const totalEvents = Object.values(swimmerStates).reduce(
     (acc, s) => acc + s.selectedEvents.length, 0
   )
+
+  const flashSaved = (swimmerId: string) => {
+    setSubmitted((prev) => ({ ...prev, [swimmerId]: true }))
+    setTimeout(() => setSubmitted((prev) => ({ ...prev, [swimmerId]: false })), 2500)
+  }
 
   const setCommitment = async (swimmerId: string, val: 'yes' | 'no') => {
     const st = swimmerStates[swimmerId]
@@ -360,8 +363,7 @@ export default function MeetDetailPage() {
             selectedEvents: val === 'no' ? [] : prev[swimmerId].selectedEvents,
           },
         }))
-        setSubmitted((prev) => ({ ...prev, [swimmerId]: true }))
-        setTimeout(() => setSubmitted((prev) => ({ ...prev, [swimmerId]: false })), 2500)
+        flashSaved(swimmerId)
       } else {
         setCommitError('Couldn’t update your response because this meet’s commitment wasn’t found. Refresh the page and try again.')
         setTimeout(() => setCommitError(null), 4000)
@@ -391,8 +393,7 @@ export default function MeetDetailPage() {
         ...(note ? { notes: note } : {}),
       })
       setSwimmerStates((prev) => ({ ...prev, [swimmerId]: { ...prev[swimmerId], savedNote: note } }))
-      setSubmitted((prev) => ({ ...prev, [swimmerId]: true }))
-      setTimeout(() => setSubmitted((prev) => ({ ...prev, [swimmerId]: false })), 2500)
+      flashSaved(swimmerId)
     } catch (err) {
       reportUIError('portal.meetDetail.commitment.note', err, 'Couldn’t save message for coaches. Try again.', {
         orgId,
@@ -505,20 +506,20 @@ export default function MeetDetailPage() {
           {deadlineDate && (
             <div
               style={{
-                background: daysUntilDeadline !== null && daysUntilDeadline <= 3 ? 'var(--error-bg)' : 'var(--warning-bg)',
-                border: `1px solid ${daysUntilDeadline !== null && daysUntilDeadline <= 3 ? 'var(--error-border)' : 'var(--warning-border)'}`,
+                background: `var(--${deadlineTone}-bg)`,
+                border: `1px solid var(--${deadlineTone}-border)`,
                 borderRadius: '12px',
                 padding: '12px 16px',
                 textAlign: 'center',
               }}
             >
-              <div style={{ fontSize: 'var(--fs-sm)', color: daysUntilDeadline !== null && daysUntilDeadline <= 3 ? 'var(--error)' : 'var(--warning)', fontFamily: 'var(--font-body)', marginBottom: '2px' }}>
+              <div style={{ fontSize: 'var(--fs-sm)', color: `var(--${deadlineTone})`, fontFamily: 'var(--font-body)', marginBottom: '2px' }}>
                 Deadline
               </div>
-              <div style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: daysUntilDeadline !== null && daysUntilDeadline <= 3 ? 'var(--error)' : 'var(--warning)' }}>
-                {deadlineDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+              <div style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: `var(--${deadlineTone})` }}>
+                {formatDateOnly(deadlineStr)}
               </div>
-              <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: daysUntilDeadline !== null && daysUntilDeadline <= 3 ? 'var(--error)' : 'var(--warning)', marginTop: '2px' }}>
+              <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: `var(--${deadlineTone})`, marginTop: '2px' }}>
                 {daysUntilDeadline === null ? '' : daysUntilDeadline <= 0 ? 'Closed' : daysUntilDeadline === 1 ? '1 day left' : `${daysUntilDeadline} days left`}
               </div>
             </div>
@@ -755,7 +756,7 @@ export default function MeetDetailPage() {
                 {swimmerDisplayName(swimmer)}
               </div>
               <div className="is-4f39ab0">
-                Age {swimmerAge(swimmer)} · {swimmer.gender === 'F' ? 'Female' : swimmer.gender === 'M' ? 'Male' : swimmer.gender}
+                Age {ageFromDob(swimmer.date_of_birth)} · {swimmer.gender === 'F' ? 'Female' : swimmer.gender === 'M' ? 'Male' : swimmer.gender}
               </div>
             </div>
             {submitted[swimmer.id] && (
@@ -776,52 +777,16 @@ export default function MeetDetailPage() {
               Are you coming?
             </div>
             <div className="is-18d4ed1">
-              <button type="button"
-                onClick={() => setCommitment(swimmer.id, 'yes')}
-                disabled={submitting !== null || !commitmentOpen || state.commitment === 'closed'}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  padding: '12px 24px',
-                  borderRadius: '12px',
-                  border: state.commitment === 'yes' ? '2px solid #059669' : '1.5px solid var(--border-strong)',
-                  background: state.commitment === 'yes' ? 'var(--success-bg)' : 'var(--bg-elevated)',
-                  color: state.commitment === 'yes' ? 'var(--success)' : 'var(--text)',
-                  fontWeight: 600,
-                  fontSize: 'var(--fs-md)',
-                  cursor: 'pointer',
-                  fontFamily: 'var(--font-body)',
-                  transition: 'all 120ms ease',
-                  opacity: submitting !== null || !commitmentOpen || state.commitment === 'closed' ? 0.6 : 1,
-                }}
-              >
-                <Icon name="check-circle" size={16} style={{ color: state.commitment === 'yes' ? 'var(--success)' : 'var(--text-muted)' }} />
-                {submitting === swimmer.id + 'yes' ? 'Saving…' : 'Yes, we\'re going'}
-              </button>
-              <button type="button"
-                onClick={() => setCommitment(swimmer.id, 'no')}
-                disabled={submitting !== null || !commitmentOpen || state.commitment === 'closed'}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  padding: '12px 24px',
-                  borderRadius: '12px',
-                  border: state.commitment === 'no' ? '2px solid #dc2626' : '1.5px solid var(--border-strong)',
-                  background: state.commitment === 'no' ? 'var(--error-bg)' : 'var(--bg-elevated)',
-                  color: state.commitment === 'no' ? 'var(--error)' : 'var(--text)',
-                  fontWeight: 600,
-                  fontSize: 'var(--fs-md)',
-                  cursor: 'pointer',
-                  fontFamily: 'var(--font-body)',
-                  transition: 'all 120ms ease',
-                  opacity: submitting !== null || !commitmentOpen || state.commitment === 'closed' ? 0.6 : 1,
-                }}
-              >
-                <Icon name="x-circle" size={16} style={{ color: state.commitment === 'no' ? 'var(--error)' : 'var(--text-muted)' }} />
-                {submitting === swimmer.id + 'no' ? 'Saving…' : 'Not this time'}
-              </button>
+              {(['yes', 'no'] as const).map((answer) => (
+                <ResponseButton
+                  key={answer}
+                  answer={answer}
+                  selected={state.commitment === answer}
+                  disabled={submitting !== null || !commitmentOpen || state.commitment === 'closed'}
+                  busy={submitting === swimmer.id + answer}
+                  onClick={() => setCommitment(swimmer.id, answer)}
+                />
+              ))}
             </div>
             {/* Note for coaches */}
             {commitmentOpen && state.commitment !== 'closed' && (
@@ -1092,12 +1057,6 @@ export default function MeetDetailPage() {
         </div>
       )}
 
-      <style>{`
-        @keyframes slideUp {
-          from { opacity: 0; transform: translateY(12px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
-    </div>
+          </div>
   )
 }

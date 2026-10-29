@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/dareaquatics/aquify/server/internal/dbutil"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -37,7 +38,7 @@ func (r *Repository) Upsert(ctx context.Context, s *OrgSettings) error {
 			public_about         = EXCLUDED.public_about,
 			public_contact_email = EXCLUDED.public_contact_email,
 			public_contact_phone = EXCLUDED.public_contact_phone`,
-		s.OrgID, s.TeamCode, s.TeamName, s.LSCCode, s.EmailSenderName, s.EmailSenderAddress, s.CreatedAt, s.UpdatedAt, nullableString(s.UpdatedBy),
+		s.OrgID, s.TeamCode, s.TeamName, s.LSCCode, s.EmailSenderName, s.EmailSenderAddress, s.CreatedAt, s.UpdatedAt, dbutil.NullableString(s.UpdatedBy),
 		s.PublicSlug, s.PublicSiteEnabled, s.PublicShowCoaches, s.PublicAbout, s.PublicContactEmail, s.PublicContactPhone,
 	)
 	return err
@@ -84,22 +85,9 @@ func (r *Repository) LoadAll(ctx context.Context) ([]*OrgSettings, error) {
 	if err != nil {
 		return nil, fmt.Errorf("orgsettings: load all: %w", err)
 	}
-	defer rows.Close()
-
-	var out []*OrgSettings
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "orgsettings: scan", func(rows pgx.Rows) (*OrgSettings, error) {
 		s := &OrgSettings{}
-		if err := rows.Scan(&s.OrgID, &s.TeamCode, &s.TeamName, &s.LSCCode, &s.EmailSenderName, &s.EmailSenderAddress, &s.CreatedAt, &s.UpdatedAt, &s.UpdatedBy, &s.PublicSlug, &s.PublicSiteEnabled, &s.PublicShowCoaches, &s.PublicAbout, &s.PublicContactEmail, &s.PublicContactPhone); err != nil {
-			return nil, fmt.Errorf("orgsettings: scan: %w", err)
-		}
-		out = append(out, s)
-	}
-	return out, rows.Err()
-}
-
-func nullableString(s string) interface{} {
-	if s == "" {
-		return nil
-	}
-	return s
+		err := rows.Scan(&s.OrgID, &s.TeamCode, &s.TeamName, &s.LSCCode, &s.EmailSenderName, &s.EmailSenderAddress, &s.CreatedAt, &s.UpdatedAt, &s.UpdatedBy, &s.PublicSlug, &s.PublicSiteEnabled, &s.PublicShowCoaches, &s.PublicAbout, &s.PublicContactEmail, &s.PublicContactPhone)
+		return s, err
+	})
 }

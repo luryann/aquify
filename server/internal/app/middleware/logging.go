@@ -5,6 +5,9 @@ import (
 	"net/http"
 	"time"
 
+	"strings"
+
+	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -28,7 +31,7 @@ func StructuredLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 			attrs := []any{
 				"request_id", chimiddleware.GetReqID(r.Context()),
 				"method", r.Method,
-				"path", r.URL.Path,
+				"path", loggedPath(r),
 				"status", writer.Status(),
 				"bytes", writer.BytesWritten(),
 				"duration_ms", time.Since(startedAt).Milliseconds(),
@@ -56,4 +59,16 @@ func StructuredLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 			logger.Info("http_request", attrs...)
 		})
 	}
+}
+
+// loggedPath is the request path for the access log. Routes whose path carries
+// a secret (the calendar feed token is itself the credential) log the route
+// pattern instead, so the secret never reaches the logs.
+func loggedPath(r *http.Request) string {
+	if rc := chi.RouteContext(r.Context()); rc != nil {
+		if pattern := rc.RoutePattern(); strings.Contains(pattern, "{token}") {
+			return pattern
+		}
+	}
+	return r.URL.Path
 }

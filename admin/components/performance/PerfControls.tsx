@@ -1,6 +1,7 @@
 'use client'
 
 import type { CSSProperties, ReactNode } from 'react'
+import { AGE_GROUPS, AGE_GROUP_LABELS } from '@/lib/performanceData'
 
 export const FIELD_STYLE: CSSProperties = { width: '100%' }
 
@@ -31,15 +32,6 @@ export function Segmented<T extends string>({
   )
 }
 
-export function LoadErrorBanner({ message, onRetry }: { message: string; onRetry?: () => void }) {
-  return (
-    <div role="alert" className="u-gap-12px u-m-0-0-16px u-p-12px-16px u-fs-fs-base" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', borderRadius: 'var(--r-sm)', background: 'var(--error-bg)', border: '1px solid var(--error-border)', color: 'var(--error)' }}>
-      <span style={{ flex: '1 1 200px' }}>{message}</span>
-      {onRetry ? <button type="button" className="btn btn-sm btn-secondary" onClick={onRetry}>Try again</button> : null}
-    </div>
-  )
-}
-
 export function Notice({ tone = 'info', children }: { tone?: 'info' | 'success' | 'warning'; children: ReactNode }) {
   return (
     <div role="status" className="u-m-0-0-16px u-p-12px-16px u-fs-fs-base" style={{ borderRadius: 'var(--r-sm)', background: `var(--${tone}-bg)`, border: `1px solid var(--${tone}-border)`, color: `var(--${tone})` }}>
@@ -50,4 +42,23 @@ export function Notice({ tone = 'info', children }: { tone?: 'info' | 'success' 
 
 export function FilterRow({ children }: { children: ReactNode }) {
   return <div className="u-gap-12px u-mb-20px" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center' }}>{children}</div>
+}
+
+/** Small caption above a form control. */
+export function LabeledField({ label, children }: { label: string; children: ReactNode }) {
+  return <label className="u-gap-4px u-fs-fs-sm" style={{ display: 'grid', color: 'var(--text-subtle)' }}>{label}{children}</label>
+}
+
+/** Women/Men at the Open age group, Girls/Boys for the age-group boards. */
+export function GenderSegmented({ value, onChange, ageGroup }: { value: 'F' | 'M'; onChange: (v: 'F' | 'M') => void; ageGroup: string }) {
+  const open = ageGroup === 'OPEN'
+  return <Segmented label="Gender" value={value} onChange={onChange} options={[{ value: 'F', label: open ? 'Women' : 'Girls' }, { value: 'M', label: open ? 'Men' : 'Boys' }]} />
+}
+
+export function AgeGroupSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <select aria-label="Age group" value={value} onChange={(e) => onChange(e.target.value)} style={FIELD_STYLE}>
+      {AGE_GROUPS.map((g) => <option key={g} value={g}>{AGE_GROUP_LABELS[g]}</option>)}
+    </select>
+  )
 }

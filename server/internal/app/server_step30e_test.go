@@ -1,12 +1,10 @@
 package app
 
 import (
-	"bytes"
 	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/dareaquatics/aquify/server/internal/app/audit"
@@ -30,40 +28,7 @@ func newStep30ERouter(t *testing.T, kc keycloak.Client, membersSvc *members.Serv
 
 func issueStep30EToken(t *testing.T, router http.Handler, userID, orgID string, roles []string) string {
 	t.Helper()
-	payload := map[string]any{
-		"user_id": userID,
-		"org_id":  orgID,
-		"roles":   roles,
-	}
-	raw, _ := json.Marshal(payload)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/sessions/issue", bytes.NewReader(raw))
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, req)
-	if rr.Code != http.StatusCreated {
-		t.Fatalf("issueStep30EToken: want 201, got %d: %s", rr.Code, rr.Body.String())
-	}
-	return issuedAccessTokenFromResponse(t, rr)
-}
-
-func do30E(router http.Handler, method, path, token, body, orgID string) *httptest.ResponseRecorder {
-	var bodyReader io.Reader
-	if body != "" {
-		bodyReader = bytes.NewBufferString(body)
-	}
-	req := httptest.NewRequest(method, path, bodyReader)
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-	if orgID != "" {
-		req.Header.Set("X-Org-Id", orgID)
-	}
-	if body != "" {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, req)
-	return rr
+	return issueSession(t, router, sessionSpec{UserID: userID, OrgID: orgID, Roles: roles})
 }
 
 // ─── Invite with create_household=true ────────────────────────────────────────
@@ -76,7 +41,7 @@ func TestStep30E_InviteCreatesHousehold(t *testing.T) {
 	adminToken := issueStep30EToken(t, router, "owner-1", "org-1", []string{"admin"})
 
 	body := `{"first_name":"Alice","last_name":"Smith","email":"alice@example.com","role":"parent","create_household":true}`
-	rr := do30E(router, http.MethodPost, "/api/v1/users/invite", adminToken, body, "org-1")
+	rr := doRequest(router, http.MethodPost, "/api/v1/users/invite", adminToken, body, "org-1")
 	if rr.Code != http.StatusCreated {
 		t.Fatalf("want 201, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -113,7 +78,7 @@ func TestStep30E_InviteWithoutCreateHousehold(t *testing.T) {
 	adminToken := issueStep30EToken(t, router, "owner-1", "org-1", []string{"admin"})
 
 	body := `{"first_name":"Bob","last_name":"Jones","email":"bob@example.com","role":"parent","create_household":false}`
-	rr := do30E(router, http.MethodPost, "/api/v1/users/invite", adminToken, body, "org-1")
+	rr := doRequest(router, http.MethodPost, "/api/v1/users/invite", adminToken, body, "org-1")
 	if rr.Code != http.StatusCreated {
 		t.Fatalf("want 201, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -150,7 +115,7 @@ func TestStep30E_GetUserHousehold_Linked(t *testing.T) {
 	router := newStep30ERouter(t, kc, membersSvc)
 	adminToken := issueStep30EToken(t, router, "admin-1", "org-1", []string{"admin"})
 
-	rr := do30E(router, http.MethodGet, "/api/v1/users/u-parent-1/household", adminToken, "", "org-1")
+	rr := doRequest(router, http.MethodGet, "/api/v1/users/u-parent-1/household", adminToken, "", "org-1")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -178,7 +143,7 @@ func TestStep30E_GetUserHousehold_NotLinked(t *testing.T) {
 	router := newStep30ERouter(t, kc, membersSvc)
 	adminToken := issueStep30EToken(t, router, "admin-1", "org-1", []string{"admin"})
 
-	rr := do30E(router, http.MethodGet, "/api/v1/users/u-2/household", adminToken, "", "org-1")
+	rr := doRequest(router, http.MethodGet, "/api/v1/users/u-2/household", adminToken, "", "org-1")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -215,7 +180,7 @@ func TestStep30E_LinkAndUnlink(t *testing.T) {
 
 	// Link household to user.
 	linkBody, _ := json.Marshal(map[string]any{"household_id": hh.ID})
-	rr := do30E(router, http.MethodPost, "/api/v1/users/u-link-1/household/link",
+	rr := doRequest(router, http.MethodPost, "/api/v1/users/u-link-1/household/link",
 		adminToken, string(linkBody), "org-1")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("link: want 200, got %d: %s", rr.Code, rr.Body.String())
@@ -229,7 +194,7 @@ func TestStep30E_LinkAndUnlink(t *testing.T) {
 
 	// Unlink.
 	unlinkBody, _ := json.Marshal(map[string]any{"household_id": hh.ID})
-	rr = do30E(router, http.MethodPost, "/api/v1/users/u-link-1/household/unlink",
+	rr = doRequest(router, http.MethodPost, "/api/v1/users/u-link-1/household/unlink",
 		adminToken, string(unlinkBody), "org-1")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("unlink: want 200, got %d: %s", rr.Code, rr.Body.String())
@@ -254,7 +219,7 @@ func TestStep30E_Link_NotFound(t *testing.T) {
 	adminToken := issueStep30EToken(t, router, "admin-1", "org-1", []string{"admin"})
 
 	linkBody, _ := json.Marshal(map[string]any{"household_id": "nonexistent-hh"})
-	rr := do30E(router, http.MethodPost, "/api/v1/users/u-link-2/household/link",
+	rr := doRequest(router, http.MethodPost, "/api/v1/users/u-link-2/household/link",
 		adminToken, string(linkBody), "org-1")
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("want 404, got %d: %s", rr.Code, rr.Body.String())
@@ -274,7 +239,7 @@ func TestStep30E_HouseholdLinkage_RBAC_AdminForbidden(t *testing.T) {
 	// Coach is NOT allowed to manage users/households.
 	coachToken := issueStep30EToken(t, router, "coach-1", "org-1", []string{"coach"})
 
-	rr := do30E(router, http.MethodGet, "/api/v1/users/u-coach-1/household", coachToken, "", "org-1")
+	rr := doRequest(router, http.MethodGet, "/api/v1/users/u-coach-1/household", coachToken, "", "org-1")
 	if rr.Code != http.StatusForbidden && rr.Code != http.StatusUnauthorized {
 		t.Fatalf("coach should be denied, got %d: %s", rr.Code, rr.Body.String())
 	}

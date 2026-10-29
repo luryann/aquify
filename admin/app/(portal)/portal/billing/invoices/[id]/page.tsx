@@ -22,6 +22,7 @@ import {
   portalInvoiceCheckoutErrorMessage,
 } from '@/lib/portal-invoice-checkout'
 import './page.inline.css'
+import { LoadErrorBanner } from '@/components/ui/LoadErrorBanner'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 const STATUS_CONFIG: Record<string, { label: string; bg: string; color: string }> = {
@@ -67,13 +68,7 @@ function LoadingSkeleton() {
         <div className="is-592a9d2" />
         <div style={{ height: '52px', background: 'var(--bg-wash)', borderRadius: '12px' }} />
       </div>
-      <style>{`
-        @keyframes slideUp {
-          from { opacity: 0; transform: translateY(12px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
-    </div>
+          </div>
   )
 }
 
@@ -148,21 +143,7 @@ function InvoiceDetailPageContent() {
           </Link>
         </nav>
         {loadError && (
-          <div
-            className="is-469b891"
-          >
-            <div className="is-730b6a7">
-              <Icon name="alert-circle" size={15} style={{ color: 'var(--warning)', marginTop: '1px', flexShrink: 0 }} />
-              <p className="is-51a00ce">{loadError}</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setReloadKey((key) => key + 1)}
-              className="is-889d44c"
-            >
-              Retry
-            </button>
-          </div>
+          <LoadErrorBanner message={loadError} onRetry={() => setReloadKey((key) => key + 1)} />
         )}
         <div
           className="card is-52b05e3" 
@@ -568,12 +549,6 @@ function InvoiceDetailPageContent() {
         </div>
       )}
 
-      <style>{`
-        @keyframes slideUp {
-          from { opacity: 0; transform: translateY(12px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
-    </div>
+          </div>
   )
 }

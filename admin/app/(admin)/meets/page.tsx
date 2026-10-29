@@ -11,6 +11,7 @@ import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
 import { fetchMeetCommitments, fetchMeetEntries, fetchMeetEvents, fetchMeets, type MeetRecord } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
+import { COURSE_LABELS } from '@/lib/meet-events'
 
 type MeetStatus = 'draft' | 'published' | 'commitment_open' | 'commitment_closed' | 'entry_finalized' | 'completed' | 'archived'
 type MeetCourse = 'SCY' | 'SCM' | 'LCM'
@@ -42,12 +43,6 @@ const STATUS_CONFIG: Record<MeetStatus, { label: string; color: string; bg: stri
 function StatusBadge({ status }: { status: MeetStatus }) {
   const c = STATUS_CONFIG[status]
   return <span className="badge" style={{ background: c.bg, color: c.color }}>{c.label}</span>
-}
-
-const COURSE_LABELS: Record<MeetCourse, string> = {
-  SCY: 'Short Course Yards',
-  SCM: 'Short Course Meters',
-  LCM: 'Long Course Meters',
 }
 
 function CourseBadge({ course }: { course: MeetCourse }) {

@@ -60,12 +60,14 @@ async function parseResponseError(res: Response): Promise<ApiError> {
   return new ApiError(res.status, code, message)
 }
 
-function getCSRFToken(): string | null {
+const CSRF_COOKIE_PREFIX = 'aquify_csrf_token='
+
+/** The CSRF token the server set for cookie-authenticated sessions, or null when absent. */
+export function getCSRFToken(): string | null {
   if (typeof document === 'undefined') return null
-  const entry = document.cookie.split('; ').find((c) => c.startsWith('aquify_csrf_token='))
+  const entry = document.cookie.split('; ').find((c) => c.startsWith(CSRF_COOKIE_PREFIX))
   if (!entry) return null
-  const [, value = ''] = entry.split('=')
-  return decodeURIComponent(value) || null
+  return decodeURIComponent(entry.slice(CSRF_COOKIE_PREFIX.length)) || null
 }
 
 /**
@@ -96,7 +98,7 @@ export async function apiFetch<T = unknown>(
   }
 
   if (token) {
-    headers['Authorization'] = `Bearer ${token}`
+    headers.Authorization = `Bearer ${token}`
   }
 
   // When using cookie-based auth (no bearer token), include CSRF token for mutations
@@ -160,28 +162,19 @@ export function useApiClient(token: string | undefined): ApiClient {
 }
 
 // Pagination helpers
-export type PaginatedResponse<T> = {
-  data: T[]
-  total: number
-  page: number
-  per_page: number
-  cursor?: string
-}
-
-export type CursorResponse<T> = {
-  data: T[]
-  next_cursor?: string
-  has_more: boolean
-}
-
 // Common query param builder
-export function buildQuery(params: Record<string, string | number | boolean | undefined | null>): string {
-  const qs = new URLSearchParams()
+
+/** Request header that scopes an API call to an organization. */
+export function orgHeaders(orgId: string): Record<string, string> {
+  return { 'X-Org-Id': orgId }
+}
+
+/** Builds a "?a=1&b=2" query string, skipping undefined, null and empty values; "" when none remain. */
+export function queryString(params: Record<string, string | number | undefined | null>): string {
+  const query = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && value !== null && value !== '') {
-      qs.set(key, String(value))
-    }
+    if (value !== undefined && value !== null && value !== '') query.set(key, String(value))
   }
-  const str = qs.toString()
-  return str ? `?${str}` : ''
+  const text = query.toString()
+  return text ? `?${text}` : ''
 }

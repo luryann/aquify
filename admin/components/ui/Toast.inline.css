@@ -1,0 +1,10 @@
+@keyframes toastSlideIn {
+  from { opacity: 0; transform: translateX(24px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes toastSlideOut {
+  from { opacity: 1; transform: translateX(0); max-height: 200px; margin-bottom: 8px; }
+  to { opacity: 0; transform: translateX(24px); max-height: 0; margin-bottom: 0; padding-top: 0; padding-bottom: 0; }
+}
+.toast-dismiss { flex-shrink: 0; margin-top: 1px; padding: 2px; display: flex; align-items: center; background: none; border: none; border-radius: var(--r-xs); color: var(--text-muted); cursor: pointer; transition: color var(--dur-fast); }
+.toast-dismiss:hover { color: var(--text); }

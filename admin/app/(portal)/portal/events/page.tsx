@@ -8,6 +8,7 @@ import { reportUIError } from '@/lib/frontend-telemetry'
 import { fetchClubEvents, type ClubEventRecord, type ClubEventRSVP } from '@/lib/engagementData'
 import { ClubEventCard, mergeRSVP } from '@/components/engagement/ClubEventCard'
 import './page.inline.css'
+import { localToday } from '@/lib/dates'
 
 export default function PortalEventsPage() {
   const { session } = useSession()
@@ -22,7 +23,7 @@ export default function PortalEventsPage() {
     if (!orgId) return
     setLoading(true)
     setError(null)
-    const from = new Date().toISOString().slice(0, 10)
+    const from = localToday()
     fetchClubEvents(api, orgId, { from })
       .then(setEvents)
       .catch((err) => { setEvents([]); setError(reportUIError('portal-club-events', err, 'Club events are unavailable right now.')) })
@@ -33,10 +34,8 @@ export default function PortalEventsPage() {
 
   return (
     <div>
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">Club events</h1>
-        </div>
+      <div className="page-heading">
+        <h1 className="page-title">Club events</h1>
       </div>
       {error && (
         <div role="alert" className="card is-9b78534" >

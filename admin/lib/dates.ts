@@ -28,10 +28,55 @@ export function formatDateOnly(
   return parsed.toLocaleDateString('en-US', opts)
 }
 
+/** Whole-year age on `asOf` for a date-of-birth string; '—' when missing or invalid. */
+export function ageFromDob(dob?: string | null, asOf: Date = new Date()): string {
+  if (!dob) return '—'
+  const birth = parseBackendDate(dob)
+  if (Number.isNaN(birth.getTime())) return '—'
+  let age = asOf.getFullYear() - birth.getFullYear()
+  const birthdayPassed = asOf.getMonth() > birth.getMonth() || (asOf.getMonth() === birth.getMonth() && asOf.getDate() >= birth.getDate())
+  if (!birthdayPassed) age -= 1
+  return `${age}`
+}
+
 /** Format a start–end date range, collapsing to a single date when equal/absent. */
 export function formatDateRange(start?: string | null, end?: string | null): string {
   if (!start) return '—'
   const startLabel = formatDateOnly(start)
   if (!end || end === start) return startLabel
   return `${startLabel} – ${formatDateOnly(end)}`
+}
+
+const DATE_TIME_OPTS: Intl.DateTimeFormatOptions = {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+}
+
+/** Format an ISO timestamp for display (local time); '—' when missing. */
+export function formatDateTime(value?: string | null): string {
+  if (!value) return '—'
+  return new Date(value).toLocaleString('en-US', DATE_TIME_OPTS)
+}
+
+/** "Jul 4" style label for a date-only or ISO string. */
+export function formatShortDate(value: string): string {
+  return parseBackendDate(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+/** "3:05 PM" for a "HH:MM[:SS]" clock string or an ISO timestamp; '' when missing, the input itself when unparseable. */
+export function formatClockTime(value?: string | null): string {
+  if (!value) return ''
+  const plain = value.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/)
+  const date = plain ? new Date(2000, 0, 1, Number(plain[1]), Number(plain[2])) : new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+}
+
+/** Today's date (YYYY-MM-DD) in the viewer's timezone; `toISOString()` would give the UTC date, which is tomorrow for US evenings. */
+export function localToday(now = new Date()): string {
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`
 }

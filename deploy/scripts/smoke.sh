@@ -83,15 +83,8 @@ check_body() {
   fi
 }
 
-AUTH_HEADER=()
-if [ -n "${SMOKE_AUTH_TOKEN}" ]; then
-  AUTH_HEADER=(-H "Authorization: Bearer ${SMOKE_AUTH_TOKEN}")
-fi
-
-ORG_HEADER=()
-if [ -n "${SMOKE_ORG_ID}" ]; then
-  ORG_HEADER=(-H "X-Org-Id: ${SMOKE_ORG_ID}")
-fi
+# curl args for authenticated checks; only used when both values are set.
+AUTHED=(-H "Authorization: Bearer ${SMOKE_AUTH_TOKEN}" -H "X-Org-Id: ${SMOKE_ORG_ID}")
 
 # ---------------------------------------------------------------------------
 # Smoke tests
@@ -121,30 +114,30 @@ check "unauth-swimmers"   "401" "${API_BASE_URL}/api/v1/members/swimmers"
 if [ -n "${SMOKE_AUTH_TOKEN}" ] && [ -n "${SMOKE_ORG_ID}" ]; then
   # Auth session check
   check "session"         "200" "${API_BASE_URL}/api/v1/auth/session" \
-    "${AUTH_HEADER[@]}" "${ORG_HEADER[@]}"
+    "${AUTHED[@]}"
 
   # Core member data
   check "households"      "200" "${API_BASE_URL}/api/v1/members/households" \
-    "${AUTH_HEADER[@]}" "${ORG_HEADER[@]}"
+    "${AUTHED[@]}"
 
   check "swimmers"        "200" "${API_BASE_URL}/api/v1/members/swimmers" \
-    "${AUTH_HEADER[@]}" "${ORG_HEADER[@]}"
+    "${AUTHED[@]}"
 
   check "groups"          "200" "${API_BASE_URL}/api/v1/groups" \
-    "${AUTH_HEADER[@]}" "${ORG_HEADER[@]}"
+    "${AUTHED[@]}"
 
   # Meet management
   check "meets"           "200" "${API_BASE_URL}/api/v1/meets" \
-    "${AUTH_HEADER[@]}" "${ORG_HEADER[@]}"
+    "${AUTHED[@]}"
 
   # Billing
   check "invoices"        "200" "${API_BASE_URL}/api/v1/invoices" \
-    "${AUTH_HEADER[@]}" "${ORG_HEADER[@]}"
+    "${AUTHED[@]}"
 
   # Reporting
   check "report-membership" "200" \
     "${API_BASE_URL}/api/v1/reports/membership-status" \
-    "${AUTH_HEADER[@]}" "${ORG_HEADER[@]}"
+    "${AUTHED[@]}"
 else
   log "SKIP authenticated checks (SMOKE_AUTH_TOKEN or SMOKE_ORG_ID not set)"
 fi

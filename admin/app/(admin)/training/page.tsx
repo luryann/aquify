@@ -17,6 +17,11 @@ import { WorkoutComposer, type ComposerInitial } from './WorkoutComposer'
 import { WorkoutLibraryPanel } from './WorkoutLibraryPanel'
 import { TrainingAnalyticsPanel } from './TrainingAnalyticsPanel'
 import { SeasonPlanPanel } from './SeasonPlanPanel'
+import { FIELD_INPUT_STYLE } from '@/lib/form-styles'
+import { LoadErrorBanner } from '@/components/ui/LoadErrorBanner'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
+import './page.inline.css'
+import { localToday, formatShortDate, parseBackendDate } from '@/lib/dates'
 
 type WorkoutType = 'water' | 'dryland' | 'video' | 'rest'
 
@@ -73,7 +78,7 @@ function WorkoutRow({ workout, groupName, onDelete, onTakeAttendance, onEditSets
       onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
     >
       <span className="u-fs-fs-sm u-ff-font-body" style={{ color: 'var(--text-subtle)' }}>
-        {new Date(workout.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+        {formatShortDate(workout.date)}
       </span>
       <div className="u-gap-6px" style={{ display: 'flex', alignItems: 'center' }}>
         <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: typeColor, display: 'inline-block', flexShrink: 0 }} />
@@ -184,7 +189,7 @@ function AttendanceSheet({
                 Take Attendance
               </h2>
               <p className="u-fs-fs-sm u-mt-4px" style={{ color: 'var(--text-muted)' }}>
-                {groupName} · {new Date(workout.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                {groupName} · {parseBackendDate(workout.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
               </p>
             </div>
             <button onClick={onClose} className="btn-icon" title="Close" style={{ color: 'var(--text-muted)' }}>
@@ -241,8 +246,6 @@ function AttendanceSheet({
   )
 }
 
-const inputStyle: React.CSSProperties = { width: '100%' }
-
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
     <label className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ display: 'block', color: 'var(--text-muted)' }}>
@@ -263,6 +266,7 @@ export default function TrainingPage() {
   const { session } = useSession()
   const api = useApiClient(session?.token)
   const orgId = session?.user.orgId ?? ''
+  const confirm = useConfirm()
 
   const [activeTab, setActiveTab] = useState<Tab>('schedule')
   const [setsTarget, setSetsTarget] = useState<{ workout: Workout; initial: ComposerInitial } | null>(null)
@@ -289,7 +293,7 @@ export default function TrainingPage() {
   const [savingSwimmerId, setSavingSwimmerId] = useState<string | null>(null)
 
   const [newWorkout, setNewWorkout] = useState({
-    date: new Date().toISOString().slice(0, 10),
+    date: localToday(),
     groupId: '',
     type: 'water' as WorkoutType,
     description: '',
@@ -360,7 +364,7 @@ export default function TrainingPage() {
       setWorkouts((ws) => [practiceToWorkout(p), ...ws])
       setShowAddForm(false)
       setNewWorkout({
-        date: new Date().toISOString().slice(0, 10),
+        date: localToday(),
         groupId: groups[0]?.id ?? '',
         type: 'water',
         description: '',
@@ -376,6 +380,8 @@ export default function TrainingPage() {
   }
 
   async function handleDeleteWorkout(id: string) {
+    const ok = await confirm({ title: 'Delete workout?', message: 'This removes the practice and its recorded attendance.', confirmLabel: 'Delete workout', destructive: true })
+    if (!ok) return
     setMutationError(null)
     try {
       await deletePractice(api, orgId, id)
@@ -412,12 +418,10 @@ export default function TrainingPage() {
     setSavingSwimmerId(swimmerId)
     try {
       await setPracticeAttendance(api, orgId, attendanceWorkout.id, swimmerId, status)
-      setAttendanceRoster((roster) => {
-        const next = roster.map((r) => r.swimmer_id === swimmerId ? { ...r, status } : r)
-        const presentCount = next.filter((r) => r.status === 'present').length
-        setWorkouts((ws) => ws.map((w) => w.id === attendanceWorkout.id ? { ...w, attendance: presentCount } : w))
-        return next
-      })
+      const next = attendanceRoster.map((r) => r.swimmer_id === swimmerId ? { ...r, status } : r)
+      const presentCount = next.filter((r) => r.status === 'present').length
+      setAttendanceRoster(next)
+      setWorkouts((ws) => ws.map((w) => w.id === attendanceWorkout.id ? { ...w, attendance: presentCount } : w))
     } catch (error) {
       setAttendanceError(errorMessage(error, 'Couldn’t save attendance. Try again.'))
     } finally {
@@ -489,14 +493,7 @@ export default function TrainingPage() {
 
       {/* ── Schedule Tab ── */}
       {(loadError || mutationError) && (
-        <div className="u-mb-16px u-p-12px-16px u-fs-fs-base u-gap-12px" style={{ borderRadius: '8px', border: '1px solid rgba(220,38,38,0.22)', background: 'rgba(220,38,38,0.08)', color: 'var(--error)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span>{mutationError ?? loadError}</span>
-          {loadError && (
-            <button type="button" className="btn btn-secondary u-fs-fs-sm u-p-6px-12px" onClick={loadPractices} >
-              Retry
-            </button>
-          )}
-        </div>
+        <LoadErrorBanner message={mutationError ?? loadError ?? ''} onRetry={loadError && !mutationError ? loadPractices : undefined} />
       )}
 
       {activeTab === 'schedule' && (
@@ -509,14 +506,14 @@ export default function TrainingPage() {
                   <FieldLabel>Date</FieldLabel>
                   <input type="date" value={newWorkout.date}
                     onChange={(e) => setNewWorkout((d) => ({ ...d, date: e.target.value }))}
-                    style={inputStyle}
+                    style={FIELD_INPUT_STYLE}
                   />
                 </div>
                 <div>
                   <FieldLabel>Group</FieldLabel>
                   <select value={newWorkout.groupId}
                     onChange={(e) => setNewWorkout((d) => ({ ...d, groupId: e.target.value }))}
-                    style={{ ...inputStyle }}
+                    style={{ ...FIELD_INPUT_STYLE }}
                   >
                     <option value="">Select group…</option>
                     {groups.map((g) => (
@@ -528,7 +525,7 @@ export default function TrainingPage() {
                   <FieldLabel>Type</FieldLabel>
                   <select value={newWorkout.type}
                     onChange={(e) => setNewWorkout((d) => ({ ...d, type: e.target.value as WorkoutType }))}
-                    style={{ ...inputStyle }}
+                    style={{ ...FIELD_INPUT_STYLE }}
                   >
                     {Object.entries(WORKOUT_TYPE_LABELS).map(([k, v]) => (
                       <option key={k} value={k}>{v}</option>
@@ -540,7 +537,7 @@ export default function TrainingPage() {
                   <input aria-label="# swimmers" type="number" min="0" value={newWorkout.attendance}
                     onChange={(e) => setNewWorkout((d) => ({ ...d, attendance: e.target.value }))}
                     placeholder="# swimmers"
-                    style={inputStyle}
+                    style={FIELD_INPUT_STYLE}
                   />
                 </div>
               </div>
@@ -552,7 +549,7 @@ export default function TrainingPage() {
                   onChange={(e) => setNewWorkout((d) => ({ ...d, description: e.target.value }))}
                   placeholder="e.g. 400 warm-up, 10×200 on 3:00, 8×50 sprint, 200 cool-down"
                   rows={2}
-                  style={{ ...inputStyle, resize: 'vertical', lineHeight: '1.5' }}
+                  style={{ ...FIELD_INPUT_STYLE, resize: 'vertical', lineHeight: '1.5' }}
                 />
               </div>
 
@@ -572,7 +569,7 @@ export default function TrainingPage() {
                         value={newWorkout[key as keyof typeof newWorkout]}
                         onChange={(e) => setNewWorkout((d) => ({ ...d, [key]: e.target.value }))}
                         placeholder="0"
-                        style={inputStyle}
+                        style={FIELD_INPUT_STYLE}
                       />
                     </div>
                   ))}
@@ -657,7 +654,7 @@ export default function TrainingPage() {
             <div className="u-gap-12px u-mb-16px" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
                 <h2 className="section-title">
-                  Sets for {getGroupName(setsTarget.workout.groupId)}, {new Date(setsTarget.workout.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                  Sets for {getGroupName(setsTarget.workout.groupId)}, {parseBackendDate(setsTarget.workout.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                 </h2>
                 <p className="u-fs-fs-sm u-mt-4px" style={{ color: 'var(--text-muted)' }}>Saving replaces this practice&apos;s yardage with the workout total.</p>
               </div>
@@ -696,19 +693,6 @@ export default function TrainingPage() {
         />
       )}
 
-      <style>{`
-        @keyframes attendanceSheetUp {
-          from { transform: translateY(24px); opacity: 0; }
-          to { transform: translateY(0); opacity: 1; }
-        }
-        @media (min-width: 640px) {
-          .attendance-sheet {
-            margin-bottom: 8vh;
-            border-radius: 18px;
-            border-bottom: 1px solid var(--border);
-          }
-        }
-      `}</style>
     </div>
   )
 }

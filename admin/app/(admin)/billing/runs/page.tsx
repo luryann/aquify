@@ -15,13 +15,9 @@ import {
   type RunResult,
 } from '@/lib/financeData'
 import { formatDateOnly } from '@/lib/dates'
+import { localToday } from '@/lib/wellness-scale'
 import { useStaffNames } from '@/lib/useStaffNames'
 import { Banner, Field, Money, ScrollTable, formGrid, numStyle, sectionTitle, tableStyle, tdStyle, thStyle, useFinanceContext } from '../financeUi'
-
-function todayISO() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
 
 export default function BillingRunsPage() {
   const { api, orgId } = useFinanceContext()
@@ -30,7 +26,7 @@ export default function BillingRunsPage() {
   const [runs, setRuns] = useState<BillingRun[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [asOf, setAsOf] = useState(todayISO())
+  const [asOf, setAsOf] = useState(localToday())
   const [status, setStatus] = useState<'draft' | 'issued'>('draft')
   const [dueDate, setDueDate] = useState('')
   const [selected, setSelected] = useState<string[]>([])

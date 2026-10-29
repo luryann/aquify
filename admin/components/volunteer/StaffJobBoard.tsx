@@ -27,6 +27,8 @@ const STATUS_TEXT: Record<VolunteerSignup['status'], string> = {
   confirmed: 'Signed up', worked: 'Worked', no_show: 'No-show', cancelled: 'Cancelled',
 }
 
+const ATTENDANCE_ERROR = 'Couldn’t record attendance. Try again.'
+
 function time(iso: string) {
   return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 }
@@ -77,15 +79,18 @@ export function StaffJobBoard({ api, orgId, jobs, onChanged, showEvent = true }:
     }
   }
 
-  async function run(key: string, fn: () => Promise<unknown>, fallback: string) {
+  /** Runs a staff action and refreshes the roster; resolves true when it succeeded. */
+  async function run(key: string, fn: () => Promise<unknown>, fallback: string): Promise<boolean> {
     setBusy(key)
     setRosterError(null)
     try {
       await fn()
       if (openId) await loadRoster(openId)
       onChanged()
+      return true
     } catch (err) {
       setRosterError(reportUIError('volunteer.staff_action', err, fallback))
+      return false
     } finally {
       setBusy(null)
     }
@@ -94,8 +99,7 @@ export function StaffJobBoard({ api, orgId, jobs, onChanged, showEvent = true }:
   const confirm = useConfirm()
   async function removeJob(job: VolunteerJobView) {
     if (!(await confirm({ title: `Delete ${job.title}?`, message: 'Volunteers signed up for it lose their spot.', confirmLabel: 'Delete job', destructive: true }))) return
-    await run(`del-${job.id}`, () => deleteVolunteerJob(api, orgId, job.id), 'Couldn’t delete the job. Try again.')
-    setOpenId(null)
+    if (await run(`del-${job.id}`, () => deleteVolunteerJob(api, orgId, job.id), 'Couldn’t delete the job. Try again.')) setOpenId(null)
   }
 
   const days = groupInOrder(jobs, (j) => localDayKey(j.starts_at))
@@ -150,9 +154,9 @@ export function StaffJobBoard({ api, orgId, jobs, onChanged, showEvent = true }:
                           {s.status === 'confirmed' ? (
                             <>
                               <button type="button" className="btn btn-secondary btn-sm" disabled={busy !== null}
-                                onClick={() => run(s.id, () => checkInVolunteerSignup(api, orgId, s.id, 'worked'), 'Couldn’t record attendance. Try again.')}>Worked</button>
+                                onClick={() => run(s.id, () => checkInVolunteerSignup(api, orgId, s.id, 'worked'), ATTENDANCE_ERROR)}>Worked</button>
                               <button type="button" className="btn btn-ghost btn-sm" disabled={busy !== null}
-                                onClick={() => run(s.id, () => checkInVolunteerSignup(api, orgId, s.id, 'no_show'), 'Couldn’t record attendance. Try again.')}>No-show</button>
+                                onClick={() => run(s.id, () => checkInVolunteerSignup(api, orgId, s.id, 'no_show'), ATTENDANCE_ERROR)}>No-show</button>
                               <button type="button" className="btn btn-ghost btn-sm" disabled={busy !== null}
                                 onClick={() => run(s.id, () => cancelVolunteerSignup(api, orgId, s.id, 'Removed by staff'), 'Couldn’t remove the volunteer. Try again.')}>Remove</button>
                             </>
@@ -168,7 +172,7 @@ export function StaffJobBoard({ api, orgId, jobs, onChanged, showEvent = true }:
                           if (!addHousehold || !addName.trim()) return
                           void run('add', () => signUpForVolunteerJob(api, orgId, job.id, {
                             household_id: addHousehold, volunteer_name: addName.trim(), certified: job.requires_certification,
-                          }), 'Couldn’t add the volunteer. Try again.').then(() => setAddName(''))
+                          }), 'Couldn’t add the volunteer. Try again.').then((ok) => { if (ok) setAddName('') })
                         }}
                         className="u-gap-8px u-mt-12px" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center' }}
                       >

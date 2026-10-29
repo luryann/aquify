@@ -121,10 +121,33 @@ func (c *bundleChecker) rejectFile(rel, reason string) {
 	}
 }
 
-func (c *bundleChecker) requireText(rel, needle string) {
+// readFile returns the file's contents, recording a failure when it cannot be read.
+func (c *bundleChecker) readFile(rel string) ([]byte, bool) {
 	payload, err := os.ReadFile(c.full(rel))
 	if err != nil {
 		c.failures = append(c.failures, fmt.Sprintf("read %s: %v", rel, err))
+		return nil, false
+	}
+	return payload, true
+}
+
+// readJSON decodes a JSON file into v, recording a failure that names what the
+// file should contain (for example "reconciliation JSON") when it is unreadable or invalid.
+func (c *bundleChecker) readJSON(rel, what string, v any) bool {
+	payload, ok := c.readFile(rel)
+	if !ok {
+		return false
+	}
+	if err := json.Unmarshal(payload, v); err != nil {
+		c.failures = append(c.failures, fmt.Sprintf("%s is invalid %s: %v", rel, what, err))
+		return false
+	}
+	return true
+}
+
+func (c *bundleChecker) requireText(rel, needle string) {
+	payload, ok := c.readFile(rel)
+	if !ok {
 		return
 	}
 	if !strings.Contains(string(payload), needle) {
@@ -133,10 +156,8 @@ func (c *bundleChecker) requireText(rel, needle string) {
 }
 
 func (c *bundleChecker) checkSmokeLog(rel string) {
-	c.requireFile(rel)
-	payload, err := os.ReadFile(c.full(rel))
-	if err != nil {
-		c.failures = append(c.failures, fmt.Sprintf("read %s: %v", rel, err))
+	payload, ok := c.readFile(rel)
+	if !ok {
 		return
 	}
 	text := strings.ToLower(string(payload))
@@ -148,15 +169,20 @@ func (c *bundleChecker) checkSmokeLog(rel string) {
 	}
 }
 
+// requiredComparisons are the source-vs-migrated comparisons every migration report must include.
+var requiredComparisons = []string{
+	"billing_outstanding_total_cents",
+	"row_count_households",
+	"row_count_swimmers",
+	"row_count_groups",
+	"row_count_historical_best_times",
+	"row_count_open_invoices",
+	"row_count_payment_history",
+}
+
 func (c *bundleChecker) checkMigrationReport(rel string) {
-	payload, err := os.ReadFile(c.full(rel))
-	if err != nil {
-		c.failures = append(c.failures, fmt.Sprintf("read %s: %v", rel, err))
-		return
-	}
 	var report migrationReport
-	if err := json.Unmarshal(payload, &report); err != nil {
-		c.failures = append(c.failures, fmt.Sprintf("%s is invalid JSON: %v", rel, err))
+	if !c.readJSON(rel, "JSON", &report) {
 		return
 	}
 	if len(report.Errors) > 0 {
@@ -166,31 +192,15 @@ func (c *bundleChecker) checkMigrationReport(rel string) {
 		c.failures = append(c.failures, fmt.Sprintf("%s has no source comparisons", rel))
 		return
 	}
-	hasBilling := false
-	requiredRows := map[string]bool{
-		"row_count_households":            false,
-		"row_count_swimmers":              false,
-		"row_count_groups":                false,
-		"row_count_historical_best_times": false,
-		"row_count_open_invoices":         false,
-		"row_count_payment_history":       false,
-	}
+	seen := map[string]bool{}
 	for _, comparison := range report.Comparisons {
 		if comparison.Status != "match" {
 			c.failures = append(c.failures, fmt.Sprintf("%s comparison %s status is %s", rel, comparison.Name, comparison.Status))
 		}
-		if comparison.Name == "billing_outstanding_total_cents" {
-			hasBilling = true
-		}
-		if _, ok := requiredRows[comparison.Name]; ok {
-			requiredRows[comparison.Name] = true
-		}
+		seen[comparison.Name] = true
 	}
-	if !hasBilling {
-		c.failures = append(c.failures, fmt.Sprintf("%s is missing billing_outstanding_total_cents comparison", rel))
-	}
-	for name, seen := range requiredRows {
-		if !seen {
+	for _, name := range requiredComparisons {
+		if !seen[name] {
 			c.failures = append(c.failures, fmt.Sprintf("%s is missing %s comparison", rel, name))
 		}
 	}
@@ -208,25 +218,19 @@ func (c *bundleChecker) checkProvider(dir string) {
 	c.requireText(filepath.Join(dir, "validation-summary.md"), "Expected Stripe webhook event: found")
 	c.requireText(filepath.Join(dir, "validation-summary.md"), "Stripe refund validation: executed")
 	c.requireText(filepath.Join(dir, "validation-summary.md"), "Postmark delivery validation: send_executed")
-	for _, rel := range []string{
-		filepath.Join(dir, "health-ready.json.status"),
-		filepath.Join(dir, "stripe-webhook-events.json.status"),
-		filepath.Join(dir, "stripe-refund.json.status"),
-		filepath.Join(dir, "postmark-send.json.status"),
-		filepath.Join(dir, "postmark-deliveries.json.status"),
+	for _, name := range []string{
+		"health-ready", "stripe-reconciliation", "stripe-webhook-events", "stripe-refund", "postmark-send", "postmark-deliveries",
 	} {
-		c.checkHTTPStatus(rel)
+		c.checkHTTPStatus(filepath.Join(dir, name+".json.status"))
 	}
-	c.checkHTTPStatus(filepath.Join(dir, "stripe-reconciliation.json.status"))
 	c.checkReconciliation(filepath.Join(dir, "stripe-reconciliation.json"))
 	c.checkStripeWebhookEvent(filepath.Join(dir, "metadata.json"), filepath.Join(dir, "stripe-webhook-events.json"))
 	c.checkPostmarkDeliveries(filepath.Join(dir, "postmark-deliveries.json"))
 }
 
 func (c *bundleChecker) checkHTTPStatus(rel string) {
-	payload, err := os.ReadFile(c.full(rel))
-	if err != nil {
-		c.failures = append(c.failures, fmt.Sprintf("read %s: %v", rel, err))
+	payload, ok := c.readFile(rel)
+	if !ok {
 		return
 	}
 	status := strings.TrimSpace(string(payload))
@@ -236,14 +240,8 @@ func (c *bundleChecker) checkHTTPStatus(rel string) {
 }
 
 func (c *bundleChecker) checkReconciliation(rel string) {
-	payload, err := os.ReadFile(c.full(rel))
-	if err != nil {
-		c.failures = append(c.failures, fmt.Sprintf("read %s: %v", rel, err))
-		return
-	}
 	var envelope reconciliationEnvelope
-	if err := json.Unmarshal(payload, &envelope); err != nil {
-		c.failures = append(c.failures, fmt.Sprintf("%s is invalid reconciliation JSON: %v", rel, err))
+	if !c.readJSON(rel, "reconciliation JSON", &envelope) {
 		return
 	}
 	if envelope.Reconciliation.StripeReportedCents == nil {
@@ -259,14 +257,8 @@ func (c *bundleChecker) checkReconciliation(rel string) {
 }
 
 func (c *bundleChecker) checkStripeWebhookEvent(metadataRel, eventsRel string) {
-	metadataPayload, err := os.ReadFile(c.full(metadataRel))
-	if err != nil {
-		c.failures = append(c.failures, fmt.Sprintf("read %s: %v", metadataRel, err))
-		return
-	}
 	var metadata providerMetadata
-	if err := json.Unmarshal(metadataPayload, &metadata); err != nil {
-		c.failures = append(c.failures, fmt.Sprintf("%s is invalid provider metadata JSON: %v", metadataRel, err))
+	if !c.readJSON(metadataRel, "provider metadata JSON", &metadata) {
 		return
 	}
 	expected := strings.TrimSpace(metadata.ExpectStripeWebhookEventID)
@@ -275,14 +267,8 @@ func (c *bundleChecker) checkStripeWebhookEvent(metadataRel, eventsRel string) {
 		return
 	}
 
-	eventsPayload, err := os.ReadFile(c.full(eventsRel))
-	if err != nil {
-		c.failures = append(c.failures, fmt.Sprintf("read %s: %v", eventsRel, err))
-		return
-	}
 	var envelope webhookEventsEnvelope
-	if err := json.Unmarshal(eventsPayload, &envelope); err != nil {
-		c.failures = append(c.failures, fmt.Sprintf("%s is invalid webhook events JSON: %v", eventsRel, err))
+	if !c.readJSON(eventsRel, "webhook events JSON", &envelope) {
 		return
 	}
 	for _, event := range envelope.Events {
@@ -294,14 +280,8 @@ func (c *bundleChecker) checkStripeWebhookEvent(metadataRel, eventsRel string) {
 }
 
 func (c *bundleChecker) checkPostmarkDeliveries(rel string) {
-	payload, err := os.ReadFile(c.full(rel))
-	if err != nil {
-		c.failures = append(c.failures, fmt.Sprintf("read %s: %v", rel, err))
-		return
-	}
 	var envelope deliveriesEnvelope
-	if err := json.Unmarshal(payload, &envelope); err != nil {
-		c.failures = append(c.failures, fmt.Sprintf("%s is invalid Postmark deliveries JSON: %v", rel, err))
+	if !c.readJSON(rel, "Postmark deliveries JSON", &envelope) {
 		return
 	}
 	for _, delivery := range envelope.Deliveries {

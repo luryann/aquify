@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/dareaquatics/aquify/server/internal/dbutil"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -35,7 +37,7 @@ func (r *Repository) UpsertDocumentType(ctx context.Context, dt *DocumentType) e
 		  is_active     = EXCLUDED.is_active,
 		  updated_at    = EXCLUDED.updated_at,
 		  updated_by    = EXCLUDED.updated_by`,
-		dt.ID, dt.OrgID, dt.Name, dt.Category, nullableString(dt.Description),
+		dt.ID, dt.OrgID, dt.Name, dt.Category, dbutil.NullableString(dt.Description),
 		dt.IsRequired, dt.AppliesTo, dt.ExpiryMonths, dt.IsActive,
 		dt.CreatedAt, dt.UpdatedAt, dt.CreatedBy, dt.UpdatedBy,
 	)
@@ -67,20 +69,15 @@ func (r *Repository) LoadDocumentTypes(ctx context.Context) ([]*DocumentType, er
 	if err != nil {
 		return nil, fmt.Errorf("documents: load document_types: %w", err)
 	}
-	defer rows.Close()
-	var out []*DocumentType
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "documents: scan document_type", func(rows pgx.Rows) (*DocumentType, error) {
 		dt := &DocumentType{}
-		if err := rows.Scan(
+		err := rows.Scan(
 			&dt.ID, &dt.OrgID, &dt.Name, &dt.Category, &dt.Description,
 			&dt.IsRequired, &dt.AppliesTo, &dt.ExpiryMonths, &dt.IsActive,
 			&dt.CreatedAt, &dt.UpdatedAt, &dt.CreatedBy, &dt.UpdatedBy,
-		); err != nil {
-			return nil, fmt.Errorf("documents: scan document_type: %w", err)
-		}
-		out = append(out, dt)
-	}
-	return out, rows.Err()
+		)
+		return dt, err
+	})
 }
 
 // ─── Document Submissions ─────────────────────────────────────────────────────
@@ -111,11 +108,11 @@ func (r *Repository) UpsertSubmission(ctx context.Context, sub *DocumentSubmissi
 		  reminder_sent_at = EXCLUDED.reminder_sent_at,
 		  updated_at       = EXCLUDED.updated_at,
 		  updated_by       = EXCLUDED.updated_by`,
-		sub.ID, sub.OrgID, sub.DocumentTypeID, sub.HouseholdID, nullableString(sub.SwimmerID),
-		sub.Status, nullableString(sub.FileObjectKey), nullableString(sub.FileName),
-		nullableInt64(sub.FileSizeBytes), nullableString(sub.FileMIME),
-		nullableString(sub.Notes), nullableString(sub.ReviewNotes),
-		sub.SubmittedAt, sub.VerifiedAt, nullableString(sub.VerifiedBy),
+		sub.ID, sub.OrgID, sub.DocumentTypeID, sub.HouseholdID, dbutil.NullableString(sub.SwimmerID),
+		sub.Status, dbutil.NullableString(sub.FileObjectKey), dbutil.NullableString(sub.FileName),
+		nullableInt64(sub.FileSizeBytes), dbutil.NullableString(sub.FileMIME),
+		dbutil.NullableString(sub.Notes), dbutil.NullableString(sub.ReviewNotes),
+		sub.SubmittedAt, sub.VerifiedAt, dbutil.NullableString(sub.VerifiedBy),
 		sub.ExpiresAt, sub.ReminderSentAt,
 		sub.CreatedAt, sub.UpdatedAt, sub.CreatedBy, sub.UpdatedBy,
 	)
@@ -137,11 +134,9 @@ func (r *Repository) LoadSubmissions(ctx context.Context) ([]*DocumentSubmission
 	if err != nil {
 		return nil, fmt.Errorf("documents: load document_submissions: %w", err)
 	}
-	defer rows.Close()
-	var out []*DocumentSubmission
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "documents: scan document_submission", func(rows pgx.Rows) (*DocumentSubmission, error) {
 		sub := &DocumentSubmission{}
-		if err := rows.Scan(
+		err := rows.Scan(
 			&sub.ID, &sub.OrgID, &sub.DocumentTypeID, &sub.HouseholdID,
 			&sub.SwimmerID, &sub.Status,
 			&sub.FileObjectKey, &sub.FileName, &sub.FileSizeBytes, &sub.FileMIME,
@@ -149,12 +144,9 @@ func (r *Repository) LoadSubmissions(ctx context.Context) ([]*DocumentSubmission
 			&sub.SubmittedAt, &sub.VerifiedAt, &sub.VerifiedBy,
 			&sub.ExpiresAt, &sub.ReminderSentAt,
 			&sub.CreatedAt, &sub.UpdatedAt, &sub.CreatedBy, &sub.UpdatedBy,
-		); err != nil {
-			return nil, fmt.Errorf("documents: scan document_submission: %w", err)
-		}
-		out = append(out, sub)
-	}
-	return out, rows.Err()
+		)
+		return sub, err
+	})
 }
 
 // DeleteSubmissionsByHousehold hard-deletes every document_submissions row
@@ -185,13 +177,6 @@ func (r *Repository) LoadAll(ctx context.Context) (
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-func nullableString(s string) interface{} {
-	if s == "" {
-		return nil
-	}
-	return s
-}
 
 func nullableInt64(n int64) interface{} {
 	if n == 0 {

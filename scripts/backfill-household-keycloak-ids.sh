@@ -28,10 +28,30 @@ set -euo pipefail
 : "${KEYCLOAK_REALM:?KEYCLOAK_REALM is required}"
 : "${DATABASE_URL:?DATABASE_URL is required}"
 
-# Pass the DSN (which embeds the DB password) to psql via the PGDATABASE
-# environment variable rather than a command-line argument — libpq accepts a
-# full connection URI there — so the credential never appears in `ps` output.
-export PGDATABASE="${DATABASE_URL}"
+# libpq does not expand a connection URI from PGDATABASE (only from a dbname
+# argument), so split the DSN into the PG* variables psql reads. The DSN goes to
+# python through the environment, so the password never appears in `ps` output.
+eval "$(python3 -c '
+import os, shlex, urllib.parse as u
+d = u.urlparse(os.environ["DATABASE_URL"])
+q = dict(u.parse_qsl(d.query))
+env = {
+    "PGHOST": d.hostname or "",
+    "PGPORT": str(d.port or ""),
+    "PGUSER": u.unquote(d.username or ""),
+    "PGPASSWORD": u.unquote(d.password or ""),
+    "PGDATABASE": u.unquote(d.path.lstrip("/")),
+    "PGSSLMODE": q.get("sslmode", ""),
+}
+for k, v in env.items():
+    if v:
+        print("export %s=%s" % (k, shlex.quote(v)))
+')"
+
+# IDs are validated as UUIDs before they reach any SQL string.
+is_uuid() {
+  [[ "$1" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]
+}
 
 echo "==> Obtaining Keycloak admin token..."
 # Pass the client secret via stdin rather than a -d argument so it never
@@ -67,8 +87,7 @@ while IFS=',' read -r HOUSEHOLD_ID PRIMARY_EMAIL; do
     continue
   fi
 
-  # Validate HOUSEHOLD_ID is a well-formed UUID before it reaches any SQL string.
-  if ! [[ "$HOUSEHOLD_ID" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
+  if ! is_uuid "$HOUSEHOLD_ID"; then
     echo "ERROR: HOUSEHOLD_ID is not a valid UUID: '$HOUSEHOLD_ID'" >&2
     ERRORS=$((ERRORS + 1))
     continue
@@ -94,8 +113,7 @@ while IFS=',' read -r HOUSEHOLD_ID PRIMARY_EMAIL; do
     continue
   fi
 
-  # Validate KC_USER_ID is a well-formed UUID before it reaches any SQL string.
-  if ! [[ "$KC_USER_ID" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
+  if ! is_uuid "$KC_USER_ID"; then
     echo "ERROR: KC_USER_ID from Keycloak is not a valid UUID: '$KC_USER_ID'" >&2
     ERRORS=$((ERRORS + 1))
     continue
@@ -103,9 +121,12 @@ while IFS=',' read -r HOUSEHOLD_ID PRIMARY_EMAIL; do
 
   # Check if another household already has this keycloak_user_id.
   # Use psql --set for parameterized variable substitution (:'varname' is quoted literal).
-  EXISTING=$(psql --csv -t \
-    --set="kc_user_id=$KC_USER_ID" \
-    -c "SELECT id FROM households WHERE keycloak_user_id = :'kc_user_id' LIMIT 1" | tr -d '[:space:]')
+  # psql does not interpolate :'var' inside a -c string, so the SQL goes in on stdin.
+  EXISTING=$(psql --csv -t -v ON_ERROR_STOP=1 \
+    --set="kc_user_id=$KC_USER_ID" <<'SQL' | tr -d '[:space:]'
+SELECT id FROM households WHERE keycloak_user_id = :'kc_user_id' LIMIT 1;
+SQL
+)
   if [ -n "$EXISTING" ]; then
     echo "SKIP household ${HOUSEHOLD_ID}: keycloak_user_id ${KC_USER_ID} already linked to ${EXISTING}"
     SKIPPED=$((SKIPPED + 1))
@@ -113,11 +134,12 @@ while IFS=',' read -r HOUSEHOLD_ID PRIMARY_EMAIL; do
   fi
 
   echo "LINK household ${HOUSEHOLD_ID} → keycloak_user_id ${KC_USER_ID} (email=${PRIMARY_EMAIL})"
-  if psql \
+  if psql -v ON_ERROR_STOP=1 \
     --set="kc_user_id=$KC_USER_ID" \
-    --set="hh_id=$HOUSEHOLD_ID" \
-    -c "UPDATE households SET keycloak_user_id = :'kc_user_id', updated_at = now() WHERE id = :'hh_id'::uuid" \
-    > /dev/null 2>&1; then
+    --set="hh_id=$HOUSEHOLD_ID" > /dev/null 2>&1 <<'SQL'
+UPDATE households SET keycloak_user_id = :'kc_user_id', updated_at = now() WHERE id = :'hh_id'::uuid;
+SQL
+  then
     MATCHED=$((MATCHED + 1))
   else
     echo "ERROR: Failed to update household ${HOUSEHOLD_ID}" >&2

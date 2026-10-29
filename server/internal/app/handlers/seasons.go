@@ -77,12 +77,7 @@ func (h *SeasonsHandlers) createSeason(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body createSeasonBody
-	if err := decodeJSONBody(w, r, &body); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid JSON body.", nil)
-		return
-	}
-	if err := h.validate.Struct(body); err != nil {
-		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "validation_error", "Validation failed.", httpx.FormatValidationErrors(err))
+	if !decodeAndValidateLegacy(w, r, &body, h.validate, "Validation failed.") {
 		return
 	}
 
@@ -96,17 +91,7 @@ func (h *SeasonsHandlers) createSeason(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.auditService != nil {
-		_, _ = h.auditService.Append(audit.AppendRequest{
-			OrgID:        orgID,
-			ActorUserID:  principal.UserID,
-			ActorRoles:   principal.Roles,
-			Action:       "season.create",
-			ResourceType: "season",
-			ResourceID:   season.ID,
-			After:        season,
-		})
-	}
+	recordAudit(h.auditService, principal, orgID, "season.create", "season", season.ID, nil, season, nil)
 
 	httpx.WriteJSON(w, http.StatusCreated, map[string]interface{}{"season": season})
 }
@@ -128,7 +113,7 @@ func (h *SeasonsHandlers) getSeason(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, seasons.ErrNotFound) {
 			httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Season not found.", nil)
 		} else {
-			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to get season.", nil)
+			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to get season.", err)
 		}
 		return
 	}
@@ -183,17 +168,7 @@ func (h *SeasonsHandlers) updateSeason(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.auditService != nil {
-		_, _ = h.auditService.Append(audit.AppendRequest{
-			OrgID:        orgID,
-			ActorUserID:  principal.UserID,
-			ActorRoles:   principal.Roles,
-			Action:       "season.update",
-			ResourceType: "season",
-			ResourceID:   season.ID,
-			After:        season,
-		})
-	}
+	recordAudit(h.auditService, principal, orgID, "season.update", "season", season.ID, nil, season, nil)
 
 	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{"season": season})
 }
@@ -219,16 +194,7 @@ func (h *SeasonsHandlers) deleteSeason(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.auditService != nil {
-		_, _ = h.auditService.Append(audit.AppendRequest{
-			OrgID:        orgID,
-			ActorUserID:  principal.UserID,
-			ActorRoles:   principal.Roles,
-			Action:       "season.delete",
-			ResourceType: "season",
-			ResourceID:   id,
-		})
-	}
+	recordAudit(h.auditService, principal, orgID, "season.delete", "season", id, nil, nil, nil)
 
 	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{"deleted": true})
 }

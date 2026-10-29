@@ -44,7 +44,7 @@ export function useMessageStream({ orgId, token, onEvent, enabled = true }: UseM
 
       try {
         const headers: Record<string, string> = { Accept: 'text/event-stream', 'X-Org-Id': orgId! }
-        if (token) headers['Authorization'] = `Bearer ${token}`
+        if (token) headers.Authorization = `Bearer ${token}`
 
         const res = await fetch('/api/v1/messages/stream', {
           headers,

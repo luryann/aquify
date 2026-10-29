@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/dareaquatics/aquify/server/internal/dbutil"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -15,13 +17,6 @@ type Repository struct {
 
 func newRepository(pool *pgxpool.Pool) *Repository {
 	return &Repository{pool: pool}
-}
-
-func nullableString(s string) interface{} {
-	if s == "" {
-		return nil
-	}
-	return s
 }
 
 // ─── Announcements ────────────────────────────────────────────────────────────
@@ -40,7 +35,7 @@ func (r *Repository) UpsertAnnouncement(ctx context.Context, a *Announcement) er
 		  is_public   = EXCLUDED.is_public,
 		  updated_at  = EXCLUDED.updated_at`,
 		a.ID, a.OrgID, a.Title, a.Body, a.Status, a.Audience,
-		nullableString(a.GroupID), a.PublishedAt, a.ArchivedAt,
+		dbutil.NullableString(a.GroupID), a.PublishedAt, a.ArchivedAt,
 		a.CreatedAt, a.UpdatedAt, a.Public,
 	)
 	return err
@@ -55,20 +50,15 @@ func (r *Repository) LoadAnnouncements(ctx context.Context) ([]*Announcement, er
 	if err != nil {
 		return nil, fmt.Errorf("comms: load announcements: %w", err)
 	}
-	defer rows.Close()
-	var out []*Announcement
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "comms: scan announcement", func(rows pgx.Rows) (*Announcement, error) {
 		a := &Announcement{}
-		if err := rows.Scan(
+		err := rows.Scan(
 			&a.ID, &a.OrgID, &a.Title, &a.Body, &a.Status, &a.Audience,
 			&a.GroupID, &a.PublishedAt, &a.ArchivedAt,
 			&a.CreatedAt, &a.UpdatedAt, &a.Public,
-		); err != nil {
-			return nil, fmt.Errorf("comms: scan announcement: %w", err)
-		}
-		out = append(out, a)
-	}
-	return out, rows.Err()
+		)
+		return a, err
+	})
 }
 
 // ─── Campaigns ────────────────────────────────────────────────────────────────
@@ -93,7 +83,7 @@ func (r *Repository) UpsertCampaign(ctx context.Context, c *EmailCampaign) error
 		  suppressed_count = EXCLUDED.suppressed_count,
 		  updated_at       = EXCLUDED.updated_at`,
 		c.ID, c.OrgID, c.Name, c.Subject, c.BodyHTML, c.BodyText,
-		c.FromName, c.FromEmail, c.Audience, nullableString(c.GroupID),
+		c.FromName, c.FromEmail, c.Audience, dbutil.NullableString(c.GroupID),
 		c.Status, c.SentAt,
 		c.TotalRecipients, c.SentCount, c.FailedCount, c.SuppressedCount,
 		c.CreatedAt, c.UpdatedAt,
@@ -111,21 +101,16 @@ func (r *Repository) LoadCampaigns(ctx context.Context) ([]*EmailCampaign, error
 	if err != nil {
 		return nil, fmt.Errorf("comms: load campaigns: %w", err)
 	}
-	defer rows.Close()
-	var out []*EmailCampaign
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "comms: scan campaign", func(rows pgx.Rows) (*EmailCampaign, error) {
 		c := &EmailCampaign{}
-		if err := rows.Scan(
+		err := rows.Scan(
 			&c.ID, &c.OrgID, &c.Name, &c.Subject, &c.BodyHTML, &c.BodyText,
 			&c.FromName, &c.FromEmail, &c.Audience, &c.GroupID, &c.Status,
 			&c.SentAt, &c.TotalRecipients, &c.SentCount, &c.FailedCount, &c.SuppressedCount,
 			&c.CreatedAt, &c.UpdatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("comms: scan campaign: %w", err)
-		}
-		out = append(out, c)
-	}
-	return out, rows.Err()
+		)
+		return c, err
+	})
 }
 
 // ─── Suppression List ─────────────────────────────────────────────────────────
@@ -151,12 +136,12 @@ func (r *Repository) UpsertDelivery(ctx context.Context, d *EmailDelivery) error
 			updated_at = EXCLUDED.updated_at`,
 		d.ID,
 		d.OrgID,
-		nullableString(d.CampaignID),
+		dbutil.NullableString(d.CampaignID),
 		d.RecipientEmail,
-		nullableString(d.RecipientUserID),
+		dbutil.NullableString(d.RecipientUserID),
 		d.Status,
-		nullableString(d.ProviderMessageID),
-		nullableString(d.ErrorMessage),
+		dbutil.NullableString(d.ProviderMessageID),
+		dbutil.NullableString(d.ErrorMessage),
 		d.SentAt,
 		d.DeliveredAt,
 		d.BouncedAt,
@@ -176,12 +161,9 @@ func (r *Repository) LoadDeliveries(ctx context.Context) ([]*EmailDelivery, erro
 	if err != nil {
 		return nil, fmt.Errorf("comms: load email_deliveries: %w", err)
 	}
-	defer rows.Close()
-
-	var out []*EmailDelivery
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "comms: scan email_delivery", func(rows pgx.Rows) (*EmailDelivery, error) {
 		d := &EmailDelivery{}
-		if err := rows.Scan(
+		err := rows.Scan(
 			&d.ID,
 			&d.OrgID,
 			&d.CampaignID,
@@ -195,12 +177,9 @@ func (r *Repository) LoadDeliveries(ctx context.Context) ([]*EmailDelivery, erro
 			&d.BouncedAt,
 			&d.CreatedAt,
 			&d.UpdatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("comms: scan email_delivery: %w", err)
-		}
-		out = append(out, d)
-	}
-	return out, rows.Err()
+		)
+		return d, err
+	})
 }
 
 func (r *Repository) UpsertSuppressionEntry(ctx context.Context, e *SuppressionEntry) error {
@@ -210,7 +189,7 @@ func (r *Repository) UpsertSuppressionEntry(ctx context.Context, e *SuppressionE
 		ON CONFLICT (org_id, email) DO UPDATE SET
 		  reason     = EXCLUDED.reason`,
 		e.ID, e.OrgID, e.Email, e.Reason,
-		e.CreatedAt, nullableString(e.CreatedBy),
+		e.CreatedAt, dbutil.NullableString(e.CreatedBy),
 	)
 	return err
 }
@@ -230,18 +209,13 @@ func (r *Repository) LoadSuppressionEntries(ctx context.Context) ([]*Suppression
 	if err != nil {
 		return nil, fmt.Errorf("comms: load suppression_list: %w", err)
 	}
-	defer rows.Close()
-	var out []*SuppressionEntry
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "comms: scan suppression_entry", func(rows pgx.Rows) (*SuppressionEntry, error) {
 		e := &SuppressionEntry{}
-		if err := rows.Scan(
+		err := rows.Scan(
 			&e.ID, &e.OrgID, &e.Email, &e.Reason, &e.CreatedAt, &e.CreatedBy,
-		); err != nil {
-			return nil, fmt.Errorf("comms: scan suppression_entry: %w", err)
-		}
-		out = append(out, e)
-	}
-	return out, rows.Err()
+		)
+		return e, err
+	})
 }
 
 func (r *Repository) UpsertNotificationPreference(ctx context.Context, preference *NotificationPreference) error {
@@ -259,13 +233,13 @@ func (r *Repository) UpsertNotificationPreference(ctx context.Context, preferenc
 		preference.ID,
 		preference.OrgID,
 		preference.UserID,
-		nullableString(preference.HouseholdID),
+		dbutil.NullableString(preference.HouseholdID),
 		preference.EventID,
 		preference.EmailEnabled,
 		preference.PushEnabled,
 		preference.CreatedAt,
 		preference.UpdatedAt,
-		nullableString(preference.UpdatedBy),
+		dbutil.NullableString(preference.UpdatedBy),
 	)
 	return err
 }
@@ -278,12 +252,9 @@ func (r *Repository) LoadNotificationPreferences(ctx context.Context) ([]*Notifi
 	if err != nil {
 		return nil, fmt.Errorf("comms: load notification_preferences: %w", err)
 	}
-	defer rows.Close()
-
-	var out []*NotificationPreference
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "comms: scan notification_preference", func(rows pgx.Rows) (*NotificationPreference, error) {
 		preference := &NotificationPreference{}
-		if err := rows.Scan(
+		err := rows.Scan(
 			&preference.ID,
 			&preference.OrgID,
 			&preference.UserID,
@@ -294,12 +265,9 @@ func (r *Repository) LoadNotificationPreferences(ctx context.Context) ([]*Notifi
 			&preference.CreatedAt,
 			&preference.UpdatedAt,
 			&preference.UpdatedBy,
-		); err != nil {
-			return nil, fmt.Errorf("comms: scan notification_preference: %w", err)
-		}
-		out = append(out, preference)
-	}
-	return out, rows.Err()
+		)
+		return preference, err
+	})
 }
 
 // ─── Messages ─────────────────────────────────────────────────────────────────
@@ -326,19 +294,14 @@ func (r *Repository) LoadMessages(ctx context.Context) ([]*Message, error) {
 	if err != nil {
 		return nil, fmt.Errorf("comms: load messages: %w", err)
 	}
-	defer rows.Close()
-	var out []*Message
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "comms: scan message", func(rows pgx.Rows) (*Message, error) {
 		m := &Message{}
-		if err := rows.Scan(
+		err := rows.Scan(
 			&m.ID, &m.OrgID, &m.HouseholdID, &m.SwimmerID,
 			&m.SenderUserID, &m.SenderRole, &m.Body, &m.EditedAt, &m.CreatedAt, &m.UpdatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("comms: scan message: %w", err)
-		}
-		out = append(out, m)
-	}
-	return out, rows.Err()
+		)
+		return m, err
+	})
 }
 
 // ─── Message edits ────────────────────────────────────────────────────────────
@@ -368,16 +331,11 @@ func (r *Repository) LoadMessageEdits(ctx context.Context) ([]*MessageEdit, erro
 	if err != nil {
 		return nil, fmt.Errorf("comms: load message_edits: %w", err)
 	}
-	defer rows.Close()
-	var out []*MessageEdit
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "comms: scan message_edit", func(rows pgx.Rows) (*MessageEdit, error) {
 		e := &MessageEdit{}
-		if err := rows.Scan(&e.ID, &e.MessageID, &e.PreviousBody, &e.EditedAt, &e.EditedBy); err != nil {
-			return nil, fmt.Errorf("comms: scan message_edit: %w", err)
-		}
-		out = append(out, e)
-	}
-	return out, rows.Err()
+		err := rows.Scan(&e.ID, &e.MessageID, &e.PreviousBody, &e.EditedAt, &e.EditedBy)
+		return e, err
+	})
 }
 
 // ─── Message reactions ─────────────────────────────────────────────────────────
@@ -407,16 +365,11 @@ func (r *Repository) LoadMessageReactions(ctx context.Context) ([]*MessageReacti
 	if err != nil {
 		return nil, fmt.Errorf("comms: load message_reactions: %w", err)
 	}
-	defer rows.Close()
-	var out []*MessageReaction
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "comms: scan message_reaction", func(rows pgx.Rows) (*MessageReaction, error) {
 		react := &MessageReaction{}
-		if err := rows.Scan(&react.ID, &react.MessageID, &react.UserID, &react.Emoji, &react.CreatedAt); err != nil {
-			return nil, fmt.Errorf("comms: scan message_reaction: %w", err)
-		}
-		out = append(out, react)
-	}
-	return out, rows.Err()
+		err := rows.Scan(&react.ID, &react.MessageID, &react.UserID, &react.Emoji, &react.CreatedAt)
+		return react, err
+	})
 }
 
 // ─── Message attachments ───────────────────────────────────────────────────────
@@ -438,16 +391,11 @@ func (r *Repository) LoadMessageAttachments(ctx context.Context) ([]*MessageAtta
 	if err != nil {
 		return nil, fmt.Errorf("comms: load message_attachments: %w", err)
 	}
-	defer rows.Close()
-	var out []*MessageAttachment
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "comms: scan message_attachment", func(rows pgx.Rows) (*MessageAttachment, error) {
 		a := &MessageAttachment{}
-		if err := rows.Scan(&a.ID, &a.MessageID, &a.ObjectKey, &a.Filename, &a.MimeType, &a.SizeBytes, &a.CreatedAt); err != nil {
-			return nil, fmt.Errorf("comms: scan message_attachment: %w", err)
-		}
-		out = append(out, a)
-	}
-	return out, rows.Err()
+		err := rows.Scan(&a.ID, &a.MessageID, &a.ObjectKey, &a.Filename, &a.MimeType, &a.SizeBytes, &a.CreatedAt)
+		return a, err
+	})
 }
 
 // ─── Message reads ──────────────────────────────────────────────────────────────
@@ -470,16 +418,11 @@ func (r *Repository) LoadMessageReads(ctx context.Context) ([]*MessageRead, erro
 	if err != nil {
 		return nil, fmt.Errorf("comms: load message_reads: %w", err)
 	}
-	defer rows.Close()
-	var out []*MessageRead
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "comms: scan message_read", func(rows pgx.Rows) (*MessageRead, error) {
 		read := &MessageRead{}
-		if err := rows.Scan(&read.ID, &read.OrgID, &read.HouseholdID, &read.SwimmerID, &read.UserID, &read.LastReadAt); err != nil {
-			return nil, fmt.Errorf("comms: scan message_read: %w", err)
-		}
-		out = append(out, read)
-	}
-	return out, rows.Err()
+		err := rows.Scan(&read.ID, &read.OrgID, &read.HouseholdID, &read.SwimmerID, &read.UserID, &read.LastReadAt)
+		return read, err
+	})
 }
 
 // ─── Household erasure (compliance right-to-erasure) ──────────────────────────

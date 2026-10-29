@@ -12,10 +12,6 @@ export function SwimmerShell({ children }: { children: ReactNode }) {
 
   if (!session) return null
 
-  const handleSignOut = () => {
-    router.push('/logout')
-  }
-
   return (
     <div
       data-portal="swim"
@@ -61,7 +57,7 @@ export function SwimmerShell({ children }: { children: ReactNode }) {
       <SwimmerNav
         swimmerName={session.user.name}
         initials={session.user.avatarInitials ?? session.user.name?.slice(0, 2)}
-        onSignOut={handleSignOut}
+        onSignOut={() => router.push('/logout')}
       />
 
       <main className="portal-frame portal-main">

@@ -26,10 +26,11 @@ import {
   type MeetEventRecord,
   type EntryRecord,
 } from '@/lib/adminData'
-import { parseBackendDate } from '@/lib/dates'
+import { formatDateOnly } from '@/lib/dates'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { useDialogA11y } from '@/components/ui/useDialogA11y'
+import './page.inline.css'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -95,10 +96,6 @@ const STROKE_LABELS: Record<string, string> = {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function formatDate(iso: string) {
-  return parseBackendDate(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
 
 function eventLabel(ev: MeetEventRecord): string {
   const dist = ev.distance ? `${ev.distance}` : ''
@@ -227,7 +224,7 @@ function SwimmerPanel({
     }
   }, [api, orgId, meetId, row.meetName, showFeedback, onRefreshTable, confirm, meetCounts])
 
-  const commitCfg = STATUS_CFG[row.status] ?? STATUS_CFG['invited']
+  const commitCfg = STATUS_CFG[row.status] ?? STATUS_CFG.invited
   const meetStatusLabel = MEET_STATUS_CFG[row.meetStatus]?.label ?? row.meetStatus
 
   // Group events by session
@@ -288,7 +285,7 @@ function SwimmerPanel({
               {swimmer.first_name} {swimmer.last_name}
             </div>
             <div className="u-fs-fs-sm u-mt-2px" style={{ color: 'var(--text-muted)' }}>
-              {row.meetName} · {row.meetDate ? formatDate(row.meetDate) : '—'}
+              {row.meetName} · {row.meetDate ? formatDateOnly(row.meetDate) : '—'}
             </div>
           </div>
           <button type="button"
@@ -491,15 +488,6 @@ function SwimmerPanel({
         </div>
       </div>
 
-      <style>{`
-        @keyframes slideInRight {
-          from { transform: translateX(100%); opacity: 0; }
-          to   { transform: translateX(0);    opacity: 1; }
-        }
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
     </>
   )
 }
@@ -608,27 +596,25 @@ function CommitmentsPageContent() {
     setPanelLoading(true)
     setPanelData(null)
 
-    // Check event cache
-    let events = meetEventsCache.get(row.meetId)
-    if (!events) {
-      events = await fetchMeetEvents(api, orgId, row.meetId).catch(() => [] as MeetEventRecord[])
-      setMeetEventsCache((prev) => new Map(prev).set(row.meetId, events!))
-    }
-
-    // Check entries cache
-    let meetEntriesForSwimmer: EntryRecord[] = []
-    let swimmerEntriesMap = meetEntriesCache.get(row.meetId)
-    if (!swimmerEntriesMap) {
-      const allEntries = await fetchMeetEntries(api, orgId, row.meetId).catch(() => [] as EntryRecord[])
-      swimmerEntriesMap = new Map<string, EntryRecord[]>()
-      for (const e of allEntries) {
-        const bucket = swimmerEntriesMap.get(e.swimmer_id) ?? []
-        bucket.push(e)
-        swimmerEntriesMap.set(e.swimmer_id, bucket)
-      }
-      setMeetEntriesCache((prev) => new Map(prev).set(row.meetId, swimmerEntriesMap!))
-    }
-    meetEntriesForSwimmer = swimmerEntriesMap.get(row.swimmerId) ?? []
+    const [events, swimmerEntriesMap] = await Promise.all([
+      meetEventsCache.get(row.meetId)
+        ?? fetchMeetEvents(api, orgId, row.meetId).catch(() => [] as MeetEventRecord[]).then((fetched) => {
+          setMeetEventsCache((prev) => new Map(prev).set(row.meetId, fetched))
+          return fetched
+        }),
+      meetEntriesCache.get(row.meetId)
+        ?? fetchMeetEntries(api, orgId, row.meetId).catch(() => [] as EntryRecord[]).then((allEntries) => {
+          const bySwimmer = new Map<string, EntryRecord[]>()
+          for (const e of allEntries) {
+            const bucket = bySwimmer.get(e.swimmer_id) ?? []
+            bucket.push(e)
+            bySwimmer.set(e.swimmer_id, bucket)
+          }
+          setMeetEntriesCache((prev) => new Map(prev).set(row.meetId, bySwimmer))
+          return bySwimmer
+        }),
+    ])
+    const meetEntriesForSwimmer = swimmerEntriesMap.get(row.swimmerId) ?? []
 
     if (myLoadId !== openPanelLoadId.current) return // stale — a newer open superseded us
     setPanelLoading(false)
@@ -727,7 +713,7 @@ function CommitmentsPageContent() {
       label: 'Date',
       render: (r) => (
         <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>
-          {r.meetDate ? formatDate(r.meetDate) : '—'}
+          {r.meetDate ? formatDateOnly(r.meetDate) : '—'}
         </span>
       ),
     },
@@ -735,7 +721,7 @@ function CommitmentsPageContent() {
       key: 'status',
       label: 'Status',
       render: (r) => {
-        const c = STATUS_CFG[r.status] ?? STATUS_CFG['invited']
+        const c = STATUS_CFG[r.status] ?? STATUS_CFG.invited
         return (
           <span className="badge" style={{ background: c.bg, color: c.color }}>
             {c.label}
@@ -901,7 +887,6 @@ function CommitmentsPageContent() {
         />
       )}
 
-      <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }`}</style>
-    </div>
+          </div>
   )
 }

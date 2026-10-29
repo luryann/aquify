@@ -44,29 +44,7 @@ func NewRateLimiter(limit int, window time.Duration, trustedProxyCIDRs []string)
 		window = time.Minute
 	}
 
-	var trustedNets []*net.IPNet
-	for _, cidr := range trustedProxyCIDRs {
-		cidr = strings.TrimSpace(cidr)
-		if cidr == "" {
-			continue
-		}
-		// Accept plain IPs as /32 (IPv4) or /128 (IPv6)
-		if !strings.Contains(cidr, "/") {
-			ip := net.ParseIP(cidr)
-			if ip == nil {
-				continue
-			}
-			if ip.To4() != nil {
-				cidr = ip.String() + "/32"
-			} else {
-				cidr = ip.String() + "/128"
-			}
-		}
-		_, ipNet, err := net.ParseCIDR(cidr)
-		if err == nil && ipNet != nil {
-			trustedNets = append(trustedNets, ipNet)
-		}
-	}
+	trustedNets := parseTrustedNets(trustedProxyCIDRs)
 
 	rl := &rateLimiter{
 		entries:       make(map[string]*rateLimitEntry),
@@ -88,6 +66,43 @@ func NewRateLimiter(limit int, window time.Duration, trustedProxyCIDRs []string)
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// parseTrustedNets parses CIDR ranges (plain IPs become /32 or /128), skipping
+// blank or invalid entries.
+func parseTrustedNets(cidrs []string) []*net.IPNet {
+	var nets []*net.IPNet
+	for _, cidr := range cidrs {
+		cidr = strings.TrimSpace(cidr)
+		if cidr == "" {
+			continue
+		}
+		// Accept plain IPs as /32 (IPv4) or /128 (IPv6)
+		if !strings.Contains(cidr, "/") {
+			ip := net.ParseIP(cidr)
+			if ip == nil {
+				continue
+			}
+			if ip.To4() != nil {
+				cidr = ip.String() + "/32"
+			} else {
+				cidr = ip.String() + "/128"
+			}
+		}
+		_, ipNet, err := net.ParseCIDR(cidr)
+		if err == nil && ipNet != nil {
+			nets = append(nets, ipNet)
+		}
+	}
+	return nets
+}
+
+// NewClientAddressResolver returns a function that resolves a request's client
+// IP with the same trusted-proxy rule as the rate limiter: X-Forwarded-For is
+// honoured only when the direct peer is inside trustedProxyCIDRs.
+func NewClientAddressResolver(trustedProxyCIDRs []string) func(*http.Request) string {
+	rl := &rateLimiter{trustedNets: parseTrustedNets(trustedProxyCIDRs)}
+	return rl.clientAddress
 }
 
 // allow reports whether the request may proceed and, when it may not, how

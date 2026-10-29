@@ -24,13 +24,11 @@ const NAV_LINKS = [
 
 // Swimmer portal colours — resolved from the [data-portal="swim"] token overrides in globals.css
 const C = {
-  bg:        'var(--bg)',
   surface:   'var(--bg-surface)',
   accent:    'var(--accent)',
   text:      'var(--text)',
   subtle:    'var(--text-subtle)',
   border:    'var(--border)',
-  borderHov: 'var(--accent-border)',
 }
 
 export function SwimmerNav({ swimmerName, initials, onSignOut }: SwimmerNavProps) {
@@ -107,29 +105,8 @@ export function SwimmerNav({ swimmerName, initials, onSignOut }: SwimmerNavProps
               <Link
                 key={link.path}
                 href={link.path}
-                style={{
-                  padding: '6px 12px',
-                  borderRadius: '8px',
-                  fontSize: 'var(--fs-base)',
-                  fontWeight: active ? 600 : 400,
-                  color: active ? C.accent : C.subtle,
-                  background: active ? 'rgba(0,212,170,0.10)' : 'transparent',
-                  textDecoration: 'none',
-                  transition: 'background 120ms ease, color 120ms ease',
-                  whiteSpace: 'nowrap',
-                }}
-                onMouseEnter={(e) => {
-                  if (!active) {
-                    e.currentTarget.style.background = 'rgba(0,212,170,0.06)'
-                    e.currentTarget.style.color = C.text
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!active) {
-                    e.currentTarget.style.background = 'transparent'
-                    e.currentTarget.style.color = C.subtle
-                  }
-                }}
+                className="sn-link"
+                data-active={active || undefined}
               >
                 {link.label}
               </Link>
@@ -152,25 +129,7 @@ export function SwimmerNav({ swimmerName, initials, onSignOut }: SwimmerNavProps
             onClick={() => setMenuOpen((v) => !v)}
             aria-label="Athlete menu"
             aria-expanded={menuOpen}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '4px 12px 4px 4px',
-              background: 'transparent',
-              border: `1px solid ${C.border}`,
-              borderRadius: '999px',
-              cursor: 'pointer',
-              transition: 'border-color 120ms ease, background 120ms ease',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(0,212,170,0.06)'
-              e.currentTarget.style.borderColor = C.borderHov
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent'
-              e.currentTarget.style.borderColor = C.border
-            }}
+            className="sn-user-trigger"
           >
             {/* Avatar */}
             <div
@@ -219,19 +178,7 @@ export function SwimmerNav({ swimmerName, initials, onSignOut }: SwimmerNavProps
                 <Link
                   href="/swim/profile"
                   onClick={() => setMenuOpen(false)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    padding: '8px 12px',
-                    borderRadius: '8px',
-                    textDecoration: 'none',
-                    color: C.text,
-                    fontSize: 'var(--fs-base)',
-                    transition: 'background 100ms ease',
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(0,212,170,0.08)')}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  className="sn-menu-link"
                 >
                   <Icon name="user" size={14} style={{ color: C.subtle }} />
                   My Profile
@@ -239,9 +186,7 @@ export function SwimmerNav({ swimmerName, initials, onSignOut }: SwimmerNavProps
                 <div style={{ height: '1px', background: C.border, margin: '4px 0' }} />
                 <button type="button"
                   onClick={() => { setMenuOpen(false); onSignOut?.() }}
-                  className="is-31cee2f"
-                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--error-bg)')}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  className="is-31cee2f hv-46c633"
                 >
                   <Icon name="log-out" size={14} style={{ color: 'var(--error)' }} />
                   Sign out
@@ -284,15 +229,8 @@ export function SwimmerNav({ swimmerName, initials, onSignOut }: SwimmerNavProps
                   key={link.path}
                   href={link.path}
                   onClick={() => setMobileNavOpen(false)}
-                  style={{
-                    padding: '12px 12px',
-                    borderRadius: '8px',
-                    fontSize: 'var(--fs-md)',
-                    fontWeight: active ? 600 : 400,
-                    color: active ? C.accent : C.subtle,
-                    background: active ? 'rgba(0,212,170,0.10)' : 'transparent',
-                    textDecoration: 'none',
-                  }}
+                  className="sn-link sn-link--drawer"
+                  data-active={active || undefined}
                 >
                   {link.label}
                 </Link>

@@ -62,9 +62,8 @@ const maxCompletedHistory = 500
 // Server is the in-memory background job worker. It satisfies the Queue
 // interface for enqueueing, and exposes Start/Stop for lifecycle management.
 //
-// Production note: replace with github.com/hibiken/asynq by creating an
-// asynqQueue adapter that wraps asynq.Client and asynq.Server behind the
-// same Queue interface — all handler functions stay identical.
+// It backs local development and tests; REDIS_URL selects the durable Asynq
+// backend (redis_backend.go) behind the same Queue interface.
 type Server struct {
 	mu             sync.RWMutex
 	closed         bool
@@ -253,16 +252,9 @@ func (s *Server) enqueueAt(ctx context.Context, processAt time.Time, task *Task,
 		go func() {
 			select {
 			case <-s.ctx.Done():
-				s.mu.Lock()
-				it.LastErr = "server_shutdown"
-				if it.UniqueKey != "" {
-					delete(s.uniqueKeyIndex, it.UniqueKey)
-				}
-				s.dlq = append(s.dlq, it)
-				s.mu.Unlock()
-				s.setStatus(it, StatusDeadLetter)
+				s.deadLetterOnShutdown(it)
 			case <-time.After(delay):
-				ch <- it
+				s.dispatchOrDeadLetter(ch, it)
 			}
 		}()
 	} else {
@@ -488,13 +480,9 @@ func (s *Server) processTask(ctx context.Context, it *internalTask) {
 	s.mu.Unlock()
 
 	if retried > maxRetries {
-		s.setStatus(it, StatusDeadLetter)
 		s.metrics.RecordDLQ(it.Type)
 		s.mu.Lock()
-		s.dlq = append(s.dlq, it)
-		if it.UniqueKey != "" {
-			delete(s.uniqueKeyIndex, it.UniqueKey)
-		}
+		s.parkInDLQLocked(it)
 		s.mu.Unlock()
 		s.logger.Error("job moved to DLQ", "id", it.ID, "type", it.Type, "retried", retried)
 		return
@@ -510,19 +498,42 @@ func (s *Server) processTask(ctx context.Context, it *internalTask) {
 	go func() {
 		select {
 		case <-time.After(backoff):
-			ch <- it
+			s.dispatchOrDeadLetter(ch, it)
 		case <-ctx.Done():
 			// Server shutting down during retry wait — move to DLQ.
-			s.mu.Lock()
-			it.LastErr = "server_shutdown"
-			s.dlq = append(s.dlq, it)
-			if it.UniqueKey != "" {
-				delete(s.uniqueKeyIndex, it.UniqueKey)
-			}
-			s.mu.Unlock()
-			s.setStatus(it, StatusDeadLetter)
+			s.deadLetterOnShutdown(it)
 		}
 	}()
+}
+
+// dispatchOrDeadLetter sends a delayed or retried task to its queue, parking it
+// in the DLQ if the server stops while the queue is full so the goroutine
+// cannot block forever.
+func (s *Server) dispatchOrDeadLetter(ch chan<- *internalTask, it *internalTask) {
+	select {
+	case ch <- it:
+	case <-s.ctx.Done():
+		s.deadLetterOnShutdown(it)
+	}
+}
+
+// deadLetterOnShutdown parks a task that was waiting on a delay or backoff when
+// the server stopped, so it can be retried from the DLQ later.
+func (s *Server) deadLetterOnShutdown(it *internalTask) {
+	s.mu.Lock()
+	it.LastErr = "server_shutdown"
+	s.parkInDLQLocked(it)
+	s.mu.Unlock()
+}
+
+// parkInDLQLocked marks a task dead-lettered and frees its unique key so the
+// same work can be enqueued again. Callers hold s.mu for writing.
+func (s *Server) parkInDLQLocked(it *internalTask) {
+	it.Status = StatusDeadLetter
+	s.dlq = append(s.dlq, it)
+	if it.UniqueKey != "" {
+		delete(s.uniqueKeyIndex, it.UniqueKey)
+	}
 }
 
 func (s *Server) setStatus(it *internalTask, status TaskStatus) {

@@ -15,20 +15,7 @@ import {
 } from '@/lib/adminData'
 import { ROLE_HIERARCHY, type Role } from '@/lib/roles'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
-
-const ROLE_OPTIONS: { value: string; label: string }[] = [
-  { value: 'admin', label: 'Admin' },
-  { value: 'coach', label: 'Coach' },
-  { value: 'parent', label: 'Parent' },
-  { value: 'swimmer', label: 'Swimmer' },
-]
-
-const ROLE_COLORS: Record<string, { bg: string; color: string }> = {
-  admin:   { bg: 'rgba(251,191,36,0.12)',  color: '#fbbf24' },
-  coach:   { bg: 'rgba(74,222,128,0.10)',  color: '#4ade80' },
-  parent:  { bg: 'rgba(196,148,255,0.10)', color: '#c484ff' },
-  swimmer: { bg: 'rgba(248,113,113,0.10)', color: '#f87171' },
-}
+import { ROLE_COLORS, ROLE_OPTIONS } from '@/lib/user-roles'
 
 function RoleBadge({ role }: { role: string }) {
   const c = ROLE_COLORS[role] ?? { bg: 'var(--bg-elevated)', color: 'var(--text-subtle)' }
@@ -106,7 +93,7 @@ export function UsersPanel() {
 
   const loadRequestIdRef = useRef(0)
 
-  function loadUsers(roleOverride?: string) {
+  function loadUsers() {
     if (!session?.user.orgId) {
       setUsers([])
       setUserSource('keycloak')
@@ -115,7 +102,7 @@ export function UsersPanel() {
       return
     }
     const requestId = ++loadRequestIdRef.current
-    const role = (roleOverride ?? roleFilter) !== 'all' ? (roleOverride ?? roleFilter) : undefined
+    const role = roleFilter !== 'all' ? roleFilter : undefined
     setLoading(true)
     setError(null)
     fetchUsers(api, session.user.orgId, { limit: 200, role })
@@ -193,7 +180,6 @@ export function UsersPanel() {
     }
   }
 
-  const selectStyle: React.CSSProperties = {}
 
   return (
     <div>
@@ -278,12 +264,12 @@ export function UsersPanel() {
             className="u-p-8px-12px-8px-32px u-fs-fs-base" style={{ width: '100%' }}
           />
         </div>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={selectStyle}>
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="all">All statuses</option>
           <option value="active">Active</option>
           <option value="disabled">Disabled</option>
         </select>
-        <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} style={selectStyle}>
+        <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
           <option value="all">All roles</option>
           {ROLE_OPTIONS.map((r) => (
             <option key={r.value} value={r.value}>{r.label}</option>

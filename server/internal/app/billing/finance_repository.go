@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/dareaquatics/aquify/server/internal/dbutil"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -63,205 +64,169 @@ func nullableDate(value string) any {
 
 // ─── Load ────────────────────────────────────────────────────────────────────
 
+// loadRows runs a read query and passes each row to scan. Errors are wrapped
+// with what names the thing being loaded (for example "fee schedules").
+func loadRows(ctx context.Context, q dbExec, what, query string, scan func(pgx.Rows) error) error {
+	rows, err := q.Query(ctx, query)
+	if err != nil {
+		return fmt.Errorf("billing: load %s: %w", what, err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		if err := scan(rows); err != nil {
+			return fmt.Errorf("billing: scan %s: %w", what, err)
+		}
+	}
+	return rows.Err()
+}
+
 func (r *Repository) loadFinanceState(ctx context.Context) (*financeState, error) {
 	f := newFinanceState()
+	q := r.db()
 
-	rows, err := r.db().Query(ctx, `
+	if err := loadRows(ctx, q, "fee schedules", `
 		SELECT id::text, org_id::text, name, kind, group_code, season, frequency, amount_cents,
 		       start_date::text, COALESCE(end_date::text, ''), proration, auto_bill, active, description,
 		       created_at, updated_at, created_by, updated_by
-		FROM billing_fee_schedules`)
-	if err != nil {
-		return nil, fmt.Errorf("billing: load fee schedules: %w", err)
-	}
-	for rows.Next() {
+		FROM billing_fee_schedules`, func(rows pgx.Rows) error {
 		sc := &FeeSchedule{}
 		if err := rows.Scan(&sc.ID, &sc.OrgID, &sc.Name, &sc.Kind, &sc.GroupCode, &sc.Season, &sc.Frequency,
 			&sc.AmountCents, &sc.StartDate, &sc.EndDate, &sc.Proration, &sc.AutoBill, &sc.Active, &sc.Description,
 			&sc.CreatedAt, &sc.UpdatedAt, &sc.CreatedBy, &sc.UpdatedBy); err != nil {
-			rows.Close()
-			return nil, fmt.Errorf("billing: scan fee schedule: %w", err)
+			return err
 		}
 		f.schedules[sc.ID] = sc
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 
-	rows, err = r.db().Query(ctx, `
+	if err := loadRows(ctx, q, "discount rules", `
 		SELECT id::text, org_id::text, name, applies_to, min_position, max_position, discount_type,
 		       percent_bps, amount_cents, active, created_at, updated_at, created_by, updated_by
-		FROM billing_discount_rules`)
-	if err != nil {
-		return nil, fmt.Errorf("billing: load discount rules: %w", err)
-	}
-	for rows.Next() {
+		FROM billing_discount_rules`, func(rows pgx.Rows) error {
 		rule := &DiscountRule{}
 		if err := rows.Scan(&rule.ID, &rule.OrgID, &rule.Name, &rule.AppliesTo, &rule.MinPosition, &rule.MaxPosition,
 			&rule.DiscountType, &rule.PercentBps, &rule.AmountCents, &rule.Active,
 			&rule.CreatedAt, &rule.UpdatedAt, &rule.CreatedBy, &rule.UpdatedBy); err != nil {
-			rows.Close()
-			return nil, fmt.Errorf("billing: scan discount rule: %w", err)
+			return err
 		}
 		f.rules[rule.ID] = rule
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 
-	rows, err = r.db().Query(ctx, `
+	if err := loadRows(ctx, q, "adjustments", `
 		SELECT id::text, org_id::text, household_id, swimmer_id, amount_cents, reason, status,
 		       COALESCE(applied_invoice_id::text, ''), COALESCE(applied_run_id::text, ''),
 		       created_at, updated_at, created_by, updated_by
-		FROM billing_adjustments`)
-	if err != nil {
-		return nil, fmt.Errorf("billing: load adjustments: %w", err)
-	}
-	for rows.Next() {
+		FROM billing_adjustments`, func(rows pgx.Rows) error {
 		a := &Adjustment{}
 		if err := rows.Scan(&a.ID, &a.OrgID, &a.HouseholdID, &a.SwimmerID, &a.AmountCents, &a.Reason, &a.Status,
 			&a.AppliedInvoiceID, &a.AppliedRunID, &a.CreatedAt, &a.UpdatedAt, &a.CreatedBy, &a.UpdatedBy); err != nil {
-			rows.Close()
-			return nil, fmt.Errorf("billing: scan adjustment: %w", err)
+			return err
 		}
 		f.adjustments[a.ID] = a
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 
-	rows, err = r.db().Query(ctx, `
+	if err := loadRows(ctx, q, "runs", `
 		SELECT id::text, org_id::text, as_of::text, invoice_status, COALESCE(due_date::text, ''), schedule_ids,
 		       trigger, fingerprint, household_count, invoice_count, charge_count, skipped_count,
 		       gross_cents, discount_cents, adjustment_cents, credit_applied_cents, net_cents, created_at, created_by
-		FROM billing_runs`)
-	if err != nil {
-		return nil, fmt.Errorf("billing: load runs: %w", err)
-	}
-	for rows.Next() {
+		FROM billing_runs`, func(rows pgx.Rows) error {
 		run := &BillingRun{}
 		if err := rows.Scan(&run.ID, &run.OrgID, &run.AsOf, &run.InvoiceStatus, &run.DueDate, &run.ScheduleIDs,
 			&run.Trigger, &run.Fingerprint, &run.HouseholdCount, &run.InvoiceCount, &run.ChargeCount, &run.SkippedCount,
 			&run.GrossCents, &run.DiscountCents, &run.AdjustmentCents, &run.CreditAppliedCents, &run.NetCents,
 			&run.CreatedAt, &run.CreatedBy); err != nil {
-			rows.Close()
-			return nil, fmt.Errorf("billing: scan run: %w", err)
+			return err
 		}
 		f.runs[run.ID] = run
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 
-	rows, err = r.db().Query(ctx, `
+	if err := loadRows(ctx, q, "charges", `
 		SELECT id::text, org_id::text, run_id::text, invoice_id::text, household_id, swimmer_id, schedule_id::text,
 		       period_key, period_start::text, period_end::text, gross_cents, discount_cents, net_cents,
 		       sibling_position, released_at, created_at
-		FROM billing_charges ORDER BY created_at, id`)
-	if err != nil {
-		return nil, fmt.Errorf("billing: load charges: %w", err)
-	}
-	for rows.Next() {
+		FROM billing_charges ORDER BY created_at, id`, func(rows pgx.Rows) error {
 		c := &BillingCharge{}
 		if err := rows.Scan(&c.ID, &c.OrgID, &c.RunID, &c.InvoiceID, &c.HouseholdID, &c.SwimmerID, &c.ScheduleID,
 			&c.PeriodKey, &c.PeriodStart, &c.PeriodEnd, &c.GrossCents, &c.DiscountCents, &c.NetCents,
 			&c.SiblingPosition, &c.ReleasedAt, &c.CreatedAt); err != nil {
-			rows.Close()
-			return nil, fmt.Errorf("billing: scan charge: %w", err)
+			return err
 		}
 		f.indexCharge(c)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 
-	rows, err = r.db().Query(ctx, `
+	if err := loadRows(ctx, q, "credit entries", `
 		SELECT id::text, org_id::text, household_id, amount_cents, kind, COALESCE(invoice_id::text, ''),
 		       COALESCE(payment_id::text, ''), COALESCE(refund_id::text, ''), reason, stripe_ref, balance_after_cents,
 		       created_at, created_by
-		FROM household_credit_entries ORDER BY created_at, id`)
-	if err != nil {
-		return nil, fmt.Errorf("billing: load credit entries: %w", err)
-	}
-	for rows.Next() {
+		FROM household_credit_entries ORDER BY created_at, id`, func(rows pgx.Rows) error {
 		e := &CreditEntry{}
 		if err := rows.Scan(&e.ID, &e.OrgID, &e.HouseholdID, &e.AmountCents, &e.Kind, &e.InvoiceID, &e.PaymentID,
 			&e.RefundID, &e.Reason, &e.StripeRef, &e.BalanceAfterCents, &e.CreatedAt, &e.CreatedBy); err != nil {
-			rows.Close()
-			return nil, fmt.Errorf("billing: scan credit entry: %w", err)
+			return err
 		}
 		f.credits = append(f.credits, e)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 
-	rows, err = r.db().Query(ctx, `SELECT org_id::text, household_id, balance_cents FROM household_credit_balances`)
-	if err != nil {
-		return nil, fmt.Errorf("billing: load credit balances: %w", err)
-	}
-	for rows.Next() {
+	if err := loadRows(ctx, q, "credit balances", `SELECT org_id::text, household_id, balance_cents FROM household_credit_balances`, func(rows pgx.Rows) error {
 		var orgID, householdID string
 		var balance int
 		if err := rows.Scan(&orgID, &householdID, &balance); err != nil {
-			rows.Close()
-			return nil, fmt.Errorf("billing: scan credit balance: %w", err)
+			return err
 		}
 		f.balances[balanceKey(orgID, householdID)] = balance
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 
-	rows, err = r.db().Query(ctx, `
+	if err := loadRows(ctx, q, "settings", `
 		SELECT org_id::text, late_fee_enabled, late_fee_grace_days, late_fee_type, late_fee_flat_cents,
 		       late_fee_percent_bps, late_fee_max_cents, auto_run_enabled, auto_run_day,
 		       auto_run_invoice_status, auto_run_due_days, updated_at, updated_by
-		FROM billing_settings`)
-	if err != nil {
-		return nil, fmt.Errorf("billing: load settings: %w", err)
-	}
-	for rows.Next() {
+		FROM billing_settings`, func(rows pgx.Rows) error {
 		st := &BillingSettings{}
 		if err := rows.Scan(&st.OrgID, &st.LateFeeEnabled, &st.LateFeeGraceDays, &st.LateFeeType, &st.LateFeeFlatCents,
 			&st.LateFeePercentBps, &st.LateFeeMaxCents, &st.AutoRunEnabled, &st.AutoRunDay,
 			&st.AutoRunInvoiceStatus, &st.AutoRunDueDays, &st.UpdatedAt, &st.UpdatedBy); err != nil {
-			rows.Close()
-			return nil, fmt.Errorf("billing: scan settings: %w", err)
+			return err
 		}
 		f.settings[st.OrgID] = st
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 
-	rows, err = r.db().Query(ctx, `
+	if err := loadRows(ctx, q, "late fees", `
 		SELECT id::text, org_id::text, invoice_id::text, item_id::text, amount_cents, applied_at
-		FROM billing_late_fee_applications`)
-	if err != nil {
-		return nil, fmt.Errorf("billing: load late fees: %w", err)
-	}
-	for rows.Next() {
+		FROM billing_late_fee_applications`, func(rows pgx.Rows) error {
 		app := &LateFeeApplication{}
 		if err := rows.Scan(&app.ID, &app.OrgID, &app.InvoiceID, &app.ItemID, &app.AmountCents, &app.AppliedAt); err != nil {
-			rows.Close()
-			return nil, fmt.Errorf("billing: scan late fee: %w", err)
+			return err
 		}
 		f.lateFees[app.OrgID+"|"+app.InvoiceID] = app
+		return nil
+	}); err != nil {
+		return nil, err
 	}
-	rows.Close()
-	return f, rows.Err()
+	return f, nil
 }
-
-// ─── Configuration writes ────────────────────────────────────────────────────
 
 func (r *Repository) upsertFeeSchedule(ctx context.Context, sc *FeeSchedule) error {
 	_, err := r.db().Exec(ctx, `
@@ -304,7 +269,7 @@ func upsertAdjustment(ctx context.Context, q dbExec, a *Adjustment) error {
 		  status = EXCLUDED.status, applied_invoice_id = EXCLUDED.applied_invoice_id,
 		  applied_run_id = EXCLUDED.applied_run_id, updated_at = EXCLUDED.updated_at, updated_by = EXCLUDED.updated_by`,
 		a.ID, a.OrgID, a.HouseholdID, a.SwimmerID, a.AmountCents, a.Reason, a.Status,
-		nullableString(a.AppliedInvoiceID), nullableString(a.AppliedRunID),
+		dbutil.NullableString(a.AppliedInvoiceID), dbutil.NullableString(a.AppliedRunID),
 		a.CreatedAt, a.UpdatedAt, a.CreatedBy, a.UpdatedBy)
 	return err
 }
@@ -435,8 +400,8 @@ func insertCreditEntry(ctx context.Context, q dbExec, e *CreditEntry) error {
 		INSERT INTO household_credit_entries (id, org_id, household_id, amount_cents, kind, invoice_id, payment_id,
 		       refund_id, reason, stripe_ref, balance_after_cents, created_at, created_by)
 		VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6::uuid, $7::uuid, $8::uuid, $9, $10, $11, $12, $13)`,
-		e.ID, e.OrgID, e.HouseholdID, e.AmountCents, e.Kind, nullableString(e.InvoiceID), nullableString(e.PaymentID),
-		nullableString(e.RefundID), e.Reason, e.StripeRef, e.BalanceAfterCents, e.CreatedAt, e.CreatedBy)
+		e.ID, e.OrgID, e.HouseholdID, e.AmountCents, e.Kind, dbutil.NullableString(e.InvoiceID), dbutil.NullableString(e.PaymentID),
+		dbutil.NullableString(e.RefundID), e.Reason, e.StripeRef, e.BalanceAfterCents, e.CreatedAt, e.CreatedBy)
 	return err
 }
 

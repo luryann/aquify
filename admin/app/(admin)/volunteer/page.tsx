@@ -21,7 +21,8 @@ import {
   type VolunteerSettings,
 } from '@/lib/volunteerData'
 import { fillPercent, formatCents, formatHours } from '@/lib/volunteer-state'
-import { ComplianceBadge, HoursMeter, InlineNotice, LoadErrorBanner } from '@/components/volunteer/VolunteerPrimitives'
+import { ComplianceBadge, HoursMeter, InlineNotice } from '@/components/volunteer/VolunteerPrimitives'
+import { LoadErrorBanner } from '@/components/ui/LoadErrorBanner'
 import { NewJobsForm } from '@/components/volunteer/NewJobsForm'
 import { StaffJobBoard } from '@/components/volunteer/StaffJobBoard'
 import { useConfirm } from '@/components/ui/ConfirmDialog'

@@ -14,8 +14,10 @@ import {
   type CommitmentRecord,
   type SwimmerRecord,
 } from '@/lib/adminData'
-import { parseBackendDate } from '@/lib/dates'
+import { formatDateOnly, parseBackendDate } from '@/lib/dates'
 import './page.inline.css'
+import { SWIMMER_AVATAR_COLORS } from '@/lib/avatar-colors'
+import { ShimmerBlock } from '@/components/ui/ShimmerBlock'
 
 // ── Types ───────────────────────────────────────────────────────────────────
 type CommitmentStatus = 'pending' | 'yes' | 'no' | 'open' | 'closed'
@@ -35,13 +37,6 @@ type MeetCard = {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
-const GRADIENTS = [
-  'var(--accent)',
-  'var(--info)',
-  'var(--warning)',
-  'var(--danger, #dc2626)',
-]
-
 function fmtMonth(iso?: string): string {
   if (!iso) return '—'
   return parseBackendDate(iso).toLocaleDateString('en-US', { month: 'short' })
@@ -50,11 +45,6 @@ function fmtMonth(iso?: string): string {
 function fmtDay(iso?: string): string {
   if (!iso) return '—'
   return parseBackendDate(iso).toLocaleDateString('en-US', { day: 'numeric' })
-}
-
-function fmtDate(iso?: string): string {
-  if (!iso) return '—'
-  return parseBackendDate(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 function daysUntil(iso?: string): number {
@@ -86,13 +76,13 @@ function buildMeetCard(
     id: sw.id,
     name: `${sw.first_name} ${sw.last_name}`,
     initials: `${sw.first_name[0] ?? ''}${sw.last_name[0] ?? ''}`.toUpperCase(),
-    gradient: GRADIENTS[idx % GRADIENTS.length],
+    gradient: SWIMMER_AVATAR_COLORS[idx % SWIMMER_AVATAR_COLORS.length],
     commitment: mapCommitment(commitments, sw.id, meet.status),
   }))
   return {
     id: meet.id,
     name: meet.name,
-    dateLabel: fmtDate(meet.start_date),
+    dateLabel: formatDateOnly(meet.start_date),
     monthLabel: fmtMonth(meet.start_date),
     dayLabel: fmtDay(meet.start_date),
     deadlineDate: meet.commitment_deadline ?? '',
@@ -121,19 +111,6 @@ const MEET_STATUS_LABEL: Record<string, string> = {
   entry_finalized:    'Entries Finalized',
   completed:          'Completed',
   archived:           'Archived',
-}
-
-function Skeleton({ w = '100%', h = 16, r = 8 }: { w?: string | number; h?: number; r?: number }) {
-  return (
-    <div
-      style={{
-        width: w, height: h, borderRadius: r,
-        background: 'linear-gradient(90deg, var(--bg-elevated) 25%, var(--border-strong) 50%, var(--bg-elevated) 75%)',
-        backgroundSize: '200% 100%',
-        animation: 'shimmer 1.5s infinite',
-      }}
-    />
-  )
 }
 
 function DeadlineCountdown({ days }: { days: number }) {
@@ -227,11 +204,7 @@ export default function MeetsPage() {
 
   return (
     <div>
-      <style>{`
-        @keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
-      `}</style>
-
+      
       {/* Page header */}
       <div className="page-heading">
         <h1 className="page-title">
@@ -244,11 +217,11 @@ export default function MeetsPage() {
         <div className="is-930d87f">
           {[0, 1].map((i) => (
             <div key={i} className="card is-4d0790f" >
-              <Skeleton w={52} h={64} r={10} />
+              <ShimmerBlock w={52} h={64} r={10} />
               <div className="is-e933947">
-                <Skeleton w="45%" h={20} />
-                <Skeleton w="65%" h={13} />
-                <Skeleton w="40%" h={30} r={8} />
+                <ShimmerBlock w="45%" h={20} />
+                <ShimmerBlock w="65%" h={13} />
+                <ShimmerBlock w="40%" h={30} r={8} />
               </div>
             </div>
           ))}
@@ -338,7 +311,7 @@ export default function MeetsPage() {
                             {meet.deadlineDate && (
                               <>
                                 <span>·</span>
-                                <span title="Respond by this date or your swimmer won't be entered in this meet">Deadline: {fmtDate(meet.deadlineDate)}</span>
+                                <span title="Respond by this date or your swimmer won't be entered in this meet">Deadline: {formatDateOnly(meet.deadlineDate)}</span>
                                 <DeadlineCountdown days={meet.daysUntilDeadline} />
                               </>
                             )}
@@ -459,9 +432,7 @@ function MeetList({ meets }: { meets: MeetCard[] }) {
         <Link
           key={meet.id}
           href={`/portal/meets/${meet.id}`}
-          className="is-e9d15aa"
-          onMouseEnter={(e) => (e.currentTarget.style.boxShadow = 'var(--shadow-sm)')}
-          onMouseLeave={(e) => (e.currentTarget.style.boxShadow = 'none')}
+          className="is-e9d15aa hv-c28f3d"
         >
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="is-79731f1">

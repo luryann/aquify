@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/dareaquatics/aquify/server/internal/dbutil"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -35,13 +36,6 @@ func (r *Repository) db() dbExec {
 	return r.pool
 }
 
-func nullableString(s string) interface{} {
-	if s == "" {
-		return nil
-	}
-	return s
-}
-
 // ─── Invoices ─────────────────────────────────────────────────────────────────
 
 func (r *Repository) UpsertInvoice(ctx context.Context, inv *Invoice) error {
@@ -70,11 +64,11 @@ func upsertInvoice(ctx context.Context, q dbExec, inv *Invoice) error {
 		  external_ref      = EXCLUDED.external_ref,
 		  updated_at        = EXCLUDED.updated_at`,
 		inv.ID, inv.OrgID,
-		nullableString(inv.HouseholdID),
+		dbutil.NullableString(inv.HouseholdID),
 		inv.InvoiceNumber, inv.Status,
 		inv.SubtotalCents, inv.TaxCents, inv.TotalCents, inv.AmountPaidCents, inv.AmountDueCents,
 		inv.IssuedAt, inv.VoidedAt, inv.WrittenOffAt,
-		nullableString(inv.DueDate), nullableString(inv.Notes), nullableString(inv.ExternalRef),
+		dbutil.NullableString(inv.DueDate), dbutil.NullableString(inv.Notes), dbutil.NullableString(inv.ExternalRef),
 		inv.CreatedAt, inv.UpdatedAt,
 	)
 	return err
@@ -92,23 +86,18 @@ func (r *Repository) LoadInvoices(ctx context.Context) ([]*Invoice, error) {
 	if err != nil {
 		return nil, fmt.Errorf("billing: load invoices: %w", err)
 	}
-	defer rows.Close()
-	var out []*Invoice
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "billing: scan invoice", func(rows pgx.Rows) (*Invoice, error) {
 		inv := &Invoice{}
-		if err := rows.Scan(
+		err := rows.Scan(
 			&inv.ID, &inv.OrgID, &inv.HouseholdID,
 			&inv.InvoiceNumber, &inv.Status, &inv.SubtotalCents, &inv.TaxCents, &inv.TotalCents,
 			&inv.AmountPaidCents, &inv.AmountDueCents,
 			&inv.IssuedAt, &inv.VoidedAt, &inv.WrittenOffAt,
 			&inv.DueDate, &inv.Notes, &inv.ExternalRef,
 			&inv.CreatedAt, &inv.UpdatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("billing: scan invoice: %w", err)
-		}
-		out = append(out, inv)
-	}
-	return out, rows.Err()
+		)
+		return inv, err
+	})
 }
 
 // ─── Invoice Items ────────────────────────────────────────────────────────────
@@ -132,7 +121,7 @@ func upsertInvoiceItem(ctx context.Context, q dbExec, item *InvoiceItem) error {
 		  updated_at       = EXCLUDED.updated_at`,
 		item.ID, item.OrgID, item.InvoiceID,
 		item.Description, item.Quantity, item.UnitAmountCents, item.Category,
-		nullableString(item.SwimmerID), nullableString(item.MeetID),
+		dbutil.NullableString(item.SwimmerID), dbutil.NullableString(item.MeetID),
 		item.CreatedAt, item.UpdatedAt,
 	)
 	return err
@@ -153,9 +142,7 @@ func (r *Repository) LoadInvoiceItems(ctx context.Context) ([]*InvoiceItem, erro
 	if err != nil {
 		return nil, fmt.Errorf("billing: load invoice_items: %w", err)
 	}
-	defer rows.Close()
-	var out []*InvoiceItem
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "billing: scan invoice_item", func(rows pgx.Rows) (*InvoiceItem, error) {
 		item := &InvoiceItem{}
 		if err := rows.Scan(
 			&item.ID, &item.OrgID, &item.InvoiceID,
@@ -163,12 +150,11 @@ func (r *Repository) LoadInvoiceItems(ctx context.Context) ([]*InvoiceItem, erro
 			&item.SwimmerID, &item.MeetID,
 			&item.CreatedAt, &item.UpdatedAt,
 		); err != nil {
-			return nil, fmt.Errorf("billing: scan invoice_item: %w", err)
+			return item, err
 		}
 		item.TotalCents = item.Quantity * item.UnitAmountCents
-		out = append(out, item)
-	}
-	return out, rows.Err()
+		return item, nil
+	})
 }
 
 // ─── Payments ────────────────────────────────────────────────────────────────
@@ -194,7 +180,7 @@ func upsertPayment(ctx context.Context, q dbExec, p *Payment) error {
 		p.ID, p.OrgID, p.InvoiceID,
 		nil, // household_id — derived from the invoice; not stored on Payment
 		p.AmountCents, p.Method, p.Status,
-		nullableString(p.StripePaymentIntentID), nullableString(p.ExternalRef), nullableString(p.Notes),
+		dbutil.NullableString(p.StripePaymentIntentID), dbutil.NullableString(p.ExternalRef), dbutil.NullableString(p.Notes),
 		p.PaidAt, p.FailedAt, p.CreatedAt, p.UpdatedAt,
 	)
 	return err
@@ -210,21 +196,16 @@ func (r *Repository) LoadPayments(ctx context.Context) ([]*Payment, error) {
 	if err != nil {
 		return nil, fmt.Errorf("billing: load payments: %w", err)
 	}
-	defer rows.Close()
-	var out []*Payment
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "billing: scan payment", func(rows pgx.Rows) (*Payment, error) {
 		p := &Payment{}
-		if err := rows.Scan(
+		err := rows.Scan(
 			&p.ID, &p.OrgID, &p.InvoiceID,
 			&p.AmountCents, &p.Method, &p.Status,
 			&p.StripePaymentIntentID, &p.ExternalRef, &p.Notes,
 			&p.PaidAt, &p.FailedAt, &p.CreatedAt, &p.UpdatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("billing: scan payment: %w", err)
-		}
-		out = append(out, p)
-	}
-	return out, rows.Err()
+		)
+		return p, err
+	})
 }
 
 // ─── Refunds ──────────────────────────────────────────────────────────────────
@@ -246,7 +227,7 @@ func upsertRefund(ctx context.Context, q dbExec, ref *Refund) error {
 		  updated_at       = EXCLUDED.updated_at`,
 		ref.ID, ref.OrgID, ref.InvoiceID, ref.PaymentID,
 		ref.AmountCents, ref.Reason, ref.Status,
-		nullableString(ref.StripeRefundID), ref.ProcessedAt, ref.RejectedAt,
+		dbutil.NullableString(ref.StripeRefundID), ref.ProcessedAt, ref.RejectedAt,
 		ref.CreatedAt, ref.UpdatedAt,
 	)
 	return err
@@ -261,20 +242,15 @@ func (r *Repository) LoadRefunds(ctx context.Context) ([]*Refund, error) {
 	if err != nil {
 		return nil, fmt.Errorf("billing: load refunds: %w", err)
 	}
-	defer rows.Close()
-	var out []*Refund
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "billing: scan refund", func(rows pgx.Rows) (*Refund, error) {
 		ref := &Refund{}
-		if err := rows.Scan(
+		err := rows.Scan(
 			&ref.ID, &ref.OrgID, &ref.InvoiceID, &ref.PaymentID,
 			&ref.AmountCents, &ref.Reason, &ref.Status, &ref.StripeRefundID,
 			&ref.ProcessedAt, &ref.RejectedAt, &ref.CreatedAt, &ref.UpdatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("billing: scan refund: %w", err)
-		}
-		out = append(out, ref)
-	}
-	return out, rows.Err()
+		)
+		return ref, err
+	})
 }
 
 // ─── Ledger Events (append-only INSERT) ──────────────────────────────────────
@@ -290,9 +266,9 @@ func insertLedgerEvent(ctx context.Context, q dbExec, ev *LedgerEvent) error {
 		VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (id) DO NOTHING`,
 		ev.ID, ev.OrgID, ev.EventType,
-		nullableString(ev.InvoiceID), nullableString(ev.PaymentID), nullableString(ev.RefundID),
-		nullableString(ev.HouseholdID),
-		ev.AmountCents, nullableString(ev.Description),
+		dbutil.NullableString(ev.InvoiceID), dbutil.NullableString(ev.PaymentID), dbutil.NullableString(ev.RefundID),
+		dbutil.NullableString(ev.HouseholdID),
+		ev.AmountCents, dbutil.NullableString(ev.Description),
 		ev.CreatedAt,
 	)
 	return err
@@ -308,21 +284,16 @@ func (r *Repository) LoadLedgerEvents(ctx context.Context) ([]*LedgerEvent, erro
 	if err != nil {
 		return nil, fmt.Errorf("billing: load ledger_events: %w", err)
 	}
-	defer rows.Close()
-	var out []*LedgerEvent
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "billing: scan ledger_event", func(rows pgx.Rows) (*LedgerEvent, error) {
 		ev := &LedgerEvent{}
-		if err := rows.Scan(
+		err := rows.Scan(
 			&ev.ID, &ev.OrgID, &ev.EventType,
 			&ev.InvoiceID, &ev.PaymentID, &ev.RefundID,
 			&ev.HouseholdID, &ev.AmountCents, &ev.Description,
 			&ev.CreatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("billing: scan ledger_event: %w", err)
-		}
-		out = append(out, ev)
-	}
-	return out, rows.Err()
+		)
+		return ev, err
+	})
 }
 
 func (r *Repository) UpsertHouseholdAutopayProfile(ctx context.Context, profile *HouseholdAutopayProfile) error {
@@ -351,16 +322,16 @@ func (r *Repository) UpsertHouseholdAutopayProfile(ctx context.Context, profile 
 		profile.HouseholdID,
 		profile.Enabled,
 		profile.PaymentMethodType,
-		nullableString(profile.PaymentMethodBrand),
-		nullableString(profile.PaymentMethodLast4),
+		dbutil.NullableString(profile.PaymentMethodBrand),
+		dbutil.NullableString(profile.PaymentMethodLast4),
 		profile.PaymentMethodLabel,
-		nullableString(profile.PaymentMethodExternalRef),
+		dbutil.NullableString(profile.PaymentMethodExternalRef),
 		profile.PaymentMethodExpMonth,
 		profile.PaymentMethodExpYear,
 		profile.TriggerDaysBeforeDue,
 		profile.CreatedAt,
 		profile.UpdatedAt,
-		nullableString(profile.UpdatedBy),
+		dbutil.NullableString(profile.UpdatedBy),
 	)
 	return err
 }
@@ -376,10 +347,7 @@ func (r *Repository) LoadHouseholdAutopayProfiles(ctx context.Context) ([]*House
 	if err != nil {
 		return nil, fmt.Errorf("billing: load household_autopay_profiles: %w", err)
 	}
-	defer rows.Close()
-
-	var out []*HouseholdAutopayProfile
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "billing: scan household_autopay_profile", func(rows pgx.Rows) (*HouseholdAutopayProfile, error) {
 		profile := &HouseholdAutopayProfile{}
 		if err := rows.Scan(
 			&profile.ID,
@@ -398,11 +366,10 @@ func (r *Repository) LoadHouseholdAutopayProfiles(ctx context.Context) ([]*House
 			&profile.UpdatedAt,
 			&profile.UpdatedBy,
 		); err != nil {
-			return nil, fmt.Errorf("billing: scan household_autopay_profile: %w", err)
+			return profile, err
 		}
-		out = append(out, profile)
-	}
-	return out, rows.Err()
+		return profile, nil
+	})
 }
 
 // ─── Batch load ───────────────────────────────────────────────────────────────

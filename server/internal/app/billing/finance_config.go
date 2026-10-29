@@ -115,8 +115,11 @@ func (s *Service) GetFeeSchedule(orgID string, principal *appmiddleware.Principa
 	if err := s.requireAdmin(principal); err != nil {
 		return nil, err
 	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.refreshLocked(context.Background()); err != nil {
+		return nil, err
+	}
 	sc, ok := s.finance.schedules[scheduleID]
 	if !ok || sc.OrgID != orgID {
 		return nil, ErrFeeScheduleNotFound
@@ -207,6 +210,9 @@ func (s *Service) ArchiveFeeSchedule(orgID, actorID string, principal *appmiddle
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.refreshLocked(context.Background()); err != nil {
+		return nil, err
+	}
 	sc, ok := s.finance.schedules[scheduleID]
 	if !ok || sc.OrgID != orgID {
 		return nil, ErrFeeScheduleNotFound
@@ -325,6 +331,9 @@ func (s *Service) UpdateDiscountRule(orgID, actorID string, principal *appmiddle
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.refreshLocked(context.Background()); err != nil {
+		return nil, nil, err
+	}
 	rule, ok := s.finance.rules[ruleID]
 	if !ok || rule.OrgID != orgID {
 		return nil, nil, ErrDiscountRuleNotFound
@@ -355,6 +364,9 @@ func (s *Service) ArchiveDiscountRule(orgID, actorID string, principal *appmiddl
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.refreshLocked(context.Background()); err != nil {
+		return nil, err
+	}
 	rule, ok := s.finance.rules[ruleID]
 	if !ok || rule.OrgID != orgID {
 		return nil, ErrDiscountRuleNotFound
@@ -525,6 +537,9 @@ func (s *Service) UpdateBillingSettings(orgID, actorID string, principal *appmid
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.refreshLocked(context.Background()); err != nil {
+		return nil, nil, err
+	}
 	before := *s.settingsLocked(orgID)
 	st := &BillingSettings{
 		OrgID: orgID, LateFeeEnabled: input.LateFeeEnabled, LateFeeGraceDays: input.LateFeeGraceDays,

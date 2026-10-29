@@ -28,11 +28,10 @@ package billing
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dareaquatics/aquify/server/internal/dbutil"
 	"log/slog"
 	"slices"
 	"sort"
@@ -469,34 +468,16 @@ func (s *Service) newID() string {
 	if s.repo != nil {
 		return uuid.New().String()
 	}
-	return newID()
+	return dbutil.NewHexID()
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-func newID() string {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		panic(fmt.Errorf("secure random unavailable for billing ID generation: %w", err))
-	}
-	return hex.EncodeToString(b)
-}
-
-func (s *Service) requireBillingRole(principal *appmiddleware.Principal) error {
-	for _, r := range principal.Roles {
-		switch strings.ToLower(r) {
-		case "admin":
-			return nil
-		}
-	}
-	return ErrForbidden
-}
-
-// RequireBillingWriteAccess is the exported counterpart of requireBillingRole.
+// RequireBillingWriteAccess is the exported counterpart of requireAdmin.
 // It allows handler packages to delegate role enforcement to the service layer
 // without duplicating the role list locally.
 func (s *Service) RequireBillingWriteAccess(principal *appmiddleware.Principal) error {
-	return s.requireBillingRole(principal)
+	return s.requireAdmin(principal)
 }
 
 func (s *Service) requireAdmin(principal *appmiddleware.Principal) error {
@@ -556,16 +537,6 @@ func (s *Service) parentCannotSeeInvoice(principal *appmiddleware.Principal, inv
 		return false
 	}
 	return inv.Status == "draft"
-}
-
-func (s *Service) requireLedgerReadAccess(principal *appmiddleware.Principal) error {
-	for _, r := range principal.Roles {
-		switch strings.ToLower(r) {
-		case "admin":
-			return nil
-		}
-	}
-	return ErrForbidden
 }
 
 func invoiceNumKey(orgID, number string) string {
@@ -718,7 +689,7 @@ func (s *Service) updateInvoiceStatusAfterPayment(inv *Invoice) {
 
 // CreateInvoice creates a draft invoice.
 func (s *Service) CreateInvoice(orgID, actorID string, principal *appmiddleware.Principal, input CreateInvoiceInput) (*Invoice, error) {
-	if err := s.requireBillingRole(principal); err != nil {
+	if err := s.requireAdmin(principal); err != nil {
 		return nil, err
 	}
 
@@ -825,7 +796,7 @@ func (s *Service) ListInvoices(orgID string, principal *appmiddleware.Principal,
 
 // AddInvoiceItem adds a line item to a draft invoice.
 func (s *Service) AddInvoiceItem(orgID, actorID string, principal *appmiddleware.Principal, invoiceID string, input AddInvoiceItemInput) (*InvoiceItem, error) {
-	if err := s.requireBillingRole(principal); err != nil {
+	if err := s.requireAdmin(principal); err != nil {
 		return nil, err
 	}
 
@@ -866,26 +837,42 @@ func (s *Service) AddInvoiceItem(orgID, actorID string, principal *appmiddleware
 	s.items[invoiceID] = append(s.items[invoiceID], item)
 	s.itemsByID[item.ID] = item
 
-	inv.UpdatedAt = now
-	inv.UpdatedBy = actorID
-	s.recomputeTotals(inv)
+	// Recompute totals on a copy; if saving the invoice fails, take the item
+	// back out so memory and the database agree.
+	next := *inv
+	next.UpdatedAt = now
+	next.UpdatedBy = actorID
+	s.recomputeTotals(&next)
 	if s.repo != nil {
-		if err := s.repo.UpsertInvoice(context.Background(), inv); err != nil {
+		if err := s.repo.UpsertInvoice(context.Background(), &next); err != nil {
+			s.items[invoiceID] = slices.DeleteFunc(s.items[invoiceID], func(i *InvoiceItem) bool { return i.ID == item.ID })
+			delete(s.itemsByID, item.ID)
+			if delErr := s.repo.DeleteInvoiceItem(context.Background(), item.ID); delErr != nil {
+				slog.Error("billing: remove orphaned invoice item failed", "item_id", item.ID, "error", delErr)
+			}
 			return nil, fmt.Errorf("persist invoice after item add: %w", err)
 		}
 	}
+	*inv = next
 
 	return item, nil
 }
 
 // RemoveInvoiceItem removes a line item from a draft invoice.
 func (s *Service) RemoveInvoiceItem(orgID, actorID string, principal *appmiddleware.Principal, invoiceID, itemID string) error {
-	if err := s.requireBillingRole(principal); err != nil {
+	if err := s.requireAdmin(principal); err != nil {
 		return err
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// The item delete and the invoice total update commit together.
+	if s.repo != nil && s.repo.tx == nil {
+		return s.stripeTransactionLocked(orgID, invoiceID, func(staged *Service) error {
+			return staged.RemoveInvoiceItem(orgID, actorID, principal, invoiceID, itemID)
+		})
+	}
 
 	inv, ok := s.invoices[invoiceID]
 	if !ok || inv.OrgID != orgID {
@@ -955,7 +942,7 @@ func (s *Service) ListInvoiceItems(orgID string, principal *appmiddleware.Princi
 
 // IssueInvoice transitions a draft invoice to issued and writes a ledger event.
 func (s *Service) IssueInvoice(orgID, actorID string, principal *appmiddleware.Principal, invoiceID string) (*Invoice, *LedgerEvent, error) {
-	if err := s.requireBillingRole(principal); err != nil {
+	if err := s.requireAdmin(principal); err != nil {
 		return nil, nil, err
 	}
 
@@ -973,18 +960,21 @@ func (s *Service) IssueInvoice(orgID, actorID string, principal *appmiddleware.P
 		return nil, nil, ErrInvoiceEmpty
 	}
 
+	// Persist a copy first so a failed write leaves the cached invoice untouched.
 	now := time.Now().UTC()
-	inv.Status = "issued"
-	inv.IssuedAt = &now
-	inv.AmountDueCents = inv.TotalCents - inv.AmountPaidCents
-	inv.UpdatedAt = now
-	inv.UpdatedBy = actorID
+	next := *inv
+	next.Status = "issued"
+	next.IssuedAt = &now
+	next.AmountDueCents = next.TotalCents - next.AmountPaidCents
+	next.UpdatedAt = now
+	next.UpdatedBy = actorID
 
 	if s.repo != nil {
-		if err := s.repo.UpsertInvoice(context.Background(), inv); err != nil {
+		if err := s.repo.UpsertInvoice(context.Background(), &next); err != nil {
 			return nil, nil, fmt.Errorf("persist issued invoice: %w", err)
 		}
 	}
+	*inv = next
 	ev, err := s.appendLedger(orgID, invoiceID, "", "", "invoice_issued", inv.TotalCents,
 		fmt.Sprintf("Invoice %s issued", inv.InvoiceNumber), actorID)
 	if err != nil {
@@ -1000,7 +990,7 @@ func (s *Service) IssueInvoice(orgID, actorID string, principal *appmiddleware.P
 
 // VoidInvoice voids an issued invoice (no payments must exist).
 func (s *Service) VoidInvoice(orgID, actorID string, principal *appmiddleware.Principal, invoiceID string) (*Invoice, *LedgerEvent, error) {
-	if err := s.requireBillingRole(principal); err != nil {
+	if err := s.requireAdmin(principal); err != nil {
 		return nil, nil, err
 	}
 
@@ -1066,19 +1056,22 @@ func (s *Service) WriteOffInvoice(orgID, actorID string, principal *appmiddlewar
 		return nil, nil, ErrInvoiceNotWriteOffable
 	}
 
+	// Persist a copy first so a failed write leaves the cached invoice untouched.
 	now := time.Now().UTC()
 	remaining := inv.AmountDueCents
-	inv.Status = "written_off"
-	inv.WrittenOffAt = &now
-	inv.AmountDueCents = 0
-	inv.UpdatedAt = now
-	inv.UpdatedBy = actorID
+	next := *inv
+	next.Status = "written_off"
+	next.WrittenOffAt = &now
+	next.AmountDueCents = 0
+	next.UpdatedAt = now
+	next.UpdatedBy = actorID
 
 	if s.repo != nil {
-		if err := s.repo.UpsertInvoice(context.Background(), inv); err != nil {
+		if err := s.repo.UpsertInvoice(context.Background(), &next); err != nil {
 			return nil, nil, fmt.Errorf("persist written-off invoice: %w", err)
 		}
 	}
+	*inv = next
 	ev, err := s.appendLedger(orgID, invoiceID, "", "", "invoice_written_off", -remaining,
 		fmt.Sprintf("Invoice %s written off", inv.InvoiceNumber), actorID)
 	if err != nil {
@@ -1092,12 +1085,21 @@ func (s *Service) WriteOffInvoice(orgID, actorID string, principal *appmiddlewar
 
 // RecordPayment records an external payment against an issued invoice.
 func (s *Service) RecordPayment(orgID, actorID string, principal *appmiddleware.Principal, invoiceID string, input RecordPaymentInput) (*Payment, *LedgerEvent, error) {
-	if err := s.requireBillingRole(principal); err != nil {
+	if err := s.requireAdmin(principal); err != nil {
 		return nil, nil, err
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// With Postgres the payment, invoice update, ledger event and any overpayment
+	// credit commit together under a row lock on the invoice, against fresh
+	// state, so two instances cannot both pay the same remaining balance.
+	if s.repo != nil && s.repo.tx == nil {
+		return stripeTransactionResult(s, orgID, invoiceID, func(staged *Service) (*Payment, *LedgerEvent, error) {
+			return staged.RecordPayment(orgID, actorID, principal, invoiceID, input)
+		})
+	}
 
 	inv, ok := s.invoices[invoiceID]
 	if !ok || inv.OrgID != orgID {
@@ -1155,6 +1157,7 @@ func (s *Service) RecordPayment(orgID, actorID string, principal *appmiddleware.
 		s.stripeIntentIndex[input.StripePaymentIntentID] = payment
 	}
 
+	beforeInvoice := *inv
 	inv.AmountPaidCents += input.AmountCents
 	s.updateInvoiceStatusAfterPayment(inv)
 	inv.UpdatedAt = now
@@ -1162,6 +1165,7 @@ func (s *Service) RecordPayment(orgID, actorID string, principal *appmiddleware.
 
 	if s.repo != nil {
 		if err := s.repo.UpsertInvoice(context.Background(), inv); err != nil {
+			*inv = beforeInvoice // the payment row is already stored; a reload re-derives the balance from it
 			return nil, nil, fmt.Errorf("persist invoice after payment: %w", err)
 		}
 	}
@@ -1175,6 +1179,8 @@ func (s *Service) RecordPayment(orgID, actorID string, principal *appmiddleware.
 			OrgID: orgID, HouseholdID: inv.HouseholdID, AmountCents: excessCents, Kind: CreditKindOverpayment,
 			InvoiceID: invoiceID, PaymentID: payment.ID, ActorID: actorID,
 			Reason: fmt.Sprintf("Overpayment on invoice %s", inv.InvoiceNumber),
+			// Stamp the intent so the webhook and refund paths see this credit.
+			StripeRef: input.StripePaymentIntentID,
 		}); err != nil {
 			return nil, nil, fmt.Errorf("record overpayment credit: %w", err)
 		}
@@ -1344,6 +1350,17 @@ func (s *Service) ListHouseholdAutopayStatuses(orgID string, principal *appmiddl
 	return out, nil
 }
 
+// autopayProfileCopyLocked returns a private copy of the household's autopay
+// profile (or a new one) to edit; it is stored only after it has been persisted,
+// so a failed write leaves the cached profile unchanged.
+func (s *Service) autopayProfileCopyLocked(key, orgID, householdID string, now time.Time) *HouseholdAutopayProfile {
+	if existing := s.autopayProfiles[key]; existing != nil {
+		cp := *existing
+		return &cp
+	}
+	return &HouseholdAutopayProfile{ID: s.newID(), OrgID: orgID, HouseholdID: householdID, CreatedAt: now}
+}
+
 // UpsertHouseholdAutopay enables autopay and persists payment-method metadata for a household.
 func (s *Service) UpsertHouseholdAutopay(orgID, actorID string, principal *appmiddleware.Principal, householdID string, input UpsertHouseholdAutopayInput) (*HouseholdAutopayStatus, error) {
 	if err := s.requireAutopayWriteAccess(principal, householdID); err != nil {
@@ -1360,15 +1377,7 @@ func (s *Service) UpsertHouseholdAutopay(orgID, actorID string, principal *appmi
 
 	now := time.Now().UTC()
 	key := autopayProfileKey(orgID, householdID)
-	profile := s.autopayProfiles[key]
-	if profile == nil {
-		profile = &HouseholdAutopayProfile{
-			ID:          s.newID(),
-			OrgID:       orgID,
-			HouseholdID: householdID,
-			CreatedAt:   now,
-		}
-	}
+	profile := s.autopayProfileCopyLocked(key, orgID, householdID, now)
 	profile.Enabled = true
 	profile.PaymentMethodType = input.PaymentMethodType
 	profile.PaymentMethodBrand = input.PaymentMethodBrand
@@ -1402,15 +1411,7 @@ func (s *Service) OptOutHouseholdAutopay(orgID, actorID string, principal *appmi
 
 	now := time.Now().UTC()
 	key := autopayProfileKey(orgID, householdID)
-	profile := s.autopayProfiles[key]
-	if profile == nil {
-		profile = &HouseholdAutopayProfile{
-			ID:          s.newID(),
-			OrgID:       orgID,
-			HouseholdID: householdID,
-			CreatedAt:   now,
-		}
-	}
+	profile := s.autopayProfileCopyLocked(key, orgID, householdID, now)
 	profile.Enabled = false
 	profile.UpdatedAt = now
 	profile.UpdatedBy = actorID
@@ -1428,7 +1429,7 @@ func (s *Service) OptOutHouseholdAutopay(orgID, actorID string, principal *appmi
 // ValidateRefundPreflight verifies whether a refund is locally eligible before
 // any external provider call is made.
 func (s *Service) ValidateRefundPreflight(orgID string, principal *appmiddleware.Principal, invoiceID string, input CreateRefundInput) (*RefundPreflight, error) {
-	if err := s.requireBillingRole(principal); err != nil {
+	if err := s.requireAdmin(principal); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(input.Reason) == "" {
@@ -1488,6 +1489,15 @@ func (s *Service) CreateRefund(orgID, actorID string, principal *appmiddleware.P
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// With Postgres the refund, invoice and payment updates, ledger event and
+	// any refund-to-credit entry commit together against fresh locked state, so
+	// a failure partway cannot leave a refund recorded without its credit.
+	if s.repo != nil && s.repo.tx == nil {
+		return stripeTransactionResult(s, orgID, invoiceID, func(staged *Service) (*Refund, *LedgerEvent, error) {
+			return staged.CreateRefund(orgID, actorID, principal, invoiceID, input)
+		})
+	}
+
 	inv, ok := s.invoices[invoiceID]
 	if !ok || inv.OrgID != orgID {
 		return nil, nil, ErrInvoiceNotFound
@@ -1539,48 +1549,44 @@ func (s *Service) CreateRefund(orgID, actorID string, principal *appmiddleware.P
 		UpdatedBy:      actorID,
 	}
 
-	if s.repo != nil {
-		if err := s.repo.UpsertRefund(context.Background(), refund); err != nil {
-			return nil, nil, fmt.Errorf("persist refund: %w", err)
-		}
-	}
-	s.refunds[invoiceID] = append(s.refunds[invoiceID], refund)
-	s.refundsByID[refund.ID] = refund
-
-	// Update payment status if fully refunded.
+	// Apply the effects to copies and persist them first; the shared in-memory
+	// records are only updated once every write has succeeded, so a failed
+	// persist cannot leave memory ahead of the database.
+	updatedPayment := *payment
 	totalRefundedForPayment := alreadyRefunded + input.AmountCents
 	if totalRefundedForPayment >= payment.AmountCents {
-		payment.Status = "reversed"
-		payment.UpdatedAt = now
+		updatedPayment.Status = "reversed"
+		updatedPayment.UpdatedAt = now
 	}
 
-	// Update invoice amount paid and status.
-	inv.AmountPaidCents -= input.AmountCents
-	if inv.AmountPaidCents < 0 {
-		inv.AmountPaidCents = 0
-	}
-	inv.AmountDueCents = inv.TotalCents - inv.AmountPaidCents
-	if inv.AmountDueCents < 0 {
-		inv.AmountDueCents = 0
-	}
-
-	// Update invoice refund status.
-	if inv.AmountPaidCents == 0 {
-		inv.Status = "refunded_full"
+	updatedInvoice := *inv
+	updatedInvoice.AmountPaidCents = max(inv.AmountPaidCents-input.AmountCents, 0)
+	updatedInvoice.AmountDueCents = max(inv.TotalCents-updatedInvoice.AmountPaidCents, 0)
+	if updatedInvoice.AmountPaidCents == 0 {
+		updatedInvoice.Status = "refunded_full"
 	} else {
-		inv.Status = "refunded_partial"
+		updatedInvoice.Status = "refunded_partial"
 	}
-	inv.UpdatedAt = now
-	inv.UpdatedBy = actorID
+	updatedInvoice.UpdatedAt = now
+	updatedInvoice.UpdatedBy = actorID
 
 	if s.repo != nil {
-		if err := s.repo.UpsertInvoice(context.Background(), inv); err != nil {
+		ctx := context.Background()
+		if err := s.repo.UpsertRefund(ctx, refund); err != nil {
+			return nil, nil, fmt.Errorf("persist refund: %w", err)
+		}
+		if err := s.repo.UpsertInvoice(ctx, &updatedInvoice); err != nil {
 			return nil, nil, fmt.Errorf("persist invoice after refund: %w", err)
 		}
-		if err := s.repo.UpsertPayment(context.Background(), payment); err != nil {
+		if err := s.repo.UpsertPayment(ctx, &updatedPayment); err != nil {
 			return nil, nil, fmt.Errorf("persist payment after refund: %w", err)
 		}
 	}
+	*payment = updatedPayment
+	*inv = updatedInvoice
+	s.refunds[invoiceID] = append(s.refunds[invoiceID], refund)
+	s.refundsByID[refund.ID] = refund
+
 	ev, err := s.appendLedger(orgID, invoiceID, input.PaymentID, refund.ID, "refund_processed", input.AmountCents,
 		fmt.Sprintf("Refund of %d cents processed for invoice %s", input.AmountCents, inv.InvoiceNumber), actorID)
 	if err != nil {
@@ -1629,7 +1635,7 @@ func (s *Service) ListRefunds(orgID string, principal *appmiddleware.Principal, 
 
 // ListLedgerEvents returns ledger events filtered by optional invoice/event type.
 func (s *Service) ListLedgerEvents(orgID string, principal *appmiddleware.Principal, filters ListLedgerFilters) ([]*LedgerEvent, error) {
-	if err := s.requireLedgerReadAccess(principal); err != nil {
+	if err := s.requireAdmin(principal); err != nil {
 		return nil, err
 	}
 
@@ -1839,7 +1845,7 @@ func (s *Service) MarkWebhookProcessed(provider, eventID string, processErr erro
 
 // ListWebhookEvents returns webhook event records visible to the admin role.
 func (s *Service) ListWebhookEvents(orgID string, principal *appmiddleware.Principal) ([]*WebhookEventRecord, error) {
-	if err := s.requireLedgerReadAccess(principal); err != nil {
+	if err := s.requireAdmin(principal); err != nil {
 		return nil, err
 	}
 
@@ -1882,31 +1888,16 @@ func (s *Service) HandleStripePaymentIntentSucceeded(
 	defer s.mu.Unlock()
 
 	if s.repo != nil && s.repo.tx == nil {
-		var result *Payment
-		var event *LedgerEvent
-		err := s.stripeTransactionLocked(orgID, invoiceID, func(staged *Service) error {
-			var err error
-			result, event, err = staged.HandleStripePaymentIntentSucceeded(orgID, paymentIntentID, invoiceID, amountCents, actorID)
-			return err
+		return stripeTransactionResult(s, orgID, invoiceID, func(staged *Service) (*Payment, *LedgerEvent, error) {
+			return staged.HandleStripePaymentIntentSucceeded(orgID, paymentIntentID, invoiceID, amountCents, actorID)
 		})
-		if err != nil {
-			return nil, nil, err
-		}
-		return result, event, nil
 	}
 
 	// Idempotency: skip if a payment with this intent ID already exists.
 	if existing, ok := s.stripeIntentIndex[paymentIntentID]; ok {
-		// A retry after a failed overpayment-credit write must still create the
-		// credit, otherwise the household never receives the excess.
-		if excess := amountCents - existing.AmountCents; excess > 0 {
-			if inv, found := s.invoices[existing.InvoiceID]; found && strings.TrimSpace(inv.HouseholdID) != "" {
-				if err := s.ensureStripeCreditLocked(inv, paymentIntentID, existing.ID, excess, actorID,
-					fmt.Sprintf("Overpayment on invoice %s", inv.InvoiceNumber)); err != nil {
-					return nil, nil, err
-				}
-			}
-		}
+		// The payment and any overpayment credit were committed together, so a
+		// redelivery must not re-derive credit from the Stripe amount. Staff may
+		// have recorded only part of the intent, and the rest is not an excess.
 		return existing, nil, nil
 	}
 
@@ -1943,7 +1934,7 @@ func (s *Service) HandleStripePaymentIntentSucceeded(
 
 	now := time.Now().UTC()
 	payment := &Payment{
-		ID:                    newID(),
+		ID:                    s.newID(),
 		OrgID:                 orgID,
 		InvoiceID:             invoiceID,
 		AmountCents:           amountCents,
@@ -2129,17 +2120,9 @@ func (s *Service) HandleStripeChargeRefunded(
 	defer s.mu.Unlock()
 
 	if s.repo != nil && s.repo.tx == nil {
-		var result *Refund
-		var event *LedgerEvent
-		err := s.stripeTransactionLocked(orgID, invoiceID, func(staged *Service) error {
-			var err error
-			result, event, err = staged.HandleStripeChargeRefunded(orgID, paymentIntentID, invoiceID, amountRefundedCents, stripeRefundID, reason, actorID)
-			return err
+		return stripeTransactionResult(s, orgID, invoiceID, func(staged *Service) (*Refund, *LedgerEvent, error) {
+			return staged.HandleStripeChargeRefunded(orgID, paymentIntentID, invoiceID, amountRefundedCents, stripeRefundID, reason, actorID)
 		})
-		if err != nil {
-			return nil, nil, err
-		}
-		return result, event, nil
 	}
 
 	inv, ok := s.invoices[invoiceID]
@@ -2278,7 +2261,7 @@ func (s *Service) GetReconciliationReport(
 	stripeTotalCents int,
 	alertThresholdCents int,
 ) (*ReconciliationReport, error) {
-	if err := s.requireLedgerReadAccess(principal); err != nil {
+	if err := s.requireAdmin(principal); err != nil {
 		return nil, err
 	}
 

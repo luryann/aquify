@@ -1,7 +1,11 @@
 name: Deploy to Staging
 
+# Staging deploys only after CI has passed for the commit on main (the CI
+# workflow runs on every push); a manual run is still available.
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
 
@@ -12,20 +16,33 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  GHCR_NAMESPACE: ${{ vars.GHCR_NAMESPACE || github.repository_owner }}
-  API_IMAGE: ghcr.io/${{ vars.GHCR_NAMESPACE || github.repository_owner }}/dare-api
-  ADMIN_IMAGE: ghcr.io/${{ vars.GHCR_NAMESPACE || github.repository_owner }}/dare-admin
 
 jobs:
   deploy:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     env:
       SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+      # workflow_run runs against the default branch head; deploy the commit CI actually tested.
+      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
     name: Build, Push, and Deploy to Staging
     runs-on: ubuntu-latest
     environment: staging
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DEPLOY_SHA }}
+
+      - name: Resolve GHCR namespace
+        env:
+          RAW_NAMESPACE: ${{ vars.GHCR_NAMESPACE || github.repository_owner }}
+        run: |
+          # GHCR repository paths must be lowercase; owner logins may not be.
+          NS="$(printf '%s' "$RAW_NAMESPACE" | tr '[:upper:]' '[:lower:]')"
+          echo "SHORT_SHA=$(printf '%s' "$DEPLOY_SHA" | cut -c1-7)" >> "$GITHUB_ENV"
+          echo "GHCR_NAMESPACE=${NS}" >> "$GITHUB_ENV"
+          echo "API_IMAGE=${REGISTRY}/${NS}/dare-api" >> "$GITHUB_ENV"
+          echo "ADMIN_IMAGE=${REGISTRY}/${NS}/dare-admin" >> "$GITHUB_ENV"
 
       # -----------------------------------------------------------------------
       # Container Registry Login
@@ -48,7 +65,7 @@ jobs:
         with:
           images: ${{ env.API_IMAGE }}
           tags: |
-            type=sha,prefix=sha-,format=short
+            type=raw,value=sha-${{ env.SHORT_SHA }}
             type=raw,value=latest-staging
 
       - name: Extract metadata for Admin image
@@ -57,7 +74,7 @@ jobs:
         with:
           images: ${{ env.ADMIN_IMAGE }}
           tags: |
-            type=sha,prefix=sha-,format=short
+            type=raw,value=sha-${{ env.SHORT_SHA }}
             type=raw,value=latest-staging
 
       # -----------------------------------------------------------------------
@@ -79,7 +96,7 @@ jobs:
           cache-from: type=gha,scope=api
           cache-to: type=gha,mode=max,scope=api
           build-args: |
-            BUILD_SHA=${{ github.sha }}
+            BUILD_SHA=${{ env.DEPLOY_SHA }}
             BUILD_REF=${{ github.ref_name }}
 
       # -----------------------------------------------------------------------
@@ -97,7 +114,7 @@ jobs:
           cache-from: type=gha,scope=admin
           cache-to: type=gha,mode=max,scope=admin
           build-args: |
-            BUILD_SHA=${{ github.sha }}
+            BUILD_SHA=${{ env.DEPLOY_SHA }}
             NEXT_PUBLIC_APP_ENV=staging
             NEXT_PUBLIC_AUTH_ENABLE_DEV_STUB_TOKENS=false
 
@@ -117,7 +134,7 @@ jobs:
           script: |
             set -euo pipefail
 
-            IMAGE_TAG="sha-$(echo "${{ github.sha }}" | cut -c1-7)"
+            IMAGE_TAG="sha-$(echo "${{ env.DEPLOY_SHA }}" | cut -c1-7)"
             DEPLOY_DIR=/opt/dare
 
             echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Deploying IMAGE_TAG=${IMAGE_TAG} to staging" \
@@ -165,14 +182,18 @@ jobs:
 
       - name: Run smoke tests on staging
         uses: appleboy/ssh-action@v1
+        env:
+          SMOKE_AUTH_TOKEN: ${{ secrets.SMOKE_TEST_AUTH_TOKEN }}
+          SMOKE_ORG_ID: ${{ secrets.SMOKE_TEST_ORG_ID }}
         with:
+          envs: SMOKE_AUTH_TOKEN,SMOKE_ORG_ID
           host: ${{ secrets.STAGING_SSH_HOST }}
           username: ${{ secrets.STAGING_SSH_USER }}
           key: ${{ secrets.STAGING_SSH_KEY }}
           script: |
             set -euo pipefail
-            SMOKE_AUTH_TOKEN="${{ secrets.SMOKE_TEST_AUTH_TOKEN }}" \
-            SMOKE_ORG_ID="${{ secrets.SMOKE_TEST_ORG_ID }}" \
+            SMOKE_AUTH_TOKEN="${SMOKE_AUTH_TOKEN}" \
+            SMOKE_ORG_ID="${SMOKE_ORG_ID}" \
             API_BASE_URL="https://api-staging.dare.club" \
               /opt/dare/scripts/smoke.sh
 
@@ -194,7 +215,7 @@ jobs:
                   "color": "danger",
                   "fields": [
                     {"title": "Branch", "value": "${{ github.ref_name }}", "short": true},
-                    {"title": "Commit", "value": "${{ github.sha }}", "short": true},
+                    {"title": "Commit", "value": "${{ env.DEPLOY_SHA }}", "short": true},
                     {"title": "Triggered by", "value": "${{ github.actor }}", "short": true},
                     {"title": "Workflow run", "value": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}", "short": false}
                   ]
@@ -216,7 +237,7 @@ jobs:
                   "color": "good",
                   "fields": [
                     {"title": "Branch", "value": "${{ github.ref_name }}", "short": true},
-                    {"title": "Image tag", "value": "sha-${{ github.sha }}", "short": true},
+                    {"title": "Image tag", "value": "sha-${{ env.DEPLOY_SHA }}", "short": true},
                     {"title": "Triggered by", "value": "${{ github.actor }}", "short": true}
                   ]
                 }

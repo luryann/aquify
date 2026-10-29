@@ -15,6 +15,7 @@ import {
   type ReportArtifactRecord,
 } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
+import { formatDateTime } from '@/lib/dates'
 
 type ReportKey = 'membership-status' | 'meet-fees' | 'invoice-aging' | 'payment-reconciliation' | 'registration-status'
 
@@ -25,16 +26,6 @@ type ReportSummary = {
   description: string
   rowCount: number
   generatedAt: string
-}
-
-function formatDateTime(value: string) {
-  return new Date(value).toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
 }
 
 function formatBytes(bytes: number) {

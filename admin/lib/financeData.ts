@@ -1,5 +1,5 @@
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
-import { ApiError, rawRequestAuthHeaders, type ApiClient } from './api.ts'
+import { ApiError, rawRequestAuthHeaders, type ApiClient, orgHeaders } from './api.ts'
 
 // ─── Types (mirror server/internal/app/billing finance contracts) ────────────
 
@@ -208,96 +208,94 @@ export type UpcomingCharges = {
 
 // ─── Fetchers ────────────────────────────────────────────────────────────────
 
-const org = (orgId: string) => ({ 'X-Org-Id': orgId })
-
 export async function fetchFeeSchedules(api: ApiClient, orgId: string) {
-  const res = await api.get<{ fee_schedules: FeeSchedule[] }>('/api/v1/billing/fee-schedules', undefined, org(orgId))
+  const res = await api.get<{ fee_schedules: FeeSchedule[] }>('/api/v1/billing/fee-schedules', undefined, orgHeaders(orgId))
   return res.fee_schedules ?? []
 }
 
 export async function saveFeeSchedule(api: ApiClient, orgId: string, input: FeeScheduleInput, id?: string) {
   const res = id
-    ? await api.put<{ fee_schedule: FeeSchedule }>(`/api/v1/billing/fee-schedules/${id}`, input, org(orgId))
-    : await api.post<{ fee_schedule: FeeSchedule }>('/api/v1/billing/fee-schedules', input, org(orgId))
+    ? await api.put<{ fee_schedule: FeeSchedule }>(`/api/v1/billing/fee-schedules/${id}`, input, orgHeaders(orgId))
+    : await api.post<{ fee_schedule: FeeSchedule }>('/api/v1/billing/fee-schedules', input, orgHeaders(orgId))
   return res.fee_schedule
 }
 
 export async function archiveFeeSchedule(api: ApiClient, orgId: string, id: string) {
-  await api.delete(`/api/v1/billing/fee-schedules/${id}`, org(orgId))
+  await api.delete(`/api/v1/billing/fee-schedules/${id}`, orgHeaders(orgId))
 }
 
 export async function fetchDiscountRules(api: ApiClient, orgId: string) {
-  const res = await api.get<{ discount_rules: DiscountRule[] }>('/api/v1/billing/discount-rules', undefined, org(orgId))
+  const res = await api.get<{ discount_rules: DiscountRule[] }>('/api/v1/billing/discount-rules', undefined, orgHeaders(orgId))
   return res.discount_rules ?? []
 }
 
 export async function saveDiscountRule(api: ApiClient, orgId: string, input: DiscountRuleInput, id?: string) {
   const res = id
-    ? await api.put<{ discount_rule: DiscountRule }>(`/api/v1/billing/discount-rules/${id}`, input, org(orgId))
-    : await api.post<{ discount_rule: DiscountRule }>('/api/v1/billing/discount-rules', input, org(orgId))
+    ? await api.put<{ discount_rule: DiscountRule }>(`/api/v1/billing/discount-rules/${id}`, input, orgHeaders(orgId))
+    : await api.post<{ discount_rule: DiscountRule }>('/api/v1/billing/discount-rules', input, orgHeaders(orgId))
   return res.discount_rule
 }
 
 export async function archiveDiscountRule(api: ApiClient, orgId: string, id: string) {
-  await api.delete(`/api/v1/billing/discount-rules/${id}`, org(orgId))
+  await api.delete(`/api/v1/billing/discount-rules/${id}`, orgHeaders(orgId))
 }
 
 export async function fetchAdjustments(api: ApiClient, orgId: string, status = 'pending') {
-  const res = await api.get<{ adjustments: BillingAdjustment[] }>(`/api/v1/billing/adjustments?status=${status}&limit=200`, undefined, org(orgId))
+  const res = await api.get<{ adjustments: BillingAdjustment[] }>(`/api/v1/billing/adjustments?status=${status}&limit=200`, undefined, orgHeaders(orgId))
   return res.adjustments ?? []
 }
 
 export async function createAdjustment(api: ApiClient, orgId: string, input: { household_id: string; amount_cents: number; reason: string }) {
-  const res = await api.post<{ adjustment: BillingAdjustment }>('/api/v1/billing/adjustments', input, org(orgId))
+  const res = await api.post<{ adjustment: BillingAdjustment }>('/api/v1/billing/adjustments', input, orgHeaders(orgId))
   return res.adjustment
 }
 
 export async function voidAdjustment(api: ApiClient, orgId: string, id: string) {
-  await api.post(`/api/v1/billing/adjustments/${id}/void`, undefined, org(orgId))
+  await api.post(`/api/v1/billing/adjustments/${id}/void`, undefined, orgHeaders(orgId))
 }
 
 export async function fetchBillingSettings(api: ApiClient, orgId: string) {
-  return (await api.get<{ settings: BillingSettings }>('/api/v1/billing/settings', undefined, org(orgId))).settings
+  return (await api.get<{ settings: BillingSettings }>('/api/v1/billing/settings', undefined, orgHeaders(orgId))).settings
 }
 
 export async function saveBillingSettings(api: ApiClient, orgId: string, settings: BillingSettings) {
-  return (await api.put<{ settings: BillingSettings }>('/api/v1/billing/settings', settings, org(orgId))).settings
+  return (await api.put<{ settings: BillingSettings }>('/api/v1/billing/settings', settings, orgHeaders(orgId))).settings
 }
 
 export async function previewBillingRun(api: ApiClient, orgId: string, input: RunInput) {
-  return (await api.post<{ preview: RunPreview }>('/api/v1/billing/runs/preview', input, org(orgId))).preview
+  return (await api.post<{ preview: RunPreview }>('/api/v1/billing/runs/preview', input, orgHeaders(orgId))).preview
 }
 
 export async function commitBillingRun(api: ApiClient, orgId: string, input: RunInput) {
-  return api.post<RunResult>('/api/v1/billing/runs', input, org(orgId))
+  return api.post<RunResult>('/api/v1/billing/runs', input, orgHeaders(orgId))
 }
 
 export async function fetchBillingRuns(api: ApiClient, orgId: string) {
-  return (await api.get<{ runs: BillingRun[] }>('/api/v1/billing/runs?limit=200', undefined, org(orgId))).runs ?? []
+  return (await api.get<{ runs: BillingRun[] }>('/api/v1/billing/runs?limit=200', undefined, orgHeaders(orgId))).runs ?? []
 }
 
 export async function applyLateFeesNow(api: ApiClient, orgId: string) {
-  return (await api.post<{ result: { applied_count: number; total_cents: number; enabled: boolean } }>('/api/v1/billing/late-fees/apply', undefined, org(orgId))).result
+  return (await api.post<{ result: { applied_count: number; total_cents: number; enabled: boolean } }>('/api/v1/billing/late-fees/apply', undefined, orgHeaders(orgId))).result
 }
 
 export async function fetchAgingReport(api: ApiClient, orgId: string, asOf: string) {
-  return (await api.get<{ report: AgingReport }>(`/api/v1/billing/reports/aging?as_of=${asOf}`, undefined, org(orgId))).report
+  return (await api.get<{ report: AgingReport }>(`/api/v1/billing/reports/aging?as_of=${asOf}`, undefined, orgHeaders(orgId))).report
 }
 
 export async function fetchRevenueReport(api: ApiClient, orgId: string, from: string, to: string) {
-  return (await api.get<{ report: RevenueReport }>(`/api/v1/billing/reports/revenue?from=${from}&to=${to}`, undefined, org(orgId))).report
+  return (await api.get<{ report: RevenueReport }>(`/api/v1/billing/reports/revenue?from=${from}&to=${to}`, undefined, orgHeaders(orgId))).report
 }
 
 export async function fetchDepositsReport(api: ApiClient, orgId: string, from: string, to: string, period: string) {
-  return (await api.get<{ report: DepositsReport }>(`/api/v1/billing/reports/deposits?from=${from}&to=${to}&period=${period}`, undefined, org(orgId))).report
+  return (await api.get<{ report: DepositsReport }>(`/api/v1/billing/reports/deposits?from=${from}&to=${to}&period=${period}`, undefined, orgHeaders(orgId))).report
 }
 
 export async function fetchStatement(api: ApiClient, orgId: string, householdId: string) {
-  return (await api.get<{ statement: Statement }>(`/api/v1/households/${householdId}/statement`, undefined, org(orgId))).statement
+  return (await api.get<{ statement: Statement }>(`/api/v1/households/${householdId}/statement`, undefined, orgHeaders(orgId))).statement
 }
 
 export async function fetchUpcomingCharges(api: ApiClient, orgId: string, householdId: string) {
-  return (await api.get<{ upcoming: UpcomingCharges }>(`/api/v1/households/${householdId}/upcoming-charges?days=90`, undefined, org(orgId))).upcoming
+  return (await api.get<{ upcoming: UpcomingCharges }>(`/api/v1/households/${householdId}/upcoming-charges?days=90`, undefined, orgHeaders(orgId))).upcoming
 }
 
 /** Download a CSV report through a raw fetch (keeps CSRF/auth headers). */
@@ -340,7 +338,10 @@ export function describeDiscount(rule: Pick<DiscountRule, 'discount_type' | 'per
 }
 
 export function describeTier(rule: Pick<DiscountRule, 'min_position' | 'max_position'>): string {
-  const ord = (n: number) => `${n}${n % 10 === 2 && n % 100 !== 12 ? 'nd' : n % 10 === 3 && n % 100 !== 13 ? 'rd' : 'th'}`
+  const ord = (n: number) => {
+    const suffix = n % 100 >= 11 && n % 100 <= 13 ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' } as Record<number, string>)[n % 10] ?? 'th'
+    return `${n}${suffix}`
+  }
   if (rule.max_position == null) return `${ord(rule.min_position)}+ swimmer`
   if (rule.max_position === rule.min_position) return `${ord(rule.min_position)} swimmer`
   return `${ord(rule.min_position)}–${ord(rule.max_position)} swimmers`

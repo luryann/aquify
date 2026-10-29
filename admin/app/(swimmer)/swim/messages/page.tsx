@@ -1,31 +1,13 @@
 'use client'
 
-import { useState, useEffect, useRef, type FormEvent } from 'react'
+import { useRef } from 'react'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
-import { reportUIError, uiErrorMessage } from '@/lib/frontend-telemetry'
 import { UnlinkedSwimmerNotice } from '@/components/swimmer/UnlinkedSwimmerNotice'
-import { useMessageStream } from '@/lib/useMessageStream'
-import {
-  fetchMessages,
-  sendMessage,
-  editMessage,
-  addReaction,
-  removeReaction,
-  markThreadRead,
-  requestMessageUploadURL,
-  type MessageRecord,
-} from '@/lib/adminData'
+import { useMessageThread } from '@/lib/useMessageThread'
 import './page.inline.css'
-
-const QUICK_REACTIONS = ['👍', '❤️', '😂', '🎉', '😮', '😢']
-
-function fmtTime(value: string): string {
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return value
-  return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-}
+import { QUICK_REACTIONS, formatMessageTime } from '@/lib/message-format'
 
 function senderLabel(role: string): string {
   if (role === 'parent') return 'Parent'
@@ -43,136 +25,40 @@ export default function SwimmerMessagesPage() {
   const swimmerId = session?.user.swimmerId ?? ''
   const userId = session?.user.id ?? ''
 
-  const [messages, setMessages] = useState<MessageRecord[]>([])
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const [reloadKey, setReloadKey] = useState(0)
-
-  const [draft, setDraft] = useState('')
-  const [sending, setSending] = useState(false)
-  const [sendError, setSendError] = useState<string | null>(null)
-
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editDraft, setEditDraft] = useState('')
-  const [reactionPickerId, setReactionPickerId] = useState<string | null>(null)
-  const [pendingAttachment, setPendingAttachment] = useState<{ object_key: string; file_name: string; file_mime: string } | null>(null)
-  const [attachError, setAttachError] = useState<string | null>(null)
-  const [uploading, setUploading] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement | null>(null)
-
-  const hasThread = Boolean(orgId && householdId && swimmerId)
-
-  useEffect(() => {
-    if (!hasThread) {
-      setLoading(false)
-      return
-    }
-    setLoading(true)
-    setLoadError(null)
-    fetchMessages(api, orgId, householdId, swimmerId)
-      .then(setMessages)
-      .catch((error) => {
-        setLoadError(reportUIError('swim-messages-thread-load', error, 'Couldn’t load your messages. Try again.', { orgId, householdId, swimmerId }))
-      })
-      .finally(() => setLoading(false))
-  }, [api, orgId, householdId, swimmerId, hasThread, reloadKey])
-
-  useEffect(() => {
-    if (!hasThread) return
-    markThreadRead(api, orgId, householdId, swimmerId).catch(() => {})
-  }, [api, orgId, householdId, swimmerId, hasThread])
-
-  useMessageStream({
+  const {
+    hasThread,
+    messages,
+    loading,
+    loadError,
+    draft,
+    setDraft,
+    sending,
+    sendError,
+    editingId,
+    setEditingId,
+    editDraft,
+    setEditDraft,
+    reactionPickerId,
+    setReactionPickerId,
+    pendingAttachment,
+    setPendingAttachment,
+    attachError,
+    uploading,
+    handleSend,
+    handleFileSelect,
+    handleEditSave,
+    handleToggleReaction,
+  } = useMessageThread({
+    api,
     orgId,
+    householdId,
+    swimmerId,
+    userId,
     token: session?.token,
-    enabled: hasThread,
-    onEvent: (event) => {
-      if (event.household_id !== householdId || event.swimmer_id !== swimmerId) return
-      setMessages((prev) => {
-        const idx = prev.findIndex((m) => m.id === event.message.id)
-        if (idx === -1) return [...prev, event.message]
-        const next = [...prev]
-        next[idx] = event.message
-        return next
-      })
-      if (event.type === 'message.created' && event.message.sender_user_id !== userId) {
-        markThreadRead(api, orgId, householdId, swimmerId).catch(() => {})
-      }
-    },
+    loadErrorScope: 'swim-messages-thread-load',
+    loadErrorMessage: 'Couldn’t load your messages. Try again.',
   })
-
-  async function handleSend(e: FormEvent) {
-    e.preventDefault()
-    if (!hasThread || (!draft.trim() && !pendingAttachment)) return
-    setSending(true)
-    setSendError(null)
-    try {
-      await sendMessage(api, orgId, {
-        household_id: householdId,
-        swimmer_id: swimmerId,
-        body: draft.trim() || '(attachment)',
-        attachments: pendingAttachment ? [pendingAttachment] : undefined,
-      })
-      setDraft('')
-      setPendingAttachment(null)
-      setReloadKey((k) => k + 1)
-    } catch (err) {
-      setSendError(uiErrorMessage(err, 'Couldn’t send your message. Try again.'))
-    } finally {
-      setSending(false)
-    }
-  }
-
-  async function handleFileSelect(file: File) {
-    if (!hasThread) return
-    setAttachError(null)
-    setUploading(true)
-    try {
-      const { upload_url, object_key, expected_file_name } = await requestMessageUploadURL(api, orgId, {
-        household_id: householdId,
-        swimmer_id: swimmerId,
-        file_name: file.name,
-        file_mime: file.type,
-        file_size_bytes: file.size,
-      })
-      const putResp = await fetch(upload_url, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } })
-      if (!putResp.ok) throw new Error('Upload failed')
-      setPendingAttachment({ object_key, file_name: expected_file_name, file_mime: file.type })
-    } catch {
-      setAttachError('Couldn’t upload that image. Try a smaller file or a different format. Try again.')
-    } finally {
-      setUploading(false)
-    }
-  }
-
-  async function handleEditSave(messageId: string) {
-    if (!editDraft.trim()) return
-    try {
-      const updated = await editMessage(api, orgId, messageId, editDraft.trim())
-      setMessages((prev) => prev.map((m) => (m.id === messageId ? updated : m)))
-    } catch {
-      // Leave the bubble as-is; the user can retry.
-    } finally {
-      setEditingId(null)
-    }
-  }
-
-  async function handleToggleReaction(message: MessageRecord, emoji: string) {
-    if (!hasThread) return
-    const already = message.reactions?.some((r) => r.emoji === emoji && r.reacted_by_me)
-    try {
-      if (already) await removeReaction(api, orgId, message.id, emoji)
-      else await addReaction(api, orgId, message.id, emoji)
-      // Realtime (when connected) will also deliver this update, but don't
-      // depend on it — refetch so the reaction shows immediately even
-      // without Redis configured.
-      const next = await fetchMessages(api, orgId, householdId, swimmerId)
-      setMessages(next)
-    } catch {
-      // Leave state as-is; the user can retry.
-    }
-    setReactionPickerId(null)
-  }
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   return (
     <div>
@@ -236,7 +122,7 @@ export default function SwimmerMessagesPage() {
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', justifyContent: mine ? 'flex-end' : 'flex-start' }}>
                       <p className="is-c454211">
-                        {senderLabel(m.sender_role)} · {fmtTime(m.created_at)}{m.edited_at ? ' · (edited)' : ''}
+                        {senderLabel(m.sender_role)} · {formatMessageTime(m.created_at)}{m.edited_at ? ' · (edited)' : ''}
                       </p>
                       {canEdit && !isEditing && (
                         <button type="button"
@@ -335,12 +221,6 @@ export default function SwimmerMessagesPage() {
         </div>
       )}
 
-      <style>{`
-        @keyframes slideUp {
-          from { opacity: 0; transform: translateY(10px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
-    </div>
+          </div>
   )
 }

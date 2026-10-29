@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/app/audit"
 	"github.com/dareaquatics/aquify/server/internal/app/billing"
 	"github.com/dareaquatics/aquify/server/internal/app/httpx"
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
@@ -113,18 +112,12 @@ func mapFinanceError(w http.ResponseWriter, r *http.Request, err error) {
 	}
 }
 
-func (h *BillingHandlers) audit(r *http.Request, principal *appmiddleware.Principal, orgID, action, resourceType, resourceID string, before, after any, meta map[string]string) {
-	if h.auditService == nil {
-		return
-	}
-	_, _ = h.auditService.Append(audit.AppendRequest{
-		OrgID: orgID, ActorUserID: principal.UserID, ActorRoles: principal.Roles, Action: action,
-		ResourceType: resourceType, ResourceID: resourceID, Before: before, After: after, Metadata: meta,
-	})
+func (h *BillingHandlers) audit(principal *appmiddleware.Principal, orgID, action, resourceType, resourceID string, before, after any, meta map[string]string) {
+	recordAudit(h.auditService, principal, orgID, action, resourceType, resourceID, before, after, meta)
 }
 
 func requireFinanceMFA(w http.ResponseWriter, r *http.Request, principal *appmiddleware.Principal, verb string) bool {
-	if principal == nil || !financeHasRole(principal, "admin") {
+	if !hasAnyRole(principal, "admin") {
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to "+verb+".", nil)
 		return false
 	}
@@ -133,15 +126,6 @@ func requireFinanceMFA(w http.ResponseWriter, r *http.Request, principal *appmid
 		return false
 	}
 	return true
-}
-
-func financeHasRole(principal *appmiddleware.Principal, role string) bool {
-	for _, r := range principal.Roles {
-		if strings.EqualFold(r, role) {
-			return true
-		}
-	}
-	return false
 }
 
 func queryDate(r *http.Request, key string, fallback time.Time) (time.Time, bool) {
@@ -154,6 +138,20 @@ func queryDate(r *http.Request, key string, fallback time.Time) (time.Time, bool
 		return time.Time{}, false
 	}
 	return t.UTC(), true
+}
+
+// billingWriteScope resolves the request scope and requires billing write access,
+// writing the error response itself when either fails.
+func (h *BillingHandlers) billingWriteScope(w http.ResponseWriter, r *http.Request) (*appmiddleware.Principal, string, bool) {
+	principal, orgID, ok := scopedRequestFromContext(w, r)
+	if !ok {
+		return nil, "", false
+	}
+	if err := h.service.RequireBillingWriteAccess(principal); err != nil {
+		mapFinanceError(w, r, err)
+		return nil, "", false
+	}
+	return principal, orgID, true
 }
 
 func writeCSV(w http.ResponseWriter, filename string, rows [][]string) {
@@ -172,7 +170,7 @@ func wantsCSV(r *http.Request) bool {
 // ─── Fee schedules ───────────────────────────────────────────────────────────
 
 func (h *BillingHandlers) listFeeSchedules(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -185,7 +183,7 @@ func (h *BillingHandlers) listFeeSchedules(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *BillingHandlers) getFeeSchedule(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -198,12 +196,8 @@ func (h *BillingHandlers) getFeeSchedule(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *BillingHandlers) createFeeSchedule(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := h.billingWriteScope(w, r)
 	if !ok {
-		return
-	}
-	if err := h.service.RequireBillingWriteAccess(principal); err != nil {
-		mapFinanceError(w, r, err)
 		return
 	}
 	var input billing.FeeScheduleInput
@@ -215,17 +209,13 @@ func (h *BillingHandlers) createFeeSchedule(w http.ResponseWriter, r *http.Reque
 		mapFinanceError(w, r, err)
 		return
 	}
-	h.audit(r, principal, orgID, auditFinanceScheduleCreate, "fee_schedule", sc.ID, nil, sc, nil)
+	h.audit(principal, orgID, auditFinanceScheduleCreate, "fee_schedule", sc.ID, nil, sc, nil)
 	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"fee_schedule": sc})
 }
 
 func (h *BillingHandlers) updateFeeSchedule(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := h.billingWriteScope(w, r)
 	if !ok {
-		return
-	}
-	if err := h.service.RequireBillingWriteAccess(principal); err != nil {
-		mapFinanceError(w, r, err)
 		return
 	}
 	var input billing.FeeScheduleInput
@@ -237,12 +227,12 @@ func (h *BillingHandlers) updateFeeSchedule(w http.ResponseWriter, r *http.Reque
 		mapFinanceError(w, r, err)
 		return
 	}
-	h.audit(r, principal, orgID, auditFinanceScheduleUpdate, "fee_schedule", sc.ID, before, sc, nil)
+	h.audit(principal, orgID, auditFinanceScheduleUpdate, "fee_schedule", sc.ID, before, sc, nil)
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"fee_schedule": sc})
 }
 
 func (h *BillingHandlers) archiveFeeSchedule(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -251,14 +241,14 @@ func (h *BillingHandlers) archiveFeeSchedule(w http.ResponseWriter, r *http.Requ
 		mapFinanceError(w, r, err)
 		return
 	}
-	h.audit(r, principal, orgID, auditFinanceScheduleArchive, "fee_schedule", sc.ID, nil, sc, nil)
+	h.audit(principal, orgID, auditFinanceScheduleArchive, "fee_schedule", sc.ID, nil, sc, nil)
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"fee_schedule": sc})
 }
 
 // ─── Discount rules ──────────────────────────────────────────────────────────
 
 func (h *BillingHandlers) listDiscountRules(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -271,12 +261,8 @@ func (h *BillingHandlers) listDiscountRules(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *BillingHandlers) createDiscountRule(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := h.billingWriteScope(w, r)
 	if !ok {
-		return
-	}
-	if err := h.service.RequireBillingWriteAccess(principal); err != nil {
-		mapFinanceError(w, r, err)
 		return
 	}
 	var input billing.DiscountRuleInput
@@ -288,17 +274,13 @@ func (h *BillingHandlers) createDiscountRule(w http.ResponseWriter, r *http.Requ
 		mapFinanceError(w, r, err)
 		return
 	}
-	h.audit(r, principal, orgID, auditFinanceRuleCreate, "discount_rule", rule.ID, nil, rule, nil)
+	h.audit(principal, orgID, auditFinanceRuleCreate, "discount_rule", rule.ID, nil, rule, nil)
 	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"discount_rule": rule})
 }
 
 func (h *BillingHandlers) updateDiscountRule(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := h.billingWriteScope(w, r)
 	if !ok {
-		return
-	}
-	if err := h.service.RequireBillingWriteAccess(principal); err != nil {
-		mapFinanceError(w, r, err)
 		return
 	}
 	var input billing.DiscountRuleInput
@@ -310,12 +292,12 @@ func (h *BillingHandlers) updateDiscountRule(w http.ResponseWriter, r *http.Requ
 		mapFinanceError(w, r, err)
 		return
 	}
-	h.audit(r, principal, orgID, auditFinanceRuleUpdate, "discount_rule", rule.ID, before, rule, nil)
+	h.audit(principal, orgID, auditFinanceRuleUpdate, "discount_rule", rule.ID, before, rule, nil)
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"discount_rule": rule})
 }
 
 func (h *BillingHandlers) archiveDiscountRule(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -324,14 +306,14 @@ func (h *BillingHandlers) archiveDiscountRule(w http.ResponseWriter, r *http.Req
 		mapFinanceError(w, r, err)
 		return
 	}
-	h.audit(r, principal, orgID, auditFinanceRuleArchive, "discount_rule", rule.ID, nil, rule, nil)
+	h.audit(principal, orgID, auditFinanceRuleArchive, "discount_rule", rule.ID, nil, rule, nil)
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"discount_rule": rule})
 }
 
 // ─── Adjustments & settings ──────────────────────────────────────────────────
 
 func (h *BillingHandlers) listAdjustments(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -346,12 +328,8 @@ func (h *BillingHandlers) listAdjustments(w http.ResponseWriter, r *http.Request
 }
 
 func (h *BillingHandlers) createAdjustment(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := h.billingWriteScope(w, r)
 	if !ok {
-		return
-	}
-	if err := h.service.RequireBillingWriteAccess(principal); err != nil {
-		mapFinanceError(w, r, err)
 		return
 	}
 	var input billing.AdjustmentInput
@@ -363,12 +341,12 @@ func (h *BillingHandlers) createAdjustment(w http.ResponseWriter, r *http.Reques
 		mapFinanceError(w, r, err)
 		return
 	}
-	h.audit(r, principal, orgID, auditFinanceAdjustmentCreate, "billing_adjustment", adj.ID, nil, adj, map[string]string{"reason": adj.Reason})
+	h.audit(principal, orgID, auditFinanceAdjustmentCreate, "billing_adjustment", adj.ID, nil, adj, map[string]string{"reason": adj.Reason})
 	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"adjustment": adj})
 }
 
 func (h *BillingHandlers) voidAdjustment(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -377,12 +355,12 @@ func (h *BillingHandlers) voidAdjustment(w http.ResponseWriter, r *http.Request)
 		mapFinanceError(w, r, err)
 		return
 	}
-	h.audit(r, principal, orgID, auditFinanceAdjustmentVoid, "billing_adjustment", adj.ID, nil, adj, nil)
+	h.audit(principal, orgID, auditFinanceAdjustmentVoid, "billing_adjustment", adj.ID, nil, adj, nil)
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"adjustment": adj})
 }
 
 func (h *BillingHandlers) getBillingSettings(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -395,12 +373,8 @@ func (h *BillingHandlers) getBillingSettings(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *BillingHandlers) updateBillingSettings(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := h.billingWriteScope(w, r)
 	if !ok {
-		return
-	}
-	if err := h.service.RequireBillingWriteAccess(principal); err != nil {
-		mapFinanceError(w, r, err)
 		return
 	}
 	var input billing.BillingSettingsInput
@@ -412,19 +386,15 @@ func (h *BillingHandlers) updateBillingSettings(w http.ResponseWriter, r *http.R
 		mapFinanceError(w, r, err)
 		return
 	}
-	h.audit(r, principal, orgID, auditFinanceSettingsUpdate, "billing_settings", orgID, before, st, nil)
+	h.audit(principal, orgID, auditFinanceSettingsUpdate, "billing_settings", orgID, before, st, nil)
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"settings": st})
 }
 
 // ─── Runs & late fees ────────────────────────────────────────────────────────
 
 func (h *BillingHandlers) previewBillingRun(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := h.billingWriteScope(w, r)
 	if !ok {
-		return
-	}
-	if err := h.service.RequireBillingWriteAccess(principal); err != nil {
-		mapFinanceError(w, r, err)
 		return
 	}
 	var input billing.RunInput
@@ -440,12 +410,8 @@ func (h *BillingHandlers) previewBillingRun(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *BillingHandlers) commitBillingRun(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := h.billingWriteScope(w, r)
 	if !ok {
-		return
-	}
-	if err := h.service.RequireBillingWriteAccess(principal); err != nil {
-		mapFinanceError(w, r, err)
 		return
 	}
 	var input billing.RunInput
@@ -457,14 +423,14 @@ func (h *BillingHandlers) commitBillingRun(w http.ResponseWriter, r *http.Reques
 		mapFinanceError(w, r, err)
 		return
 	}
-	h.audit(r, principal, orgID, auditFinanceRunCommit, "billing_run", result.Run.ID, nil, result.Run, map[string]string{
+	h.audit(principal, orgID, auditFinanceRunCommit, "billing_run", result.Run.ID, nil, result.Run, map[string]string{
 		"as_of": result.Run.AsOf, "invoice_count": strconv.Itoa(result.Run.InvoiceCount), "net_cents": strconv.Itoa(result.Run.NetCents),
 	})
 	httpx.WriteJSON(w, http.StatusCreated, result)
 }
 
 func (h *BillingHandlers) listBillingRuns(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -479,7 +445,7 @@ func (h *BillingHandlers) listBillingRuns(w http.ResponseWriter, r *http.Request
 }
 
 func (h *BillingHandlers) getBillingRun(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -492,7 +458,7 @@ func (h *BillingHandlers) getBillingRun(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *BillingHandlers) applyLateFees(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -518,7 +484,7 @@ func (h *BillingHandlers) applyLateFees(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if result.AppliedCount > 0 {
-		h.audit(r, principal, orgID, auditFinanceLateFeesApply, "billing_late_fees", orgID, nil, result, nil)
+		h.audit(principal, orgID, auditFinanceLateFeesApply, "billing_late_fees", orgID, nil, result, nil)
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"result": result})
 }
@@ -526,7 +492,7 @@ func (h *BillingHandlers) applyLateFees(w http.ResponseWriter, r *http.Request) 
 // ─── Credits, statement, upcoming ────────────────────────────────────────────
 
 func (h *BillingHandlers) getHouseholdCredit(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -539,7 +505,7 @@ func (h *BillingHandlers) getHouseholdCredit(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *BillingHandlers) addHouseholdCredit(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -556,7 +522,7 @@ func (h *BillingHandlers) addHouseholdCredit(w http.ResponseWriter, r *http.Requ
 		mapFinanceError(w, r, err)
 		return
 	}
-	h.audit(r, principal, orgID, auditFinanceCreditCreate, "household_credit", entry.ID, nil, entry, map[string]string{
+	h.audit(principal, orgID, auditFinanceCreditCreate, "household_credit", entry.ID, nil, entry, map[string]string{
 		"household_id": householdID, "reason": entry.Reason, "applied_invoices": strings.Join(applied, ","),
 	})
 	if applied == nil {
@@ -566,7 +532,7 @@ func (h *BillingHandlers) addHouseholdCredit(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *BillingHandlers) refundToCredit(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -583,12 +549,12 @@ func (h *BillingHandlers) refundToCredit(w http.ResponseWriter, r *http.Request)
 		mapFinanceError(w, r, err)
 		return
 	}
-	h.audit(r, principal, orgID, auditFinanceRefundToCredit, "refund", refund.ID, nil, refund, map[string]string{"invoice_id": invoiceID, "reason": input.Reason})
+	h.audit(principal, orgID, auditFinanceRefundToCredit, "refund", refund.ID, nil, refund, map[string]string{"invoice_id": invoiceID, "reason": input.Reason})
 	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"refund": refund, "ledger_event": ledgerEv})
 }
 
 func (h *BillingHandlers) getHouseholdStatement(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -607,7 +573,7 @@ func (h *BillingHandlers) getHouseholdStatement(w http.ResponseWriter, r *http.R
 }
 
 func (h *BillingHandlers) getUpcomingCharges(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -623,7 +589,7 @@ func (h *BillingHandlers) getUpcomingCharges(w http.ResponseWriter, r *http.Requ
 // ─── Reports ─────────────────────────────────────────────────────────────────
 
 func (h *BillingHandlers) auditExport(r *http.Request, principal *appmiddleware.Principal, orgID, report string) {
-	h.audit(r, principal, orgID, auditFinanceReportExport, "billing_report", report, nil, nil, map[string]string{"report": report, "query": r.URL.RawQuery})
+	h.audit(principal, orgID, auditFinanceReportExport, "billing_report", report, nil, nil, map[string]string{"report": report, "query": r.URL.RawQuery})
 }
 
 func reportRange(w http.ResponseWriter, r *http.Request) (time.Time, time.Time, bool) {
@@ -638,7 +604,7 @@ func reportRange(w http.ResponseWriter, r *http.Request) (time.Time, time.Time, 
 }
 
 func (h *BillingHandlers) agingReport(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -661,7 +627,7 @@ func (h *BillingHandlers) agingReport(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *BillingHandlers) revenueReport(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -683,7 +649,7 @@ func (h *BillingHandlers) revenueReport(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *BillingHandlers) outstandingReport(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -701,7 +667,7 @@ func (h *BillingHandlers) outstandingReport(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *BillingHandlers) depositsReport(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -723,7 +689,7 @@ func (h *BillingHandlers) depositsReport(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *BillingHandlers) quickBooksExport(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}

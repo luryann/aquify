@@ -3,12 +3,17 @@ import type { ClubEventInput, ClubEventRecord, ClubEventRSVP, ClubEventSummary }
 
 const pad = (n: number) => String(n).padStart(2, '0')
 
+/** YYYY-MM-DD for a Date in the viewer's local time zone. */
+function localDateKey(d: Date): string {
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
 /** ISO timestamp -> value for <input type="datetime-local"> in local time. */
 export function isoToLocalInput(iso?: string | null): string {
   if (!iso) return ''
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  return `${localDateKey(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
 /** <input type="datetime-local"> value -> ISO timestamp (local time). */
@@ -26,8 +31,7 @@ export function allDayISO(date: string): string {
 /** Calendar date (YYYY-MM-DD) an event falls on for the viewer. */
 export function clubEventDateKey(e: Pick<ClubEventRecord, 'starts_at' | 'all_day'>): string {
   if (e.all_day) return e.starts_at.slice(0, 10)
-  const d = new Date(e.starts_at)
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  return localDateKey(new Date(e.starts_at))
 }
 
 export function formatClubEventWhen(e: Pick<ClubEventRecord, 'starts_at' | 'ends_at' | 'all_day'>): string {

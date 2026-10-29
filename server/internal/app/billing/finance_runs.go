@@ -154,10 +154,6 @@ type pendingCharge struct {
 	discount    int
 }
 
-func (p *pendingCharge) key(orgID string) string {
-	return chargeKey(orgID, p.schedule.ID, p.period.Key, p.householdID, p.swimmerID)
-}
-
 func (s *Service) normalizeRunInput(orgID string, input RunInput) (normalizedRunInput, error) {
 	out := normalizedRunInput{InvoiceStatus: "draft", IncludeAdjustments: true, Expected: strings.TrimSpace(input.ExpectedFingerprint)}
 	asOf, err := parseDate(input.AsOf)
@@ -271,18 +267,17 @@ func (s *Service) buildRunPreviewLocked(orgID string, roster RosterSnapshot, in 
 		return "", true
 	}
 
-	pending := map[string][]*pendingCharge{} // household → charges
-	type pairKey struct{ schedule, period string }
-	considered := map[string]map[pairKey]bool{} // kind → (schedule, period) pairs in scope
+	pending := map[string][]*pendingCharge{}        // household → charges
+	considered := map[string]map[chargeScope]bool{} // kind → (schedule, period) pairs in scope
 	for _, sc := range schedules {
 		period, ok := periodFor(sc, in.AsOf)
 		if !ok {
 			continue
 		}
 		if considered[sc.Kind] == nil {
-			considered[sc.Kind] = map[pairKey]bool{}
+			considered[sc.Kind] = map[chargeScope]bool{}
 		}
-		considered[sc.Kind][pairKey{sc.ID, period.Key}] = true
+		considered[sc.Kind][chargeScope{sc.ID, period.Key}] = true
 		schedStart, _ := parseDate(sc.StartDate)
 		schedEnd := period.End
 		if sc.EndDate != "" {
@@ -415,144 +410,10 @@ func (s *Service) buildRunPreviewLocked(orgID string, roster RosterSnapshot, in 
 
 	for householdID := range householdIDs {
 		charges := pending[householdID]
-		// Sibling positions per kind: swimmers already billed in the same
-		// (schedule, period) scope keep their recorded position; new swimmers
-		// follow, most expensive first, then oldest, then ID.
-		for _, kind := range []string{ScheduleKindDues, ScheduleKindRegistration} {
-			positions := map[string]int{}
-			maxPos := 0
-			for _, c := range s.finance.charges {
-				if c.ReleasedAt != nil || c.OrgID != orgID || c.HouseholdID != householdID {
-					continue
-				}
-				if !considered[kind][pairKey{c.ScheduleID, c.PeriodKey}] {
-					continue
-				}
-				if existing, ok := positions[c.SwimmerID]; !ok || c.SiblingPosition < existing {
-					positions[c.SwimmerID] = c.SiblingPosition
-				}
-				if c.SiblingPosition > maxPos {
-					maxPos = c.SiblingPosition
-				}
-			}
-			type newSwimmer struct {
-				id, dob string
-				gross   int
-			}
-			fresh := map[string]*newSwimmer{}
-			for _, pc := range charges {
-				if pc.schedule.Kind != kind {
-					continue
-				}
-				if _, ok := positions[pc.swimmerID]; ok {
-					continue
-				}
-				ns := fresh[pc.swimmerID]
-				if ns == nil {
-					ns = &newSwimmer{id: pc.swimmerID, dob: pc.swimmerDOB}
-					fresh[pc.swimmerID] = ns
-				}
-				ns.gross += pc.gross
-			}
-			ordered := make([]*newSwimmer, 0, len(fresh))
-			for _, ns := range fresh {
-				ordered = append(ordered, ns)
-			}
-			sort.Slice(ordered, func(i, j int) bool {
-				if ordered[i].gross != ordered[j].gross {
-					return ordered[i].gross > ordered[j].gross
-				}
-				if ordered[i].dob != ordered[j].dob {
-					if ordered[i].dob == "" {
-						return false
-					}
-					if ordered[j].dob == "" {
-						return true
-					}
-					return ordered[i].dob < ordered[j].dob
-				}
-				return ordered[i].id < ordered[j].id
-			})
-			for _, ns := range ordered {
-				maxPos++
-				positions[ns.id] = maxPos
-			}
-			for _, pc := range charges {
-				if pc.schedule.Kind != kind {
-					continue
-				}
-				pc.position = positions[pc.swimmerID]
-				pc.rule, pc.discount = pickDiscount(rules, kind, pc.position, pc.gross)
-			}
-		}
+		s.assignSiblingPositions(orgID, householdID, charges, considered, rules)
 
-		sort.SliceStable(charges, func(i, j int) bool {
-			if charges[i].swimmerName != charges[j].swimmerName {
-				return charges[i].swimmerName < charges[j].swimmerName
-			}
-			if charges[i].schedule.Kind != charges[j].schedule.Kind {
-				return charges[i].schedule.Kind < charges[j].schedule.Kind
-			}
-			return charges[i].schedule.Name < charges[j].schedule.Name
-		})
-
-		hh := &RunPreviewHousehold{
-			HouseholdID: householdID, HouseholdName: households[householdID].Name,
-			Lines: []RunPreviewLine{}, charges: charges,
-		}
-		swimmerSet := map[string]bool{}
-		for _, pc := range charges {
-			swimmerSet[pc.swimmerID] = true
-			category := itemCategoryProgramFee
-			if pc.schedule.Kind == ScheduleKindRegistration {
-				category = itemCategoryRegistrationFee
-			}
-			desc := fmt.Sprintf("%s — %s (%s – %s)", pc.schedule.Name, pc.swimmerName, fmtDate(pc.period.Start), fmtDate(pc.period.End))
-			if pc.schedule.Kind == ScheduleKindRegistration {
-				desc = fmt.Sprintf("%s — %s (%s)", pc.schedule.Name, pc.swimmerName, pc.schedule.Season)
-			}
-			if pc.note != "" {
-				desc += " · " + pc.note
-			}
-			hh.Lines = append(hh.Lines, RunPreviewLine{
-				Kind: pc.schedule.Kind, Category: category, Description: desc,
-				ScheduleID: pc.schedule.ID, ScheduleName: pc.schedule.Name,
-				SwimmerID: pc.swimmerID, SwimmerName: pc.swimmerName,
-				PeriodKey: pc.period.Key, PeriodStart: fmtDate(pc.period.Start), PeriodEnd: fmtDate(pc.period.End),
-				AmountCents: pc.gross, SiblingPosition: pc.position, Note: pc.note,
-			})
-			hh.GrossCents += pc.gross
-			if pc.discount > 0 {
-				hh.Lines = append(hh.Lines, RunPreviewLine{
-					Kind: "discount", Category: itemCategoryDiscount,
-					Description: fmt.Sprintf("%s — %s, %s swimmer (−%s)", pc.rule.Name, pc.swimmerName, ordinal(pc.position), describeDiscount(pc.rule)),
-					ScheduleID:  pc.schedule.ID, ScheduleName: pc.schedule.Name,
-					SwimmerID: pc.swimmerID, SwimmerName: pc.swimmerName, PeriodKey: pc.period.Key,
-					AmountCents: -pc.discount, SiblingPosition: pc.position, DiscountRuleID: pc.rule.ID,
-				})
-				hh.DiscountCents += pc.discount
-			}
-		}
-		adjustments := adjustmentsByHousehold[householdID]
-		sort.Slice(adjustments, func(i, j int) bool { return adjustments[i].CreatedAt.Before(adjustments[j].CreatedAt) })
-		for _, a := range adjustments {
-			name := ""
-			if sw, ok := swimmers[a.SwimmerID]; ok {
-				name = swimmerDisplayName(sw)
-			}
-			desc := "Adjustment: " + a.Reason
-			if name != "" {
-				desc += " — " + name
-			}
-			hh.Lines = append(hh.Lines, RunPreviewLine{
-				Kind: "adjustment", Category: itemCategoryAdjustment, Description: desc,
-				SwimmerID: a.SwimmerID, SwimmerName: name, AmountCents: a.AmountCents, AdjustmentID: a.ID,
-			})
-			hh.AdjustmentCents += a.AmountCents
-		}
-		hh.adjustments = adjustments
-		hh.SwimmerCount = len(swimmerSet)
-		hh.TotalCents = hh.GrossCents - hh.DiscountCents + hh.AdjustmentCents
+		hh := buildHouseholdPreview(householdID, households[householdID].Name, charges, adjustmentsByHousehold[householdID], swimmers)
+		adjustments := hh.adjustments
 		if hh.TotalCents <= 0 {
 			reason := "net total is zero or negative; nothing invoiced"
 			if len(adjustments) > 0 {
@@ -569,6 +430,162 @@ func (s *Service) buildRunPreviewLocked(orgID string, roster RosterSnapshot, in 
 		preview.Households = append(preview.Households, hh)
 	}
 
+	finalizePreview(preview)
+	return preview
+}
+
+// chargeScope identifies a (schedule, billing period) pair a run is billing.
+type chargeScope struct{ schedule, period string }
+
+// assignSiblingPositions sets each pending charge's sibling position and the
+// discount that position earns. Swimmers already billed in the same
+// (schedule, period) scope keep their recorded position; new swimmers follow,
+// most expensive first, then oldest, then ID.
+func (s *Service) assignSiblingPositions(orgID, householdID string, charges []*pendingCharge, considered map[string]map[chargeScope]bool, rules []*DiscountRule) {
+	for _, kind := range []string{ScheduleKindDues, ScheduleKindRegistration} {
+		positions := map[string]int{}
+		maxPos := 0
+		for _, c := range s.finance.charges {
+			if c.ReleasedAt != nil || c.OrgID != orgID || c.HouseholdID != householdID {
+				continue
+			}
+			if !considered[kind][chargeScope{c.ScheduleID, c.PeriodKey}] {
+				continue
+			}
+			if existing, ok := positions[c.SwimmerID]; !ok || c.SiblingPosition < existing {
+				positions[c.SwimmerID] = c.SiblingPosition
+			}
+			if c.SiblingPosition > maxPos {
+				maxPos = c.SiblingPosition
+			}
+		}
+		type newSwimmer struct {
+			id, dob string
+			gross   int
+		}
+		fresh := map[string]*newSwimmer{}
+		for _, pc := range charges {
+			if pc.schedule.Kind != kind {
+				continue
+			}
+			if _, ok := positions[pc.swimmerID]; ok {
+				continue
+			}
+			ns := fresh[pc.swimmerID]
+			if ns == nil {
+				ns = &newSwimmer{id: pc.swimmerID, dob: pc.swimmerDOB}
+				fresh[pc.swimmerID] = ns
+			}
+			ns.gross += pc.gross
+		}
+		ordered := make([]*newSwimmer, 0, len(fresh))
+		for _, ns := range fresh {
+			ordered = append(ordered, ns)
+		}
+		sort.Slice(ordered, func(i, j int) bool {
+			if ordered[i].gross != ordered[j].gross {
+				return ordered[i].gross > ordered[j].gross
+			}
+			if ordered[i].dob != ordered[j].dob {
+				if ordered[i].dob == "" {
+					return false
+				}
+				if ordered[j].dob == "" {
+					return true
+				}
+				return ordered[i].dob < ordered[j].dob
+			}
+			return ordered[i].id < ordered[j].id
+		})
+		for _, ns := range ordered {
+			maxPos++
+			positions[ns.id] = maxPos
+		}
+		for _, pc := range charges {
+			if pc.schedule.Kind != kind {
+				continue
+			}
+			pc.position = positions[pc.swimmerID]
+			pc.rule, pc.discount = pickDiscount(rules, kind, pc.position, pc.gross)
+		}
+	}
+}
+
+// buildHouseholdPreview turns a household's pending charges and adjustments
+// into ordered invoice lines with gross, discount, adjustment and net totals.
+func buildHouseholdPreview(householdID, householdName string, charges []*pendingCharge, adjustments []*Adjustment, swimmers map[string]RosterSwimmer) *RunPreviewHousehold {
+	sort.SliceStable(charges, func(i, j int) bool {
+		if charges[i].swimmerName != charges[j].swimmerName {
+			return charges[i].swimmerName < charges[j].swimmerName
+		}
+		if charges[i].schedule.Kind != charges[j].schedule.Kind {
+			return charges[i].schedule.Kind < charges[j].schedule.Kind
+		}
+		return charges[i].schedule.Name < charges[j].schedule.Name
+	})
+
+	hh := &RunPreviewHousehold{
+		HouseholdID: householdID, HouseholdName: householdName,
+		Lines: []RunPreviewLine{}, charges: charges,
+	}
+	swimmerSet := map[string]bool{}
+	for _, pc := range charges {
+		swimmerSet[pc.swimmerID] = true
+		category := itemCategoryProgramFee
+		if pc.schedule.Kind == ScheduleKindRegistration {
+			category = itemCategoryRegistrationFee
+		}
+		desc := fmt.Sprintf("%s — %s (%s – %s)", pc.schedule.Name, pc.swimmerName, fmtDate(pc.period.Start), fmtDate(pc.period.End))
+		if pc.schedule.Kind == ScheduleKindRegistration {
+			desc = fmt.Sprintf("%s — %s (%s)", pc.schedule.Name, pc.swimmerName, pc.schedule.Season)
+		}
+		if pc.note != "" {
+			desc += " · " + pc.note
+		}
+		hh.Lines = append(hh.Lines, RunPreviewLine{
+			Kind: pc.schedule.Kind, Category: category, Description: desc,
+			ScheduleID: pc.schedule.ID, ScheduleName: pc.schedule.Name,
+			SwimmerID: pc.swimmerID, SwimmerName: pc.swimmerName,
+			PeriodKey: pc.period.Key, PeriodStart: fmtDate(pc.period.Start), PeriodEnd: fmtDate(pc.period.End),
+			AmountCents: pc.gross, SiblingPosition: pc.position, Note: pc.note,
+		})
+		hh.GrossCents += pc.gross
+		if pc.discount > 0 {
+			hh.Lines = append(hh.Lines, RunPreviewLine{
+				Kind: "discount", Category: itemCategoryDiscount,
+				Description: fmt.Sprintf("%s — %s, %s swimmer (−%s)", pc.rule.Name, pc.swimmerName, ordinal(pc.position), describeDiscount(pc.rule)),
+				ScheduleID:  pc.schedule.ID, ScheduleName: pc.schedule.Name,
+				SwimmerID: pc.swimmerID, SwimmerName: pc.swimmerName, PeriodKey: pc.period.Key,
+				AmountCents: -pc.discount, SiblingPosition: pc.position, DiscountRuleID: pc.rule.ID,
+			})
+			hh.DiscountCents += pc.discount
+		}
+	}
+	sort.Slice(adjustments, func(i, j int) bool { return adjustments[i].CreatedAt.Before(adjustments[j].CreatedAt) })
+	for _, a := range adjustments {
+		name := ""
+		if sw, ok := swimmers[a.SwimmerID]; ok {
+			name = swimmerDisplayName(sw)
+		}
+		desc := "Adjustment: " + a.Reason
+		if name != "" {
+			desc += " — " + name
+		}
+		hh.Lines = append(hh.Lines, RunPreviewLine{
+			Kind: "adjustment", Category: itemCategoryAdjustment, Description: desc,
+			SwimmerID: a.SwimmerID, SwimmerName: name, AmountCents: a.AmountCents, AdjustmentID: a.ID,
+		})
+		hh.AdjustmentCents += a.AmountCents
+	}
+	hh.adjustments = adjustments
+	hh.SwimmerCount = len(swimmerSet)
+	hh.TotalCents = hh.GrossCents - hh.DiscountCents + hh.AdjustmentCents
+	return hh
+}
+
+// finalizePreview orders the preview's households and skips, totals them, and
+// fingerprints the result so a commit can detect that the preview went stale.
+func finalizePreview(preview *RunPreview) {
 	sort.Slice(preview.Households, func(i, j int) bool {
 		if preview.Households[i].HouseholdName != preview.Households[j].HouseholdName {
 			return preview.Households[i].HouseholdName < preview.Households[j].HouseholdName
@@ -598,7 +615,6 @@ func (s *Service) buildRunPreviewLocked(orgID string, roster RosterSnapshot, in 
 		}
 	}
 	preview.Fingerprint = hex.EncodeToString(hash.Sum(nil))[:24]
-	return preview
 }
 
 // PreviewBillingRun computes a dry run (admin only). Nothing is written.

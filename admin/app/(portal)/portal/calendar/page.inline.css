@@ -7,10 +7,7 @@
 .is-f7be90b.is-f7be90b { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; animation: slideUp 0.4s var(--ease-out) both; }
 .is-ec25a69.is-ec25a69 { display: flex; gap: 4px; background: var(--bg-wash); border-radius: 8px; padding: 4px; }
 .is-bf585c4.is-bf585c4 { margin-bottom: 12px; font-size: var(--fs-sm); color: var(--warning); }
-.is-154e8a6.is-154e8a6 { margin-bottom: 20px; padding: 12px 16px; background: var(--warning-bg); border: 1px solid var(--warning-border); border-radius: 12px; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .is-730b6a7.is-730b6a7 { display: flex; gap: 12px; align-items: flex-start; }
-.is-d827c78.is-d827c78 { font-size: var(--fs-base); color: var(--warning); line-height: 1.5; }
-.is-889d44c.is-889d44c { background: var(--bg-elevated); border: 1px solid var(--warning-border); border-radius: 8px; cursor: pointer; color: var(--warning); font-size: var(--fs-sm); font-weight: 600; padding: 8px 16px; white-space: nowrap; }
 .is-63beafb.is-63beafb { display: flex; align-items: center; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; animation: slideUp 0.4s var(--ease-out) 0.05s both; }
 .is-044825a.is-044825a { display: flex; align-items: center; justify-content: space-between; padding: 20px 20px 16px; border-bottom: 1px solid var(--border); }
 .is-e2ff0fd.is-e2ff0fd { display: flex; align-items: center; gap: 12px; }
@@ -34,3 +31,9 @@
 .upcoming-scroll { max-height: 328px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--border) transparent; -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent); }
 .upcoming-scroll[data-at-end="true"] { -webkit-mask-image: none; mask-image: none; }
 .upcoming-scroll:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.cal-nav-btn { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border); background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--text-subtle); transition: background 120ms ease; }
+.cal-nav-btn:hover, .upcoming-row:hover { background: var(--bg-wash); }
+.cal-today-btn:hover { background: var(--bg-wash); color: var(--text); }
+.cal-day { background: transparent; cursor: pointer; transition: background 100ms ease; }
+.cal-day[data-selected="true"] { background: rgba(235, 93, 30, 0.04); }
+.cal-day[data-selected="false"]:hover { background: var(--bg-wash); }

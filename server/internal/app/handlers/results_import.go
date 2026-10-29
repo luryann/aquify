@@ -32,7 +32,7 @@ type unmatchedResult struct {
 // recorded as official results, which recomputes best times. Re-importing the
 // same file is a no-op for swims already recorded.
 func (h *PerformanceHandlers) importMeetResults(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := perfScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -55,23 +55,12 @@ func (h *PerformanceHandlers) importMeetResults(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	file, header, err := r.FormFile("file")
-	if err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "missing_file", "Multipart field 'file' is required.", nil)
-		return
-	}
-	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, maxResultsFileBytes+1))
-	if err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_file", "Failed to read uploaded file.", nil)
-		return
-	}
-	if len(data) > maxResultsFileBytes {
-		httpx.WriteError(w, r, http.StatusRequestEntityTooLarge, "file_too_large", "Results file exceeds the 25 MB upload cap.", nil)
+	filename, data, ok := readResultsUpload(w, r)
+	if !ok {
 		return
 	}
 
-	parsed, warnings, err := meets.ParseResultsFile(header.Filename, data)
+	parsed, warnings, err := meets.ParseResultsFile(filename, data)
 	if err != nil {
 		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_results_file", err.Error(), nil)
 		return
@@ -114,29 +103,7 @@ func (h *PerformanceHandlers) importMeetResults(w http.ResponseWriter, r *http.R
 			duplicates++
 			continue
 		}
-		input := performance.UpsertResultInput{
-			SwimmerID:   swimmer.ID,
-			MeetID:      meet.ID,
-			EventNumber: strings.TrimSpace(res.Event.EventNumber),
-			Distance:    res.Event.Distance,
-			Stroke:      stroke,
-			Course:      course,
-			Gender:      resultGender(res.Event.EventGender, swimmer.Gender),
-			DQ:          dq,
-			IsOfficial:  true,
-		}
-		if res.FinalsTime.Valid {
-			ms := int(math.Round(res.FinalsTime.Seconds * 1000))
-			input.FinTimeMs = &ms
-		}
-		if res.SeedTime.Valid {
-			ms := int(math.Round(res.SeedTime.Seconds * 1000))
-			input.SeedTimeMs = &ms
-		}
-		if res.Place > 0 {
-			place := res.Place
-			input.Place = &place
-		}
+		input := resultUpsertInput(res, swimmer, meet.ID, course, stroke, dq)
 		_, breaks, err := h.service.UpsertResultWithRecords(orgID, principal.UserID, principal, input)
 		if err != nil {
 			httpx.WriteError(w, r, http.StatusInternalServerError, "result_import_failed", fmt.Sprintf("Imported %d results before a failure: %v", imported, err), nil)
@@ -155,7 +122,7 @@ func (h *PerformanceHandlers) importMeetResults(w http.ResponseWriter, r *http.R
 			ResourceType: "meet",
 			ResourceID:   meet.ID,
 			Metadata: map[string]string{
-				"file":       header.Filename,
+				"file":       filename,
 				"imported":   fmt.Sprintf("%d", imported),
 				"duplicates": fmt.Sprintf("%d", duplicates),
 				"unmatched":  fmt.Sprintf("%d", len(unmatched)),
@@ -183,6 +150,57 @@ func (h *PerformanceHandlers) importMeetResults(w http.ResponseWriter, r *http.R
 		// record is locked.
 		"new_team_records": recordBreaksOrEmpty(newRecords),
 	})
+}
+
+// readResultsUpload reads the multipart "file" field (25 MB cap), writing the
+// error response itself when it fails.
+func readResultsUpload(w http.ResponseWriter, r *http.Request) (string, []byte, bool) {
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "missing_file", "Multipart field 'file' is required.", nil)
+		return "", nil, false
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, maxResultsFileBytes+1))
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_file", "Failed to read uploaded file.", nil)
+		return "", nil, false
+	}
+	if len(data) > maxResultsFileBytes {
+		httpx.WriteError(w, r, http.StatusRequestEntityTooLarge, "file_too_large", "Results file exceeds the 25 MB upload cap.", nil)
+		return "", nil, false
+	}
+	return header.Filename, data, true
+}
+
+func secondsToMs(seconds float64) *int {
+	ms := int(math.Round(seconds * 1000))
+	return &ms
+}
+
+func resultUpsertInput(res meetfiles.ParsedIndividualResult, swimmer *members.Swimmer, meetID, course, stroke string, dq bool) performance.UpsertResultInput {
+	input := performance.UpsertResultInput{
+		SwimmerID:   swimmer.ID,
+		MeetID:      meetID,
+		EventNumber: strings.TrimSpace(res.Event.EventNumber),
+		Distance:    res.Event.Distance,
+		Stroke:      stroke,
+		Course:      course,
+		Gender:      resultGender(res.Event.EventGender, swimmer.Gender),
+		DQ:          dq,
+		IsOfficial:  true,
+	}
+	if res.FinalsTime.Valid {
+		input.FinTimeMs = secondsToMs(res.FinalsTime.Seconds)
+	}
+	if res.SeedTime.Valid {
+		input.SeedTimeMs = secondsToMs(res.SeedTime.Seconds)
+	}
+	if res.Place > 0 {
+		place := res.Place
+		input.Place = &place
+	}
+	return input
 }
 
 func resultCourse(candidates ...any) string {

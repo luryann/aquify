@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/dareaquatics/aquify/server/internal/dbutil"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -14,13 +16,6 @@ type Repository struct {
 
 func newRepository(pool *pgxpool.Pool) *Repository {
 	return &Repository{pool: pool}
-}
-
-func nullableString(s string) interface{} {
-	if s == "" {
-		return nil
-	}
-	return s
 }
 
 // ─── File Exports ─────────────────────────────────────────────────────────────
@@ -38,10 +33,10 @@ func (r *Repository) UpsertFileExport(ctx context.Context, ex *FileExport) error
 		  storage_key = EXCLUDED.storage_key,
 		  last_error  = EXCLUDED.last_error,
 		  updated_at  = EXCLUDED.updated_at`,
-		ex.ID, ex.OrgID, nullableString(ex.MeetID),
+		ex.ID, ex.OrgID, dbutil.NullableString(ex.MeetID),
 		ex.ExportType, ex.Status, ex.Filename,
-		ex.SizeBytes, nullableString(ex.StorageKey),
-		ex.ExpiresAt, nullableString(ex.LastError),
+		ex.SizeBytes, dbutil.NullableString(ex.StorageKey),
+		ex.ExpiresAt, dbutil.NullableString(ex.LastError),
 		ex.CreatedAt, ex.UpdatedAt,
 	)
 	return err
@@ -57,21 +52,16 @@ func (r *Repository) LoadFileExports(ctx context.Context) ([]*FileExport, error)
 	if err != nil {
 		return nil, fmt.Errorf("exports: load file_exports: %w", err)
 	}
-	defer rows.Close()
-	var out []*FileExport
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "exports: scan file_export", func(rows pgx.Rows) (*FileExport, error) {
 		ex := &FileExport{}
-		if err := rows.Scan(
+		err := rows.Scan(
 			&ex.ID, &ex.OrgID, &ex.MeetID,
 			&ex.ExportType, &ex.Status, &ex.Filename,
 			&ex.SizeBytes, &ex.StorageKey, &ex.ExpiresAt,
 			&ex.LastError, &ex.CreatedAt, &ex.UpdatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("exports: scan file_export: %w", err)
-		}
-		out = append(out, ex)
-	}
-	return out, rows.Err()
+		)
+		return ex, err
+	})
 }
 
 // ─── Batch load ───────────────────────────────────────────────────────────────

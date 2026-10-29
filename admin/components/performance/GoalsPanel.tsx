@@ -4,18 +4,18 @@ import { useCallback, useEffect, useState } from 'react'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
 import { reportUIError } from '@/lib/frontend-telemetry'
-import { parseBackendDate } from '@/lib/dates'
+import { formatDateOnly } from '@/lib/dates'
 import {
   COURSES, EVENT_DISTANCES, STROKES, STROKE_LABELS,
   createSwimmerGoal, deleteSwimmerGoal, fetchSwimmerGoals, formatSwimTime, parseSwimTime, type Goal,
 } from '@/lib/performanceData'
 import { goalTone } from '@/lib/performance-periods'
-import { FIELD_STYLE, LoadErrorBanner } from './PerfControls'
+import { FIELD_STYLE, LabeledField } from './PerfControls'
+import { LoadErrorBanner } from '@/components/ui/LoadErrorBanner'
 
 function deadlineText(g: Goal) {
   if (!g.deadline) return null
-  const d = parseBackendDate(g.deadline)
-  const date = d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : g.deadline
+  const date = formatDateOnly(g.deadline)
   if (g.achieved) return `by ${date}`
   if (g.overdue) return `deadline passed ${date}`
   if (g.days_remaining != null) return `${g.days_remaining} day${g.days_remaining === 1 ? '' : 's'} left, ${date}`
@@ -99,27 +99,27 @@ export function GoalsPanel({ swimmerId, swimmerName }: { swimmerId: string; swim
         <div className="u-p-16px u-mb-16px" style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
           {formError ? <LoadErrorBanner message={formError} /> : null}
           <div className="u-gap-12px" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))' }}>
-            <label className="u-gap-4px u-fs-fs-sm" style={{ display: 'grid', color: 'var(--text-subtle)' }}>Stroke
+            <LabeledField label="Stroke">
               <select value={stroke} onChange={(e) => { setStroke(e.target.value); setDistance(String(EVENT_DISTANCES[e.target.value as keyof typeof EVENT_DISTANCES][1] ?? 100)) }} style={FIELD_STYLE}>
                 {STROKES.map((s) => <option key={s} value={s}>{STROKE_LABELS[s]}</option>)}
               </select>
-            </label>
-            <label className="u-gap-4px u-fs-fs-sm" style={{ display: 'grid', color: 'var(--text-subtle)' }}>Distance
+            </LabeledField>
+            <LabeledField label="Distance">
               <select value={distance} onChange={(e) => setDistance(e.target.value)} style={FIELD_STYLE}>
                 {distances.map((d) => <option key={d} value={d}>{d}</option>)}
               </select>
-            </label>
-            <label className="u-gap-4px u-fs-fs-sm" style={{ display: 'grid', color: 'var(--text-subtle)' }}>Course
+            </LabeledField>
+            <LabeledField label="Course">
               <select value={course} onChange={(e) => setCourse(e.target.value)} style={FIELD_STYLE}>
                 {COURSES.map((c) => <option key={c}>{c}</option>)}
               </select>
-            </label>
-            <label className="u-gap-4px u-fs-fs-sm" style={{ display: 'grid', color: 'var(--text-subtle)' }}>Target time
+            </LabeledField>
+            <LabeledField label="Target time">
               <input aria-label="1:05.00" placeholder="1:05.00" value={target} onChange={(e) => setTarget(e.target.value)} style={FIELD_STYLE} />
-            </label>
-            <label className="u-gap-4px u-fs-fs-sm" style={{ display: 'grid', color: 'var(--text-subtle)' }}>Deadline (optional)
+            </LabeledField>
+            <LabeledField label="Deadline (optional)">
               <input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} style={FIELD_STYLE} />
-            </label>
+            </LabeledField>
           </div>
           <div className="u-gap-8px u-mt-12px" style={{ display: 'flex', justifyContent: 'flex-end' }}>
             <button type="button" className="btn btn-sm btn-ghost" onClick={() => { setAdding(false); setFormError(null) }}>Cancel</button>

@@ -9,18 +9,8 @@ import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
 import { createSuppression, fetchSuppression, removeSuppression, type SuppressionRecord } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
-
-function formatDateTime(value: string) {
-  return new Date(value).toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
-const FIELD_INPUT_STYLE: React.CSSProperties = { width: '100%' }
+import { formatDateTime } from '@/lib/dates'
+import { FIELD_INPUT_STYLE } from '@/lib/form-styles'
 
 export function SuppressionPanel() {
   const { session } = useSession()
@@ -173,7 +163,7 @@ export function SuppressionPanel() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search addresses…"
-            style={{ ...FIELD_INPUT_STYLE }}
+            style={FIELD_INPUT_STYLE}
           />
         </div>
         <div className="u-gap-8px" style={{ display: 'flex', flexWrap: 'wrap' }}>

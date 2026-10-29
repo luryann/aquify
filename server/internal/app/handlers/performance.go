@@ -95,18 +95,8 @@ func (h *PerformanceHandlers) RegisterRoutes(router chi.Router) {
 
 // ─── Scope helper ─────────────────────────────────────────────────────────────
 
-func perfScopeFromRequest(w http.ResponseWriter, r *http.Request) (*appmiddleware.Principal, string, bool) {
-	return scopedRequestFromContext(w, r)
-}
-
 func (h *PerformanceHandlers) decodeAndValidate(w http.ResponseWriter, r *http.Request, dst any) bool {
-	return decodeAndValidateJSON(w, r, dst, h.validate, decodeAndValidateOptions{
-		InvalidStatus:     http.StatusBadRequest,
-		InvalidCode:       "invalid_request_body",
-		ValidationStatus:  http.StatusUnprocessableEntity,
-		ValidationCode:    "validation_error",
-		ValidationMessage: "Request validation failed.",
-	})
+	return decodeAndValidateUnprocessable(w, r, dst, h.validate)
 }
 
 // ─── Request body types ───────────────────────────────────────────────────────
@@ -186,7 +176,7 @@ type swimmerActivityRecord struct {
 
 // upsertResult POST /results
 func (h *PerformanceHandlers) upsertResult(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := perfScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -197,12 +187,7 @@ func (h *PerformanceHandlers) upsertResult(w http.ResponseWriter, r *http.Reques
 
 	splits := make([]performance.SplitInput, 0, len(body.Splits))
 	for _, sp := range body.Splits {
-		splits = append(splits, performance.SplitInput{
-			SplitNumber:      sp.SplitNumber,
-			SplitDistance:    sp.SplitDistance,
-			SplitTimeMs:      sp.SplitTimeMs,
-			CumulativeTimeMs: sp.CumulativeTimeMs,
-		})
+		splits = append(splits, performance.SplitInput(sp))
 	}
 
 	result, breaks, err := h.service.UpsertResultWithRecords(orgID, principal.UserID, principal, performance.UpsertResultInput{
@@ -241,7 +226,7 @@ func (h *PerformanceHandlers) upsertResult(w http.ResponseWriter, r *http.Reques
 // listBestTimes GET /swimmers/{swimmerID}/best-times
 // Allowed roles: admin, coach, parent (parent household scoping deferred to DB layer).
 func (h *PerformanceHandlers) listBestTimes(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := perfScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -271,7 +256,7 @@ func (h *PerformanceHandlers) listBestTimes(w http.ResponseWriter, r *http.Reque
 
 // listOrgBestTimes GET /performance/best-times
 func (h *PerformanceHandlers) listOrgBestTimes(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := perfScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -298,7 +283,7 @@ func (h *PerformanceHandlers) listOrgBestTimes(w http.ResponseWriter, r *http.Re
 
 // overrideBestTime POST /swimmers/{swimmerID}/best-times/override
 func (h *PerformanceHandlers) overrideBestTime(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := perfScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -337,16 +322,7 @@ func (h *PerformanceHandlers) overrideBestTime(w http.ResponseWriter, r *http.Re
 		if body.Reason != "" {
 			meta["reason"] = body.Reason
 		}
-		_, _ = h.auditService.Append(audit.AppendRequest{
-			OrgID:        orgID,
-			ActorUserID:  principal.UserID,
-			ActorRoles:   principal.Roles,
-			Action:       audit.ActionPerformanceBestTimeOverride,
-			ResourceType: "best_time",
-			ResourceID:   bt.ID,
-			After:        bt,
-			Metadata:     meta,
-		})
+		recordAudit(h.auditService, principal, orgID, audit.ActionPerformanceBestTimeOverride, "best_time", bt.ID, nil, bt, meta)
 	}
 
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
@@ -358,21 +334,14 @@ func (h *PerformanceHandlers) overrideBestTime(w http.ResponseWriter, r *http.Re
 // listProgression GET /swimmers/{swimmerID}/progression
 // Allowed roles: admin, coach, parent (parent household scoping deferred to DB layer).
 func (h *PerformanceHandlers) listProgression(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := perfScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
 	swimmerID := chi.URLParam(r, "swimmerID")
 
 	q := r.URL.Query()
-	distanceStr := q.Get("distance")
-	var distance int
-	if distanceStr != "" {
-		d, err := strconv.Atoi(distanceStr)
-		if err == nil {
-			distance = d
-		}
-	}
+	distance := queryInt(r, "distance")
 
 	results, err := h.service.ListProgression(orgID, principal, swimmerID, performance.ListResultsFilters{
 		EventDistance: distance,
@@ -397,7 +366,7 @@ func (h *PerformanceHandlers) listProgression(w http.ResponseWriter, r *http.Req
 
 // listActivity GET /swimmers/{swimmerID}/activity
 func (h *PerformanceHandlers) listActivity(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := perfScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -447,20 +416,13 @@ func (h *PerformanceHandlers) listActivity(w http.ResponseWriter, r *http.Reques
 
 // listOrgProgression GET /performance/progression
 func (h *PerformanceHandlers) listOrgProgression(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := perfScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
 
 	q := r.URL.Query()
-	distanceStr := q.Get("distance")
-	var distance int
-	if distanceStr != "" {
-		d, err := strconv.Atoi(distanceStr)
-		if err == nil {
-			distance = d
-		}
-	}
+	distance := queryInt(r, "distance")
 
 	results, err := h.service.ListProgressionForOrg(orgID, principal, performance.ListResultsFilters{
 		SwimmerID:     q.Get("swimmer_id"),
@@ -522,7 +484,7 @@ func (h *PerformanceHandlers) buildActivityFeed(orgID string, principal *appmidd
 			ID:         "registration:" + registration.ID,
 			Type:       "registration",
 			OccurredAt: registration.UpdatedAt,
-			Title:      "Registration " + strings.ReplaceAll(registration.Status, "_", " "),
+			Title:      "Registration " + humanizeStatus(registration.Status),
 			Detail:     "Season " + registration.Season + " registration recorded.",
 			Status:     registration.Status,
 			SourceID:   registration.ID,
@@ -566,13 +528,13 @@ func (h *PerformanceHandlers) buildActivityFeed(orgID string, principal *appmidd
 		}
 		detail := "Document record updated."
 		if strings.TrimSpace(submission.DocumentTypeName) != "" {
-			detail = submission.DocumentTypeName + " document " + strings.ReplaceAll(submission.Status, "_", " ") + "."
+			detail = submission.DocumentTypeName + " document " + humanizeStatus(submission.Status) + "."
 		}
 		activities = append(activities, swimmerActivityRecord{
 			ID:         "document:" + submission.ID,
 			Type:       "document",
 			OccurredAt: occurredAt,
-			Title:      "Document " + strings.ReplaceAll(submission.Status, "_", " "),
+			Title:      "Document " + humanizeStatus(submission.Status),
 			Detail:     detail,
 			Status:     submission.Status,
 			SourceID:   submission.ID,
@@ -599,7 +561,7 @@ func (h *PerformanceHandlers) buildActivityFeed(orgID string, principal *appmidd
 				ID:         "commitment:" + commitment.ID,
 				Type:       "commitment",
 				OccurredAt: commitment.UpdatedAt,
-				Title:      "Meet commitment " + strings.ReplaceAll(commitment.Status, "_", " "),
+				Title:      "Meet commitment " + humanizeStatus(commitment.Status),
 				Detail:     "Response recorded for " + meetName + ".",
 				Status:     commitment.Status,
 				SourceID:   commitment.ID,
@@ -615,6 +577,11 @@ func (h *PerformanceHandlers) buildActivityFeed(orgID string, principal *appmidd
 		return activities[i].OccurredAt.After(activities[j].OccurredAt)
 	})
 	return activities, nil
+}
+
+// humanizeStatus turns a snake_case status into display words.
+func humanizeStatus(status string) string {
+	return strings.ReplaceAll(status, "_", " ")
 }
 
 func strokeActivityLabel(stroke string) string {
@@ -648,7 +615,7 @@ func formatActivityTime(ms int) string {
 // evaluateCutQualification GET /swimmers/{swimmerID}/cut-qualification?standard_id=...
 // Allowed roles: admin, coach, parent (parent household scoping deferred to DB layer).
 func (h *PerformanceHandlers) evaluateCutQualification(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := perfScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -678,24 +645,14 @@ func (h *PerformanceHandlers) evaluateCutQualification(w http.ResponseWriter, r 
 
 // listTimeStandards GET /time-standards
 func (h *PerformanceHandlers) listTimeStandards(w http.ResponseWriter, r *http.Request) {
-	_, orgID, ok := perfScopeFromRequest(w, r)
+	_, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
 
 	q := r.URL.Query()
-	var yearFilter int
-	if y := q.Get("season_year"); y != "" {
-		if n, err := strconv.Atoi(y); err == nil {
-			yearFilter = n
-		}
-	}
-	var distFilter int
-	if d := q.Get("event_distance"); d != "" {
-		if n, err := strconv.Atoi(d); err == nil {
-			distFilter = n
-		}
-	}
+	yearFilter := queryInt(r, "season_year")
+	distFilter := queryInt(r, "event_distance")
 	activeOnly := q.Get("active_only") == "true" || q.Get("active_only") == "1"
 
 	standards, err := h.service.ListTimeStandards(orgID, performance.ListTimeStandardsFilters{
@@ -720,7 +677,7 @@ func (h *PerformanceHandlers) listTimeStandards(w http.ResponseWriter, r *http.R
 
 // createTimeStandard POST /time-standards
 func (h *PerformanceHandlers) createTimeStandard(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := perfScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -757,7 +714,7 @@ func (h *PerformanceHandlers) createTimeStandard(w http.ResponseWriter, r *http.
 
 // getTimeStandard GET /time-standards/{standardID}
 func (h *PerformanceHandlers) getTimeStandard(w http.ResponseWriter, r *http.Request) {
-	_, orgID, ok := perfScopeFromRequest(w, r)
+	_, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -778,7 +735,7 @@ func (h *PerformanceHandlers) getTimeStandard(w http.ResponseWriter, r *http.Req
 
 // updateTimeStandard PUT /time-standards/{standardID}
 func (h *PerformanceHandlers) updateTimeStandard(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := perfScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -814,7 +771,7 @@ func (h *PerformanceHandlers) updateTimeStandard(w http.ResponseWriter, r *http.
 
 // deleteTimeStandard DELETE /time-standards/{standardID}
 func (h *PerformanceHandlers) deleteTimeStandard(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := perfScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}

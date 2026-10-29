@@ -49,9 +49,9 @@ var expectedColumns = map[string][]string{
 func MissingExpectedColumns(actual map[string]map[string]bool) []string {
 	var missing []string
 	for table, columns := range expectedColumns {
-		tableColumns := actual[table]
 		for _, column := range columns {
-			if tableColumns == nil || !tableColumns[column] {
+			// Indexing a nil inner map yields false, so an absent table is reported too.
+			if !actual[table][column] {
 				missing = append(missing, fmt.Sprintf("%s.%s", table, column))
 			}
 		}

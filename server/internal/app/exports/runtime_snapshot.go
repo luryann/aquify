@@ -7,7 +7,7 @@ type runtimeSnapshot struct {
 }
 
 type fileExportSnapshot struct {
-	FileExport   FileExport           `json:"file_export"`
+	FileExport   FileExport   `json:"file_export"`
 	PendingInput *ReportInput `json:"pending_input,omitempty"`
 }
 

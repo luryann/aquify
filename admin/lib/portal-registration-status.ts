@@ -3,14 +3,14 @@ import type {
   DocumentTypeRecord,
   RegistrationRecord,
 } from './adminData.ts'
-import { selectLatestSubmission } from './document-submissions.ts'
+import { resolveDocumentStatus, selectLatestSubmission, type DocumentStatus } from './document-submissions.ts'
 
 export type RegistrationDocumentRow = {
   id: string
   name: string
   category: string
   appliesTo: string
-  effectiveStatus: 'verified' | 'submitted' | 'pending' | 'rejected' | 'expired' | 'missing'
+  effectiveStatus: DocumentStatus
   submittedAt?: string
   expiresAt?: string
 }
@@ -59,28 +59,9 @@ export function buildPortalRegistrationDocumentRows(input: {
         name: type.name,
         category: type.category,
         appliesTo: type.applies_to,
-        effectiveStatus: resolveRegistrationDocumentStatus(submission, now),
+        effectiveStatus: resolveDocumentStatus(submission, now),
         submittedAt: submission?.submitted_at,
         expiresAt: submission?.expires_at,
       }
     })
-}
-
-function resolveRegistrationDocumentStatus(
-  submission: DocumentSubmissionRecord | null,
-  now: Date,
-): RegistrationDocumentRow['effectiveStatus'] {
-  if (!submission) return 'missing'
-  if (submission.expires_at && new Date(submission.expires_at).getTime() < now.getTime() && submission.status !== 'verified') {
-    return 'expired'
-  }
-  switch (submission.status) {
-    case 'verified':
-    case 'submitted':
-    case 'pending':
-    case 'rejected':
-      return submission.status
-    default:
-      return 'pending'
-  }
 }

@@ -3,9 +3,8 @@
 // Fetch helpers + types for club events, calendar feeds, wellness check-ins
 // and attendance summaries (server/internal/app/{events,wellness,attendance}).
 import type { ApiClient } from './api'
+import { orgHeaders } from './api'
 import { fetchAllPages } from './adminData'
-
-const org = (orgId: string) => ({ 'X-Org-Id': orgId })
 
 // ── Club events ──────────────────────────────────────────────────────────────
 
@@ -76,19 +75,19 @@ export async function fetchClubEvents(api: ApiClient, orgId: string, range?: { f
 }
 
 export async function createClubEvent(api: ApiClient, orgId: string, body: ClubEventInput): Promise<ClubEventRecord> {
-  return (await api.post<{ event: ClubEventRecord }>('/api/v1/club-events', body, org(orgId))).event
+  return (await api.post<{ event: ClubEventRecord }>('/api/v1/club-events', body, orgHeaders(orgId))).event
 }
 
 export async function updateClubEvent(api: ApiClient, orgId: string, id: string, body: ClubEventInput): Promise<ClubEventRecord> {
-  return (await api.put<{ event: ClubEventRecord }>(`/api/v1/club-events/${id}`, body, org(orgId))).event
+  return (await api.put<{ event: ClubEventRecord }>(`/api/v1/club-events/${id}`, body, orgHeaders(orgId))).event
 }
 
 export async function deleteClubEvent(api: ApiClient, orgId: string, id: string): Promise<void> {
-  await api.delete(`/api/v1/club-events/${id}`, org(orgId))
+  await api.delete(`/api/v1/club-events/${id}`, orgHeaders(orgId))
 }
 
 export async function fetchClubEventRSVPs(api: ApiClient, orgId: string, id: string): Promise<{ rsvps: ClubEventRSVP[]; summary: ClubEventSummary }> {
-  const res = await api.get<{ rsvps?: ClubEventRSVP[]; summary: ClubEventSummary }>(`/api/v1/club-events/${id}/rsvps`, undefined, org(orgId))
+  const res = await api.get<{ rsvps?: ClubEventRSVP[]; summary: ClubEventSummary }>(`/api/v1/club-events/${id}/rsvps`, undefined, orgHeaders(orgId))
   return { rsvps: res.rsvps ?? [], summary: res.summary }
 }
 
@@ -100,7 +99,7 @@ export async function respondClubEvent(
   id: string,
   body: { household_id?: string; swimmer_id?: string; response: RSVPResponse; guest_count?: number; note?: string },
 ): Promise<{ rsvp: ClubEventRSVP; billing: RSVPBillingOutcome }> {
-  return api.put(`/api/v1/club-events/${id}/rsvps`, body, org(orgId))
+  return api.put(`/api/v1/club-events/${id}/rsvps`, body, orgHeaders(orgId))
 }
 
 export function clubEventExportPath(id: string): string {
@@ -118,15 +117,15 @@ export type CalendarFeedStatus = {
 }
 
 export async function fetchCalendarFeed(api: ApiClient, orgId: string): Promise<CalendarFeedStatus> {
-  return api.get<CalendarFeedStatus>('/api/v1/calendar/feed-token', undefined, org(orgId))
+  return api.get<CalendarFeedStatus>('/api/v1/calendar/feed-token', undefined, orgHeaders(orgId))
 }
 
 export async function rotateCalendarFeed(api: ApiClient, orgId: string): Promise<CalendarFeedStatus> {
-  return api.post<CalendarFeedStatus>('/api/v1/calendar/feed-token', undefined, org(orgId))
+  return api.post<CalendarFeedStatus>('/api/v1/calendar/feed-token', undefined, orgHeaders(orgId))
 }
 
 export async function revokeCalendarFeed(api: ApiClient, orgId: string): Promise<CalendarFeedStatus> {
-  return api.delete<CalendarFeedStatus>('/api/v1/calendar/feed-token', org(orgId))
+  return api.delete<CalendarFeedStatus>('/api/v1/calendar/feed-token', orgHeaders(orgId))
 }
 
 // ── Wellness ─────────────────────────────────────────────────────────────────
@@ -186,17 +185,17 @@ export async function submitWellnessCheckIn(
   orgId: string,
   body: WellnessMetrics & { swimmer_id?: string; date?: string; note?: string },
 ): Promise<{ checkin: WellnessCheckIn; created: boolean }> {
-  return api.put('/api/v1/wellness/checkins', body, org(orgId))
+  return api.put('/api/v1/wellness/checkins', body, orgHeaders(orgId))
 }
 
 export async function fetchSwimmerWellness(api: ApiClient, orgId: string, swimmerId: string, days = 30): Promise<SwimmerWellness> {
-  return api.get<SwimmerWellness>(`/api/v1/wellness/swimmers/${swimmerId}?days=${days}`, undefined, org(orgId))
+  return api.get<SwimmerWellness>(`/api/v1/wellness/swimmers/${swimmerId}?days=${days}`, undefined, orgHeaders(orgId))
 }
 
 export async function fetchWellnessHeatmap(api: ApiClient, orgId: string, group: string, days = 14): Promise<WellnessHeatmap> {
   const qs = new URLSearchParams({ days: String(days) })
   if (group) qs.set('group', group)
-  return api.get<WellnessHeatmap>(`/api/v1/wellness/heatmap?${qs}`, undefined, org(orgId))
+  return api.get<WellnessHeatmap>(`/api/v1/wellness/heatmap?${qs}`, undefined, orgHeaders(orgId))
 }
 
 // ── Attendance summary ───────────────────────────────────────────────────────
@@ -215,6 +214,6 @@ export type AttendanceSummary = {
 }
 
 export async function fetchAttendanceSummary(api: ApiClient, orgId: string, swimmerId: string, days = 90): Promise<AttendanceSummary> {
-  const res = await api.get<{ summary: AttendanceSummary }>(`/api/v1/swimmers/${swimmerId}/attendance-summary?days=${days}`, undefined, org(orgId))
+  const res = await api.get<{ summary: AttendanceSummary }>(`/api/v1/swimmers/${swimmerId}/attendance-summary?days=${days}`, undefined, orgHeaders(orgId))
   return res.summary
 }

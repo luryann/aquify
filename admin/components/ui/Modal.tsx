@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, type ReactNode } from 'react'
 import { Icon } from './icons'
+import { useDialogA11y } from './useDialogA11y'
+import './Modal.inline.css'
 
 type ModalProps = {
   open: boolean
@@ -15,49 +17,17 @@ type ModalProps = {
 
 export function Modal({ open, onClose, title, description, children, footer, width = 480 }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null)
+  useDialogA11y(panelRef, onClose, open)
+
+  // Lock page scroll while the dialog is open.
   useEffect(() => {
     if (!open) return
-    const returnTo = document.activeElement as HTMLElement | null
-    const focusables = () =>
-      Array.from(
-        panelRef.current?.querySelectorAll<HTMLElement>(
-          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-        ) ?? [],
-      )
-    const t = window.setTimeout(() => {
-      const auto = panelRef.current?.querySelector<HTMLElement>('[data-autofocus]')
-      ;(auto ?? focusables().find((el) => el.getAttribute('aria-label') !== 'Close') ?? panelRef.current)?.focus()
-    }, 0)
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation()
-        onClose()
-        return
-      }
-      if (e.key !== 'Tab') return
-      const els = focusables()
-      if (els.length === 0) return
-      const first = els[0]
-      const last = els[els.length - 1]
-      const active = document.activeElement
-      if (e.shiftKey && (active === first || !panelRef.current?.contains(active))) {
-        e.preventDefault()
-        last.focus()
-      } else if (!e.shiftKey && (active === last || !panelRef.current?.contains(active))) {
-        e.preventDefault()
-        first.focus()
-      }
-    }
-    document.addEventListener('keydown', onKeyDown)
     const prevOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     return () => {
-      window.clearTimeout(t)
-      returnTo?.focus?.()
-      document.removeEventListener('keydown', onKeyDown)
       document.body.style.overflow = prevOverflow
     }
-  }, [open, onClose])
+  }, [open])
 
   if (!open) return null
 
@@ -136,22 +106,6 @@ export function Modal({ open, onClose, title, description, children, footer, wid
         )}
       </div>
 
-      <style>{`
-        @keyframes modalOverlayIn {
-          from { opacity: 0; }
-          to   { opacity: 1; }
-        }
-        @keyframes modalPanelIn {
-          from { opacity: 0; transform: translateY(-10px) scale(0.98); }
-          to   { opacity: 1; transform: translateY(0) scale(1); }
-        }
-        @media (prefers-reduced-motion: reduce) {
-          @keyframes modalPanelIn {
-            from { opacity: 0; }
-            to   { opacity: 1; }
-          }
-        }
-      `}</style>
     </div>
   )
 }

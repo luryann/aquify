@@ -1,0 +1,7 @@
+.sidebar-link { display: flex; align-items: center; gap: 8px; padding: 8px 12px; margin: 0 8px; border-radius: var(--r-sm); justify-content: flex-start; text-decoration: none; color: var(--text-subtle); background: transparent; font-size: var(--fs-base); font-weight: 400; white-space: nowrap; overflow: hidden; transition: background var(--dur-fast), color var(--dur-fast); }
+.sidebar-link[data-collapsed="true"] { padding: 8px 0; margin: 0; border-radius: 0; justify-content: center; }
+.sidebar-link[data-active="true"] { color: var(--text); background: var(--accent-subtle); font-weight: 700; }
+.sidebar-link[data-active="false"]:hover { color: var(--text); background: var(--bg-surface); }
+.sidebar-resize { position: absolute; top: 0; right: 0; width: 4px; height: 100%; cursor: col-resize; z-index: 20; background: transparent; transition: background 150ms ease; }
+.sidebar-resize[data-dragging="true"] { background: var(--accent); }
+.sidebar-resize[data-dragging="false"]:hover { background: var(--accent-border); }

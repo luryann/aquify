@@ -8,7 +8,8 @@ import { reportUIError } from '@/lib/frontend-telemetry'
 import { fetchGroups, fetchSeasons, type GroupRecord, type SeasonRecord } from '@/lib/adminData'
 import { COURSES, STROKE_LABELS, fetchProgressReport, formatDrop, formatSwimTime, type ProgressReport, type SwimmerProgress } from '@/lib/performanceData'
 import { defaultComparison } from '@/lib/performance-periods'
-import { FIELD_STYLE, FilterRow, LoadErrorBanner } from '@/components/performance/PerfControls'
+import { FIELD_STYLE, FilterRow } from '@/components/performance/PerfControls'
+import { LoadErrorBanner } from '@/components/ui/LoadErrorBanner'
 import { EmptyState } from '@/components/ui/EmptyState'
 
 type Range = { from_a: string; to_a: string; from_b: string; to_b: string }

@@ -33,7 +33,6 @@ const (
 const (
 	TypeParseImport         = "imports:parse"
 	TypeGenerateExport      = "exports:generate"
-	TypeSendCampaignBatch   = "email:campaign_batch"
 	TypeBillingReconcile    = "billing:reconcile"
 	TypeNightlyIntegrity    = "integrity:nightly"
 	TypePurgeExpiredFiles   = "cleanup:purge_expired"

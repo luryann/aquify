@@ -25,8 +25,9 @@ import {
   type SwimmerGroupLinkRecord,
   type SwimmerRecord,
 } from '@/lib/adminData'
-import { parseBackendDate } from '@/lib/dates'
+import { ageFromDob, formatDateOnly } from '@/lib/dates'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
+import { formatAgeRange } from '@/lib/group-format'
 
 const FIELD_STYLE: React.CSSProperties = { width: '100%' }
 const FIELD_LABEL_STYLE: React.CSSProperties = { display: 'block', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginBottom: '6px', fontFamily: 'var(--font-body)' }
@@ -81,31 +82,6 @@ type RuleRow = {
   createdAt: string
 }
 
-function formatAgeRange(minAge: number | null | undefined, maxAge: number | null | undefined) {
-  if (minAge == null && maxAge == null) return 'All ages'
-  if (minAge == null) return `Up to ${maxAge}`
-  if (maxAge == null) return `${minAge}+`
-  return `${minAge}-${maxAge}`
-}
-
-function formatDate(value?: string | null) {
-  if (!value) return '—'
-  const parsed = parseBackendDate(value)
-  if (Number.isNaN(parsed.getTime())) return value
-  return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
-function computeAge(dob?: string) {
-  if (!dob) return '—'
-  const birth = parseBackendDate(dob)
-  if (Number.isNaN(birth.getTime())) return '—'
-  const now = new Date()
-  let age = now.getFullYear() - birth.getFullYear()
-  const birthdayPassed = now.getMonth() > birth.getMonth() || (now.getMonth() === birth.getMonth() && now.getDate() >= birth.getDate())
-  if (!birthdayPassed) age -= 1
-  return `${age}`
-}
-
 function summarizeRule(rule: EligibilityRuleRecord) {
   const params = rule.parameters ?? {}
   if (rule.rule_type === 'age_range') {
@@ -142,13 +118,13 @@ const SWIMMER_COLS: Column<SwimmerRow>[] = [
   { key: 'gender', label: 'Gender', render: (row) => <span className="u-fs-fs-base" style={{ color: 'var(--text-subtle)' }}>{row.gender}</span> },
   { key: 'isPrimary', label: 'Primary group?', render: (row) => <span className="badge" style={{ background: row.isPrimary ? 'var(--accent-subtle)' : 'var(--bg-elevated)', color: row.isPrimary ? 'var(--accent)' : 'var(--text-muted)' }}>{row.isPrimary ? 'Yes' : 'No'}</span> },
   { key: 'status', label: 'Status', render: (row) => <span className="badge" style={{ background: row.status === 'active' ? 'var(--success-bg)' : 'var(--bg-elevated)', color: row.status === 'active' ? 'var(--success)' : 'var(--text-muted)' }}>{row.status}</span> },
-  { key: 'joinedGroup', label: 'Since', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>{formatDate(row.joinedGroup)}</span> },
+  { key: 'joinedGroup', label: 'Since', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>{formatDateOnly(row.joinedGroup)}</span> },
 ]
 
 const RULE_COLS: Column<RuleRow>[] = [
   { key: 'ruleType', label: 'Type', render: (row) => <span className="u-ff-font-body u-fs-fs-sm u-p-2px-8px" style={{ borderRadius: '8px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-subtle)' }}>{row.ruleType}</span> },
   { key: 'description', label: 'Description', render: (row) => <span className="u-fs-fs-base" style={{ color: 'var(--text-subtle)' }}>{row.description}</span> },
-  { key: 'createdAt', label: 'Created', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>{formatDate(row.createdAt)}</span> },
+  { key: 'createdAt', label: 'Created', render: (row) => <span className="u-ff-font-body u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>{formatDateOnly(row.createdAt)}</span> },
   { key: 'active', label: 'Status', render: (row) => <span className="badge" style={{ background: row.active ? 'var(--success-bg)' : 'var(--bg-elevated)', color: row.active ? 'var(--success)' : 'var(--text-muted)' }}>{row.active ? 'active' : 'disabled'}</span> },
 ]
 
@@ -162,7 +138,7 @@ function buildSwimmerRows(swimmers: SwimmerRecord[], links: SwimmerGroupLinkReco
         id: swimmer.id,
         name: `${swimmer.preferred_name || swimmer.first_name} ${swimmer.last_name}`.trim(),
         ussNumber: swimmer.swimmer_external_id || '',
-        age: computeAge(swimmer.date_of_birth),
+        age: ageFromDob(swimmer.date_of_birth),
         gender: swimmer.gender,
         status: swimmer.registration_status,
         joinedGroup: link.assigned_at,
@@ -608,7 +584,7 @@ export default function GroupDetailPage() {
               {[
                 { label: 'Code', value: group.code },
                 { label: 'Group ID', value: group.id },
-                { label: 'Created', value: formatDate(group.created_at) },
+                { label: 'Created', value: formatDateOnly(group.created_at) },
               ].map((row) => (
                 <div key={row.label} className="u-gap-12px u-fs-fs-base u-pb-12px" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)' }}>
                   <span style={{ color: 'var(--text-muted)' }}>{row.label}</span>

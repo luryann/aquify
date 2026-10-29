@@ -10,15 +10,7 @@ import { shouldShowCollectionEmptyState } from '@/lib/collection-load-state'
 import { reportUIError } from '@/lib/frontend-telemetry'
 import { UnlinkedSwimmerNotice } from '@/components/swimmer/UnlinkedSwimmerNotice'
 import { WellnessPromptCard } from '@/components/engagement/WellnessPromptCard'
-
-const COURSE_LABELS: Record<string, string> = {
-  SCY: 'Short Course Yards',
-  SCM: 'Short Course Meters',
-  LCM: 'Long Course Meters',
-}
-function courseTitle(course: string): string | undefined {
-  return COURSE_LABELS[course.toUpperCase()]
-}
+import { COURSE_LABELS } from '@/lib/meet-events'
 import {
   fetchSwimmers,
   fetchMeets,
@@ -29,31 +21,27 @@ import {
   type AnnouncementRecord,
 } from '@/lib/adminData'
 import './page.inline.css'
+import { formatSwimTime } from '@/lib/performanceData'
+import { SkeletonLine } from '@/components/ui/SkeletonLine'
 
 // ── Design tokens ──────────────────────────────────────────────────────────
 const C = {
   accent:   'var(--accent)',
-  accentDim: 'var(--accent-subtle)',
   accentBorder: 'var(--accent-border)',
   text:     'var(--text)',
   subtle:   'var(--text-subtle)',
   muted:    'var(--text-muted)',
-  card:     'var(--bg-surface)',
-  cardHov:  'var(--bg-elevated)',
   border:   'var(--border)',
   warn:     'var(--warning)',
   warnBg:   'var(--warning-bg)',
   warnBorder: 'var(--warning-border)',
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────
-function fmtTime(ms: number): string {
-  const s = ms / 1000
-  const m = Math.floor(s / 60)
-  const rem = s % 60
-  return m > 0 ? `${m}:${rem.toFixed(2).padStart(5, '0')}` : rem.toFixed(2)
+function courseTitle(course: string): string | undefined {
+  return COURSE_LABELS[course.toUpperCase()]
 }
 
+// ── Helpers ────────────────────────────────────────────────────────────────
 function eventName(distance: number, stroke: string): string {
   const cap = stroke.charAt(0).toUpperCase() + stroke.slice(1)
   return `${distance} ${cap}`
@@ -102,20 +90,6 @@ type BestTimeDisplay = {
 }
 
 // ── Skeleton components ────────────────────────────────────────────────────
-function SkeletonLine({ width = '100%', height = '14px' }: { width?: string; height?: string }) {
-  return (
-    <div
-      style={{
-        width,
-        height,
-        background: 'var(--border)',
-        borderRadius: '6px',
-        animation: 'pulse 1.5s ease-in-out infinite',
-      }}
-    />
-  )
-}
-
 function SkeletonCard() {
   return (
     <div className="card is-d18a76e"
@@ -291,7 +265,7 @@ export default function SwimmerDashboardPage() {
           .map(bt => ({
             event: eventName(bt.event_distance, bt.stroke),
             course: bt.course.toUpperCase(),
-            time: fmtTime(bt.best_time_ms!),
+            time: formatSwimTime(bt.best_time_ms!),
             // A best set in the last 30 days still counts as news.
             fresh: bt.recorded_at ? Date.now() - new Date(bt.recorded_at).getTime() < 30 * 86_400_000 : false,
           }))
@@ -365,17 +339,7 @@ export default function SwimmerDashboardPage() {
 
   return (
     <div>
-      <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.45; }
-        }
-        @keyframes slideUp {
-          from { opacity: 0; transform: translateY(12px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
-
+      
       {/* Hero greeting */}
       <div
         className="is-31a2ed9"

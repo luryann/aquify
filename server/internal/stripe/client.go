@@ -18,10 +18,6 @@ import (
 	"time"
 
 	stripeapi "github.com/stripe/stripe-go/v84"
-	"github.com/stripe/stripe-go/v84/balancetransaction"
-	"github.com/stripe/stripe-go/v84/checkout/session"
-	"github.com/stripe/stripe-go/v84/paymentintent"
-	striperefund "github.com/stripe/stripe-go/v84/refund"
 )
 
 // ─── Errors ───────────────────────────────────────────────────────────────────
@@ -444,6 +440,7 @@ func (c *StubClient) CreateRefund(_ context.Context, params RefundParams) (*Refu
 type SDKClient struct {
 	secretKey string
 	backend   stripeapi.Backend
+	api       *stripeapi.Client
 }
 
 // NewSDKClient returns a Stripe SDK-backed client.
@@ -451,7 +448,17 @@ func NewSDKClient(secretKey string) (*SDKClient, error) {
 	if strings.TrimSpace(secretKey) == "" {
 		return nil, ErrInvalidConfig
 	}
-	return &SDKClient{secretKey: strings.TrimSpace(secretKey), backend: stripeapi.GetBackend(stripeapi.APIBackend)}, nil
+	return newSDKClientWithBackend(secretKey, stripeapi.GetBackend(stripeapi.APIBackend)), nil
+}
+
+// newSDKClientWithBackend builds a client whose API calls all go through backend.
+func newSDKClientWithBackend(secretKey string, backend stripeapi.Backend) *SDKClient {
+	key := strings.TrimSpace(secretKey)
+	return &SDKClient{
+		secretKey: key,
+		backend:   backend,
+		api:       stripeapi.NewClient(key, stripeapi.WithBackends(&stripeapi.Backends{API: backend, Connect: backend, Uploads: backend})),
+	}
 }
 
 // Ready performs a cheap authenticated read against the Stripe account API.
@@ -462,7 +469,7 @@ func (c *SDKClient) Ready(ctx context.Context) error {
 // CreatePaymentIntent creates a Stripe PaymentIntent via stripe-go.
 func (c *SDKClient) CreatePaymentIntent(ctx context.Context, params PaymentIntentParams) (*PaymentIntentResult, error) {
 
-	req := &stripeapi.PaymentIntentParams{
+	req := &stripeapi.PaymentIntentCreateParams{
 		Amount:      stripeapi.Int64(int64(params.AmountCents)),
 		Currency:    stripeapi.String(strings.ToLower(strings.TrimSpace(params.Currency))),
 		Description: stripeapi.String(params.Description),
@@ -471,8 +478,7 @@ func (c *SDKClient) CreatePaymentIntent(ctx context.Context, params PaymentInten
 	if strings.TrimSpace(params.IdempotencyKey) != "" {
 		req.SetIdempotencyKey(strings.TrimSpace(params.IdempotencyKey))
 	}
-	req.Context = ctx
-	intent, err := (paymentintent.Client{B: c.backend, Key: c.secretKey}).New(req)
+	intent, err := c.api.V1PaymentIntents.Create(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -488,22 +494,22 @@ func (c *SDKClient) CreatePaymentIntent(ctx context.Context, params PaymentInten
 // CreateCheckoutSession creates a hosted Stripe Checkout session via stripe-go.
 func (c *SDKClient) CreateCheckoutSession(ctx context.Context, params CheckoutSessionParams) (*CheckoutSessionResult, error) {
 
-	req := &stripeapi.CheckoutSessionParams{
+	req := &stripeapi.CheckoutSessionCreateParams{
 		Mode:       stripeapi.String(string(stripeapi.CheckoutSessionModePayment)),
 		SuccessURL: stripeapi.String(params.SuccessURL),
 		CancelURL:  stripeapi.String(params.CancelURL),
 		Metadata:   params.Metadata,
 		// Webhooks arrive as payment_intent.* events, so the PaymentIntent
 		// itself must carry the invoice/org metadata.
-		PaymentIntentData: &stripeapi.CheckoutSessionPaymentIntentDataParams{
+		PaymentIntentData: &stripeapi.CheckoutSessionCreatePaymentIntentDataParams{
 			Metadata: params.Metadata,
 		},
-		LineItems: []*stripeapi.CheckoutSessionLineItemParams{
+		LineItems: []*stripeapi.CheckoutSessionCreateLineItemParams{
 			{
 				Quantity: stripeapi.Int64(1),
-				PriceData: &stripeapi.CheckoutSessionLineItemPriceDataParams{
+				PriceData: &stripeapi.CheckoutSessionCreateLineItemPriceDataParams{
 					Currency: stripeapi.String(strings.ToLower(strings.TrimSpace(params.Currency))),
-					ProductData: &stripeapi.CheckoutSessionLineItemPriceDataProductDataParams{
+					ProductData: &stripeapi.CheckoutSessionCreateLineItemPriceDataProductDataParams{
 						Name: stripeapi.String(params.Description),
 					},
 					UnitAmount: stripeapi.Int64(int64(params.AmountCents)),
@@ -514,8 +520,7 @@ func (c *SDKClient) CreateCheckoutSession(ctx context.Context, params CheckoutSe
 	if strings.TrimSpace(params.IdempotencyKey) != "" {
 		req.SetIdempotencyKey(strings.TrimSpace(params.IdempotencyKey))
 	}
-	req.Context = ctx
-	cs, err := (session.Client{B: c.backend, Key: c.secretKey}).New(req)
+	cs, err := c.api.V1CheckoutSessions.Create(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -535,19 +540,14 @@ func (c *SDKClient) ParseWebhookEvent(payload []byte, sigHeader, webhookSecret s
 func (c *SDKClient) FetchBalanceCents(ctx context.Context) (int, error) {
 
 	total := 0
-	params := &stripeapi.BalanceTransactionListParams{}
-	params.Filters.AddFilter("type", "", "charge")
-	params.Context = ctx
-	iter := (balancetransaction.Client{B: c.backend, Key: c.secretKey}).List(params)
-	for iter.Next() {
-		tx := iter.BalanceTransaction()
-		if tx == nil {
-			continue
+	params := &stripeapi.BalanceTransactionListParams{Type: stripeapi.String("charge")}
+	for tx, err := range c.api.V1BalanceTransactions.List(ctx, params) {
+		if err != nil {
+			return 0, err
 		}
-		total += int(tx.Amount)
-	}
-	if err := iter.Err(); err != nil {
-		return 0, err
+		if tx != nil {
+			total += int(tx.Amount)
+		}
 	}
 	return total, nil
 }
@@ -555,7 +555,7 @@ func (c *SDKClient) FetchBalanceCents(ctx context.Context) (int, error) {
 // CreateRefund creates a refund against a Stripe payment intent.
 func (c *SDKClient) CreateRefund(ctx context.Context, params RefundParams) (*RefundResult, error) {
 
-	req := &stripeapi.RefundParams{
+	req := &stripeapi.RefundCreateParams{
 		PaymentIntent: stripeapi.String(params.PaymentIntentID),
 		Amount:        stripeapi.Int64(int64(params.AmountCents)),
 	}
@@ -570,8 +570,7 @@ func (c *SDKClient) CreateRefund(ctx context.Context, params RefundParams) (*Ref
 	default:
 		req.Reason = stripeapi.String(string(stripeapi.RefundReasonRequestedByCustomer))
 	}
-	req.Context = ctx
-	refund, err := (striperefund.Client{B: c.backend, Key: c.secretKey}).New(req)
+	refund, err := c.api.V1Refunds.Create(ctx, req)
 	if err != nil {
 		return nil, err
 	}

@@ -4,8 +4,9 @@ import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { LoadErrorBanner } from '@/components/ui/LoadErrorBanner'
 import { useSession } from '@/lib/session'
-import { useApiClient } from '@/lib/api'
+import { useApiClient, type ApiClient } from '@/lib/api'
 import { useStaffNames } from '@/lib/useStaffNames'
 import {
   fetchCampaign,
@@ -15,17 +16,7 @@ import {
   type EmailDeliveryRecord,
 } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
-
-function formatDateTime(value?: string) {
-  if (!value) return '—'
-  return new Date(value).toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
+import { formatDateTime } from '@/lib/dates'
 
 function campaignPreviewDocument(bodyHTML: string) {
   return `<!doctype html>
@@ -44,6 +35,16 @@ function campaignPreviewDocument(bodyHTML: string) {
 </html>`
 }
 
+// The campaign still renders when its delivery rows fail to load, but the
+// failure is shown instead of reading as "no deliveries".
+async function loadDeliveries(api: ApiClient, orgId: string, id: string) {
+  try {
+    return { rows: await fetchCampaignDeliveries(api, orgId, id), error: null }
+  } catch (err) {
+    return { rows: [] as EmailDeliveryRecord[], error: uiErrorMessage(err, 'Couldn’t load deliveries. Try again.') }
+  }
+}
+
 export default function CampaignDetailPage() {
   const params = useParams<{ id: string }>()
   const campaignId = Array.isArray(params?.id) ? params.id[0] : params?.id
@@ -52,18 +53,20 @@ export default function CampaignDetailPage() {
   const staffName = useStaffNames(api, session?.user.orgId)
   const [campaign, setCampaign] = useState<EmailCampaignRecord | null>(null)
   const [deliveries, setDeliveries] = useState<EmailDeliveryRecord[]>([])
+  const [deliveriesError, setDeliveriesError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
   async function loadCampaignState(orgId: string, id: string) {
-    const [nextCampaign, nextDeliveries] = await Promise.all([
+    const [nextCampaign, deliveryResult] = await Promise.all([
       fetchCampaign(api, orgId, id),
-      fetchCampaignDeliveries(api, orgId, id).catch(() => []),
+      loadDeliveries(api, orgId, id),
     ])
     setCampaign(nextCampaign)
-    setDeliveries(nextDeliveries)
+    setDeliveries(deliveryResult.rows)
+    setDeliveriesError(deliveryResult.error)
   }
 
   useEffect(() => {
@@ -77,18 +80,20 @@ export default function CampaignDetailPage() {
       try {
         setLoading(true)
         setError(null)
-        const [nextCampaign, nextDeliveries] = await Promise.all([
+        const [nextCampaign, deliveryResult] = await Promise.all([
           fetchCampaign(api, session.user.orgId, campaignId),
-          fetchCampaignDeliveries(api, session.user.orgId, campaignId).catch(() => []),
+          loadDeliveries(api, session.user.orgId, campaignId),
         ])
         if (cancelled) return
         setCampaign(nextCampaign)
-        setDeliveries(nextDeliveries)
+        setDeliveries(deliveryResult.rows)
+        setDeliveriesError(deliveryResult.error)
       } catch (err) {
         if (!cancelled) {
           setError(uiErrorMessage(err, 'Couldn’t load campaign. Try again.'))
           setCampaign(null)
           setDeliveries([])
+          setDeliveriesError(null)
         }
       } finally {
         if (!cancelled) setLoading(false)
@@ -218,7 +223,9 @@ export default function CampaignDetailPage() {
               Delivered {deliverySummary.delivered} · Failed {deliverySummary.failed} · Suppressed {deliverySummary.suppressed}
             </span>
           </div>
-          {deliveries.length === 0 ? (
+          {deliveriesError ? (
+            <div className="u-p-20px" ><LoadErrorBanner message={deliveriesError} /></div>
+          ) : deliveries.length === 0 ? (
             <div className="u-p-20px" ><EmptyState icon="mail" title="No deliveries recorded" description="This campaign has not produced delivery rows yet." /></div>
           ) : (
             <div className="table-scroll" style={{ overflowX: 'auto' }}>

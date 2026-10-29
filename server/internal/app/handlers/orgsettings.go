@@ -104,17 +104,7 @@ func (h *OrgSettingsHandlers) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.auditService != nil {
-		_, _ = h.auditService.Append(audit.AppendRequest{
-			OrgID:        orgID,
-			ActorUserID:  principal.UserID,
-			ActorRoles:   principal.Roles,
-			Action:       "org_settings.update",
-			ResourceType: "org_settings",
-			ResourceID:   orgID,
-			After:        settings,
-		})
-	}
+	recordAudit(h.auditService, principal, orgID, "org_settings.update", "org_settings", orgID, nil, settings, nil)
 
 	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{"org_settings": settings})
 }

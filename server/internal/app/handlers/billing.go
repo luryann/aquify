@@ -90,18 +90,8 @@ func (h *BillingHandlers) RegisterRoutes(router chi.Router) {
 
 // ─── Scope helper ─────────────────────────────────────────────────────────────
 
-func billingScopeFromRequest(w http.ResponseWriter, r *http.Request) (*appmiddleware.Principal, string, bool) {
-	return scopedRequestFromContext(w, r)
-}
-
 func (h *BillingHandlers) decodeAndValidate(w http.ResponseWriter, r *http.Request, dst any) bool {
-	return decodeAndValidateJSON(w, r, dst, h.validate, decodeAndValidateOptions{
-		InvalidStatus:     http.StatusBadRequest,
-		InvalidCode:       "invalid_request_body",
-		ValidationStatus:  http.StatusUnprocessableEntity,
-		ValidationCode:    "validation_error",
-		ValidationMessage: "Request validation failed.",
-	})
+	return decodeAndValidateUnprocessable(w, r, dst, h.validate)
 }
 
 func mapBillingError(w http.ResponseWriter, r *http.Request, err error) {
@@ -139,14 +129,14 @@ func mapBillingError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, billing.ErrAutopayPaymentMethodRequired):
 		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "autopay_payment_method_required", "Payment method details are required to enable autopay.", nil)
 	default:
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An unexpected error occurred.", nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An unexpected error occurred.", err)
 	}
 }
 
 // ─── Invoice handlers ─────────────────────────────────────────────────────────
 
 func (h *BillingHandlers) createInvoice(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -165,7 +155,7 @@ func (h *BillingHandlers) createInvoice(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *BillingHandlers) getInvoice(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -180,7 +170,7 @@ func (h *BillingHandlers) getInvoice(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *BillingHandlers) listInvoices(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -201,7 +191,7 @@ func (h *BillingHandlers) listInvoices(w http.ResponseWriter, r *http.Request) {
 // ─── Invoice item handlers ────────────────────────────────────────────────────
 
 func (h *BillingHandlers) addInvoiceItem(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -221,7 +211,7 @@ func (h *BillingHandlers) addInvoiceItem(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *BillingHandlers) removeInvoiceItem(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -236,7 +226,7 @@ func (h *BillingHandlers) removeInvoiceItem(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *BillingHandlers) listInvoiceItems(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -252,14 +242,32 @@ func (h *BillingHandlers) listInvoiceItems(w http.ResponseWriter, r *http.Reques
 
 // ─── Invoice lifecycle handlers ───────────────────────────────────────────────
 
-func (h *BillingHandlers) issueInvoice(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+// privilegedBillingAction gates an invoice transition behind a permission
+// (and MFA) check; verb completes "You are not allowed to ...".
+type privilegedBillingAction struct {
+	action appmiddleware.Action
+	verb   string
+}
+
+// invoiceTransition runs an issue/void/write-off style action on the invoice in
+// the URL and records the before/after invoice in the audit log.
+func (h *BillingHandlers) invoiceTransition(
+	w http.ResponseWriter,
+	r *http.Request,
+	auditAction string,
+	gate *privilegedBillingAction,
+	do func(orgID, actorID string, principal *appmiddleware.Principal, invoiceID string) (*billing.Invoice, *billing.LedgerEvent, error),
+) {
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
+		return
+	}
+	if gate != nil && !requirePrivilegedBillingAction(w, r, principal, gate.action, gate.verb) {
 		return
 	}
 	invoiceID := chi.URLParam(r, "invoiceID")
 
-	// Capture before state for audit diff.
+	// Capture the invoice before the change for the audit diff.
 	var beforeInv interface{}
 	if h.auditService != nil {
 		if before, err := h.service.GetInvoice(orgID, principal, invoiceID); err == nil {
@@ -267,110 +275,33 @@ func (h *BillingHandlers) issueInvoice(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	inv, ledgerEv, err := h.service.IssueInvoice(orgID, principal.UserID, principal, invoiceID)
+	inv, ledgerEv, err := do(orgID, principal.UserID, principal, invoiceID)
 	if err != nil {
 		mapBillingError(w, r, err)
 		return
 	}
 
-	if h.auditService != nil {
-		_, _ = h.auditService.Append(audit.AppendRequest{
-			OrgID:        orgID,
-			ActorUserID:  principal.UserID,
-			ActorRoles:   principal.Roles,
-			Action:       audit.ActionBillingInvoiceIssue,
-			ResourceType: "invoice",
-			ResourceID:   invoiceID,
-			Before:       beforeInv,
-			After:        inv,
-		})
-	}
+	recordAudit(h.auditService, principal, orgID, auditAction, "invoice", invoiceID, beforeInv, inv, nil)
 
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"invoice": inv, "ledger_event": ledgerEv})
+}
+
+func (h *BillingHandlers) issueInvoice(w http.ResponseWriter, r *http.Request) {
+	h.invoiceTransition(w, r, audit.ActionBillingInvoiceIssue, nil, h.service.IssueInvoice)
 }
 
 func (h *BillingHandlers) voidInvoice(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
-	if !ok {
-		return
-	}
-	if !requirePrivilegedBillingAction(w, r, principal, appmiddleware.ActionBillingVoid, "void invoices") {
-		return
-	}
-	invoiceID := chi.URLParam(r, "invoiceID")
-
-	var beforeInv interface{}
-	if h.auditService != nil {
-		if before, err := h.service.GetInvoice(orgID, principal, invoiceID); err == nil {
-			beforeInv = before
-		}
-	}
-
-	inv, ledgerEv, err := h.service.VoidInvoice(orgID, principal.UserID, principal, invoiceID)
-	if err != nil {
-		mapBillingError(w, r, err)
-		return
-	}
-
-	if h.auditService != nil {
-		_, _ = h.auditService.Append(audit.AppendRequest{
-			OrgID:        orgID,
-			ActorUserID:  principal.UserID,
-			ActorRoles:   principal.Roles,
-			Action:       audit.ActionBillingInvoiceVoid,
-			ResourceType: "invoice",
-			ResourceID:   invoiceID,
-			Before:       beforeInv,
-			After:        inv,
-		})
-	}
-
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"invoice": inv, "ledger_event": ledgerEv})
+	h.invoiceTransition(w, r, audit.ActionBillingInvoiceVoid, &privilegedBillingAction{appmiddleware.ActionBillingVoid, "void invoices"}, h.service.VoidInvoice)
 }
 
 func (h *BillingHandlers) writeOffInvoice(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
-	if !ok {
-		return
-	}
-	if !requirePrivilegedBillingAction(w, r, principal, appmiddleware.ActionBillingWriteOff, "write off invoices") {
-		return
-	}
-	invoiceID := chi.URLParam(r, "invoiceID")
-
-	var beforeInv interface{}
-	if h.auditService != nil {
-		if before, err := h.service.GetInvoice(orgID, principal, invoiceID); err == nil {
-			beforeInv = before
-		}
-	}
-
-	inv, ledgerEv, err := h.service.WriteOffInvoice(orgID, principal.UserID, principal, invoiceID)
-	if err != nil {
-		mapBillingError(w, r, err)
-		return
-	}
-
-	if h.auditService != nil {
-		_, _ = h.auditService.Append(audit.AppendRequest{
-			OrgID:        orgID,
-			ActorUserID:  principal.UserID,
-			ActorRoles:   principal.Roles,
-			Action:       audit.ActionBillingInvoiceWriteOff,
-			ResourceType: "invoice",
-			ResourceID:   invoiceID,
-			Before:       beforeInv,
-			After:        inv,
-		})
-	}
-
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"invoice": inv, "ledger_event": ledgerEv})
+	h.invoiceTransition(w, r, audit.ActionBillingInvoiceWriteOff, &privilegedBillingAction{appmiddleware.ActionBillingWriteOff, "write off invoices"}, h.service.WriteOffInvoice)
 }
 
 // ─── Payment handlers ─────────────────────────────────────────────────────────
 
 func (h *BillingHandlers) recordPayment(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -389,11 +320,13 @@ func (h *BillingHandlers) recordPayment(w http.ResponseWriter, r *http.Request) 
 		mapBillingError(w, r, err)
 		return
 	}
+	recordAudit(h.auditService, principal, orgID, audit.ActionBillingPaymentRecord, "payment", payment.ID, nil, payment,
+		map[string]string{"invoice_id": invoiceID, "method": payment.Method})
 	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"payment": payment, "ledger_event": ledgerEv})
 }
 
 func (h *BillingHandlers) listPayments(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -408,7 +341,7 @@ func (h *BillingHandlers) listPayments(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *BillingHandlers) listOrgPayments(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -427,7 +360,7 @@ func (h *BillingHandlers) listOrgPayments(w http.ResponseWriter, r *http.Request
 // ─── Refund handlers ──────────────────────────────────────────────────────────
 
 func (h *BillingHandlers) createRefund(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -456,7 +389,7 @@ func (h *BillingHandlers) createRefund(w http.ResponseWriter, r *http.Request) {
 			IdempotencyKey:  fmt.Sprintf("refund:%s:%s:%s:%d", orgID, invoiceID, preflight.Payment.ID, input.AmountCents),
 		})
 		if err != nil {
-			httpx.WriteError(w, r, http.StatusBadGateway, "stripe_error", "Failed to create Stripe refund.", nil)
+			httpx.WriteError(w, r, http.StatusBadGateway, "stripe_error", "Failed to create Stripe refund.", err)
 			return
 		}
 		input.StripeRefundID = refundResult.ID
@@ -485,23 +418,14 @@ func (h *BillingHandlers) createRefund(w http.ResponseWriter, r *http.Request) {
 		if input.Reason != "" {
 			meta["reason"] = input.Reason
 		}
-		_, _ = h.auditService.Append(audit.AppendRequest{
-			OrgID:        orgID,
-			ActorUserID:  principal.UserID,
-			ActorRoles:   principal.Roles,
-			Action:       audit.ActionBillingRefundCreate,
-			ResourceType: "refund",
-			ResourceID:   refund.ID,
-			After:        refund,
-			Metadata:     meta,
-		})
+		recordAudit(h.auditService, principal, orgID, audit.ActionBillingRefundCreate, "refund", refund.ID, nil, refund, meta)
 	}
 
 	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"refund": refund, "ledger_event": ledgerEv})
 }
 
 func (h *BillingHandlers) listRefunds(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -518,7 +442,7 @@ func (h *BillingHandlers) listRefunds(w http.ResponseWriter, r *http.Request) {
 // ─── Household invoices handler ───────────────────────────────────────────────
 
 func (h *BillingHandlers) listHouseholdInvoices(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -537,10 +461,23 @@ func (h *BillingHandlers) listHouseholdInvoices(w http.ResponseWriter, r *http.R
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"household_id": householdID, "count": len(invoices), "invoices": invoices})
 }
 
-// ─── Ledger handler ───────────────────────────────────────────────────────────
+// ─── Autopay handlers ─────────────────────────────────────────────────────────
+
+// autopayBeforeState reads the household's autopay for the audit diff; nil when
+// auditing is off or the read fails (the write then proceeds without a diff).
+func (h *BillingHandlers) autopayBeforeState(orgID string, principal *appmiddleware.Principal, householdID string) any {
+	if h.auditService == nil {
+		return nil
+	}
+	before, err := h.service.GetHouseholdAutopayStatus(orgID, principal, householdID)
+	if err != nil {
+		return nil
+	}
+	return before
+}
 
 func (h *BillingHandlers) getHouseholdAutopay(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -555,7 +492,7 @@ func (h *BillingHandlers) getHouseholdAutopay(w http.ResponseWriter, r *http.Req
 }
 
 func (h *BillingHandlers) listHouseholdAutopay(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -569,18 +506,13 @@ func (h *BillingHandlers) listHouseholdAutopay(w http.ResponseWriter, r *http.Re
 }
 
 func (h *BillingHandlers) upsertHouseholdAutopay(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
 	householdID := chi.URLParam(r, "householdID")
 
-	var beforeState interface{}
-	if h.auditService != nil {
-		if before, err := h.service.GetHouseholdAutopayStatus(orgID, principal, householdID); err == nil {
-			beforeState = before
-		}
-	}
+	beforeState := h.autopayBeforeState(orgID, principal, householdID)
 
 	var input billing.UpsertHouseholdAutopayInput
 	if !h.decodeAndValidate(w, r, &input) {
@@ -593,35 +525,19 @@ func (h *BillingHandlers) upsertHouseholdAutopay(w http.ResponseWriter, r *http.
 		return
 	}
 
-	if h.auditService != nil {
-		_, _ = h.auditService.Append(audit.AppendRequest{
-			OrgID:        orgID,
-			ActorUserID:  principal.UserID,
-			ActorRoles:   principal.Roles,
-			Action:       audit.ActionBillingAutopayEnroll,
-			ResourceType: "household_autopay",
-			ResourceID:   householdID,
-			Before:       beforeState,
-			After:        status,
-		})
-	}
+	recordAudit(h.auditService, principal, orgID, audit.ActionBillingAutopayEnroll, "household_autopay", householdID, beforeState, status, nil)
 
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"autopay": status})
 }
 
 func (h *BillingHandlers) optOutHouseholdAutopay(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
 	householdID := chi.URLParam(r, "householdID")
 
-	var beforeState interface{}
-	if h.auditService != nil {
-		if before, err := h.service.GetHouseholdAutopayStatus(orgID, principal, householdID); err == nil {
-			beforeState = before
-		}
-	}
+	beforeState := h.autopayBeforeState(orgID, principal, householdID)
 
 	status, err := h.service.OptOutHouseholdAutopay(orgID, principal.UserID, principal, householdID)
 	if err != nil {
@@ -629,24 +545,15 @@ func (h *BillingHandlers) optOutHouseholdAutopay(w http.ResponseWriter, r *http.
 		return
 	}
 
-	if h.auditService != nil {
-		_, _ = h.auditService.Append(audit.AppendRequest{
-			OrgID:        orgID,
-			ActorUserID:  principal.UserID,
-			ActorRoles:   principal.Roles,
-			Action:       audit.ActionBillingAutopayOptOut,
-			ResourceType: "household_autopay",
-			ResourceID:   householdID,
-			Before:       beforeState,
-			After:        status,
-		})
-	}
+	recordAudit(h.auditService, principal, orgID, audit.ActionBillingAutopayOptOut, "household_autopay", householdID, beforeState, status, nil)
 
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"autopay": status})
 }
 
+// ─── Ledger handler ───────────────────────────────────────────────────────────
+
 func (h *BillingHandlers) listLedgerEvents(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := billingScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}

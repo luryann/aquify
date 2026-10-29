@@ -35,9 +35,9 @@ func TestReadZip_ExtractsSD3AndCL2(t *testing.T) {
 	pdfContent := []byte("%PDF-1.4 ignored")
 
 	archive := buildZIP(t, map[string][]byte{
-		"results.sd3":  sd3Content,
+		"results.sd3": sd3Content,
 		"entries.CL2": cl2Content, // uppercase extension
-		"readme.pdf":   pdfContent,
+		"readme.pdf":  pdfContent,
 	})
 
 	entries, err := meetfiles.ReadZip(archive)
@@ -110,5 +110,16 @@ func TestReadZip_InvalidData(t *testing.T) {
 	_, err := meetfiles.ReadZip([]byte("not a zip file"))
 	if err == nil {
 		t.Error("expected error for invalid ZIP data")
+	}
+}
+
+func TestReadZip_RejectsOversizedEntry(t *testing.T) {
+	big := bytes.Repeat([]byte("A"), 101<<20) // compresses to a few KB, expands past the cap
+	data := buildZIP(t, map[string][]byte{"huge.sd3": big})
+	if len(data) > 1<<20 {
+		t.Fatalf("test archive unexpectedly large: %d bytes", len(data))
+	}
+	if _, err := meetfiles.ReadZip(data); err == nil {
+		t.Fatal("expected an error for an entry larger than the size limit")
 	}
 }

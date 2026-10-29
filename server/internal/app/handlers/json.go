@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 
 	"github.com/dareaquatics/aquify/server/internal/app/httpx"
 	"github.com/go-playground/validator/v10"
@@ -124,9 +123,39 @@ func normalizeJSONDecodeError(err error, limit int64) error {
 		return errors.New("request body contains malformed JSON")
 	}
 
-	if strings.HasPrefix(err.Error(), "json: unknown field ") {
-		return err
-	}
-
 	return err
+}
+
+// decodeAndValidateBadRequest decodes and validates a body, answering validation
+// failures with 400 validation_failed.
+func decodeAndValidateBadRequest(w http.ResponseWriter, r *http.Request, dst any, validate *validator.Validate) bool {
+	return decodeAndValidateJSON(w, r, dst, validate, decodeAndValidateOptions{
+		InvalidStatus:     http.StatusBadRequest,
+		InvalidCode:       "invalid_request_body",
+		ValidationStatus:  http.StatusBadRequest,
+		ValidationCode:    "validation_failed",
+		ValidationMessage: "One or more request fields are invalid.",
+	})
+}
+
+// decodeAndValidateUnprocessable decodes and validates a body, answering
+// validation failures with 422 validation_error.
+func decodeAndValidateUnprocessable(w http.ResponseWriter, r *http.Request, dst any, validate *validator.Validate) bool {
+	return decodeAndValidateJSON(w, r, dst, validate, decodeAndValidateOptions{
+		InvalidStatus:     http.StatusBadRequest,
+		InvalidCode:       "invalid_request_body",
+		ValidationStatus:  http.StatusUnprocessableEntity,
+		ValidationCode:    "validation_error",
+		ValidationMessage: "Request validation failed.",
+	})
+}
+
+// decodeAndValidateLegacy decodes and validates a body for the older handlers whose
+// contract is 400 bad_request on malformed JSON and 422 validation_error with the given message.
+func decodeAndValidateLegacy(w http.ResponseWriter, r *http.Request, dst any, validate *validator.Validate, validationMessage string) bool {
+	return decodeAndValidateJSON(w, r, dst, validate, decodeAndValidateOptions{
+		InvalidCode:       "bad_request",
+		InvalidMessage:    "Invalid JSON body.",
+		ValidationMessage: validationMessage,
+	})
 }

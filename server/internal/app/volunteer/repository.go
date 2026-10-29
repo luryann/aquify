@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dareaquatics/aquify/server/internal/dbutil"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -109,16 +110,7 @@ func (r *Repository) listJobs(ctx context.Context, orgID, meetID string) ([]*Job
 	if err != nil {
 		return nil, fmt.Errorf("volunteer: list jobs: %w", err)
 	}
-	defer rows.Close()
-	out := []*Job{}
-	for rows.Next() {
-		j, err := scanJob(rows)
-		if err != nil {
-			return nil, fmt.Errorf("volunteer: scan job: %w", err)
-		}
-		out = append(out, j)
-	}
-	return out, rows.Err()
+	return dbutil.CollectRowsNonNil(rows, "volunteer: scan job", func(rows pgx.Rows) (*Job, error) { return scanJob(rows) })
 }
 
 func (r *Repository) getJob(ctx context.Context, orgID, id string) (*Job, error) {
@@ -225,16 +217,7 @@ func (r *Repository) listSignups(ctx context.Context, orgID string, f SignupFilt
 	if err != nil {
 		return nil, fmt.Errorf("volunteer: list signups: %w", err)
 	}
-	defer rows.Close()
-	out := []*Signup{}
-	for rows.Next() {
-		su, err := scanSignup(rows)
-		if err != nil {
-			return nil, fmt.Errorf("volunteer: scan signup: %w", err)
-		}
-		out = append(out, su)
-	}
-	return out, rows.Err()
+	return dbutil.CollectRowsNonNil(rows, "volunteer: scan signup", func(rows pgx.Rows) (*Signup, error) { return scanSignup(rows) })
 }
 
 func (r *Repository) getSignup(ctx context.Context, orgID, id string) (*Signup, error) {
@@ -338,16 +321,7 @@ func (r *Repository) listRequirements(ctx context.Context, orgID, seasonID strin
 	if err != nil {
 		return nil, fmt.Errorf("volunteer: list requirements: %w", err)
 	}
-	defer rows.Close()
-	out := []*Requirement{}
-	for rows.Next() {
-		q, err := scanRequirement(rows)
-		if err != nil {
-			return nil, fmt.Errorf("volunteer: scan requirement: %w", err)
-		}
-		out = append(out, q)
-	}
-	return out, rows.Err()
+	return dbutil.CollectRowsNonNil(rows, "volunteer: scan requirement", func(rows pgx.Rows) (*Requirement, error) { return scanRequirement(rows) })
 }
 
 func (r *Repository) upsertRequirement(ctx context.Context, q *Requirement) (*Requirement, error) {
@@ -401,16 +375,11 @@ func (r *Repository) listCredits(ctx context.Context, orgID, seasonID, household
 	if err != nil {
 		return nil, fmt.Errorf("volunteer: list credits: %w", err)
 	}
-	defer rows.Close()
-	out := []*Credit{}
-	for rows.Next() {
+	return dbutil.CollectRowsNonNil(rows, "volunteer: scan credit", func(rows pgx.Rows) (*Credit, error) {
 		c := &Credit{}
-		if err := rows.Scan(&c.ID, &c.OrgID, &c.SeasonID, &c.HouseholdID, &c.Hours, &c.Reason, &c.CreatedBy, &c.CreatedAt); err != nil {
-			return nil, fmt.Errorf("volunteer: scan credit: %w", err)
-		}
-		out = append(out, c)
-	}
-	return out, rows.Err()
+		err := rows.Scan(&c.ID, &c.OrgID, &c.SeasonID, &c.HouseholdID, &c.Hours, &c.Reason, &c.CreatedBy, &c.CreatedAt)
+		return c, err
+	})
 }
 
 func (r *Repository) insertCredit(ctx context.Context, c *Credit) error {
@@ -442,17 +411,12 @@ func (r *Repository) listBuyouts(ctx context.Context, orgID, seasonID string) ([
 	if err != nil {
 		return nil, fmt.Errorf("volunteer: list buyouts: %w", err)
 	}
-	defer rows.Close()
-	out := []*Buyout{}
-	for rows.Next() {
+	return dbutil.CollectRowsNonNil(rows, "volunteer: scan buyout", func(rows pgx.Rows) (*Buyout, error) {
 		b := &Buyout{}
-		if err := rows.Scan(&b.ID, &b.OrgID, &b.SeasonID, &b.HouseholdID, &b.Status, &b.HoursShort, &b.RateCentsPerHour,
-			&b.AmountCents, &b.InvoiceID, &b.InvoiceItemID, &b.CreatedBy, &b.CreatedAt, &b.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("volunteer: scan buyout: %w", err)
-		}
-		out = append(out, b)
-	}
-	return out, rows.Err()
+		err := rows.Scan(&b.ID, &b.OrgID, &b.SeasonID, &b.HouseholdID, &b.Status, &b.HoursShort, &b.RateCentsPerHour,
+			&b.AmountCents, &b.InvoiceID, &b.InvoiceItemID, &b.CreatedBy, &b.CreatedAt, &b.UpdatedAt)
+		return b, err
+	})
 }
 
 func (r *Repository) reserveBuyout(ctx context.Context, b *Buyout) error {

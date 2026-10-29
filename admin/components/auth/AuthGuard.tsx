@@ -51,8 +51,8 @@ function LoadingSplash() {
   )
 }
 
-// Unauthorized / forbidden screen
-function UnauthorizedScreen({ reason }: { reason: 'unauthenticated' | 'forbidden' }) {
+// Shown to a signed-in user who lacks the role this area requires
+function ForbiddenScreen() {
   const router = useRouter()
   const { session } = useSession()
   const dashboardDestination = session ? destinationForRole(session.user.roles) : '/dashboard'
@@ -83,21 +83,18 @@ function UnauthorizedScreen({ reason }: { reason: 'unauthenticated' | 'forbidden
       <p
         className="u-ff-font-display u-fw-display-weight u-fs-fs-xl" style={{ color: 'var(--text)' }}
       >
-        {reason === 'forbidden' ? 'Access Denied' : 'Sign In Required'}
+        Access Denied
       </p>
 
       <p className="u-fs-fs-base u-lh-1_6" style={{ color: 'var(--text-subtle)', maxWidth: '320px' }}>
-        {reason === 'forbidden'
-          ? "You don't have permission to access this area. Contact your administrator."
-          : 'Sign in to continue.'}
+        You don&apos;t have permission to access this area. Contact your administrator.
       </p>
 
       <button
         className="btn btn-secondary u-mt-8px"
-        onClick={() => router.push(reason === 'forbidden' ? dashboardDestination : '/login')}
-        
+        onClick={() => router.push(dashboardDestination)}
       >
-        {reason === 'forbidden' ? 'Go to Dashboard' : 'Sign In'}
+        Go to Dashboard
       </button>
     </div>
   )
@@ -117,34 +114,20 @@ export function AuthGuard({
   const mfaRequired = requireMFA ?? (session ? roleRequiresMFA(session.user.roles) : false)
   const mfaIncomplete = mfaRequired && session && !session.user.mfaAuthenticated
 
-  // Redirect unauthenticated users
+  // Send signed-out users to login, and users who still owe an MFA step-up to /mfa
   useEffect(() => {
-    if (!loading && !session) {
-      router.replace(redirectTo)
-    }
-  }, [loading, session, router, redirectTo])
+    if (loading) return
+    if (!session) router.replace(redirectTo)
+    else if (mfaIncomplete) router.replace('/mfa')
+  }, [loading, session, mfaIncomplete, router, redirectTo])
 
-  // Redirect to MFA step-up if session exists but MFA is not yet completed
-  useEffect(() => {
-    if (!loading && session && mfaIncomplete) {
-      router.replace('/mfa')
-    }
-  }, [loading, session, mfaIncomplete, router])
-
-  if (loading) {
+  // Keep showing the splash while hydrating or while the redirect above fires
+  if (loading || !session || mfaIncomplete) {
     return fallback ?? <LoadingSplash />
   }
 
-  if (!session || mfaIncomplete) {
-    // Keep showing splash while useEffect fires the redirect
-    return fallback ?? <LoadingSplash />
-  }
-
-  // Role-based access check
-  if (requiredRoles && requiredRoles.length > 0) {
-    if (!canAccess(session.user.roles, requiredRoles)) {
-      return <UnauthorizedScreen reason="forbidden" />
-    }
+  if (requiredRoles && requiredRoles.length > 0 && !canAccess(session.user.roles, requiredRoles)) {
+    return <ForbiddenScreen />
   }
 
   return <>{children}</>

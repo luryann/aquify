@@ -62,6 +62,7 @@ var (
 	ErrInvalidMFAFactor     = errors.New("invalid mfa factor")
 	ErrInvalidMFACode       = errors.New("invalid mfa challenge code")
 	ErrUnsupportedMFAFactor = errors.New("unsupported mfa factor")
+	ErrMFATooManyAttempts   = errors.New("too many failed mfa attempts; try again later")
 	ErrOIDCNotConfigured    = errors.New("oidc is not configured")
 	ErrOIDCStateInvalid     = errors.New("oidc state is invalid")
 )
@@ -114,6 +115,10 @@ type Service struct {
 
 	// TOTP replay prevention: "factorID|code" → time the code was last accepted.
 	usedTOTPCodes map[string]time.Time
+
+	// mfaFailures counts recent failed challenges per factor so a 6-digit code
+	// cannot be brute-forced; entries expire with their window.
+	mfaFailures map[string]mfaAttempts
 
 	// JWKS cache — keyed independently with its own mutex so JWKS fetches do
 	// not block unrelated session operations.
@@ -265,10 +270,7 @@ func (s *Service) upsertAuthenticatedUserRow(ctx context.Context, userID, email,
 			updated_at    = now()`,
 		userID, orgID, email, userID, name, lastLoginAt,
 	)
-	if err != nil {
-		return err
-	}
-	return nil
+	return err
 }
 
 func surrogateSyncedUserEmail(userID string) string {
@@ -292,14 +294,20 @@ func isUniqueConstraintViolation(err error, constraintName string) bool {
 	return pgErr.ConstraintName == constraintName
 }
 
+// marshalBackupCodes encodes backup-code hashes for storage; nil when there are none.
+func marshalBackupCodes(codes []backupCodeRecord) []byte {
+	if len(codes) == 0 {
+		return nil
+	}
+	data, _ := json.Marshal(codes)
+	return data
+}
+
 func (s *Service) saveMFAFactorToDB(r mfaFactorRecord) {
 	if s.pool == nil {
 		return
 	}
-	var backupCodesJSON []byte
-	if len(r.BackupCodes) > 0 {
-		backupCodesJSON, _ = json.Marshal(r.BackupCodes)
-	}
+	backupCodesJSON := marshalBackupCodes(r.BackupCodes)
 	var totpSecret *string
 	if r.TOTPSecret != "" {
 		totpSecret = &r.TOTPSecret
@@ -327,10 +335,7 @@ func (s *Service) updateMFAFactorInDB(r mfaFactorRecord) {
 	if s.pool == nil {
 		return
 	}
-	var backupCodesJSON []byte
-	if len(r.BackupCodes) > 0 {
-		backupCodesJSON, _ = json.Marshal(r.BackupCodes)
-	}
+	backupCodesJSON := marshalBackupCodes(r.BackupCodes)
 	ctx := context.Background()
 	_, err := s.pool.Exec(ctx, `
 		UPDATE mfa_factors
@@ -503,6 +508,7 @@ func NewService(cfg Config) *Service {
 		httpClient:       &http.Client{Timeout: cfg.OIDC.HTTPTimeout},
 		logger:           l,
 		usedTOTPCodes:    make(map[string]time.Time),
+		mfaFailures:      make(map[string]mfaAttempts),
 		jwksCacheTTL:     5 * time.Minute,
 	}
 	if cfg.EnableDevStubTokens {
@@ -730,17 +736,8 @@ func (s *Service) RefreshSession(refreshToken string) (SessionTokens, error) {
 		AccessToken:  nextAccess,
 		RefreshToken: nextRefresh,
 		IDToken:      record.IDToken,
-		Principal: normalizeLocalDevPrincipal(appmiddleware.Principal{
-			UserID:           record.Principal.UserID,
-			Email:            record.Principal.Email,
-			Name:             record.Principal.Name,
-			OrgID:            record.Principal.OrgID,
-			HouseholdID:      record.Principal.HouseholdID,
-			SwimmerID:        record.Principal.SwimmerID,
-			Roles:            append([]string{}, record.Principal.Roles...),
-			MFAAuthenticated: record.Principal.MFAAuthenticated,
-		}),
-		ExpiresAt: expiresAt,
+		Principal:    normalizeLocalDevPrincipal(copyPrincipal(record.Principal)),
+		ExpiresAt:    expiresAt,
 	}
 
 	s.sessionsByAccess[nextAccess] = next
@@ -968,6 +965,39 @@ func (s *Service) EnrollMFA(userID, email, orgID, factorType, label string) (MFA
 	return factor, nil
 }
 
+const (
+	mfaMaxFailures   = 5
+	mfaLockoutWindow = 5 * time.Minute
+)
+
+type mfaAttempts struct {
+	count int
+	start time.Time
+}
+
+// mfaLockedLocked reports whether the factor has used up its failed attempts in
+// the current window (callers hold s.mu).
+func (s *Service) mfaLockedLocked(factorID string, now time.Time) bool {
+	w, ok := s.mfaFailures[factorID]
+	if !ok {
+		return false
+	}
+	if now.Sub(w.start) > mfaLockoutWindow {
+		delete(s.mfaFailures, factorID)
+		return false
+	}
+	return w.count >= mfaMaxFailures
+}
+
+func (s *Service) recordMFAFailureLocked(factorID string, now time.Time) {
+	w := s.mfaFailures[factorID]
+	if w.count == 0 || now.Sub(w.start) > mfaLockoutWindow {
+		w = mfaAttempts{start: now}
+	}
+	w.count++
+	s.mfaFailures[factorID] = w
+}
+
 func (s *Service) ChallengeMFA(currentAccessToken string, principal *appmiddleware.Principal, factorID, challengeCode string) (SessionTokens, error) {
 	if principal == nil {
 		return SessionTokens{}, ErrInvalidMFAFactor
@@ -989,6 +1019,10 @@ func (s *Service) ChallengeMFA(currentAccessToken string, principal *appmiddlewa
 			continue
 		}
 
+		if s.mfaLockedLocked(factors[i].Factor.ID, time.Now().UTC()) {
+			return SessionTokens{}, ErrMFATooManyAttempts
+		}
+
 		switch factors[i].Factor.FactorType {
 		case "totp":
 			now := time.Now().UTC()
@@ -1004,8 +1038,10 @@ func (s *Service) ChallengeMFA(currentAccessToken string, principal *appmiddlewa
 				return SessionTokens{}, ErrInvalidMFACode
 			}
 			if !verifyTOTP(factors[i].TOTPSecret, challengeCode, now) {
+				s.recordMFAFailureLocked(factors[i].Factor.ID, now)
 				return SessionTokens{}, ErrInvalidMFACode
 			}
+			delete(s.mfaFailures, factors[i].Factor.ID)
 			s.usedTOTPCodes[replayKey] = now
 		case "backup_code":
 			providedHash := hashChallengeCode(strings.ToUpper(strings.TrimSpace(challengeCode)))
@@ -1021,8 +1057,10 @@ func (s *Service) ChallengeMFA(currentAccessToken string, principal *appmiddlewa
 				}
 			}
 			if !matched {
+				s.recordMFAFailureLocked(factors[i].Factor.ID, time.Now().UTC())
 				return SessionTokens{}, ErrInvalidMFACode
 			}
+			delete(s.mfaFailures, factors[i].Factor.ID)
 		default:
 			return SessionTokens{}, ErrUnsupportedMFAFactor
 		}
@@ -1080,17 +1118,8 @@ func (s *Service) issueSessionRecord(ctx context.Context, principal appmiddlewar
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 		IDToken:      strings.TrimSpace(idToken),
-		Principal: appmiddleware.Principal{
-			UserID:           principal.UserID,
-			Email:            principal.Email,
-			Name:             principal.Name,
-			OrgID:            principal.OrgID,
-			HouseholdID:      principal.HouseholdID,
-			SwimmerID:        principal.SwimmerID,
-			Roles:            append([]string{}, principal.Roles...),
-			MFAAuthenticated: principal.MFAAuthenticated,
-		},
-		ExpiresAt: expiresAt,
+		Principal:    copyPrincipal(principal),
+		ExpiresAt:    expiresAt,
 	}
 
 	if s.pool != nil {
@@ -1115,31 +1144,7 @@ func (s *Service) persistSessionRecord(ctx context.Context, record *sessionRecor
 	if s.pool == nil {
 		return nil
 	}
-
-	userID, err := parseRequiredUUID(record.Principal.UserID, "user_id")
-	if err != nil {
-		return err
-	}
-	orgID, err := parseOptionalUUID(record.Principal.OrgID, "org_id")
-	if err != nil {
-		return err
-	}
-	principalJSON, err := json.Marshal(record.Principal)
-	if err != nil {
-		return fmt.Errorf("marshal principal: %w", err)
-	}
-
-	_, err = s.pool.Exec(ctx, `
-		INSERT INTO sessions (
-			org_id, user_id, refresh_token_hash, access_token_hash, principal, id_token, expires_at, last_seen_at
-		)
-		VALUES ($1::uuid, $2::uuid, $3, $4, $5::jsonb, $6, $7, now())`,
-		orgID, userID, hashToken(record.RefreshToken), hashToken(record.AccessToken), principalJSON, nullableString(record.IDToken), record.ExpiresAt,
-	)
-	if err != nil {
-		return fmt.Errorf("persist session: %w", err)
-	}
-	return nil
+	return insertSessionRecord(ctx, s.pool, record)
 }
 
 func (s *Service) refreshPersistentSession(ctx context.Context, refreshToken string) (SessionTokens, error) {
@@ -1172,19 +1177,10 @@ func (s *Service) refreshPersistentSession(ctx context.Context, refreshToken str
 		AccessToken:  nextAccess,
 		RefreshToken: nextRefresh,
 		IDToken:      record.IDToken,
-		Principal: appmiddleware.Principal{
-			UserID:           record.Principal.UserID,
-			Email:            record.Principal.Email,
-			Name:             record.Principal.Name,
-			OrgID:            record.Principal.OrgID,
-			HouseholdID:      record.Principal.HouseholdID,
-			SwimmerID:        record.Principal.SwimmerID,
-			Roles:            append([]string{}, record.Principal.Roles...),
-			MFAAuthenticated: record.Principal.MFAAuthenticated,
-		},
-		ExpiresAt: expiresAt,
+		Principal:    copyPrincipal(record.Principal),
+		ExpiresAt:    expiresAt,
 	}
-	if err := s.persistSessionRecordTx(ctx, tx, next); err != nil {
+	if err := insertSessionRecord(ctx, tx, next); err != nil {
 		return SessionTokens{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -1198,7 +1194,10 @@ func (s *Service) refreshPersistentSession(ctx context.Context, refreshToken str
 	}, nil
 }
 
-func (s *Service) persistSessionRecordTx(ctx context.Context, tx pgx.Tx, record *sessionRecord) error {
+// insertSessionRecord stores a session row using the pool or an open transaction.
+func insertSessionRecord(ctx context.Context, q interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+}, record *sessionRecord) error {
 	userID, err := parseRequiredUUID(record.Principal.UserID, "user_id")
 	if err != nil {
 		return err
@@ -1212,7 +1211,7 @@ func (s *Service) persistSessionRecordTx(ctx context.Context, tx pgx.Tx, record 
 		return fmt.Errorf("marshal principal: %w", err)
 	}
 
-	_, err = tx.Exec(ctx, `
+	_, err = q.Exec(ctx, `
 		INSERT INTO sessions (
 			org_id, user_id, refresh_token_hash, access_token_hash, principal, id_token, expires_at, last_seen_at
 		)
@@ -1226,41 +1225,21 @@ func (s *Service) persistSessionRecordTx(ctx context.Context, tx pgx.Tx, record 
 }
 
 func (s *Service) revokePersistentSessionByRefreshToken(ctx context.Context, refreshToken string) (*sessionRecord, error) {
-	record, err := s.loadPersistentSessionAny(ctx, `
-		SELECT principal, COALESCE(id_token, ''), expires_at, revoked_at
-		FROM sessions
-		WHERE refresh_token_hash = $1`,
-		hashToken(refreshToken),
-	)
-	if err != nil {
-		return nil, err
-	}
-	if record.RevokedAt != nil {
-		return record, nil
-	}
-	now := time.Now().UTC()
-	tag, err := s.pool.Exec(ctx, `
-		UPDATE sessions
-		SET revoked_at = $2, updated_at = now()
-		WHERE refresh_token_hash = $1 AND revoked_at IS NULL`,
-		hashToken(refreshToken), now,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("revoke session: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return record, nil
-	}
-	record.RevokedAt = &now
-	return record, nil
+	return s.revokePersistentSessionByHash(ctx, "refresh_token_hash", refreshToken)
 }
 
 func (s *Service) revokePersistentSessionByAccessToken(ctx context.Context, accessToken string) (*sessionRecord, error) {
+	return s.revokePersistentSessionByHash(ctx, "access_token_hash", accessToken)
+}
+
+// revokePersistentSessionByHash revokes the session whose hashColumn (a fixed
+// column name chosen by the callers above, never user input) matches the token.
+func (s *Service) revokePersistentSessionByHash(ctx context.Context, hashColumn, token string) (*sessionRecord, error) {
 	record, err := s.loadPersistentSessionAny(ctx, `
 		SELECT principal, COALESCE(id_token, ''), expires_at, revoked_at
 		FROM sessions
-		WHERE access_token_hash = $1`,
-		hashToken(accessToken),
+		WHERE `+hashColumn+` = $1`,
+		hashToken(token),
 	)
 	if err != nil {
 		return nil, err
@@ -1272,8 +1251,8 @@ func (s *Service) revokePersistentSessionByAccessToken(ctx context.Context, acce
 	tag, err := s.pool.Exec(ctx, `
 		UPDATE sessions
 		SET revoked_at = $2, updated_at = now()
-		WHERE access_token_hash = $1 AND revoked_at IS NULL`,
-		hashToken(accessToken), now,
+		WHERE `+hashColumn+` = $1 AND revoked_at IS NULL`,
+		hashToken(token), now,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("revoke session: %w", err)
@@ -1294,10 +1273,6 @@ func (s *Service) loadPersistentSessionByAccessToken(ctx context.Context, access
 	)
 }
 
-func (s *Service) loadPersistentSessionByRefreshToken(ctx context.Context, refreshToken string) (*sessionRecord, error) {
-	return s.loadPersistentSessionByRefreshTokenTx(ctx, s.pool, refreshToken, false)
-}
-
 func (s *Service) loadPersistentSessionByRefreshTokenTx(ctx context.Context, q interface {
 	QueryRow(context.Context, string, ...any) pgx.Row
 }, refreshToken string, forUpdate bool) (*sessionRecord, error) {
@@ -1308,27 +1283,22 @@ func (s *Service) loadPersistentSessionByRefreshTokenTx(ctx context.Context, q i
 	if forUpdate {
 		query += ` FOR UPDATE`
 	}
-	var principalJSON []byte
-	record := &sessionRecord{}
-	err := q.QueryRow(ctx, query, hashToken(refreshToken)).Scan(&principalJSON, &record.IDToken, &record.ExpiresAt, &record.RevokedAt)
+	record, err := scanSessionRecord(q.QueryRow(ctx, query, hashToken(refreshToken)))
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrSessionNotFound
-		}
-		return nil, fmt.Errorf("load session: %w", err)
+		return nil, err
 	}
-	if err := json.Unmarshal(principalJSON, &record.Principal); err != nil {
-		return nil, fmt.Errorf("unmarshal session principal: %w", err)
-	}
-	record.Principal = normalizeLocalDevPrincipal(record.Principal)
-	now := time.Now().UTC()
+	return record, validateSessionRecord(record)
+}
+
+// validateSessionRecord rejects revoked and expired sessions.
+func validateSessionRecord(record *sessionRecord) error {
 	if record.RevokedAt != nil {
-		return nil, ErrSessionRevoked
+		return ErrSessionRevoked
 	}
-	if now.After(record.ExpiresAt) {
-		return nil, ErrSessionExpired
+	if time.Now().UTC().After(record.ExpiresAt) {
+		return ErrSessionExpired
 	}
-	return record, nil
+	return nil
 }
 
 func (s *Service) loadPersistentValidatedSession(ctx context.Context, query string, arg any) (*sessionRecord, error) {
@@ -1336,21 +1306,18 @@ func (s *Service) loadPersistentValidatedSession(ctx context.Context, query stri
 	if err != nil {
 		return nil, err
 	}
-	now := time.Now().UTC()
-	if record.RevokedAt != nil {
-		return nil, ErrSessionRevoked
-	}
-	if now.After(record.ExpiresAt) {
-		return nil, ErrSessionExpired
-	}
-	return record, nil
+	return record, validateSessionRecord(record)
 }
 
 func (s *Service) loadPersistentSessionAny(ctx context.Context, query string, arg any) (*sessionRecord, error) {
+	return scanSessionRecord(s.pool.QueryRow(ctx, query, arg))
+}
+
+// scanSessionRecord reads one (principal, id_token, expires_at, revoked_at) row.
+func scanSessionRecord(row pgx.Row) (*sessionRecord, error) {
 	var principalJSON []byte
 	record := &sessionRecord{}
-	err := s.pool.QueryRow(ctx, query, arg).Scan(&principalJSON, &record.IDToken, &record.ExpiresAt, &record.RevokedAt)
-	if err != nil {
+	if err := row.Scan(&principalJSON, &record.IDToken, &record.ExpiresAt, &record.RevokedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrSessionNotFound
 		}
@@ -1445,20 +1412,21 @@ func (s *Service) ListRoleAssignments(orgID string) []RoleAssignment {
 
 func (s *Service) oidcConfigured() bool {
 	oidc := s.cfg.OIDC
-	return strings.TrimSpace(oidc.TokenURL) != "" &&
-		strings.TrimSpace(oidc.JWKSURL) != "" &&
-		strings.TrimSpace(oidc.RedirectURL) != "" &&
-		strings.TrimSpace(oidc.ClientID) != "" &&
-		strings.TrimSpace(oidc.ClientSecret) != "" &&
-		strings.TrimSpace(oidc.StateSigningKey) != ""
+	return allNonBlank(oidc.TokenURL, oidc.JWKSURL, oidc.RedirectURL, oidc.ClientID, oidc.ClientSecret, oidc.StateSigningKey)
 }
 
 func (s *Service) oidcAuthorizeConfigured() bool {
 	oidc := s.cfg.OIDC
-	return strings.TrimSpace(oidc.AuthorizeURL) != "" &&
-		strings.TrimSpace(oidc.RedirectURL) != "" &&
-		strings.TrimSpace(oidc.ClientID) != "" &&
-		strings.TrimSpace(oidc.StateSigningKey) != ""
+	return allNonBlank(oidc.AuthorizeURL, oidc.RedirectURL, oidc.ClientID, oidc.StateSigningKey)
+}
+
+func allNonBlank(values ...string) bool {
+	for _, v := range values {
+		if strings.TrimSpace(v) == "" {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Service) buildOIDCLogoutURL(idToken string) (string, bool) {
@@ -1885,7 +1853,7 @@ func verifyTOTP(secret, challengeCode string, now time.Time) bool {
 	}
 
 	for _, offset := range []int64{-1, 0, 1} {
-		if generateTOTP(secret, now.Unix()+offset*30) == challengeCode {
+		if subtle.ConstantTimeCompare([]byte(generateTOTP(secret, now.Unix()+offset*30)), []byte(challengeCode)) == 1 {
 			return true
 		}
 	}
@@ -1937,20 +1905,18 @@ func hasRole(roles []string, role string) bool {
 	return false
 }
 
+// copyPrincipal returns a value copy of p with its own Roles slice.
+func copyPrincipal(p appmiddleware.Principal) appmiddleware.Principal {
+	p.Roles = append([]string{}, p.Roles...)
+	return p
+}
+
 func clonePrincipal(in *appmiddleware.Principal) *appmiddleware.Principal {
 	if in == nil {
 		return nil
 	}
-	return &appmiddleware.Principal{
-		UserID:           in.UserID,
-		Email:            in.Email,
-		Name:             in.Name,
-		OrgID:            in.OrgID,
-		HouseholdID:      in.HouseholdID,
-		SwimmerID:        in.SwimmerID,
-		Roles:            append([]string{}, in.Roles...),
-		MFAAuthenticated: in.MFAAuthenticated,
-	}
+	cp := copyPrincipal(*in)
+	return &cp
 }
 
 func randomToken(byteLen int) string {
@@ -1978,4 +1944,3 @@ func randomAlphaNumeric(length int) string {
 	}
 	return string(out)
 }
-

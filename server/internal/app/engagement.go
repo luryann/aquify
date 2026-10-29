@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -157,95 +158,112 @@ func buildCalendarFeedSource(meetsService *meets.Service, trainingService *train
 		items := []events.CalendarItem{}
 
 		if meetsService != nil {
-			list, err := meetsService.ListMeets(actor, orgID)
+			meetItems, err := meetFeedItems(meetsService, actor, orgID, fromDate, toDate)
 			if err != nil {
 				return nil, err
 			}
-			for _, m := range list {
-				if !feedMeetStatuses[m.Status] || m.StartDate == "" {
-					continue
-				}
-				end := m.EndDate
-				if end == "" {
-					end = m.StartDate
-				}
-				if end < fromDate || m.StartDate > toDate {
-					continue
-				}
-				desc := ""
-				if m.HostOrg != "" {
-					desc = "Hosted by " + m.HostOrg
-				}
-				items = append(items, events.CalendarItem{
-					UID: "meet-" + m.ID + "@dare", Title: m.Name, Description: desc, Location: m.Location,
-					Categories: "meet", AllDay: true, StartDate: m.StartDate, EndDate: end, Updated: m.UpdatedAt,
-				})
-				if m.Status == "commitment_open" && m.CommitmentDeadline != "" {
-					day := m.CommitmentDeadline
-					if len(day) > 10 {
-						day = day[:10]
-					}
-					items = append(items, events.CalendarItem{
-						UID: "meet-deadline-" + m.ID + "@dare", Title: "Commitment deadline — " + m.Name,
-						Description: "Respond yes/no for each swimmer in the parent portal.",
-						Categories:  "deadline", AllDay: true, StartDate: day, EndDate: day, Updated: m.UpdatedAt,
-					})
-				}
-			}
+			items = append(items, meetItems...)
 		}
-
 		if trainingService != nil {
-			practices, err := trainingService.List(orgID)
+			practiceItems, err := practiceFeedItems(trainingService, groupsService, dir, actor, orgID, household, fromDate, toDate)
 			if err != nil {
 				return nil, err
 			}
-			groupNames := map[string]string{}
-			if groupsService != nil {
-				if gl, err := groupsService.ListGroups(actor, orgID, false); err == nil {
-					for _, g := range gl {
-						groupNames[roster.CanonicalGroupCode(g.Code)] = g.Name
-					}
-				}
-			}
-			codeCache := map[string]string{}
-			for _, p := range practices {
-				if p == nil || p.Date < fromDate || p.Date > toDate || strings.EqualFold(p.Type, "rest") {
-					continue
-				}
-				label := "All groups"
-				if ref := strings.TrimSpace(p.GroupID); ref != "" {
-					code, ok := codeCache[ref]
-					if !ok {
-						code = dir.ResolveGroupCode(orgID, ref)
-						codeCache[ref] = code
-					}
-					inGroup := false
-					for _, sw := range household {
-						if sw.InGroup(code) {
-							inGroup = true
-							break
-						}
-					}
-					if !inGroup {
-						continue
-					}
-					label = code
-					if name := groupNames[code]; name != "" {
-						label = name
-					}
-				}
-				title := "Practice — " + label
-				if strings.EqualFold(p.Type, "dryland") {
-					title = "Dryland — " + label
-				}
-				items = append(items, events.CalendarItem{
-					UID: "practice-" + p.ID + "@dare", Title: title, Description: p.Description,
-					Categories: "practice", AllDay: true, StartDate: p.Date, EndDate: p.Date, Updated: p.UpdatedAt,
-				})
-			}
+			items = append(items, practiceItems...)
 		}
 		return items, nil
 	}
+}
+
+// meetFeedItems returns all-day entries for published-onward meets overlapping
+// [fromDate, toDate], plus a deadline entry while commitments are open.
+func meetFeedItems(meetsService *meets.Service, actor *appmiddleware.Principal, orgID, fromDate, toDate string) ([]events.CalendarItem, error) {
+	list, err := meetsService.ListMeets(actor, orgID)
+	if err != nil {
+		return nil, err
+	}
+	var items []events.CalendarItem
+	for _, m := range list {
+		if !feedMeetStatuses[m.Status] || m.StartDate == "" {
+			continue
+		}
+		end := m.EndDate
+		if end == "" {
+			end = m.StartDate
+		}
+		if end < fromDate || m.StartDate > toDate {
+			continue
+		}
+		desc := ""
+		if m.HostOrg != "" {
+			desc = "Hosted by " + m.HostOrg
+		}
+		items = append(items, events.CalendarItem{
+			UID: "meet-" + m.ID + "@dare", Title: m.Name, Description: desc, Location: m.Location,
+			Categories: "meet", AllDay: true, StartDate: m.StartDate, EndDate: end, Updated: m.UpdatedAt,
+		})
+		if m.Status == "commitment_open" && m.CommitmentDeadline != "" {
+			day := m.CommitmentDeadline
+			if len(day) > 10 {
+				day = day[:10]
+			}
+			items = append(items, events.CalendarItem{
+				UID: "meet-deadline-" + m.ID + "@dare", Title: "Commitment deadline — " + m.Name,
+				Description: "Respond yes/no for each swimmer in the parent portal.",
+				Categories:  "deadline", AllDay: true, StartDate: day, EndDate: day, Updated: m.UpdatedAt,
+			})
+		}
+	}
+	return items, nil
+}
+
+// practiceFeedItems returns all-day practice entries within [fromDate, toDate]
+// that apply to the household: team-wide practices and those for a group any
+// of its swimmers belongs to. Rest days are omitted.
+func practiceFeedItems(trainingService *training.Service, groupsService *groups.Service, dir roster.Directory, actor *appmiddleware.Principal, orgID string, household []roster.Swimmer, fromDate, toDate string) ([]events.CalendarItem, error) {
+	practices, err := trainingService.List(orgID)
+	if err != nil {
+		return nil, err
+	}
+	groupNames := map[string]string{}
+	if groupsService != nil {
+		if gl, err := groupsService.ListGroups(actor, orgID, false); err == nil {
+			for _, g := range gl {
+				groupNames[roster.CanonicalGroupCode(g.Code)] = g.Name
+			}
+		}
+	}
+	codeCache := map[string]string{}
+	var items []events.CalendarItem
+	for _, p := range practices {
+		if p == nil || p.Date < fromDate || p.Date > toDate || strings.EqualFold(p.Type, "rest") {
+			continue
+		}
+		label := "All groups"
+		if ref := strings.TrimSpace(p.GroupID); ref != "" {
+			code, ok := codeCache[ref]
+			if !ok {
+				code = dir.ResolveGroupCode(orgID, ref)
+				codeCache[ref] = code
+			}
+			if !slices.ContainsFunc(household, func(sw roster.Swimmer) bool { return sw.InGroup(code) }) {
+				continue
+			}
+			label = code
+			if name := groupNames[code]; name != "" {
+				label = name
+			}
+		}
+		title := "Practice — " + label
+		if strings.EqualFold(p.Type, "dryland") {
+			title = "Dryland — " + label
+		}
+		items = append(items, events.CalendarItem{
+			UID: "practice-" + p.ID + "@dare", Title: title, Description: p.Description,
+			Categories: "practice", AllDay: true, StartDate: p.Date, EndDate: p.Date, Updated: p.UpdatedAt,
+		})
+	}
+	return items, nil
 }
 
 // engagementHandlers bundles the club events, wellness and attendance

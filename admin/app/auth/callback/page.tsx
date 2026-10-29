@@ -159,8 +159,7 @@ function CallbackInner() {
                 animation: 'spin 0.9s linear infinite',
               }}
             />
-            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-            {/* Center dot */}
+                        {/* Center dot */}
             <div
               style={{
                 position: 'absolute',

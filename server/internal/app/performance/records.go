@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/dareaquatics/aquify/server/internal/dbutil"
 	"log/slog"
 	"sort"
 	"strings"
@@ -347,7 +348,7 @@ func (s *Service) persistRecordEntryLocked(e *RecordEntry) error {
 
 func (s *Service) appendAuditLocked(orgID, actorID, action, resource, resourceID string, meta map[string]any) {
 	s.auditEvents = append(s.auditEvents, &BestTimeAuditEvent{
-		ID:         newID(),
+		ID:         dbutil.NewHexID(),
 		OrgID:      orgID,
 		ActorID:    actorID,
 		Action:     action,
@@ -797,7 +798,7 @@ func (s *Service) DeleteManualRecord(orgID, actorID, entryID string, principal *
 		return nil, fmt.Errorf("%w: only manual entries can be deleted; reject result entries instead", ErrRecordInvalid)
 	}
 	if s.repo != nil {
-		if err := s.repo.DeleteRecordEntry(context.Background(), e.ID); err != nil {
+		if err := s.repo.DeleteRecordEntry(context.Background(), e.OrgID, e.ID); err != nil {
 			return nil, fmt.Errorf("delete record entry: %w", err)
 		}
 	}
@@ -875,7 +876,7 @@ func (s *Service) RebuildRecords(orgID, actorID string, principal *appmiddleware
 				continue
 			}
 			if s.repo != nil {
-				if err := s.repo.DeleteRecordEntry(context.Background(), e.ID); err != nil {
+				if err := s.repo.DeleteRecordEntry(context.Background(), e.OrgID, e.ID); err != nil {
 					return summary, fmt.Errorf("delete record entry: %w", err)
 				}
 			}

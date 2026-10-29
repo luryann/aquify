@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
-import { parseBackendDate } from '@/lib/dates'
+import { parseBackendDate, localToday } from '@/lib/dates'
 import { useApiClient } from '@/lib/api'
 import { shouldShowCollectionEmptyState } from '@/lib/collection-load-state'
 import { reportUIError } from '@/lib/frontend-telemetry'
@@ -18,6 +18,7 @@ import { formatDistance, formatDuration } from '@/lib/workout-format'
 import { WorkoutSheet } from '@/components/training/WorkoutSheet'
 import { SwimmerClubEvents } from '@/components/engagement/SwimmerClubEvents'
 import './page.inline.css'
+import { SkeletonLine } from '@/components/ui/SkeletonLine'
 
 // Convert raw commitment status to a plain-language answer, mirroring the
 // dashboard's own commitment badge so the swimmer sees the same wording
@@ -166,12 +167,6 @@ function groupIntoSections(events: ScheduleEvent[]): Array<{ heading: string; ev
 }
 
 // ── Skeleton ───────────────────────────────────────────────────────────────
-function SkeletonLine({ width = '100%', height = '14px' }: { width?: string; height?: string }) {
-  return (
-    <div style={{ width, height, background: 'var(--border)', borderRadius: '6px', animation: 'pulse 1.5s ease-in-out infinite' }} />
-  )
-}
-
 // ── Components ─────────────────────────────────────────────────────────────
 function EventCard({ ev }: { ev: ScheduleEvent }) {
   const [expanded, setExpanded] = useState(ev.type === 'meet')
@@ -328,7 +323,7 @@ export default function SwimmerSchedulePage() {
     setLoadError(null)
     Promise.all([
       fetchMeets(api, orgId),
-      fetchTrainingSchedule(api, orgId, now.toISOString().slice(0, 10), new Date(now.getTime() + 56 * 86400000).toISOString().slice(0, 10)),
+      fetchTrainingSchedule(api, orgId, localToday(now), localToday(new Date(now.getTime() + 56 * 86400000))),
     ])
       .then(async ([meets, practices]) => {
         const futureMeets = meets.filter(m => {
@@ -377,11 +372,7 @@ export default function SwimmerSchedulePage() {
 
   return (
     <div>
-      <style>{`
-        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.45} }
-        @keyframes slideUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
-      `}</style>
-
+      
       {/* Header */}
       <div className="is-88ea830">
         <h1 className="page-title"

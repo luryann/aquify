@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/dareaquatics/aquify/server/internal/dbutil"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -116,20 +117,14 @@ func (r *Repository) ListEvents(ctx context.Context, orgID string) ([]*Event, er
 	if err != nil {
 		return nil, fmt.Errorf("club events: list events: %w", err)
 	}
-	defer rows.Close()
-	out := []*Event{}
-	for rows.Next() {
-		e, err := scanEvent(rows)
-		if err != nil {
-			return nil, fmt.Errorf("club events: scan event: %w", err)
-		}
-		out = append(out, e)
-	}
-	return out, rows.Err()
+	return dbutil.CollectRowsNonNil(rows, "club events: scan event", func(rows pgx.Rows) (*Event, error) { return scanEvent(rows) })
 }
 
 // DeleteEvent removes an event; RSVPs cascade.
 func (r *Repository) DeleteEvent(ctx context.Context, orgID, id string) error {
+	if _, err := parseUUID(id); err != nil {
+		return ErrNotFound
+	}
 	tag, err := r.pool.Exec(ctx, `DELETE FROM club_events WHERE id = $1::uuid AND org_id = $2`, id, orgID)
 	if err != nil {
 		return fmt.Errorf("club events: delete event: %w", err)
@@ -153,16 +148,7 @@ func scanRSVP(row pgx.Row) (*RSVP, error) {
 }
 
 func collectRSVPs(rows pgx.Rows) ([]*RSVP, error) {
-	defer rows.Close()
-	out := []*RSVP{}
-	for rows.Next() {
-		r, err := scanRSVP(rows)
-		if err != nil {
-			return nil, fmt.Errorf("club events: scan rsvp: %w", err)
-		}
-		out = append(out, r)
-	}
-	return out, rows.Err()
+	return dbutil.CollectRowsNonNil(rows, "club events: scan rsvp", func(rows pgx.Rows) (*RSVP, error) { return scanRSVP(rows) })
 }
 
 // ListRSVPs loads RSVPs for one event.
@@ -191,6 +177,9 @@ func (r *Repository) ListRSVPsForEvents(ctx context.Context, orgID string, event
 // RespondTx upserts an RSVP inside a transaction that locks the event row,
 // so concurrent responses cannot oversubscribe capacity.
 func (r *Repository) RespondTx(ctx context.Context, orgID, eventID, householdID, swimmerID string, build func(existing *RSVP, othersYes int) (*RSVP, error)) (*RSVP, error) {
+	if _, err := parseUUID(eventID); err != nil {
+		return nil, ErrNotFound
+	}
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("club events: begin rsvp tx: %w", err)

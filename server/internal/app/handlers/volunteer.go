@@ -54,21 +54,8 @@ func (h *VolunteerHandlers) RegisterRoutes(router chi.Router) {
 	})
 }
 
-func (h *VolunteerHandlers) audit(r *http.Request, p *appmiddleware.Principal, orgID, action, resourceType, resourceID string, before, after any, meta map[string]string) {
-	if h.auditService == nil || p == nil {
-		return
-	}
-	_, _ = h.auditService.Append(audit.AppendRequest{
-		OrgID:        orgID,
-		ActorUserID:  p.UserID,
-		ActorRoles:   p.Roles,
-		Action:       action,
-		ResourceType: resourceType,
-		ResourceID:   resourceID,
-		Before:       before,
-		After:        after,
-		Metadata:     meta,
-	})
+func (h *VolunteerHandlers) audit(p *appmiddleware.Principal, orgID, action, resourceType, resourceID string, before, after any, meta map[string]string) {
+	recordAudit(h.auditService, p, orgID, action, resourceType, resourceID, before, after, meta)
 }
 
 // writeVolunteerError maps domain errors to HTTP responses.
@@ -181,7 +168,7 @@ func (h *VolunteerHandlers) updateSettings(w http.ResponseWriter, r *http.Reques
 		writeVolunteerError(w, r, err)
 		return
 	}
-	h.audit(r, p, orgID, "volunteer.settings.update", "volunteer_settings", orgID, nil, st, nil)
+	h.audit(p, orgID, "volunteer.settings.update", "volunteer_settings", orgID, nil, st, nil)
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{"settings": st})
 }
 
@@ -210,21 +197,17 @@ func (h *VolunteerHandlers) listJobs(w http.ResponseWriter, r *http.Request) {
 		SeasonID: strings.TrimSpace(q.Get("season_id")),
 		Upcoming: q.Get("upcoming") == "true",
 	}
-	if raw := q.Get("from"); raw != "" {
+	for name, dst := range map[string]*time.Time{"from": &f.From, "to": &f.To} {
+		raw := q.Get(name)
+		if raw == "" {
+			continue
+		}
 		t, ok := parseTimestamp(raw)
 		if !ok {
-			httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "from must be RFC3339 or YYYY-MM-DD.", nil)
+			httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", name+" must be RFC3339 or YYYY-MM-DD.", nil)
 			return
 		}
-		f.From = t
-	}
-	if raw := q.Get("to"); raw != "" {
-		t, ok := parseTimestamp(raw)
-		if !ok {
-			httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "to must be RFC3339 or YYYY-MM-DD.", nil)
-			return
-		}
-		f.To = t
+		*dst = t
 	}
 	jobs, err := h.service.ListJobs(r.Context(), p, orgID, f)
 	if err != nil {
@@ -302,7 +285,7 @@ func (h *VolunteerHandlers) createJob(w http.ResponseWriter, r *http.Request) {
 		writeVolunteerError(w, r, err)
 		return
 	}
-	h.audit(r, p, orgID, "volunteer.job.create", "volunteer_job", job.ID, nil, job, nil)
+	h.audit(p, orgID, "volunteer.job.create", "volunteer_job", job.ID, nil, job, nil)
 	_ = httpx.WriteJSON(w, http.StatusCreated, map[string]any{"job": job})
 }
 
@@ -357,7 +340,7 @@ func (h *VolunteerHandlers) bulkCreateJobs(w http.ResponseWriter, r *http.Reques
 	for _, j := range jobs {
 		ids = append(ids, j.ID)
 	}
-	h.audit(r, p, orgID, "volunteer.job.bulk_create", "volunteer_job", body.MeetID, nil, map[string]any{"job_ids": ids}, map[string]string{
+	h.audit(p, orgID, "volunteer.job.bulk_create", "volunteer_job", body.MeetID, nil, map[string]any{"job_ids": ids}, map[string]string{
 		"template_id": body.TemplateID, "meet_id": body.MeetID, "event_name": body.EventName,
 	})
 	_ = httpx.WriteJSON(w, http.StatusCreated, map[string]any{"jobs": jobs, "count": len(jobs)})
@@ -430,7 +413,7 @@ func (h *VolunteerHandlers) updateJob(w http.ResponseWriter, r *http.Request) {
 		writeVolunteerError(w, r, err)
 		return
 	}
-	h.audit(r, p, orgID, "volunteer.job.update", "volunteer_job", job.ID, before, job, nil)
+	h.audit(p, orgID, "volunteer.job.update", "volunteer_job", job.ID, before, job, nil)
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{"job": job})
 }
 
@@ -444,7 +427,7 @@ func (h *VolunteerHandlers) deleteJob(w http.ResponseWriter, r *http.Request) {
 		writeVolunteerError(w, r, err)
 		return
 	}
-	h.audit(r, p, orgID, "volunteer.job.delete", "volunteer_job", job.ID, job, nil, nil)
+	h.audit(p, orgID, "volunteer.job.delete", "volunteer_job", job.ID, job, nil, nil)
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{"deleted": true})
 }
 
@@ -475,7 +458,7 @@ func (h *VolunteerHandlers) signUp(w http.ResponseWriter, r *http.Request) {
 		writeVolunteerError(w, r, err)
 		return
 	}
-	h.audit(r, p, orgID, "volunteer.signup.create", "volunteer_signup", su.ID, nil, su.Signup, map[string]string{
+	h.audit(p, orgID, "volunteer.signup.create", "volunteer_signup", su.ID, nil, su.Signup, map[string]string{
 		"job_id": su.JobID, "household_id": su.HouseholdID,
 	})
 	_ = httpx.WriteJSON(w, http.StatusCreated, map[string]any{"signup": su})
@@ -526,7 +509,7 @@ func (h *VolunteerHandlers) cancelSignup(w http.ResponseWriter, r *http.Request)
 		writeVolunteerError(w, r, err)
 		return
 	}
-	h.audit(r, p, orgID, "volunteer.signup.cancel", "volunteer_signup", su.ID, before, su, map[string]string{"reason": body.Reason})
+	h.audit(p, orgID, "volunteer.signup.cancel", "volunteer_signup", su.ID, before, su, map[string]string{"reason": body.Reason})
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{"signup": su})
 }
 
@@ -553,7 +536,7 @@ func (h *VolunteerHandlers) checkIn(w http.ResponseWriter, r *http.Request) {
 		writeVolunteerError(w, r, err)
 		return
 	}
-	h.audit(r, p, orgID, "volunteer.signup.check_in", "volunteer_signup", su.ID, before, su, map[string]string{"status": su.Status})
+	h.audit(p, orgID, "volunteer.signup.check_in", "volunteer_signup", su.ID, before, su, map[string]string{"status": su.Status})
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{"signup": su})
 }
 
@@ -597,7 +580,7 @@ func (h *VolunteerHandlers) upsertRequirement(w http.ResponseWriter, r *http.Req
 		writeVolunteerError(w, r, err)
 		return
 	}
-	h.audit(r, p, orgID, "volunteer.requirement.upsert", "volunteer_requirement", req.ID, nil, req, nil)
+	h.audit(p, orgID, "volunteer.requirement.upsert", "volunteer_requirement", req.ID, nil, req, nil)
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{"requirement": req})
 }
 
@@ -611,7 +594,7 @@ func (h *VolunteerHandlers) deleteRequirement(w http.ResponseWriter, r *http.Req
 		writeVolunteerError(w, r, err)
 		return
 	}
-	h.audit(r, p, orgID, "volunteer.requirement.delete", "volunteer_requirement", id, nil, nil, nil)
+	h.audit(p, orgID, "volunteer.requirement.delete", "volunteer_requirement", id, nil, nil, nil)
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{"deleted": true})
 }
 
@@ -652,7 +635,7 @@ func (h *VolunteerHandlers) addCredit(w http.ResponseWriter, r *http.Request) {
 		writeVolunteerError(w, r, err)
 		return
 	}
-	h.audit(r, p, orgID, "volunteer.credit.create", "volunteer_credit", c.ID, nil, c, map[string]string{"household_id": c.HouseholdID})
+	h.audit(p, orgID, "volunteer.credit.create", "volunteer_credit", c.ID, nil, c, map[string]string{"household_id": c.HouseholdID})
 	_ = httpx.WriteJSON(w, http.StatusCreated, map[string]any{"credit": c})
 }
 
@@ -673,16 +656,16 @@ func (h *VolunteerHandlers) seasonLedger(w http.ResponseWriter, r *http.Request)
 		writeVolunteerError(w, r, err)
 		return
 	}
-	summary := map[string]any{"households": len(rows)}
 	counts := map[string]int{}
 	due := 0
 	for _, row := range rows {
 		counts[row.Status]++
 		due += row.BuyoutDueCents
 	}
-	summary["by_status"] = counts
-	summary["buyout_due_cents"] = due
-	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{"ledger": rows, "summary": summary})
+	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"ledger":  rows,
+		"summary": map[string]any{"households": len(rows), "by_status": counts, "buyout_due_cents": due},
+	})
 }
 
 func (h *VolunteerHandlers) householdLedger(w http.ResponseWriter, r *http.Request) {
@@ -695,8 +678,7 @@ func (h *VolunteerHandlers) householdLedger(w http.ResponseWriter, r *http.Reque
 		writeVolunteerError(w, r, err)
 		return
 	}
-	resp := map[string]any{"ledger": rows}
-	_ = httpx.WriteJSON(w, http.StatusOK, resp)
+	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{"ledger": rows})
 }
 
 func (h *VolunteerHandlers) listBuyouts(w http.ResponseWriter, r *http.Request) {
@@ -739,7 +721,7 @@ func (h *VolunteerHandlers) billBuyout(w http.ResponseWriter, r *http.Request) {
 		writeVolunteerError(w, r, err)
 		return
 	}
-	h.audit(r, p, orgID, "volunteer.buyout.bill", "volunteer_buyout", b.ID, nil, b, map[string]string{
+	h.audit(p, orgID, "volunteer.buyout.bill", "volunteer_buyout", b.ID, nil, b, map[string]string{
 		"household_id": b.HouseholdID, "season_id": b.SeasonID, "invoice_id": b.InvoiceID,
 	})
 	_ = httpx.WriteJSON(w, http.StatusCreated, map[string]any{"buyout": b, "invoice": inv})

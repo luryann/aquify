@@ -5,6 +5,7 @@ import type { ApiClient } from '@/lib/api'
 import { fetchClubEvents, type ClubEventRecord, type ClubEventRSVP } from '@/lib/engagementData'
 import { reportUIError } from '@/lib/frontend-telemetry'
 import { ClubEventCard, mergeRSVP } from './ClubEventCard'
+import { localToday } from '@/lib/dates'
 
 /** Upcoming club events on the swimmer schedule; swimmers RSVP for themselves. */
 export function SwimmerClubEvents({ api, orgId, swimmerId }: { api: ApiClient; orgId: string; swimmerId: string }) {
@@ -15,8 +16,8 @@ export function SwimmerClubEvents({ api, orgId, swimmerId }: { api: ApiClient; o
   useEffect(() => {
     if (!orgId) return
     setError(null)
-    const from = new Date().toISOString().slice(0, 10)
-    const to = new Date(Date.now() + 60 * 86400000).toISOString().slice(0, 10)
+    const from = localToday()
+    const to = localToday(new Date(Date.now() + 60 * 86400000))
     fetchClubEvents(api, orgId, { from, to })
       .then(setEvents)
       .catch((err) => setError(reportUIError('swimmer-club-events', err, 'Club events are unavailable right now.')))

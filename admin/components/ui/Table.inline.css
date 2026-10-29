@@ -1,0 +1,3 @@
+.table-row { background: transparent; transition: background var(--dur-fast); }
+.table-row[data-selected="true"] { background: var(--accent-subtle); }
+.table-row[data-selected="false"]:hover { background: var(--bg-wash); }

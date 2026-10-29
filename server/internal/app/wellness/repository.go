@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/dareaquatics/aquify/server/internal/dbutil"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -63,16 +65,11 @@ func (r *Repository) List(ctx context.Context, orgID string, swimmerIDs []string
 	if err != nil {
 		return nil, fmt.Errorf("wellness: list check-ins: %w", err)
 	}
-	defer rows.Close()
-	out := []*CheckIn{}
-	for rows.Next() {
+	return dbutil.CollectRowsNonNil(rows, "wellness: scan check-in", func(rows pgx.Rows) (*CheckIn, error) {
 		c := &CheckIn{}
-		if err := rows.Scan(&c.ID, &c.OrgID, &c.SwimmerID, &c.HouseholdID, &c.Date,
+		err := rows.Scan(&c.ID, &c.OrgID, &c.SwimmerID, &c.HouseholdID, &c.Date,
 			&c.SleepHours, &c.SleepQuality, &c.Soreness, &c.Energy, &c.Stress, &c.Mood, &c.Note,
-			&c.SubmittedBy, &c.SubmittedRole, &c.CreatedAt, &c.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("wellness: scan check-in: %w", err)
-		}
-		out = append(out, c)
-	}
-	return out, rows.Err()
+			&c.SubmittedBy, &c.SubmittedRole, &c.CreatedAt, &c.UpdatedAt)
+		return c, err
+	})
 }

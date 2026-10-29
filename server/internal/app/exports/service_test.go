@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/go-pdf/fpdf"
 )
 
 func intPtr(v int) *int { return &v }
@@ -154,5 +156,26 @@ func TestReportTitles(t *testing.T) {
 		if got := reportTitle(reportType); !strings.Contains(got, want) {
 			t.Errorf("reportTitle(%q) = %q, want to contain %q", reportType, got, want)
 		}
+	}
+}
+
+func TestPDFDocTranslatesUnicodeForCoreFonts(t *testing.T) {
+	t.Parallel()
+
+	doc := newPDFDoc(fpdf.New("P", "mm", "Letter", ""))
+	if got := doc.tr("José • Núñez"); got != "Jos\xe9 \x95 N\xfa\xf1ez" {
+		t.Fatalf("translator output = %q, want cp1252 bytes", got)
+	}
+
+	content, _, err := buildReportPDF(ReportInput{
+		ReportType: ReportTypeEntry,
+		Meet:       ReportMeet{Name: "Año Meet", StartDate: "2026-03-01"},
+		Entries: []ReportEntry{{
+			SwimmerFirst: "José", SwimmerLast: "Núñez-Ñandú-Ångström-Ælfred", MeetEventID: "e1", EventNumber: "1",
+			Stroke: "free", Distance: 50, Course: "SCY",
+		}},
+	})
+	if err != nil || len(content) == 0 {
+		t.Fatalf("buildReportPDF with accented names: err=%v len=%d", err, len(content))
 	}
 }

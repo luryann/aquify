@@ -49,7 +49,7 @@ func Parse(data []byte) (*meetfiles.ParseResult, error) {
 			continue
 		}
 
-		upper := strings.ToUpper(strings.TrimSpace(line)) // what
+		upper := strings.ToUpper(strings.TrimSpace(line))
 
 		switch {
 		case strings.HasPrefix(upper, "EVENT"):
@@ -86,10 +86,11 @@ func Parse(data []byte) (*meetfiles.ParseResult, error) {
 	return result, nil
 }
 
-// truncate returns the first n characters of s, appending "…" when truncated.
+// truncate returns the first n characters (runes) of s, appending "…" when truncated.
 func truncate(s string, n int) string {
-	if len(s) <= n {
+	runes := []rune(s)
+	if len(runes) <= n {
 		return s
 	}
-	return s[:n] + "…"
+	return string(runes[:n]) + "…"
 }

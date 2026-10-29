@@ -38,12 +38,13 @@ const COLUMNS: Column<LedgerEventRow>[] = [
 ]
 
 async function loadLedgerRows(api: ReturnType<typeof useApiClient>, orgId: string): Promise<LedgerEventRow[]> {
-  const households = await fetchHouseholds(api, orgId)
-  const invoicesByHousehold = await Promise.all(households.map(async (household) => ({
-    household,
-    invoices: await fetchInvoicesForHousehold(api, orgId, household.id).catch(() => []),
-  })))
-  const events = await fetchLedgerEvents(api, orgId)
+  const [invoicesByHousehold, events] = await Promise.all([
+    fetchHouseholds(api, orgId).then((households) => Promise.all(households.map(async (household) => ({
+      household,
+      invoices: await fetchInvoicesForHousehold(api, orgId, household.id).catch(() => []),
+    })))),
+    fetchLedgerEvents(api, orgId),
+  ])
 
   const invoiceMap = new Map<string, InvoiceRecord>()
   const householdByInvoice = new Map<string, HouseholdRecord>()
@@ -112,12 +113,12 @@ export function LedgerPanel() {
     }
   }, [api, session?.user.orgId])
 
+  const query = search.toLowerCase()
   const filtered = useMemo(() => rows.filter((row) => {
-    const query = search.toLowerCase()
     if (dateFrom && row.createdAt < dateFrom) return false
     if (dateTo && row.createdAt > `${dateTo}T23:59:59Z`) return false
     return !search || row.householdName.toLowerCase().includes(query) || row.invoiceNumber.toLowerCase().includes(query) || row.description.toLowerCase().includes(query)
-  }), [rows, search, dateFrom, dateTo])
+  }), [rows, search, query, dateFrom, dateTo])
 
   const totalCredits = rows.reduce((sum, row) => sum + row.creditCents, 0)
   const totalDebits = rows.reduce((sum, row) => sum + row.debitCents, 0)

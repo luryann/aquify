@@ -905,3 +905,30 @@ func TestStubClient_GetUser_NotFound(t *testing.T) {
 		t.Fatalf("expected ErrUserNotFound, got %v", err)
 	}
 }
+
+func TestAdminClientRejectsUnsafeUserIDsWithoutCallingKeycloak(t *testing.T) {
+	t.Parallel()
+
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusTeapot)
+	}))
+	defer srv.Close()
+	c, err := keycloak.NewAdminClient(keycloak.AdminConfig{AdminURL: srv.URL, Realm: "r", ClientID: "c", ClientSecret: "s"})
+	if err != nil {
+		t.Fatalf("NewAdminClient: %v", err)
+	}
+	ctx := context.Background()
+	for _, id := range []string{"", "..", "../clients/x", "a/b", "a%2Fb", "a b", "x?y"} {
+		if _, err := c.GetUser(ctx, id); !errors.Is(err, keycloak.ErrUserNotFound) {
+			t.Fatalf("GetUser(%q) err = %v, want ErrUserNotFound", id, err)
+		}
+		if err := c.DeleteUser(ctx, id); !errors.Is(err, keycloak.ErrUserNotFound) {
+			t.Fatalf("DeleteUser(%q) err = %v, want ErrUserNotFound", id, err)
+		}
+	}
+	if calls != 0 {
+		t.Fatalf("unsafe ids reached Keycloak %d times", calls)
+	}
+}

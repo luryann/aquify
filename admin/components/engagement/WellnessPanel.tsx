@@ -25,7 +25,6 @@ export function WellnessPanel({ api, orgId, swimmerId, swimmerName, selfView }: 
 }) {
   const [data, setData] = useState<SwimmerWellness | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [reloadKey, setReloadKey] = useState(0)
 
   const load = useCallback(() => {
     setError(null)
@@ -34,7 +33,7 @@ export function WellnessPanel({ api, orgId, swimmerId, swimmerName, selfView }: 
       .catch((err) => setError(reportUIError('wellness-load', err, 'Check-in history is unavailable right now.', { swimmerId })))
   }, [api, orgId, swimmerId])
 
-  useEffect(() => { if (orgId && swimmerId) load() }, [load, orgId, swimmerId, reloadKey])
+  useEffect(() => { if (orgId && swimmerId) load() }, [load, orgId, swimmerId])
 
   const today = localToday()
   const todays = data?.checkins.find((c) => c.date === today) ?? null
@@ -51,7 +50,7 @@ export function WellnessPanel({ api, orgId, swimmerId, swimmerName, selfView }: 
         </p>
         {data || error ? (
           <WellnessCheckInForm key={todays?.id ?? 'new'} api={api} orgId={orgId} swimmerId={swimmerId} existing={todays}
-            forName={selfView ? undefined : swimmerName} onSaved={() => setReloadKey((k) => k + 1)} />
+            forName={selfView ? undefined : swimmerName} onSaved={load} />
         ) : <div className="skeleton" style={{ height: 320, borderRadius: 12 }} />}
       </section>
       <section className="card u-p-20px" >
@@ -59,7 +58,7 @@ export function WellnessPanel({ api, orgId, swimmerId, swimmerName, selfView }: 
         {error ? (
           <div role="alert" className="u-gap-12px u-fs-fs-base" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--warning)' }}>
             <span>{error}</span>
-            <button type="button" className="btn btn-secondary btn-sm" onClick={() => setReloadKey((k) => k + 1)}>Retry</button>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={load}>Retry</button>
           </div>
         ) : !data ? (
           <div className="skeleton" style={{ height: 180, borderRadius: 12 }} />

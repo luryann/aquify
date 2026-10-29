@@ -1,8 +1,6 @@
 /* Static layout/type styles migrated from inline style props. */
 .is-930d87f.is-930d87f { display: flex; flex-direction: column; gap: 12px; }
-.is-6fe8896.is-6fe8896 { padding: 12px 16px; background: var(--warning-bg); border: 1px solid var(--warning-border); border-radius: 12px; margin-bottom: 16px; font-size: var(--fs-base); color: var(--warning); display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .is-730b6a7.is-730b6a7 { display: flex; gap: 12px; align-items: flex-start; }
-.is-889d44c.is-889d44c { background: var(--bg-elevated); border: 1px solid var(--warning-border); border-radius: 8px; cursor: pointer; color: var(--warning); font-size: var(--fs-sm); font-weight: 600; padding: 8px 16px; white-space: nowrap; }
 .is-78da8de.is-78da8de { padding: 12px 16px; background: rgba(220,38,38,0.07); border: 1px solid rgba(220,38,38,0.18); border-radius: 12px; margin-bottom: 16px; font-size: var(--fs-base); color: var(--error); display: flex; justify-content: space-between; align-items: center; }
 .is-3e74408.is-3e74408 { background: none; border: none; cursor: pointer; color: var(--error); font-size: var(--fs-lg); line-height: 1; padding: 0; }
 .is-fe04bf3.is-fe04bf3 { background: var(--error-bg); border: 1px solid rgba(220,38,38,0.18); border-radius: 12px; padding: 20px 24px; margin-bottom: 24px; animation: slideUp 0.35s ease both; }

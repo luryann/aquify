@@ -8,3 +8,10 @@
 .is-1cab63f.is-1cab63f { font-family: var(--font-mono); font-size: clamp(26px, 4vw, 40px); font-weight: 600; margin: 0; }
 .is-cac0e17.is-cac0e17 { font-size: var(--fs-xl); color: var(--text-subtle); margin: 4px 0 0; }
 .is-ffa21d3.is-ffa21d3 { margin-top: 40px; font-size: var(--fs-lg); }
+
+        @media print {
+          .deck { padding: 0 !important; background: #fff !important; color: #000 !important; }
+          .deck-print { display: none !important; }
+          .deck section { break-inside: avoid; }
+        }
+      

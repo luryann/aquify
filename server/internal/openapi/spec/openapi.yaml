@@ -28,7 +28,6 @@ tags:
   - name: Meets
   - name: Commitments
   - name: Entries
-  - name: Imports
   - name: Exports
   - name: Performance
   - name: Billing
@@ -39,6 +38,10 @@ tags:
   - name: Jobs
   - name: Training
   - name: Volunteer
+  - name: Settings
+  - name: Reports
+  - name: Seasons
+  - name: Documents
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PATHS
@@ -358,6 +361,8 @@ paths:
               schema: { $ref: "#/components/schemas/SessionResponse" }
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "429":
+          description: Too many failed attempts for this factor (5 per 5 minutes); error code `mfa_locked`
 
   /auth/roles/assign:
     post:
@@ -920,6 +925,22 @@ paths:
   # ── Members ─────────────────────────────────────────────────────────────────
 
   /members/households:
+    get:
+      tags: [Members]
+      summary: "List households"
+      operationId: listHouseholds
+      description: "Admin and coach see every household in the org; parent and swimmer sessions only see their own. Paginated (default 100, max 200)."
+      parameters:
+        - { name: limit, in: query, schema: { type: integer } }
+        - { name: offset, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: Households
+          content:
+            application/json:
+              schema: { type: object, properties: { status: { type: string }, count: { type: integer }, total: { type: integer }, limit: { type: integer }, offset: { type: integer }, households: { type: array, items: { $ref: "#/components/schemas/Household" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
     post:
       tags: [Members]
       summary: Create household
@@ -941,6 +962,37 @@ paths:
           $ref: "#/components/responses/Forbidden"
 
   /members/households/{householdID}:
+    get:
+      tags: [Members]
+      summary: "Get household"
+      operationId: getHousehold
+      description: "Parent sessions may only read their own household."
+      parameters:
+        - { name: householdID, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Household
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HouseholdResponse" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Members]
+      summary: "Delete household"
+      operationId: deleteHousehold
+      description: "Admin only. Refused with 409 while swimmers are still assigned to the household."
+      parameters:
+        - { name: householdID, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Household deleted
+          content:
+            application/json:
+              schema: { type: object, properties: { status: { type: string }, household: { $ref: "#/components/schemas/Household" } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
     patch:
       tags: [Members]
       summary: Update household
@@ -964,6 +1016,21 @@ paths:
           $ref: "#/components/responses/NotFound"
 
   /members/households/{householdID}/contacts:
+    get:
+      tags: [Members]
+      summary: "List household contacts"
+      operationId: listContacts
+      description: "Parent sessions may only list contacts of their own household."
+      parameters:
+        - { name: householdID, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Contacts
+          content:
+            application/json:
+              schema: { type: object, properties: { status: { type: string }, count: { type: integer }, contacts: { type: array, items: { $ref: "#/components/schemas/Contact" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
     post:
       tags: [Members]
       summary: Add contact to household
@@ -1046,6 +1113,22 @@ paths:
           $ref: "#/components/responses/NotFound"
 
   /members/swimmers/{swimmerID}:
+    get:
+      tags: [Members]
+      summary: "Get swimmer"
+      operationId: getSwimmer
+      description: "Medical flags are redacted unless `include_medical=true` is requested by an admin, coach or the swimmer's own parent."
+      parameters:
+        - { name: swimmerID, in: path, required: true, schema: { type: string } }
+        - { name: include_medical, in: query, schema: { type: boolean } }
+      responses:
+        "200":
+          description: Swimmer
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SwimmerResponse" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
     patch:
       tags: [Members]
       summary: Update swimmer profile
@@ -1218,6 +1301,21 @@ paths:
           $ref: "#/components/responses/NotFound"
 
   /groups/{groupID}/eligibility-rules:
+    get:
+      tags: [Groups]
+      summary: "List group eligibility rules"
+      operationId: listEligibilityRules
+      description: "Lists the age/rule constraints attached to a group."
+      parameters:
+        - { name: groupID, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Eligibility rules
+          content:
+            application/json:
+              schema: { type: object, properties: { status: { type: string }, count: { type: integer }, total: { type: integer }, rules: { type: array, items: { type: object, additionalProperties: true } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
     post:
       tags: [Groups]
       summary: Attach eligibility rule to group
@@ -1279,6 +1377,21 @@ paths:
   # ── Registrations ─────────────────────────────────────────────────────────
 
   /registrations:
+    get:
+      tags: [Registrations]
+      summary: "List registrations"
+      operationId: listRegistrations
+      description: "Admin and coach see every registration; parents only their own household, with waiver summary fields (`waiver_accepted`, `waiver_count`, `waiver_types`, `last_waiver_accepted_at`). Paginated."
+      parameters:
+        - { name: limit, in: query, schema: { type: integer } }
+        - { name: offset, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: Registrations
+          content:
+            application/json:
+              schema: { type: object, properties: { status: { type: string }, count: { type: integer }, total: { type: integer }, limit: { type: integer }, offset: { type: integer }, registrations: { type: array, items: { $ref: "#/components/schemas/Registration" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
     post:
       tags: [Registrations]
       summary: Create registration
@@ -1358,7 +1471,7 @@ paths:
               required: [waiver_type]
               properties:
                 waiver_type: { type: string }
-                ip_address: { type: string }
+                ip_address: { type: string, description: "Deprecated and ignored; the server records the caller address it observed." }
       responses:
         "201":
           description: Waiver accepted
@@ -2115,190 +2228,6 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "403":
           $ref: "#/components/responses/Forbidden"
-
-  # ── Imports ──────────────────────────────────────────────────────────────────
-
-  /imports/upload-url:
-    post:
-      tags: [Imports]
-      summary: Request presigned upload URL for meet file
-      description: Registers an import upload after validating filename safety, declared size cap, and allowed MIME type.
-      operationId: requestImportUploadURL
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [filename, size_bytes, mime_type]
-              properties:
-                filename: { type: string }
-                file_type:
-                  type: string
-                  enum: [cl2, sd3, zip, hy3, hyv, ev3]
-                meet_id: { type: string, format: uuid }
-                size_bytes: { type: integer, format: int64, minimum: 1 }
-                mime_type: { type: string }
-      responses:
-        "201":
-          description: Import record and presigned upload URL created
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  import: { $ref: "#/components/schemas/FileImport" }
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-
-  /imports:
-    get:
-      tags: [Imports]
-      summary: List import jobs
-      operationId: listImports
-      responses:
-        "200":
-          description: Import list
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  count: { type: integer }
-                  imports:
-                    type: array
-                    items: { $ref: "#/components/schemas/FileImport" }
-        "403":
-          $ref: "#/components/responses/Forbidden"
-
-  /imports/{importID}:
-    get:
-      tags: [Imports]
-      summary: Get import job detail
-      operationId: getImport
-      parameters:
-        - $ref: "#/components/parameters/ImportID"
-      responses:
-        "200":
-          description: Import detail
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  import: { $ref: "#/components/schemas/FileImport" }
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
-
-  /imports/{importID}/finalize:
-    post:
-      tags: [Imports]
-      summary: Finalize upload, run malware-scan hook, and begin parsing
-      operationId: finalizeImport
-      parameters:
-        - $ref: "#/components/parameters/ImportID"
-      responses:
-        "200":
-          description: Import finalized
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  import: { $ref: "#/components/schemas/FileImport" }
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "422":
-          $ref: "#/components/responses/UnprocessableEntity"
-
-  /imports/{importID}/conflicts:
-    get:
-      tags: [Imports]
-      summary: List match conflicts for import
-      operationId: listImportConflicts
-      parameters:
-        - $ref: "#/components/parameters/ImportID"
-      responses:
-        "200":
-          description: Conflict list
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  count: { type: integer }
-                  conflicts:
-                    type: array
-                    items: { $ref: "#/components/schemas/MatchConflict" }
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
-
-  /imports/{importID}/conflicts/{conflictID}/resolve:
-    post:
-      tags: [Imports]
-      summary: Resolve match conflict (admin only, audited)
-      operationId: resolveImportConflict
-      parameters:
-        - $ref: "#/components/parameters/ImportID"
-        - name: conflictID
-          in: path
-          required: true
-          schema: { type: string }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [resolved_swimmer_id]
-              properties:
-                resolved_swimmer_id: { type: string, format: uuid }
-                resolution_note: { type: string }
-      responses:
-        "200":
-          description: Conflict resolved
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  conflict: { $ref: "#/components/schemas/MatchConflict" }
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "409":
-          $ref: "#/components/responses/Conflict"
-
-  /imports/{importID}/report:
-    get:
-      tags: [Imports]
-      summary: Download deterministic import report
-      operationId: getImportReport
-      parameters:
-        - $ref: "#/components/parameters/ImportID"
-      responses:
-        "200":
-          description: Import report
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  import: { $ref: "#/components/schemas/FileImport" }
-                  report: { type: object }
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
 
   # ── Exports (standalone) ─────────────────────────────────────────────────
 
@@ -3411,6 +3340,21 @@ paths:
   # ── Billing ──────────────────────────────────────────────────────────────────
 
   /invoices:
+    get:
+      tags: [Billing]
+      summary: "List invoices"
+      operationId: listInvoices
+      description: "Admin sees every invoice; parents only their own household's."
+      parameters:
+        - { name: household_id, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Invoices
+          content:
+            application/json:
+              schema: { type: object, properties: { count: { type: integer }, invoices: { type: array, items: { $ref: "#/components/schemas/Invoice" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
     post:
       tags: [Billing]
       summary: Create invoice (draft)
@@ -6914,6 +6858,850 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  # ── Operations added to match the router (documents, messaging, seasons, practices, reads) ──
+
+  /members/swimmer-groups:
+    get:
+      tags: [Members]
+      summary: "List swimmer-group links"
+      operationId: listSwimmerGroupLinks
+      description: "Parent and swimmer sessions only see links for their own household. Paginated."
+      parameters:
+        - { name: limit, in: query, schema: { type: integer } }
+        - { name: offset, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: Swimmer-group links
+          content:
+            application/json:
+              schema: { type: object, properties: { status: { type: string }, count: { type: integer }, total: { type: integer }, limit: { type: integer }, offset: { type: integer }, links: { type: array, items: { type: object, additionalProperties: true } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /payments:
+    get:
+      tags: [Billing]
+      summary: "List payments"
+      operationId: listOrgPayments
+      description: "Org-wide payment list; admin only."
+      parameters:
+        - { name: invoice_id, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Payments
+          content:
+            application/json:
+              schema: { type: object, properties: { count: { type: integer }, payments: { type: array, items: { $ref: "#/components/schemas/Payment" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /reports/invoice-detail:
+    get:
+      tags: [Reports]
+      summary: "Generate invoice detail report"
+      operationId: runInvoiceDetailReport
+      description: "Line-item detail for one invoice plus its payments. `format=csv` streams a CSV artifact."
+      parameters:
+        - { name: invoice_id, in: query, schema: { type: string } }
+        - { name: format, in: query, schema: { type: string, enum: [json, csv] } }
+      responses:
+        "200":
+          description: Invoice detail report
+          content:
+            application/json:
+              schema: { type: object, properties: { report: { type: object, additionalProperties: true } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /performance/best-times:
+    get:
+      tags: [Performance]
+      summary: "List best times org-wide"
+      operationId: listOrgBestTimes
+      description: "Admin and coach see the whole org; parent and swimmer sessions are filtered to their own household."
+      parameters:
+        - { name: swimmer_id, in: query, schema: { type: string } }
+        - { name: course, in: query, schema: { type: string } }
+        - { name: stroke, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Rows
+          content:
+            application/json:
+              schema: { type: object, properties: { count: { type: integer }, best_times: { type: array, items: { $ref: "#/components/schemas/BestTime" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /performance/progression:
+    get:
+      tags: [Performance]
+      summary: "List result progression org-wide"
+      operationId: listOrgProgression
+      description: "Admin and coach see the whole org; parent and swimmer sessions are filtered to their own household."
+      parameters:
+        - { name: swimmer_id, in: query, schema: { type: string } }
+        - { name: course, in: query, schema: { type: string } }
+        - { name: stroke, in: query, schema: { type: string } }
+        - { name: distance, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: Rows
+          content:
+            application/json:
+              schema: { type: object, properties: { count: { type: integer }, results: { type: array, items: { $ref: "#/components/schemas/Result" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /auth/roles/assignments:
+    get:
+      tags: [Auth]
+      summary: "List role assignments"
+      operationId: listRoleAssignments
+      description: "Admin only. Lists the org's user-to-role assignments."
+      responses:
+        "200":
+          description: Assignments
+          content:
+            application/json:
+              schema: { type: object, properties: { count: { type: integer }, assignments: { type: array, items: { type: object, additionalProperties: true } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /settings/runtime:
+    get:
+      tags: [Settings]
+      summary: "Read runtime settings"
+      operationId: getRuntimeSettings
+      description: "Admin only. Non-secret view of the effective runtime configuration (secrets are never returned)."
+      responses:
+        "200":
+          description: Runtime settings
+          content:
+            application/json:
+              schema: { type: object, properties: { settings: { type: object, additionalProperties: true } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /users/{userID}/swimmer:
+    get:
+      tags: [Users]
+      summary: "Get swimmer linked to a user"
+      operationId: getUserSwimmer
+      description: "Returns `swimmer: null` when the user has no linked swimmer in this org."
+      parameters:
+        - { name: userID, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Linked swimmer
+          content:
+            application/json:
+              schema: { type: object, properties: { status: { type: string }, swimmer: { nullable: true, allOf: [{ $ref: "#/components/schemas/Swimmer" }] } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /users/{userID}/swimmer/link:
+    post:
+      tags: [Users]
+      summary: "Link a user to a swimmer"
+      operationId: linkUserSwimmer
+      description: "Admin only. A swimmer may be linked to at most one user."
+      parameters:
+        - { name: userID, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, properties: { swimmer_id: { type: string } }, required: [swimmer_id] }
+      responses:
+        "200":
+          description: Linked
+          content:
+            application/json:
+              schema: { type: object, properties: { status: { type: string }, swimmer: { $ref: "#/components/schemas/Swimmer" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /users/{userID}/swimmer/unlink:
+    post:
+      tags: [Users]
+      summary: "Unlink a user from a swimmer"
+      operationId: unlinkUserSwimmer
+      description: "Admin only."
+      parameters:
+        - { name: userID, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, properties: { swimmer_id: { type: string } }, required: [swimmer_id] }
+      responses:
+        "200":
+          description: Unlinked
+          content:
+            application/json:
+              schema: { type: object, properties: { status: { type: string } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /users/me/swimmer-link-requests:
+    post:
+      tags: [Users]
+      summary: "Ask staff to link my account to a swimmer"
+      operationId: createSwimmerLinkRequest
+      description: "Any authenticated user may submit a self-service recovery request."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, properties: { requested_swimmer_name: { type: string }, note: { type: string } } }
+      responses:
+        "201":
+          description: Request created
+          content:
+            application/json:
+              schema: { type: object, properties: { request: { type: object, additionalProperties: true } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /users/swimmer-link-requests:
+    get:
+      tags: [Users]
+      summary: "List swimmer link requests"
+      operationId: listSwimmerLinkRequests
+      description: "Admin only."
+      responses:
+        "200":
+          description: Requests
+          content:
+            application/json:
+              schema: { type: object, properties: { requests: { type: array, items: { type: object, additionalProperties: true } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /users/swimmer-link-requests/{requestID}/resolve:
+    post:
+      tags: [Users]
+      summary: "Resolve a swimmer link request"
+      operationId: resolveSwimmerLinkRequest
+      description: "Admin only. Links the requesting user to the chosen swimmer and closes the request."
+      parameters:
+        - { name: requestID, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, properties: { swimmer_id: { type: string } }, required: [swimmer_id] }
+      responses:
+        "200":
+          description: Resolved
+          content:
+            application/json:
+              schema: { type: object, properties: { status: { type: string }, request: { type: object, additionalProperties: true } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /seasons:
+    get:
+      tags: [Seasons]
+      summary: "List seasons"
+      operationId: listSeasons
+      description: "Admin and coach."
+      responses:
+        "200":
+          description: Seasons
+          content:
+            application/json:
+              schema: { type: object, properties: { seasons: { type: array, items: { type: object, additionalProperties: true } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Seasons]
+      summary: "Create season"
+      operationId: createSeason
+      description: "Admin only; audit-logged."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, properties: { name: { type: string }, start_date: { type: string, format: date }, end_date: { type: string, format: date }, status: { type: string }, goals: { type: string } }, required: [name, status] }
+      responses:
+        "201":
+          description: Season created
+          content:
+            application/json:
+              schema: { type: object, properties: { season: { type: object, additionalProperties: true } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /seasons/{seasonID}:
+    get:
+      tags: [Seasons]
+      summary: "Get season"
+      operationId: getSeason
+      description: "Admin and coach."
+      parameters:
+        - { name: seasonID, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Season
+          content:
+            application/json:
+              schema: { type: object, properties: { season: { type: object, additionalProperties: true } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Seasons]
+      summary: "Update season"
+      operationId: updateSeason
+      description: "Admin only; partial update, audit-logged."
+      parameters:
+        - { name: seasonID, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, properties: { name: { type: string }, start_date: { type: string }, end_date: { type: string }, status: { type: string }, goals: { type: string } } }
+      responses:
+        "200":
+          description: Season updated
+          content:
+            application/json:
+              schema: { type: object, properties: { season: { type: object, additionalProperties: true } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Seasons]
+      summary: "Delete season"
+      operationId: deleteSeason
+      description: "Admin only; audit-logged."
+      parameters:
+        - { name: seasonID, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Season deleted
+          content:
+            application/json:
+              schema: { type: object, properties: { deleted: { type: boolean } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /practices:
+    get:
+      tags: [Training]
+      summary: "List practices"
+      operationId: listPractices
+      description: "Admin and coach see all practices; parent and swimmer sessions see team-wide practices plus those of their household swimmers' groups."
+      responses:
+        "200":
+          description: Practices
+          content:
+            application/json:
+              schema: { type: object, properties: { practices: { type: array, items: { $ref: "#/components/schemas/TrainingPractice" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Training]
+      summary: "Create practice"
+      operationId: createPractice
+      description: "Admin and coach."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, properties: { date: { type: string, format: date }, group_id: { type: string }, type: { type: string }, description: { type: string }, yardage_target: { type: integer }, attendance: { type: integer }, strokes: { type: object, additionalProperties: true }, notes: { type: string } } }
+      responses:
+        "201":
+          description: Practice created
+          content:
+            application/json:
+              schema: { type: object, properties: { practice: { $ref: "#/components/schemas/TrainingPractice" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /practices/{practiceID}:
+    get:
+      tags: [Training]
+      summary: "Get practice"
+      operationId: getPractice
+      description: "Scoped like the list endpoint."
+      parameters:
+        - { name: practiceID, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Practice
+          content:
+            application/json:
+              schema: { type: object, properties: { practice: { $ref: "#/components/schemas/TrainingPractice" } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Training]
+      summary: "Update practice"
+      operationId: updatePractice
+      description: "Admin and coach; partial update. While a workout is linked, yardage and strokes derive from the workout."
+      parameters:
+        - { name: practiceID, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, properties: { date: { type: string, format: date }, group_id: { type: string }, type: { type: string }, description: { type: string }, yardage_target: { type: integer }, attendance: { type: integer }, strokes: { type: object, additionalProperties: true }, notes: { type: string } } }
+      responses:
+        "200":
+          description: Practice updated
+          content:
+            application/json:
+              schema: { type: object, properties: { practice: { $ref: "#/components/schemas/TrainingPractice" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Training]
+      summary: "Delete practice"
+      operationId: deletePractice
+      description: "Admin and coach."
+      parameters:
+        - { name: practiceID, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Practice deleted
+          content:
+            application/json:
+              schema: { type: object, properties: { deleted: { type: boolean } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /practices/{practiceID}/attendance:
+    get:
+      tags: [Training]
+      summary: "List practice attendance"
+      operationId: listPracticeAttendance
+      description: "Admin and coach."
+      parameters:
+        - { name: practiceID, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Attendance rows
+          content:
+            application/json:
+              schema: { type: object, properties: { attendance: { type: array, items: { type: object, additionalProperties: true } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /practices/{practiceID}/attendance/{swimmerID}:
+    put:
+      tags: [Training]
+      summary: "Mark swimmer attendance"
+      operationId: setPracticeAttendance
+      description: "Admin and coach. Idempotent per swimmer and practice."
+      parameters:
+        - { name: practiceID, in: path, required: true, schema: { type: string } }
+        - { name: swimmerID, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, properties: { status: { type: string, enum: [present, absent, excused] } }, required: [status] }
+      responses:
+        "200":
+          description: Attendance recorded
+          content:
+            application/json:
+              schema: { type: object, properties: { attendance: { type: object, additionalProperties: true } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /document-types:
+    get:
+      tags: [Documents]
+      summary: "List document types"
+      operationId: listDocumentTypes
+      description: "Admin, coach and parent. Active types only unless `active_only=false`."
+      parameters:
+        - { name: active_only, in: query, schema: { type: boolean } }
+      responses:
+        "200":
+          description: Document types
+          content:
+            application/json:
+              schema: { type: object, properties: { document_types: { type: array, items: { type: object, additionalProperties: true } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Documents]
+      summary: "Create document type"
+      operationId: createDocumentType
+      description: "Admin only; audit-logged. 409 when the name already exists."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, properties: { name: { type: string }, category: { type: string }, description: { type: string }, is_required: { type: boolean }, applies_to: { type: string }, expiry_months: { type: integer }, is_active: { type: boolean } }, required: [name, category] }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { type: object, properties: { document_type: { type: object, additionalProperties: true } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /document-types/{typeID}:
+    put:
+      tags: [Documents]
+      summary: "Update document type"
+      operationId: updateDocumentType
+      description: "Admin only; partial update."
+      parameters:
+        - { name: typeID, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, properties: { name: { type: string }, category: { type: string }, description: { type: string }, is_required: { type: boolean }, applies_to: { type: string }, expiry_months: { type: integer }, is_active: { type: boolean } } }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { type: object, properties: { document_type: { type: object, additionalProperties: true } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [Documents]
+      summary: "Delete document type"
+      operationId: deleteDocumentType
+      description: "Admin only."
+      parameters:
+        - { name: typeID, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema: { type: object, properties: { deleted: { type: boolean } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /documents:
+    get:
+      tags: [Documents]
+      summary: "List document submissions"
+      operationId: listDocumentSubmissions
+      description: "Admin and coach may filter by `household_id`; parents are pinned to their own household."
+      parameters:
+        - { name: household_id, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Submissions
+          content:
+            application/json:
+              schema: { type: object, properties: { documents: { type: array, items: { type: object, additionalProperties: true } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Documents]
+      summary: "Create document submission"
+      operationId: createDocumentSubmission
+      description: "Starts a submission in `pending`; upload the file with `upload-url` then `attach`."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, properties: { document_type_id: { type: string }, household_id: { type: string }, swimmer_id: { type: string } }, required: [document_type_id, household_id] }
+      responses:
+        "201":
+          description: Submission created
+          content:
+            application/json:
+              schema: { type: object, properties: { document: { type: object, additionalProperties: true } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /documents/{submissionID}:
+    get:
+      tags: [Documents]
+      summary: "Get document submission"
+      operationId: getDocumentSubmission
+      description: "Parents only see their own household's submissions (404 otherwise)."
+      parameters:
+        - { name: submissionID, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Submission
+          content:
+            application/json:
+              schema: { type: object, properties: { document: { type: object, additionalProperties: true } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /documents/{submissionID}/upload-url:
+    post:
+      tags: [Documents]
+      summary: "Request presigned upload URL"
+      operationId: requestDocumentUploadURL
+      description: "Returns a 15-minute presigned PUT URL scoped to this submission."
+      parameters:
+        - { name: submissionID, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, properties: { file_name: { type: string }, file_mime: { type: string }, file_size_bytes: { type: integer } }, required: [file_name, file_mime, file_size_bytes] }
+      responses:
+        "201":
+          description: Upload URL
+          content:
+            application/json:
+              schema: { type: object, properties: { upload_url: { type: string }, object_key: { type: string }, upload_expires_at: { type: string, format: date-time }, submission_id: { type: string }, expected_file_name: { type: string } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /documents/{submissionID}/attach:
+    post:
+      tags: [Documents]
+      summary: "Attach uploaded file"
+      operationId: attachDocumentFile
+      description: "Finalizes the upload. The object key must be submission-scoped and the object must exist; the stored size (not the declared one) is enforced."
+      parameters:
+        - { name: submissionID, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, properties: { file_object_key: { type: string }, file_name: { type: string }, file_mime: { type: string }, file_size_bytes: { type: integer } }, required: [file_object_key, file_name] }
+      responses:
+        "200":
+          description: Attached
+          content:
+            application/json:
+              schema: { type: object, properties: { document: { type: object, additionalProperties: true } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /documents/{submissionID}/verify:
+    post:
+      tags: [Documents]
+      summary: "Verify submission"
+      operationId: verifyDocumentSubmission
+      description: "Admin only; audit-logged."
+      parameters:
+        - { name: submissionID, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { type: object, properties: { review_notes: { type: string } } }
+      responses:
+        "200":
+          description: Verified
+          content:
+            application/json:
+              schema: { type: object, properties: { document: { type: object, additionalProperties: true } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /documents/{submissionID}/reject:
+    post:
+      tags: [Documents]
+      summary: "Reject submission"
+      operationId: rejectDocumentSubmission
+      description: "Admin only; audit-logged."
+      parameters:
+        - { name: submissionID, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { type: object, properties: { review_notes: { type: string } } }
+      responses:
+        "200":
+          description: Rejected
+          content:
+            application/json:
+              schema: { type: object, properties: { document: { type: object, additionalProperties: true } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /messages:
+    post:
+      tags: [Communications]
+      summary: "Send message"
+      operationId: sendMessage
+      description: "Thread = household + swimmer. Parents may only post in their own household's threads. Attachments must come from `upload-url` and are validated against storage."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, properties: { household_id: { type: string }, swimmer_id: { type: string }, body: { type: string, maxLength: 4000 }, attachments: { type: array, items: { type: object, properties: { object_key: { type: string }, file_name: { type: string }, file_mime: { type: string } }, required: [object_key, file_name, file_mime] } } }, required: [household_id, swimmer_id, body] }
+      responses:
+        "201":
+          description: Message sent
+          content:
+            application/json:
+              schema: { type: object, properties: { message: { type: object, additionalProperties: true } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+    get:
+      tags: [Communications]
+      summary: "List messages in a thread"
+      operationId: listMessages
+      description: "Requires `household_id` and `swimmer_id`; authorization follows the thread."
+      parameters:
+        - { name: household_id, in: query, schema: { type: string } }
+        - { name: swimmer_id, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Messages
+          content:
+            application/json:
+              schema: { type: object, properties: { messages: { type: array, items: { type: object, additionalProperties: true } }, count: { type: integer } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /message-threads:
+    get:
+      tags: [Communications]
+      summary: "List message threads"
+      operationId: listMessageThreads
+      description: "Admin and coach only."
+      responses:
+        "200":
+          description: Threads
+          content:
+            application/json:
+              schema: { type: object, properties: { threads: { type: array, items: { type: object, additionalProperties: true } }, count: { type: integer } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /messages/{messageID}:
+    patch:
+      tags: [Communications]
+      summary: "Edit own message"
+      operationId: editMessage
+      description: "Only the author may edit."
+      parameters:
+        - { name: messageID, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, properties: { body: { type: string, maxLength: 4000 } }, required: [body] }
+      responses:
+        "200":
+          description: Edited
+          content:
+            application/json:
+              schema: { type: object, properties: { message: { type: object, additionalProperties: true } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /messages/{messageID}/reactions:
+    post:
+      tags: [Communications]
+      summary: "Add reaction"
+      operationId: addMessageReaction
+      description: "Only a fixed emoji set is accepted (422 otherwise)."
+      parameters:
+        - { name: messageID, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, properties: { emoji: { type: string } }, required: [emoji] }
+      responses:
+        "201":
+          description: Reaction added
+          content:
+            application/json:
+              schema: { type: object, properties: { ok: { type: boolean } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /messages/{messageID}/reactions/{emoji}:
+    delete:
+      tags: [Communications]
+      summary: "Remove reaction"
+      operationId: removeMessageReaction
+      description: "Removes the caller's own reaction."
+      parameters:
+        - { name: messageID, in: path, required: true, schema: { type: string } }
+        - { name: emoji, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Reaction removed
+          content:
+            application/json:
+              schema: { type: object, properties: { ok: { type: boolean } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /messages/read:
+    post:
+      tags: [Communications]
+      summary: "Mark thread read"
+      operationId: markThreadRead
+      description: "Marks the thread identified by `household_id` and `swimmer_id` read for the caller."
+      parameters:
+        - { name: household_id, in: query, schema: { type: string } }
+        - { name: swimmer_id, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Marked read
+          content:
+            application/json:
+              schema: { type: object, properties: { ok: { type: boolean } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /messages/upload-url:
+    post:
+      tags: [Communications]
+      summary: "Request attachment upload URL"
+      operationId: requestMessageUploadURL
+      description: "Presigned PUT URL for a message attachment, scoped to the thread."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, properties: { household_id: { type: string }, swimmer_id: { type: string }, file_name: { type: string }, file_mime: { type: string }, file_size_bytes: { type: integer } }, required: [household_id, swimmer_id, file_name, file_mime, file_size_bytes] }
+      responses:
+        "201":
+          description: Upload URL
+          content:
+            application/json:
+              schema: { type: object, properties: { upload_url: { type: string }, object_key: { type: string } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /messages/stream:
+    get:
+      tags: [Communications]
+      summary: "Stream new messages (SSE)"
+      operationId: streamMessages
+      description: "Server-sent events (`text/event-stream`). Staff receive every thread; parents and swimmers only their own household."
+      responses:
+        "200":
+          description: Event stream
+          content:
+            text/event-stream:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+
 components:
 
   # ── Security Schemes ────────────────────────────────────────────────────────
@@ -6999,11 +7787,6 @@ components:
       schema: { type: string }
     EntryID:
       name: entryID
-      in: path
-      required: true
-      schema: { type: string }
-    ImportID:
-      name: importID
       in: path
       required: true
       schema: { type: string }
@@ -8624,47 +9407,6 @@ components:
         seed_time_ms: { type: [integer, "null"] }
         is_relay: { type: boolean, default: false }
 
-    # Imports ──────────────────────────────────────────────────────────────────
-    FileImport:
-      allOf:
-        - $ref: "#/components/schemas/AuditMeta"
-        - type: object
-          properties:
-            org_id: { type: string }
-            meet_id: { type: string }
-            filename: { type: string }
-            file_type:
-              type: string
-              enum: [cl2, sd3, zip, hy3, hyv, ev3]
-            status:
-              type: string
-              enum: [uploaded, scanning, parsing, matching, conflicts_pending, applied, failed, archived]
-            upload_url: { type: [string, "null"] }
-            declared_size_bytes: { type: integer, format: int64 }
-            declared_mime_type: { type: string }
-            scan_status: { type: string, enum: [pending, clean, infected] }
-            scan_provider: { type: string }
-            conflict_count: { type: integer }
-            error_count: { type: integer }
-            row_count: { type: integer }
-
-    MatchConflict:
-      allOf:
-        - $ref: "#/components/schemas/AuditMeta"
-        - type: object
-          properties:
-            import_id: { type: string }
-            conflict_type:
-              type: string
-              enum: [unknown_athlete, ambiguous_match, bad_event_code, duplicate_row]
-            status:
-              type: string
-              enum: [open, resolved_manual, resolved_auto, rejected, closed]
-            raw_data: { type: object }
-            resolved_swimmer_id: { type: [string, "null"] }
-            resolution_note: { type: string }
-
-    # Org settings ───────────────────────────────────────────────────────────────
     OrgSettings:
       type: object
       properties:

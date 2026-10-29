@@ -5,13 +5,14 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
 import { reportUIError } from '@/lib/frontend-telemetry'
-import { parseBackendDate } from '@/lib/dates'
+import { formatDateOnly } from '@/lib/dates'
 import { fetchSeasons, type SeasonRecord } from '@/lib/adminData'
 import {
-  AGE_GROUPS, AGE_GROUP_LABELS, COURSES, EVENT_DISTANCES, STROKES, STROKE_LABELS,
+  AGE_GROUP_LABELS, COURSES, EVENT_DISTANCES, STROKES, STROKE_LABELS,
   fetchTopTimes, formatSwimTime, genderLabel, type Course, type TopTimesList,
 } from '@/lib/performanceData'
-import { FIELD_STYLE, FilterRow, LoadErrorBanner, Segmented } from './PerfControls'
+import { AgeGroupSelect, FIELD_STYLE, FilterRow, GenderSegmented, Segmented } from './PerfControls'
+import { LoadErrorBanner } from '@/components/ui/LoadErrorBanner'
 import { periodRange, type PeriodPreset } from '@/lib/performance-periods'
 
 /** Top-N board: one best swim per swimmer per event, filterable by course,
@@ -58,10 +59,8 @@ export function TopTimesBoard({ canUseSeasons = false }: { canUseSeasons?: boole
     <div>
       <FilterRow>
         <Segmented label="Course" value={course} onChange={setCourse} options={COURSES.map((c) => ({ value: c, label: c }))} />
-        <Segmented label="Gender" value={gender} onChange={setGender} options={[{ value: 'F', label: ageGroup === 'OPEN' ? 'Women' : 'Girls' }, { value: 'M', label: ageGroup === 'OPEN' ? 'Men' : 'Boys' }]} />
-        <select aria-label="Age group" value={ageGroup} onChange={(e) => setAgeGroup(e.target.value)} style={FIELD_STYLE}>
-          {AGE_GROUPS.map((g) => <option key={g} value={g}>{AGE_GROUP_LABELS[g]}</option>)}
-        </select>
+        <GenderSegmented value={gender} onChange={setGender} ageGroup={ageGroup} />
+        <AgeGroupSelect value={ageGroup} onChange={setAgeGroup} />
         <select aria-label="Event" value={event} onChange={(e) => setEvent(e.target.value)} style={FIELD_STYLE}>
           <option value="">All events</option>
           {STROKES.flatMap((s) => EVENT_DISTANCES[s].map((d) => <option key={`${d}|${s}`} value={`${d}|${s}`}>{d} {STROKE_LABELS[s]}</option>))}
@@ -96,7 +95,7 @@ export function TopTimesBoard({ canUseSeasons = false }: { canUseSeasons?: boole
                     <span style={{ color: e.rank === 1 ? 'var(--accent)' : 'var(--text-muted)', fontWeight: e.rank === 1 ? 600 : 400, fontVariantNumeric: 'tabular-nums' }}>{e.rank}</span>
                     <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={e.meet_name ? `${e.meet_name}, ${e.swim_date}` : e.swim_date}>
                       {e.swimmer_name}{e.age != null ? <span style={{ color: 'var(--text-muted)' }}> {e.age}</span> : null}
-                      <span className="u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}> · {parseBackendDate(e.swim_date)?.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) ?? e.swim_date}</span>
+                      <span className="u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}> · {formatDateOnly(e.swim_date, { month: 'short', year: 'numeric' })}</span>
                     </span>
                     <span className="u-fw-600" style={{ fontVariantNumeric: 'tabular-nums' }}>{formatSwimTime(e.time_ms)}</span>
                   </li>

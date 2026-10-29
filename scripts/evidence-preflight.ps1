@@ -65,54 +65,49 @@ function Require-EnvEquals {
     }
 }
 
-function Require-PositiveIntEnv {
-    param([string]$Name)
+function Require-IntEnv {
+    param([string]$Name, [int]$Min, [string]$Description)
     $value = Require-Env $Name
     if ($null -eq $value) {
         return
     }
     $parsed = 0
-    if (-not [int]::TryParse($value, [ref]$parsed) -or $parsed -le 0) {
-        Add-Failure "$Name must be a positive integer."
+    if (-not [int]::TryParse($value, [ref]$parsed) -or $parsed -lt $Min) {
+        Add-Failure "$Name must be a $Description."
     }
+}
+
+function Require-PositiveIntEnv {
+    param([string]$Name)
+    Require-IntEnv $Name 1 "positive integer"
 }
 
 function Require-NonNegativeIntEnv {
     param([string]$Name)
-    $value = Require-Env $Name
-    if ($null -eq $value) {
+    Require-IntEnv $Name 0 "non-negative integer"
+}
+
+function Require-Path {
+    param([string]$Name, [string]$Path, [string]$PathType, [string]$Label)
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        Add-Failure "Missing path for $Name"
         return
     }
-    $parsed = 0
-    if (-not [int]::TryParse($value, [ref]$parsed) -or $parsed -lt 0) {
-        Add-Failure "$Name must be a non-negative integer."
+    if (-not (Test-Path -LiteralPath $Path -PathType $PathType)) {
+        Add-Failure "$Name does not exist or is not a ${Label}: $Path"
+        return
     }
+    Write-Host "OK ${Label}: $Name -> $Path"
 }
 
 function Require-File {
     param([string]$Name, [string]$Path)
-    if ([string]::IsNullOrWhiteSpace($Path)) {
-        Add-Failure "Missing path for $Name"
-        return
-    }
-    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-        Add-Failure "$Name does not exist or is not a file: $Path"
-        return
-    }
-    Write-Host "OK file: $Name -> $Path"
+    Require-Path $Name $Path "Leaf" "file"
 }
 
 function Require-Directory {
     param([string]$Name, [string]$Path)
-    if ([string]::IsNullOrWhiteSpace($Path)) {
-        Add-Failure "Missing path for $Name"
-        return
-    }
-    if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
-        Add-Failure "$Name does not exist or is not a directory: $Path"
-        return
-    }
-    Write-Host "OK directory: $Name -> $Path"
+    Require-Path $Name $Path "Container" "directory"
 }
 
 function Validate-SourceCounts {

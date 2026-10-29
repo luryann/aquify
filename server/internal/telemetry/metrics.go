@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -13,8 +14,8 @@ type Metrics struct {
 	registry *prometheus.Registry
 
 	// HTTP layer
-	HTTPRequestsTotal    *prometheus.CounterVec
-	HTTPRequestDuration  *prometheus.HistogramVec
+	HTTPRequestsTotal   *prometheus.CounterVec
+	HTTPRequestDuration *prometheus.HistogramVec
 
 	// Background jobs
 	JobExecutionsTotal *prometheus.CounterVec
@@ -81,8 +82,8 @@ func NewMetrics() *Metrics {
 	}
 
 	reg.MustRegister(
-		prometheus.NewGoCollector(),
-		prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}),
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 		m.HTTPRequestsTotal,
 		m.HTTPRequestDuration,
 		m.JobExecutionsTotal,

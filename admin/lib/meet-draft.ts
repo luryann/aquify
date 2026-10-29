@@ -1,4 +1,4 @@
-import type { ParsedMeetEventDraftRecord, ParsedMeetSessionDraft } from './adminData.ts'
+import type { CreateMeetPayload, ParsedMeetEventDraftRecord, ParsedMeetSessionDraft } from './adminData.ts'
 
 export type Course = 'SCY' | 'SCM' | 'LCM'
 
@@ -24,40 +24,6 @@ export type MeetCreateDraftState = {
   maxEntriesPerSwimmer: string
   swimmerSelfSignup: boolean
   sessions: MeetSessionDraft[]
-}
-
-export type CreateMeetPayload = {
-  name: string
-  course?: string
-  host_org?: string
-  location?: string
-  start_date?: string
-  end_date?: string
-  commitment_deadline?: string
-  entry_deadline?: string
-  sessions?: Array<{
-    session_number: number
-    name: string
-    session_date?: string
-    warmup_time?: string
-    start_time?: string
-  }>
-  events?: Array<{
-    session_number?: number
-    event_number: string
-    stroke: string
-    distance: number
-    course?: string
-    gender?: string
-    min_age?: number
-    max_age?: number
-    entry_fee_cents?: number
-    is_relay?: boolean
-  }>
-  signup_settings?: {
-    self_signup_enabled: boolean
-    max_entries_per_swimmer: number
-  }
 }
 
 export function maxEntriesPayloadValue(value: string): number {

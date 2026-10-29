@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/dareaquatics/aquify/server/internal/dbutil"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -12,7 +13,7 @@ import (
 // Repository handles all DB persistence for the members domain.
 // It is used in write-through mode: every mutation writes to the DB first,
 // then the in-memory map is updated. On startup, the service loads all records
-// from the DB via loadFromDB.
+// from the DB via syncFromDB.
 type Repository struct {
 	pool *pgxpool.Pool
 }
@@ -43,9 +44,9 @@ func (r *Repository) UpsertHousehold(ctx context.Context, h Household) error {
 		  keycloak_user_id  = EXCLUDED.keycloak_user_id,
 		  updated_at        = EXCLUDED.updated_at`,
 		h.ID, h.OrgID, h.HouseholdName,
-		nullableString(h.PrimaryEmail), nullableString(h.PrimaryPhoneE164),
-		h.Status, nullableString(h.Notes),
-		nullableString(h.KeycloakUserID),
+		dbutil.NullableString(h.PrimaryEmail), dbutil.NullableString(h.PrimaryPhoneE164),
+		h.Status, dbutil.NullableString(h.Notes),
+		dbutil.NullableString(h.KeycloakUserID),
 		h.CreatedAt, h.UpdatedAt,
 	)
 	return err
@@ -57,35 +58,9 @@ func (r *Repository) SetHouseholdKeycloakUserID(ctx context.Context, householdID
 	_, err := r.pool.Exec(ctx, `
 		UPDATE households SET keycloak_user_id = $2, updated_at = now()
 		WHERE id = $1::uuid AND deleted_at IS NULL`,
-		householdID, nullableString(keycloakUserID),
+		householdID, dbutil.NullableString(keycloakUserID),
 	)
 	return err
-}
-
-func (r *Repository) LoadHouseholds(ctx context.Context) ([]Household, error) {
-	rows, err := r.pool.Query(ctx, `
-		SELECT id::text, org_id::text, household_name,
-		       COALESCE(primary_email, ''), COALESCE(primary_phone_e164, ''),
-		       status, COALESCE(notes, ''), COALESCE(keycloak_user_id, ''),
-		       created_at, updated_at
-		FROM households WHERE deleted_at IS NULL`)
-	if err != nil {
-		return nil, fmt.Errorf("members: load households: %w", err)
-	}
-	defer rows.Close()
-
-	var out []Household
-	for rows.Next() {
-		var h Household
-		if err := rows.Scan(&h.ID, &h.OrgID, &h.HouseholdName,
-			&h.PrimaryEmail, &h.PrimaryPhoneE164,
-			&h.Status, &h.Notes, &h.KeycloakUserID,
-			&h.CreatedAt, &h.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("members: scan household: %w", err)
-		}
-		out = append(out, h)
-	}
-	return out, rows.Err()
 }
 
 func (r *Repository) DeleteHousehold(ctx context.Context, id, deletedBy string) error {
@@ -119,44 +94,12 @@ func (r *Repository) UpsertContact(ctx context.Context, c Contact) error {
 		  updated_at           = EXCLUDED.updated_at`,
 		c.ID, c.OrgID, c.HouseholdID,
 		c.Relationship, c.FirstName, c.LastName,
-		nullableString(c.Email), nullableString(c.PhoneE164),
+		dbutil.NullableString(c.Email), dbutil.NullableString(c.PhoneE164),
 		c.IsPrimary, c.IsEmergencyContact, c.CanPickUp,
-		c.EmergencyPriority, nullableString(c.Notes),
+		c.EmergencyPriority, dbutil.NullableString(c.Notes),
 		c.CreatedAt, c.UpdatedAt,
 	)
 	return err
-}
-
-func (r *Repository) LoadContacts(ctx context.Context) ([]Contact, error) {
-	rows, err := r.pool.Query(ctx, `
-		SELECT id::text, org_id::text, household_id::text,
-		       relationship, first_name, last_name,
-		       COALESCE(email, ''), COALESCE(phone_e164, ''),
-		       is_primary, is_emergency_contact, can_pick_up,
-		       emergency_priority, COALESCE(notes, ''),
-		       created_at, updated_at
-		FROM contacts WHERE deleted_at IS NULL`)
-	if err != nil {
-		return nil, fmt.Errorf("members: load contacts: %w", err)
-	}
-	defer rows.Close()
-
-	var out []Contact
-	for rows.Next() {
-		var c Contact
-		if err := rows.Scan(
-			&c.ID, &c.OrgID, &c.HouseholdID,
-			&c.Relationship, &c.FirstName, &c.LastName,
-			&c.Email, &c.PhoneE164,
-			&c.IsPrimary, &c.IsEmergencyContact, &c.CanPickUp,
-			&c.EmergencyPriority, &c.Notes,
-			&c.CreatedAt, &c.UpdatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("members: scan contact: %w", err)
-		}
-		out = append(out, c)
-	}
-	return out, rows.Err()
 }
 
 // ───────────────────────────── Swimmers ────────────────────────────────────
@@ -191,13 +134,13 @@ func (r *Repository) UpsertSwimmer(ctx context.Context, sw Swimmer) error {
 		  keycloak_user_id               = EXCLUDED.keycloak_user_id,
 		  updated_at                     = EXCLUDED.updated_at`,
 		sw.ID, sw.OrgID, sw.HouseholdID,
-		sw.FirstName, sw.LastName, nullableString(sw.PreferredName),
+		sw.FirstName, sw.LastName, dbutil.NullableString(sw.PreferredName),
 		sw.DateOfBirth, sw.Gender,
-		nullableString(sw.SwimmerExternalID), nullableString(sw.USASwimmingID), sw.RegistrationStatus,
-		string(flagsJSON), nullableString(sw.Notes),
-		nullableString(sw.EmergencyContactName), nullableString(sw.EmergencyContactPhone),
-		nullableString(sw.EmergencyContactRelationship), nullableString(sw.Allergies),
-		nullableString(sw.KeycloakUserID),
+		dbutil.NullableString(sw.SwimmerExternalID), dbutil.NullableString(sw.USASwimmingID), sw.RegistrationStatus,
+		string(flagsJSON), dbutil.NullableString(sw.Notes),
+		dbutil.NullableString(sw.EmergencyContactName), dbutil.NullableString(sw.EmergencyContactPhone),
+		dbutil.NullableString(sw.EmergencyContactRelationship), dbutil.NullableString(sw.Allergies),
+		dbutil.NullableString(sw.KeycloakUserID),
 		sw.CreatedAt, sw.UpdatedAt,
 	)
 	return err
@@ -209,49 +152,9 @@ func (r *Repository) SetSwimmerKeycloakUserID(ctx context.Context, swimmerID, ke
 	_, err := r.pool.Exec(ctx, `
 		UPDATE swimmers SET keycloak_user_id = $2, updated_at = now()
 		WHERE id = $1::uuid AND deleted_at IS NULL`,
-		swimmerID, nullableString(keycloakUserID),
+		swimmerID, dbutil.NullableString(keycloakUserID),
 	)
 	return err
-}
-
-func (r *Repository) LoadSwimmers(ctx context.Context) ([]Swimmer, error) {
-	rows, err := r.pool.Query(ctx, `
-		SELECT id::text, org_id::text, household_id::text,
-		       first_name, last_name, COALESCE(preferred_name, ''),
-		       date_of_birth::text, gender,
-		       COALESCE(swimmer_external_id, ''), COALESCE(usa_swimming_id, ''), registration_status,
-		       medical_flags::text, COALESCE(notes, ''),
-		       COALESCE(emergency_contact_name, ''), COALESCE(emergency_contact_phone, ''),
-		       COALESCE(emergency_contact_relationship, ''), COALESCE(allergies, ''),
-		       COALESCE(keycloak_user_id, ''),
-		       created_at, updated_at
-		FROM swimmers WHERE deleted_at IS NULL`)
-	if err != nil {
-		return nil, fmt.Errorf("members: load swimmers: %w", err)
-	}
-	defer rows.Close()
-
-	var out []Swimmer
-	for rows.Next() {
-		var sw Swimmer
-		var flagsJSON string
-		if err := rows.Scan(
-			&sw.ID, &sw.OrgID, &sw.HouseholdID,
-			&sw.FirstName, &sw.LastName, &sw.PreferredName,
-			&sw.DateOfBirth, &sw.Gender,
-			&sw.SwimmerExternalID, &sw.USASwimmingID, &sw.RegistrationStatus,
-			&flagsJSON, &sw.Notes,
-			&sw.EmergencyContactName, &sw.EmergencyContactPhone,
-			&sw.EmergencyContactRelationship, &sw.Allergies,
-			&sw.KeycloakUserID,
-			&sw.CreatedAt, &sw.UpdatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("members: scan swimmer: %w", err)
-		}
-		_ = json.Unmarshal([]byte(flagsJSON), &sw.MedicalFlags)
-		out = append(out, sw)
-	}
-	return out, rows.Err()
 }
 
 func (r *Repository) ListSwimmerDeleteDependencies(ctx context.Context, orgID, swimmerID string) ([]swimmerDeleteDependencyRecord, error) {
@@ -364,32 +267,6 @@ func (r *Repository) UpsertSwimmerGroupLink(ctx context.Context, link SwimmerGro
 	return err
 }
 
-func (r *Repository) LoadSwimmerGroupLinks(ctx context.Context) ([]SwimmerGroupLink, error) {
-	rows, err := r.pool.Query(ctx, `
-		SELECT id::text, org_id::text, swimmer_id::text,
-		       group_code, is_primary, assigned_at, created_at, updated_at
-		FROM swimmer_groups WHERE deleted_at IS NULL`)
-	if err != nil {
-		return nil, fmt.Errorf("members: load swimmer_groups: %w", err)
-	}
-	defer rows.Close()
-
-	var out []SwimmerGroupLink
-	for rows.Next() {
-		var link SwimmerGroupLink
-		if err := rows.Scan(
-			&link.ID, &link.OrgID, &link.SwimmerID,
-			&link.GroupCode, &link.IsPrimary,
-			&link.AssignedAt, &link.CreatedAt, &link.UpdatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("members: scan swimmer_group: %w", err)
-		}
-		link.GroupCode = normalizeGroupCode(link.GroupCode)
-		out = append(out, link)
-	}
-	return out, rows.Err()
-}
-
 // ───────────────────────────── Swimmer Link Requests ───────────────────────
 
 func (r *Repository) InsertSwimmerLinkRequest(ctx context.Context, req SwimmerLinkRequest) error {
@@ -410,17 +287,11 @@ func (r *Repository) ListPendingSwimmerLinkRequests(ctx context.Context, orgID s
 	if err != nil {
 		return nil, fmt.Errorf("members: list swimmer link requests: %w", err)
 	}
-	defer rows.Close()
-
-	var out []SwimmerLinkRequest
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "members: scan swimmer link request", func(rows pgx.Rows) (SwimmerLinkRequest, error) {
 		var req SwimmerLinkRequest
-		if err := rows.Scan(&req.ID, &req.OrgID, &req.UserID, &req.RequestedSwimmerName, &req.Note, &req.Status, &req.CreatedAt); err != nil {
-			return nil, fmt.Errorf("members: scan swimmer link request: %w", err)
-		}
-		out = append(out, req)
-	}
-	return out, rows.Err()
+		err := rows.Scan(&req.ID, &req.OrgID, &req.UserID, &req.RequestedSwimmerName, &req.Note, &req.Status, &req.CreatedAt)
+		return req, err
+	})
 }
 
 func (r *Repository) ResolveSwimmerLinkRequest(ctx context.Context, orgID, requestID, resolvedBy, resolvedSwimmerID string) error {
@@ -475,20 +346,15 @@ func loadHouseholdsInTx(ctx context.Context, tx pgx.Tx) ([]Household, error) {
 		       status, COALESCE(notes, ''), COALESCE(keycloak_user_id, ''), created_at, updated_at
 		FROM households WHERE deleted_at IS NULL`)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("members: load households: %w", err)
 	}
-	defer rows.Close()
-	var out []Household
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "members: scan households", func(rows pgx.Rows) (Household, error) {
 		var h Household
-		if err := rows.Scan(&h.ID, &h.OrgID, &h.HouseholdName,
+		err := rows.Scan(&h.ID, &h.OrgID, &h.HouseholdName,
 			&h.PrimaryEmail, &h.PrimaryPhoneE164,
-			&h.Status, &h.Notes, &h.KeycloakUserID, &h.CreatedAt, &h.UpdatedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, h)
-	}
-	return out, rows.Err()
+			&h.Status, &h.Notes, &h.KeycloakUserID, &h.CreatedAt, &h.UpdatedAt)
+		return h, err
+	})
 }
 
 func loadContactsInTx(ctx context.Context, tx pgx.Tx) ([]Contact, error) {
@@ -500,25 +366,20 @@ func loadContactsInTx(ctx context.Context, tx pgx.Tx) ([]Contact, error) {
 		       emergency_priority, COALESCE(notes, ''), created_at, updated_at
 		FROM contacts WHERE deleted_at IS NULL`)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("members: load contacts: %w", err)
 	}
-	defer rows.Close()
-	var out []Contact
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "members: scan contacts", func(rows pgx.Rows) (Contact, error) {
 		var c Contact
-		if err := rows.Scan(
+		err := rows.Scan(
 			&c.ID, &c.OrgID, &c.HouseholdID,
 			&c.Relationship, &c.FirstName, &c.LastName,
 			&c.Email, &c.PhoneE164,
 			&c.IsPrimary, &c.IsEmergencyContact, &c.CanPickUp,
 			&c.EmergencyPriority, &c.Notes,
 			&c.CreatedAt, &c.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		out = append(out, c)
-	}
-	return out, rows.Err()
+		)
+		return c, err
+	})
 }
 
 func loadSwimmersInTx(ctx context.Context, tx pgx.Tx) ([]Swimmer, error) {
@@ -533,11 +394,9 @@ func loadSwimmersInTx(ctx context.Context, tx pgx.Tx) ([]Swimmer, error) {
 		       COALESCE(keycloak_user_id, ''), created_at, updated_at
 		FROM swimmers WHERE deleted_at IS NULL`)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("members: load swimmers: %w", err)
 	}
-	defer rows.Close()
-	var out []Swimmer
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "members: scan swimmer", func(rows pgx.Rows) (Swimmer, error) {
 		var sw Swimmer
 		var flagsJSON string
 		if err := rows.Scan(
@@ -551,12 +410,11 @@ func loadSwimmersInTx(ctx context.Context, tx pgx.Tx) ([]Swimmer, error) {
 			&sw.KeycloakUserID,
 			&sw.CreatedAt, &sw.UpdatedAt,
 		); err != nil {
-			return nil, err
+			return sw, err
 		}
 		_ = json.Unmarshal([]byte(flagsJSON), &sw.MedicalFlags)
-		out = append(out, sw)
-	}
-	return out, rows.Err()
+		return sw, nil
+	})
 }
 
 func loadSwimmerGroupLinksInTx(ctx context.Context, tx pgx.Tx) ([]SwimmerGroupLink, error) {
@@ -565,28 +423,18 @@ func loadSwimmerGroupLinksInTx(ctx context.Context, tx pgx.Tx) ([]SwimmerGroupLi
 		       group_code, is_primary, assigned_at, created_at, updated_at
 		FROM swimmer_groups WHERE deleted_at IS NULL`)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("members: load swimmer group links: %w", err)
 	}
-	defer rows.Close()
-	var out []SwimmerGroupLink
-	for rows.Next() {
+	return dbutil.CollectRows(rows, "members: scan swimmer group links", func(rows pgx.Rows) (SwimmerGroupLink, error) {
 		var link SwimmerGroupLink
 		if err := rows.Scan(
 			&link.ID, &link.OrgID, &link.SwimmerID,
 			&link.GroupCode, &link.IsPrimary,
 			&link.AssignedAt, &link.CreatedAt, &link.UpdatedAt,
 		); err != nil {
-			return nil, err
+			return link, err
 		}
-		out = append(out, link)
-	}
-	return out, rows.Err()
-}
-
-// nullableString converts an empty string to nil so Postgres stores NULL.
-func nullableString(s string) interface{} {
-	if s == "" {
-		return nil
-	}
-	return s
+		link.GroupCode = normalizeGroupCode(link.GroupCode)
+		return link, nil
+	})
 }

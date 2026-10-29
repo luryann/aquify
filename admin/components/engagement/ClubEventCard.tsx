@@ -25,6 +25,7 @@ export function ClubEventCard({ event, api, orgId, onRSVP, swimmerOnlyId }: {
 }) {
   const s = event.rsvp_summary
   const cancelled = event.status === 'cancelled'
+  const familyRSVP = findMyRSVP(event.my_rsvps)
   return (
     <article id={`event-${event.id}`} className="card u-p-20px u-gap-12px" style={{ display: 'flex', flexDirection: 'column', opacity: cancelled ? 0.7 : 1 }}>
       <div className="u-gap-12px" style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap' }}>
@@ -50,10 +51,10 @@ export function ClubEventCard({ event, api, orgId, onRSVP, swimmerOnlyId }: {
           {event.rsvp_mode === 'household' ? (
             swimmerOnlyId ? (
               <p className="u-fs-fs-sm" style={{ color: 'var(--text-muted)' }}>
-                {findMyRSVP(event.my_rsvps) ? `Your family replied: ${findMyRSVP(event.my_rsvps)!.response}.` : 'A parent replies for your family.'}
+                {familyRSVP ? `Your family replied: ${familyRSVP.response}.` : 'A parent replies for your family.'}
               </p>
             ) : (
-              <RSVPControl api={api} orgId={orgId} eventId={event.id} current={findMyRSVP(event.my_rsvps)} open={event.rsvp_open}
+              <RSVPControl api={api} orgId={orgId} eventId={event.id} current={familyRSVP} open={event.rsvp_open}
                 feeCents={event.fee_cents} headcountLabel="People attending" onSaved={(r) => onRSVP(event.id, r)} />
             )
           ) : (

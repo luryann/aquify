@@ -6,22 +6,19 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
 import { reportUIError } from '@/lib/frontend-telemetry'
-import { parseBackendDate } from '@/lib/dates'
+import { formatDateOnly } from '@/lib/dates'
 import {
   AGE_GROUPS, AGE_GROUP_LABELS, COURSES, STROKES, STROKE_LABELS,
   createManualRecord, decideRecordEntry, deleteManualRecord, draftRecordAnnouncement, fetchPendingRecords,
   fetchRecordHistory, fetchTeamRecords, formatSwimTime, genderLabel, parseSwimTime, rebuildRecords, updateRecordEntry,
   type Course, type RecordEntry, type RecordHistory, type TeamRecord,
 } from '@/lib/performanceData'
-import { FIELD_STYLE, FilterRow, LoadErrorBanner, Notice, Segmented } from './PerfControls'
+import { AgeGroupSelect, FIELD_STYLE, FilterRow, GenderSegmented, LabeledField, Notice, Segmented } from './PerfControls'
+import { LoadErrorBanner } from '@/components/ui/LoadErrorBanner'
 
 const STROKE_TITLES: Record<string, string> = { free: 'Freestyle', back: 'Backstroke', breast: 'Breaststroke', fly: 'Butterfly', im: 'Individual Medley' }
 
-function formatDate(value?: string) {
-  if (!value) return ''
-  const d = parseBackendDate(value)
-  return d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : value
-}
+const formatDate = (value?: string) => formatDateOnly(value, undefined, '')
 
 type Props = { canManage?: boolean }
 
@@ -74,40 +71,37 @@ export function RecordsBoard({ canManage = false }: Props) {
     return STROKES.filter((s) => groups.has(s)).map((s) => ({ stroke: s, rows: groups.get(s)!.sort((a, b) => a.distance - b.distance) }))
   }, [records])
 
-  const decide = async (entry: RecordEntry, decision: 'approve' | 'reject') => {
+  /** Runs a management action, then reloads the board; failures show in the error banner. */
+  const manage = async (scope: string, fallback: string, action: () => Promise<void>) => {
     setBusy(true)
     try {
-      await decideRecordEntry(api, orgId, entry.id, decision)
-      setNotice(decision === 'approve' ? `Approved ${entry.swimmer_name}'s ${formatSwimTime(entry.time_ms)} as the new record.` : `Rejected ${entry.swimmer_name}'s ${formatSwimTime(entry.time_ms)}.`)
+      await action()
       await load()
     } catch (err) {
-      setError(reportUIError('performance.records.decide', err, 'The record decision could not be saved.'))
+      setError(reportUIError(`performance.records.${scope}`, err, fallback))
     } finally {
       setBusy(false)
     }
   }
 
-  const rebuild = async () => {
-    setBusy(true)
-    try {
+  const decide = (entry: RecordEntry, decision: 'approve' | 'reject') =>
+    manage('decide', 'The record decision could not be saved.', async () => {
+      await decideRecordEntry(api, orgId, entry.id, decision)
+      setNotice(decision === 'approve' ? `Approved ${entry.swimmer_name}'s ${formatSwimTime(entry.time_ms)} as the new record.` : `Rejected ${entry.swimmer_name}'s ${formatSwimTime(entry.time_ms)}.`)
+    })
+
+  const rebuild = () =>
+    manage('rebuild', 'Records could not be rebuilt.', async () => {
       const s = await rebuildRecords(api, orgId)
       setNotice(`Rebuilt from results: ${s.entries_created} record swims found${s.slots_skipped_locked ? `, ${s.slots_skipped_locked} locked records left as they were` : ''}.`)
-      await load()
-    } catch (err) {
-      setError(reportUIError('performance.records.rebuild', err, 'Records could not be rebuilt.'))
-    } finally {
-      setBusy(false)
-    }
-  }
+    })
 
   return (
     <div>
       <FilterRow>
         <Segmented label="Course" value={course} onChange={setCourse} options={COURSES.map((c) => ({ value: c, label: c }))} />
-        <Segmented label="Gender" value={gender} onChange={setGender} options={[{ value: 'F', label: ageGroup === 'OPEN' ? 'Women' : 'Girls' }, { value: 'M', label: ageGroup === 'OPEN' ? 'Men' : 'Boys' }]} />
-        <select aria-label="Age group" value={ageGroup} onChange={(e) => setAgeGroup(e.target.value)} style={FIELD_STYLE}>
-          {AGE_GROUPS.map((g) => <option key={g} value={g}>{AGE_GROUP_LABELS[g]}</option>)}
-        </select>
+        <GenderSegmented value={gender} onChange={setGender} ageGroup={ageGroup} />
+        <AgeGroupSelect value={ageGroup} onChange={setAgeGroup} />
         {canManage ? (
           <div className="u-gap-8px u-ml-auto" style={{ display: 'flex', flexWrap: 'wrap' }}>
             <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void rebuild()}>Rebuild from results</button>
@@ -318,10 +312,6 @@ function AddRecordModal({ defaults, onClose, onSave }: {
     }
   }
 
-  const label = (text: string, control: React.ReactNode) => (
-    <label className="u-gap-4px u-fs-fs-sm" style={{ display: 'grid', color: 'var(--text-subtle)' }}>{text}{control}</label>
-  )
-
   return (
     <Modal
       open
@@ -336,15 +326,15 @@ function AddRecordModal({ defaults, onClose, onSave }: {
     >
       {error ? <LoadErrorBanner message={error} /> : null}
       <div className="u-gap-12px" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))' }}>
-        {label('Course', <select value={course} onChange={(e) => setCourse(e.target.value)} style={FIELD_STYLE}>{COURSES.map((c) => <option key={c}>{c}</option>)}</select>)}
-        {label('Gender', <select value={gender} onChange={(e) => setGender(e.target.value)} style={FIELD_STYLE}><option value="F">Girls / Women</option><option value="M">Boys / Men</option></select>)}
-        {label('Age group', <select value={ageGroup} onChange={(e) => setAgeGroup(e.target.value)} style={FIELD_STYLE}>{AGE_GROUPS.map((g) => <option key={g} value={g}>{AGE_GROUP_LABELS[g]}</option>)}</select>)}
-        {label('Stroke', <select value={stroke} onChange={(e) => setStroke(e.target.value)} style={FIELD_STYLE}>{STROKES.map((s) => <option key={s} value={s}>{STROKE_LABELS[s]}</option>)}</select>)}
-        {label('Distance', <input inputMode="numeric" value={distance} onChange={(e) => setDistance(e.target.value.replace(/\D/g, ''))} style={FIELD_STYLE} />)}
-        {label('Time', <input aria-label="58.12" placeholder="58.12" value={time} onChange={(e) => setTime(e.target.value)} style={FIELD_STYLE} />)}
-        {label('Swimmer', <input value={name} onChange={(e) => setName(e.target.value)} style={FIELD_STYLE} />)}
-        {label('Date set', <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={FIELD_STYLE} />)}
-        {label('Meet (optional)', <input value={meet} onChange={(e) => setMeet(e.target.value)} style={FIELD_STYLE} />)}
+        <LabeledField label="Course"><select value={course} onChange={(e) => setCourse(e.target.value)} style={FIELD_STYLE}>{COURSES.map((c) => <option key={c}>{c}</option>)}</select></LabeledField>
+        <LabeledField label="Gender"><select value={gender} onChange={(e) => setGender(e.target.value)} style={FIELD_STYLE}><option value="F">Girls / Women</option><option value="M">Boys / Men</option></select></LabeledField>
+        <LabeledField label="Age group"><select value={ageGroup} onChange={(e) => setAgeGroup(e.target.value)} style={FIELD_STYLE}>{AGE_GROUPS.map((g) => <option key={g} value={g}>{AGE_GROUP_LABELS[g]}</option>)}</select></LabeledField>
+        <LabeledField label="Stroke"><select value={stroke} onChange={(e) => setStroke(e.target.value)} style={FIELD_STYLE}>{STROKES.map((s) => <option key={s} value={s}>{STROKE_LABELS[s]}</option>)}</select></LabeledField>
+        <LabeledField label="Distance"><input inputMode="numeric" value={distance} onChange={(e) => setDistance(e.target.value.replace(/\D/g, ''))} style={FIELD_STYLE} /></LabeledField>
+        <LabeledField label="Time"><input aria-label="58.12" placeholder="58.12" value={time} onChange={(e) => setTime(e.target.value)} style={FIELD_STYLE} /></LabeledField>
+        <LabeledField label="Swimmer"><input value={name} onChange={(e) => setName(e.target.value)} style={FIELD_STYLE} /></LabeledField>
+        <LabeledField label="Date set"><input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={FIELD_STYLE} /></LabeledField>
+        <LabeledField label="Meet (optional)"><input value={meet} onChange={(e) => setMeet(e.target.value)} style={FIELD_STYLE} /></LabeledField>
       </div>
       <label className="u-gap-8px u-fs-fs-base u-mt-16px" style={{ display: 'flex', alignItems: 'center' }}>
         <input type="checkbox" checked={locked} onChange={(e) => setLocked(e.target.checked)} />

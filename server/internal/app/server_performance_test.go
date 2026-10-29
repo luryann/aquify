@@ -528,7 +528,6 @@ func TestOrgPerformanceSummaryEndpointsReturnAggregatedData(t *testing.T) {
 	}
 }
 
-
 // TestParentRoleCanReadBestTimesForOwnHousehold verifies that a parent can read
 // best-time data for a swimmer who belongs to their household.
 func TestParentRoleCanReadBestTimesForOwnHousehold(t *testing.T) {

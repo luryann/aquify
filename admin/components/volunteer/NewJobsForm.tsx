@@ -9,6 +9,15 @@ import { InlineNotice } from './VolunteerPrimitives'
 
 type Shift = { date: string; start: string; end: string; label: string }
 
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="form-field">
+      <span className="form-label">{label}</span>
+      {children}
+    </label>
+  )
+}
+
 const ROLES = Object.keys(VOLUNTEER_ROLE_LABELS) as VolunteerRole[]
 
 /**
@@ -33,6 +42,9 @@ export function NewJobsForm({ api, orgId, meetId, defaultDate, onCreated }: {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Single-job mode uses only the first shift; ignore any extras left from template mode.
+  const visibleShifts = mode === 'single' ? shifts.slice(0, 1) : shifts
+
   function patchShift(i: number, patch: Partial<Shift>) {
     setShifts((list) => list.map((s, idx) => (idx === i ? { ...s, ...patch } : s)))
   }
@@ -44,7 +56,7 @@ export function NewJobsForm({ api, orgId, meetId, defaultDate, onCreated }: {
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
-    const isoShifts = shifts.map((s) => ({ ...shiftISO(s), label: s.label.trim() || undefined }))
+    const isoShifts = visibleShifts.map((s) => ({ ...shiftISO(s), label: s.label.trim() || undefined }))
     if (isoShifts.some((s) => !s.starts_at || !s.ends_at)) {
       setError('Every shift needs a date, start time, and end time.')
       return
@@ -72,8 +84,6 @@ export function NewJobsForm({ api, orgId, meetId, defaultDate, onCreated }: {
     }
   }
 
-  const visibleShifts = mode === 'single' ? shifts.slice(0, 1) : shifts
-
   return (
     <form onSubmit={submit} className="card u-gap-16px" style={{ display: 'flex', flexDirection: 'column' }}>
       <div role="radiogroup" aria-label="What to create" className="u-gap-6px" style={{ display: 'flex', flexWrap: 'wrap' }}>
@@ -94,33 +104,28 @@ export function NewJobsForm({ api, orgId, meetId, defaultDate, onCreated }: {
       ) : null}
       <div className="u-gap-12px" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
         {!meetId ? (
-          <label className="form-field">
-            <span className="form-label">Event name</span>
+          <Field label="Event name">
             <input aria-label="Fall fundraiser" className="form-input" required value={eventName} onChange={(e) => setEventName(e.target.value)} placeholder="Fall fundraiser" />
-          </label>
+          </Field>
         ) : null}
         {mode === 'single' ? (
           <>
-            <label className="form-field">
-              <span className="form-label">Role</span>
+            <Field label="Role">
               <select className="form-input" value={role} onChange={(e) => setRole(e.target.value as VolunteerRole)}>
                 {ROLES.map((r) => <option key={r} value={r}>{VOLUNTEER_ROLE_LABELS[r]}</option>)}
               </select>
-            </label>
-            <label className="form-field">
-              <span className="form-label">Title</span>
+            </Field>
+            <Field label="Title">
               <input className="form-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={VOLUNTEER_ROLE_LABELS[role]} />
-            </label>
-            <label className="form-field">
-              <span className="form-label">Spots</span>
+            </Field>
+            <Field label="Spots">
               <input className="form-input" type="number" min={1} max={500} value={capacity} onChange={(e) => setCapacity(e.target.value)} />
-            </label>
+            </Field>
           </>
         ) : null}
-        <label className="form-field">
-          <span className="form-label">Location</span>
+        <Field label="Location">
           <input aria-label="Optional" className="form-input" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Optional" />
-        </label>
+        </Field>
       </div>
       {mode === 'single' ? (
         <label className="u-gap-8px u-fs-fs-base" style={{ display: 'flex', alignItems: 'center' }}>
@@ -130,23 +135,19 @@ export function NewJobsForm({ api, orgId, meetId, defaultDate, onCreated }: {
       ) : null}
       {visibleShifts.map((s, i) => (
         <div key={i} className="u-gap-12px" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', alignItems: 'end' }}>
-          <label className="form-field">
-            <span className="form-label">Date</span>
+          <Field label="Date">
             <input className="form-input" type="date" required value={s.date} onChange={(e) => patchShift(i, { date: e.target.value })} />
-          </label>
-          <label className="form-field">
-            <span className="form-label">Starts</span>
+          </Field>
+          <Field label="Starts">
             <input className="form-input" type="time" required value={s.start} onChange={(e) => patchShift(i, { start: e.target.value })} />
-          </label>
-          <label className="form-field">
-            <span className="form-label">Ends</span>
+          </Field>
+          <Field label="Ends">
             <input className="form-input" type="time" required value={s.end} onChange={(e) => patchShift(i, { end: e.target.value })} />
-          </label>
+          </Field>
           {mode === 'template' ? (
-            <label className="form-field">
-              <span className="form-label">Shift name</span>
+            <Field label="Shift name">
               <input aria-label="Session 1" className="form-input" value={s.label} onChange={(e) => patchShift(i, { label: e.target.value })} placeholder="Session 1" />
-            </label>
+            </Field>
           ) : null}
           {mode === 'template' && shifts.length > 1 ? (
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShifts((l) => l.filter((_, idx) => idx !== i))}>Remove shift</button>

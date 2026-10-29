@@ -15,14 +15,8 @@ import {
   type TimeStandardRecord,
 } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
-
-function formatSwimTime(milliseconds: number) {
-  const totalSeconds = milliseconds / 1000
-  if (totalSeconds < 60) return totalSeconds.toFixed(2)
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = (totalSeconds % 60).toFixed(2).padStart(5, '0')
-  return `${minutes}:${seconds}`
-}
+import { formatSwimTime } from '@/lib/performanceData'
+import { FIELD_INPUT_STYLE } from '@/lib/form-styles'
 
 function genderLabel(gender: string) {
   if (gender === 'F') return 'Girls'
@@ -41,8 +35,6 @@ function msFromParts(minutes: string, seconds: string, hundredths: string): numb
 const FIELD_LABEL_STYLE: React.CSSProperties = {
   display: 'block', fontSize: 'var(--fs-sm)', fontFamily: 'var(--font-body)', color: 'var(--text-muted)', marginBottom: '4px',
 }
-const FIELD_INPUT_STYLE: React.CSSProperties = { width: '100%' }
-
 const STROKE_OPTIONS = ['free', 'back', 'breast', 'fly', 'im']
 const COURSE_OPTIONS = ['SCY', 'SCM', 'LCM']
 

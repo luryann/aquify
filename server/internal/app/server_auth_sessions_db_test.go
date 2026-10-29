@@ -164,7 +164,7 @@ func cleanupAuthFixtures(t *testing.T, pool *pgxpool.Pool, orgID string) {
 	ctx := context.Background()
 	for _, q := range []string{
 		"DELETE FROM sessions WHERE org_id = $1::uuid",
-		"DELETE FROM mfa_factors WHERE org_id = $1::uuid",
+		"DELETE FROM mfa_factors WHERE org_id = $1",
 		"DELETE FROM users WHERE org_id = $1::uuid",
 	} {
 		if _, err := pool.Exec(ctx, q, orgID); err != nil {

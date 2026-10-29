@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useState } from 'react'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
+import { formatDateOnly } from '@/lib/dates'
 import {
   fetchHouseholds,
   fetchHouseholdAutopayStatuses,
@@ -21,17 +22,10 @@ import {
   type AutopayFormState,
   type HouseholdAutopayRow,
 } from '@/lib/autopay'
+import { FIELD_INPUT_STYLE } from '@/lib/form-styles'
 
 function formatCurrencyCents(value?: number) {
   return typeof value === 'number' ? `$${(value / 100).toFixed(2)}` : '—'
-}
-
-function formatDate(value?: string) {
-  return value ? new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
-}
-
-function inputStyle(): CSSProperties {
-  return { width: '100%' }
 }
 
 export function AutopayPanel() {
@@ -65,8 +59,7 @@ export function AutopayPanel() {
         if (cancelled) return
         setHouseholds(householdList)
         setStatuses(autopayStatuses)
-        const nextSelected = householdList[0]?.id ?? ''
-        setSelectedHouseholdId(nextSelected)
+        setSelectedHouseholdId(householdList[0]?.id ?? '')
       } catch (loadError) {
         if (!cancelled) setError(autopayErrorMessage(loadError, 'Couldn’t load autopay households. Try again.'))
       } finally {
@@ -108,37 +101,32 @@ export function AutopayPanel() {
     setForm(autopayFormFromStatus(selectedStatus))
   }
 
-  async function saveAutopay() {
+  async function mutateAutopay(mutate: () => Promise<unknown>, successMessage: string, failureMessage?: string) {
     if (!selectedHouseholdId || !orgId) return
     setSaving(true)
     setError('')
     setSuccess('')
     try {
-      await upsertHouseholdAutopay(api, orgId, selectedHouseholdId, autopayPayloadFromForm(form))
+      await mutate()
       await refreshStatuses(selectedHouseholdId)
-      setSuccess('Autopay settings saved.')
+      setSuccess(successMessage)
     } catch (saveError) {
-      setError(autopayErrorMessage(saveError))
+      setError(autopayErrorMessage(saveError, failureMessage))
     } finally {
       setSaving(false)
     }
   }
 
-  async function disableAutopay() {
-    if (!selectedHouseholdId || !orgId) return
-    setSaving(true)
-    setError('')
-    setSuccess('')
-    try {
-      await optOutHouseholdAutopay(api, orgId, selectedHouseholdId)
-      await refreshStatuses(selectedHouseholdId)
-      setSuccess('Autopay has been turned off for this household.')
-    } catch (saveError) {
-      setError(autopayErrorMessage(saveError, 'Couldn’t opt this household out. Try again.'))
-    } finally {
-      setSaving(false)
-    }
-  }
+  const saveAutopay = () => mutateAutopay(
+    () => upsertHouseholdAutopay(api, orgId, selectedHouseholdId, autopayPayloadFromForm(form)),
+    'Autopay settings saved.',
+  )
+
+  const disableAutopay = () => mutateAutopay(
+    () => optOutHouseholdAutopay(api, orgId, selectedHouseholdId),
+    'Autopay has been turned off for this household.',
+    'Couldn’t opt this household out. Try again.',
+  )
 
   return (
     <div>
@@ -190,7 +178,7 @@ export function AutopayPanel() {
                   </div>
                   <div className="u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>{row.methodLabel}</div>
                   <div>
-                    <div className="u-fs-fs-base" style={{ color: 'var(--text)' }}>{formatDate(row.nextChargeDate)}</div>
+                    <div className="u-fs-fs-base" style={{ color: 'var(--text)' }}>{formatDateOnly(row.nextChargeDate)}</div>
                     <div className="u-fs-fs-xs u-ff-font-body u-mt-4px" style={{ color: 'var(--text-muted)' }}>{formatCurrencyCents(row.nextChargeAmountCents)}</div>
                   </div>
                   <span className="badge" style={{ width: 'fit-content', background: row.enabled ? 'var(--success-bg)' : 'var(--warning-bg)', color: row.enabled ? 'var(--success)' : 'var(--warning)' }}>
@@ -220,7 +208,7 @@ export function AutopayPanel() {
               <div className="u-p-12px-16px" style={{ borderRadius: '12px', background: selectedRow.enabled ? 'var(--success-bg)' : 'var(--surface-subtle)', border: '1px solid var(--border)' }}>
                 <div className="u-fs-fs-sm u-fw-600 u-mb-4px" style={{ color: 'var(--text)' }}>{formatAutopayMethod(selectedRow.status)}</div>
                 <div className="u-fs-fs-xs u-lh-1_5" style={{ color: 'var(--text-muted)' }}>
-                  Next charge: {formatDate(selectedRow.nextChargeDate)} · {formatCurrencyCents(selectedRow.nextChargeAmountCents)}
+                  Next charge: {formatDateOnly(selectedRow.nextChargeDate)} · {formatCurrencyCents(selectedRow.nextChargeAmountCents)}
                 </div>
               </div>
 
@@ -228,7 +216,7 @@ export function AutopayPanel() {
                 <label className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ display: 'block', color: 'var(--text-muted)' }}>
                   Payment type
                 </label>
-                <select value={form.paymentMethodType} onChange={(event) => setForm((current) => ({ ...current, paymentMethodType: event.target.value === 'ach' ? 'ach' : 'card' }))} style={inputStyle()}>
+                <select value={form.paymentMethodType} onChange={(event) => setForm((current) => ({ ...current, paymentMethodType: event.target.value === 'ach' ? 'ach' : 'card' }))} style={FIELD_INPUT_STYLE}>
                   <option value="card">Card</option>
                   <option value="ach">ACH</option>
                 </select>
@@ -238,7 +226,7 @@ export function AutopayPanel() {
                 <label className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ display: 'block', color: 'var(--text-muted)' }}>
                   Saved label
                 </label>
-                <input aria-label="Visa •••• 4242" value={form.paymentMethodLabel} onChange={(event) => setForm((current) => ({ ...current, paymentMethodLabel: event.target.value }))} style={inputStyle()} placeholder="Visa •••• 4242" />
+                <input aria-label="Visa •••• 4242" value={form.paymentMethodLabel} onChange={(event) => setForm((current) => ({ ...current, paymentMethodLabel: event.target.value }))} style={FIELD_INPUT_STYLE} placeholder="Visa •••• 4242" />
               </div>
 
               <div className="cols-2 u-gap-12px" >
@@ -246,7 +234,7 @@ export function AutopayPanel() {
                   <label className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ display: 'block', color: 'var(--text-muted)' }}>
                     {form.paymentMethodType === 'ach' ? 'Bank Name' : 'Brand'}
                   </label>
-                  <input value={form.paymentMethodBrand} onChange={(event) => setForm((current) => ({ ...current, paymentMethodBrand: event.target.value }))} style={inputStyle()} placeholder={form.paymentMethodType === 'ach' ? 'Chase Bank' : 'Visa'} />
+                  <input value={form.paymentMethodBrand} onChange={(event) => setForm((current) => ({ ...current, paymentMethodBrand: event.target.value }))} style={FIELD_INPUT_STYLE} placeholder={form.paymentMethodType === 'ach' ? 'Chase Bank' : 'Visa'} />
                 </div>
                 <div>
                   <label className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ display: 'block', color: 'var(--text-muted)' }}>
@@ -259,7 +247,7 @@ export function AutopayPanel() {
                         ? { ...current, paymentMethodExternalRef: event.target.value }
                         : { ...current, paymentMethodLast4: event.target.value }
                     ))}
-                    style={inputStyle()}
+                    style={FIELD_INPUT_STYLE}
                     placeholder={form.paymentMethodType === 'ach' ? 'bank_12345' : '4242'}
                   />
                 </div>
@@ -271,13 +259,13 @@ export function AutopayPanel() {
                     <label className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ display: 'block', color: 'var(--text-muted)' }}>
                       Expiry month
                     </label>
-                    <input aria-label="09" value={form.paymentMethodExpMonth} onChange={(event) => setForm((current) => ({ ...current, paymentMethodExpMonth: event.target.value }))} style={inputStyle()} placeholder="09" />
+                    <input aria-label="09" value={form.paymentMethodExpMonth} onChange={(event) => setForm((current) => ({ ...current, paymentMethodExpMonth: event.target.value }))} style={FIELD_INPUT_STYLE} placeholder="09" />
                   </div>
                   <div>
                     <label className="u-fs-fs-sm u-ff-font-body u-mb-6px" style={{ display: 'block', color: 'var(--text-muted)' }}>
                       Expiry year
                     </label>
-                    <input aria-label="2028" value={form.paymentMethodExpYear} onChange={(event) => setForm((current) => ({ ...current, paymentMethodExpYear: event.target.value }))} style={inputStyle()} placeholder="2028" />
+                    <input aria-label="2028" value={form.paymentMethodExpYear} onChange={(event) => setForm((current) => ({ ...current, paymentMethodExpYear: event.target.value }))} style={FIELD_INPUT_STYLE} placeholder="2028" />
                   </div>
                 </div>
               ) : null}

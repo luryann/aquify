@@ -42,6 +42,25 @@ jobs:
   server-test:
     name: Server Tests & Lint
     runs-on: ubuntu-latest
+    # A real Postgres so the DB-backed repository, transaction and audit tests
+    # run instead of skipping (they have caught bugs the in-memory tests cannot).
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: aquify_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/aquify_ci?sslmode=disable
+      BILLING_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/aquify_ci?sslmode=disable
     steps:
       - uses: actions/checkout@v6
 
@@ -53,6 +72,10 @@ jobs:
 
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Apply database migrations
+        working-directory: server
+        run: go run github.com/pressly/goose/v3/cmd/goose@v3.24.1 -dir ../db/migrations postgres "$DATABASE_URL" up
 
       - name: Run meetfiles tests
         working-directory: internal/meetfiles
@@ -114,6 +137,10 @@ jobs:
       - name: Lint
         working-directory: admin
         run: npm run lint
+
+      - name: Unit tests
+        working-directory: admin
+        run: npm test
 
       - name: Production build
         working-directory: admin

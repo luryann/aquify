@@ -19,6 +19,10 @@ import (
 
 var ErrObjectNotFound = errors.New("object not found")
 
+// maxGetObjectBytes bounds GetObject, which loads the whole object into memory
+// (reports and exports are small; larger downloads should use a presigned URL).
+const maxGetObjectBytes = 64 << 20
+
 // ObjectStorage is the interface satisfied by both the real MinIO/S3 client and
 // the in-memory stub used in tests and early development.
 type ObjectStorage interface {
@@ -248,7 +252,10 @@ func (s *S3Storage) GetObject(ctx context.Context, key string) ([]byte, string, 
 		return nil, "", fmt.Errorf("stat object %s: %w", key, err)
 	}
 
-	data, err := io.ReadAll(obj)
+	if info.Size > maxGetObjectBytes {
+		return nil, "", fmt.Errorf("object %s is %d bytes, over the %d byte in-memory read limit", key, info.Size, int64(maxGetObjectBytes))
+	}
+	data, err := io.ReadAll(io.LimitReader(obj, maxGetObjectBytes+1))
 	if err != nil {
 		return nil, "", fmt.Errorf("read object %s: %w", key, err)
 	}

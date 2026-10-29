@@ -43,24 +43,15 @@ func (h *AttendanceSummaryHandlers) summary(w http.ResponseWriter, r *http.Reque
 		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient role.", nil)
 		return
 	}
-	sw, allowed, err := householdSwimmer(h.directory, principal, orgID, chi.URLParam(r, "swimmerID"))
-	if err != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to resolve swimmer.", nil)
-		return
-	}
-	if sw.ID == "" {
-		httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Swimmer not found.", nil)
-		return
-	}
-	if !allowed && !hasAnyRole(principal, "admin", "coach") {
-		httpx.WriteError(w, r, http.StatusForbidden, "household_scope_violation", "You can only view attendance for your own household.", nil)
+	sw, ok := readableSwimmer(w, r, h.directory, principal, orgID, "attendance")
+	if !ok {
 		return
 	}
 	days := clampDays(r.URL.Query().Get("days"), attendanceDefaultDays, attendanceMaxDays)
 	from, to, _ := wellness.DateRange(h.today(), days)
 	summary, err := attendance.Summarize(h.source, h.directory, orgID, sw, from, to)
 	if err != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to aggregate attendance.", nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to aggregate attendance.", err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"summary": summary})

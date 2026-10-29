@@ -61,14 +61,6 @@ func (h *AuthHandlers) RegisterProtectedRoutes(router chi.Router) {
 }
 
 func (h *AuthHandlers) OIDCAuthorize(w http.ResponseWriter, r *http.Request) {
-	h.oidcAuthorize(w, r)
-}
-
-func (h *AuthHandlers) OIDCCallback(w http.ResponseWriter, r *http.Request) {
-	h.oidcCallback(w, r)
-}
-
-func (h *AuthHandlers) oidcAuthorize(w http.ResponseWriter, r *http.Request) {
 	loginHint := strings.TrimSpace(r.URL.Query().Get("login_hint"))
 	orgID := strings.TrimSpace(r.URL.Query().Get("org_id"))
 
@@ -99,12 +91,25 @@ func authSessionMetadata(expiresAt any) map[string]any {
 	}
 }
 
+// existingOrNewCSRFToken keeps the caller's CSRF cookie value when present, else mints a token.
+func existingOrNewCSRFToken(w http.ResponseWriter, r *http.Request) (string, bool) {
+	if cookie, err := r.Cookie(appmiddleware.CSRFTokenCookieName); err == nil && strings.TrimSpace(cookie.Value) != "" {
+		return strings.TrimSpace(cookie.Value), true
+	}
+	token, err := appmiddleware.CSRFTokenFactory()
+	if err != nil {
+		writeCSRFGenerationError(w, r, err)
+		return "", false
+	}
+	return token, true
+}
+
 func writeCSRFGenerationError(w http.ResponseWriter, r *http.Request, err error) {
 	slog.Error("csrf: token generation failed", "error", err)
 	httpx.WriteError(w, r, http.StatusInternalServerError, "csrf_generation_failed", "Failed to generate CSRF token.", nil)
 }
 
-func (h *AuthHandlers) oidcCallback(w http.ResponseWriter, r *http.Request) {
+func (h *AuthHandlers) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 	var req oidcCallbackRequest
 	if !h.decodeAndValidate(w, r, &req) {
 		return
@@ -192,9 +197,8 @@ func (h *AuthHandlers) issueSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandlers) currentSession(w http.ResponseWriter, r *http.Request) {
-	principal, ok := appmiddleware.PrincipalFromContext(r.Context())
-	if !ok || principal == nil {
-		httpx.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Authentication context is missing.", nil)
+	principal, ok := requirePrincipal(w, r)
+	if !ok {
 		return
 	}
 
@@ -214,9 +218,8 @@ func (h *AuthHandlers) currentSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandlers) listMFAFactors(w http.ResponseWriter, r *http.Request) {
-	principal, ok := appmiddleware.PrincipalFromContext(r.Context())
-	if !ok || principal == nil {
-		httpx.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Authentication context is missing.", nil)
+	principal, ok := requirePrincipal(w, r)
+	if !ok {
 		return
 	}
 
@@ -274,16 +277,9 @@ func (h *AuthHandlers) refreshSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	csrfCookie, err := r.Cookie(appmiddleware.CSRFTokenCookieName)
-	csrfToken := ""
-	if err == nil && strings.TrimSpace(csrfCookie.Value) != "" {
-		csrfToken = strings.TrimSpace(csrfCookie.Value)
-	} else {
-		csrfToken, err = appmiddleware.CSRFTokenFactory()
-		if err != nil {
-			writeCSRFGenerationError(w, r, err)
-			return
-		}
+	csrfToken, ok := existingOrNewCSRFToken(w, r)
+	if !ok {
+		return
 	}
 	appmiddleware.SetSessionCookies(w, session.AccessToken, session.RefreshToken, csrfToken, session.ExpiresAt)
 
@@ -304,15 +300,9 @@ func (h *AuthHandlers) revokeSession(w http.ResponseWriter, r *http.Request) {
 	// so a defer would silently drop the Set-Cookie headers on every code path.
 	appmiddleware.ClearSessionCookies(w)
 
-	refreshToken := readRefreshToken(r)
-	if refreshToken == "" {
-		// Try to read from body as a fallback (some clients send the token in JSON).
-		var req revokeSessionRequest
-		if err := decodeOptionalJSONBody(w, r, &req); err != nil {
-			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request_body", err.Error(), nil)
-			return
-		}
-		refreshToken = req.RefreshToken
+	refreshToken, ok := refreshTokenFromCookieOrBody(w, r)
+	if !ok {
+		return
 	}
 
 	// Attempt to revoke the server-side session record. Ignore not-found errors:
@@ -329,16 +319,10 @@ func (h *AuthHandlers) logoutSession(w http.ResponseWriter, r *http.Request) {
 	// Clear session cookies FIRST — before any WriteHeader call.
 	appmiddleware.ClearSessionCookies(w)
 
-	refreshToken := readRefreshToken(r)
 	accessToken, _, _ := appmiddleware.ExtractAuthToken(r)
-	if refreshToken == "" {
-		// Try to read from body as a fallback (some clients send the token in JSON).
-		var req revokeSessionRequest
-		if err := decodeOptionalJSONBody(w, r, &req); err != nil {
-			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request_body", err.Error(), nil)
-			return
-		}
-		refreshToken = req.RefreshToken
+	refreshToken, ok := refreshTokenFromCookieOrBody(w, r)
+	if !ok {
+		return
 	}
 
 	result := h.service.LogoutSessionWithAccess(refreshToken, accessToken)
@@ -355,9 +339,8 @@ type enrollMFARequest struct {
 }
 
 func (h *AuthHandlers) enrollMFA(w http.ResponseWriter, r *http.Request) {
-	principal, ok := appmiddleware.PrincipalFromContext(r.Context())
-	if !ok || principal == nil {
-		httpx.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Authentication context is missing.", nil)
+	principal, ok := requirePrincipal(w, r)
+	if !ok {
 		return
 	}
 
@@ -385,9 +368,8 @@ type challengeMFARequest struct {
 }
 
 func (h *AuthHandlers) challengeMFA(w http.ResponseWriter, r *http.Request) {
-	principal, ok := appmiddleware.PrincipalFromContext(r.Context())
-	if !ok || principal == nil {
-		httpx.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Authentication context is missing.", nil)
+	principal, ok := requirePrincipal(w, r)
+	if !ok {
 		return
 	}
 
@@ -411,21 +393,17 @@ func (h *AuthHandlers) challengeMFA(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, authn.ErrUnsupportedMFAFactor):
 			status = http.StatusNotImplemented
 			code = "unsupported_mfa_factor"
+		case errors.Is(err, authn.ErrMFATooManyAttempts):
+			status = http.StatusTooManyRequests
+			code = "mfa_locked"
 		}
 		httpx.WriteError(w, r, status, code, "MFA challenge failed.", nil)
 		return
 	}
 
-	csrfCookie, err := r.Cookie(appmiddleware.CSRFTokenCookieName)
-	csrfToken := ""
-	if err == nil && strings.TrimSpace(csrfCookie.Value) != "" {
-		csrfToken = strings.TrimSpace(csrfCookie.Value)
-	} else {
-		csrfToken, err = appmiddleware.CSRFTokenFactory()
-		if err != nil {
-			writeCSRFGenerationError(w, r, err)
-			return
-		}
+	csrfToken, ok := existingOrNewCSRFToken(w, r)
+	if !ok {
+		return
 	}
 	appmiddleware.SetSessionCookies(w, session.AccessToken, session.RefreshToken, csrfToken, session.ExpiresAt)
 
@@ -488,18 +466,7 @@ func (h *AuthHandlers) assignRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.auditService != nil {
-		_, _ = h.auditService.Append(audit.AppendRequest{
-			OrgID:        orgID,
-			ActorUserID:  principal.UserID,
-			ActorRoles:   principal.Roles,
-			Action:       audit.ActionAuthRoleAssign,
-			ResourceType: "user_role",
-			ResourceID:   req.TargetUserID,
-			After:        assignment,
-			Metadata:     map[string]string{"role": req.Role, "reason": req.Reason},
-		})
-	}
+	recordAudit(h.auditService, principal, orgID, audit.ActionAuthRoleAssign, "user_role", req.TargetUserID, nil, assignment, map[string]string{"role": req.Role, "reason": req.Reason})
 
 	_ = httpx.WriteJSON(w, http.StatusCreated, map[string]any{
 		"status":     "assigned",
@@ -508,13 +475,22 @@ func (h *AuthHandlers) assignRole(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandlers) decodeAndValidate(w http.ResponseWriter, r *http.Request, dst any) bool {
-	return decodeAndValidateJSON(w, r, dst, h.validate, decodeAndValidateOptions{
-		InvalidStatus:     http.StatusBadRequest,
-		InvalidCode:       "invalid_request_body",
-		ValidationStatus:  http.StatusBadRequest,
-		ValidationCode:    "validation_failed",
-		ValidationMessage: "One or more request fields are invalid.",
-	})
+	return decodeAndValidateBadRequest(w, r, dst, h.validate)
+}
+
+// refreshTokenFromCookieOrBody prefers the refresh cookie and falls back to an
+// optional JSON body (some clients send the token there). It answers 400 and
+// returns ok=false when a present body cannot be parsed; a missing token is "".
+func refreshTokenFromCookieOrBody(w http.ResponseWriter, r *http.Request) (string, bool) {
+	if token := readRefreshToken(r); token != "" {
+		return token, true
+	}
+	var req revokeSessionRequest
+	if err := decodeOptionalJSONBody(w, r, &req); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request_body", err.Error(), nil)
+		return "", false
+	}
+	return req.RefreshToken, true
 }
 
 func readRefreshToken(r *http.Request) string {

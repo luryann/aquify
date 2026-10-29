@@ -371,8 +371,6 @@ func (s *Service) SetClock(now func() time.Time) { s.now = now }
 // Now returns the service clock time.
 func (s *Service) Now() time.Time { return s.now() }
 
-func newID() string { return uuid.New().String() }
-
 func copyEvent(e *Event) *Event {
 	cp := *e
 	cp.GroupCodes = append([]string{}, e.GroupCodes...)
@@ -405,7 +403,7 @@ func (s *Service) Create(orgID, actorID string, in EventInput) (*Event, error) {
 		return nil, err
 	}
 	now := s.now()
-	e := &Event{ID: newID(), OrgID: orgID, CreatedAt: now, UpdatedAt: now, CreatedBy: actorID, UpdatedBy: actorID}
+	e := &Event{ID: uuid.NewString(), OrgID: orgID, CreatedAt: now, UpdatedAt: now, CreatedBy: actorID, UpdatedBy: actorID}
 	applyInput(e, in)
 	if s.repo != nil {
 		if err := s.repo.UpsertEvent(context.Background(), e); err != nil {
@@ -638,7 +636,7 @@ func (s *Service) buildRSVP(event *Event, existing *RSVP, othersYes int, in RSVP
 		cp := *existing
 		r = &cp
 	} else {
-		r.ID = newID()
+		r.ID = uuid.NewString()
 		r.OrgID = event.OrgID
 		r.EventID = event.ID
 		r.HouseholdID = in.HouseholdID

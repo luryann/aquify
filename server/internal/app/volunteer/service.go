@@ -370,8 +370,6 @@ func (s *Service) SetReminderSender(fn func(ctx context.Context, email ReminderE
 	s.sendEmail = fn
 }
 
-func newID() string { return uuid.New().String() }
-
 func round2(v float64) float64 { return math.Round(v*100) / 100 }
 
 // ─── Role helpers ─────────────────────────────────────────────────────────────
@@ -604,7 +602,7 @@ func (s *Service) CreateJob(ctx context.Context, p *appmiddleware.Principal, org
 func (s *Service) newJob(p *appmiddleware.Principal, orgID string, in JobInput) *Job {
 	now := s.now()
 	return &Job{
-		ID:                    newID(),
+		ID:                    uuid.NewString(),
 		OrgID:                 orgID,
 		MeetID:                in.MeetID,
 		EventName:             in.EventName,
@@ -1050,7 +1048,7 @@ func (s *Service) SignUp(ctx context.Context, p *appmiddleware.Principal, orgID,
 		}
 	}
 	su := &Signup{
-		ID:            newID(),
+		ID:            uuid.NewString(),
 		OrgID:         orgID,
 		JobID:         jobID,
 		HouseholdID:   householdID,
@@ -1140,8 +1138,8 @@ func (s *Service) Cancel(ctx context.Context, p *appmiddleware.Principal, orgID,
 	su.CancelledAt = &now
 	su.CancelledBy = p.UserID
 	if r := strings.TrimSpace(reason); r != "" {
-		if len(r) > 500 {
-			r = r[:500]
+		if runes := []rune(r); len(runes) > 500 {
+			r = string(runes[:500])
 		}
 		su.Notes = strings.TrimSpace(strings.TrimSpace(su.Notes + "\nCancelled: " + r))
 	}
@@ -1328,7 +1326,7 @@ func (s *Service) UpsertRequirement(ctx context.Context, p *appmiddleware.Princi
 		return nil, invalid("notes", "must be at most 500 characters")
 	}
 	req := &Requirement{
-		ID:                 newID(),
+		ID:                 uuid.NewString(),
 		OrgID:              orgID,
 		SeasonID:           in.SeasonID,
 		HouseholdID:        in.HouseholdID,
@@ -1385,7 +1383,7 @@ func (s *Service) AddCredit(ctx context.Context, p *appmiddleware.Principal, org
 		return nil, invalid("reason", "is required (max 500 characters)")
 	}
 	c := &Credit{
-		ID:          newID(),
+		ID:          uuid.NewString(),
 		OrgID:       orgID,
 		SeasonID:    in.SeasonID,
 		HouseholdID: in.HouseholdID,
@@ -1702,7 +1700,7 @@ func (s *Service) BillBuyout(ctx context.Context, p *appmiddleware.Principal, or
 	}
 	now := s.now()
 	b := &Buyout{
-		ID:               newID(),
+		ID:               uuid.NewString(),
 		OrgID:            orgID,
 		SeasonID:         season.ID,
 		HouseholdID:      hh.ID,

@@ -8,3 +8,14 @@
 .is-31cee2f.is-31cee2f { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 8px; background: transparent; border: none; color: var(--error); font-size: var(--fs-base); cursor: pointer; width: 100%; text-align: left; transition: background 100ms ease; }
 .is-40001e4.is-40001e4 { display: flex; align-items: center; justify-content: space-between; padding: 0 8px 16px; }
 .is-32bee05.is-32bee05 { display: flex; flex-direction: column; gap: 2px; }
+.hv-46c633.hv-46c633:hover { background: var(--error-bg); }
+
+.sn-link { padding: 6px 12px; border-radius: 8px; font-size: var(--fs-base); font-weight: 400; color: var(--text-subtle); background: transparent; text-decoration: none; white-space: nowrap; transition: background 120ms ease, color 120ms ease; }
+.sn-link:not([data-active]):hover { background: rgba(0,212,170,0.06); color: var(--text); }
+.sn-link[data-active] { font-weight: 600; color: var(--accent); background: rgba(0,212,170,0.10); }
+.sn-link--drawer { padding: 12px; font-size: var(--fs-md); white-space: normal; }
+
+.sn-user-trigger { display: flex; align-items: center; gap: 8px; padding: 4px 12px 4px 4px; background: transparent; border: 1px solid var(--border); border-radius: 999px; cursor: pointer; transition: border-color 120ms ease, background 120ms ease; }
+.sn-user-trigger:hover { background: rgba(0,212,170,0.06); border-color: var(--accent-border); }
+.sn-menu-link { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 8px; text-decoration: none; color: var(--text); font-size: var(--fs-base); transition: background 100ms ease; }
+.sn-menu-link:hover { background: rgba(0,212,170,0.08); }

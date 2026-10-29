@@ -13,15 +13,7 @@ import {
   type SwimmerRecord,
 } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
-
-function formatSwimTime(milliseconds?: number | null) {
-  if (milliseconds == null) return 'NT'
-  const totalSeconds = milliseconds / 1000
-  if (totalSeconds < 60) return totalSeconds.toFixed(2)
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = (totalSeconds % 60).toFixed(2).padStart(5, '0')
-  return `${minutes}:${seconds}`
-}
+import { formatSwimTime } from '@/lib/performanceData'
 
 function eventKeyFor(record: ProgressionResultRecord): string {
   return `${record.distance} ${record.stroke} ${record.course}`

@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dareaquatics/aquify/server/internal/app/audit"
 	"github.com/dareaquatics/aquify/server/internal/app/comms"
 	"github.com/dareaquatics/aquify/server/internal/app/httpx"
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
@@ -78,20 +77,7 @@ func writePerfExtError(w http.ResponseWriter, r *http.Request, err error) {
 }
 
 func (h *PerformanceHandlers) audit(principal *appmiddleware.Principal, orgID, action, resourceType, resourceID string, before, after any, meta map[string]string) {
-	if h.auditService == nil || principal == nil {
-		return
-	}
-	_, _ = h.auditService.Append(audit.AppendRequest{
-		OrgID:        orgID,
-		ActorUserID:  principal.UserID,
-		ActorRoles:   principal.Roles,
-		Action:       action,
-		ResourceType: resourceType,
-		ResourceID:   resourceID,
-		Before:       before,
-		After:        after,
-		Metadata:     meta,
-	})
+	recordAudit(h.auditService, principal, orgID, action, resourceType, resourceID, before, after, meta)
 }
 
 func queryInt(r *http.Request, name string) int {
@@ -105,7 +91,7 @@ func queryInt(r *http.Request, name string) int {
 // ─── Records ─────────────────────────────────────────────────────────────────
 
 func (h *PerformanceHandlers) listRecords(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := perfScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -129,7 +115,7 @@ func (h *PerformanceHandlers) listRecords(w http.ResponseWriter, r *http.Request
 }
 
 func (h *PerformanceHandlers) getRecordHistory(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := perfScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -149,7 +135,7 @@ func (h *PerformanceHandlers) getRecordHistory(w http.ResponseWriter, r *http.Re
 }
 
 func (h *PerformanceHandlers) listPendingRecords(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := perfScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -179,7 +165,7 @@ type createManualRecordBody struct {
 }
 
 func (h *PerformanceHandlers) createManualRecord(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := perfScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -207,7 +193,7 @@ type updateRecordEntryBody struct {
 }
 
 func (h *PerformanceHandlers) updateRecordEntry(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := perfScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -230,7 +216,7 @@ type decideRecordBody struct {
 }
 
 func (h *PerformanceHandlers) decideRecord(w http.ResponseWriter, r *http.Request, approve bool) {
-	principal, orgID, ok := perfScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -262,7 +248,7 @@ func (h *PerformanceHandlers) rejectRecordEntry(w http.ResponseWriter, r *http.R
 }
 
 func (h *PerformanceHandlers) deleteRecordEntry(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := perfScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -277,7 +263,7 @@ func (h *PerformanceHandlers) deleteRecordEntry(w http.ResponseWriter, r *http.R
 }
 
 func (h *PerformanceHandlers) rebuildRecords(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := perfScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -294,7 +280,7 @@ func (h *PerformanceHandlers) rebuildRecords(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *PerformanceHandlers) draftRecordAnnouncement(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := perfScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -308,14 +294,14 @@ func (h *PerformanceHandlers) draftRecordAnnouncement(w http.ResponseWriter, r *
 		writePerfExtError(w, r, err)
 		return
 	}
-	if len(title) > 255 {
-		title = title[:255]
+	if r := []rune(title); len(r) > 255 {
+		title = string(r[:255]) // by rune so a multi-byte name is never cut mid-character
 	}
 	announcement, err := h.commsService.CreateAnnouncement(comms.CreateAnnouncementInput{
 		OrgID: orgID, Title: title, Body: body, Audience: "all", CreatedBy: principal.UserID,
 	})
 	if err != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "announcement_failed", err.Error(), nil)
+		httpx.WriteError(w, r, http.StatusInternalServerError, "announcement_failed", "An internal error occurred.", err)
 		return
 	}
 	h.audit(principal, orgID, "performance.team_record.announcement_drafted", "announcement", announcement.ID, nil, announcement, map[string]string{"record_entry_id": entryID})
@@ -325,7 +311,7 @@ func (h *PerformanceHandlers) draftRecordAnnouncement(w http.ResponseWriter, r *
 // ─── Top times ───────────────────────────────────────────────────────────────
 
 func (h *PerformanceHandlers) listTopTimes(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := perfScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -350,7 +336,7 @@ func (h *PerformanceHandlers) listTopTimes(w http.ResponseWriter, r *http.Reques
 // ─── Goals ───────────────────────────────────────────────────────────────────
 
 func (h *PerformanceHandlers) listOrgGoals(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := perfScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -364,7 +350,7 @@ func (h *PerformanceHandlers) listOrgGoals(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *PerformanceHandlers) listGoals(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := perfScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -388,7 +374,7 @@ type createGoalBody struct {
 }
 
 func (h *PerformanceHandlers) createGoal(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := perfScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -414,7 +400,7 @@ type updateGoalBody struct {
 }
 
 func (h *PerformanceHandlers) updateGoal(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := perfScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -433,7 +419,7 @@ func (h *PerformanceHandlers) updateGoal(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *PerformanceHandlers) deleteGoal(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := perfScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -470,7 +456,7 @@ type optimizeRelayBody struct {
 }
 
 func (h *PerformanceHandlers) optimizeRelay(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := perfScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -495,7 +481,7 @@ func (h *PerformanceHandlers) optimizeRelay(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *PerformanceHandlers) listRelayLineups(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := perfScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -521,7 +507,7 @@ type relayLineupBody struct {
 }
 
 func (h *PerformanceHandlers) saveRelayLineup(w http.ResponseWriter, r *http.Request, lineupID string) {
-	principal, orgID, ok := perfScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -551,7 +537,7 @@ func (h *PerformanceHandlers) replaceRelayLineup(w http.ResponseWriter, r *http.
 }
 
 func (h *PerformanceHandlers) deleteRelayLineup(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := perfScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -567,7 +553,7 @@ func (h *PerformanceHandlers) deleteRelayLineup(w http.ResponseWriter, r *http.R
 // ─── Progress report ─────────────────────────────────────────────────────────
 
 func (h *PerformanceHandlers) progressReport(w http.ResponseWriter, r *http.Request) {
-	principal, orgID, ok := perfScopeFromRequest(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
