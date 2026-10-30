@@ -84,8 +84,6 @@ func PrincipalFromContext(ctx context.Context) (*Principal, bool) {
 	return principal, ok
 }
 
-// HasAnyRole reports whether the principal holds at least one of the required
-// roles (exact match). A nil principal holds no roles.
 // IsParentOnly reports whether the principal is a parent with no staff role,
 // so household scoping applies.
 func IsParentOnly(principal *Principal) bool {
@@ -98,6 +96,8 @@ func IsSwimmerOnly(principal *Principal) bool {
 	return HasAnyRole(principal, "swimmer") && !HasAnyRole(principal, "admin", "coach", "parent")
 }
 
+// HasAnyRole reports whether the principal holds at least one of the required
+// roles (exact match). A nil principal holds no roles.
 func HasAnyRole(principal *Principal, required ...string) bool {
 	if principal == nil {
 		return false

@@ -62,6 +62,10 @@ export type BillingSettings = {
   auto_run_day: number
   auto_run_invoice_status: 'draft' | 'issued'
   auto_run_due_days: number
+  meet_fee_per_event_cents: number
+  meet_fee_flat_cents: number
+  meet_fee_invoice_status: 'draft' | 'issued'
+  meet_fee_due_days: number
 }
 
 export type RunInput = {

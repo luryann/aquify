@@ -16,6 +16,7 @@ import {
 import { ROLE_HIERARCHY, highestRoleTier, type Role } from '@/lib/roles'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { ROLE_COLORS, ROLE_OPTIONS } from '@/lib/user-roles'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 function RoleBadge({ role }: { role: string }) {
   const c = ROLE_COLORS[role] ?? { bg: 'var(--bg-elevated)', color: 'var(--text-subtle)' }
@@ -284,7 +285,7 @@ export function UsersPanel() {
       {loading ? (
         <div className="card u-p-48px u-fs-fs-base" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
           <Icon name="loader" size={20} style={{ marginBottom: '12px', opacity: 0.5 }} />
-          <div>Loading users…</div>
+          <PageSkeleton variant="table" noHeader rows={4} />
         </div>
       ) : error ? (
         <div className="card u-p-32px u-fs-fs-base" style={{ textAlign: 'center', color: 'var(--error)' }}>

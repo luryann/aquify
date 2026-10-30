@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/dareaquatics/aquify/meetfiles"
 )
@@ -51,7 +52,20 @@ func field(line string, start, length int) string {
 	if end > len(line) {
 		end = len(line)
 	}
-	return strings.TrimSpace(line[begin:end])
+	// Columns are byte offsets; keep the slice on rune boundaries so a
+	// multi-byte name that straddles a field edge isn't split into invalid
+	// UTF-8.
+	for begin < end && !utf8.RuneStart(line[begin]) {
+		begin++
+	}
+	if end < len(line) {
+		for end > begin && !utf8.RuneStart(line[end]) {
+			end--
+		}
+	}
+	// A rune cut by the record itself (e.g. a writer that truncated bytes)
+	// is dropped rather than propagated as invalid UTF-8.
+	return strings.TrimSpace(strings.ToValidUTF8(line[begin:end], ""))
 }
 
 // ─── Code table decoders ─────────────────────────────────────────────────────
@@ -131,8 +145,7 @@ func parseTime(raw string) meetfiles.Time {
 		return meetfiles.Time{Raw: s, Valid: false}
 	}
 
-	// Expect mm:ss.hh  (total 8 chars, but may be shorter for sub-minute times)
-	// Normalise: strip leading zeros to get canonical form.
+	// Expect mm:ss.hh  (total 8 chars, but may be shorter for sub-minute times).
 	secs, err := parseTimeString(s)
 	if err != nil {
 		return meetfiles.Time{Raw: s, Valid: false}
@@ -140,23 +153,28 @@ func parseTime(raw string) meetfiles.Time {
 	return meetfiles.Time{Raw: s, Valid: true, Seconds: secs}
 }
 
-// parseTimeString converts "mm:ss.hh" or "ss.hh" to total seconds.
+// parseTimeString converts "mm:ss.hh" or "ss.hh" to total seconds.  Only
+// digits, one optional minutes separator and a decimal point are accepted;
+// strconv.ParseFloat alone would also take "NaN", "Inf", "-5" and "1e3".
 func parseTimeString(s string) (float64, error) {
-	var minutes, seconds float64
+	var minutes int
 	if idx := strings.Index(s, ":"); idx >= 0 {
-		m, err := strconv.ParseFloat(strings.TrimSpace(s[:idx]), 64)
-		if err != nil {
-			return 0, fmt.Errorf("invalid minutes in %q: %w", s, err)
+		m, err := strconv.Atoi(strings.TrimSpace(s[:idx]))
+		if err != nil || m < 0 || strings.ContainsAny(s[:idx], "+-") {
+			return 0, fmt.Errorf("invalid minutes in %q", s)
 		}
 		minutes = m
 		s = s[idx+1:]
 	}
-	sec, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	s = strings.TrimSpace(s)
+	if s == "" || strings.Trim(s, "0123456789.") != "" {
+		return 0, fmt.Errorf("invalid seconds in %q", s)
+	}
+	sec, err := strconv.ParseFloat(s, 64)
 	if err != nil {
 		return 0, fmt.Errorf("invalid seconds in %q: %w", s, err)
 	}
-	seconds = sec
-	return minutes*60 + seconds, nil
+	return float64(minutes)*60 + sec, nil
 }
 
 // ─── Name parser ─────────────────────────────────────────────────────────────
@@ -169,8 +187,7 @@ func parseName(raw string) (last, first string) {
 		return s, ""
 	}
 	last = strings.TrimSpace(s[:idx])
-	// remainder is "First M" — first name is everything before the last space
-	// if there's an initial; for now keep the full remainder as first name.
+	// remainder is "First M"; the middle initial is kept as part of first name.
 	first = strings.TrimSpace(s[idx+1:])
 	return last, first
 }
@@ -204,8 +221,7 @@ func ParseD0(line string, lineNumber int) (meetfiles.ParsedIndividualResult, err
 	dob := parseDate(field(line, 56, 8))
 	gender := field(line, 66, 1)
 	eventGender := field(line, 67, 1)
-	distanceStr := field(line, 68, 4)
-	distance := parseInt(distanceStr)
+	distance := parseInt(field(line, 68, 4))
 	strokeCode := field(line, 72, 1)
 	eventNumber := field(line, 73, 4)
 	ageGroup := field(line, 77, 4)
@@ -281,8 +297,14 @@ func ParseE0(line string, lineNumber int) meetfiles.ParsedRelayResult {
 	eventNumber := field(line, 27, 4)
 	ageGroup := field(line, 31, 4)
 	seedTimeRaw := field(line, 46, 8)
+	seedCourseCode := field(line, 54, 1)
 	finalsTimeRaw := field(line, 73, 8)
+	finalsCourseCode := field(line, 81, 1)
 	teamCode := field(line, 13, 6)
+	courseCode := finalsCourseCode
+	if courseCode == "" {
+		courseCode = seedCourseCode
+	}
 
 	return meetfiles.ParsedRelayResult{
 		LineNumber: lineNumber,
@@ -293,6 +315,7 @@ func ParseE0(line string, lineNumber int) meetfiles.ParsedRelayResult {
 			Stroke:      decodeStroke(strokeCode),
 			EventGender: eventGender,
 			AgeGroup:    ageGroup,
+			Course:      decodeCourse(courseCode),
 		},
 		SeedTime:   parseTime(seedTimeRaw),
 		FinalsTime: parseTime(finalsTimeRaw),
@@ -307,13 +330,8 @@ func ParseF0(line string, lineNumber int) meetfiles.ParsedRelayLeg {
 	ussNum := field(line, 51, 12)
 	dob := parseDate(field(line, 66, 8))
 	gender := field(line, 76, 1)
-	legOrderStr := field(line, 79, 1) // finals leg position
+	legOrder := parseInt(field(line, 79, 1)) // finals leg position
 	legTimeRaw := field(line, 80, 8)
-
-	legOrder := 0
-	if n, err := strconv.Atoi(legOrderStr); err == nil {
-		legOrder = n
-	}
 
 	return meetfiles.ParsedRelayLeg{
 		LineNumber: lineNumber,

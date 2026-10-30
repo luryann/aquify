@@ -16,6 +16,7 @@ import {
 } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { formatDateTime } from '@/lib/dates'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 type ReportKey = 'membership-status' | 'meet-fees' | 'invoice-aging' | 'payment-reconciliation' | 'registration-status'
 
@@ -149,7 +150,7 @@ export default function ReportsPage() {
       ) : null}
 
       {loading ? (
-        <EmptyState icon="bar-chart-2" title="Loading reports" description="Fetching the latest report summaries." />
+        <PageSkeleton variant="table" noHeader rows={4} />
       ) : summaries.length === 0 ? (
         <EmptyState icon="bar-chart-2" title="No reports available" description="No report data is available for this organization yet." />
       ) : (

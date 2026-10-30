@@ -3,6 +3,7 @@ package sdif_test
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/dareaquatics/aquify/meetfiles"
 	"github.com/dareaquatics/aquify/meetfiles/sdif"
@@ -411,5 +412,73 @@ func TestParse_EmptyFile(t *testing.T) {
 	}
 	if len(result.ParseErrors) != 0 {
 		t.Errorf("expected 0 errors for empty file, got %+v", result.ParseErrors)
+	}
+}
+
+// ─── Non-numeric time fields ──────────────────────────────────────────────────
+
+func TestParse_NonNumericTimesAreInvalid(t *testing.T) {
+	for _, raw := range []string{"NaN     ", "Inf     ", "-5.00   ", "1e2     ", "1:xx.00 ", "-1:00.00"} {
+		d0 := makeD0("Poe, Ed", "", "01012005", "20", "M", "M", "0100", "1", "0001", "OPEN",
+			"03152026", raw, "2", raw, "2", " 1", " 1", "  1")
+		result, err := sdif.Parse([]byte(crlf(makeA0()) + crlf(d0)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(result.IndividualResults) != 1 {
+			t.Fatalf("%q: got %d results", raw, len(result.IndividualResults))
+		}
+		if ft := result.IndividualResults[0].FinalsTime; ft.Valid {
+			t.Errorf("%q: FinalsTime.Valid = true (%v s); want false", raw, ft.Seconds)
+		}
+	}
+}
+
+// ─── Review-pass regressions ─────────────────────────────────────────────────
+
+func TestParse_RelayEventCourse(t *testing.T) {
+	data := makeA0() + "\r\n" + makeB1() + "\r\n" + makeC1() + "\r\n" +
+		makeE0("TESTA", "X", "0200", "7", "0010", "OPEN", "1:55.34 ") + "\r\n" + makeZ0() + "\r\n"
+	res, err := sdif.Parse([]byte(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.RelayResults) != 1 {
+		t.Fatalf("relays = %d", len(res.RelayResults))
+	}
+	if got := res.RelayResults[0].Event.Course; got != meetfiles.CourseShortCourseYards {
+		t.Fatalf("relay course = %q, want SCY", got)
+	}
+}
+
+func TestParse_CROnlyAndLongLines(t *testing.T) {
+	data := makeA0() + "\r" + makeB1() + "\r" +
+		makeD0("Doe, Jane", "123456789ABC", "01012010", "16", "F", "F", "0100", "1", "0005", "1517", "03152026", "NT", "2", "55.00", "2", "1", "1", "1") + "\r" + makeZ0() + "\r"
+	res, err := sdif.Parse([]byte(data))
+	if err != nil {
+		t.Fatalf("CR-only file errored: %v", err)
+	}
+	if len(res.IndividualResults) != 1 {
+		t.Fatalf("results = %d, want 1", len(res.IndividualResults))
+	}
+	// A >64KB junk line must not abort the parse.
+	long := strings.Repeat("X", 200_000)
+	if _, err := sdif.Parse([]byte(makeA0() + "\n" + long + "\n" + makeZ0() + "\n")); err != nil {
+		t.Fatalf("long line errored: %v", err)
+	}
+}
+
+func TestParse_NonASCIINameNotSplit(t *testing.T) {
+	// 28-byte name field; the last rune straddles the field boundary.
+	name := strings.Repeat("A", 27) + "é" + ", X"
+	line := makeD0(name, "123456789ABC", "01012010", "16", "F", "F", "0100", "1", "0005", "1517", "03152026", "NT", "2", "55.00", "2", "1", "1", "1")
+	res, err := sdif.Parse([]byte(line + "\r\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range res.IndividualResults {
+		if !utf8.ValidString(r.Swimmer.LastName) || !utf8.ValidString(r.Swimmer.FirstName) {
+			t.Fatalf("invalid UTF-8 name: %q / %q", r.Swimmer.LastName, r.Swimmer.FirstName)
+		}
 	}
 }

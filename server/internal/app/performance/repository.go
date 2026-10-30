@@ -7,6 +7,7 @@ import (
 
 	"github.com/dareaquatics/aquify/server/internal/dbutil"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -67,6 +68,13 @@ func (r *Repository) UpsertResult(ctx context.Context, res *Result) error {
 		res.CreatedAt, res.UpdatedAt,
 		res.MeetEventID, dbutil.NullableString(res.EventNumber), seedTimeMs,
 	)
+	return err
+}
+
+// DeleteResult hard-deletes a result (splits cascade). It compensates a
+// partially failed UpsertResultWithRecords.
+func (r *Repository) DeleteResult(ctx context.Context, orgID, id string) error {
+	_, err := r.pool.Exec(ctx, `DELETE FROM results WHERE id = $1::uuid AND org_id = $2`, id, orgID)
 	return err
 }
 
@@ -183,6 +191,29 @@ func (r *Repository) LoadBestTimes(ctx context.Context) ([]*BestTime, error) {
 // ─── Time Standards ───────────────────────────────────────────────────────────
 
 func (r *Repository) UpsertTimeStandard(ctx context.Context, ts *TimeStandard) error {
+	return r.upsertTimeStandard(ctx, r.pool, ts)
+}
+
+// UpsertTimeStandardsTx writes all standards in a single transaction.
+func (r *Repository) UpsertTimeStandardsTx(ctx context.Context, list []*TimeStandard) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	for _, ts := range list {
+		if err := r.upsertTimeStandard(ctx, tx, ts); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+type pgExecer interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+}
+
+func (r *Repository) upsertTimeStandard(ctx context.Context, db pgExecer, ts *TimeStandard) error {
 	var ageMin, ageMax interface{}
 	if ts.AgeMin != nil {
 		ageMin = *ts.AgeMin
@@ -190,7 +221,7 @@ func (r *Repository) UpsertTimeStandard(ctx context.Context, ts *TimeStandard) e
 	if ts.AgeMax != nil {
 		ageMax = *ts.AgeMax
 	}
-	_, err := r.pool.Exec(ctx, `
+	_, err := db.Exec(ctx, `
 		INSERT INTO time_standards (id, org_id, name, standard_code, description, gender, age_min, age_max,
 		                            event_distance, stroke, course, time_ms, season_year, is_active, created_at, updated_at)
 		VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)

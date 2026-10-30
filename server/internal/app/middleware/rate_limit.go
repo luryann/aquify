@@ -161,7 +161,7 @@ func (rl *rateLimiter) resolveClientAddress(r *http.Request) string {
 	remoteHost := remoteIP(r.RemoteAddr)
 
 	if rl.peerTrusted(r) {
-		if forwarded := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0]); forwarded != "" {
+		if forwarded := rl.forwardedClient(r); forwarded != "" {
 			return forwarded
 		}
 	}
@@ -173,6 +173,31 @@ func (rl *rateLimiter) resolveClientAddress(r *http.Request) string {
 		return strings.TrimSpace(r.RemoteAddr)
 	}
 	return "unknown"
+}
+
+// forwardedClient picks the client from X-Forwarded-For by walking the chain
+// from the right and skipping trusted proxies. Proxies append the address they
+// received the request from, so the leftmost entries are client-supplied and
+// spoofable; the first untrusted hop from the right is the real client. When
+// every hop is trusted the leftmost is returned. Returns "" without the header.
+func (rl *rateLimiter) forwardedClient(r *http.Request) string {
+	var hops []string
+	for _, line := range r.Header.Values("X-Forwarded-For") {
+		for _, hop := range strings.Split(line, ",") {
+			if hop = strings.TrimSpace(hop); hop != "" {
+				hops = append(hops, hop)
+			}
+		}
+	}
+	for i := len(hops) - 1; i >= 0; i-- {
+		if !isTrustedIP(hops[i], rl.trustedNets) {
+			return hops[i]
+		}
+	}
+	if len(hops) > 0 {
+		return hops[0]
+	}
+	return ""
 }
 
 // remoteIP extracts the IP portion from an addr of the form "host:port" or

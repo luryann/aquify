@@ -1,6 +1,7 @@
 package attendance
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/dareaquatics/aquify/server/internal/app/roster"
@@ -54,5 +55,13 @@ func TestSummarize(t *testing.T) {
 	empty, _ := Summarize(fakeSource{}, dir, "org", sw, "2026-09-15", "2026-10-15")
 	if empty.AttendancePct != nil || len(empty.Recent) != 0 {
 		t.Fatalf("expected nil pct with no practices: %+v", empty)
+	}
+}
+
+func TestSummarizeRejectsBadRange(t *testing.T) {
+	for _, c := range [][2]string{{"", ""}, {"2026-01-01", ""}, {"nope", "2026-01-02"}, {"2026-02-01", "2026-01-01"}} {
+		if _, err := Summarize(nil, nil, "org", roster.Swimmer{}, c[0], c[1]); !errors.Is(err, ErrInvalidRange) {
+			t.Fatalf("range %v: err = %v", c, err)
+		}
 	}
 }

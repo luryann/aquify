@@ -124,3 +124,18 @@ func TestPracticeAttendanceUpsertsPerSwimmer(t *testing.T) {
 		t.Fatalf("cross-org attendance: want ErrNotFound, got %v", err)
 	}
 }
+
+func TestPracticeDateValidated(t *testing.T) {
+	svc := NewService()
+	if _, err := svc.Create("org-a", "07/02/2026", "g", "water", "x", 0, nil, PracticeStrokes{}, "", "c"); !errors.Is(err, ErrInvalidDate) {
+		t.Fatalf("Create bad date: %v", err)
+	}
+	p, err := svc.Create("org-a", "2026-07-02", "g", "water", "x", 0, nil, PracticeStrokes{}, "", "c")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bad := "tomorrow"
+	if _, err := svc.Update("org-a", p.ID, PracticeUpdates{Date: &bad}, "c"); !errors.Is(err, ErrInvalidDate) {
+		t.Fatalf("Update bad date: %v", err)
+	}
+}

@@ -3,9 +3,8 @@ package middleware
 import (
 	"log/slog"
 	"net/http"
-	"time"
-
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"

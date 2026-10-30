@@ -6,6 +6,8 @@ import { Icon } from '@/components/ui/icons'
 import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
 import { PublicSitePanel } from './PublicSitePanel'
+import { IntegrationsPanel } from './IntegrationsPanel'
+import { SwimmerSignInPanel } from './SwimmerSignInPanel'
 import { fetchOrgSettings, updateOrgSettings, type OrgSettingsRecord } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 
@@ -145,7 +147,11 @@ export default function SettingsPage() {
         </form>
       </div>
 
+      <SwimmerSignInPanel canEdit={canEditTeam} />
+
       <PublicSitePanel canEdit={canEditTeam} />
+
+      <IntegrationsPanel canEdit={canEditTeam} />
 
       {canEditTeam ? (
         <Link

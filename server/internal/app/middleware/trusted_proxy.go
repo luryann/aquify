@@ -24,7 +24,7 @@ func TrustedProxy(trustedProxyCIDRs []string) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			info := clientInfo{ip: rl.resolveClientAddress(r), secure: r.TLS != nil}
 			if !info.secure && rl.peerTrusted(r) {
-				info.secure = strings.EqualFold(strings.TrimSpace(firstForwarded(r.Header.Get("X-Forwarded-Proto"))), "https")
+				info.secure = strings.EqualFold(strings.TrimSpace(lastForwarded(r.Header.Values("X-Forwarded-Proto"))), "https")
 			}
 			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), clientInfoKey{}, info)))
 		})
@@ -50,6 +50,18 @@ func RequestIsSecure(r *http.Request) bool {
 	return r.TLS != nil
 }
 
-func firstForwarded(v string) string {
-	return strings.Split(v, ",")[0]
+// lastForwarded returns the rightmost non-empty entry across the header lines.
+// A proxy appends what it observed, so the leftmost entries are client-supplied
+// and spoofable; the rightmost one was written by the nearest (trusted) proxy,
+// the same rule forwardedClient applies to X-Forwarded-For.
+func lastForwarded(lines []string) string {
+	last := ""
+	for _, line := range lines {
+		for _, v := range strings.Split(line, ",") {
+			if v = strings.TrimSpace(v); v != "" {
+				last = v
+			}
+		}
+	}
+	return last
 }

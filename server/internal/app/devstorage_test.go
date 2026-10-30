@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -53,5 +54,28 @@ func TestDevStorageHandlerServesPresignedStubURLs(t *testing.T) {
 	router.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, expired, nil))
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("expired GET: want 403, got %d", rr.Code)
+	}
+}
+
+type failingReader struct{}
+
+func (failingReader) Read([]byte) (int, error) { return 0, errors.New("connection reset") }
+
+func TestDevStorageDistinguishesReadErrorFromTooLarge(t *testing.T) {
+	store := storage.NewStubStorage(devStoragePath)
+	router := chi.NewRouter()
+	router.Handle(devStoragePath+"/*", devStorageHandler(store))
+	putURL, _ := store.PresignedPutURL("docs/x.bin", time.Minute)
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodPut, putURL, failingReader{}))
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("read error: want 400, got %d", rr.Code)
+	}
+
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodPut, putURL, bytes.NewReader(make([]byte, maxDevStorageObjectBytes+1))))
+	if rr.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversize: want 413, got %d", rr.Code)
 	}
 }

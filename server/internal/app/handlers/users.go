@@ -360,10 +360,14 @@ func (h *UserHandlers) assignInitialRole(ctx context.Context, principal *appmidd
 	}
 }
 
-func writeUserCreated(w http.ResponseWriter, userID, householdID string) {
+func writeUserCreated(w http.ResponseWriter, userID, householdID string, householdFailed bool) {
 	resp := map[string]any{"status": "created", "user_id": userID}
 	if householdID != "" {
 		resp["household_id"] = householdID
+	}
+	if householdFailed {
+		resp["household_created"] = false
+		resp["warning"] = "User was created but the linked household could not be created."
 	}
 	_ = httpx.WriteJSON(w, http.StatusCreated, resp)
 }
@@ -399,48 +403,109 @@ func (h *UserHandlers) listUsers(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	search := strings.TrimSpace(q.Get("search"))
 	pagination := parseListPagination(r, listPaginationOptions{DefaultLimit: 50})
-
-	users, err := h.kc.ListUsers(r.Context(), orgID, search, pagination.Limit, pagination.Offset)
-	if err != nil {
-		writeKeycloakAdminError(w, r, err, "Failed to list users.")
-		return
-	}
-
 	roleFilter := normalizeUserRole(q.Get("role"))
+	statusFilter := strings.ToLower(strings.TrimSpace(q.Get("status")))
 
-	source := keycloakSource(h.kc)
-	listItems := make([]userListItem, 0, len(users))
-	for _, u := range users {
-		realmRoles, err := h.kc.GetUserRealmRoles(r.Context(), u.ID)
+	var (
+		users     []keycloak.User
+		total     int
+		roleCache map[string][]string
+	)
+	if roleFilter == "" && statusFilter == "" {
+		// No post-filters: Keycloak can paginate directly.
+		var err error
+		users, err = h.kc.ListUsers(r.Context(), orgID, search, pagination.Limit, pagination.Offset)
 		if err != nil {
-			// Do not render a lookup failure as "no roles": the role filter
-			// would silently drop the user from results.
-			writeKeycloakAdminError(w, r, err, "Failed to load user roles.")
+			writeKeycloakAdminError(w, r, err, "Failed to list users.")
 			return
 		}
-		normalizedRoles := normalizeRealmRoles(realmRoles)
-		if roleFilter != "" && !slices.Contains(normalizedRoles, roleFilter) {
-			continue
+		total = pagination.Offset + len(users)
+	} else {
+		// Role/status are applied here, so they must run over the whole result
+		// set before slicing a page; otherwise each page is filtered on its own
+		// and counts/offsets are wrong.
+		all, err := h.listAllUsers(r.Context(), orgID, search)
+		if err != nil {
+			writeKeycloakAdminError(w, r, err, "Failed to list users.")
+			return
 		}
-		listItems = append(listItems, buildUserListItem(u, normalizedRoles))
+		if statusFilter != "" {
+			all = slices.DeleteFunc(all, func(u keycloak.User) bool {
+				return !userMatchesStatus(buildUserListItem(u, nil), statusFilter)
+			})
+		}
+		if roleFilter != "" {
+			roleCache = map[string][]string{}
+			kept := make([]keycloak.User, 0, len(all))
+			for _, u := range all {
+				realmRoles, rerr := h.kc.GetUserRealmRoles(r.Context(), u.ID)
+				if rerr != nil {
+					// Do not render a lookup failure as "no roles".
+					writeKeycloakAdminError(w, r, rerr, "Failed to load user roles.")
+					return
+				}
+				norm := normalizeRealmRoles(realmRoles)
+				roleCache[u.ID] = norm
+				if slices.Contains(norm, roleFilter) {
+					kept = append(kept, u)
+				}
+			}
+			all = kept
+		}
+		users, total = paginateSlice(all, pagination)
 	}
 
-	if statusFilter := strings.ToLower(strings.TrimSpace(q.Get("status"))); statusFilter != "" {
-		listItems = slices.DeleteFunc(listItems, func(u userListItem) bool { return !userMatchesStatus(u, statusFilter) })
+	listItems, err := h.buildUserListItems(r.Context(), users, roleCache)
+	if err != nil {
+		writeKeycloakAdminError(w, r, err, "Failed to load user roles.")
+		return
 	}
+	h.writeUserList(w, keycloakSource(h.kc), listItems, total, pagination)
+}
 
-	if listItems == nil {
-		listItems = []userListItem{}
+// listAllUsers pages ListUsers to exhaustion.
+func (h *UserHandlers) listAllUsers(ctx context.Context, orgID, search string) ([]keycloak.User, error) {
+	const page = 200
+	var out []keycloak.User
+	for offset := 0; ; offset += page {
+		batch, err := h.kc.ListUsers(ctx, orgID, search, page, offset)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, batch...)
+		if len(batch) < page {
+			return out, nil
+		}
 	}
+}
 
+// buildUserListItems attaches normalized roles, using cached role lookups when given.
+func (h *UserHandlers) buildUserListItems(ctx context.Context, users []keycloak.User, cache map[string][]string) ([]userListItem, error) {
+	items := make([]userListItem, 0, len(users))
+	for _, u := range users {
+		roles, ok := cache[u.ID]
+		if !ok {
+			realmRoles, err := h.kc.GetUserRealmRoles(ctx, u.ID)
+			if err != nil {
+				return nil, err
+			}
+			roles = normalizeRealmRoles(realmRoles)
+		}
+		items = append(items, buildUserListItem(u, roles))
+	}
+	return items, nil
+}
+
+func (h *UserHandlers) writeUserList(w http.ResponseWriter, source string, items []userListItem, total int, pagination listPagination) {
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":     "ok",
-		"count":      len(listItems),
+		"count":      len(items),
+		"total":      total,
 		"limit":      pagination.Limit,
 		"offset":     pagination.Offset,
 		"source":     source,
 		"is_stubbed": source == "stub",
-		"users":      listItems,
+		"users":      items,
 	})
 }
 
@@ -491,7 +556,9 @@ func (h *UserHandlers) getUser(w http.ResponseWriter, r *http.Request) {
 
 	roles, err := h.kc.GetUserRealmRoles(r.Context(), userID)
 	if err != nil {
-		roles = []keycloak.Role{}
+		// Do not render a lookup failure as "no roles".
+		writeKeycloakAdminError(w, r, err, "Failed to load user roles.")
+		return
 	}
 
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
@@ -670,9 +737,19 @@ func (h *UserHandlers) createUser(w http.ResponseWriter, r *http.Request) {
 
 	// Auto-create a linked household if requested.
 	var householdID string
+	householdFailed := false
 	if req.CreateHousehold && h.membershipService != nil {
 		hh, hhErr := h.createLinkedHousehold(principal, orgID, req.FirstName, req.LastName, req.Email, newUserID)
-		if hhErr == nil {
+		if hhErr != nil {
+			// Non-fatal (the account exists), but never silent: audit it and
+			// tell the caller, as inviteUser does.
+			householdFailed = true
+			h.emitAudit(principal, audit.ActionAuthUserInvite, newUserID, map[string]string{
+				"email":           req.Email,
+				"method":          "direct_create",
+				"household_error": hhErr.Error(),
+			})
+		} else {
 			householdID = hh.ID
 		}
 	}
@@ -684,7 +761,7 @@ func (h *UserHandlers) createUser(w http.ResponseWriter, r *http.Request) {
 		"household_id": householdID,
 	})
 
-	writeUserCreated(w, newUserID, householdID)
+	writeUserCreated(w, newUserID, householdID, householdFailed)
 }
 
 // ── POST /users/invite ─────────────────────────────────────────────────────────
@@ -732,6 +809,7 @@ func (h *UserHandlers) inviteUser(w http.ResponseWriter, r *http.Request) {
 
 	// If requested and a members service is available, auto-create a linked household.
 	var householdID string
+	householdFailed := false
 	if req.CreateHousehold && h.membershipService != nil {
 		hh, hhErr := h.createLinkedHousehold(principal, orgID, req.FirstName, req.LastName, req.Email, newUserID)
 		if hhErr != nil {
@@ -743,6 +821,7 @@ func (h *UserHandlers) inviteUser(w http.ResponseWriter, r *http.Request) {
 		} else {
 			householdID = hh.ID
 		}
+		householdFailed = hhErr != nil
 	}
 
 	// Send welcome / verification email.
@@ -754,7 +833,7 @@ func (h *UserHandlers) inviteUser(w http.ResponseWriter, r *http.Request) {
 		"household_id": householdID,
 	})
 
-	writeUserCreated(w, newUserID, householdID)
+	writeUserCreated(w, newUserID, householdID, householdFailed)
 }
 
 // ── PUT /users/{id} ────────────────────────────────────────────────────────────
@@ -811,8 +890,37 @@ func (h *UserHandlers) disableUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userID := chi.URLParam(r, "id")
+	if userID == principal.UserID {
+		httpx.WriteError(w, r, http.StatusConflict, "cannot_disable_self", "You cannot disable your own account.", nil)
+		return
+	}
 	if _, ok := h.requireUserInOrg(w, r, userID, orgID); !ok {
 		return
+	}
+
+	// Last-admin guard, as on delete / admin role removal: a disabled admin
+	// cannot sign in, so it must not be the last enabled one.
+	targetIsAdmin, err := h.userIsOrgAdmin(r.Context(), userID)
+	if err != nil {
+		writeKeycloakAdminError(w, r, err, "Could not verify the user's roles; nothing was disabled.")
+		return
+	}
+	if targetIsAdmin {
+		admins, err := h.kc.ListUsersWithRealmRole(r.Context(), orgID, "admin")
+		if err != nil {
+			writeKeycloakAdminError(w, r, err, "Could not verify the org's admin count; nothing was disabled.")
+			return
+		}
+		enabledOthers := 0
+		for _, a := range admins {
+			if a.ID != userID && a.Enabled {
+				enabledOthers++
+			}
+		}
+		if enabledOthers == 0 {
+			httpx.WriteError(w, r, http.StatusConflict, "last_admin", "Cannot disable the last admin in this org.", nil)
+			return
+		}
 	}
 
 	if err := h.kc.DisableUser(r.Context(), userID); err != nil {
@@ -1116,7 +1224,18 @@ func (h *UserHandlers) removeRole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Last-admin guard: prevent removal of the final admin role in the org.
+	// Only relevant when the target actually holds it; otherwise the removal
+	// is a no-op and must not be refused as "last admin".
+	targetIsAdmin := false
 	if roleName == "admin" {
+		var err error
+		targetIsAdmin, err = h.userIsOrgAdmin(r.Context(), userID)
+		if err != nil {
+			writeKeycloakAdminError(w, r, err, "Could not verify the user's roles; the role was not removed.")
+			return
+		}
+	}
+	if targetIsAdmin {
 		onlyOne, err := h.orgHasOnlyOneAdmin(r.Context(), orgID)
 		if err != nil {
 			writeKeycloakAdminError(w, r, err, "Could not verify the org's admin count; the role was not removed.")
@@ -1301,6 +1420,13 @@ func (h *UserHandlers) unlinkUserHousehold(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// The household must actually be linked to this user; otherwise the call
+	// would silently sever another user's link and audit it against this one.
+	if linked, found := h.membershipService.GetHouseholdByKeycloakUserID(userID); !found || linked.ID != householdID || linked.OrgID != orgID {
+		httpx.WriteError(w, r, http.StatusConflict, "not_linked", "That household is not linked to this user.", nil)
+		return
+	}
+
 	if err := h.membershipService.UnlinkHouseholdFromUser(orgID, householdID); err != nil {
 		if errors.Is(err, members.ErrHouseholdNotFound) {
 			httpx.WriteError(w, r, http.StatusNotFound, "household_not_found", "Household not found.", nil)
@@ -1393,6 +1519,12 @@ func (h *UserHandlers) unlinkUserSwimmer(w http.ResponseWriter, r *http.Request)
 
 	swimmerID, ok := decodeRequiredID(w, r, "swimmer_id", func(b swimmerIDBody) string { return b.SwimmerID })
 	if !ok {
+		return
+	}
+
+	// Same ownership rule as household unlink.
+	if linked, found := h.membershipService.GetSwimmerByKeycloakUserID(userID); !found || linked.ID != swimmerID || linked.OrgID != orgID {
+		httpx.WriteError(w, r, http.StatusConflict, "not_linked", "That swimmer is not linked to this user.", nil)
 		return
 	}
 

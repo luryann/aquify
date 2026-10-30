@@ -23,7 +23,10 @@ import (
 	"strings"
 
 	"github.com/dareaquatics/aquify/meetfiles"
+	"github.com/dareaquatics/aquify/meetfiles/sdif"
 )
+
+var utf8BOM = []byte("\xef\xbb\xbf")
 
 // Parse performs a best-effort parse of a CL2 file.
 //
@@ -33,36 +36,38 @@ import (
 // ParseResult as a partial result and route any parse errors to the admin
 // conflict queue for manual review.
 func Parse(data []byte) (*meetfiles.ParseResult, error) {
+	// Real-world CL2 files (USA Swimming / Hy-Tek results exports) use the SDIF
+	// v3 record layout (A0/B1/C1/D0/...), the same one SD3 uses. Hand those to
+	// the SDIF parser and only fall back to the scaffold for anything else.
+	if looksLikeSDIF(data) {
+		parsed, err := sdif.Parse(data)
+		if err != nil {
+			return nil, err
+		}
+		parsed.FileType = meetfiles.FileTypeCL2
+		return parsed, nil
+	}
+
 	result := &meetfiles.ParseResult{
 		FileType: meetfiles.FileTypeCL2,
 	}
 
-	scanner := bufio.NewScanner(bytes.NewReader(data))
+	scanner := bufio.NewScanner(bytes.NewReader(bytes.TrimPrefix(data, utf8BOM)))
 	lineNumber := 0
 
 	for scanner.Scan() {
 		lineNumber++
-		raw := scanner.Text()
-		line := strings.TrimRight(raw, "\r")
-
-		if strings.TrimSpace(line) == "" {
+		line := scanner.Text()
+		upper := strings.ToUpper(strings.TrimSpace(line))
+		if upper == "" {
 			continue
 		}
 
-		upper := strings.ToUpper(strings.TrimSpace(line))
-
 		switch {
-		case strings.HasPrefix(upper, "EVENT"):
-			// Best-effort: log but do not error — we know events exist.
-			// A full implementation would extract event number, distance,
-			// stroke, and course from fixed-width fields.
-
-		case strings.HasPrefix(upper, "HEAT"):
-			// Best-effort: attempt to extract heat/lane/swimmer/time.
-			// Full column positions require an actual CL2 spec.
-
-		case strings.HasPrefix(upper, "CL2"):
-			// File header — ignore.
+		case strings.HasPrefix(upper, "EVENT"), strings.HasPrefix(upper, "HEAT"), strings.HasPrefix(upper, "CL2"):
+			// Recognised but not yet decoded: a full implementation would
+			// extract event/heat/lane/swimmer/time from fixed-width fields,
+			// which needs an actual CL2 spec.
 
 		default:
 			// Unrecognised line: record as a parse error so administrators
@@ -93,4 +98,11 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return string(runes[:n]) + "…"
+}
+
+// looksLikeSDIF reports whether the first non-blank line starts with the SDIF
+// file-description record ID "A0" (optionally after a UTF-8 BOM).
+func looksLikeSDIF(data []byte) bool {
+	data = bytes.TrimLeft(bytes.TrimPrefix(data, utf8BOM), " \t\r\n")
+	return len(data) >= 2 && data[0] == 'A' && data[1] == '0'
 }

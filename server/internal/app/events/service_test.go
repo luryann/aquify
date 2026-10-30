@@ -327,3 +327,18 @@ func TestRenderICS(t *testing.T) {
 		}
 	}
 }
+
+func TestRSVPOpenAllDayStaysOpenThroughUTCDay(t *testing.T) {
+	start := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)
+	e := &Event{RSVPEnabled: true, Status: "scheduled", AllDay: true, StartsAt: start}
+	if !e.RSVPOpen(start.Add(10 * time.Hour)) {
+		t.Fatal("all-day event should accept RSVPs later on the same UTC day")
+	}
+	if e.RSVPOpen(start.Add(24 * time.Hour)) {
+		t.Fatal("all-day event should close once the UTC day ends")
+	}
+	timed := &Event{RSVPEnabled: true, Status: "scheduled", StartsAt: start}
+	if timed.RSVPOpen(start.Add(time.Hour)) {
+		t.Fatal("timed event without end closes at its start")
+	}
+}

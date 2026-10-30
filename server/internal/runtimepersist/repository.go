@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -107,13 +109,66 @@ func (r *Repository) runSQL(sql string) (string, error) {
 	// Windows this is only ~32KB and fails with "The filename or extension is too
 	// long" once the serialized snapshot grows, which previously turned committed
 	// mutations into 500s.
-	cmd := exec.Command("psql", "-d", r.DatabaseURL, "-v", "ON_ERROR_STOP=1", "-At", "-F", "\t", "-f", "-")
+	// Connection parameters travel in PG* environment variables, not argv, so
+	// the password is not visible in the process list. A DSN that is not a
+	// postgres URL falls back to passing it with -d.
+	args := []string{"-v", "ON_ERROR_STOP=1", "-At", "-F", "\t", "-f", "-"}
+	connEnv, ok := psqlEnvFromURL(r.DatabaseURL)
+	if !ok {
+		args = append([]string{"-d", r.DatabaseURL}, args...)
+	}
+	cmd := exec.Command("psql", args...)
+	if ok {
+		cmd.Env = append(os.Environ(), connEnv...)
+	}
 	cmd.Stdin = strings.NewReader(sql)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("runtime snapshot psql failed: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+// psqlEnvFromURL converts a postgres:// or postgresql:// URL into the
+// equivalent libpq environment variables. ok is false for anything else.
+func psqlEnvFromURL(dsn string) (env []string, ok bool) {
+	u, err := url.Parse(strings.TrimSpace(dsn))
+	if err != nil || (u.Scheme != "postgres" && u.Scheme != "postgresql") {
+		return nil, false
+	}
+	add := func(k, v string) {
+		if v != "" {
+			env = append(env, k+"="+v)
+		}
+	}
+	add("PGHOST", u.Hostname())
+	add("PGPORT", u.Port())
+	if u.User != nil {
+		add("PGUSER", u.User.Username())
+		if pw, set := u.User.Password(); set {
+			add("PGPASSWORD", pw)
+		}
+	}
+	add("PGDATABASE", strings.TrimPrefix(u.Path, "/"))
+	queryEnv := map[string]string{
+		"sslmode": "PGSSLMODE", "sslrootcert": "PGSSLROOTCERT", "sslcert": "PGSSLCERT", "sslkey": "PGSSLKEY",
+		"connect_timeout": "PGCONNECT_TIMEOUT", "application_name": "PGAPPNAME", "options": "PGOPTIONS",
+		"host": "PGHOST", "port": "PGPORT", "user": "PGUSER", "password": "PGPASSWORD", "dbname": "PGDATABASE",
+	}
+	q := u.Query()
+	for k, name := range queryEnv {
+		if v := q.Get(k); v != "" {
+			add(name, v)
+		}
+	}
+	// A query parameter we cannot map would be silently dropped; use the safe
+	// argv path for those instead.
+	for k := range q {
+		if _, known := queryEnv[k]; !known {
+			return nil, false
+		}
+	}
+	return env, true
 }
 
 func escapeLiteral(value string) string {

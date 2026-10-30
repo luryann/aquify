@@ -459,9 +459,6 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, deps RouterDeps) htt
 	}
 	stripeClient = resolveStripeClient(cfg, logger, appEnv, stripeClient)
 	billingHandlers := handlers.NewBillingHandlersWithAuditAndStripe(billingService, auditService, stripeClient)
-	if metrics == nil {
-		metrics = telemetry.NewMetrics()
-	}
 	stripeHandlers := handlers.NewStripeHandlers(
 		stripeClient,
 		billingService,
@@ -531,9 +528,10 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, deps RouterDeps) htt
 	engagement := buildEngagementHandlers(dbPool, logger, membershipService, groupsService, meetsService, trainingService, billingService, auditService)
 	trainingHandlers.SetSeasonsService(seasonsService)
 	orgSettingsHandlers := handlers.NewOrgSettingsHandlers(orgSettingsService, auditService)
-	publicSiteHandlers := buildPublicSiteHandlers(cfg, orgSettingsService, commsService, meetsService, engagement.eventsService, performanceService, kcClient, nil)
-
+	usaSwimmingHandlers := handlers.NewUSASwimmingHandlers(resolveUSASwimming(dbPool, appEnv), performanceService, membershipService, auditService)
+	// Resolve the Keycloak client first: the public site's coach list reads it.
 	kcClient = resolveKeycloakClient(cfg, logger, kcClient)
+	publicSiteHandlers := buildPublicSiteHandlers(cfg, orgSettingsService, commsService, meetsService, engagement.eventsService, performanceService, kcClient, nil)
 	userHandlers := handlers.NewUserHandlersWithMembers(kcClient, auditService, membershipService)
 
 	wireCrossDomainHooks(logger, authService, membershipService, groupsService, meetsService)
@@ -678,6 +676,17 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, deps RouterDeps) htt
 			protected.Use(appmiddleware.CSRFProtection(cfg.Security.CSRFHeaderName))
 			protected.Use(appmiddleware.Auth(authService))
 			protected.Use(appmiddleware.RequireOrgScope)
+			protected.Use(appmiddleware.RequireSwimmerAccess(appmiddleware.SwimmerAccessChecks(func(orgID, swimmerID string) (bool, error) {
+				if enabled, err := orgSettingsService.SwimmerAccountsEnabled(orgID); err != nil {
+					return false, err
+				} else if !enabled {
+					return true, nil
+				}
+				if strings.TrimSpace(swimmerID) == "" {
+					return false, nil
+				}
+				return membershipService.SwimmerPortalDisabled(orgID, swimmerID)
+			})))
 			protected.Use(appmiddleware.RejectImpersonationHeaders())
 			protected.With(appmiddleware.RBACStub("admin", "coach")).Get("/authz/ping", handlers.AuthzPing)
 
@@ -703,6 +712,7 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, deps RouterDeps) htt
 			engagement.attendanceSummary.RegisterRoutes(protected)
 			volunteerHandlers.RegisterRoutes(protected)
 			orgSettingsHandlers.RegisterRoutes(protected)
+			usaSwimmingHandlers.RegisterRoutes(protected)
 			reportsHandlers.RegisterRoutes(protected)
 			jobsHandlers.RegisterRoutes(protected)
 			settingsHandlers.RegisterRoutes(protected)
@@ -929,7 +939,7 @@ func settingsSummary(cfg Config) map[string]any {
 		"postmark": map[string]any{
 			"from_name":    cfg.Postmark.FromName,
 			"from_email":   cfg.Postmark.FromEmail,
-			"webhook_auth": cfg.Postmark.WebhookAuthHeaderName != "" || cfg.Postmark.WebhookBasicUser != "" || cfg.Postmark.WebhookBasicPass != "",
+			"webhook_auth": (cfg.Postmark.WebhookAuthHeaderName != "" && cfg.Postmark.WebhookAuthHeaderValue != "") || (cfg.Postmark.WebhookBasicUser != "" && cfg.Postmark.WebhookBasicPass != ""),
 		},
 		"telemetry": map[string]any{
 			"service_name":    cfg.Telemetry.ServiceName,

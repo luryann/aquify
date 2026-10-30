@@ -392,18 +392,16 @@ func (s *Service) reviewSubmission(orgID, submissionID, reviewer, status, review
 // GetSubmission returns a single document submission.
 func (s *Service) GetSubmission(orgID, submissionID string) (*DocumentSubmission, error) {
 	s.mu.RLock()
+	defer s.mu.RUnlock()
 	sub, ok := s.submissions[submissionID]
-	s.mu.RUnlock()
 	if !ok || sub.OrgID != orgID {
 		return nil, ErrSubmissionNotFound
 	}
 	cp := *sub
 	// Denormalize type name.
-	s.mu.RLock()
 	if dt, ok := s.docTypes[sub.DocumentTypeID]; ok {
 		cp.DocumentTypeName = dt.Name
 	}
-	s.mu.RUnlock()
 	return &cp, nil
 }
 
@@ -445,6 +443,7 @@ func (s *Service) EraseHouseholdData(ctx context.Context, orgID, householdID str
 	defer s.mu.Unlock()
 
 	var objectKeys []string
+	var ids []string
 	for id, sub := range s.submissions {
 		if sub.OrgID != orgID || sub.HouseholdID != householdID {
 			continue
@@ -452,13 +451,18 @@ func (s *Service) EraseHouseholdData(ctx context.Context, orgID, householdID str
 		if sub.FileObjectKey != "" {
 			objectKeys = append(objectKeys, sub.FileObjectKey)
 		}
-		delete(s.submissions, id)
+		ids = append(ids, id)
 	}
 
+	// Database first: if it fails the cache keeps the rows (and their object
+	// keys), so a retry can still purge the files from object storage.
 	if s.repo != nil {
 		if err := s.repo.DeleteSubmissionsByHousehold(ctx, orgID, householdID); err != nil {
-			return objectKeys, fmt.Errorf("erase household document submissions: %w", err)
+			return nil, fmt.Errorf("erase household document submissions: %w", err)
 		}
+	}
+	for _, id := range ids {
+		delete(s.submissions, id)
 	}
 
 	return objectKeys, nil

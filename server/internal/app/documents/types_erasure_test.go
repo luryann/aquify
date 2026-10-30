@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestDocumentTypeUpdateDeleteAndDuplicateNames(t *testing.T) {
@@ -72,5 +74,28 @@ func TestEraseHouseholdDataRemovesOnlyThatHousehold(t *testing.T) {
 	}
 	if _, err := svc.GetSubmission("org-a", keep.ID); err != nil {
 		t.Fatalf("other household's submission must survive: %v", err)
+	}
+}
+
+// When the database delete fails, the cached submissions (and the object keys
+// they hold) must survive so a retry can still purge the files from storage.
+func TestEraseHouseholdDataKeepsCacheWhenDatabaseDeleteFails(t *testing.T) {
+	t.Parallel()
+	svc := NewService()
+	svc.submissions["s1"] = &DocumentSubmission{ID: "s1", OrgID: "org-a", HouseholdID: "hh-1", FileObjectKey: "docs/hh-1/a.pdf"}
+
+	// Port 1 refuses connections immediately, so the DELETE fails.
+	pool, err := pgxpool.New(context.Background(), "postgres://u:p@127.0.0.1:1/none?sslmode=disable&connect_timeout=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	svc.repo = newRepository(pool)
+
+	if _, err := svc.EraseHouseholdData(context.Background(), "org-a", "hh-1"); err == nil {
+		t.Fatal("expected an error when the database delete fails")
+	}
+	if _, err := svc.GetSubmission("org-a", "s1"); err != nil {
+		t.Fatalf("submission dropped from cache despite failed database delete: %v", err)
 	}
 }

@@ -1221,7 +1221,10 @@ func TestSwimmerGroupCodesMatchGroupCodeCasing(t *testing.T) {
 		t.Fatalf("want canonical SENIOR link, got %q (%v)", link.GroupCode, err)
 	}
 	// Re-assigning with different casing is idempotent, and group filters match.
-	again, _ := svc.AssignSwimmerToGroup(admin, "org-case", sw.ID, members.AssignSwimmerGroupInput{GroupCode: "Senior"})
+	again, err := svc.AssignSwimmerToGroup(admin, "org-case", sw.ID, members.AssignSwimmerGroupInput{GroupCode: "Senior"})
+	if err != nil {
+		t.Fatalf("re-assign with different casing: %v", err)
+	}
 	if again.ID != link.ID {
 		t.Fatal("expected the existing link to be reused regardless of casing")
 	}
@@ -1275,7 +1278,10 @@ func TestApprovingRegistrationAddsSwimmerToGroupRoster(t *testing.T) {
 		t.Fatalf("approve: %d %s", rr.Code, rr.Body.String())
 	}
 
-	links, _ := membersSvc.ListSwimmerGroupLinks(&appmiddleware.Principal{UserID: "admin-user", OrgID: "org-roster", Roles: []string{"admin"}}, "org-roster")
+	links, err := membersSvc.ListSwimmerGroupLinks(&appmiddleware.Principal{UserID: "admin-user", OrgID: "org-roster", Roles: []string{"admin"}}, "org-roster")
+	if err != nil {
+		t.Fatalf("list swimmer group links: %v", err)
+	}
 	if len(links) != 1 || links[0].SwimmerID != sw.Swimmer.ID || links[0].GroupCode != grp.Group.Code || !links[0].IsPrimary {
 		t.Fatalf("expected primary roster link to %q, got %+v", grp.Group.Code, links)
 	}

@@ -135,3 +135,31 @@ func TestReadZip_EnforcesCumulativeCapWhileReading(t *testing.T) {
 		t.Fatalf("expected a cumulative-cap error, got %v", err)
 	}
 }
+
+func TestReadZip_NormalizesAndRejectsUnsafeNames(t *testing.T) {
+	ok := buildZIP(t, map[string][]byte{`sub\dir/./a.sd3`: []byte("x")})
+	entries, err := meetfiles.ReadZip(ok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name != "sub/dir/a.sd3" {
+		t.Fatalf("names = %+v", entries)
+	}
+	for _, bad := range []string{"../evil.sd3", "/abs/evil.sd3", `..\evil.sd3`, "C:/evil.sd3"} {
+		if _, err := meetfiles.ReadZip(buildZIP(t, map[string][]byte{bad: []byte("x")})); err == nil {
+			t.Errorf("ReadZip accepted unsafe name %q", bad)
+		}
+	}
+}
+
+func TestReadHY3_UnsafeNamesNeverBecomePayloads(t *testing.T) {
+	res := meetfiles.ReadHY3("a.hy3", buildZIP(t, map[string][]byte{"../evil.sd3": []byte("x"), "ok.sd3": []byte("y")}))
+	if res.SelectedPayload == nil || res.SelectedPayload.Name != "ok.sd3" {
+		t.Fatalf("selected = %+v err=%+v", res.SelectedPayload, res.Error)
+	}
+	for _, p := range res.AllPayloads {
+		if strings.Contains(p.Name, "..") {
+			t.Fatalf("unsafe payload surfaced: %q", p.Name)
+		}
+	}
+}

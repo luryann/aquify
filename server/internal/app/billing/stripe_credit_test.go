@@ -13,18 +13,7 @@ func TestStripePaymentIntentSucceeded_ExcessAndUnpayableGoToCredit(t *testing.T)
 	p := billingAdminPrincipal()
 	org := p.OrgID
 
-	inv, err := svc.CreateInvoice(org, p.UserID, p, CreateInvoiceInput{HouseholdID: "hh-credit", InvoiceNumber: "INV-STRIPE-CREDIT"})
-	if err != nil {
-		t.Fatalf("create invoice: %v", err)
-	}
-	if _, err := svc.AddInvoiceItem(org, p.UserID, p, inv.ID, AddInvoiceItemInput{
-		Description: "Dues", Quantity: 1, UnitAmountCents: 10000, Category: "program_fee",
-	}); err != nil {
-		t.Fatalf("add item: %v", err)
-	}
-	if _, _, err := svc.IssueInvoice(org, p.UserID, p, inv.ID); err != nil {
-		t.Fatalf("issue: %v", err)
-	}
+	inv := issuedInvoice(t, svc, p, "hh-credit", "INV-STRIPE-CREDIT", 10000)
 
 	// 12,000 captured against a 10,000 balance: invoice settles, 2,000 credited.
 	if _, _, err := svc.HandleStripePaymentIntentSucceeded(org, "pi_over", inv.ID, 12000, "stripe-webhook"); err != nil {
@@ -53,18 +42,7 @@ func TestStripeCreditOnlyPayment_RedeliveryAndRefund(t *testing.T) {
 	p := billingAdminPrincipal()
 	org := p.OrgID
 
-	inv, err := svc.CreateInvoice(org, p.UserID, p, CreateInvoiceInput{HouseholdID: "hh-refund", InvoiceNumber: "INV-STRIPE-REFUND"})
-	if err != nil {
-		t.Fatalf("create invoice: %v", err)
-	}
-	if _, err := svc.AddInvoiceItem(org, p.UserID, p, inv.ID, AddInvoiceItemInput{
-		Description: "Dues", Quantity: 1, UnitAmountCents: 10000, Category: "program_fee",
-	}); err != nil {
-		t.Fatalf("add item: %v", err)
-	}
-	if _, _, err := svc.IssueInvoice(org, p.UserID, p, inv.ID); err != nil {
-		t.Fatalf("issue: %v", err)
-	}
+	inv := issuedInvoice(t, svc, p, "hh-refund", "INV-STRIPE-REFUND", 10000)
 	if _, _, err := svc.HandleStripePaymentIntentSucceeded(org, "pi_full", inv.ID, 10000, "stripe-webhook"); err != nil {
 		t.Fatalf("settle: %v", err)
 	}

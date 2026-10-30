@@ -29,6 +29,7 @@ tags:
   - name: Commitments
   - name: Entries
   - name: Exports
+  - name: Integrations
   - name: Performance
   - name: Billing
   - name: Stripe
@@ -902,6 +903,7 @@ paths:
           $ref: "#/components/responses/NotFound"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+
   /authz/ping:
     get:
       tags: [Auth]
@@ -2338,6 +2340,7 @@ paths:
                 team_code: { type: string }
                 team_name: { type: string }
                 lsc_code: { type: string }
+                swimmer_accounts_enabled: { type: boolean, description: "When false, swimmer-role sign-in is blocked org-wide (403 swimmer_access_disabled). Parents, coaches and admins are unaffected." }
       responses:
         "200":
           description: Org settings updated
@@ -3299,6 +3302,298 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /time-standards/import:
+    post:
+      tags: [Performance]
+      summary: Import time standards from a CSV file (admin only)
+      description: |
+        Multipart upload (field `file`, CSV, max 5 MB, max 5000 rows). XLSX is not supported; export as CSV.
+        Columns (header row required, case-insensitive): `standard_name` (required), `standard_code` (defaults to name),
+        `season_year` (or `season`; 2026 or 2025-2026), `course` (SCY|SCM|LCM), `gender` (M|F|X, boys/girls accepted),
+        `age_group` (11-12, 10&U, 15&O, OPEN/blank) or `age_min`/`age_max`, `event_distance`+`stroke`
+        (or `event` such as "100 Free"), `cut_time` (58.12 or 1:02.45), optional `description`.
+        A standard is identified by code + season + event + course + gender + age group; matches are updated,
+        others created. With `preview=true` nothing is written. Without it, all rows are written atomically or none
+        (422 `import_has_errors` with per-row errors). Commits are audited as `time_standards.import`.
+      operationId: importTimeStandards
+      parameters:
+        - name: preview
+          in: query
+          schema: { type: boolean }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        "200":
+          description: Preview or committed import
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  preview: { type: boolean }
+                  imported: { type: boolean }
+                  counts:
+                    type: object
+                    properties:
+                      total: { type: integer }
+                      valid: { type: integer }
+                      errors: { type: integer }
+                      create: { type: integer }
+                      update: { type: integer }
+                      unchanged: { type: integer }
+                  rows:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        line: { type: integer }
+                        standard_name: { type: string }
+                        standard_code: { type: string }
+                        season_year: { type: integer }
+                        course: { type: string }
+                        gender: { type: string }
+                        age_min: { type: integer }
+                        age_max: { type: integer }
+                        event_distance: { type: integer }
+                        stroke: { type: string }
+                        time_ms: { type: integer }
+                        action: { type: string, enum: [create, update, unchanged] }
+                        errors:
+                          type: array
+                          items: { type: string }
+        "400":
+          description: Missing/unreadable file or structural CSV problem
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          description: File too large
+        "415":
+          description: Spreadsheet formats are not supported
+        "422":
+          description: Row errors; nothing imported (details carry rows and counts)
+
+  /integrations/usa-swimming:
+    get:
+      tags: [Integrations]
+      summary: Get USA Swimming integration settings (admin only; API key redacted)
+      operationId: getUSASwimmingIntegration
+      responses:
+        "200":
+          description: Redacted settings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  integration: { $ref: "#/components/schemas/USASwimmingIntegration" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    put:
+      tags: [Integrations]
+      summary: Update USA Swimming integration settings (admin only, audited)
+      description: The API key is stored encrypted and never returned. Empty `api_key` clears it. Requires INTEGRATIONS_ENCRYPTION_KEY outside dev/test (503 `encryption_not_configured` otherwise).
+      operationId: updateUSASwimmingIntegration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                base_url: { type: string }
+                api_key: { type: string }
+                enabled: { type: boolean }
+                token_url: { type: string, description: "OAuth token endpoint. Setting it switches to the vendor API (api_key is then the client secret)." }
+                client_id: { type: string }
+                club_id: { type: string, description: "SWIMS club ID used for roster calls" }
+      responses:
+        "200":
+          description: Updated redacted settings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  integration: { $ref: "#/components/schemas/USASwimmingIntegration" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /integrations/usa-swimming/test:
+    post:
+      tags: [Integrations]
+      summary: Test the USA Swimming connection (admin only)
+      operationId: testUSASwimmingIntegration
+      responses:
+        "200":
+          description: Test outcome
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  message: { type: string }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Integration not configured
+  /integrations/usa-swimming/clubs:
+    get:
+      tags: [Integrations]
+      summary: List SWIMS clubs the vendor credentials can access (admin only)
+      operationId: listUSASwimmingClubs
+      responses:
+        "200": { description: Clubs }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "501": { description: Configured integration is not the vendor API }
+  /integrations/usa-swimming/roster-compare:
+    get:
+      tags: [Integrations]
+      summary: Compare the SWIMS club roster with Aquify swimmers (admin only, read-only)
+      description: Matches on USA Swimming ID. Reports only_in_swims, only_in_aquify and mismatched (last name / date of birth). Never modifies data.
+      operationId: compareUSASwimmingRoster
+      responses:
+        "200": { description: Comparison }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: Integration or club ID not configured }
+  /integrations/usa-swimming/registration-link:
+    get:
+      tags: [Integrations]
+      summary: Get the club's USA Swimming online member registration link (admin only)
+      operationId: getUSASwimmingRegistrationLink
+      responses:
+        "200": { description: Link }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /integrations/usa-swimming/verify-members:
+    post:
+      tags: [Integrations]
+      summary: Verify swimmers' USA Swimming membership (admin only, Tier 3)
+      description: Checks swimmers that have a USA Swimming ID (all, or the given `swimmer_ids`, max 500). 403 `tier_not_authorized` when the credentials lack Tier 3.
+      operationId: verifyUSASwimmingMembers
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                swimmer_ids: { type: array, items: { type: string } }
+      responses:
+        "200": { description: Per-member validity }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+  /integrations/usa-swimming/verify-time:
+    post:
+      tags: [Integrations]
+      summary: Verify a claimed swim time against USA Swimming (admin only, Tier 3)
+      operationId: verifyUSASwimmingTime
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [swimmer_id, event, time]
+              properties:
+                swimmer_id: { type: string }
+                event: { type: string, description: "e.g. 100 Free SCY" }
+                time: { type: string, description: "mm:ss.hh, e.g. 00:52.34" }
+      responses:
+        "200": { description: "`{valid: boolean}`" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+  /integrations/usa-swimming/registrations:
+    post:
+      tags: [Integrations]
+      summary: Submit one member registration to SWIMS (admin only, Tier 2, audited)
+      description: Fields are validated locally against the documented SWIMS rules before any vendor call.
+      operationId: submitUSASwimmingRegistration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [first_name, last_name, date_of_birth, competition_category]
+              properties:
+                member_id: { type: string, description: "14 alphanumerics; omit for a new member" }
+                first_name: { type: string }
+                last_name: { type: string }
+                date_of_birth: { type: string, format: date }
+                competition_category: { type: string, enum: [FEMALE, MALE] }
+                phone: { type: string }
+                phone_type: { type: string, enum: [Mobile, Work, Home, Other] }
+                postal_code: { type: string }
+                offering_id: { type: string }
+      responses:
+        "200": { description: Submission result with request id }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+  /integrations/usa-swimming/registrations/{requestID}/status:
+    get:
+      tags: [Integrations]
+      summary: Check a SWIMS registration request (admin only, Tier 2)
+      operationId: getUSASwimmingRegistrationStatus
+      parameters:
+        - { name: requestID, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: "Status: Not Found, Payment Pending, Processed or Pending" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /integrations/usa-swimming/sync:
+    post:
+      tags: [Integrations]
+      summary: Sync official times for swimmers with a USA Swimming ID (admin only)
+      description: Records each time as an official result (best times recompute). An identical finish time for the same swimmer/event/course is skipped, so re-running never double-records.
+      operationId: syncUSASwimmingTimes
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                swimmer_ids:
+                  type: array
+                  items: { type: string }
+      responses:
+        "200":
+          description: Sync summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  swimmer_count: { type: integer }
+                  imported: { type: integer }
+                  duplicates: { type: integer }
+                  skipped: { type: integer }
+                  new_team_records: { type: integer }
+                  summary: { type: string }
+                  swimmers:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        swimmer_id: { type: string }
+                        name: { type: string }
+                        imported: { type: integer }
+                        duplicates: { type: integer }
+                        skipped: { type: integer }
+                        status: { type: string, enum: [synced, not_found, error] }
+                        error: { type: string }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Integration disabled or not configured
+
   /time-standards/{standardID}:
     get:
       tags: [Performance]
@@ -3786,22 +4081,7 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [name, kind, frequency, amount_cents, start_date]
-              properties:
-                name: { type: string }
-                kind: { type: string }
-                group_code: { type: string }
-                season: { type: string }
-                frequency: { type: string }
-                amount_cents: { type: integer }
-                start_date: { type: string }
-                end_date: { type: string }
-                proration: { type: string }
-                auto_bill: { type: boolean }
-                active: { type: boolean }
-                description: { type: string }
+            schema: { $ref: "#/components/schemas/FeeScheduleInput" }
       responses:
         "201":
           description: Created
@@ -3840,22 +4120,7 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [name, kind, frequency, amount_cents, start_date]
-              properties:
-                name: { type: string }
-                kind: { type: string }
-                group_code: { type: string }
-                season: { type: string }
-                frequency: { type: string }
-                amount_cents: { type: integer }
-                start_date: { type: string }
-                end_date: { type: string }
-                proration: { type: string }
-                auto_bill: { type: boolean }
-                active: { type: boolean }
-                description: { type: string }
+            schema: { $ref: "#/components/schemas/FeeScheduleInput" }
       responses:
         "200":
           description: OK
@@ -3908,18 +4173,7 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [name, applies_to, min_position, discount_type]
-              properties:
-                name: { type: string }
-                applies_to: { type: string }
-                min_position: { type: integer }
-                max_position: { type: integer }
-                discount_type: { type: string }
-                percent_bps: { type: integer }
-                amount_cents: { type: integer }
-                active: { type: boolean }
+            schema: { $ref: "#/components/schemas/DiscountRuleInput" }
       responses:
         "201":
           description: Created
@@ -3942,18 +4196,7 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [name, applies_to, min_position, discount_type]
-              properties:
-                name: { type: string }
-                applies_to: { type: string }
-                min_position: { type: integer }
-                max_position: { type: integer }
-                discount_type: { type: string }
-                percent_bps: { type: integer }
-                amount_cents: { type: integer }
-                active: { type: boolean }
+            schema: { $ref: "#/components/schemas/DiscountRuleInput" }
       responses:
         "200":
           description: OK
@@ -4093,6 +4336,10 @@ paths:
                 auto_run_day: { type: integer }
                 auto_run_invoice_status: { type: string }
                 auto_run_due_days: { type: integer }
+                meet_fee_per_event_cents: { type: integer }
+                meet_fee_flat_cents: { type: integer }
+                meet_fee_invoice_status: { type: string, enum: [draft, issued] }
+                meet_fee_due_days: { type: integer }
       responses:
         "200":
           description: OK
@@ -4113,17 +4360,7 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [as_of]
-              properties:
-                as_of: { type: string }
-                schedule_ids: { type: array, items: { type: string } }
-                invoice_status: { type: string }
-                due_date: { type: string }
-                due_days: { type: integer }
-                include_adjustments: { type: boolean }
-                expected_fingerprint: { type: string }
+            schema: { $ref: "#/components/schemas/BillingRunRequest" }
       responses:
         "200":
           description: OK
@@ -4165,17 +4402,7 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [as_of]
-              properties:
-                as_of: { type: string }
-                schedule_ids: { type: array, items: { type: string } }
-                invoice_status: { type: string }
-                due_date: { type: string }
-                due_days: { type: integer }
-                include_adjustments: { type: boolean }
-                expected_fingerprint: { type: string }
+            schema: { $ref: "#/components/schemas/BillingRunRequest" }
       responses:
         "201":
           description: Committed
@@ -6596,9 +6823,8 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-# ─────────────────────────────────────────────────────────────────────────────
-# COMPONENTS
-# ─────────────────────────────────────────────────────────────────────────────
+  # ── Engagement (club events, calendar, public site, wellness) ─────────────────
+
   /club-events:
     get:
       tags: [Engagement]
@@ -7022,7 +7248,7 @@ paths:
           description: Linked swimmer
           content:
             application/json:
-              schema: { type: object, properties: { status: { type: string }, swimmer: { nullable: true, allOf: [{ $ref: "#/components/schemas/Swimmer" }] } } }
+              schema: { type: object, properties: { status: { type: string }, swimmer: { oneOf: [{ $ref: "#/components/schemas/Swimmer" }, { type: "null" }] } } }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
@@ -7733,6 +7959,9 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# COMPONENTS
+# ─────────────────────────────────────────────────────────────────────────────
 components:
 
   # ── Security Schemes ────────────────────────────────────────────────────────
@@ -7933,6 +8162,25 @@ components:
 
   # ── Schemas ─────────────────────────────────────────────────────────────────
   schemas:
+    USASwimmingIntegration:
+      type: object
+      properties:
+        base_url: { type: string }
+        enabled: { type: boolean }
+        has_api_key: { type: boolean }
+        api_key_hint: { type: string }
+        configured: { type: boolean }
+        stub_available: { type: boolean }
+        last_test_at: { type: string, format: date-time }
+        last_test_ok: { type: boolean }
+        last_test_message: { type: string }
+        last_sync_at: { type: string, format: date-time }
+        last_sync_message: { type: string }
+        updated_at: { type: string, format: date-time }
+        token_url: { type: string }
+        client_id: { type: string }
+        club_id: { type: string }
+        vendor_api: { type: boolean }
     ClubEventInput:
       type: object
       required: [title, category, starts_at]
@@ -7942,14 +8190,14 @@ components:
         description: { type: string }
         location: { type: string }
         starts_at: { type: string, format: date-time }
-        ends_at: { type: string, format: date-time, nullable: true }
+        ends_at: { type: [string, "null"], format: date-time }
         all_day: { type: boolean }
         audience: { type: string, enum: [all, groups] }
         group_codes: { type: array, items: { type: string } }
         rsvp_enabled: { type: boolean }
         rsvp_mode: { type: string, enum: [household, swimmer] }
-        rsvp_deadline: { type: string, format: date-time, nullable: true }
-        capacity: { type: integer, minimum: 1, nullable: true }
+        rsvp_deadline: { type: [string, "null"], format: date-time }
+        capacity: { type: [integer, "null"], minimum: 1 }
         fee_cents: { type: integer, minimum: 0 }
         status: { type: string, enum: [scheduled, cancelled] }
         public: { type: boolean, description: Show on the public team website (audience must be all). }
@@ -7988,19 +8236,18 @@ components:
         no: { type: integer }
         maybe: { type: integer }
         yes_headcount: { type: integer }
-        spots_left: { type: integer, nullable: true }
+        spots_left: { type: [integer, "null"] }
     CalendarFeedStatus:
       type: object
       properties:
         household_id: { type: string }
         active: { type: boolean }
         feed:
-          type: object
-          nullable: true
+          type: [object, "null"]
           properties:
             id: { type: string }
             created_at: { type: string, format: date-time }
-            last_used_at: { type: string, format: date-time, nullable: true }
+            last_used_at: { type: [string, "null"], format: date-time }
     WellnessCheckIn:
       type: object
       properties:
@@ -8152,7 +8399,7 @@ components:
         deadline: { type: string, format: date }
         notes: { type: string }
         status: { type: string, enum: [active, archived] }
-        best_time_ms: { type: integer, nullable: true }
+        best_time_ms: { type: [integer, "null"] }
         best_recorded_at: { type: string, format: date-time }
         gap_ms: { type: integer, description: "best − target; ≤ 0 means achieved" }
         progress_percent: { type: number, description: 0–100 from baseline toward target }
@@ -9063,6 +9310,7 @@ components:
               type: array
               items: { type: string }
             notes: { type: string }
+            portal_access_disabled: { type: boolean, description: "When true, this swimmer cannot sign in (swimmer role); records are kept." }
 
     SwimmerResponse:
       type: object
@@ -9112,6 +9360,7 @@ components:
           type: [array, "null"]
           items: { type: string }
         notes: { type: string }
+        portal_access_disabled: { type: boolean, description: "Admin/coach, or a parent for their own household's swimmers. Swimmers cannot change it." }
 
     # Groups ───────────────────────────────────────────────────────────────────
     Group:
@@ -9457,6 +9706,7 @@ components:
         public_about: { type: string }
         public_contact_email: { type: string }
         public_contact_phone: { type: string }
+        swimmer_accounts_enabled: { type: boolean, default: true }
         updated_at: { type: string, format: date-time }
         updated_by: { type: string }
     PublicTeamSite:
@@ -9479,7 +9729,7 @@ components:
               id: { type: string }
               title: { type: string }
               body: { type: string }
-              published_at: { type: string, format: date-time, nullable: true }
+              published_at: { type: [string, "null"], format: date-time }
         meets:
           type: array
           items:
@@ -9503,7 +9753,7 @@ components:
               description: { type: string }
               location: { type: string }
               starts_at: { type: string, format: date-time }
-              ends_at: { type: string, format: date-time, nullable: true }
+              ends_at: { type: [string, "null"], format: date-time }
               all_day: { type: boolean }
         records:
           type: array
@@ -9841,6 +10091,48 @@ components:
         payment_id: { type: string }
         amount_cents: { type: integer, minimum: 1 }
         reason: { type: string }
+
+    FeeScheduleInput:
+      type: object
+      required: [name, kind, frequency, amount_cents, start_date]
+      properties:
+        name: { type: string }
+        kind: { type: string }
+        group_code: { type: string }
+        season: { type: string }
+        frequency: { type: string }
+        amount_cents: { type: integer }
+        start_date: { type: string }
+        end_date: { type: string }
+        proration: { type: string }
+        auto_bill: { type: boolean }
+        active: { type: boolean }
+        description: { type: string }
+
+    DiscountRuleInput:
+      type: object
+      required: [name, applies_to, min_position, discount_type]
+      properties:
+        name: { type: string }
+        applies_to: { type: string }
+        min_position: { type: integer }
+        max_position: { type: integer }
+        discount_type: { type: string }
+        percent_bps: { type: integer }
+        amount_cents: { type: integer }
+        active: { type: boolean }
+
+    BillingRunRequest:
+      type: object
+      required: [as_of]
+      properties:
+        as_of: { type: string }
+        schedule_ids: { type: array, items: { type: string } }
+        invoice_status: { type: string }
+        due_date: { type: string }
+        due_days: { type: integer }
+        include_adjustments: { type: boolean }
+        expected_fingerprint: { type: string }
 
     HouseholdAutopayStatus:
       type: object

@@ -182,6 +182,9 @@ func (s *Server) enqueueAt(ctx context.Context, processAt time.Time, task *Task,
 	for _, opt := range opts {
 		opt(o)
 	}
+	// An empty queue name falls back to default, as in the durable backend, so
+	// the task is listed and counted under the queue that actually runs it.
+	o.Queue = defaultQueue(o.Queue)
 	// EnqueueIn supplies an explicit schedule; otherwise honor WithDelay,
 	// matching the durable backend's option semantics.
 	if processAt.IsZero() {
@@ -226,6 +229,7 @@ func (s *Server) enqueueAt(ctx context.Context, processAt time.Time, task *Task,
 			ProcessAt:  processAt,
 			MaxRetries: maxRetries,
 			UniqueKey:  o.UniqueKey,
+			OrgID:      TaskOrgID(task.Payload),
 		},
 		task:    task,
 		handler: h,
@@ -373,6 +377,14 @@ func (s *Server) RetryDLQTask(ctx context.Context, taskID string) error {
 	select {
 	case ch <- found:
 	case <-ctx.Done():
+		// Could not dispatch: put the task back so the retry is not lost.
+		s.mu.Lock()
+		found.Status = StatusDeadLetter
+		s.dlq = append(s.dlq, found)
+		if found.UniqueKey != "" {
+			delete(s.uniqueKeyIndex, found.UniqueKey)
+		}
+		s.mu.Unlock()
 		return ctx.Err()
 	}
 	s.metrics.RecordEnqueue(found.Type)

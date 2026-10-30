@@ -3,9 +3,11 @@
 package attendance
 
 import (
+	"errors"
 	"math"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/dareaquatics/aquify/server/internal/app/roster"
 )
@@ -61,8 +63,17 @@ const RecentLimit = 12
 // swimmer's groups, or for all groups (no group set). The percentage is
 // present / (present + absent); excused and unmarked practices are excluded
 // from the denominator so missing roll calls do not penalise the swimmer.
+// ErrInvalidRange is returned when from/to are not a valid YYYY-MM-DD window.
+var ErrInvalidRange = errors.New("attendance: from and to must be YYYY-MM-DD dates with from <= to")
+
+// Summarize aggregates attendance. from and to are inclusive YYYY-MM-DD dates.
 func Summarize(src PracticeSource, dir roster.Directory, orgID string, swimmer roster.Swimmer, from, to string) (Summary, error) {
 	out := Summary{SwimmerID: swimmer.ID, From: from, To: to, Recent: []Mark{}}
+	f, ferr := time.Parse("2006-01-02", from)
+	t, terr := time.Parse("2006-01-02", to)
+	if ferr != nil || terr != nil || f.After(t) {
+		return out, ErrInvalidRange
+	}
 	practices, err := src.Practices(orgID)
 	if err != nil {
 		return out, err

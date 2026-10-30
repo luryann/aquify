@@ -160,7 +160,7 @@ func writeCSV(w http.ResponseWriter, filename string, rows [][]string) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
 	cw := csv.NewWriter(w)
-	_ = cw.WriteAll(rows)
+	_ = cw.WriteAll(csvSafeRows(rows))
 }
 
 func wantsCSV(r *http.Request) bool {

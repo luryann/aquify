@@ -1,6 +1,9 @@
 package comms
 
 import (
+	"context"
+
+	"github.com/dareaquatics/aquify/server/internal/postmark"
 	"testing"
 	"time"
 )
@@ -138,5 +141,95 @@ func TestMessageThreadLookup(t *testing.T) {
 	}
 	if _, _, ok := s.MessageThread("org-1", "missing"); ok {
 		t.Fatal("expected lookup to fail for a missing message")
+	}
+}
+
+func TestApplyPostmarkEventIgnoresOtherOrgsDelivery(t *testing.T) {
+	s := NewService()
+	s.deliveries["d1"] = &EmailDelivery{
+		ID: "d1", OrgID: "org-a", CampaignID: "c1", RecipientEmail: "x@example.com",
+		Status: "sent", ProviderMessageID: "pm-1",
+	}
+
+	err := s.ApplyPostmarkEvent(PostmarkEventInput{
+		OrgID: "org-b", MessageID: "pm-1", RecipientEmail: "x@example.com", RecordType: "Delivery",
+	})
+	if err != ErrDeliveryNotFound {
+		t.Fatalf("expected ErrDeliveryNotFound for a cross-org event, got %v", err)
+	}
+	if got := s.deliveries["d1"].Status; got != "sent" {
+		t.Fatalf("cross-org event changed another org's delivery to %q", got)
+	}
+}
+
+func TestListersReturnCopiesOfCachedRecords(t *testing.T) {
+	s := NewService()
+	s.campaigns["c1"] = &EmailCampaign{ID: "c1", OrgID: "org-1"}
+	s.deliveries["d1"] = &EmailDelivery{ID: "d1", OrgID: "org-1", CampaignID: "c1", Status: "sent"}
+	if _, err := s.AddSuppression(AddSuppressionInput{OrgID: "org-1", Email: "a@example.com", Reason: "manual"}); err != nil {
+		t.Fatal(err)
+	}
+
+	deliveries, err := s.ListDeliveries("org-1", "c1")
+	if err != nil || len(deliveries) != 1 {
+		t.Fatalf("ListDeliveries: %v %v", deliveries, err)
+	}
+	deliveries[0].Status = "mutated"
+	if s.deliveries["d1"].Status != "sent" {
+		t.Fatal("ListDeliveries leaked the cached delivery pointer")
+	}
+
+	entries, _ := s.ListSuppression("org-1")
+	entries[0].Reason = "mutated"
+	if s.suppression[suppressionKey("org-1", "a@example.com")].Reason != "manual" {
+		t.Fatal("ListSuppression leaked the cached entry pointer")
+	}
+}
+
+func TestSetAnnouncementPublicDoesNotMutateReturnedPointer(t *testing.T) {
+	s := NewService()
+	created, err := s.CreateAnnouncement(CreateAnnouncementInput{OrgID: "org-1", Title: "t", Body: "b", Audience: "all"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SetAnnouncementPublic("org-1", created.ID, "u1", true); err != nil {
+		t.Fatal(err)
+	}
+	if created.Public {
+		t.Fatal("SetAnnouncementPublic wrote through the pointer CreateAnnouncement returned")
+	}
+	got, _ := s.GetAnnouncement("org-1", created.ID)
+	if !got.Public {
+		t.Fatal("public flag was not applied")
+	}
+}
+
+func TestSendCampaignRetrySkipsAlreadySentRecipients(t *testing.T) {
+	stub := postmark.NewStubClient()
+	s := NewServiceWithClient(stub)
+	c, err := s.CreateCampaign(CreateCampaignInput{OrgID: "org-1", Name: "n", Subject: "s", BodyHTML: "<p>x</p>", FromName: "f", FromEmail: "f@example.com", Audience: "all", CreatedBy: "a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inp := SendCampaignInput{ActorID: "a", Recipients: []Recipient{{Email: "a@example.com"}, {Email: "b@example.com"}}}
+	if _, err := s.SendCampaign(context.Background(), "org-1", c.ID, inp); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(stub.Sent()); got != 2 {
+		t.Fatalf("first send mailed %d, want 2", got)
+	}
+	// Simulate the revert after a mid-send persistence failure.
+	s.mu.Lock()
+	s.campaigns[c.ID].Status = "draft"
+	s.mu.Unlock()
+	res, err := s.SendCampaign(context.Background(), "org-1", c.ID, inp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len(stub.Sent()); got != 2 {
+		t.Fatalf("retry re-mailed recipients: %d messages, want 2", got)
+	}
+	if res.SentCount != 2 || res.TotalRecipients != 2 {
+		t.Fatalf("retry counts wrong: sent=%d total=%d", res.SentCount, res.TotalRecipients)
 	}
 }

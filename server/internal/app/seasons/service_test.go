@@ -9,6 +9,19 @@ func TestCreateValidatesStatus(t *testing.T) {
 	}
 }
 
+func TestCreateReturnsCopyNotCachedPointer(t *testing.T) {
+	svc := NewService()
+	created, err := svc.Create("org-1", "2026 Season", "", "", "active", "", "admin-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	created.Name = "mutated by caller"
+	got, err := svc.Get("org-1", created.ID)
+	if err != nil || got.Name != "2026 Season" {
+		t.Fatalf("cache aliased by Create result: %+v (%v)", got, err)
+	}
+}
+
 func TestListIsOrgScopedAndSorted(t *testing.T) {
 	svc := NewService()
 	if _, err := svc.Create("org-1", "Older", "2024-09-01", "2025-06-30", "completed", "", "admin-1"); err != nil {

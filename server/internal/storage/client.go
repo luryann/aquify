@@ -259,6 +259,11 @@ func (s *S3Storage) GetObject(ctx context.Context, key string) ([]byte, string, 
 	if err != nil {
 		return nil, "", fmt.Errorf("read object %s: %w", key, err)
 	}
+	// Stat's size can be stale (object replaced mid-read); the extra byte read
+	// above exposes an overflow that must not be returned silently truncated.
+	if int64(len(data)) > maxGetObjectBytes {
+		return nil, "", fmt.Errorf("object %s exceeds the %d byte in-memory read limit", key, int64(maxGetObjectBytes))
+	}
 	return data, info.ContentType, nil
 }
 

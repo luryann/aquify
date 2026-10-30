@@ -1,9 +1,12 @@
 package compliance
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestComplianceRequestLifecycleAndSnapshots(t *testing.T) {
@@ -158,5 +161,31 @@ func TestDataDeletionStatusTransitions(t *testing.T) {
 	}
 	if failed.Status != "failed" || failed.ReviewNotes != "failed while processing" {
 		t.Fatalf("failed deletion = %+v, want failed request with notes", failed)
+	}
+}
+
+// A request whose write to Postgres failed must not be handed back (or cached)
+// as if it were saved: the caller would show a request id that does not exist
+// after a restart.
+func TestCreateRequestsFailWhenPersistenceFails(t *testing.T) {
+	t.Parallel()
+
+	// Port 1 refuses connections immediately, so every write fails.
+	pool, err := pgxpool.New(context.Background(), "postgres://u:p@127.0.0.1:1/none?sslmode=disable&connect_timeout=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	svc := NewServiceWithConfig(7, 14)
+	svc.repo = newRepository(pool)
+
+	if _, err := svc.CreateDataExportRequest("org-a", "hh-1", "parent-1"); err == nil {
+		t.Fatal("CreateDataExportRequest() succeeded despite a failed write")
+	}
+	if _, err := svc.CreateDataDeletionRequest("org-a", "hh-1", "parent-1", "bye"); err == nil {
+		t.Fatal("CreateDataDeletionRequest() succeeded despite a failed write")
+	}
+	if len(svc.exports) != 0 || len(svc.deletions) != 0 {
+		t.Fatalf("unsaved requests were cached: %d exports, %d deletions", len(svc.exports), len(svc.deletions))
 	}
 }

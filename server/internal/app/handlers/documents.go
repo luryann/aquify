@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -126,13 +128,34 @@ func (h *DocumentHandlers) createDocumentType(w http.ResponseWriter, r *http.Req
 }
 
 type updateDocumentTypeBody struct {
-	Name         *string `json:"name"`
-	Category     *string `json:"category"`
-	Description  *string `json:"description"`
-	IsRequired   *bool   `json:"is_required"`
-	AppliesTo    *string `json:"applies_to"`
-	ExpiryMonths *int    `json:"expiry_months"`
-	IsActive     *bool   `json:"is_active"`
+	Name         *string     `json:"name"`
+	Category     *string     `json:"category"`
+	Description  *string     `json:"description"`
+	IsRequired   *bool       `json:"is_required"`
+	AppliesTo    *string     `json:"applies_to"`
+	ExpiryMonths optionalInt `json:"expiry_months"`
+	IsActive     *bool       `json:"is_active"`
+}
+
+// optionalInt distinguishes an absent field (leave unchanged) from an explicit
+// JSON null (clear the value) and a number (set it).
+type optionalInt struct {
+	Set   bool
+	Value *int
+}
+
+func (o *optionalInt) UnmarshalJSON(data []byte) error {
+	o.Set = true
+	if string(bytes.TrimSpace(data)) == "null" {
+		o.Value = nil
+		return nil
+	}
+	var n int
+	if err := json.Unmarshal(data, &n); err != nil {
+		return err
+	}
+	o.Value = &n
+	return nil
 }
 
 // updateDocumentType handles PUT /api/v1/document-types/{typeID}
@@ -169,8 +192,8 @@ func (h *DocumentHandlers) updateDocumentType(w http.ResponseWriter, r *http.Req
 	if body.AppliesTo != nil {
 		updates["applies_to"] = *body.AppliesTo
 	}
-	if body.ExpiryMonths != nil {
-		updates["expiry_months"] = body.ExpiryMonths
+	if body.ExpiryMonths.Set {
+		updates["expiry_months"] = body.ExpiryMonths.Value
 	}
 	if body.IsActive != nil {
 		updates["is_active"] = *body.IsActive
@@ -390,8 +413,23 @@ func documentObjectKey(orgID, submissionID, fileName string) string {
 
 func validateDocumentObjectKey(orgID, submissionID, objectKey string) error {
 	prefix := fmt.Sprintf("documents/%s/%s/", strings.TrimSpace(orgID), strings.TrimSpace(submissionID))
-	if !strings.HasPrefix(strings.TrimSpace(objectKey), prefix) {
+	objectKey = strings.TrimSpace(objectKey)
+	if !strings.HasPrefix(objectKey, prefix) {
 		return fmt.Errorf("object key %q does not belong to this submission", objectKey)
+	}
+	// A prefix match alone is not containment: ".." segments (or backslash /
+	// control-character tricks) could resolve to another submission's object.
+	if strings.ContainsAny(objectKey, "\\\x00") {
+		return fmt.Errorf("object key %q contains forbidden characters", objectKey)
+	}
+	rest := strings.TrimPrefix(objectKey, prefix)
+	if rest == "" {
+		return fmt.Errorf("object key %q has no file name", objectKey)
+	}
+	for _, seg := range strings.Split(rest, "/") {
+		if seg == "" || seg == "." || seg == ".." {
+			return fmt.Errorf("object key %q contains a path traversal segment", objectKey)
+		}
 	}
 	return nil
 }

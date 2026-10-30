@@ -159,7 +159,35 @@ func (r *Repository) insertJobs(ctx context.Context, jobs []*Job) error {
 }
 
 func (r *Repository) updateJob(ctx context.Context, j *Job) error {
-	tag, err := r.pool.Exec(ctx, `
+	if !isUUID(j.ID) {
+		return ErrJobNotFound
+	}
+	// Lock the job row (same pattern as insertSignup) so the capacity check
+	// cannot race a concurrent signup.
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("volunteer: begin job update: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var locked string
+	err = tx.QueryRow(ctx, `SELECT id::text FROM volunteer_jobs WHERE id = $1::uuid AND org_id = $2 FOR UPDATE`,
+		j.ID, j.OrgID).Scan(&locked)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrJobNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("volunteer: lock job: %w", err)
+	}
+	var filled int
+	if err := tx.QueryRow(ctx, `
+		SELECT COUNT(*) FROM volunteer_signups
+		WHERE job_id = $1::uuid AND status IN ('confirmed','worked','no_show')`, j.ID).Scan(&filled); err != nil {
+		return fmt.Errorf("volunteer: count signups: %w", err)
+	}
+	if j.Capacity < filled {
+		return ErrCapacityBelowFilled
+	}
+	tag, err := tx.Exec(ctx, `
 		UPDATE volunteer_jobs SET event_name = $3, season_id = $4::uuid, role = $5, title = $6, description = $7,
 			location = $8, starts_at = $9, ends_at = $10, capacity = $11, hour_credit = $12, min_age = $13,
 			requires_certification = $14, updated_at = $15, updated_by = $16
@@ -172,6 +200,9 @@ func (r *Repository) updateJob(ctx context.Context, j *Job) error {
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrJobNotFound
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("volunteer: commit job update: %w", err)
 	}
 	return nil
 }
@@ -283,18 +314,27 @@ func (r *Repository) insertSignup(ctx context.Context, su *Signup) error {
 	return nil
 }
 
-func (r *Repository) updateSignup(ctx context.Context, su *Signup) error {
+func (r *Repository) updateSignup(ctx context.Context, su *Signup, expectedStatus string) error {
 	tag, err := r.pool.Exec(ctx, `
 		UPDATE volunteer_signups SET status = $3, hours_credited = $4, notes = $5, cancelled_at = $6,
 			cancelled_by = $7, checked_in_at = $8, checked_in_by = $9, updated_at = $10
-		WHERE id = $1::uuid AND org_id = $2`,
+		WHERE id = $1::uuid AND org_id = $2 AND status = $11`,
 		su.ID, su.OrgID, su.Status, su.HoursCredited, su.Notes, su.CancelledAt,
-		su.CancelledBy, su.CheckedInAt, su.CheckedInBy, su.UpdatedAt)
+		su.CancelledBy, su.CheckedInAt, su.CheckedInBy, su.UpdatedAt, expectedStatus)
 	if err != nil {
 		return fmt.Errorf("volunteer: update signup: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
-		return ErrSignupNotFound
+		// Either the row is gone or a concurrent writer already moved it.
+		var exists bool
+		if err := r.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM volunteer_signups WHERE id = $1::uuid AND org_id = $2)`,
+			su.ID, su.OrgID).Scan(&exists); err != nil {
+			return fmt.Errorf("volunteer: recheck signup: %w", err)
+		}
+		if !exists {
+			return ErrSignupNotFound
+		}
+		return ErrInvalidTransition
 	}
 	return nil
 }
@@ -439,12 +479,15 @@ func (r *Repository) reserveBuyout(ctx context.Context, b *Buyout) error {
 }
 
 func (r *Repository) updateBuyout(ctx context.Context, b *Buyout) error {
-	_, err := r.pool.Exec(ctx, `
+	tag, err := r.pool.Exec(ctx, `
 		UPDATE volunteer_buyouts SET status = $3, invoice_id = $4, invoice_item_id = $5, updated_at = $6
 		WHERE id = $1::uuid AND org_id = $2`,
 		b.ID, b.OrgID, b.Status, b.InvoiceID, b.InvoiceItemID, b.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("volunteer: update buyout: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrBuyoutNotFound
 	}
 	return nil
 }

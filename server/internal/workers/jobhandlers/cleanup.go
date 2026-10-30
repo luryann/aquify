@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
@@ -46,6 +47,9 @@ type ProcessDataDeletionPayload struct {
 
 // PurgeExpiredFilesHandler returns a Handler that removes expired temp files
 // (export objects in object storage).
+//
+// The services delete each object before marking its artifact expired, so a
+// storage failure leaves the artifact pending and the next sweep retries it.
 func PurgeExpiredFilesHandler(logger *slog.Logger, exportsService *exports.Service, reportsService *reports.Service) workers.Handler {
 	return func(ctx context.Context, task *workers.Task) error {
 		var p PurgeExpiredFilesPayload
@@ -57,19 +61,35 @@ func PurgeExpiredFilesHandler(logger *slog.Logger, exportsService *exports.Servi
 
 		cutoff := parseCutoffTime(p.CutoffTime)
 
+		// ExpireArtifacts deletes each object before marking it expired, so an
+		// artifact whose delete failed is left pending and retried next sweep.
+		// The returned artifacts are already gone; DeleteArtifact is a safety net.
+		var failed []string
 		if exportsService != nil {
 			for _, artifact := range exportsService.ExpireArtifacts(cutoff) {
-				if err := exportsService.DeleteArtifact(artifact.StorageKey); err != nil { // blank keys are ignored
+				if strings.TrimSpace(artifact.StorageKey) == "" {
+					continue
+				}
+				if err := exportsService.DeleteArtifact(artifact.StorageKey); err != nil {
 					logger.Warn("purge expired files: delete export artifact failed", "storage_key", artifact.StorageKey, "error", err)
+					failed = append(failed, artifact.StorageKey)
 				}
 			}
 		}
 		if reportsService != nil {
 			for _, artifact := range reportsService.ExpireArtifacts(cutoff) {
-				if err := reportsService.DeleteArtifact(artifact.StorageKey); err != nil { // blank keys are ignored
+				if strings.TrimSpace(artifact.StorageKey) == "" {
+					continue
+				}
+				if err := reportsService.DeleteArtifact(artifact.StorageKey); err != nil {
 					logger.Warn("purge expired files: delete report artifact failed", "storage_key", artifact.StorageKey, "error", err)
+					failed = append(failed, artifact.StorageKey)
 				}
 			}
+		}
+		if len(failed) > 0 {
+			sort.Strings(failed)
+			return fmt.Errorf("purge expired files: %d artifact delete(s) failed: %s", len(failed), strings.Join(failed, ", "))
 		}
 
 		logger.Info("purge expired files: completed", "org_id", p.OrgID)

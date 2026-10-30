@@ -20,6 +20,7 @@ import (
 
 var (
 	ErrNotFound          = errors.New("practice not found")
+	ErrInvalidDate       = errors.New("practice date must be a valid YYYY-MM-DD date")
 	ErrInvalidType       = errors.New("practice type must be water, dryland, video, or rest")
 	ErrInvalidAttendance = errors.New("attendance status must be present, absent, or excused")
 )
@@ -160,6 +161,9 @@ func (s *Service) Create(
 	if !validTypes[practiceType] {
 		return nil, ErrInvalidType
 	}
+	if _, err := time.Parse("2006-01-02", date); err != nil {
+		return nil, ErrInvalidDate
+	}
 	id := uuid.NewString()
 	now := time.Now().UTC()
 	p := &Practice{
@@ -244,6 +248,11 @@ func (s *Service) Get(orgID, id string) (*Practice, error) {
 
 // Update applies PracticeUpdates to an existing practice.
 func (s *Service) Update(orgID, id string, updates PracticeUpdates, updatedBy string) (*Practice, error) {
+	if updates.Date != nil {
+		if _, err := time.Parse("2006-01-02", *updates.Date); err != nil {
+			return nil, ErrInvalidDate
+		}
+	}
 	if s.repo != nil {
 		p, err := s.repo.GetByID(context.Background(), orgID, id)
 		if err != nil {
@@ -340,11 +349,6 @@ func (s *Service) Update(orgID, id string, updates PracticeUpdates, updatedBy st
 	cp.UpdatedAt = time.Now().UTC()
 	cp.UpdatedBy = updatedBy
 
-	if s.repo != nil {
-		if err := s.repo.Upsert(context.Background(), &cp); err != nil {
-			return nil, err
-		}
-	}
 	s.practices[id] = &cp
 	return &cp, nil
 }
@@ -410,12 +414,6 @@ func (s *Service) SetAttendance(orgID, practiceID, swimmerID, status, markedBy s
 		if err != nil {
 			return nil, err
 		}
-		s.mu.Lock()
-		if s.attendance[practiceID] == nil {
-			s.attendance[practiceID] = make(map[string]*PracticeAttendance)
-		}
-		s.attendance[practiceID][swimmerID] = rec
-		s.mu.Unlock()
 		return rec, nil
 	}
 

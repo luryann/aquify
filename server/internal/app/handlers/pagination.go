@@ -9,6 +9,9 @@ import (
 const (
 	defaultListLimit = 100
 	maxListLimit     = 200
+
+	// maxParsedInt caps limit/offset query values so digit strings cannot overflow int.
+	maxParsedInt = 1 << 30
 )
 
 type listPagination struct {
@@ -76,7 +79,13 @@ func parseNonNegativeInt(raw string, fallback int) int {
 		if ch < '0' || ch > '9' {
 			return fallback
 		}
-		value = value*10 + int(ch-'0')
+		// Clamp instead of overflowing: a wrapped negative offset would panic the slice.
+		if value < maxParsedInt {
+			value = value*10 + int(ch-'0')
+		}
+	}
+	if value > maxParsedInt {
+		value = maxParsedInt
 	}
 	return value
 }

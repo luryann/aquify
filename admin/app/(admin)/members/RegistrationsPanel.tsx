@@ -12,6 +12,7 @@ import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { formatDateOnly } from '@/lib/dates'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { Modal } from '@/components/ui/Modal'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 type RegistrationStatus = 'pending' | 'active' | 'inactive' | 'completed' | 'rejected' | 'withdrawn'
 type WaiverStatus = 'pending' | 'accepted'
@@ -346,7 +347,7 @@ export function RegistrationsPanel() {
       )}
 
       {loading ? (
-        <EmptyState icon="clipboard-list" title="Loading registrations" description="Fetching live registration data from the API." />
+        <PageSkeleton variant="table" noHeader rows={4} />
       ) : error ? (
         <EmptyState icon="alert-circle" title="Unable to load registrations" description={error} />
       ) : (

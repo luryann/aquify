@@ -225,7 +225,14 @@ func (h *StripeHandlers) createPaymentIntent(w http.ResponseWriter, r *http.Requ
 
 	invoice, err := h.billing.GetInvoice(orgID, principal, req.InvoiceID)
 	if err != nil {
-		httpx.WriteError(w, r, http.StatusNotFound, "invoice_not_found", "Invoice not found.", nil)
+		switch {
+		case errors.Is(err, billing.ErrInvoiceNotFound):
+			httpx.WriteError(w, r, http.StatusNotFound, "invoice_not_found", "Invoice not found.", nil)
+		case errors.Is(err, billing.ErrForbidden):
+			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "Insufficient permissions.", nil)
+		default:
+			httpx.WriteError(w, r, http.StatusInternalServerError, "invoice_lookup_failed", "Failed to load invoice.", err)
+		}
 		return
 	}
 	if invoice.AmountDueCents <= 0 || req.AmountCents > invoice.AmountDueCents {

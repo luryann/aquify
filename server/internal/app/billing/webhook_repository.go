@@ -87,10 +87,15 @@ func (r *Repository) finishWebhookEvent(ctx context.Context, rec *WebhookEventRe
 	return nil
 }
 
-// loadWebhookEvents returns the most recent webhook events, optionally for one org.
+// loadWebhookEvents returns the most recent webhook events, for one org (empty orgID means all orgs).
 func (r *Repository) loadWebhookEvents(ctx context.Context, orgID string, limit int) ([]*WebhookEventRecord, error) {
 	var org interface{}
-	if isUUIDString(orgID) {
+	if orgID != "" {
+		// A non-empty org that is not a UUID can match nothing; never fall
+		// through to the unfiltered (all orgs) query.
+		if !isUUIDString(orgID) {
+			return []*WebhookEventRecord{}, nil
+		}
 		org = orgID
 	}
 	rows, err := r.pool.Query(ctx, `

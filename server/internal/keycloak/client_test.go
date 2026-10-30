@@ -1057,3 +1057,68 @@ func TestAdminClient_ListUsersWithRealmRole_PagesAndFiltersByOrg(t *testing.T) {
 		t.Fatalf("unknown role should be empty: %v %v", none, err)
 	}
 }
+
+// Regression: a 201 without a usable Location header used to return ("", nil).
+func TestAdminClient_CreateUser_MissingLocationIsError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/token") {
+			json.NewEncoder(w).Encode(map[string]any{"access_token": "t", "expires_in": 300})
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+	c := newTestClient(t, srv)
+	if id, err := c.CreateUser(context.Background(), "a@example.com", "A", "B", "org-1"); err == nil {
+		t.Fatalf("expected error for missing Location, got id %q", id)
+	}
+}
+
+// Regression: a negative offset panicked on slicing and a huge offset sized an
+// enormous allocation in the org-filter fallback.
+func TestAdminClient_ListUsers_ExtremeOffsetsDoNotPanic(t *testing.T) {
+	srv, mk := newTestServer(t)
+	c := newTestClient(t, srv)
+	mk.disableOrgQueryFilter = true
+	mk.users["u1"] = &keycloak.User{ID: "u1", Attributes: map[string][]string{"org_id": {"org-1"}}}
+	if got, err := c.ListUsers(context.Background(), "org-1", "", 10, -5); err != nil || len(got) != 1 {
+		t.Fatalf("negative offset: %v %v", got, err)
+	}
+	if got, err := c.ListUsers(context.Background(), "org-1", "", 10, 1<<40); err != nil || len(got) != 0 {
+		t.Fatalf("huge offset: %v %v", got, err)
+	}
+	s := keycloak.NewStubClient()
+	s.AddUser(keycloak.User{ID: "u1"})
+	if got, err := s.ListUsers(context.Background(), "", "", 10, -1); err != nil || len(got) != 1 {
+		t.Fatalf("stub negative offset: %v %v", got, err)
+	}
+}
+
+// A token revoked server-side before its local expiry yields a 401 on the
+// admin call; the client must refresh once and retry instead of failing.
+func TestAdminClient_RetriesOnceAfter401WithFreshToken(t *testing.T) {
+	var tokenCalls, userCalls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/protocol/openid-connect/token") {
+			tokenCalls++
+			_ = json.NewEncoder(w).Encode(map[string]any{"access_token": fmt.Sprintf("tok-%d", tokenCalls), "expires_in": 300})
+			return
+		}
+		userCalls++
+		if r.Header.Get("Authorization") != "Bearer tok-2" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "u1", "email": "a@example.com", "enabled": true})
+	}))
+	t.Cleanup(srv.Close)
+	c := newTestClient(t, srv)
+	u, err := c.GetUser(context.Background(), "u1")
+	if err != nil {
+		t.Fatalf("GetUser after 401: %v", err)
+	}
+	if u.ID != "u1" || tokenCalls != 2 || userCalls != 2 {
+		t.Fatalf("user=%+v tokenCalls=%d userCalls=%d, want one refresh and one retry", u, tokenCalls, userCalls)
+	}
+}

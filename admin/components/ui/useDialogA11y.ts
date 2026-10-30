@@ -1,12 +1,16 @@
 'use client'
 
-import { useEffect, type RefObject } from 'react'
+import { useEffect, useRef, type RefObject } from 'react'
 
 /**
  * Escape-to-close, Tab focus trap, initial focus and focus restore for
  * hand-built overlays (drawers, sheets). Modal.tsx wraps it for the centered case.
  */
 export function useDialogA11y(ref: RefObject<HTMLElement | null>, onClose: () => void, active = true) {
+  // Callers pass inline arrows; depending on them directly would re-run the
+  // effect (and re-steal focus to the first field) on every keystroke.
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
   useEffect(() => {
     if (!active) return
     const returnTo = document.activeElement as HTMLElement | null
@@ -23,7 +27,7 @@ export function useDialogA11y(ref: RefObject<HTMLElement | null>, onClose: () =>
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation()
-        onClose()
+        onCloseRef.current()
         return
       }
       if (e.key !== 'Tab') return
@@ -46,5 +50,5 @@ export function useDialogA11y(ref: RefObject<HTMLElement | null>, onClose: () =>
       returnTo?.focus?.()
       document.removeEventListener('keydown', onKeyDown)
     }
-  }, [ref, onClose, active])
+  }, [ref, active])
 }

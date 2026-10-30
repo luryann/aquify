@@ -9,7 +9,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/dareaquatics/aquify/server/internal/dbutil"
 	"log/slog"
 	"slices"
 	"sort"
@@ -18,6 +17,7 @@ import (
 	"time"
 
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	"github.com/dareaquatics/aquify/server/internal/dbutil"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -29,6 +29,7 @@ var (
 	ErrResultNotFound         = errors.New("result not found")
 	ErrBestTimeNotFound       = errors.New("best time record not found")
 	ErrStandardNotFound       = errors.New("time standard not found")
+	ErrStandardInvalid        = errors.New("invalid time standard")
 	ErrOverrideRequiresReason = errors.New("a reason is required for manual best-time overrides")
 )
 
@@ -373,6 +374,9 @@ func (s *Service) SetHouseholdChecker(checker SwimmerHouseholdChecker) {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 func (s *Service) requireAdminOrCoach(principal *appmiddleware.Principal) error {
+	if principal == nil {
+		return ErrForbidden
+	}
 	for _, r := range principal.Roles {
 		switch strings.ToLower(r) {
 		case "admin", "coach":
@@ -383,6 +387,9 @@ func (s *Service) requireAdminOrCoach(principal *appmiddleware.Principal) error 
 }
 
 func (s *Service) requireAdmin(principal *appmiddleware.Principal) error {
+	if principal == nil {
+		return ErrForbidden
+	}
 	for _, r := range principal.Roles {
 		switch strings.ToLower(r) {
 		case "admin":
@@ -397,6 +404,9 @@ func (s *Service) requireAdmin(principal *appmiddleware.Principal) error {
 // checkParentHouseholdForSwimmer after this check to enforce household
 // isolation for the parent and swimmer roles.
 func (s *Service) requireReadAccess(principal *appmiddleware.Principal) error {
+	if principal == nil {
+		return ErrForbidden
+	}
 	for _, r := range principal.Roles {
 		switch strings.ToLower(r) {
 		case "admin", "coach", "parent", "swimmer":
@@ -497,6 +507,23 @@ func (s *Service) HasMeetResult(orgID, swimmerID, meetID string, distance int, s
 	return false
 }
 
+// HasResultTime reports whether the swimmer already has an active result for
+// this event/course with exactly this finish time, regardless of meet. It is
+// the dedupe used by external (USA Swimming) syncs, which have no meet to key
+// on: an identical time for the same swimmer/event/course is treated as the
+// same swim.
+func (s *Service) HasResultTime(orgID, swimmerID string, distance int, stroke, course string, finTimeMs int) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, r := range s.results {
+		if r.OrgID == orgID && r.SwimmerID == swimmerID && r.Distance == distance && r.Stroke == stroke &&
+			r.Course == course && r.Status == "active" && !r.DQ && r.FinTimeMs != nil && *r.FinTimeMs == finTimeMs {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Service) UpsertResult(orgID, actorID string, principal *appmiddleware.Principal, input UpsertResultInput) (*Result, error) {
 	result, _, err := s.UpsertResultWithRecords(orgID, actorID, principal, input)
 	return result, err
@@ -556,6 +583,19 @@ func (s *Service) UpsertResultWithRecords(orgID, actorID string, principal *appm
 	}
 	s.results[result.ID] = result
 
+	// rollback undoes the stored result (and splits) when a later step fails,
+	// so the caller's error never leaves a half-recorded swim behind.
+	// Compensation, not a transaction: the repo methods each use the pool.
+	rollback := func() {
+		delete(s.results, result.ID)
+		delete(s.splits, result.ID)
+		if s.repo != nil {
+			if err := s.repo.DeleteResult(context.Background(), orgID, result.ID); err != nil {
+				slog.Error("performance: roll back result after failed upsert", "result_id", result.ID, "error", err)
+			}
+		}
+	}
+
 	// Persist splits
 	if len(input.Splits) > 0 {
 		ss := make([]*Split, 0, len(input.Splits))
@@ -577,6 +617,7 @@ func (s *Service) UpsertResultWithRecords(orgID, actorID string, principal *appm
 		if s.repo != nil {
 			if err := s.repo.UpsertSplits(context.Background(), ss); err != nil {
 				slog.Error("performance: upsert splits", "error", err)
+				rollback()
 				s.mu.Unlock()
 				return nil, nil, fmt.Errorf("persist splits: %w", err)
 			}
@@ -594,6 +635,7 @@ func (s *Service) UpsertResultWithRecords(orgID, actorID string, principal *appm
 	)
 	if result.IsOfficial && !result.DQ && result.FinTimeMs != nil && !isRelayStroke(input.Stroke) {
 		if err := s.recomputeBestTimeLocked(orgID, actorID, input.SwimmerID, input.Distance, input.Stroke, input.Course); err != nil {
+			rollback()
 			s.mu.Unlock()
 			return nil, nil, err
 		}
@@ -1099,6 +1141,12 @@ func (s *Service) UpdateTimeStandard(orgID, actorID, standardID string, principa
 		return nil, ErrStandardNotFound
 	}
 
+	if input.TimeMs != nil && *input.TimeMs <= 0 {
+		return nil, fmt.Errorf("%w: time_ms must be greater than zero", ErrStandardInvalid)
+	}
+	if input.Name != nil && strings.TrimSpace(*input.Name) == "" {
+		return nil, fmt.Errorf("%w: name must not be empty", ErrStandardInvalid)
+	}
 	ts := new(TimeStandard)
 	*ts = *current
 	if input.Name != nil {

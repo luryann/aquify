@@ -40,7 +40,8 @@ type RedisBackend struct {
 	handlers    map[string]Handler
 	scheduled   []ScheduledJob
 	server      *asynq.Server
-	scheduler   *asynq.Scheduler
+	schedCancel context.CancelFunc
+	schedWG     sync.WaitGroup
 	started     bool
 }
 
@@ -234,7 +235,7 @@ func (b *RedisBackend) DLQTasks() ([]TaskInfo, error) {
 }
 
 func (b *RedisBackend) RetryDLQTask(_ context.Context, taskID string) error {
-	queue, _, err := b.findTask(taskID)
+	queue, err := b.findDLQTask(taskID)
 	if err != nil {
 		return err
 	}
@@ -245,7 +246,7 @@ func (b *RedisBackend) RetryDLQTask(_ context.Context, taskID string) error {
 }
 
 func (b *RedisBackend) DeleteDLQTask(taskID string) error {
-	queue, _, err := b.findTask(taskID)
+	queue, err := b.findDLQTask(taskID)
 	if err != nil {
 		return err
 	}
@@ -277,38 +278,48 @@ func (b *RedisBackend) Start() error {
 		},
 	})
 	if err := b.server.Start(mux); err != nil {
+		b.server = nil
 		return err
 	}
+	// Any failure below must not leave the server running while
+	// started stays false, or a retried Start would launch a second one.
+	started := false
+	defer func() {
+		if started {
+			return
+		}
+		b.server.Shutdown()
+		b.server = nil
+	}()
 
 	if len(b.scheduled) > 0 {
-		scheduler := asynq.NewScheduler(b.redisOpt, &asynq.SchedulerOpts{})
+		ctx, cancel := context.WithCancel(context.Background())
+		now := time.Now()
 		for _, job := range b.scheduled {
 			if job.Interval <= 0 {
 				continue
 			}
 			task, err := NewTask(job.TaskType, job.Payload)
 			if err != nil {
+				cancel()
+				b.schedWG.Wait()
 				return err
 			}
-			if _, err := b.enqueue(context.Background(), time.Time{}, task, WithQueue(job.Queue)); err != nil && !errors.Is(err, ErrDuplicateTask) {
+			// Every instance runs this; the deterministic task ID makes the
+			// duplicate enqueues from other instances collapse into one.
+			initialID := scheduledTaskID(job, "init", now.UnixNano()/int64(job.Interval))
+			if _, err := b.enqueue(ctx, time.Time{}, task, WithQueue(job.Queue), WithUniqueKey(initialID)); err != nil && !errors.Is(err, ErrDuplicateTask) {
+				cancel()
+				b.schedWG.Wait()
 				return fmt.Errorf("enqueue initial scheduled job %q: %w", job.Name, err)
 			}
-			_, err = scheduler.Register(
-				fmt.Sprintf("@every %s", job.Interval),
-				asynq.NewTask(task.Type, task.Payload),
-				asynq.Queue(defaultQueue(job.Queue)),
-				asynq.Retention(b.retention),
-			)
-			if err != nil {
-				return err
-			}
+			b.schedWG.Add(1)
+			go b.runScheduledJob(ctx, job, task)
 		}
-		if err := scheduler.Start(); err != nil {
-			return err
-		}
-		b.scheduler = scheduler
+		b.schedCancel = cancel
 	}
 
+	started = true
 	b.started = true
 	return nil
 }
@@ -316,9 +327,10 @@ func (b *RedisBackend) Start() error {
 func (b *RedisBackend) Stop(_ context.Context) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.scheduler != nil {
-		b.scheduler.Shutdown()
-		b.scheduler = nil
+	if b.schedCancel != nil {
+		b.schedCancel()
+		b.schedWG.Wait()
+		b.schedCancel = nil
 	}
 	if b.server != nil {
 		b.server.Shutdown()
@@ -463,6 +475,19 @@ func (b *RedisBackend) findTask(taskID string) (string, *asynq.TaskInfo, error) 
 	return "", nil, ErrTaskNotFound
 }
 
+// findDLQTask locates taskID and returns its queue only if it is archived, so
+// the DLQ retry/delete actions can never touch a pending or scheduled task.
+func (b *RedisBackend) findDLQTask(taskID string) (string, error) {
+	queue, task, err := b.findTask(taskID)
+	if err != nil {
+		return "", err
+	}
+	if task.State != asynq.TaskStateArchived {
+		return "", ErrTaskNotFound
+	}
+	return queue, nil
+}
+
 func convertAsynqTaskInfo(info *asynq.TaskInfo) *TaskInfo {
 	if info == nil {
 		return nil
@@ -489,6 +514,7 @@ func convertAsynqTaskInfo(info *asynq.TaskInfo) *TaskInfo {
 		MaxRetries: info.MaxRetry,
 		Retried:    info.Retried,
 		LastErr:    info.LastErr,
+		OrgID:      TaskOrgID(info.Payload),
 	}
 	out.CompletedAt = normalizeTimestamp(info.CompletedAt)
 	return out
@@ -498,7 +524,8 @@ func normalizeAsynqTaskError(err error) error {
 	if err == nil {
 		return nil
 	}
-	if strings.Contains(strings.ToLower(err.Error()), "not found") {
+	if errors.Is(err, asynq.ErrTaskNotFound) || errors.Is(err, asynq.ErrQueueNotFound) ||
+		strings.Contains(strings.ToLower(err.Error()), "not found") {
 		return ErrTaskNotFound
 	}
 	return err
@@ -517,4 +544,35 @@ func (b *RedisBackend) maxRetriesForQueue(queue string) int {
 		return policy.MaxRetries
 	}
 	return policies[QueueDefault].MaxRetries
+}
+
+// scheduledTaskID is the deterministic task ID shared by every instance for one
+// firing of a scheduled job, so asynq rejects all but the first enqueue.
+func scheduledTaskID(job ScheduledJob, kind string, bucket int64) string {
+	return fmt.Sprintf("sched:%s:%s:%s:%d", job.TaskType, job.Name, kind, bucket)
+}
+
+// runScheduledJob fires job at wall-clock-aligned interval boundaries. Because
+// all instances compute the same boundary (and so the same task ID), only one
+// task is enqueued per firing no matter how many instances run a scheduler.
+func (b *RedisBackend) runScheduledJob(ctx context.Context, job ScheduledJob, task *Task) {
+	defer b.schedWG.Done()
+	interval := int64(job.Interval)
+	for {
+		now := time.Now()
+		next := (now.UnixNano()/interval + 1) * interval
+		timer := time.NewTimer(time.Duration(next - now.UnixNano()))
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+		// Nearest boundary tolerates small clock skew between instances.
+		bucket := (time.Now().UnixNano() + interval/2) / interval
+		_, err := b.enqueue(ctx, time.Time{}, task, WithQueue(job.Queue), WithUniqueKey(scheduledTaskID(job, "tick", bucket)))
+		if err != nil && !errors.Is(err, ErrDuplicateTask) && ctx.Err() == nil {
+			b.logger.Error("scheduled job enqueue failed", "job", job.Name, "error", err)
+		}
+	}
 }

@@ -287,7 +287,7 @@ function FirstRunSteps() {
             <span className="is-77c4c01">{st.n}</span>
             <strong className="is-14207b8">{st.title}</strong>
             <span className="is-fb4f5c1">{st.body}</span>
-            <Link href={st.href} className="portal-tap is-4becda5" >{st.cta}</Link>
+            <Link href={st.href} className={`portal-tap btn btn-sm ${st.n === 1 ? 'btn-primary' : 'btn-secondary'}`}>{st.cta}</Link>
           </li>
         ))}
       </ol>

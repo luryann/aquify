@@ -79,6 +79,12 @@ func ReadHY3(filename string, data []byte) HY3IngestResult {
 			result.UnknownFiles = append(result.UnknownFiles, f.Name)
 			continue
 		}
+		cleanName, safe := normalizeZipEntryName(f.Name)
+		if !safe {
+			// Absolute / path-traversal names are never surfaced as payloads.
+			result.UnknownFiles = append(result.UnknownFiles, f.Name)
+			continue
+		}
 
 		content, newBudget, readErr := readZipEntryBounded(f, budget)
 		if readErr != nil {
@@ -93,7 +99,7 @@ func ReadHY3(filename string, data []byte) HY3IngestResult {
 			return result
 		}
 		budget = newBudget
-		result.AllPayloads = append(result.AllPayloads, ZipEntry{Name: f.Name, Content: content})
+		result.AllPayloads = append(result.AllPayloads, ZipEntry{Name: cleanName, Content: content})
 	}
 
 	if len(result.AllPayloads) == 0 {

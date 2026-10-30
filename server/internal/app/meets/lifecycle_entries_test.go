@@ -55,7 +55,7 @@ func TestLockCommitmentsTurnsSelectionsIntoEntries(t *testing.T) {
 		t.Fatalf("respond no: %v", err)
 	}
 	for _, ev := range events {
-		if _, err := svc.SelectCommitmentEvent(parent, "org-a", meet.ID, ids["sw-yes"], SelectEventInput{MeetEventID: ev.ID}); err != nil {
+		if _, err := svc.SelectCommitmentEvent(parent, "org-a", meet.ID, ids["sw-yes"], SelectEventInput{MeetEventID: ev.ID, SeedTimeMs: intPtr(31250)}); err != nil {
 			t.Fatalf("select: %v", err)
 		}
 	}
@@ -66,6 +66,11 @@ func TestLockCommitmentsTurnsSelectionsIntoEntries(t *testing.T) {
 	entries, err := svc.ListEntries(admin, "org-a", meet.ID)
 	if err != nil || len(entries) != 2 {
 		t.Fatalf("want 2 entries from selections, got %d (%v)", len(entries), err)
+	}
+	for _, e := range entries {
+		if e.SeedTimeMs == nil || *e.SeedTimeMs != 31250 {
+			t.Fatalf("entry %s lost the selection seed time: %v", e.ID, e.SeedTimeMs)
+		}
 	}
 	commitments, _ = svc.ListCommitments(admin, "org-a", meet.ID)
 	for _, c := range commitments {
@@ -139,5 +144,37 @@ func TestParseResultsFileFormats(t *testing.T) {
 	}
 	if _, _, err := ParseResultsFile("results.cl2", cl2); err != nil {
 		t.Fatalf("cl2: %v", err)
+	}
+}
+
+func TestScratchEntryPersistsReasonOnEntry(t *testing.T) {
+	t.Parallel()
+	svc := NewService()
+	admin := &appmiddleware.Principal{UserID: "admin-1", Roles: []string{"admin"}}
+	parent := &appmiddleware.Principal{UserID: "parent-1", HouseholdID: "hh-1", Roles: []string{"parent"}}
+	svc.SeedSwimmer("org-a", "sw-yes", "hh-1")
+	svc.SeedParentHousehold(parent.UserID, "hh-1")
+	meet := openMeetForCommitments(t, svc, admin)
+	commitments, _ := svc.ListCommitments(admin, "org-a", meet.ID)
+	events, _ := svc.ListMeetEvents(admin, "org-a", meet.ID)
+	if _, _, err := svc.RespondToCommitment(parent, "org-a", meet.ID, commitments[0].ID, CommitmentRespondInput{Response: "committed_yes"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.SelectCommitmentEvent(parent, "org-a", meet.ID, commitments[0].ID, SelectEventInput{MeetEventID: events[0].ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := svc.LockCommitments(admin, "org-a", meet.ID); err != nil {
+		t.Fatal(err)
+	}
+	entries, _ := svc.ListEntries(admin, "org-a", meet.ID)
+	if len(entries) != 1 || entries[0].CommitmentID == "" || entries[0].ProposedBy != "admin-1" {
+		t.Fatalf("entry lineage missing: %+v", entries)
+	}
+	if _, _, err := svc.ScratchEntry(admin, "org-a", meet.ID, entries[0].ID, "  sick  "); err != nil {
+		t.Fatal(err)
+	}
+	entries, _ = svc.ListEntries(admin, "org-a", meet.ID)
+	if entries[0].ScratchReason != "sick" {
+		t.Fatalf("scratch reason = %q, want %q", entries[0].ScratchReason, "sick")
 	}
 }

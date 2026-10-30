@@ -41,6 +41,45 @@ func issueDocToken(t *testing.T, router http.Handler, userID, orgID, role, house
 	return issueSession(t, router, sessionSpec{UserID: userID, OrgID: orgID, HouseholdID: householdID, Roles: []string{role}})
 }
 
+// createDocType creates a document type as admin and returns its ID.
+func createDocType(t *testing.T, router http.Handler, adminToken, orgID, body string) string {
+	t.Helper()
+	rr := doOrgRequest(router, http.MethodPost, "/api/v1/document-types", adminToken, orgID, body)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("create doc type: got %d body=%s", rr.Code, rr.Body.String())
+	}
+	var resp struct {
+		DocumentType struct {
+			ID string `json:"id"`
+		} `json:"document_type"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil || resp.DocumentType.ID == "" {
+		t.Fatalf("decode doc type: id=%q err=%v", resp.DocumentType.ID, err)
+	}
+	return resp.DocumentType.ID
+}
+
+// createDocSubmission creates a submission for the household and returns its ID.
+func createDocSubmission(t *testing.T, router http.Handler, token, orgID, typeID, householdID string) string {
+	t.Helper()
+	rr := doOrgRequest(router, http.MethodPost, "/api/v1/documents", token, orgID, `{
+		"document_type_id": "`+typeID+`",
+		"household_id": "`+householdID+`"
+	}`)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("create submission: got %d body=%s", rr.Code, rr.Body.String())
+	}
+	var resp struct {
+		Document struct {
+			ID string `json:"id"`
+		} `json:"document"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil || resp.Document.ID == "" {
+		t.Fatalf("decode submission: id=%q err=%v", resp.Document.ID, err)
+	}
+	return resp.Document.ID
+}
+
 func requestDocumentUpload(t *testing.T, router http.Handler, token, orgID, submissionID, fileName, fileMIME string, fileSize int64) string {
 	t.Helper()
 
@@ -171,38 +210,16 @@ func TestDocumentUploadURLAndAttachValidateObjectStorage(t *testing.T) {
 	adminToken := issueDocToken(t, router, "admin-user", orgID, "admin", "")
 	parentToken := issueDocToken(t, router, "parent-user", orgID, "parent", "hh-001")
 
-	typeResp := doOrgRequest(router, http.MethodPost, "/api/v1/document-types", adminToken, orgID, `{
+	typeID := createDocType(t, router, adminToken, orgID, `{
 		"name": "Medical Form",
 		"category": "medical",
 		"is_required": true,
 		"applies_to": "household",
 		"is_active": true
 	}`)
-	if typeResp.Code != http.StatusCreated {
-		t.Fatalf("create doc type: got %d body=%s", typeResp.Code, typeResp.Body.String())
-	}
-	var createdType struct {
-		DocumentType struct {
-			ID string `json:"id"`
-		} `json:"document_type"`
-	}
-	json.NewDecoder(typeResp.Body).Decode(&createdType)
+	subID := createDocSubmission(t, router, parentToken, orgID, typeID, "hh-001")
 
-	createResp := doOrgRequest(router, http.MethodPost, "/api/v1/documents", parentToken, orgID, `{
-		"document_type_id": "`+createdType.DocumentType.ID+`",
-		"household_id": "hh-001"
-	}`)
-	if createResp.Code != http.StatusCreated {
-		t.Fatalf("create submission: got %d body=%s", createResp.Code, createResp.Body.String())
-	}
-	var createdSub struct {
-		Document struct {
-			ID string `json:"id"`
-		} `json:"document"`
-	}
-	json.NewDecoder(createResp.Body).Decode(&createdSub)
-
-	uploadResp := doOrgRequest(router, http.MethodPost, "/api/v1/documents/"+createdSub.Document.ID+"/upload-url", parentToken, orgID, `{
+	uploadResp := doOrgRequest(router, http.MethodPost, "/api/v1/documents/"+subID+"/upload-url", parentToken, orgID, `{
 		"file_name": "medical.pdf",
 		"file_mime": "application/pdf",
 		"file_size_bytes": 1234
@@ -218,7 +235,7 @@ func TestDocumentUploadURLAndAttachValidateObjectStorage(t *testing.T) {
 		t.Fatal("expected object key in upload response")
 	}
 
-	missingAttachResp := doOrgRequest(router, http.MethodPost, "/api/v1/documents/"+createdSub.Document.ID+"/attach", parentToken, orgID, `{
+	missingAttachResp := doOrgRequest(router, http.MethodPost, "/api/v1/documents/"+subID+"/attach", parentToken, orgID, `{
 		"file_object_key": "`+uploadPayload.ObjectKey+`",
 		"file_name": "medical.pdf",
 		"file_mime": "application/pdf",
@@ -232,7 +249,7 @@ func TestDocumentUploadURLAndAttachValidateObjectStorage(t *testing.T) {
 		t.Fatalf("seed uploaded object: %v", err)
 	}
 
-	attachResp := doOrgRequest(router, http.MethodPost, "/api/v1/documents/"+createdSub.Document.ID+"/attach", parentToken, orgID, `{
+	attachResp := doOrgRequest(router, http.MethodPost, "/api/v1/documents/"+subID+"/attach", parentToken, orgID, `{
 		"file_object_key": "`+uploadPayload.ObjectKey+`",
 		"file_name": "medical.pdf",
 		"file_mime": "application/pdf",
@@ -252,37 +269,21 @@ func TestDocumentAttachRejectsObjectKeyOutsideSubmissionScope(t *testing.T) {
 	adminToken := issueDocToken(t, router, "admin-user", orgID, "admin", "")
 	parentToken := issueDocToken(t, router, "parent-user", orgID, "parent", "hh-001")
 
-	typeResp := doOrgRequest(router, http.MethodPost, "/api/v1/document-types", adminToken, orgID, `{
+	typeID := createDocType(t, router, adminToken, orgID, `{
 		"name": "Insurance Card",
 		"category": "insurance",
 		"is_required": true,
 		"applies_to": "household",
 		"is_active": true
 	}`)
-	var createdType struct {
-		DocumentType struct {
-			ID string `json:"id"`
-		} `json:"document_type"`
-	}
-	json.NewDecoder(typeResp.Body).Decode(&createdType)
-
-	createResp := doOrgRequest(router, http.MethodPost, "/api/v1/documents", parentToken, orgID, `{
-		"document_type_id": "`+createdType.DocumentType.ID+`",
-		"household_id": "hh-001"
-	}`)
-	var createdSub struct {
-		Document struct {
-			ID string `json:"id"`
-		} `json:"document"`
-	}
-	json.NewDecoder(createResp.Body).Decode(&createdSub)
+	subID := createDocSubmission(t, router, parentToken, orgID, typeID, "hh-001")
 
 	foreignObjectKey := "documents/" + orgID + "/some-other-submission/foreign.pdf"
 	if err := store.PutObject(context.Background(), foreignObjectKey, "application/pdf", []byte("pdf")); err != nil {
 		t.Fatalf("seed foreign object: %v", err)
 	}
 
-	attachResp := doOrgRequest(router, http.MethodPost, "/api/v1/documents/"+createdSub.Document.ID+"/attach", parentToken, orgID, `{
+	attachResp := doOrgRequest(router, http.MethodPost, "/api/v1/documents/"+subID+"/attach", parentToken, orgID, `{
 		"file_object_key": "`+foreignObjectKey+`",
 		"file_name": "foreign.pdf",
 		"file_mime": "application/pdf",
@@ -323,27 +324,16 @@ func TestDocumentSubmissionWorkflow(t *testing.T) {
 	adminToken := issueDocToken(t, router, "admin-user", orgID, "admin", "")
 	parentToken := issueDocToken(t, router, "parent-user", orgID, "parent", householdID)
 
-	// Admin creates a document type
-	rr := doOrgRequest(router, http.MethodPost, "/api/v1/document-types", adminToken, orgID, `{
+	typeID := createDocType(t, router, adminToken, orgID, `{
 		"name": "Medical Authorization",
 		"category": "medical",
 		"is_required": true,
 		"applies_to": "swimmer",
 		"is_active": true
 	}`)
-	if rr.Code != http.StatusCreated {
-		t.Fatalf("create doc type: %d %s", rr.Code, rr.Body.String())
-	}
-	var typeResp struct {
-		DocumentType struct {
-			ID string `json:"id"`
-		} `json:"document_type"`
-	}
-	json.NewDecoder(rr.Body).Decode(&typeResp)
-	typeID := typeResp.DocumentType.ID
 
 	// Parent creates a submission
-	rr = doOrgRequest(router, http.MethodPost, "/api/v1/documents", parentToken, orgID, `{
+	rr := doOrgRequest(router, http.MethodPost, "/api/v1/documents", parentToken, orgID, `{
 		"document_type_id": "`+typeID+`",
 		"household_id": "`+householdID+`"
 	}`)
@@ -395,32 +385,13 @@ func TestDocumentRejectAndResubmit(t *testing.T) {
 	adminToken := issueDocToken(t, router, "admin-user", orgID, "admin", "")
 	parentToken := issueDocToken(t, router, "parent-user", orgID, "parent", householdID)
 
-	// Create type
-	rr := doOrgRequest(router, http.MethodPost, "/api/v1/document-types", adminToken, orgID, `{
+	typeID := createDocType(t, router, adminToken, orgID, `{
 		"name": "Insurance Card", "category": "insurance", "is_required": true, "is_active": true
 	}`)
-	var tr struct {
-		DocumentType struct {
-			ID string `json:"id"`
-		} `json:"document_type"`
-	}
-	json.NewDecoder(rr.Body).Decode(&tr)
-
-	// Parent submits
-	rr = doOrgRequest(router, http.MethodPost, "/api/v1/documents", parentToken, orgID, `{
-		"document_type_id": "`+tr.DocumentType.ID+`",
-		"household_id": "`+householdID+`"
-	}`)
-	var sr struct {
-		Document struct {
-			ID string `json:"id"`
-		} `json:"document"`
-	}
-	json.NewDecoder(rr.Body).Decode(&sr)
-	subID := sr.Document.ID
+	subID := createDocSubmission(t, router, parentToken, orgID, typeID, householdID)
 
 	objectKey := requestDocumentUpload(t, router, parentToken, orgID, subID, "ins.pdf", "application/pdf", 4096)
-	rr = attachUploadedDocument(t, router, store, parentToken, orgID, subID, objectKey, "ins.pdf", "application/pdf", 4096)
+	rr := attachUploadedDocument(t, router, store, parentToken, orgID, subID, objectKey, "ins.pdf", "application/pdf", 4096)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("attach initial file: %d %s", rr.Code, rr.Body.String())
 	}
@@ -462,35 +433,13 @@ func TestDocumentHouseholdScopeEnforcement(t *testing.T) {
 	parent1Token := issueDocToken(t, router, "parent-1", orgID, "parent", "hh-001")
 	parent2Token := issueDocToken(t, router, "parent-2", orgID, "parent", "hh-002")
 
-	// Create type
-	rr := doOrgRequest(router, http.MethodPost, "/api/v1/document-types", adminToken, orgID, `{
+	typeID := createDocType(t, router, adminToken, orgID, `{
 		"name": "Photo Release", "category": "release", "is_required": false, "is_active": true
 	}`)
-	var tr struct {
-		DocumentType struct {
-			ID string `json:"id"`
-		} `json:"document_type"`
-	}
-	json.NewDecoder(rr.Body).Decode(&tr)
-	typeID := tr.DocumentType.ID
-
-	// Parent 1 creates a submission
-	rr = doOrgRequest(router, http.MethodPost, "/api/v1/documents", parent1Token, orgID, `{
-		"document_type_id": "`+typeID+`", "household_id": "hh-001"
-	}`)
-	if rr.Code != http.StatusCreated {
-		t.Fatalf("parent1 create submission: %d %s", rr.Code, rr.Body.String())
-	}
-	var sr struct {
-		Document struct {
-			ID string `json:"id"`
-		} `json:"document"`
-	}
-	json.NewDecoder(rr.Body).Decode(&sr)
-	subID := sr.Document.ID
+	subID := createDocSubmission(t, router, parent1Token, orgID, typeID, "hh-001")
 
 	// Parent 2 tries to view parent 1's submission — should get 404
-	rr = doOrgRequest(router, http.MethodGet, "/api/v1/documents/"+subID, parent2Token, orgID, "")
+	rr := doOrgRequest(router, http.MethodGet, "/api/v1/documents/"+subID, parent2Token, orgID, "")
 	if rr.Code != http.StatusNotFound {
 		t.Errorf("parent2 accessing parent1 submission: want 404, got %d", rr.Code)
 	}
@@ -530,31 +479,13 @@ func TestGetSubmissionRoleEnforcement(t *testing.T) {
 	swimmerToken := issueDocToken(t, router, "swimmer-user", orgID, "swimmer", "")
 	readOnlyToken := issueDocToken(t, router, "readonly-user", orgID, "read_only", "")
 
-	// Admin creates a type
-	rr := doOrgRequest(router, http.MethodPost, "/api/v1/document-types", adminToken, orgID, `{
+	typeID := createDocType(t, router, adminToken, orgID, `{
 		"name": "Role Check Waiver", "category": "waiver", "is_required": true, "is_active": true
 	}`)
-	var tr struct {
-		DocumentType struct {
-			ID string `json:"id"`
-		} `json:"document_type"`
-	}
-	json.NewDecoder(rr.Body).Decode(&tr)
-
-	// Parent creates a submission
-	rr = doOrgRequest(router, http.MethodPost, "/api/v1/documents", parentToken, orgID, `{
-		"document_type_id": "`+tr.DocumentType.ID+`", "household_id": "`+householdID+`"
-	}`)
-	var sr struct {
-		Document struct {
-			ID string `json:"id"`
-		} `json:"document"`
-	}
-	json.NewDecoder(rr.Body).Decode(&sr)
-	subID := sr.Document.ID
+	subID := createDocSubmission(t, router, parentToken, orgID, typeID, householdID)
 
 	// Swimmer role must get 403
-	rr = doOrgRequest(router, http.MethodGet, "/api/v1/documents/"+subID, swimmerToken, orgID, "")
+	rr := doOrgRequest(router, http.MethodGet, "/api/v1/documents/"+subID, swimmerToken, orgID, "")
 	if rr.Code != http.StatusForbidden {
 		t.Errorf("swimmer GET document: want 403, got %d", rr.Code)
 	}
@@ -583,34 +514,17 @@ func TestDocumentVerifyRequiresAdmin(t *testing.T) {
 	adminToken := issueDocToken(t, router, "admin-user", orgID, "admin", "")
 	parentToken := issueDocToken(t, router, "parent-user", orgID, "parent", householdID)
 
-	// Create type + submission
-	rr := doOrgRequest(router, http.MethodPost, "/api/v1/document-types", adminToken, orgID, `{
+	typeID := createDocType(t, router, adminToken, orgID, `{
 		"name": "USS Registration", "category": "registration", "is_required": true, "is_active": true
 	}`)
-	var tr struct {
-		DocumentType struct {
-			ID string `json:"id"`
-		} `json:"document_type"`
-	}
-	json.NewDecoder(rr.Body).Decode(&tr)
-
-	rr = doOrgRequest(router, http.MethodPost, "/api/v1/documents", parentToken, orgID, `{
-		"document_type_id": "`+tr.DocumentType.ID+`", "household_id": "`+householdID+`"
-	}`)
-	var sr struct {
-		Document struct {
-			ID string `json:"id"`
-		} `json:"document"`
-	}
-	json.NewDecoder(rr.Body).Decode(&sr)
-	subID := sr.Document.ID
+	subID := createDocSubmission(t, router, parentToken, orgID, typeID, householdID)
 
 	doOrgRequest(router, http.MethodPost, "/api/v1/documents/"+subID+"/attach", parentToken, orgID, `{
 		"file_object_key": "uploads/uss.pdf", "file_name": "uss.pdf"
 	}`)
 
 	// Parent tries to verify — must be forbidden
-	rr = doOrgRequest(router, http.MethodPost, "/api/v1/documents/"+subID+"/verify", parentToken, orgID, `{}`)
+	rr := doOrgRequest(router, http.MethodPost, "/api/v1/documents/"+subID+"/verify", parentToken, orgID, `{}`)
 	if rr.Code != http.StatusForbidden {
 		t.Errorf("parent verify: want 403, got %d", rr.Code)
 	}

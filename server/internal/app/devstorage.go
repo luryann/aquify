@@ -44,7 +44,11 @@ func devStorageHandler(store *storage.StubStorage) http.Handler {
 		switch r.Method {
 		case http.MethodPut:
 			data, err := io.ReadAll(io.LimitReader(r.Body, maxDevStorageObjectBytes+1))
-			if err != nil || len(data) > maxDevStorageObjectBytes {
+			if err != nil {
+				httpx.WriteError(w, r, http.StatusBadRequest, "read_failed", "Could not read the request body.", err)
+				return
+			}
+			if len(data) > maxDevStorageObjectBytes {
 				httpx.WriteError(w, r, http.StatusRequestEntityTooLarge, "object_too_large", "Object is too large.", nil)
 				return
 			}

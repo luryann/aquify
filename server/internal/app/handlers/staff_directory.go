@@ -97,8 +97,17 @@ type CachedStaffLister struct {
 	ttl   time.Duration
 	now   func() time.Time
 
-	mu      sync.Mutex
-	entries map[string]cachedStaff
+	mu       sync.Mutex
+	entries  map[string]cachedStaff
+	inflight map[string]*staffCall
+}
+
+// staffCall is one in-flight inner lookup shared by every concurrent miss for
+// the same org (a minimal singleflight).
+type staffCall struct {
+	done  chan struct{}
+	staff []StaffMember
+	err   error
 }
 
 type cachedStaff struct {
@@ -111,7 +120,7 @@ func NewCachedStaffLister(inner StaffLister, ttl time.Duration, now func() time.
 	if now == nil {
 		now = time.Now
 	}
-	return &CachedStaffLister{inner: inner, ttl: ttl, now: now, entries: map[string]cachedStaff{}}
+	return &CachedStaffLister{inner: inner, ttl: ttl, now: now, entries: map[string]cachedStaff{}, inflight: map[string]*staffCall{}}
 }
 
 func (c *CachedStaffLister) ListStaff(ctx context.Context, orgID string) ([]StaffMember, error) {
@@ -121,14 +130,36 @@ func (c *CachedStaffLister) ListStaff(ctx context.Context, orgID string) ([]Staf
 		c.mu.Unlock()
 		return out, nil
 	}
+	// Concurrent misses for the same org share one inner call.
+	if call, ok := c.inflight[orgID]; ok {
+		c.mu.Unlock()
+		select {
+		case <-call.done:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		if call.err != nil {
+			return nil, call.err
+		}
+		return slices.Clone(call.staff), nil
+	}
+	call := &staffCall{done: make(chan struct{})}
+	c.inflight[orgID] = call
 	c.mu.Unlock()
 
-	staff, err := c.inner.ListStaff(ctx, orgID)
-	if err != nil {
-		return nil, err
-	}
+	// The lookup is shared, so it must not die with the first caller's request.
+	call.staff, call.err = c.inner.ListStaff(context.WithoutCancel(ctx), orgID)
+
 	c.mu.Lock()
-	c.entries[orgID] = cachedStaff{staff: slices.Clone(staff), expires: c.now().Add(c.ttl)}
+	delete(c.inflight, orgID)
+	if call.err == nil {
+		c.entries[orgID] = cachedStaff{staff: slices.Clone(call.staff), expires: c.now().Add(c.ttl)}
+	}
 	c.mu.Unlock()
-	return staff, nil
+	close(call.done)
+
+	if call.err != nil {
+		return nil, call.err
+	}
+	return slices.Clone(call.staff), nil
 }

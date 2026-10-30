@@ -8,6 +8,7 @@ import { fetchTrainingAnalytics, type TrainingAnalytics } from '@/lib/trainingDa
 import { ZONES, ZONE_LABELS, addDaysISO, weekStartOf, zoneColor } from '@/lib/workout-format'
 import { WeeklyBars } from '@/components/training/WeeklyBars'
 import { errorText } from './WorkoutComposer'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 const RANGES = [4, 8, 12, 26] as const
 
@@ -78,7 +79,7 @@ export function TrainingAnalyticsPanel({ api, orgId, groups }: { api: ApiClient;
           <button type="button" className="btn btn-secondary u-fs-fs-sm u-p-6px-12px" onClick={load} >Retry</button>
         </div>
       )}
-      {loading && !data && <p className="u-fs-fs-base" style={{ color: 'var(--text-muted)' }}>Loading analytics…</p>}
+      {loading && !data && <PageSkeleton variant="list" noHeader rows={4} />}
 
       {data && totals && (
         <div className="u-gap-20px" style={{ display: 'flex', flexDirection: 'column', opacity: loading ? 0.6 : 1, transition: 'opacity var(--dur)' }}>

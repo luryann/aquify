@@ -156,7 +156,7 @@ export default function BestTimesPage() {
           <span style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}>
             <Icon name="search" size={14} />
           </span>
-          <input aria-label="Find a swimmer"
+          <input aria-label="Find a swimmer" className="input-search"
             value={swimmerSearch}
             onChange={(e) => setSwimmerSearch(e.target.value)}
             placeholder="Find a swimmer…"

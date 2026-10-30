@@ -343,19 +343,44 @@ func upsertEntry(ctx context.Context, db execer, e Entry) error {
 	if e.SeedTimeMs != nil {
 		seedTime = *e.SeedTimeMs
 	}
+	// entry_time_ms is intentionally not written: the service does not model
+	// it, and listing it in the conflict clause used to reset any stored value
+	// to NULL on every update.
+	//
+	// commitment_id / actor columns are FKs; they are resolved through
+	// sub-selects so an unknown or non-UUID value (stub principals, deleted
+	// users or commitments) stores NULL instead of failing the whole write.
+	// NOTE: untested against Postgres (no database available in the review
+	// environment).
 	_, err := db.Exec(ctx, `
-		INSERT INTO entries (id, org_id, meet_id, swimmer_id, meet_event_id, status, seed_time_ms, entry_time_ms, notes, created_at, updated_at)
-		VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6, $7, $8, $9, $10, $11)
+		INSERT INTO entries (id, org_id, meet_id, swimmer_id, meet_event_id, status, seed_time_ms, notes, created_at, updated_at,
+		                     commitment_id, is_relay, proposed_by, approved_by, created_by, updated_by, scratch_reason)
+		VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6, $7, $8, $9, $10,
+		        (SELECT id FROM commitments WHERE id::text = NULLIF($11::text, '')),
+		        $12,
+		        (SELECT id FROM users WHERE id::text = NULLIF($13::text, '')),
+		        (SELECT id FROM users WHERE id::text = NULLIF($14::text, '')),
+		        (SELECT id FROM users WHERE id::text = NULLIF($15::text, '')),
+		        (SELECT id FROM users WHERE id::text = NULLIF($16::text, '')),
+		        $17)
 		ON CONFLICT (id) DO UPDATE SET
-		  status        = EXCLUDED.status,
-		  seed_time_ms  = EXCLUDED.seed_time_ms,
-		  entry_time_ms = EXCLUDED.entry_time_ms,
-		  notes         = EXCLUDED.notes,
-		  updated_at    = EXCLUDED.updated_at`,
+		  meet_event_id  = EXCLUDED.meet_event_id,
+		  status         = EXCLUDED.status,
+		  seed_time_ms   = EXCLUDED.seed_time_ms,
+		  notes          = EXCLUDED.notes,
+		  commitment_id  = EXCLUDED.commitment_id,
+		  is_relay       = EXCLUDED.is_relay,
+		  proposed_by    = EXCLUDED.proposed_by,
+		  approved_by    = EXCLUDED.approved_by,
+		  updated_by     = EXCLUDED.updated_by,
+		  scratch_reason = EXCLUDED.scratch_reason,
+		  updated_at     = EXCLUDED.updated_at`,
 		e.ID, e.OrgID, e.MeetID, e.SwimmerID, e.MeetEventID,
-		e.Status, seedTime, nil,
+		e.Status, seedTime,
 		e.OverrideReason,
 		e.CreatedAt, e.UpdatedAt,
+		e.CommitmentID, e.IsRelay, e.ProposedBy, e.ApprovedBy, e.CreatedBy, e.UpdatedBy,
+		e.ScratchReason,
 	)
 	return err
 }
@@ -364,6 +389,10 @@ func (r *Repository) LoadEntries(ctx context.Context) ([]Entry, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id::text, org_id::text, meet_id::text, swimmer_id::text, meet_event_id::text,
 		       status, seed_time_ms, COALESCE(notes, ''),
+		       COALESCE(commitment_id::text, ''), is_relay,
+		       COALESCE(proposed_by::text, ''), COALESCE(approved_by::text, ''),
+		       COALESCE(created_by::text, ''), COALESCE(updated_by::text, ''),
+		       COALESCE(scratch_reason, ''),
 		       created_at, updated_at
 		FROM entries`)
 	if err != nil {
@@ -375,6 +404,9 @@ func (r *Repository) LoadEntries(ctx context.Context) ([]Entry, error) {
 		if err := rows.Scan(
 			&e.ID, &e.OrgID, &e.MeetID, &e.SwimmerID, &e.MeetEventID,
 			&e.Status, &seedMs, &e.OverrideReason,
+			&e.CommitmentID, &e.IsRelay,
+			&e.ProposedBy, &e.ApprovedBy, &e.CreatedBy, &e.UpdatedBy,
+			&e.ScratchReason,
 			&e.CreatedAt, &e.UpdatedAt,
 		); err != nil {
 			return e, err

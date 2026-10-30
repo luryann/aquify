@@ -14,6 +14,7 @@ import {
 import { AgeGroupSelect, FIELD_STYLE, FilterRow, GenderSegmented, Segmented } from './PerfControls'
 import { LoadErrorBanner } from '@/components/ui/LoadErrorBanner'
 import { periodRange, type PeriodPreset } from '@/lib/performance-periods'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 /** Top-N board: one best swim per swimmer per event, filterable by course,
  *  gender, age group (age on the swim date), event and time window. */
@@ -79,7 +80,7 @@ export function TopTimesBoard({ canUseSeasons = false }: { canUseSeasons?: boole
       {error ? <LoadErrorBanner message={error} onRetry={() => void load()} /> : null}
 
       {loading ? (
-        <div className="u-fs-fs-base u-p-24px-0" style={{ color: 'var(--text-muted)' }}>Loading top times…</div>
+        <PageSkeleton variant="table" noHeader rows={4} />
       ) : !error && lists.length === 0 ? (
         <EmptyState icon="bar-chart-2" title="No swims match these filters" description="Try another age group, course or time window." />
       ) : (

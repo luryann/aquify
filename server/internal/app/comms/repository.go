@@ -7,6 +7,7 @@ import (
 
 	"github.com/dareaquatics/aquify/server/internal/dbutil"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -219,7 +220,30 @@ func (r *Repository) LoadSuppressionEntries(ctx context.Context) ([]*Suppression
 }
 
 func (r *Repository) UpsertNotificationPreference(ctx context.Context, preference *NotificationPreference) error {
-	_, err := r.pool.Exec(ctx, `
+	return upsertNotificationPreference(ctx, r.pool, preference)
+}
+
+// UpsertNotificationPreferences writes every preference in one transaction.
+func (r *Repository) UpsertNotificationPreferences(ctx context.Context, prefs []*NotificationPreference) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	for _, p := range prefs {
+		if err := upsertNotificationPreference(ctx, tx, p); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+type execer interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+}
+
+func upsertNotificationPreference(ctx context.Context, db execer, preference *NotificationPreference) error {
+	_, err := db.Exec(ctx, `
 		INSERT INTO notification_preferences (
 			id, org_id, user_id, household_id, event_id, email_enabled, push_enabled, created_at, updated_at, updated_by
 		)
@@ -314,6 +338,30 @@ func (r *Repository) InsertMessageEdit(ctx context.Context, e *MessageEdit) erro
 		e.ID, e.MessageID, e.PreviousBody, e.EditedAt, e.EditedBy,
 	)
 	return err
+}
+
+// EditMessageTx writes the history row and the new body in one transaction.
+func (r *Repository) EditMessageTx(ctx context.Context, e *MessageEdit, body string, editedAt time.Time) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO message_edits (id, message_id, previous_body, edited_at, edited_by)
+		VALUES ($1::uuid, $2::uuid, $3, $4, $5::uuid)
+		ON CONFLICT (id) DO NOTHING`,
+		e.ID, e.MessageID, e.PreviousBody, e.EditedAt, e.EditedBy,
+	); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE messages SET body = $2, edited_at = $3, updated_at = $3 WHERE id = $1::uuid`,
+		e.MessageID, body, editedAt,
+	); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (r *Repository) UpdateMessageBody(ctx context.Context, messageID, body string, editedAt time.Time) error {
@@ -443,21 +491,18 @@ func (r *Repository) EraseHousehold(ctx context.Context, orgID, householdID stri
 		return fmt.Errorf("begin erase tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	stmts := []struct {
+	type stmt struct {
 		name string
 		sql  string
 		args []any
-	}{
+	}
+	stmts := []stmt{
 		{"messages", `DELETE FROM messages WHERE org_id = $1::uuid AND household_id = $2::uuid`, []any{orgID, householdID}},
 		{"message reads", `DELETE FROM message_reads WHERE org_id = $1::uuid AND household_id = $2::uuid`, []any{orgID, householdID}},
 		{"notification preferences", `DELETE FROM notification_preferences WHERE org_id = $1::uuid AND household_id = $2`, []any{orgID, householdID}},
 	}
 	if len(emails) > 0 {
-		stmts = append(stmts, struct {
-			name string
-			sql  string
-			args []any
-		}{"email deliveries", `DELETE FROM email_deliveries WHERE org_id = $1::uuid AND lower(recipient_email) = ANY($2::text[])`, []any{orgID, emails}})
+		stmts = append(stmts, stmt{"email deliveries", `DELETE FROM email_deliveries WHERE org_id = $1::uuid AND lower(recipient_email) = ANY($2::text[])`, []any{orgID, emails}})
 	}
 	for _, st := range stmts {
 		if _, err := tx.Exec(ctx, st.sql, st.args...); err != nil {
@@ -465,41 +510,6 @@ func (r *Repository) EraseHousehold(ctx context.Context, orgID, householdID stri
 		}
 	}
 	return tx.Commit(ctx)
-}
-
-func (r *Repository) DeleteMessagesByHousehold(ctx context.Context, orgID, householdID string) error {
-	_, err := r.pool.Exec(ctx, `
-		DELETE FROM messages WHERE org_id = $1::uuid AND household_id = $2::uuid`,
-		orgID, householdID,
-	)
-	return err
-}
-
-func (r *Repository) DeleteMessageReadsByHousehold(ctx context.Context, orgID, householdID string) error {
-	_, err := r.pool.Exec(ctx, `
-		DELETE FROM message_reads WHERE org_id = $1::uuid AND household_id = $2::uuid`,
-		orgID, householdID,
-	)
-	return err
-}
-
-func (r *Repository) DeleteNotificationPreferencesByHousehold(ctx context.Context, orgID, householdID string) error {
-	_, err := r.pool.Exec(ctx, `
-		DELETE FROM notification_preferences WHERE org_id = $1::uuid AND household_id = $2`,
-		orgID, householdID,
-	)
-	return err
-}
-
-func (r *Repository) DeleteEmailDeliveriesByRecipientEmails(ctx context.Context, orgID string, emails []string) error {
-	if len(emails) == 0 {
-		return nil
-	}
-	_, err := r.pool.Exec(ctx, `
-		DELETE FROM email_deliveries WHERE org_id = $1::uuid AND lower(recipient_email) = ANY($2::text[])`,
-		orgID, emails,
-	)
-	return err
 }
 
 // ─── Batch load ───────────────────────────────────────────────────────────────

@@ -535,6 +535,10 @@ func (s *Service) UpdateBillingSettings(orgID, actorID string, principal *appmid
 			return nil, nil, invalidField("late_fee_percent_bps", "must be positive when a percentage late fee is enabled")
 		}
 	}
+	meetFeeStatus := input.MeetFeeInvoiceStatus
+	if meetFeeStatus == "" {
+		meetFeeStatus = "draft"
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.refreshLocked(context.Background()); err != nil {
@@ -546,6 +550,8 @@ func (s *Service) UpdateBillingSettings(orgID, actorID string, principal *appmid
 		LateFeeType: input.LateFeeType, LateFeeFlatCents: input.LateFeeFlatCents, LateFeePercentBps: input.LateFeePercentBps,
 		LateFeeMaxCents: input.LateFeeMaxCents, AutoRunEnabled: input.AutoRunEnabled, AutoRunDay: input.AutoRunDay,
 		AutoRunInvoiceStatus: input.AutoRunInvoiceStatus, AutoRunDueDays: input.AutoRunDueDays,
+		MeetFeePerEventCents: input.MeetFeePerEventCents, MeetFeeFlatCents: input.MeetFeeFlatCents,
+		MeetFeeInvoiceStatus: meetFeeStatus, MeetFeeDueDays: input.MeetFeeDueDays,
 		UpdatedAt: time.Now().UTC(), UpdatedBy: actorID,
 	}
 	if s.repo != nil {

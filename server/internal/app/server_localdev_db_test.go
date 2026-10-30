@@ -46,7 +46,6 @@ func TestDBLocalDevBootstrap_SeedsKnownUsers(t *testing.T) {
 		SeedLocalUsers:      true,
 	})
 	authService.SetPool(pool)
-	authService.SetPool(pool)
 
 	if got, want := countUsersForOrg(t, pool, authn.LocalDevOrgID), len(authn.LocalDevUsers()); got != want {
 		t.Fatalf("expected %d seeded local users, got %d", want, got)

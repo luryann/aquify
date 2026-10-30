@@ -66,6 +66,7 @@ var (
 	ErrWebhookInFlight              = errors.New("webhook is being processed")
 	ErrWebhookNotFound              = errors.New("webhook event not found")
 	ErrAutopayPaymentMethodRequired = errors.New("autopay payment method metadata is required")
+	ErrAutopayHouseholdNotFound     = errors.New("household not found")
 )
 
 // ─── Domain types ─────────────────────────────────────────────────────────────
@@ -629,6 +630,25 @@ func normalizeAutopayInput(input UpsertHouseholdAutopayInput) UpsertHouseholdAut
 	input.PaymentMethodLabel = strings.TrimSpace(input.PaymentMethodLabel)
 	input.PaymentMethodExternalRef = strings.TrimSpace(input.PaymentMethodExternalRef)
 	return input
+}
+
+// validateAutopayExpiry checks optional card expiry fields. Both must be
+// supplied together; the month must be 1-12 and the card must not be expired.
+func validateAutopayExpiry(input UpsertHouseholdAutopayInput, now time.Time) error {
+	m, y := input.PaymentMethodExpMonth, input.PaymentMethodExpYear
+	if m == 0 && y == 0 {
+		return nil
+	}
+	if m < 1 || m > 12 {
+		return invalidField("payment_method_exp_month", "must be between 1 and 12")
+	}
+	if y < 2000 || y > 2200 {
+		return invalidField("payment_method_exp_year", "is not a valid year")
+	}
+	if y < now.Year() || (y == now.Year() && m < int(now.Month())) {
+		return invalidField("payment_method_exp_year", "card is expired")
+	}
+	return nil
 }
 
 func (s *Service) requireAutopayReadAccess(principal *appmiddleware.Principal, householdID string) error {
@@ -1435,6 +1455,23 @@ func (s *Service) UpsertHouseholdAutopay(orgID, actorID string, principal *appmi
 	if input.PaymentMethodLabel == "" || input.PaymentMethodType == "" {
 		return nil, ErrAutopayPaymentMethodRequired
 	}
+	if err := validateAutopayExpiry(input, time.Now().UTC()); err != nil {
+		return nil, err
+	}
+	// When a roster is wired (and non-empty: an org with no households at all
+	// is the unseeded in-memory/dev case), the household must exist in this org.
+	if roster, err := s.loadRoster(orgID); err == nil && len(roster.Households) > 0 {
+		found := false
+		for _, h := range roster.Households {
+			if h.ID == householdID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, ErrAutopayHouseholdNotFound
+		}
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1490,6 +1527,25 @@ func (s *Service) OptOutHouseholdAutopay(orgID, actorID string, principal *appmi
 	return s.buildAutopayStatusLocked(orgID, householdID, profile), nil
 }
 
+// refundableInvoiceStatus lists the invoice statuses a refund may be taken from.
+var refundableInvoiceStatus = map[string]bool{
+	"paid":             true,
+	"partially_paid":   true,
+	"refunded_partial": true,
+}
+
+// refundedForPaymentLocked sums the refunds that count against a payment
+// (pending, approved or processed). Caller holds s.mu.
+func (s *Service) refundedForPaymentLocked(invoiceID, paymentID string) int {
+	total := 0
+	for _, r := range s.refunds[invoiceID] {
+		if r.PaymentID == paymentID && (r.Status == "pending" || r.Status == "approved" || r.Status == "processed") {
+			total += r.AmountCents
+		}
+	}
+	return total
+}
+
 // ValidateRefundPreflight verifies whether a refund is locally eligible before
 // any external provider call is made.
 func (s *Service) ValidateRefundPreflight(orgID string, principal *appmiddleware.Principal, invoiceID string, input CreateRefundInput) (*RefundPreflight, error) {
@@ -1508,12 +1564,7 @@ func (s *Service) ValidateRefundPreflight(orgID string, principal *appmiddleware
 		return nil, ErrInvoiceNotFound
 	}
 
-	validRefundStatuses := map[string]bool{
-		"paid":             true,
-		"partially_paid":   true,
-		"refunded_partial": true,
-	}
-	if !validRefundStatuses[inv.Status] {
+	if !refundableInvoiceStatus[inv.Status] {
 		return nil, ErrInvalidTransition
 	}
 
@@ -1528,12 +1579,7 @@ func (s *Service) ValidateRefundPreflight(orgID string, principal *appmiddleware
 		return nil, ErrCreditPaymentRefundToCredit
 	}
 
-	alreadyRefunded := 0
-	for _, r := range s.refunds[invoiceID] {
-		if r.PaymentID == input.PaymentID && (r.Status == "pending" || r.Status == "approved" || r.Status == "processed") {
-			alreadyRefunded += r.AmountCents
-		}
-	}
+	alreadyRefunded := s.refundedForPaymentLocked(invoiceID, input.PaymentID)
 	if alreadyRefunded+input.AmountCents > payment.AmountCents {
 		return nil, ErrRefundExceedsPayment
 	}
@@ -1567,12 +1613,7 @@ func (s *Service) CreateRefund(orgID, actorID string, principal *appmiddleware.P
 		return nil, nil, ErrInvoiceNotFound
 	}
 
-	validRefundStatuses := map[string]bool{
-		"paid":             true,
-		"partially_paid":   true,
-		"refunded_partial": true,
-	}
-	if !validRefundStatuses[inv.Status] {
+	if !refundableInvoiceStatus[inv.Status] {
 		return nil, nil, ErrInvalidTransition
 	}
 
@@ -1584,12 +1625,7 @@ func (s *Service) CreateRefund(orgID, actorID string, principal *appmiddleware.P
 		return nil, nil, ErrInvalidTransition
 	}
 
-	alreadyRefunded := 0
-	for _, r := range s.refunds[invoiceID] {
-		if r.PaymentID == input.PaymentID && (r.Status == "pending" || r.Status == "approved" || r.Status == "processed") {
-			alreadyRefunded += r.AmountCents
-		}
-	}
+	alreadyRefunded := s.refundedForPaymentLocked(invoiceID, input.PaymentID)
 	if alreadyRefunded+input.AmountCents > payment.AmountCents {
 		return nil, nil, ErrRefundExceedsPayment
 	}
@@ -1851,8 +1887,8 @@ func (s *Service) RecordWebhookEvent(provider, orgID, eventID, eventType string,
 		if !claimed {
 			return false, nil
 		}
-		rec.ProcessingUntil = &lease
-		s.webhookEvents[key] = rec
+		// DB mode: Postgres is the only source of truth for webhook events;
+		// caching every payload here would grow without bound and is never read.
 		return true, nil
 	}
 
@@ -1882,7 +1918,9 @@ func (s *Service) MarkWebhookProcessed(provider, eventID string, processErr erro
 	rec, ok := s.webhookEvents[key]
 	if !ok {
 		rec = &WebhookEventRecord{ID: s.newID(), Provider: provider, EventID: eventID, CreatedAt: time.Now().UTC()}
-		s.webhookEvents[key] = rec
+		if s.repo == nil {
+			s.webhookEvents[key] = rec
+		}
 	}
 	now := time.Now().UTC()
 	rec.ProcessingUntil = nil
@@ -2013,7 +2051,6 @@ func (s *Service) HandleStripePaymentIntentSucceeded(
 	}
 
 	if s.repo != nil {
-		payment.ID = s.newID()
 		if err := s.repo.UpsertPayment(context.Background(), payment); err != nil {
 			return nil, nil, fmt.Errorf("persist stripe payment: %w", err)
 		}

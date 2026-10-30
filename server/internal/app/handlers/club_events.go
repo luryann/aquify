@@ -555,6 +555,17 @@ func (h *ClubEventsHandlers) respondRSVP(w http.ResponseWriter, r *http.Request)
 				return
 			}
 			in.HouseholdID = sw.HouseholdID
+		} else if in.HouseholdID != "" {
+			// Household-mode staff RSVP: the body's household must belong to this org.
+			names, err := h.directory.HouseholdNames(orgID)
+			if err != nil {
+				httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load households.", err)
+				return
+			}
+			if _, exists := names[in.HouseholdID]; !exists {
+				httpx.WriteError(w, r, http.StatusUnprocessableEntity, "validation_error", "Unknown household.", nil)
+				return
+			}
 		}
 	} else {
 		isParent := roster.HasAnyRole(principal, "parent")

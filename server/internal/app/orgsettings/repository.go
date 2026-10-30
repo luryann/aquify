@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/dareaquatics/aquify/server/internal/dbutil"
 
+	"github.com/dareaquatics/aquify/server/internal/dbutil"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -20,10 +20,12 @@ func newRepository(pool *pgxpool.Pool) *Repository {
 }
 
 // Upsert inserts or updates the settings row for an org.
-func (r *Repository) Upsert(ctx context.Context, s *OrgSettings) error {
+// swimmerAccounts, when non-nil, is written in the same statement; nil leaves
+// the stored value unchanged (TRUE for a new row).
+func (r *Repository) Upsert(ctx context.Context, s *OrgSettings, swimmerAccounts *bool) error {
 	_, err := r.pool.Exec(ctx, `
-		INSERT INTO org_settings (org_id, team_code, team_name, lsc_code, email_sender_name, email_sender_address, created_at, updated_at, updated_by, public_slug, public_site_enabled, public_show_coaches, public_about, public_contact_email, public_contact_phone)
-		VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		INSERT INTO org_settings (org_id, team_code, team_name, lsc_code, email_sender_name, email_sender_address, created_at, updated_at, updated_by, public_slug, public_site_enabled, public_show_coaches, public_about, public_contact_email, public_contact_phone, swimmer_accounts_enabled)
+		VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, COALESCE($16::boolean, TRUE))
 		ON CONFLICT (org_id) DO UPDATE SET
 			team_code            = EXCLUDED.team_code,
 			team_name            = EXCLUDED.team_name,
@@ -37,9 +39,10 @@ func (r *Repository) Upsert(ctx context.Context, s *OrgSettings) error {
 			public_show_coaches  = EXCLUDED.public_show_coaches,
 			public_about         = EXCLUDED.public_about,
 			public_contact_email = EXCLUDED.public_contact_email,
-			public_contact_phone = EXCLUDED.public_contact_phone`,
+			public_contact_phone = EXCLUDED.public_contact_phone,
+			swimmer_accounts_enabled = COALESCE($16::boolean, org_settings.swimmer_accounts_enabled)`,
 		s.OrgID, s.TeamCode, s.TeamName, s.LSCCode, s.EmailSenderName, s.EmailSenderAddress, s.CreatedAt, s.UpdatedAt, dbutil.NullableString(s.UpdatedBy),
-		s.PublicSlug, s.PublicSiteEnabled, s.PublicShowCoaches, s.PublicAbout, s.PublicContactEmail, s.PublicContactPhone,
+		s.PublicSlug, s.PublicSiteEnabled, s.PublicShowCoaches, s.PublicAbout, s.PublicContactEmail, s.PublicContactPhone, swimmerAccounts,
 	)
 	return err
 }

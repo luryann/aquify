@@ -9,6 +9,7 @@ import (
 	"github.com/dareaquatics/aquify/server/internal/dbutil"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -58,6 +59,14 @@ func scanEvent(row pgx.Row) (*Event, error) {
 
 // UpsertEvent inserts or replaces an event row.
 func (r *Repository) UpsertEvent(ctx context.Context, e *Event) error {
+	return upsertEvent(ctx, r.pool, e)
+}
+
+type execer interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+}
+
+func upsertEvent(ctx context.Context, db execer, e *Event) error {
 	var capacity any
 	if e.Capacity != nil {
 		capacity = *e.Capacity
@@ -66,7 +75,7 @@ func (r *Repository) UpsertEvent(ctx context.Context, e *Event) error {
 	if codes == nil {
 		codes = []string{}
 	}
-	_, err := r.pool.Exec(ctx, `
+	_, err := db.Exec(ctx, `
 		INSERT INTO club_events (
 			id, org_id, title, category, description, location, starts_at, ends_at, all_day,
 			audience, group_codes, rsvp_enabled, rsvp_mode, rsvp_deadline, capacity, fee_cents,
@@ -118,6 +127,79 @@ func (r *Repository) ListEvents(ctx context.Context, orgID string) ([]*Event, er
 		return nil, fmt.Errorf("club events: list events: %w", err)
 	}
 	return dbutil.CollectRowsNonNil(rows, "club events: scan event", func(rows pgx.Rows) (*Event, error) { return scanEvent(rows) })
+}
+
+// lockEventTx locks the event row and returns it together with its RSVPs. The
+// row lock serialises with RespondTx, which locks the same row.
+func (r *Repository) lockEventTx(ctx context.Context, tx pgx.Tx, orgID, id string) (*Event, []*RSVP, error) {
+	if _, err := parseUUID(id); err != nil {
+		return nil, nil, ErrNotFound
+	}
+	e, err := scanEvent(tx.QueryRow(ctx, `SELECT `+eventColumns+` FROM club_events WHERE id = $1::uuid AND org_id = $2 FOR UPDATE`, id, orgID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil, ErrNotFound
+		}
+		return nil, nil, fmt.Errorf("club events: lock event: %w", err)
+	}
+	rows, err := tx.Query(ctx, `SELECT `+rsvpColumns+` FROM club_event_rsvps
+		WHERE org_id = $1 AND event_id = $2::uuid ORDER BY household_id, swimmer_id`, orgID, id)
+	if err != nil {
+		return nil, nil, fmt.Errorf("club events: list rsvps: %w", err)
+	}
+	rsvps, err := collectRSVPs(rows)
+	if err != nil {
+		return nil, nil, err
+	}
+	return e, rsvps, nil
+}
+
+// UpdateEventTx locks the event, lets build derive the new row from the
+// locked state, and writes it in the same transaction. It returns the prior
+// event, the RSVPs seen under the lock and the stored event.
+// (Postgres path; not covered by in-memory tests.)
+func (r *Repository) UpdateEventTx(ctx context.Context, orgID, id string, build func(existing *Event, rsvps []*RSVP) (*Event, error)) (*Event, []*RSVP, *Event, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("club events: begin update tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	existing, rsvps, err := r.lockEventTx(ctx, tx, orgID, id)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	next, err := build(existing, rsvps)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if err := upsertEvent(ctx, tx, next); err != nil {
+		return nil, nil, nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, nil, nil, fmt.Errorf("club events: commit update: %w", err)
+	}
+	return existing, rsvps, next, nil
+}
+
+// DeleteEventTx locks and deletes an event, returning the RSVPs removed with it.
+// (Postgres path; not covered by in-memory tests.)
+func (r *Repository) DeleteEventTx(ctx context.Context, orgID, id string) ([]*RSVP, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("club events: begin delete tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	_, rsvps, err := r.lockEventTx(ctx, tx, orgID, id)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM club_events WHERE id = $1::uuid AND org_id = $2`, id, orgID); err != nil {
+		return nil, fmt.Errorf("club events: delete event: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("club events: commit delete: %w", err)
+	}
+	return rsvps, nil
 }
 
 // DeleteEvent removes an event; RSVPs cascade.

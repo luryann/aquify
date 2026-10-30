@@ -32,6 +32,7 @@ import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { useDialogA11y } from '@/components/ui/useDialogA11y'
 import './page.inline.css'
+import { Skeleton } from '@/components/ui/Skeleton'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -340,7 +341,7 @@ function SwimmerPanel({
             <div className="u-fs-fs-sm u-ff-font-body u-mb-8px" style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <span>Event selections</span>
               {selectionsLoading ? (
-                <span style={{ color: 'var(--text-muted)' }}>Loading…</span>
+                <Skeleton width="48px" height="12px" />
               ) : (
                 <span style={{ color: selectedCount > 0 ? 'var(--accent)' : 'var(--text-muted)' }}>
                   {selectedCount} selected

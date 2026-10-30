@@ -379,10 +379,10 @@ func (c *AdminClient) adminURL(path string) string {
 }
 
 // userURL builds an admin URL for one user. Keycloak user IDs are UUIDs; an ID
-// with anything outside [A-Za-z0-9_.@-], or containing "..", (a "/", an encoded
-// slash, a traversal segment) is treated
-// as not found rather than being spliced into the path, where it could address a
-// different admin resource with the service account's credentials.
+// with anything outside [A-Za-z0-9_.@-], or containing ".." (a "/", an encoded
+// slash, a traversal segment), is treated as not found rather than being
+// spliced into the path, where it could address a different admin resource
+// with the service account's credentials.
 func (c *AdminClient) userURL(userID, suffix string) (string, error) {
 	if userID == "" || strings.Contains(userID, "..") {
 		return "", ErrUserNotFound
@@ -397,29 +397,59 @@ func (c *AdminClient) userURL(userID, suffix string) (string, error) {
 }
 
 func (c *AdminClient) do(ctx context.Context, method, urlStr string, body any) (*http.Response, error) {
-	token, err := c.getToken(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	var bodyReader io.Reader
+	var payload []byte
 	if body != nil {
 		b, err := json.Marshal(body)
 		if err != nil {
 			return nil, fmt.Errorf("keycloak: marshal request body: %w", err)
 		}
-		bodyReader = bytes.NewReader(b)
+		payload = b
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, urlStr, bodyReader)
+	token, err := c.getToken(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("keycloak: build request: %w", err)
+		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+	for attempt := 0; ; attempt++ {
+		var bodyReader io.Reader
+		if payload != nil {
+			bodyReader = bytes.NewReader(payload)
+		}
+		req, err := http.NewRequestWithContext(ctx, method, urlStr, bodyReader)
+		if err != nil {
+			return nil, fmt.Errorf("keycloak: build request: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		if payload != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		resp, err := c.http.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		// A cached token can be revoked or expire server-side before our local
+		// expiry; refresh once and retry instead of failing the call.
+		if resp.StatusCode != http.StatusUnauthorized || attempt > 0 {
+			return resp, nil
+		}
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64*1024))
+		resp.Body.Close()
+		if token, err = c.forceRefreshToken(ctx, token); err != nil {
+			return nil, err
+		}
 	}
-	return c.http.Do(req)
+}
+
+// forceRefreshToken replaces the cached token after a 401. If another caller
+// already rotated it (the cached token differs from the rejected one), that
+// fresh token is reused instead of fetching again.
+func (c *AdminClient) forceRefreshToken(ctx context.Context, rejected string) (string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.token != "" && c.token != rejected {
+		return c.token, nil
+	}
+	return c.refreshToken(ctx)
 }
 
 func readBody(resp *http.Response) ([]byte, error) {
@@ -436,6 +466,9 @@ func (c *AdminClient) ListUsers(ctx context.Context, orgID, search string, limit
 	}
 	if limit > 500 {
 		limit = 500
+	}
+	if offset < 0 {
+		offset = 0
 	}
 
 	users, err := c.listUsersPage(ctx, search, limit, offset, orgID)
@@ -463,7 +496,7 @@ func (c *AdminClient) ListUsers(ctx context.Context, orgID, search string, limit
 	// Page the realm until the requested org window is filled or the realm is
 	// exhausted, filtering by org locally. The window is applied to the org's own
 	// users, so orgs beyond the first realm page and deep offsets work.
-	matched := make([]User, 0, offset+limit)
+	matched := make([]User, 0, min(offset+limit, fallbackPageSize)) // offset is caller-controlled: never size by it
 	for page := 0; page < maxFallbackPages && len(matched) < offset+limit; page++ {
 		batch, err := c.listUsersPage(ctx, search, fallbackPageSize, page*fallbackPageSize, "")
 		if err != nil {
@@ -623,11 +656,12 @@ func (c *AdminClient) CreateUser(ctx context.Context, email, firstName, lastName
 	case http.StatusCreated:
 		// Keycloak returns the new user URL in Location header.
 		location := resp.Header.Get("Location")
-		parts := strings.Split(strings.TrimRight(location, "/"), "/")
-		if len(parts) == 0 {
+		id := location[strings.LastIndex(strings.TrimRight(location, "/"), "/")+1:]
+		id = strings.TrimRight(id, "/")
+		if id == "" {
 			return "", fmt.Errorf("keycloak: create user: missing Location header")
 		}
-		return parts[len(parts)-1], nil
+		return id, nil
 	case http.StatusConflict:
 		return "", ErrConflict
 	default:
@@ -1050,6 +1084,9 @@ func (s *StubClient) ListUsers(_ context.Context, orgID, search string, limit, o
 	if limit <= 0 {
 		limit = 50
 	}
+	if offset < 0 {
+		offset = 0
+	}
 	var out []User
 	for _, u := range s.users {
 		if orgID != "" && u.OrgID() != orgID {
@@ -1065,7 +1102,8 @@ func (s *StubClient) ListUsers(_ context.Context, orgID, search string, limit, o
 		}
 		out = append(out, *u)
 	}
-	// Apply offset and limit.
+	// Map iteration is random; sort so offset/limit paging is stable.
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	if offset >= len(out) {
 		return []User{}, nil
 	}

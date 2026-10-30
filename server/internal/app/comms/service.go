@@ -266,7 +266,6 @@ type AttachmentInput struct {
 	SizeBytes int64
 }
 
-// CreateMessageInput holds fields for sending a message into a household+swimmer thread.
 // IsPubliclyVisible reports whether the announcement may appear on the
 // unauthenticated team website: explicitly marked public, published, and
 // addressed to everyone (never a group-scoped or draft announcement).
@@ -274,6 +273,7 @@ func (a Announcement) IsPubliclyVisible() bool {
 	return a.Public && a.Status == "published" && a.Audience == "all"
 }
 
+// CreateMessageInput holds fields for sending a message into a household+swimmer thread.
 type CreateMessageInput struct {
 	OrgID        string            `json:"org_id"       validate:"required"`
 	HouseholdID  string            `json:"household_id" validate:"required"`
@@ -439,8 +439,8 @@ func (s *Service) SetPostmarkClient(client postmark.Client) {
 
 // PostmarkClient returns the currently configured Postmark client.
 func (s *Service) PostmarkClient() postmark.Client {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.postmarkClient
 }
 
@@ -577,10 +577,11 @@ func (s *Service) ReplaceNotificationPreferences(orgID, userID, householdID, act
 	}
 
 	now := time.Now().UTC()
+	staged := make([]*NotificationPreference, 0, len(settings))
 	for i, setting := range settings {
 		definition := definitions[i]
 		key := notificationPreferenceKey(orgID, userID, definition.EventID)
-		// Edit a copy; the cached preference is replaced only after it is saved.
+		// Edit a copy; the cache is replaced only after every row is saved.
 		pref := &NotificationPreference{ID: s.newID(), OrgID: orgID, UserID: userID, CreatedAt: now}
 		if existing := s.preferences[key]; existing != nil {
 			cp := *existing
@@ -595,12 +596,15 @@ func (s *Service) ReplaceNotificationPreferences(orgID, userID, householdID, act
 		if pref.CreatedAt.IsZero() {
 			pref.CreatedAt = now
 		}
-		if s.repo != nil {
-			if err := s.repo.UpsertNotificationPreference(context.Background(), pref); err != nil {
-				return nil, fmt.Errorf("persist notification preference: %w", err)
-			}
+		staged = append(staged, pref)
+	}
+	if s.repo != nil && len(staged) > 0 {
+		if err := s.repo.UpsertNotificationPreferences(context.Background(), staged); err != nil {
+			return nil, fmt.Errorf("persist notification preferences: %w", err)
 		}
-		s.preferences[key] = pref
+	}
+	for _, pref := range staged {
+		s.preferences[notificationPreferenceKey(orgID, userID, pref.EventID)] = pref
 	}
 
 	return s.listNotificationPreferencesLocked(orgID, userID), nil
@@ -662,7 +666,9 @@ func (s *Service) SetAnnouncementPublic(orgID, id, actorID string, public bool) 
 			return nil, fmt.Errorf("persist announcement: %w", err)
 		}
 	}
-	*a = next
+	// Replace rather than overwrite: CreateAnnouncement hands out the cached
+	// pointer, and an in-place write would race with callers reading it.
+	s.announcements[id] = &next
 	cp := next
 	return &cp, nil
 }
@@ -674,7 +680,7 @@ func (s *Service) ListPublicAnnouncements(orgID string) []Announcement {
 	defer s.mu.RUnlock()
 	out := []Announcement{}
 	for _, a := range s.announcements {
-		if a.OrgID == orgID && a.Public && a.Status == "published" && a.Audience == "all" {
+		if a.OrgID == orgID && a.IsPubliclyVisible() {
 			out = append(out, *a)
 		}
 	}
@@ -991,13 +997,9 @@ func (s *Service) EditMessage(orgID, messageID, userID, newBody string) (*Messag
 	m.UpdatedAt = now
 
 	if s.repo != nil {
-		if err := s.repo.InsertMessageEdit(context.Background(), edit); err != nil {
+		if err := s.repo.EditMessageTx(context.Background(), edit, m.Body, now); err != nil {
 			s.mu.Unlock()
 			return nil, fmt.Errorf("persist message edit: %w", err)
-		}
-		if err := s.repo.UpdateMessageBody(context.Background(), m.ID, m.Body, now); err != nil {
-			s.mu.Unlock()
-			return nil, fmt.Errorf("persist message body: %w", err)
 		}
 	}
 	s.messages[messageID] = m
@@ -1180,10 +1182,11 @@ func (s *Service) revertCampaignSendFailure(c *EmailCampaign, actorID string, se
 	c.Status = "draft"
 	c.UpdatedAt = time.Now().UTC()
 	c.UpdatedBy = actorID
+	snapshot := *c // persist a copy so the write does not race with readers of c
 	s.mu.Unlock()
 
 	if s.repo != nil {
-		_ = s.repo.UpsertCampaign(context.Background(), c)
+		_ = s.repo.UpsertCampaign(context.Background(), &snapshot)
 	}
 	return sendErr
 }
@@ -1205,6 +1208,7 @@ func (s *Service) SendCampaign(ctx context.Context, orgID, campaignID string, in
 	c.Status = "sending"
 	c.UpdatedAt = time.Now().UTC()
 	c.UpdatedBy = inp.ActorID
+	client := s.postmarkClient
 	s.mu.Unlock()
 
 	var (
@@ -1214,12 +1218,31 @@ func (s *Service) SendCampaign(ctx context.Context, orgID, campaignID string, in
 		processedCount  int
 	)
 
+	// A retry after a mid-send persistence failure must not re-mail recipients
+	// that already have a terminal delivery row for this campaign.
+	prior := map[string]string{}
+	s.mu.RLock()
+	for _, existing := range s.deliveries {
+		if existing.CampaignID == campaignID && existing.OrgID == orgID && existing.Status != "failed" {
+			prior[existing.RecipientEmail] = existing.Status
+		}
+	}
+	s.mu.RUnlock()
+
 	for _, r := range inp.Recipients {
 		email := strings.ToLower(strings.TrimSpace(r.Email))
 		if email == "" {
 			continue
 		}
 		processedCount++
+		if status, done := prior[email]; done {
+			if status == "suppressed" {
+				suppressedCount++
+			} else {
+				sentCount++
+			}
+			continue
+		}
 
 		d := &EmailDelivery{
 			ID:              s.newID(),
@@ -1239,7 +1262,7 @@ func (s *Service) SendCampaign(ctx context.Context, orgID, campaignID string, in
 			d.Status = "suppressed"
 			suppressedCount++
 		} else {
-			resp, err := s.postmarkClient.SendEmail(ctx, postmark.SendEmailRequest{
+			resp, err := client.SendEmail(ctx, postmark.SendEmailRequest{
 				To:        email,
 				Subject:   c.Subject,
 				HTMLBody:  c.BodyHTML,
@@ -1319,7 +1342,8 @@ func (s *Service) ListDeliveries(orgID, campaignID string) ([]*EmailDelivery, er
 	out := make([]*EmailDelivery, 0)
 	for _, d := range s.deliveries {
 		if d.CampaignID == campaignID {
-			out = append(out, d)
+			cp := *d // ApplyPostmarkEvent mutates cached deliveries in place
+			out = append(out, &cp)
 		}
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -1342,6 +1366,9 @@ func (s *Service) ApplyPostmarkEvent(inp PostmarkEventInput) error {
 		for _, candidate := range s.deliveries {
 			if candidate.ProviderMessageID != inp.MessageID {
 				continue
+			}
+			if orgID != "" && candidate.OrgID != orgID {
+				continue // never let one org's event touch another org's delivery
 			}
 			if email != "" && !strings.EqualFold(candidate.RecipientEmail, email) {
 				continue
@@ -1391,7 +1418,7 @@ func (s *Service) ApplyPostmarkEvent(inp PostmarkEventInput) error {
 			}
 		}
 		if orgID != "" && email != "" {
-			s.upsertSuppressionLocked(orgID, email, reason, "postmark-webhook")
+			return s.upsertSuppressionLocked(orgID, email, reason, "postmark-webhook")
 		}
 		return nil
 	case "SubscriptionChange":
@@ -1399,11 +1426,9 @@ func (s *Service) ApplyPostmarkEvent(inp PostmarkEventInput) error {
 			return nil
 		}
 		if inp.SuppressSending {
-			s.upsertSuppressionLocked(orgID, email, normalizeSuppressionReason(inp.SuppressionReason), "postmark-webhook")
-		} else {
-			s.removeSuppressionByEmailLocked(orgID, email)
+			return s.upsertSuppressionLocked(orgID, email, normalizeSuppressionReason(inp.SuppressionReason), "postmark-webhook")
 		}
-		return nil
+		return s.removeSuppressionByEmailLocked(orgID, email)
 	default:
 		return nil
 	}
@@ -1447,7 +1472,8 @@ func (s *Service) ListSuppression(orgID string) ([]*SuppressionEntry, error) {
 	out := make([]*SuppressionEntry, 0)
 	for _, e := range s.suppression {
 		if e.OrgID == orgID {
-			out = append(out, e)
+			cp := *e // upsertSuppressionLocked replaces cached entries
+			out = append(out, &cp)
 		}
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -1478,23 +1504,34 @@ func (s *Service) addSuppressionLocked(orgID, email, reason, createdBy string) (
 	return entry, nil
 }
 
-func (s *Service) upsertSuppressionLocked(orgID, email, reason, createdBy string) {
+// upsertSuppressionLocked persists before touching the cache and returns the
+// persistence error so the webhook is retried instead of silently dropping a
+// bounce/complaint suppression.
+func (s *Service) upsertSuppressionLocked(orgID, email, reason, createdBy string) error {
 	key := suppressionKey(orgID, email)
 	if existing, ok := s.suppression[key]; ok {
-		existing.Reason = reason
+		next := *existing
+		next.Reason = reason
 		if s.repo != nil {
-			_ = s.repo.UpsertSuppressionEntry(context.Background(), existing)
+			if err := s.repo.UpsertSuppressionEntry(context.Background(), &next); err != nil {
+				return fmt.Errorf("persist suppression entry: %w", err)
+			}
 		}
-		return
+		s.suppression[key] = &next
+		return nil
 	}
-	_, _ = s.addSuppressionLocked(orgID, email, reason, createdBy)
+	_, err := s.addSuppressionLocked(orgID, email, reason, createdBy)
+	return err
 }
 
-func (s *Service) removeSuppressionByEmailLocked(orgID, email string) {
+func (s *Service) removeSuppressionByEmailLocked(orgID, email string) error {
 	if s.repo != nil {
-		_ = s.repo.DeleteSuppressionEntry(context.Background(), orgID, email)
+		if err := s.repo.DeleteSuppressionEntry(context.Background(), orgID, email); err != nil {
+			return fmt.Errorf("delete suppression entry: %w", err)
+		}
 	}
 	delete(s.suppression, suppressionKey(orgID, email))
+	return nil
 }
 
 func occurredAtOrNow(ts time.Time) time.Time {

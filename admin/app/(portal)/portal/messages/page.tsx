@@ -9,6 +9,7 @@ import { useMessageThread } from '@/lib/useMessageThread'
 import { fetchSwimmers, type SwimmerRecord } from '@/lib/adminData'
 import './page.inline.css'
 import { QUICK_REACTIONS, formatMessageTime } from '@/lib/message-format'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 function senderLabel(role: string): string {
   if (role === 'parent' || role === 'swimmer') return 'You'
@@ -101,7 +102,7 @@ export default function PortalMessagesPage() {
           {swimmersError}
         </div>
       ) : swimmersLoading ? (
-        <div className="is-5ce7d6b">Loading your swimmers…</div>
+        <PageSkeleton variant="table" noHeader rows={4} />
       ) : swimmers.length === 0 ? (
         <div className="card is-3c1fe43" >
           <Icon name="users" size={32} style={{ color: 'var(--text-muted)', marginBottom: '16px' }} />
@@ -150,7 +151,7 @@ export default function PortalMessagesPage() {
               {messagesError ? (
                 <p className="is-de107ca">{messagesError}</p>
               ) : messagesLoading ? (
-                <p className="is-8fb176a">Loading conversation…</p>
+                <PageSkeleton variant="list" noHeader rows={4} />
               ) : messages.length === 0 ? (
                 <p className="is-8fb176a">
                   No messages yet. Send the first one below to start the conversation with your coach.

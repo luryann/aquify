@@ -678,6 +678,14 @@ func (r *Runner) importHistoricalBestTimes(ctx context.Context, path string) Ste
 	return finishStepReport(step)
 }
 
+// discardDraftInvoice voids a draft invoice left behind when a later step of
+// the import failed, so a failed row never leaves an orphan draft.
+func (r *Runner) discardDraftInvoice(step *StepReport, key, invoiceID string) {
+	if _, _, err := r.billingSvc.VoidInvoice(r.cfg.OrgID, r.cfg.ActorID, r.principal, invoiceID); err != nil {
+		step.Warnings = append(step.Warnings, fmt.Sprintf("invoice %s: could not discard draft invoice %s: %v", key, invoiceID, err))
+	}
+}
+
 func (r *Runner) importOpenInvoices(ctx context.Context, path string) StepReport {
 	step := newStepReport(StepOpenInvoices, filepath.Base(path))
 	rows, err := loadRows(path, requiredHeadersByFile[filepath.Base(path)], func(record map[string]string) OpenInvoiceRow {
@@ -761,11 +769,13 @@ func (r *Runner) importOpenInvoices(ctx context.Context, path string) StepReport
 			Category:        "manual",
 		})
 		if err != nil {
+			r.discardDraftInvoice(&step, key, invoice.ID)
 			step.Errors = append(step.Errors, fmt.Sprintf("invoice %s: %v", key, err))
 			continue
 		}
 
 		if _, _, err := r.billingSvc.IssueInvoice(r.cfg.OrgID, r.cfg.ActorID, r.principal, invoice.ID); err != nil {
+			r.discardDraftInvoice(&step, key, invoice.ID)
 			step.Errors = append(step.Errors, fmt.Sprintf("invoice %s: %v", key, err))
 			continue
 		}
@@ -945,7 +955,8 @@ func isBlankCSVRecord(record []string) bool {
 }
 
 func normalizeHeader(value string) string {
-	value = strings.TrimSpace(strings.ToLower(value))
+	// Excel "CSV UTF-8" exports start with a BOM that TrimSpace does not strip.
+	value = strings.TrimSpace(strings.ToLower(strings.TrimPrefix(value, "\ufeff")))
 	value = strings.ReplaceAll(value, " ", "_")
 	value = strings.ReplaceAll(value, "-", "_")
 	return value

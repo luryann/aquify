@@ -18,6 +18,7 @@ import { formatDateOnly } from '@/lib/dates'
 import { localToday } from '@/lib/wellness-scale'
 import { useStaffNames } from '@/lib/useStaffNames'
 import { Banner, Field, Money, ScrollTable, formGrid, numStyle, sectionTitle, tableStyle, tdStyle, thStyle, useFinanceContext } from '../financeUi'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 export default function BillingRunsPage() {
   const { api, orgId } = useFinanceContext()
@@ -265,7 +266,7 @@ export default function BillingRunsPage() {
       <section className="u-mt-32px" >
         <h2 style={sectionTitle}>History</h2>
         {loading ? (
-          <p className="u-fs-fs-base" style={{ color: 'var(--text-subtle)' }}>Loading runs…</p>
+          <PageSkeleton variant="table" noHeader rows={4} />
         ) : !loadError && runs.length === 0 ? (
           <p className="u-fs-fs-base" style={{ color: 'var(--text-subtle)' }}>No billing runs yet. Your first committed run will appear here.</p>
         ) : runs.length > 0 ? (

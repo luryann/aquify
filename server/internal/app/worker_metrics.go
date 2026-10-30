@@ -32,13 +32,17 @@ func withJobMetrics(registrar workerHandlerRegistrar, metrics *telemetry.Metrics
 func instrumentHandler(metrics *telemetry.Metrics, taskType string, h workers.Handler) workers.Handler {
 	return func(ctx context.Context, task *workers.Task) error {
 		start := time.Now()
+		// Recorded in a defer so a panicking handler still counts as a failure
+		// (the panic keeps propagating to the worker's recover).
+		status := "failure"
+		defer func() {
+			metrics.JobExecutionsTotal.WithLabelValues(taskType, status).Inc()
+			metrics.JobDurationSeconds.WithLabelValues(taskType).Observe(time.Since(start).Seconds())
+		}()
 		err := h(ctx, task)
-		status := "success"
-		if err != nil {
-			status = "failure"
+		if err == nil {
+			status = "success"
 		}
-		metrics.JobExecutionsTotal.WithLabelValues(taskType, status).Inc()
-		metrics.JobDurationSeconds.WithLabelValues(taskType).Observe(time.Since(start).Seconds())
 		return err
 	}
 }

@@ -22,6 +22,7 @@ import { LoadErrorBanner } from '@/components/ui/LoadErrorBanner'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import './page.inline.css'
 import { localToday, formatShortDate, parseBackendDate } from '@/lib/dates'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 type WorkoutType = 'water' | 'dryland' | 'video' | 'rest'
 
@@ -205,7 +206,7 @@ function AttendanceSheet({
 
         <div className="u-p-8px-12px" style={{ overflowY: 'auto', flex: 1 }}>
           {loading ? (
-            <div className="u-p-40px u-fs-fs-base" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>Loading roster…</div>
+            <PageSkeleton variant="table" noHeader rows={4} />
           ) : error ? (
             <div className="u-p-40px u-fs-fs-base" style={{ textAlign: 'center', color: 'var(--error)' }}>{error}</div>
           ) : roster.length === 0 ? (

@@ -17,13 +17,17 @@ type store interface {
 	listJobs(ctx context.Context, orgID, meetID string) ([]*Job, error)
 	getJob(ctx context.Context, orgID, id string) (*Job, error)
 	insertJobs(ctx context.Context, jobs []*Job) error
+	// updateJob persists job, refusing (ErrCapacityBelowFilled) a capacity below
+	// the spots currently occupied; the check is atomic with the write.
 	updateJob(ctx context.Context, job *Job) error
 	deleteJob(ctx context.Context, orgID, id string) error
 
 	listSignups(ctx context.Context, orgID string, f SignupFilter) ([]*Signup, error)
 	getSignup(ctx context.Context, orgID, id string) (*Signup, error)
 	insertSignup(ctx context.Context, su *Signup) error
-	updateSignup(ctx context.Context, su *Signup) error
+	// updateSignup writes su only if the stored status still equals
+	// expectedStatus (compare-and-swap); otherwise it returns ErrInvalidTransition.
+	updateSignup(ctx context.Context, su *Signup, expectedStatus string) error
 
 	listRequirements(ctx context.Context, orgID, seasonID string) ([]*Requirement, error)
 	upsertRequirement(ctx context.Context, req *Requirement) (*Requirement, error)
@@ -133,6 +137,15 @@ func (m *memoryStore) updateJob(_ context.Context, job *Job) error {
 	if cur, ok := m.jobs[job.ID]; !ok || cur.OrgID != job.OrgID {
 		return ErrJobNotFound
 	}
+	filled := 0
+	for _, su := range m.signups {
+		if su.JobID == job.ID && occupiesSpot(su.Status) {
+			filled++
+		}
+	}
+	if job.Capacity < filled {
+		return ErrCapacityBelowFilled
+	}
 	cp := *job
 	m.jobs[job.ID] = &cp
 	return nil
@@ -226,11 +239,15 @@ func (m *memoryStore) insertSignup(_ context.Context, su *Signup) error {
 	return nil
 }
 
-func (m *memoryStore) updateSignup(_ context.Context, su *Signup) error {
+func (m *memoryStore) updateSignup(_ context.Context, su *Signup, expectedStatus string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if cur, ok := m.signups[su.ID]; !ok || cur.OrgID != su.OrgID {
+	cur, ok := m.signups[su.ID]
+	if !ok || cur.OrgID != su.OrgID {
 		return ErrSignupNotFound
+	}
+	if cur.Status != expectedStatus {
+		return ErrInvalidTransition
 	}
 	cp := *su
 	m.signups[su.ID] = &cp
@@ -338,8 +355,8 @@ func (m *memoryStore) reserveBuyout(_ context.Context, b *Buyout) error {
 func (m *memoryStore) updateBuyout(_ context.Context, b *Buyout) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if _, ok := m.buyouts[b.ID]; !ok {
-		return ErrBuyoutExists
+	if cur, ok := m.buyouts[b.ID]; !ok || cur.OrgID != b.OrgID {
+		return ErrBuyoutNotFound
 	}
 	cp := *b
 	m.buyouts[b.ID] = &cp

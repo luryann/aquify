@@ -45,6 +45,7 @@ var (
 	ErrCertificationRequired = errors.New("this job requires a certified volunteer")
 	ErrAgeRequirement        = errors.New("volunteer does not meet the minimum age for this job")
 	ErrBuyoutExists          = errors.New("a buyout has already been billed for this household and season")
+	ErrBuyoutNotFound        = errors.New("buyout not found")
 	ErrNothingOwed           = errors.New("household has no remaining hours to buy out")
 	ErrNoBuyoutRate          = errors.New("no buyout rate is configured for this season")
 	ErrBillingUnavailable    = errors.New("billing service is not configured")
@@ -1152,10 +1153,10 @@ func (s *Service) Cancel(ctx context.Context, p *appmiddleware.Principal, orgID,
 		if runes := []rune(r); len(runes) > 500 {
 			r = string(runes[:500])
 		}
-		su.Notes = strings.TrimSpace(strings.TrimSpace(su.Notes + "\nCancelled: " + r))
+		su.Notes = strings.TrimSpace(su.Notes + "\nCancelled: " + r)
 	}
 	su.UpdatedAt = now
-	if err := s.store.updateSignup(ctx, su); err != nil {
+	if err := s.store.updateSignup(ctx, su, before.Status); err != nil {
 		return nil, nil, err
 	}
 	return &before, su, nil
@@ -1210,7 +1211,7 @@ func (s *Service) CheckIn(ctx context.Context, p *appmiddleware.Principal, orgID
 		su.CheckedInBy = p.UserID
 	}
 	su.UpdatedAt = now
-	if err := s.store.updateSignup(ctx, su); err != nil {
+	if err := s.store.updateSignup(ctx, su, before.Status); err != nil {
 		return nil, nil, err
 	}
 	return &before, su, nil

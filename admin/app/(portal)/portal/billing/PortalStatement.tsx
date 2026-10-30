@@ -5,6 +5,7 @@ import type { ApiClient } from '@/lib/api'
 import { formatDateOnly } from '@/lib/dates'
 import { fetchStatement, fetchUpcomingCharges, financeErrorMessage, formatCents, type Statement, type UpcomingCharges } from '@/lib/financeData'
 import './PortalStatement.inline.css'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 const headingStyle = { fontSize: 'var(--fs-md)', fontWeight: 600, fontFamily: 'var(--font-body)', color: 'var(--text)', margin: '0 0 16px' } as const
 const rowStyle = { padding: '12px 20px', borderBottom: '1px solid var(--border)', fontSize: 'var(--fs-base)' } as const
@@ -59,7 +60,7 @@ export function PortalStatement({ api, orgId, householdId }: { api: ApiClient; o
         ) : (
           <div className="card is-f27afbb" >
             {loading ? (
-              <div className="is-13c4a2f">Loading statement…</div>
+              <PageSkeleton variant="list" noHeader rows={4} />
             ) : lines.length === 0 ? (
               <div className="is-3d754c5">No charges or payments yet.</div>
             ) : (

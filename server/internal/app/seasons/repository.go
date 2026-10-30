@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/dareaquatics/aquify/server/internal/dbutil"
 
+	"github.com/dareaquatics/aquify/server/internal/dbutil"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -22,7 +23,15 @@ func newRepository(pool *pgxpool.Pool) *Repository {
 
 // Upsert inserts or updates a season record.
 func (r *Repository) Upsert(ctx context.Context, s *Season) error {
-	_, err := r.pool.Exec(ctx, `
+	return upsertSeason(ctx, r.pool, s)
+}
+
+type execer interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+}
+
+func upsertSeason(ctx context.Context, db execer, s *Season) error {
+	_, err := db.Exec(ctx, `
 		INSERT INTO seasons (
 			id, org_id, name, start_date, end_date, status, goals,
 			created_at, updated_at, created_by, updated_by
@@ -42,6 +51,48 @@ func (r *Repository) Upsert(ctx context.Context, s *Season) error {
 		s.CreatedAt, s.UpdatedAt, s.CreatedBy, s.UpdatedBy,
 	)
 	return err
+}
+
+// UpdateTx loads the season under a row lock, lets mutate change it, and writes
+// it back in the same transaction so concurrent updates cannot lose writes.
+// (Postgres path; not covered by in-memory tests.)
+func (r *Repository) UpdateTx(ctx context.Context, orgID, id string, mutate func(*Season) error) (*Season, error) {
+	if _, err := uuid.Parse(id); err != nil {
+		return nil, ErrNotFound
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("seasons: begin update: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	s := &Season{}
+	if err := tx.QueryRow(ctx, `
+		SELECT id::text, org_id, name,
+		       COALESCE(start_date::text, ''), COALESCE(end_date::text, ''),
+		       status, goals,
+		       created_at, updated_at,
+		       COALESCE(created_by, ''), COALESCE(updated_by, '')
+		FROM seasons
+		WHERE id = $1::uuid AND org_id = $2
+		FOR UPDATE`, id, orgID).Scan(
+		&s.ID, &s.OrgID, &s.Name, &s.StartDate, &s.EndDate, &s.Status, &s.Goals,
+		&s.CreatedAt, &s.UpdatedAt, &s.CreatedBy, &s.UpdatedBy,
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("seasons: lock season: %w", err)
+	}
+	if err := mutate(s); err != nil {
+		return nil, err
+	}
+	if err := upsertSeason(ctx, tx, s); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("seasons: commit update: %w", err)
+	}
+	return s, nil
 }
 
 // Delete permanently removes a season by (org_id, id).

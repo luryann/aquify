@@ -75,11 +75,9 @@ func Setup(ctx context.Context, cfg Config, logger *slog.Logger) (shutdown func(
 	}
 
 	// Build the OTLP HTTP exporter.
-	exporter, err := otlptracehttp.New(ctx,
-		otlptracehttp.WithEndpoint(cfg.OTLPEndpoint),
-		otlptracehttp.WithInsecure(),
+	exporter, err := otlptracehttp.New(ctx, append(endpointOptions(cfg.OTLPEndpoint),
 		otlptracehttp.WithTimeout(5*time.Second),
-	)
+	)...)
 	if err != nil {
 		return nil, fmt.Errorf("telemetry: create OTLP exporter: %w", err)
 	}
@@ -133,6 +131,16 @@ func Setup(ctx context.Context, cfg Config, logger *slog.Logger) (shutdown func(
 	)
 
 	return tp.Shutdown, nil
+}
+
+// endpointOptions accepts either a bare host:port (plain HTTP) or a full URL
+// such as "http://otel-collector:4318"; WithEndpoint alone would mangle the
+// latter into an unusable request URL.
+func endpointOptions(endpoint string) []otlptracehttp.Option {
+	if strings.Contains(endpoint, "://") {
+		return []otlptracehttp.Option{otlptracehttp.WithEndpointURL(endpoint)}
+	}
+	return []otlptracehttp.Option{otlptracehttp.WithEndpoint(endpoint), otlptracehttp.WithInsecure()}
 }
 
 func envOrDefault(key, def string) string {

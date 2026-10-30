@@ -32,6 +32,7 @@ import {
 } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 type SessionRow = {
   id: string
@@ -434,7 +435,7 @@ function MeetDetailPageContent() {
   ], [commitments.length, entries.length, events.length, sessions.length])
 
   if (loading) {
-    return <div className="page"><EmptyState icon="calendar" title="Loading meet" description="Fetching meet details." /></div>
+    return <PageSkeleton variant="detail" />
   }
 
   if (error || !meet) {

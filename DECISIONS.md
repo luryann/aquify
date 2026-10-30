@@ -56,6 +56,7 @@ Purpose: remove ambiguity so a new engineer/AI can execute without additional co
     - billing/payments
     - document/compliance actions
   - Swimmer account may be disabled globally or per household without blocking launch.
+  - Every person who signs in (parent or swimmer) uses their own Aquify account; there are no shared or account-less logins. An admin can turn swimmer sign-in off for the whole club or for one swimmer (parents can do the same for their own swimmers); disabled swimmers keep their records and parents lose nothing.
   - The swimmer portal (`/swim`) is always available to users with the `swimmer` role; there is no feature flag. Households without swimmer accounts are simply unaffected.
   - Swimmer role is read-only by default unless specific field-level permissions are explicitly enabled.
 

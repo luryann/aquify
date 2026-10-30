@@ -351,3 +351,34 @@ func TestNormalizeGroupTypeMapsLegacyTypesToAllowedOnes(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadRowsToleratesUTF8BOMOnFirstHeader(t *testing.T) {
+	dir := t.TempDir()
+	// Spreadsheet "CSV UTF-8" exports prefix the file with a BOM.
+	writeCSVFixture(t, dir, "households.csv", "\ufefflegacy_household_id,household_name\nhh-1,Smith Family\n")
+	runner := NewRunner(Config{OrgID: testutil.DefaultOrgID})
+	step := runner.importHouseholds(context.Background(), filepath.Join(dir, "households.csv"))
+	if len(step.Errors) != 0 || step.Imported != 1 {
+		t.Fatalf("expected BOM-prefixed export to import, got %+v", step)
+	}
+}
+
+func TestOpenInvoicesFailedIssueLeavesNoDraft(t *testing.T) {
+	runner := NewRunner(Config{OrgID: testutil.DefaultOrgID})
+	dir := t.TempDir()
+	writeCSVFixture(t, dir, "households.csv", "legacy_household_id,household_name\nhh-1,Smith Family\n")
+	if step := runner.importHouseholds(context.Background(), filepath.Join(dir, "households.csv")); len(step.Errors) != 0 {
+		t.Fatal(step.Errors)
+	}
+	// A zero-total invoice cannot be issued, so the import fails after the draft was created.
+	writeCSVFixture(t, dir, "open_invoices.csv", "legacy_invoice_id,invoice_number,legacy_household_id,total_amount_cents,outstanding_amount_cents,due_date\ninv-1,INV-100,hh-1,0,0,2026-03-01\n")
+	step := runner.importOpenInvoices(context.Background(), filepath.Join(dir, "open_invoices.csv"))
+	if len(step.Errors) != 1 || step.Imported != 0 {
+		t.Fatalf("expected one failed row: %+v", step)
+	}
+	for _, inv := range runner.BillingService().SnapshotInvoices(testutil.DefaultOrgID) {
+		if inv.Status == "draft" {
+			t.Fatalf("orphan draft invoice left behind: %+v", inv)
+		}
+	}
+}

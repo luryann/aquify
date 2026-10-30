@@ -26,6 +26,7 @@ import { useSession } from '@/lib/session'
 import { parseBackendDate } from '@/lib/dates'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import './page.inline.css'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 const STEP_LABELS = ['Select Program', 'Select Swimmers', 'Review Waivers', 'Confirm']
 
@@ -271,7 +272,7 @@ export default function NewRegistrationPage() {
       )}
 
       {loading ? (
-        <div className="is-03ed17c">Loading registration options…</div>
+        <PageSkeleton variant="list" noHeader rows={4} />
       ) : (
         <>
           {step === 0 && (

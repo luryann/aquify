@@ -2,6 +2,7 @@ package meetfiles
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -194,7 +195,9 @@ func parseEV3Event(fields []string, course Course) (ParsedMeetEvent, bool, sessi
 	}
 
 	dayIndex, err := strconv.Atoi(cleanHytekField(fields[23]))
-	if err != nil || dayIndex <= 0 {
+	if err != nil || dayIndex <= 0 || dayIndex > maxDerivedMeetDays {
+		// Non-numeric, non-positive or absurd (would push AddDate to nonsense
+		// dates) day indexes fall back to day 1.
 		dayIndex = 1
 	}
 
@@ -232,7 +235,7 @@ func buildEV3Sessions(startDate *time.Time, sessions map[int]sessionMeta) []Pars
 	for sessionNumber := range sessions {
 		keys = append(keys, sessionNumber)
 	}
-	sortInts(keys)
+	sort.Ints(keys)
 
 	out := make([]ParsedMeetSession, 0, len(keys))
 	for _, sessionNumber := range keys {
@@ -251,6 +254,9 @@ func buildEV3Sessions(startDate *time.Time, sessions map[int]sessionMeta) []Pars
 	}
 	return out
 }
+
+// maxDerivedMeetDays bounds the one-session-per-day fallback.
+const maxDerivedMeetDays = 366
 
 func deriveDailyMeetSessions(startDate, endDate *time.Time) []ParsedMeetSession {
 	if startDate == nil && endDate == nil {
@@ -273,6 +279,12 @@ func deriveDailyMeetSessions(startDate, endDate *time.Time) []ParsedMeetSession 
 	endDay := end.UTC().Truncate(24 * time.Hour)
 	if endDay.Before(startDay) {
 		endDay = startDay
+	}
+
+	// A hostile or garbled header (e.g. 01/01/0001-12/31/9999) must not expand
+	// into millions of sessions.
+	if endDay.Sub(startDay) > time.Duration(maxDerivedMeetDays-1)*24*time.Hour {
+		endDay = startDay.AddDate(0, 0, maxDerivedMeetDays-1)
 	}
 
 	var sessions []ParsedMeetSession
@@ -447,14 +459,4 @@ func normalizeHytekClock(value string) string {
 		return ""
 	}
 	return parsed.Format("15:04")
-}
-
-func sortInts(values []int) {
-	for i := 0; i < len(values); i++ {
-		for j := i + 1; j < len(values); j++ {
-			if values[j] < values[i] {
-				values[i], values[j] = values[j], values[i]
-			}
-		}
-	}
 }

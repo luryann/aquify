@@ -201,6 +201,11 @@ export const NAV_ITEMS: NavItem[] = [
     section: 'System',
   },
   {
+    id: 'usa-swimming', label: 'USA Swimming', path: '/usa-swimming', icon: 'shield-check',
+    allowedRoles: ['admin'],
+    section: 'System',
+  },
+  {
     id: 'users', label: 'Users & roles', path: '/users', icon: 'user-check',
     allowedRoles: ['admin'],
     section: 'System',

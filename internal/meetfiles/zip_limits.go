@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path"
+	"strings"
 )
 
 // Meet entry files (SD3/CL2/EV3/HYV) are line-oriented text; these caps are
@@ -56,4 +58,23 @@ func readZipEntryBounded(f *zip.File, budget int64) ([]byte, int64, error) {
 	budget += int64(len(content))
 
 	return content, budget, nil
+}
+
+// normalizeZipEntryName converts an archive path to a clean, slash-separated,
+// relative name. ok is false for absolute names, drive-letter names, names
+// containing NUL, or names that escape the archive root via "..". Callers
+// must skip entries with ok == false.
+func normalizeZipEntryName(name string) (clean string, ok bool) {
+	if name == "" || strings.ContainsRune(name, 0) {
+		return "", false
+	}
+	n := strings.ReplaceAll(name, "\\", "/")
+	if strings.HasPrefix(n, "/") || (len(n) >= 2 && n[1] == ':') {
+		return "", false
+	}
+	c := path.Clean(n)
+	if c == "." || c == ".." || strings.HasPrefix(c, "../") {
+		return "", false
+	}
+	return c, true
 }

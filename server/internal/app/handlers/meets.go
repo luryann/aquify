@@ -167,14 +167,22 @@ func (h *MeetsHandlers) parseEntryFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	const maxBytes = 25 << 20
+	// Bound the whole request so an oversized upload cannot fill memory/temp disk
+	// in ParseMultipartForm before the file-size check below runs.
+	r.Body = http.MaxBytesReader(w, r.Body, maxBytes+(1<<20))
 	file, header, err := r.FormFile("file")
 	if err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			httpx.WriteError(w, r, http.StatusRequestEntityTooLarge, "file_too_large", "Meet file exceeds the 25 MB upload cap.", nil)
+			return
+		}
 		httpx.WriteError(w, r, http.StatusBadRequest, "missing_file", "Multipart field 'file' is required.", nil)
 		return
 	}
 	defer file.Close()
 
-	const maxBytes = 25 << 20
 	data, err := io.ReadAll(io.LimitReader(file, maxBytes+1))
 	if err != nil {
 		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_file", "Failed to read uploaded file.", err)

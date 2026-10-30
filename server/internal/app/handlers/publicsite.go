@@ -154,11 +154,22 @@ func (h *PublicSiteHandlers) site(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.src.Announcements != nil {
-		out := []publicAnnouncement{}
+		visible := []comms.Announcement{}
 		for _, a := range h.src.Announcements(orgID) {
-			if !a.IsPubliclyVisible() || len(out) >= publicMaxAnnouncements {
-				continue
+			if a.IsPubliclyVisible() {
+				visible = append(visible, a)
 			}
+		}
+		// Newest first, so the cap drops the oldest rather than whatever the
+		// source happened to list last.
+		sort.SliceStable(visible, func(i, j int) bool {
+			return announcementTime(visible[i]).After(announcementTime(visible[j]))
+		})
+		if len(visible) > publicMaxAnnouncements {
+			visible = visible[:publicMaxAnnouncements]
+		}
+		out := make([]publicAnnouncement, 0, len(visible))
+		for _, a := range visible {
 			out = append(out, publicAnnouncement{ID: a.ID, Title: a.Title, Body: a.Body, PublishedAt: a.PublishedAt})
 		}
 		resp["announcements"] = out
@@ -221,4 +232,11 @@ func (h *PublicSiteHandlers) site(w http.ResponseWriter, r *http.Request) {
 // for the public site; family-level redaction applies.
 func PublicRecordsPrincipal(orgID string) *appmiddleware.Principal {
 	return &appmiddleware.Principal{UserID: "public-site", OrgID: orgID, Roles: []string{"parent"}}
+}
+
+func announcementTime(a comms.Announcement) time.Time {
+	if a.PublishedAt != nil {
+		return *a.PublishedAt
+	}
+	return time.Time{}
 }

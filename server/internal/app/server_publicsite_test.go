@@ -65,8 +65,8 @@ func TestPublicTeamSite(t *testing.T) {
 	// Content: one public + one private announcement, public + private + group events, a future and a draft meet.
 	pubAnn := must(do(admin, http.MethodPost, "/api/v1/announcements", map[string]any{"title": "Public news", "body": "Come see us", "audience": "all", "public": true}), http.StatusCreated, "pub ann")
 	privAnn := must(do(admin, http.MethodPost, "/api/v1/announcements", map[string]any{"title": "Private secret", "body": "Parents only", "audience": "all"}), http.StatusCreated, "priv ann")
-	draftAnn := must(do(admin, http.MethodPost, "/api/v1/announcements", map[string]any{"title": "Draft public", "body": "unpublished", "audience": "all", "public": true}), http.StatusCreated, "draft ann")
-	_ = draftAnn
+	// Left unpublished on purpose: public=true must not expose a draft.
+	must(do(admin, http.MethodPost, "/api/v1/announcements", map[string]any{"title": "Draft public", "body": "unpublished", "audience": "all", "public": true}), http.StatusCreated, "draft ann")
 	must(do(admin, http.MethodPost, "/api/v1/announcements/"+pubAnn["id"].(string)+"/publish", nil), http.StatusOK, "publish pub")
 	must(do(admin, http.MethodPost, "/api/v1/announcements/"+privAnn["id"].(string)+"/publish", nil), http.StatusOK, "publish priv")
 	must(do(parent, http.MethodPatch, "/api/v1/announcements/"+privAnn["id"].(string), map[string]any{"public": true}), http.StatusForbidden, "parent toggle")

@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/dareaquatics/aquify/server/internal/dbutil"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+
+	"github.com/dareaquatics/aquify/server/internal/dbutil"
 )
 
 // ─── Transactions & locking ──────────────────────────────────────────────────
@@ -209,12 +210,14 @@ func (r *Repository) loadFinanceState(ctx context.Context) (*financeState, error
 	if err := loadRows(ctx, q, "settings", `
 		SELECT org_id::text, late_fee_enabled, late_fee_grace_days, late_fee_type, late_fee_flat_cents,
 		       late_fee_percent_bps, late_fee_max_cents, auto_run_enabled, auto_run_day,
-		       auto_run_invoice_status, auto_run_due_days, updated_at, updated_by
+		       auto_run_invoice_status, auto_run_due_days, meet_fee_per_event_cents, meet_fee_flat_cents,
+		       meet_fee_invoice_status, meet_fee_due_days, updated_at, updated_by
 		FROM billing_settings`, func(rows pgx.Rows) error {
 		st := &BillingSettings{}
 		if err := rows.Scan(&st.OrgID, &st.LateFeeEnabled, &st.LateFeeGraceDays, &st.LateFeeType, &st.LateFeeFlatCents,
 			&st.LateFeePercentBps, &st.LateFeeMaxCents, &st.AutoRunEnabled, &st.AutoRunDay,
-			&st.AutoRunInvoiceStatus, &st.AutoRunDueDays, &st.UpdatedAt, &st.UpdatedBy); err != nil {
+			&st.AutoRunInvoiceStatus, &st.AutoRunDueDays, &st.MeetFeePerEventCents, &st.MeetFeeFlatCents,
+			&st.MeetFeeInvoiceStatus, &st.MeetFeeDueDays, &st.UpdatedAt, &st.UpdatedBy); err != nil {
 			return err
 		}
 		f.settings[st.OrgID] = st
@@ -302,18 +305,22 @@ func (r *Repository) upsertSettings(ctx context.Context, st *BillingSettings) er
 	_, err := r.db().Exec(ctx, `
 		INSERT INTO billing_settings (org_id, late_fee_enabled, late_fee_grace_days, late_fee_type, late_fee_flat_cents,
 		       late_fee_percent_bps, late_fee_max_cents, auto_run_enabled, auto_run_day, auto_run_invoice_status,
-		       auto_run_due_days, updated_at, updated_by)
-		VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		       auto_run_due_days, meet_fee_per_event_cents, meet_fee_flat_cents, meet_fee_invoice_status,
+		       meet_fee_due_days, updated_at, updated_by)
+		VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 		ON CONFLICT (org_id) DO UPDATE SET
 		  late_fee_enabled = EXCLUDED.late_fee_enabled, late_fee_grace_days = EXCLUDED.late_fee_grace_days,
 		  late_fee_type = EXCLUDED.late_fee_type, late_fee_flat_cents = EXCLUDED.late_fee_flat_cents,
 		  late_fee_percent_bps = EXCLUDED.late_fee_percent_bps, late_fee_max_cents = EXCLUDED.late_fee_max_cents,
 		  auto_run_enabled = EXCLUDED.auto_run_enabled, auto_run_day = EXCLUDED.auto_run_day,
 		  auto_run_invoice_status = EXCLUDED.auto_run_invoice_status, auto_run_due_days = EXCLUDED.auto_run_due_days,
+		  meet_fee_per_event_cents = EXCLUDED.meet_fee_per_event_cents, meet_fee_flat_cents = EXCLUDED.meet_fee_flat_cents,
+		  meet_fee_invoice_status = EXCLUDED.meet_fee_invoice_status, meet_fee_due_days = EXCLUDED.meet_fee_due_days,
 		  updated_at = EXCLUDED.updated_at, updated_by = EXCLUDED.updated_by`,
 		st.OrgID, st.LateFeeEnabled, st.LateFeeGraceDays, st.LateFeeType, st.LateFeeFlatCents,
 		st.LateFeePercentBps, st.LateFeeMaxCents, st.AutoRunEnabled, st.AutoRunDay, st.AutoRunInvoiceStatus,
-		st.AutoRunDueDays, st.UpdatedAt, st.UpdatedBy)
+		st.AutoRunDueDays, st.MeetFeePerEventCents, st.MeetFeeFlatCents, st.MeetFeeInvoiceStatus,
+		st.MeetFeeDueDays, st.UpdatedAt, st.UpdatedBy)
 	return err
 }
 

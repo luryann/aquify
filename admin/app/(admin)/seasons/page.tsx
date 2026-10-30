@@ -14,6 +14,7 @@ import {
 } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { FIELD_INPUT_STYLE } from '@/lib/form-styles'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 type SeasonStatus = SeasonRecord['status']
 
@@ -439,7 +440,7 @@ export default function SeasonsPage() {
       {/* Loading */}
       {loading && (
         <div className="card u-p-40px u-mb-24px" style={{ textAlign: 'center' }}>
-          <p className="page-subtitle">Loading seasons…</p>
+          <PageSkeleton variant="list" noHeader rows={4} />
         </div>
       )}
 
@@ -447,7 +448,7 @@ export default function SeasonsPage() {
       {!loading && !loadError && seasons.length === 0 && !creating && (
         <div className="card u-p-40px u-mb-24px" style={{ textAlign: 'center' }}>
           <p className="u-fs-fs-md u-mb-6px" style={{ color: 'var(--text)' }}>No seasons yet</p>
-          <p className="page-subtitle">Create your first season to start planning dates and goals.</p>
+          <p className="page-subtitle" style={{ marginInline: 'auto' }}>Create your first season to start planning dates and goals.</p>
         </div>
       )}
 

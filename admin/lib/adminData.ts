@@ -55,6 +55,7 @@ export type SwimmerRecord = {
   emergency_contact_phone?: string
   emergency_contact_relationship?: string
   allergies?: string
+  portal_access_disabled?: boolean
 }
 
 export type SwimmerGroupLinkRecord = {
@@ -2035,6 +2036,7 @@ export async function updateSwimmer(
     emergency_contact_phone?: string
     emergency_contact_relationship?: string
     allergies?: string
+    portal_access_disabled?: boolean
   },
 ): Promise<SwimmerRecord> {
   const res = await api.patch<{ swimmer: SwimmerRecord }>(
@@ -2120,29 +2122,26 @@ export async function createMeet(
   return res.meet
 }
 
+/** POSTs a single file as multipart/form-data (cookie-auth CSRF headers included). */
+async function postMultipartFile<T>(token: string | undefined, orgId: string, path: string, file: File): Promise<T> {
+  const form = new FormData()
+  form.append('file', file, file.name)
+  const res = await fetch(path, {
+    method: 'POST',
+    body: form,
+    headers: { 'X-Org-Id': orgId, ...rawRequestAuthHeaders(token, 'POST') },
+    credentials: 'include',
+  })
+  if (!res.ok) throw await ApiError.fromResponse(res)
+  return await res.json() as T
+}
+
 export async function parseMeetEntryFile(
   token: string | undefined,
   orgId: string,
   file: File,
 ): Promise<ParsedMeetFileRecord> {
-  const form = new FormData()
-  form.append('file', file, file.name)
-
-  const headers: Record<string, string> = {
-    'X-Org-Id': orgId,
-    ...rawRequestAuthHeaders(token, 'POST'),
-  }
-
-  const res = await fetch('/api/v1/meets/parse-entry-file', {
-    method: 'POST',
-    body: form,
-    headers,
-    credentials: 'include',
-  })
-  if (!res.ok) {
-    throw await ApiError.fromResponse(res)
-  }
-  const payload = await res.json() as { parsed: ParsedMeetFileRecord }
+  const payload = await postMultipartFile<{ parsed: ParsedMeetFileRecord }>(token, orgId, '/api/v1/meets/parse-entry-file', file)
   return payload.parsed
 }
 
@@ -2193,18 +2192,7 @@ export async function importMeetResults(
   meetId: string,
   file: File,
 ): Promise<ResultsImportSummary> {
-  const form = new FormData()
-  form.append('file', file, file.name)
-  const res = await fetch(`/api/v1/meets/${meetId}/results/import`, {
-    method: 'POST',
-    body: form,
-    headers: { 'X-Org-Id': orgId, ...rawRequestAuthHeaders(token, 'POST') },
-    credentials: 'include',
-  })
-  if (!res.ok) {
-    throw await ApiError.fromResponse(res)
-  }
-  return await res.json() as ResultsImportSummary
+  return postMultipartFile<ResultsImportSummary>(token, orgId, `/api/v1/meets/${meetId}/results/import`, file)
 }
 
 export async function deleteInvoiceItem(api: ApiClient, orgId: string, invoiceId: string, itemId: string): Promise<void> {
@@ -2327,6 +2315,7 @@ export type OrgSettingsRecord = {
   public_about?: string
   public_contact_email?: string
   public_contact_phone?: string
+  swimmer_accounts_enabled?: boolean
   updated_at?: string
   updated_by?: string
 }
@@ -2343,7 +2332,7 @@ export async function fetchOrgSettings(api: ApiClient, orgId: string): Promise<O
 export async function updateOrgSettings(
   api: ApiClient,
   orgId: string,
-  input: { team_code?: string; team_name?: string; lsc_code?: string; email_sender_name?: string; email_sender_address?: string } & Partial<Pick<OrgSettingsRecord, 'public_slug' | 'public_site_enabled' | 'public_show_coaches' | 'public_about' | 'public_contact_email' | 'public_contact_phone'>>,
+  input: { team_code?: string; team_name?: string; lsc_code?: string; email_sender_name?: string; email_sender_address?: string } & Partial<Pick<OrgSettingsRecord, 'public_slug' | 'public_site_enabled' | 'public_show_coaches' | 'public_about' | 'public_contact_email' | 'public_contact_phone' | 'swimmer_accounts_enabled'>>,
 ): Promise<OrgSettingsRecord> {
   const res = await api.put<{ org_settings: OrgSettingsRecord }>(
     '/api/v1/org-settings',
@@ -2550,5 +2539,174 @@ export async function unlinkUserSwimmer(
   swimmerId: string,
 ): Promise<void> {
   await api.post(`/api/v1/users/${userId}/swimmer/unlink`, { swimmer_id: swimmerId }, orgHeaders(orgId))
+}
+
+
+/** Turn swimmer-role sign-in on or off for the whole club (admin only). */
+export async function setSwimmerAccountsEnabled(api: ApiClient, orgId: string, enabled: boolean): Promise<OrgSettingsRecord> {
+  return updateOrgSettings(api, orgId, { swimmer_accounts_enabled: enabled })
+}
+
+/** Allow or block one swimmer's own sign-in. Records are always kept. */
+export async function setSwimmerPortalAccess(api: ApiClient, orgId: string, swimmerId: string, allowed: boolean): Promise<SwimmerRecord> {
+  return updateSwimmer(api, orgId, swimmerId, { portal_access_disabled: !allowed })
+}
+
+// ── Time standards file import ────────────────────────────────────────────────
+
+export type StandardsImportRow = {
+  line: number
+  standard_name: string
+  standard_code: string
+  season_year: number
+  course: string
+  gender: string
+  age_min?: number
+  age_max?: number
+  event_distance: number
+  stroke: string
+  time_ms: number
+  action?: 'create' | 'update' | 'unchanged'
+  errors: string[]
+}
+
+export type StandardsImportResult = {
+  preview: boolean
+  imported?: boolean
+  rows: StandardsImportRow[]
+  counts: { total: number; valid: number; errors: number; create: number; update: number; unchanged: number }
+}
+
+/** Uploads a time-standards CSV. preview=true parses and plans without writing. */
+export async function importTimeStandardsFile(
+  token: string | undefined,
+  orgId: string,
+  file: File,
+  preview: boolean,
+): Promise<StandardsImportResult> {
+  return postMultipartFile<StandardsImportResult>(token, orgId, `/api/v1/time-standards/import${preview ? '?preview=true' : ''}`, file)
+}
+
+// ── USA Swimming (SWIMS) integration ──────────────────────────────────────────
+
+const USA_SWIMMING_API = '/api/v1/integrations/usa-swimming'
+
+export type USASwimmingIntegration = {
+  base_url: string
+  enabled: boolean
+  has_api_key: boolean
+  api_key_hint?: string
+  configured: boolean
+  stub_available: boolean
+  last_test_at?: string
+  last_test_ok: boolean
+  last_test_message?: string
+  last_sync_at?: string
+  last_sync_message?: string
+  token_url: string
+  client_id: string
+  club_id: string
+  vendor_api: boolean
+}
+
+export type USASwimmingSyncResult = {
+  swimmer_count: number
+  imported: number
+  duplicates: number
+  skipped: number
+  new_team_records: number
+  summary: string
+  swimmers: { swimmer_id: string; name: string; imported: number; duplicates: number; skipped: number; status: 'synced' | 'not_found' | 'error'; error?: string }[]
+}
+
+export async function fetchUSASwimmingIntegration(api: ApiClient, orgId: string): Promise<USASwimmingIntegration> {
+  const res = await api.get<{ integration: USASwimmingIntegration }>(USA_SWIMMING_API, undefined, orgHeaders(orgId))
+  return res.integration
+}
+
+export async function updateUSASwimmingIntegration(
+  api: ApiClient,
+  orgId: string,
+  input: { base_url?: string; api_key?: string; enabled?: boolean; token_url?: string; client_id?: string; club_id?: string },
+): Promise<USASwimmingIntegration> {
+  const res = await api.put<{ integration: USASwimmingIntegration }>(USA_SWIMMING_API, input, orgHeaders(orgId))
+  return res.integration
+}
+
+export async function testUSASwimmingIntegration(api: ApiClient, orgId: string): Promise<{ ok: boolean; message: string }> {
+  return api.post<{ ok: boolean; message: string }>(`${USA_SWIMMING_API}/test`, {}, orgHeaders(orgId))
+}
+
+export async function syncUSASwimmingTimes(api: ApiClient, orgId: string): Promise<USASwimmingSyncResult> {
+  return api.post<USASwimmingSyncResult>(`${USA_SWIMMING_API}/sync`, {}, orgHeaders(orgId))
+}
+
+export type USASwimmingClub = { club_id: string; name: string; code?: string }
+export type USASwimmingRosterRow = { member_id?: string; swimmer_id?: string; name: string; differences?: string[] }
+export type USASwimmingRosterComparison = {
+  swims_count: number
+  matched: number
+  only_in_swims: USASwimmingRosterRow[] | null
+  only_in_aquify: USASwimmingRosterRow[] | null
+  mismatched: USASwimmingRosterRow[] | null
+}
+
+export async function fetchUSASwimmingClubs(api: ApiClient, orgId: string): Promise<USASwimmingClub[]> {
+  const res = await api.get<{ clubs: USASwimmingClub[] }>(`${USA_SWIMMING_API}/clubs`, undefined, orgHeaders(orgId))
+  return res.clubs
+}
+
+export async function compareUSASwimmingRoster(api: ApiClient, orgId: string): Promise<USASwimmingRosterComparison> {
+  return api.get<USASwimmingRosterComparison>(`${USA_SWIMMING_API}/roster-compare`, undefined, orgHeaders(orgId))
+}
+
+export async function fetchUSASwimmingRegistrationLink(api: ApiClient, orgId: string): Promise<string> {
+  const res = await api.get<{ registration_link: string }>(`${USA_SWIMMING_API}/registration-link`, undefined, orgHeaders(orgId))
+  return res.registration_link
+}
+
+export type USASwimmingMemberCheck = { member_id: string; name: string; valid: boolean; detail?: string }
+export type USASwimmingRegistrationInput = {
+  member_id?: string
+  first_name: string
+  last_name: string
+  date_of_birth: string
+  competition_category: 'FEMALE' | 'MALE'
+  phone?: string
+  phone_type?: 'Mobile' | 'Work' | 'Home' | 'Other'
+  postal_code?: string
+  offering_id?: string
+}
+export type USASwimmingRegistrationResult = { status: string; request_id?: string; ok: boolean; error?: string }
+
+export async function verifyUSASwimmingMembers(
+  api: ApiClient,
+  orgId: string,
+  swimmerIds?: string[],
+): Promise<{ results: USASwimmingMemberCheck[]; invalid: number }> {
+  return api.post(`${USA_SWIMMING_API}/verify-members`, swimmerIds?.length ? { swimmer_ids: swimmerIds } : {}, orgHeaders(orgId))
+}
+
+export async function verifyUSASwimmingTime(
+  api: ApiClient,
+  orgId: string,
+  input: { swimmer_id: string; event: string; time: string },
+): Promise<boolean> {
+  const res = await api.post<{ valid: boolean }>(`${USA_SWIMMING_API}/verify-time`, input, orgHeaders(orgId))
+  return res.valid
+}
+
+export async function submitUSASwimmingRegistration(
+  api: ApiClient,
+  orgId: string,
+  input: USASwimmingRegistrationInput,
+): Promise<USASwimmingRegistrationResult> {
+  const res = await api.post<{ result: USASwimmingRegistrationResult }>(`${USA_SWIMMING_API}/registrations`, input, orgHeaders(orgId))
+  return res.result
+}
+
+export async function fetchUSASwimmingRegistrationStatus(api: ApiClient, orgId: string, requestId: string): Promise<string> {
+  const res = await api.get<{ status: string }>(`${USA_SWIMMING_API}/registrations/${encodeURIComponent(requestId)}/status`, undefined, orgHeaders(orgId))
+  return res.status
 }
 

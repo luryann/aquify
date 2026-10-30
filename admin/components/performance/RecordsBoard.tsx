@@ -15,6 +15,7 @@ import {
 } from '@/lib/performanceData'
 import { AgeGroupSelect, FIELD_STYLE, FilterRow, GenderSegmented, LabeledField, Notice, Segmented } from './PerfControls'
 import { LoadErrorBanner } from '@/components/ui/LoadErrorBanner'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 const STROKE_TITLES: Record<string, string> = { free: 'Freestyle', back: 'Backstroke', breast: 'Breaststroke', fly: 'Butterfly', im: 'Individual Medley' }
 
@@ -133,7 +134,7 @@ export function RecordsBoard({ canManage = false }: Props) {
       ) : null}
 
       {loading ? (
-        <div className="u-fs-fs-base u-p-24px-0" style={{ color: 'var(--text-muted)' }}>Loading records…</div>
+        <PageSkeleton variant="table" noHeader rows={4} />
       ) : !error && byStroke.length === 0 ? (
         <EmptyState
           icon="clock"
@@ -244,7 +245,7 @@ function HistoryModal({ record, canManage, onClose, onChanged }: { record: TeamR
   return (
     <Modal open onClose={onClose} title={record.label} description="Every swim that has held this record, newest first." width={560}>
       {error ? <LoadErrorBanner message={error} onRetry={() => void load()} /> : null}
-      {!history ? <div className="u-fs-fs-base" style={{ color: 'var(--text-muted)' }}>Loading history…</div> : (
+      {!history ? <PageSkeleton variant="table" noHeader rows={4} /> : (
         <ol className="u-m-0 u-p-0 u-gap-12px" style={{ listStyle: 'none', display: 'grid' }}>
           {history.progression.map((e, i) => (
             <li key={e.id} className="u-p-12px-12px" style={{ borderRadius: 'var(--r-sm)', border: '1px solid var(--border)', background: i === 0 ? 'var(--accent-subtle)' : 'transparent' }}>

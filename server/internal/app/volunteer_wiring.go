@@ -152,17 +152,28 @@ func (b volunteerBiller) CreateBuyoutInvoice(_ context.Context, req volunteer.Bu
 		Category:        "manual",
 	})
 	if err != nil {
+		b.discardDraft(req, actor, inv.ID)
 		return volunteer.BuyoutInvoiceResult{}, fmt.Errorf("volunteer buyout: add item to draft invoice %s: %w", inv.ID, mapBillingErr(err))
 	}
 	status := inv.Status
 	if req.Issue {
 		issued, _, err := b.billing.IssueInvoice(req.OrgID, actor, req.Principal, inv.ID)
 		if err != nil {
+			b.discardDraft(req, actor, inv.ID)
 			return volunteer.BuyoutInvoiceResult{}, fmt.Errorf("volunteer buyout: issue invoice %s: %w", inv.ID, mapBillingErr(err))
 		}
 		status = issued.Status
 	}
 	return volunteer.BuyoutInvoiceResult{InvoiceID: inv.ID, InvoiceItemID: item.ID, InvoiceNumber: inv.InvoiceNumber, InvoiceStatus: status}, nil
+}
+
+// discardDraft voids the draft invoice created for a buyout whose later
+// billing steps failed, so a failed buyout never leaves an orphan draft. The
+// caller (volunteer.Service) releases the buyout reservation on error.
+func (b volunteerBiller) discardDraft(req volunteer.BuyoutInvoiceRequest, actor, invoiceID string) {
+	if _, _, err := b.billing.VoidInvoice(req.OrgID, actor, req.Principal, invoiceID); err != nil {
+		slog.Error("volunteer buyout: discard draft invoice failed", "invoice_id", invoiceID, "error", err)
+	}
 }
 
 func mapBillingErr(err error) error {

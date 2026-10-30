@@ -27,6 +27,7 @@ import {
 import { formatDateOnly } from '@/lib/dates'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { formatCents } from '@/lib/financeData'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 type SwimmerRow = {
   id: string
@@ -295,7 +296,7 @@ export default function HouseholdDetailPage() {
   const primaryContact = contacts.find((contact) => contact.isPrimary) ?? contacts[0]
 
   if (loading) {
-    return <div className="page"><EmptyState icon="users" title="Loading household" description="Fetching live household detail data from the API." /></div>
+    return <PageSkeleton variant="detail" />
   }
 
   if (error || !household) {

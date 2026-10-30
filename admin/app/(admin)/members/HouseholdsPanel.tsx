@@ -13,6 +13,7 @@ import { canAccess } from '@/lib/roles'
 import { formatDateOnly } from '@/lib/dates'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { Modal } from '@/components/ui/Modal'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 type HouseholdRow = {
   id: string
@@ -273,7 +274,7 @@ export function HouseholdsPanel() {
       </div>
 
       {loading ? (
-        <EmptyState icon="users" title="Loading households" description="Fetching live household data from the API." />
+        <PageSkeleton variant="table" noHeader rows={4} />
       ) : error ? (
         <EmptyState icon="alert-circle" title="Unable to load households" description={error} />
       ) : (

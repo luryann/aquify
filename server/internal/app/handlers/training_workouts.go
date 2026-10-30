@@ -73,6 +73,8 @@ func writeTrainingError(w http.ResponseWriter, r *http.Request, err error, fallb
 			[]httpx.ValidationIssue{{Field: verr.Field, Message: verr.Message}})
 	case errors.Is(err, training.ErrInvalidAssignment):
 		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "validation_error", "Provide practice_id, or a date (and optional group_id) for a new practice.", nil)
+	case errors.Is(err, training.ErrInvalidDate):
+		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Practice date must be YYYY-MM-DD.", nil)
 	case errors.Is(err, training.ErrInvalidType):
 		httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid practice type.", nil)
 	case errors.Is(err, training.ErrInvalidRange):

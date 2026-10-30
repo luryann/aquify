@@ -14,7 +14,7 @@ var expectedColumns = map[string][]string{
 	"data_deletion_requests": {"deleted_at", "expires_at"},
 	"data_export_requests":   {"deleted_at"},
 	"email_campaigns":        {"deleted_at"},
-	"entries":                {"entry_time_ms", "notes"},
+	"entries":                {"entry_time_ms", "notes", "scratch_reason"},
 	"eligibility_rules":      {"rule_value"},
 	"file_exports":           {"expires_at", "filename", "last_error", "size_bytes"},
 	"meets":                  {"venue", "self_signup_enabled", "max_entries_per_swimmer"},

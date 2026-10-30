@@ -45,21 +45,26 @@ func (h *OrgSettingsHandlers) get(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load org settings.", err)
 		return
 	}
+	if settings, err = h.service.WithSwimmerAccounts(settings); err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load org settings.", err)
+		return
+	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{"org_settings": settings})
 }
 
 type updateOrgSettingsBody struct {
-	TeamCode           *string `json:"team_code"`
-	TeamName           *string `json:"team_name"`
-	LSCCode            *string `json:"lsc_code"`
-	EmailSenderName    *string `json:"email_sender_name"`
-	EmailSenderAddress *string `json:"email_sender_address"`
-	PublicSlug         *string `json:"public_slug"`
-	PublicSiteEnabled  *bool   `json:"public_site_enabled"`
-	PublicShowCoaches  *bool   `json:"public_show_coaches"`
-	PublicAbout        *string `json:"public_about"`
-	PublicContactEmail *string `json:"public_contact_email"`
-	PublicContactPhone *string `json:"public_contact_phone"`
+	TeamCode               *string `json:"team_code"`
+	TeamName               *string `json:"team_name"`
+	LSCCode                *string `json:"lsc_code"`
+	EmailSenderName        *string `json:"email_sender_name"`
+	EmailSenderAddress     *string `json:"email_sender_address"`
+	PublicSlug             *string `json:"public_slug"`
+	PublicSiteEnabled      *bool   `json:"public_site_enabled"`
+	PublicShowCoaches      *bool   `json:"public_show_coaches"`
+	PublicAbout            *string `json:"public_about"`
+	PublicContactEmail     *string `json:"public_contact_email"`
+	PublicContactPhone     *string `json:"public_contact_phone"`
+	SwimmerAccountsEnabled *bool   `json:"swimmer_accounts_enabled"`
 }
 
 func (h *OrgSettingsHandlers) update(w http.ResponseWriter, r *http.Request) {
@@ -79,17 +84,18 @@ func (h *OrgSettingsHandlers) update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	settings, err := h.service.Update(orgID, orgsettings.Updates{
-		TeamCode:           body.TeamCode,
-		TeamName:           body.TeamName,
-		LSCCode:            body.LSCCode,
-		EmailSenderName:    body.EmailSenderName,
-		EmailSenderAddress: body.EmailSenderAddress,
-		PublicSlug:         body.PublicSlug,
-		PublicSiteEnabled:  body.PublicSiteEnabled,
-		PublicShowCoaches:  body.PublicShowCoaches,
-		PublicAbout:        body.PublicAbout,
-		PublicContactEmail: body.PublicContactEmail,
-		PublicContactPhone: body.PublicContactPhone,
+		TeamCode:               body.TeamCode,
+		TeamName:               body.TeamName,
+		LSCCode:                body.LSCCode,
+		EmailSenderName:        body.EmailSenderName,
+		EmailSenderAddress:     body.EmailSenderAddress,
+		PublicSlug:             body.PublicSlug,
+		PublicSiteEnabled:      body.PublicSiteEnabled,
+		PublicShowCoaches:      body.PublicShowCoaches,
+		PublicAbout:            body.PublicAbout,
+		PublicContactEmail:     body.PublicContactEmail,
+		PublicContactPhone:     body.PublicContactPhone,
+		SwimmerAccountsEnabled: body.SwimmerAccountsEnabled,
 	}, principal.UserID)
 	if errors.Is(err, orgsettings.ErrInvalidSlug) {
 		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "invalid_slug", err.Error(), nil)
@@ -100,6 +106,11 @@ func (h *OrgSettingsHandlers) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to update org settings.", err)
+		return
+	}
+
+	if settings, err = h.service.WithSwimmerAccounts(settings); err != nil {
 		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to update org settings.", err)
 		return
 	}

@@ -250,6 +250,10 @@ func (h *MembershipHandlers) deleteHousehold(w http.ResponseWriter, r *http.Requ
 	})
 }
 
+// actionMembersContactCreate audits a household contact being added (contacts
+// carry emergency/pick-up authority, so the change must be traceable).
+const actionMembersContactCreate = "members.contact.create"
+
 func (h *MembershipHandlers) addContact(w http.ResponseWriter, r *http.Request) {
 	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
@@ -288,6 +292,9 @@ func (h *MembershipHandlers) addContact(w http.ResponseWriter, r *http.Request) 
 		}
 		return
 	}
+
+	recordAudit(h.auditService, principal, orgID, actionMembersContactCreate, "household_contact", contact.ID, nil, contact,
+		map[string]string{"household_id": householdID})
 
 	_ = httpx.WriteJSON(w, http.StatusCreated, map[string]any{
 		"status":  "created",
@@ -442,6 +449,7 @@ type updateSwimmerRequest struct {
 	EmergencyContactPhone        *string   `json:"emergency_contact_phone"`
 	EmergencyContactRelationship *string   `json:"emergency_contact_relationship"`
 	Allergies                    *string   `json:"allergies"`
+	PortalAccessDisabled         *bool     `json:"portal_access_disabled"`
 }
 
 func (h *MembershipHandlers) updateSwimmer(w http.ResponseWriter, r *http.Request) {
@@ -471,6 +479,7 @@ func (h *MembershipHandlers) updateSwimmer(w http.ResponseWriter, r *http.Reques
 		EmergencyContactPhone:        req.EmergencyContactPhone,
 		EmergencyContactRelationship: req.EmergencyContactRelationship,
 		Allergies:                    req.Allergies,
+		PortalAccessDisabled:         req.PortalAccessDisabled,
 	})
 	if err != nil {
 		if writeMembersNotFound(w, r, err) {
@@ -625,7 +634,11 @@ func (h *MembershipHandlers) listSwimmerGroupLinks(w http.ResponseWriter, r *htt
 
 	links, err := h.service.ListSwimmerGroupLinks(principal, orgID)
 	if err != nil {
-		httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to list swimmer groups.", nil)
+		if errors.Is(err, members.ErrForbidden) {
+			httpx.WriteError(w, r, http.StatusForbidden, "forbidden", "You are not allowed to list swimmer groups.", nil)
+			return
+		}
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to list swimmer groups.", err)
 		return
 	}
 	pagination := parseListPagination(r, listPaginationOptions{})

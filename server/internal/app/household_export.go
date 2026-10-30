@@ -71,6 +71,11 @@ func collectHouseholdExportData(orgID, householdID string, membersSvc *members.S
 		if err != nil {
 			return nil, fmt.Errorf("export %s: %w", src.name, err)
 		}
+		for _, k := range src.keys {
+			if _, ok := data[k]; !ok {
+				return nil, fmt.Errorf("export %s: declared key %q missing from source output", src.name, k)
+			}
+		}
 		for k, v := range data {
 			out[k] = v
 		}

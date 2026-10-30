@@ -2,8 +2,12 @@ package exports
 
 import (
 	"bytes"
+	"errors"
+	"github.com/dareaquatics/aquify/server/internal/storage"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
 	"github.com/go-pdf/fpdf"
@@ -203,5 +207,83 @@ func TestListExportsForViewerAppliesPerTypeAudience(t *testing.T) {
 	}
 	if n := len(svc.ListExportsForViewer(coach, "org-1", "m1")); n != 3 {
 		t.Fatalf("coach should see all 3, got %d", n)
+	}
+}
+
+// DownloadExport must copy the job while holding the lock: ExpireArtifacts
+// rewrites the same record under the write lock. Run with -race to catch a regression.
+func TestDownloadExportDoesNotRaceWithExpiry(t *testing.T) {
+	svc := NewService()
+	admin := &appmiddleware.Principal{UserID: "u", Roles: []string{"admin"}}
+	job, _, err := svc.GenerateExport(admin, "org-1", "m1", sampleReportInput(ReportTypeEvent, ""))
+	if err != nil {
+		t.Fatalf("GenerateExport: %v", err)
+	}
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 200; i++ {
+			_, _, _ = svc.DownloadExport(admin, "org-1", job.ID)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 200; i++ {
+			svc.ExpireArtifacts(time.Now().Add(365 * 24 * time.Hour))
+		}
+	}()
+	wg.Wait()
+}
+
+func TestDownloadExpiredExportReportsExpired(t *testing.T) {
+	svc := NewService()
+	admin := &appmiddleware.Principal{UserID: "u", Roles: []string{"admin"}}
+	job, _, err := svc.GenerateExport(admin, "org-1", "m1", sampleReportInput(ReportTypeEvent, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc.mu.Lock()
+	svc.exports[job.ID].Status = "expired"
+	svc.mu.Unlock()
+	if _, _, err := svc.DownloadExport(admin, "org-1", job.ID); err != ErrExportExpired {
+		t.Fatalf("got %v, want ErrExportExpired", err)
+	}
+}
+
+type failDeleteStore struct {
+	storage.ObjectStorage
+	fail bool
+}
+
+func (f *failDeleteStore) Delete(key string) error {
+	if f.fail {
+		return errors.New("s3 down")
+	}
+	return f.ObjectStorage.Delete(key)
+}
+
+func TestExpireArtifactsKeepsExportReadyWhenDeleteFails(t *testing.T) {
+	svc := NewService()
+	fs := &failDeleteStore{ObjectStorage: svc.store, fail: true}
+	svc.store = fs
+	admin := &appmiddleware.Principal{UserID: "u", Roles: []string{"admin"}}
+	job, _, err := svc.GenerateExport(admin, "org-1", "m1", sampleReportInput(ReportTypeEvent, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	future := time.Now().Add(365 * 24 * time.Hour)
+	if got := svc.ExpireArtifacts(future); len(got) != 0 {
+		t.Fatalf("expired %d despite failed delete", len(got))
+	}
+	svc.mu.RLock()
+	st := svc.exports[job.ID].Status
+	svc.mu.RUnlock()
+	if st == "expired" {
+		t.Fatal("export marked expired although the object delete failed")
+	}
+	fs.fail = false
+	if got := svc.ExpireArtifacts(future); len(got) != 1 {
+		t.Fatalf("retry expired %d, want 1", len(got))
 	}
 }

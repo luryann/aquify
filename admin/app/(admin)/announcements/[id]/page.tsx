@@ -15,6 +15,7 @@ import {
 } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { formatDateTime } from '@/lib/dates'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 export default function AnnouncementDetailPage() {
   const params = useParams<{ id: string }>()
@@ -89,7 +90,7 @@ export default function AnnouncementDetailPage() {
   }
 
   if (loading) {
-    return <div className="u-p-32px" ><EmptyState icon="megaphone" title="Loading announcement" description="Fetching the live announcement record." /></div>
+    return <PageSkeleton variant="detail" />
   }
 
   if (!announcement) {

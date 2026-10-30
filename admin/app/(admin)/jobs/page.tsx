@@ -18,6 +18,7 @@ import {
   type WorkerTaskRecord,
 } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 function formatDateTime(value?: string) {
   if (!value) return '—'
@@ -177,7 +178,7 @@ function JobsPageContent() {
       ) : null}
 
       {loading ? (
-        <EmptyState icon="activity" title="Loading jobs" description="Reading live queue state and recent executions." />
+        <PageSkeleton variant="table" noHeader rows={4} />
       ) : (
         <div className="u-gap-24px" style={{ display: 'flex', flexDirection: 'column' }}>
           <div className="cols-4 u-gap-12px" >

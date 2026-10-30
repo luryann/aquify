@@ -7,6 +7,7 @@ import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { assignRole, fetchMFAFactors, fetchRoleAssignments, fetchUsers, type MFAFactorRecord, type RoleAssignmentRecord, type UserRecord } from '@/lib/adminData'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 const ROLE_OPTIONS = ['admin', 'coach', 'parent', 'swimmer'] as const
 type RoleOption = (typeof ROLE_OPTIONS)[number]
@@ -216,7 +217,7 @@ export function RolesPanel() {
           </div>
           {loading ? (
             <div className="u-p-24px" >
-              <EmptyState icon="shield-check" title="Loading assignments" description="Fetching live role assignments from the API." />
+              <PageSkeleton variant="table" noHeader rows={4} />
             </div>
           ) : assignments.length === 0 ? (
             <div className="u-p-24px" >

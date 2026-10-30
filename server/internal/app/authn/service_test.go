@@ -720,3 +720,25 @@ func TestChallengeMFALocksOutAfterRepeatedFailures(t *testing.T) {
 		t.Fatalf("expected lockout, got %v", err)
 	}
 }
+
+func TestListMFAFactorsOmitsOneTimeSecrets(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(Config{EnableDevStubTokens: true})
+	if _, err := service.EnrollMFA(LocalDevAdminUserID, "admin@dare.local", LocalDevOrgID, "totp", "Authenticator"); err != nil {
+		t.Fatalf("enroll totp: %v", err)
+	}
+	if _, err := service.EnrollMFA(LocalDevAdminUserID, "admin@dare.local", LocalDevOrgID, "backup_code", "Backup"); err != nil {
+		t.Fatalf("enroll backup: %v", err)
+	}
+
+	factors := service.ListMFAFactors(LocalDevAdminUserID)
+	if len(factors) != 2 {
+		t.Fatalf("expected 2 factors, got %d", len(factors))
+	}
+	for _, f := range factors {
+		if f.ProvisioningURI != "" || f.ChallengeHint != "" || len(f.Codes) != 0 {
+			t.Fatalf("list leaked one-time enrollment secrets: %+v", f)
+		}
+	}
+}

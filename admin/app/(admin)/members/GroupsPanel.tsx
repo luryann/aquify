@@ -12,6 +12,7 @@ import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { Modal } from '@/components/ui/Modal'
 import { formatAgeRange } from '@/lib/group-format'
 import { FIELD_INPUT_STYLE } from '@/lib/form-styles'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 type GroupType = 'competitive' | 'recreational' | 'developmental' | 'masters' | 'other'
 
@@ -245,7 +246,7 @@ export function GroupsPanel() {
       </div>
 
       {loading ? (
-        <EmptyState icon="layers" title="Loading groups" description="Fetching live group data from the API." />
+        <PageSkeleton variant="table" noHeader rows={4} />
       ) : error ? (
         <EmptyState icon="alert-circle" title="Unable to load groups" description={error} />
       ) : (

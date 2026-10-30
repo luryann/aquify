@@ -24,6 +24,7 @@ import {
 } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { QUICK_REACTIONS } from '@/lib/message-format'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 function formatDateTime(value?: string) {
   if (!value) return '—'
@@ -284,7 +285,7 @@ export default function MessagesInboxPage() {
       </div>
 
       {loading ? (
-        <EmptyState icon="mail" title="Loading messages" description="Fetching message threads." />
+        <PageSkeleton variant="list" noHeader rows={4} />
       ) : error ? (
         <EmptyState icon="alert-circle" title="Unable to load messages" description={error} />
       ) : threads.length === 0 ? (
@@ -363,7 +364,7 @@ export default function MessagesInboxPage() {
               {threadError ? (
                 <p className="u-fs-fs-base" style={{ color: 'var(--error)' }}>{threadError}</p>
               ) : threadLoading ? (
-                <p className="page-subtitle">Loading conversation…</p>
+                <PageSkeleton variant="list" noHeader rows={4} />
               ) : messages.length === 0 ? (
                 <p className="page-subtitle">No messages in this thread yet.</p>
               ) : (

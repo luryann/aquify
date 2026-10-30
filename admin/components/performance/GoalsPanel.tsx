@@ -12,6 +12,7 @@ import {
 import { goalTone } from '@/lib/performance-periods'
 import { FIELD_STYLE, LabeledField } from './PerfControls'
 import { LoadErrorBanner } from '@/components/ui/LoadErrorBanner'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 function deadlineText(g: Goal) {
   if (!g.deadline) return null
@@ -129,7 +130,7 @@ export function GoalsPanel({ swimmerId, swimmerName }: { swimmerId: string; swim
       ) : null}
 
       {loading ? (
-        <p className="u-fs-fs-base u-m-0" style={{ color: 'var(--text-muted)' }}>Loading goals…</p>
+        <PageSkeleton variant="list" noHeader rows={4} />
       ) : !error && goals.length === 0 ? (
         <p className="u-fs-fs-base u-m-0" style={{ color: 'var(--text-muted)' }}>No goals yet. Pick an event and a target time to track progress after every meet.</p>
       ) : (

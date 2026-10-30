@@ -13,6 +13,7 @@ import {
   type SwimmerRecord,
 } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 type PendingUser = {
   id: string
@@ -251,7 +252,7 @@ export default function ApprovalsPage() {
       </div>
 
       {loading ? (
-        <EmptyState icon="users" title="Loading approvals" description="Fetching pending registration requests…" />
+        <PageSkeleton variant="table" noHeader rows={4} />
       ) : filtered.length === 0 ? (
         <EmptyState icon="check-circle" title="No pending approvals" description={search ? 'No matches for your search.' : 'All registration requests have been reviewed.'} />
       ) : (

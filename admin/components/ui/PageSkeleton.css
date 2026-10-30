@@ -1,0 +1,8 @@
+.ps-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-4); }
+.ps-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--space-4); }
+.ps-split { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: var(--space-4); }
+.ps-stack { display: flex; flex-direction: column; gap: var(--space-3); }
+.ps-card { padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); }
+.ps-row { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); }
+.ps-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--space-4); }
+@media (max-width: 760px) { .ps-split { grid-template-columns: minmax(0, 1fr); } }

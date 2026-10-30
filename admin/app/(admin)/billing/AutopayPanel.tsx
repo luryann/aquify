@@ -23,6 +23,7 @@ import {
   type HouseholdAutopayRow,
 } from '@/lib/autopay'
 import { FIELD_INPUT_STYLE } from '@/lib/form-styles'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 function formatCurrencyCents(value?: number) {
   return typeof value === 'number' ? `$${(value / 100).toFixed(2)}` : '—'
@@ -167,7 +168,7 @@ export function AutopayPanel() {
 
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             {loading ? (
-              <div className="u-p-24px u-fs-fs-base" style={{ color: 'var(--text-muted)' }}>Loading households…</div>
+              <PageSkeleton variant="table" noHeader rows={4} />
             ) : rows.length === 0 ? (
               <div className="u-p-24px u-fs-fs-base" style={{ color: 'var(--text-muted)' }}>No households available.</div>
             ) : (

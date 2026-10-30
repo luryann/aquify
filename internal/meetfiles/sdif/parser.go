@@ -22,10 +22,7 @@
 package sdif
 
 import (
-	"bufio"
-	"bytes"
 	"fmt"
-	"strings"
 
 	"github.com/dareaquatics/aquify/meetfiles"
 )
@@ -45,7 +42,6 @@ func Parse(data []byte) (*meetfiles.ParseResult, error) {
 		FileType: meetfiles.FileTypeSD3,
 	}
 
-	scanner := bufio.NewScanner(bytes.NewReader(data))
 	lineNumber := 0
 
 	// pendingRelay holds the current E0 relay being built until the next
@@ -59,12 +55,9 @@ func Parse(data []byte) (*meetfiles.ParseResult, error) {
 		}
 	}
 
-	for scanner.Scan() {
+	for _, raw := range splitRecordLines(data) {
 		lineNumber++
-		raw := scanner.Text()
-
-		// Strip trailing CR that may remain after splitting on LF.
-		line := strings.TrimRight(raw, "\r")
+		line := raw
 
 		if len(line) < 2 {
 			// Blank or too-short line — skip silently.
@@ -133,10 +126,6 @@ func Parse(data []byte) (*meetfiles.ParseResult, error) {
 		}
 	}
 
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("sdif: scanner: %w", err)
-	}
-
 	// Flush any trailing relay.
 	flush()
 
@@ -149,4 +138,29 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
+}
+
+// splitRecordLines splits data into lines on CRLF, LF or a bare CR, with no
+// per-line length limit (a bufio.Scanner would fail on >64KB lines, and a
+// CR-only file is a single "line" to it).
+func splitRecordLines(data []byte) []string {
+	var lines []string
+	start := 0
+	for i := 0; i < len(data); i++ {
+		switch data[i] {
+		case '\n':
+			lines = append(lines, string(data[start:i]))
+			start = i + 1
+		case '\r':
+			lines = append(lines, string(data[start:i]))
+			if i+1 < len(data) && data[i+1] == '\n' {
+				i++
+			}
+			start = i + 1
+		}
+	}
+	if start < len(data) {
+		lines = append(lines, string(data[start:]))
+	}
+	return lines
 }

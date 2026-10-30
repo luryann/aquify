@@ -16,6 +16,7 @@ import {
 } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { formatDateOnly } from '@/lib/dates'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 type ExportStatus = 'pending' | 'generating' | 'ready' | 'failed' | 'expired'
 
@@ -184,7 +185,7 @@ export function ReportsPanel({ meetId }: { meetId: string }) {
       </div>
 
       {loading ? (
-        <EmptyState icon="download" title="Loading reports" description="Fetching generated reports for this meet." />
+        <PageSkeleton variant="table" noHeader rows={4} />
       ) : error ? (
         <EmptyState icon="alert-circle" title="Unable to load reports" description={error} />
       ) : (

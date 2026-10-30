@@ -132,13 +132,12 @@ func TestStripeWebhookPaymentIntentSucceededRecordsPayment(t *testing.T) {
 		HouseholdID:   "hh-001",
 		InvoiceNumber: "INV-STRIPE-1",
 	})
-	item, _ := billingSvc.AddInvoiceItem("org-demo", "actor-1", p, inv.ID, billing.AddInvoiceItemInput{
+	billingSvc.AddInvoiceItem("org-demo", "actor-1", p, inv.ID, billing.AddInvoiceItemInput{
 		Description:     "Program fee",
 		Quantity:        1,
 		UnitAmountCents: 5000,
 		Category:        "program_fee",
 	})
-	_ = item
 	billingSvc.IssueInvoice("org-demo", "actor-1", p, inv.ID)
 
 	router := newStripeRouter(t, billingSvc, stub)
@@ -783,7 +782,9 @@ func TestStripeReconciliationNoMismatch(t *testing.T) {
 			MismatchCents  int  `json:"mismatch_cents"`
 		} `json:"reconciliation"`
 	}
-	json.NewDecoder(rr.Body).Decode(&resp)
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode reconciliation: %v", err)
+	}
 
 	if resp.Reconciliation.HasMismatch {
 		t.Fatalf("expected no mismatch, got mismatch_cents=%d", resp.Reconciliation.MismatchCents)

@@ -126,6 +126,10 @@ func mapBillingError(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "refund_requires_reason", "A reason is required for refund requests.", nil)
 	case errors.Is(err, billing.ErrDuplicateInvoiceNumber):
 		httpx.WriteError(w, r, http.StatusConflict, "duplicate_invoice_number", "Invoice number already exists for this organisation.", nil)
+	case errors.Is(err, billing.ErrAutopayHouseholdNotFound):
+		httpx.WriteError(w, r, http.StatusNotFound, "household_not_found", "Household not found.", nil)
+	case errors.Is(err, billing.ErrInvalidFinanceInput):
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "validation_error", err.Error(), nil)
 	case errors.Is(err, billing.ErrAutopayPaymentMethodRequired):
 		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "autopay_payment_method_required", "Payment method details are required to enable autopay.", nil)
 	default:
@@ -382,11 +386,25 @@ func (h *BillingHandlers) createRefund(w http.ResponseWriter, r *http.Request) {
 
 	stripeRefundIssued := false
 	if preflight.Payment.Method == "stripe" && preflight.Payment.StripePaymentIntentID != "" && h.stripeClient != nil {
+		// The key must be stable across retries of one request but distinct for
+		// each refund of the payment: two same-amount partial refunds sharing a
+		// key would make Stripe replay the first refund and move no money.
+		existing, err := h.service.ListRefunds(orgID, principal, invoiceID)
+		if err != nil {
+			mapBillingError(w, r, err)
+			return
+		}
+		prior := 0
+		for _, rf := range existing {
+			if rf.PaymentID == preflight.Payment.ID {
+				prior++
+			}
+		}
 		refundResult, err := h.stripeClient.CreateRefund(r.Context(), stripelib.RefundParams{
 			PaymentIntentID: preflight.Payment.StripePaymentIntentID,
 			AmountCents:     input.AmountCents,
 			Reason:          input.Reason,
-			IdempotencyKey:  fmt.Sprintf("refund:%s:%s:%s:%d", orgID, invoiceID, preflight.Payment.ID, input.AmountCents),
+			IdempotencyKey:  fmt.Sprintf("refund:%s:%s:%s:%d:%d", orgID, invoiceID, preflight.Payment.ID, input.AmountCents, prior),
 		})
 		if err != nil {
 			httpx.WriteError(w, r, http.StatusBadGateway, "stripe_error", "Failed to create Stripe refund.", err)

@@ -144,6 +144,10 @@ func (h *TrainingHandlers) createPractice(w http.ResponseWriter, r *http.Request
 		body.YardageTarget, body.Attendance, strokes, body.Notes, principal.UserID,
 	)
 	if err != nil {
+		if errors.Is(err, training.ErrInvalidDate) {
+			httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Practice date must be YYYY-MM-DD.", nil)
+			return
+		}
 		if errors.Is(err, training.ErrInvalidType) {
 			httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid practice type.", nil)
 			return
@@ -224,6 +228,10 @@ func (h *TrainingHandlers) updatePractice(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		if errors.Is(err, training.ErrNotFound) {
 			httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Practice not found.", nil)
+			return
+		}
+		if errors.Is(err, training.ErrInvalidDate) {
+			httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Practice date must be YYYY-MM-DD.", nil)
 			return
 		}
 		if errors.Is(err, training.ErrInvalidType) {

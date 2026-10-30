@@ -7,6 +7,7 @@ import { AuthGuard } from '@/components/auth/AuthGuard'
 import { useSession } from '@/lib/session'
 import { useApiClient, ApiError } from '@/lib/api'
 import { fetchRuntimeSettings, type RuntimeSettingsRecord } from '@/lib/adminData'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 function sectionEntries(section?: Record<string, unknown>) {
   return Object.entries(section ?? {}).sort(([a], [b]) => a.localeCompare(b))
@@ -125,7 +126,7 @@ function SystemDiagnosticsPageContent() {
           </div>
           {loading ? (
             <div className="u-p-24px" >
-              <EmptyState icon="settings" title="Loading settings" description="Fetching the server configuration." />
+              <PageSkeleton variant="list" noHeader rows={4} />
             </div>
           ) : !activeSection ? (
             <div className="u-p-24px" >

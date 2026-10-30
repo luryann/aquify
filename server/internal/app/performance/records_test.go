@@ -163,7 +163,7 @@ func TestRebuildRecordsReplaysResultsAndKeepsManualAndRejected(t *testing.T) {
 	// record table (simulating pre-feature history).
 	swim(t, s, "amy", "m-2025", 63000)
 	swim(t, s, "amy", "m-2026", 61000)
-	b := swim(t, s, "bea", "m-2026", 60500)
+	swim(t, s, "bea", "m-2026", 60500)
 	for id := range s.recordEntries {
 		delete(s.recordEntries, id)
 	}
@@ -200,7 +200,6 @@ func TestRebuildRecordsReplaysResultsAndKeepsManualAndRejected(t *testing.T) {
 	if open.Current == nil || open.Current.TimeMs != 61000 || len(open.Rejected) != 1 {
 		t.Fatalf("rejected swim must stay excluded after rebuild: %+v", open)
 	}
-	_ = b
 	if _, err := s.RebuildRecords("org", "coach", coachP); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("coach rebuild: %v", err)
 	}

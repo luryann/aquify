@@ -617,10 +617,21 @@ func (s *Service) EvaluateSwimmerEligibility(principal *appmiddleware.Principal,
 	var ruleResults []RuleEvaluation
 	allPassed := true
 
+	activeRules := make([]EligibilityRule, 0)
 	for _, rule := range s.rules {
-		if rule.GroupID != group.ID || !rule.IsActive {
-			continue
+		if rule.GroupID == group.ID && rule.IsActive {
+			activeRules = append(activeRules, rule)
 		}
+	}
+	// s.rules is a map: evaluate in a stable order (creation time, then ID).
+	slices.SortFunc(activeRules, func(a, b EligibilityRule) int {
+		if c := a.CreatedAt.Compare(b.CreatedAt); c != 0 {
+			return c
+		}
+		return strings.Compare(a.ID, b.ID)
+	})
+
+	for _, rule := range activeRules {
 		eval := s.evalRule(rule, swimmer)
 		ruleResults = append(ruleResults, eval)
 		if !eval.Passed {
@@ -661,7 +672,10 @@ func (s *Service) ListEligibilityRules(principal *appmiddleware.Principal, orgID
 		out = append(out, rule)
 	}
 	slices.SortFunc(out, func(a, b EligibilityRule) int {
-		return a.CreatedAt.Compare(b.CreatedAt)
+		if c := a.CreatedAt.Compare(b.CreatedAt); c != 0 {
+			return c
+		}
+		return strings.Compare(a.ID, b.ID)
 	})
 	return out, nil
 }
@@ -1098,7 +1112,7 @@ func (s *Service) ListRegistrations(principal *appmiddleware.Principal, orgID st
 		return nil, ErrForbidden
 	}
 	if err := s.syncFromDB(context.Background()); err != nil {
-		return []Registration{}, nil
+		return nil, err
 	}
 
 	s.mu.RLock()

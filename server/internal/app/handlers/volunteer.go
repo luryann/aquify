@@ -90,6 +90,8 @@ func writeVolunteerError(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, r, http.StatusConflict, "signup_not_active", err.Error(), nil)
 	case errors.Is(err, volunteer.ErrInvalidTransition):
 		httpx.WriteError(w, r, http.StatusConflict, "invalid_transition", err.Error(), nil)
+	case errors.Is(err, volunteer.ErrBuyoutNotFound):
+		httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Buyout not found.", nil)
 	case errors.Is(err, volunteer.ErrJobHasWorkedSignups):
 		httpx.WriteError(w, r, http.StatusConflict, "job_has_worked_signups", err.Error(), nil)
 	case errors.Is(err, volunteer.ErrCapacityBelowFilled):
@@ -123,6 +125,22 @@ func parseTimestamp(raw string) (time.Time, bool) {
 		return t.UTC(), true
 	}
 	return time.Time{}, false
+}
+
+// parseRangeBound parses a list filter bound. The service treats the upper
+// bound as exclusive, so a date-only upper bound (midnight) is advanced a day
+// to include jobs starting any time on that date.
+func parseRangeBound(raw string, upper bool) (time.Time, bool) {
+	t, ok := parseTimestamp(raw)
+	if !ok {
+		return t, false
+	}
+	if upper {
+		if _, err := time.Parse("2006-01-02", strings.TrimSpace(raw)); err == nil {
+			t = t.AddDate(0, 0, 1)
+		}
+	}
+	return t, true
 }
 
 // ─── Settings & templates ─────────────────────────────────────────────────────
@@ -202,7 +220,7 @@ func (h *VolunteerHandlers) listJobs(w http.ResponseWriter, r *http.Request) {
 		if raw == "" {
 			continue
 		}
-		t, ok := parseTimestamp(raw)
+		t, ok := parseRangeBound(raw, name == "to")
 		if !ok {
 			httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", name+" must be RFC3339 or YYYY-MM-DD.", nil)
 			return

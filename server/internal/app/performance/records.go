@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/dareaquatics/aquify/server/internal/dbutil"
 	"log/slog"
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	"github.com/dareaquatics/aquify/server/internal/dbutil"
 )
 
 // Team records.
@@ -673,7 +674,7 @@ func (s *Service) CreateManualRecord(orgID, actorID string, principal *appmiddle
 	if err != nil {
 		return nil, err
 	}
-	if len(input.Notes) > 1000 || len(input.MeetName) > 200 {
+	if utf8.RuneCountInString(input.Notes) > 1000 || utf8.RuneCountInString(input.MeetName) > 200 {
 		return nil, fmt.Errorf("%w: notes/meet_name too long", ErrRecordInvalid)
 	}
 	if input.SwimmerAge != nil && (*input.SwimmerAge < 3 || *input.SwimmerAge > 120) {
@@ -748,7 +749,7 @@ func (s *Service) UpdateRecordEntry(orgID, actorID, entryID string, principal *a
 		next.MeetName = strings.TrimSpace(*input.MeetName)
 	}
 	if input.Notes != nil {
-		if len(*input.Notes) > 1000 {
+		if utf8.RuneCountInString(*input.Notes) > 1000 {
 			return nil, nil, fmt.Errorf("%w: notes too long", ErrRecordInvalid)
 		}
 		next.Notes = strings.TrimSpace(*input.Notes)

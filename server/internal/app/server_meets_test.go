@@ -185,11 +185,6 @@ func createMeetEvent(t *testing.T, router http.Handler, orgID, token, meetID, ev
 	return env.Event.ID
 }
 
-func issueMeetSessionTokenWithHousehold(t *testing.T, router http.Handler, userID, orgID, householdID string, roles []string, mfaAuthenticated bool) string {
-	t.Helper()
-	return issueSession(t, router, sessionSpec{UserID: userID, OrgID: orgID, HouseholdID: householdID, Roles: roles, MFA: mfaAuthenticated})
-}
-
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 func TestMeetsRejectUnauthenticated(t *testing.T) {
@@ -544,7 +539,7 @@ func TestCommitmentListUsesParentHouseholdIDFromSession(t *testing.T) {
 	})
 
 	adminToken := issueSessionToken(t, router, "org-parent-scope", []string{"admin"}, false)
-	parentToken := issueMeetSessionTokenWithHousehold(t, router, "user-parent-scope", "org-parent-scope", "hsh-parent-scope", []string{"parent"}, false)
+	parentToken := issueSessionTokenWithHousehold(t, router, "user-parent-scope", "org-parent-scope", "hsh-parent-scope", []string{"parent"}, false)
 
 	meetsService.SeedSwimmer("org-parent-scope", "swm-parent-scope", "hsh-parent-scope")
 
@@ -1528,14 +1523,9 @@ func TestOverrideEntryBlockedOnFinalizedMeet(t *testing.T) {
 	json.Unmarshal(rr.Body.Bytes(), &propEnv) //nolint
 	entryID := propEnv.Entry.ID
 
-	overrideBody := encodeJSONBody(t, map[string]any{
-		"new_meet_event_id": eventID2,
-		"reason":            "Should be blocked",
-	})
-
 	doOverride := func(t *testing.T) int {
 		t.Helper()
-		overrideBody = encodeJSONBody(t, map[string]any{
+		overrideBody := encodeJSONBody(t, map[string]any{
 			"new_meet_event_id": eventID2,
 			"reason":            "Should be blocked",
 		})

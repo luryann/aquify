@@ -247,16 +247,12 @@ func (s *Service) upsertAuthenticatedUser(ctx context.Context, userID, email, na
 			"user_id", userID,
 			"email", email,
 		)
-		err = s.upsertAuthenticatedUserRowKeepEmail(ctx, userID, surrogateSyncedUserEmail(userID), name, orgID, lastLoginAt)
+		err = s.upsertAuthenticatedUserRow(ctx, userID, surrogateSyncedUserEmail(userID), name, orgID, lastLoginAt, true)
 	}
 	if err != nil {
 		return fmt.Errorf("upsert authenticated user: %w", err)
 	}
 	return nil
-}
-
-func (s *Service) upsertAuthenticatedUserRowKeepEmail(ctx context.Context, userID, insertEmail, name, orgID string, lastLoginAt *time.Time) error {
-	return s.upsertAuthenticatedUserRow(ctx, userID, insertEmail, name, orgID, lastLoginAt, true)
 }
 
 func (s *Service) upsertAuthenticatedUserRow(ctx context.Context, userID, email, name, orgID string, lastLoginAt *time.Time, keepExistingEmail bool) error {
@@ -308,9 +304,9 @@ func marshalBackupCodes(codes []backupCodeRecord) []byte {
 	return data
 }
 
-func (s *Service) saveMFAFactorToDB(r mfaFactorRecord) {
+func (s *Service) saveMFAFactorToDB(r mfaFactorRecord) error {
 	if s.pool == nil {
-		return
+		return nil
 	}
 	backupCodesJSON := marshalBackupCodes(r.BackupCodes)
 	var totpSecret *string
@@ -332,13 +328,14 @@ func (s *Service) saveMFAFactorToDB(r mfaFactorRecord) {
 		r.Factor.CreatedAt, r.Factor.LastChallengedAt,
 	)
 	if err != nil {
-		s.logger.Warn("authn: save MFA factor to DB", "error", err)
+		return fmt.Errorf("save MFA factor: %w", err)
 	}
+	return nil
 }
 
-func (s *Service) updateMFAFactorInDB(r mfaFactorRecord) {
+func (s *Service) updateMFAFactorInDB(r mfaFactorRecord) error {
 	if s.pool == nil {
-		return
+		return nil
 	}
 	// backup_codes is intentionally not written here: consumption is a
 	// conditional UPDATE (consumeBackupCodeInDB), and writing this process's
@@ -352,8 +349,52 @@ func (s *Service) updateMFAFactorInDB(r mfaFactorRecord) {
 		r.Factor.ID, r.Factor.IsVerified, r.Factor.LastChallengedAt,
 	)
 	if err != nil {
-		s.logger.Warn("authn: update MFA factor in DB", "error", err)
+		return fmt.Errorf("update MFA factor: %w", err)
 	}
+	return nil
+}
+
+// reloadMFAFactorsForUser refreshes one user's factors from Postgres so a
+// factor enrolled, verified or spent on another instance is seen here. The
+// query runs without s.mu; only the swap takes the lock.
+func (s *Service) reloadMFAFactorsForUser(ctx context.Context, userID string) error {
+	if s.pool == nil {
+		return nil
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT id::text, user_id::text, COALESCE(org_id::text, ''), factor_type,
+		       COALESCE(label, ''), is_verified,
+		       COALESCE(totp_secret, ''), COALESCE(backup_codes, '[]'::jsonb),
+		       COALESCE(created_at, now()), last_challenged_at
+		FROM mfa_factors WHERE user_id::text = $1
+		ORDER BY created_at, id`, userID)
+	if err != nil {
+		return fmt.Errorf("reload MFA factors: %w", err)
+	}
+	defer rows.Close()
+	var fresh []mfaFactorRecord
+	for rows.Next() {
+		var r mfaFactorRecord
+		var backupCodesJSON []byte
+		if err := rows.Scan(
+			&r.Factor.ID, &r.Factor.UserID, &r.Factor.OrgID, &r.Factor.FactorType,
+			&r.Factor.Label, &r.Factor.IsVerified, &r.TOTPSecret,
+			&backupCodesJSON, &r.Factor.CreatedAt, &r.Factor.LastChallengedAt,
+		); err != nil {
+			return fmt.Errorf("scan MFA factor: %w", err)
+		}
+		if len(backupCodesJSON) > 0 {
+			_ = json.Unmarshal(backupCodesJSON, &r.BackupCodes)
+		}
+		fresh = append(fresh, r)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("reload MFA factors: %w", err)
+	}
+	s.mu.Lock()
+	s.mfaFactorsByUser[userID] = fresh
+	s.mu.Unlock()
+	return nil
 }
 
 type SessionInput struct {
@@ -906,6 +947,10 @@ func (s *Service) ResolvePrincipal(token string) (*appmiddleware.Principal, bool
 }
 
 func (s *Service) ListMFAFactors(userID string) []MFAFactor {
+	if err := s.reloadMFAFactorsForUser(context.Background(), userID); err != nil {
+		// Signature has no error return; serve the cached view and log loudly.
+		s.logger.Warn("authn: MFA factor reload failed; serving cached factors", "user_id", userID, "error", err)
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -960,13 +1005,17 @@ func (s *Service) EnrollMFA(userID, email, orgID, factorType, label string) (MFA
 		}
 		factor.Codes = plainCodes
 	}
-	record.Factor = factor
+	// record.Factor deliberately stays the bare factor: the returned copy carries
+	// one-time secrets (backup codes, provisioning URI, dev hint) that must never
+	// be retained in memory where ListMFAFactors would hand them out again.
 
+	// Persist first: a factor the database never saw must not exist in memory.
+	if err := s.saveMFAFactorToDB(record); err != nil {
+		return MFAFactor{}, err
+	}
 	s.mu.Lock()
 	s.mfaFactorsByUser[userID] = append(s.mfaFactorsByUser[userID], record)
 	s.mu.Unlock()
-
-	s.saveMFAFactorToDB(record)
 
 	return factor, nil
 }
@@ -1008,127 +1057,172 @@ func (s *Service) ChallengeMFA(currentAccessToken string, principal *appmiddlewa
 	if principal == nil {
 		return SessionTokens{}, ErrInvalidMFAFactor
 	}
-
+	ctx := context.Background()
 	currentAccessToken = strings.TrimSpace(currentAccessToken)
 
-	s.mu.Lock()
-	unlocked := false
-	defer func() {
-		if !unlocked {
-			s.mu.Unlock()
-		}
-	}()
+	// Pick up factors changed on other instances before deciding anything.
+	if err := s.reloadMFAFactorsForUser(ctx, principal.UserID); err != nil {
+		return SessionTokens{}, err
+	}
 
+	// Phase 1 (locked, no I/O): find the factor, enforce lockout and replay
+	// protection, verify the code, and tentatively claim it in memory so a
+	// concurrent attempt on this instance cannot reuse it.
+	var (
+		record      mfaFactorRecord
+		replayKey   string
+		totpStep    int64
+		backupHash  string
+		backupIndex = -1
+	)
+	s.mu.Lock()
+	found := false
 	factors := s.mfaFactorsByUser[principal.UserID]
 	for i := range factors {
 		if factors[i].Factor.ID != factorID {
 			continue
 		}
-
-		if s.mfaLockedLocked(factors[i].Factor.ID, time.Now().UTC()) {
+		found = true
+		now := time.Now().UTC()
+		if s.mfaLockedLocked(factors[i].Factor.ID, now) {
+			s.mu.Unlock()
 			return SessionTokens{}, ErrMFATooManyAttempts
 		}
-
 		switch factors[i].Factor.FactorType {
 		case "totp":
-			now := time.Now().UTC()
-			replayKey := factors[i].Factor.ID + "|" + challengeCode
+			replayKey = factors[i].Factor.ID + "|" + challengeCode
 			// Purge expired replay entries (TTL = 90 seconds: the ±30s window × 3).
 			for k, t := range s.usedTOTPCodes {
 				if now.Sub(t) > 90*time.Second {
 					delete(s.usedTOTPCodes, k)
 				}
 			}
-			// Reject replayed codes within the acceptance window.
 			if _, replayed := s.usedTOTPCodes[replayKey]; replayed {
+				s.mu.Unlock()
 				return SessionTokens{}, ErrInvalidMFACode
 			}
 			step, ok := verifyTOTPStep(factors[i].TOTPSecret, challengeCode, now)
 			if !ok {
 				s.recordMFAFailureLocked(factors[i].Factor.ID, now)
+				s.mu.Unlock()
 				return SessionTokens{}, ErrInvalidMFACode
 			}
-			if s.pool != nil {
-				fresh, err := s.consumeTOTPStepInDB(context.Background(), factors[i].Factor.ID, step)
-				if err != nil {
-					return SessionTokens{}, err
-				}
-				if !fresh {
-					return SessionTokens{}, ErrInvalidMFACode
-				}
-			}
-			delete(s.mfaFailures, factors[i].Factor.ID)
+			totpStep = step
 			s.usedTOTPCodes[replayKey] = now
 		case "backup_code":
 			providedHash := hashChallengeCode(strings.ToUpper(strings.TrimSpace(challengeCode)))
-			matched := false
 			for j := range factors[i].BackupCodes {
 				if factors[i].BackupCodes[j].Used {
 					continue
 				}
 				if subtle.ConstantTimeCompare([]byte(providedHash), []byte(factors[i].BackupCodes[j].Hash)) == 1 {
-					if s.pool != nil {
-						consumed, err := s.consumeBackupCodeInDB(context.Background(), factors[i].Factor.ID, factors[i].BackupCodes[j].Hash)
-						if err != nil {
-							return SessionTokens{}, err
-						}
-						if !consumed {
-							// Another instance already spent it.
-							factors[i].BackupCodes[j].Used = true
-							break
-						}
-					}
+					backupIndex, backupHash = j, factors[i].BackupCodes[j].Hash
 					factors[i].BackupCodes[j].Used = true
-					matched = true
 					break
 				}
 			}
-			if !matched {
-				s.recordMFAFailureLocked(factors[i].Factor.ID, time.Now().UTC())
+			if backupIndex < 0 {
+				s.recordMFAFailureLocked(factors[i].Factor.ID, now)
+				s.mu.Unlock()
 				return SessionTokens{}, ErrInvalidMFACode
 			}
-			delete(s.mfaFailures, factors[i].Factor.ID)
 		default:
+			s.mu.Unlock()
 			return SessionTokens{}, ErrUnsupportedMFAFactor
 		}
-
-		now := time.Now().UTC()
-		factors[i].Factor.IsVerified = true
-		factors[i].Factor.LastChallengedAt = &now
-		s.mfaFactorsByUser[principal.UserID] = factors
-		updated := factors[i]
-		go s.updateMFAFactorInDB(updated)
-
-		var idToken string
-		if currentAccessToken != "" && s.pool == nil {
-			if currentRecord, ok := s.sessionsByAccess[currentAccessToken]; ok {
-				idToken = currentRecord.IDToken
-				currentRecord.RevokedAt = &now
-			}
-		}
-		s.mu.Unlock()
-		unlocked = true
-
-		if currentAccessToken != "" && s.pool != nil {
-			currentRecord, err := s.revokePersistentSessionByAccessToken(context.Background(), currentAccessToken)
-			if err == nil && currentRecord != nil {
-				idToken = currentRecord.IDToken
-			}
-		}
-
-		return s.issueSessionRecord(context.Background(), appmiddleware.Principal{
-			UserID:           principal.UserID,
-			Email:            principal.Email,
-			Name:             principal.Name,
-			OrgID:            principal.OrgID,
-			HouseholdID:      principal.HouseholdID,
-			SwimmerID:        principal.SwimmerID,
-			Roles:            append([]string{}, principal.Roles...),
-			MFAAuthenticated: true,
-		}, idToken, 15*time.Minute)
+		record = factors[i]
+		break
+	}
+	s.mu.Unlock()
+	if !found {
+		return SessionTokens{}, ErrInvalidMFAFactor
 	}
 
-	return SessionTokens{}, ErrInvalidMFAFactor
+	// undo releases the tentative in-memory claim when persistence fails.
+	undo := func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if replayKey != "" {
+			delete(s.usedTOTPCodes, replayKey)
+		}
+		if backupIndex >= 0 {
+			fs := s.mfaFactorsByUser[principal.UserID]
+			for i := range fs {
+				if fs[i].Factor.ID == factorID && backupIndex < len(fs[i].BackupCodes) {
+					fs[i].BackupCodes[backupIndex].Used = false
+				}
+			}
+		}
+	}
+
+	// Phase 2 (unlocked): database-atomic consumption, then the factor update,
+	// all synchronous so a persistence failure is reported, never dropped.
+	now := time.Now().UTC()
+	if s.pool != nil {
+		switch record.Factor.FactorType {
+		case "totp":
+			fresh, err := s.consumeTOTPStepInDB(ctx, record.Factor.ID, totpStep)
+			if err != nil {
+				undo()
+				return SessionTokens{}, err
+			}
+			if !fresh {
+				return SessionTokens{}, ErrInvalidMFACode // spent on another instance; keep the local claim
+			}
+		case "backup_code":
+			consumed, err := s.consumeBackupCodeInDB(ctx, record.Factor.ID, backupHash)
+			if err != nil {
+				undo()
+				return SessionTokens{}, err
+			}
+			if !consumed {
+				return SessionTokens{}, ErrInvalidMFACode // another instance spent it
+			}
+		}
+	}
+	record.Factor.IsVerified = true
+	record.Factor.LastChallengedAt = &now
+	if err := s.updateMFAFactorInDB(record); err != nil {
+		// The code is already spent in the DB (single use); do not release it.
+		return SessionTokens{}, err
+	}
+
+	// Phase 3 (locked, no I/O): commit the verified state to memory.
+	var idToken string
+	s.mu.Lock()
+	delete(s.mfaFailures, factorID)
+	fs := s.mfaFactorsByUser[principal.UserID]
+	for i := range fs {
+		if fs[i].Factor.ID == factorID {
+			fs[i].Factor.IsVerified = true
+			fs[i].Factor.LastChallengedAt = &now
+		}
+	}
+	if currentAccessToken != "" && s.pool == nil {
+		if currentRecord, ok := s.sessionsByAccess[currentAccessToken]; ok {
+			idToken = currentRecord.IDToken
+			currentRecord.RevokedAt = &now
+		}
+	}
+	s.mu.Unlock()
+
+	if currentAccessToken != "" && s.pool != nil {
+		currentRecord, err := s.revokePersistentSessionByAccessToken(ctx, currentAccessToken)
+		if err == nil && currentRecord != nil {
+			idToken = currentRecord.IDToken
+		}
+	}
+
+	return s.issueSessionRecord(ctx, appmiddleware.Principal{
+		UserID:           principal.UserID,
+		Email:            principal.Email,
+		Name:             principal.Name,
+		OrgID:            principal.OrgID,
+		HouseholdID:      principal.HouseholdID,
+		SwimmerID:        principal.SwimmerID,
+		Roles:            append([]string{}, principal.Roles...),
+		MFAAuthenticated: true,
+	}, idToken, 15*time.Minute)
 }
 
 func (s *Service) issueSessionRecord(ctx context.Context, principal appmiddleware.Principal, idToken string, expiresIn time.Duration) (SessionTokens, error) {
@@ -1150,7 +1244,7 @@ func (s *Service) issueSessionRecord(ctx context.Context, principal appmiddlewar
 	}
 
 	if s.pool != nil {
-		if err := s.persistSessionRecord(ctx, record); err != nil {
+		if err := insertSessionRecord(ctx, s.pool, record); err != nil {
 			return SessionTokens{}, err
 		}
 	} else {
@@ -1165,13 +1259,6 @@ func (s *Service) issueSessionRecord(ctx context.Context, principal appmiddlewar
 		RefreshToken: refreshToken,
 		ExpiresAt:    expiresAt,
 	}, nil
-}
-
-func (s *Service) persistSessionRecord(ctx context.Context, record *sessionRecord) error {
-	if s.pool == nil {
-		return nil
-	}
-	return insertSessionRecord(ctx, s.pool, record)
 }
 
 func (s *Service) refreshPersistentSession(ctx context.Context, refreshToken string) (SessionTokens, error) {

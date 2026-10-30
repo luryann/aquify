@@ -17,6 +17,7 @@ import {
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { formatSwimTime } from '@/lib/performanceData'
 import { FIELD_INPUT_STYLE } from '@/lib/form-styles'
+import { ImportStandardsModal } from './ImportStandardsModal'
 
 function genderLabel(gender: string) {
   if (gender === 'F') return 'Girls'
@@ -47,6 +48,7 @@ export default function TimeStandardsPage() {
   const [workingId, setWorkingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
 
   const [search, setSearch] = useState('')
   const [strokeFilter, setStrokeFilter] = useState('')
@@ -235,10 +237,15 @@ export default function TimeStandardsPage() {
         <div>
           <h1 className="page-title">Time standards</h1>
         </div>
-        <button onClick={() => setModalOpen(true)} className="btn btn-primary">
-          <Icon name="plus" size={14} />
-          New standard
-        </button>
+        <div className="u-gap-8px" style={{ display: 'flex' }}>
+          <button onClick={() => setImportOpen(true)} className="btn btn-secondary">
+            Import from file
+          </button>
+          <button onClick={() => setModalOpen(true)} className="btn btn-primary">
+            <Icon name="plus" size={14} />
+            New standard
+          </button>
+        </div>
       </div>
 
       {error ? (
@@ -282,6 +289,8 @@ export default function TimeStandardsPage() {
         emptyTitle={standards.length === 0 ? 'No standards yet' : 'No matches'}
         emptyDescription={standards.length === 0 ? 'Create a standard to populate this table.' : 'Try a different search or filter.'}
       />
+
+      <ImportStandardsModal open={importOpen} onClose={() => setImportOpen(false)} onImported={() => void loadStandards()} />
 
       <Modal
         open={modalOpen}

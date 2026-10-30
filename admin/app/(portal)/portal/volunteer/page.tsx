@@ -26,6 +26,7 @@ import { HoursMeter, InlineNotice, SpotPips } from '@/components/volunteer/Volun
 import { LoadErrorBanner } from '@/components/ui/LoadErrorBanner'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import './page.inline.css'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 const h2: React.CSSProperties = { fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--fs-2xl)', margin: '0 0 12px' }
 
@@ -269,7 +270,7 @@ export default function PortalVolunteerPage() {
           ) : null}
         </>
       ) : null}
-      {loading ? <p className="is-550d8c4">Loading shifts…</p> : null}
+      {loading ? <PageSkeleton variant="list" noHeader rows={4} /> : null}
     </div>
   )
 }

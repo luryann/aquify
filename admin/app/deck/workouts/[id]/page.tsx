@@ -10,6 +10,7 @@ import { formatDistance, formatDuration } from '@/lib/workout-format'
 import { WorkoutSheet } from '@/components/training/WorkoutSheet'
 import { errorText } from '@/app/(admin)/training/WorkoutComposer'
 import './page.inline.css'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 // Pool-deck view: one workout in very large type for a tablet on the deck or
 // a printed sheet in a page protector. No app chrome.
@@ -41,7 +42,7 @@ function DeckView() {
           <button type="button" className="btn btn-secondary" onClick={load}>Retry</button>
         </div>
       )}
-      {!workout && !error && <p className="is-33f2b95">Loading workout…</p>}
+      {!workout && !error && <PageSkeleton variant="list" noHeader rows={4} />}
       {workout && (
         <>
           <header className="is-bca94cc">

@@ -6,6 +6,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { Icon } from '@/components/ui/icons'
 import { Modal } from '@/components/ui/Modal'
 import { Tabs } from '@/components/ui/Tabs'
+import { SwimmerSignInToggle } from '@/components/members/SwimmerSignInToggle'
 import { SwimmerEngagementCard } from '@/components/engagement/SwimmerEngagementCard'
 import { Table, type Column } from '@/components/ui/Table'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -29,6 +30,7 @@ import {
 import { ageFromDob, formatDateOnly } from '@/lib/dates'
 import { formatSwimTime } from '@/lib/performanceData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 type BestTimeRow = {
   event: string
@@ -203,7 +205,7 @@ export default function SwimmerDetailPage() {
   }
 
   if (loading) {
-    return <div className="page"><EmptyState icon="users" title="Loading swimmer" description="Fetching live swimmer detail data from the API." /></div>
+    return <PageSkeleton variant="detail" />
   }
 
   if (error || !swimmer) {
@@ -335,6 +337,7 @@ export default function SwimmerDetailPage() {
               {swimmer.notes || 'No coach notes recorded yet.'}
             </p>
           </div>
+          <SwimmerSignInToggle swimmerId={swimmer.id} disabled={swimmer.portal_access_disabled ?? false} onChange={(next) => setSwimmer((prev) => (prev ? { ...prev, portal_access_disabled: next } : prev))} />
         </div>
       ) : null}
 

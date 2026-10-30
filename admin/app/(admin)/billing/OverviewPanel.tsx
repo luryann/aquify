@@ -16,6 +16,7 @@ import {
 } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { formatCents } from '@/lib/financeData'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 type InvoiceWithHousehold = InvoiceRecord & {
   household_name: string
@@ -128,7 +129,7 @@ export function OverviewPanel({ onNavigateTab }: { onNavigateTab: (tab: 'invoice
       ) : null}
 
       {loading ? (
-        <EmptyState icon="credit-card" title="Loading billing summary" description="Aggregating invoice and payment data." />
+        <PageSkeleton variant="list" noHeader rows={4} />
       ) : (
         <div className="u-gap-24px" style={{ display: 'flex', flexDirection: 'column' }}>
           <div className="cols-4 u-gap-12px" >
@@ -145,14 +146,21 @@ export function OverviewPanel({ onNavigateTab }: { onNavigateTab: (tab: 'invoice
             ))}
           </div>
 
-          {reconciliation ? (
+          {reconciliation && reconciliation.row_count > 0 ? (
             <div className="u-p-16px-16px" style={{ borderRadius: '12px', background: reconciliation.unreconciled_row_count > 0 ? 'var(--warning-bg)' : 'var(--success-bg)', border: `1px solid ${reconciliation.unreconciled_row_count > 0 ? 'var(--warning-border)' : 'var(--success-border)'}` }}>
               <div className="u-fs-fs-base u-fw-600 u-mb-4px" style={{ color: reconciliation.unreconciled_row_count > 0 ? 'var(--warning)' : 'var(--success)' }}>
                 {reconciliation.unreconciled_row_count > 0 ? 'Some payments need review' : 'All payments are accounted for'}
               </div>
               <div className="u-fs-fs-sm" style={{ color: 'var(--text-subtle)' }}>
-                {formatCents(reconciliation.net_collected_cents)} collected across {reconciliation.row_count} payment{reconciliation.row_count === 1 ? '' : 's'} in the last 30 days. {reconciliation.unreconciled_row_count} payment{reconciliation.unreconciled_row_count === 1 ? '' : 's'} still need matching to an invoice.
+                {formatCents(reconciliation.net_collected_cents)} collected across {reconciliation.row_count} payment{reconciliation.row_count === 1 ? '' : 's'} in the last 30 days.
+                {reconciliation.unreconciled_row_count > 0
+                  ? ` ${reconciliation.unreconciled_row_count} still need matching to an invoice.`
+                  : ''}
               </div>
+            </div>
+          ) : reconciliation ? (
+            <div className="u-p-16px-16px u-fs-fs-sm" style={{ borderRadius: '12px', background: 'var(--bg-subtle, var(--bg-card))', border: '1px solid var(--border)', color: 'var(--text-subtle)' }}>
+              No payments in the last 30 days.
             </div>
           ) : null}
 

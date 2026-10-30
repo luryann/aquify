@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
 )
@@ -184,6 +185,16 @@ func sortGoals(out []GoalProgress) {
 	})
 }
 
+func (s *Service) activeGoalCountLocked(orgID, swimmerID string) int {
+	count := 0
+	for _, g := range s.goals {
+		if g.OrgID == orgID && g.SwimmerID == swimmerID && g.Status == "active" {
+			count++
+		}
+	}
+	return count
+}
+
 // CreateGoal adds a goal for a swimmer.
 func (s *Service) CreateGoal(orgID, actorID string, principal *appmiddleware.Principal, swimmerID string, input GoalInput) (*GoalProgress, error) {
 	if err := s.requireGoalAccess(principal, orgID, swimmerID); err != nil {
@@ -205,7 +216,7 @@ func (s *Service) CreateGoal(orgID, actorID string, principal *appmiddleware.Pri
 		return nil, fmt.Errorf("%w: distance out of range", ErrGoalInvalid)
 	case input.TargetTimeMs <= 0 || input.TargetTimeMs > 3_600_000:
 		return nil, fmt.Errorf("%w: target_time_ms out of range", ErrGoalInvalid)
-	case len(strings.TrimSpace(input.Notes)) > 500:
+	case utf8.RuneCountInString(strings.TrimSpace(input.Notes)) > 500:
 		return nil, fmt.Errorf("%w: notes max 500 characters", ErrGoalInvalid)
 	}
 	deadline, err := normalizeDeadline(input.Deadline)
@@ -214,13 +225,7 @@ func (s *Service) CreateGoal(orgID, actorID string, principal *appmiddleware.Pri
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	count := 0
-	for _, g := range s.goals {
-		if g.OrgID == orgID && g.SwimmerID == swimmerID && g.Status == "active" {
-			count++
-		}
-	}
-	if count >= maxGoalsPerSwimmer {
+	if s.activeGoalCountLocked(orgID, swimmerID) >= maxGoalsPerSwimmer {
 		return nil, fmt.Errorf("%w: a swimmer can have at most %d active goals", ErrGoalInvalid, maxGoalsPerSwimmer)
 	}
 	now := time.Now().UTC()
@@ -270,7 +275,7 @@ func (s *Service) UpdateGoal(orgID, actorID string, principal *appmiddleware.Pri
 		next.Deadline = d
 	}
 	if input.Notes != nil {
-		if len(strings.TrimSpace(*input.Notes)) > 500 {
+		if utf8.RuneCountInString(strings.TrimSpace(*input.Notes)) > 500 {
 			return nil, fmt.Errorf("%w: notes max 500 characters", ErrGoalInvalid)
 		}
 		next.Notes = strings.TrimSpace(*input.Notes)
@@ -278,6 +283,10 @@ func (s *Service) UpdateGoal(orgID, actorID string, principal *appmiddleware.Pri
 	if input.Status != nil {
 		if *input.Status != "active" && *input.Status != "archived" {
 			return nil, fmt.Errorf("%w: status must be active or archived", ErrGoalInvalid)
+		}
+		// Un-archiving is subject to the same cap as creating.
+		if *input.Status == "active" && g.Status != "active" && s.activeGoalCountLocked(orgID, swimmerID) >= maxGoalsPerSwimmer {
+			return nil, fmt.Errorf("%w: a swimmer can have at most %d active goals", ErrGoalInvalid, maxGoalsPerSwimmer)
 		}
 		next.Status = *input.Status
 	}

@@ -57,18 +57,10 @@ func (s *Service) LoadRuntimeSnapshot(data []byte) error {
 	s.deliveries = runtimepersist.ClonePtrMap(snapshot.Deliveries)
 	s.suppression = runtimepersist.ClonePtrMap(snapshot.Suppression)
 	s.preferences = runtimepersist.ClonePtrMap(snapshot.Preferences)
-	s.messages = nonNilMap(runtimepersist.ClonePtrMap(snapshot.Messages))
-	s.messageEdits = nonNilMap(runtimepersist.ClonePtrMap(snapshot.Edits))
-	s.messageReactions = nonNilMap(runtimepersist.ClonePtrMap(snapshot.Reactions))
-	s.messageAttachments = nonNilMap(runtimepersist.ClonePtrMap(snapshot.Attachments))
-	s.messageReads = nonNilMap(runtimepersist.ClonePtrMap(snapshot.Reads))
+	s.messages = runtimepersist.ClonePtrMap(snapshot.Messages)
+	s.messageEdits = runtimepersist.ClonePtrMap(snapshot.Edits)
+	s.messageReactions = runtimepersist.ClonePtrMap(snapshot.Reactions)
+	s.messageAttachments = runtimepersist.ClonePtrMap(snapshot.Attachments)
+	s.messageReads = runtimepersist.ClonePtrMap(snapshot.Reads)
 	return nil
-}
-
-// nonNilMap guards writes after loading an older snapshot that lacks a field.
-func nonNilMap[V any](m map[string]V) map[string]V {
-	if m == nil {
-		return make(map[string]V)
-	}
-	return m
 }

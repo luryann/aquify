@@ -65,11 +65,13 @@ func buildReadinessChecker(cfg Config, dbPool *pgxpool.Pool, objectStore storage
 				name: "queue",
 				check: func(ctx context.Context) (string, error) {
 					if strings.TrimSpace(cfg.Worker.RedisURL) == "" {
-						if _, ok := workerBackend.(*workers.Server); ok {
-							return "ready (in-memory)", nil
-						}
+						// A typed-nil *workers.Server in the interface is not a live
+						// in-memory queue: check nil-ness before the type assertion.
 						if isNilWorkerBackend(workerBackend) {
 							return "disabled", nil
+						}
+						if _, ok := workerBackend.(*workers.Server); ok {
+							return "ready (in-memory)", nil
 						}
 						return "ready", nil
 					}

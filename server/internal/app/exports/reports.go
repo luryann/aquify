@@ -391,7 +391,7 @@ func renderEntryReportBy(pdf pdfDoc, in ReportInput, keyFn func(ReportEntry) (st
 		groups[key] = append(groups[key], e)
 		labels[key] = label
 	}
-	sort.Strings(order)
+	orderReportGroups(order, groups, byEventOrder)
 
 	for _, key := range order {
 		entries := groups[key]
@@ -400,6 +400,30 @@ func renderEntryReportBy(pdf pdfDoc, in ReportInput, keyFn func(ReportEntry) (st
 		entryRowsTable(pdf, entries)
 		pdf.Ln(4)
 	}
+}
+
+// orderReportGroups sorts group keys in place. Session groups are keyed by
+// session ID (an opaque UUID), so they run in meet order — by their lowest
+// event number — rather than ID order; other groupings sort by key.
+func orderReportGroups(order []string, groups map[string][]ReportEntry, byEventOrder bool) {
+	if !byEventOrder {
+		sort.Strings(order)
+		return
+	}
+	first := make(map[string]int64, len(order))
+	for _, key := range order {
+		for i, e := range groups[key] {
+			if n := eventNumKey(e.EventNumber); i == 0 || n < first[key] {
+				first[key] = n
+			}
+		}
+	}
+	sort.SliceStable(order, func(i, j int) bool {
+		if first[order[i]] != first[order[j]] {
+			return first[order[i]] < first[order[j]]
+		}
+		return order[i] < order[j]
+	})
 }
 
 func renderEntryReportFlat(pdf pdfDoc, entries []ReportEntry) {

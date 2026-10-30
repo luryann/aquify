@@ -3,6 +3,7 @@ package members
 import (
 	"context"
 	"errors"
+	"sort"
 	"strings"
 	"time"
 )
@@ -63,6 +64,13 @@ func (s *Service) ListPendingLinkRequests(orgID string) ([]SwimmerLinkRequest, e
 			out = append(out, req)
 		}
 	}
+	// Match the repository's oldest-first order; map iteration is random.
+	sort.Slice(out, func(i, j int) bool {
+		if !out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].CreatedAt.Before(out[j].CreatedAt)
+		}
+		return out[i].ID < out[j].ID
+	})
 	return out, nil
 }
 

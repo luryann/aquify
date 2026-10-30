@@ -48,8 +48,7 @@ export function CalendarSubscribeCard({ api, orgId }: { api: ApiClient; orgId: s
   }
 
   return (
-    <div className="card u-p-16px u-gap-12px" style={{ display: 'flex', flexDirection: 'column' }}>
-      <p className="u-ff-font-display u-fw-display-weight u-fs-fs-lg" style={{ color: 'var(--text)' }}>Add to your phone’s calendar</p>
+    <div className="u-gap-12px" style={{ display: 'flex', flexDirection: 'column' }}>
       <p className="u-fs-fs-sm u-lh-1_5" style={{ color: 'var(--text-subtle)' }}>
         Meets, your swimmers’ practices and club events stay in sync in Google, Apple or Outlook calendar.
       </p>

@@ -14,6 +14,7 @@ import { Icon } from '@/components/ui/icons'
 import { WorkoutComposer, errorText, type ComposerInitial } from './WorkoutComposer'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { localToday } from '@/lib/dates'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 type Editing = { id: string | null; initial: ComposerInitial }
 
@@ -149,7 +150,7 @@ export function WorkoutLibraryPanel({ api, orgId, groups, onScheduled }: {
       )}
 
       {loading ? (
-        <p className="u-fs-fs-base u-p-24px-0" style={{ color: 'var(--text-muted)' }}>Loading library…</p>
+        <PageSkeleton variant="table" noHeader rows={4} />
       ) : !loadError && workouts.length === 0 ? (
         <div className="card u-p-24px u-fs-fs-base" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
           Your library is empty. Write a workout once, then schedule it for any group in two clicks.

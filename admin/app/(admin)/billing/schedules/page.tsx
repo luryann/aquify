@@ -28,6 +28,7 @@ import {
 } from '@/lib/financeData'
 import { formatDateOnly } from '@/lib/dates'
 import { Banner, Field, Money, ScrollTable, formGrid, numStyle, sectionTitle, tableStyle, tdStyle, thStyle, useFinanceContext } from '../financeUi'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 const FREQUENCY_LABEL: Record<string, string> = { monthly: 'Monthly', quarterly: 'Quarterly', annual: 'Annual', one_time: 'One-time' }
 const PRORATION_LABEL: Record<string, string> = {
@@ -278,7 +279,7 @@ export default function FeeSchedulesPage() {
         ) : null}
 
         {loading ? (
-          <p className="u-fs-fs-base" style={{ color: 'var(--text-subtle)' }}>Loading schedules…</p>
+          <PageSkeleton variant="table" noHeader rows={4} />
         ) : !loadError && activeSchedules.length === 0 ? (
           <p className="u-fs-fs-base u-mt-12px" style={{ color: 'var(--text-subtle)' }}>No active schedules. Create one per roster group to start billing dues.</p>
         ) : activeSchedules.length > 0 ? (
@@ -481,6 +482,27 @@ export default function FeeSchedulesPage() {
             </Field>
             <Field label="Due after (days)">
               <input className="form-input" type="number" min={0} value={settings.auto_run_due_days} onChange={(e) => setSettings({ ...settings, auto_run_due_days: Number(e.target.value) })} />
+            </Field>
+          </div>
+          <h2 className="u-mt-24px" style={sectionTitle}>Meet fees</h2>
+          <p className="u-fs-fs-sm u-mt-4px" style={{ color: 'var(--text-subtle)' }}>
+            Default charges for each swimmer entered in a meet. Per-event fees are multiplied by the number of events the swimmer swims.
+          </p>
+          <div style={{ ...formGrid, marginTop: 12 }}>
+            <Field label="Fee per event (USD)">
+              <input className="form-input" inputMode="decimal" defaultValue={(settings.meet_fee_per_event_cents / 100).toFixed(2)} onBlur={(e) => setSettings({ ...settings, meet_fee_per_event_cents: parseDollarsToCents(e.target.value) ?? 0 })} />
+            </Field>
+            <Field label="Flat fee per swimmer per meet (USD)">
+              <input className="form-input" inputMode="decimal" defaultValue={(settings.meet_fee_flat_cents / 100).toFixed(2)} onBlur={(e) => setSettings({ ...settings, meet_fee_flat_cents: parseDollarsToCents(e.target.value) ?? 0 })} />
+            </Field>
+            <Field label="Create meet invoices as">
+              <select className="form-input" value={settings.meet_fee_invoice_status} onChange={(e) => setSettings({ ...settings, meet_fee_invoice_status: e.target.value as BillingSettings['meet_fee_invoice_status'] })}>
+                <option value="draft">Drafts for review</option>
+                <option value="issued">Issued to families</option>
+              </select>
+            </Field>
+            <Field label="Due after (days)">
+              <input className="form-input" type="number" min={0} value={settings.meet_fee_due_days} onChange={(e) => setSettings({ ...settings, meet_fee_due_days: Number(e.target.value) })} />
             </Field>
           </div>
           <div className="u-gap-8px u-mt-16px" style={{ display: 'flex', flexWrap: 'wrap' }}>

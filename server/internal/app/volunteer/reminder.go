@@ -3,6 +3,7 @@ package volunteer
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -86,7 +87,7 @@ func (s *Service) SendShiftReminder(ctx context.Context, p ShiftReminderPayload)
 		return false, "", fmt.Errorf("volunteer reminder: missing org_id or signup_id")
 	}
 	su, err := s.store.getSignup(ctx, p.OrgID, p.SignupID)
-	if err == ErrSignupNotFound {
+	if errors.Is(err, ErrSignupNotFound) {
 		return false, "signup_deleted", nil
 	}
 	if err != nil {
@@ -96,7 +97,7 @@ func (s *Service) SendShiftReminder(ctx context.Context, p ShiftReminderPayload)
 		return false, "signup_" + su.Status, nil
 	}
 	job, err := s.store.getJob(ctx, p.OrgID, su.JobID)
-	if err == ErrJobNotFound {
+	if errors.Is(err, ErrJobNotFound) {
 		return false, "job_deleted", nil
 	}
 	if err != nil {

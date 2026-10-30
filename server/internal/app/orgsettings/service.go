@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -46,21 +47,23 @@ func (s *Service) FindBySlug(slug string) (*OrgSettings, error) {
 
 // OrgSettings holds the export identity fields for a single org.
 type OrgSettings struct {
-	OrgID              string    `json:"org_id"`
-	TeamCode           string    `json:"team_code"`
-	TeamName           string    `json:"team_name"`
-	LSCCode            string    `json:"lsc_code"`
-	EmailSenderName    string    `json:"email_sender_name"`
-	EmailSenderAddress string    `json:"email_sender_address"`
-	PublicSlug         string    `json:"public_slug"`
-	PublicSiteEnabled  bool      `json:"public_site_enabled"`
-	PublicShowCoaches  bool      `json:"public_show_coaches"`
-	PublicAbout        string    `json:"public_about"`
-	PublicContactEmail string    `json:"public_contact_email"`
-	PublicContactPhone string    `json:"public_contact_phone"`
-	CreatedAt          time.Time `json:"created_at"`
-	UpdatedAt          time.Time `json:"updated_at"`
-	UpdatedBy          string    `json:"updated_by"`
+	OrgID              string `json:"org_id"`
+	TeamCode           string `json:"team_code"`
+	TeamName           string `json:"team_name"`
+	LSCCode            string `json:"lsc_code"`
+	EmailSenderName    string `json:"email_sender_name"`
+	EmailSenderAddress string `json:"email_sender_address"`
+	PublicSlug         string `json:"public_slug"`
+	PublicSiteEnabled  bool   `json:"public_site_enabled"`
+	PublicShowCoaches  bool   `json:"public_show_coaches"`
+	PublicAbout        string `json:"public_about"`
+	PublicContactEmail string `json:"public_contact_email"`
+	PublicContactPhone string `json:"public_contact_phone"`
+	// SwimmerAccountsEnabled is filled by WithSwimmerAccounts (default true).
+	SwimmerAccountsEnabled bool      `json:"swimmer_accounts_enabled"`
+	CreatedAt              time.Time `json:"created_at"`
+	UpdatedAt              time.Time `json:"updated_at"`
+	UpdatedBy              string    `json:"updated_by"`
 }
 
 // Updates carries the mutable fields that may be patched. A nil pointer leaves
@@ -77,13 +80,21 @@ type Updates struct {
 	PublicAbout        *string `json:"public_about,omitempty"`
 	PublicContactEmail *string `json:"public_contact_email,omitempty"`
 	PublicContactPhone *string `json:"public_contact_phone,omitempty"`
+	// SwimmerAccountsEnabled is written in the same statement/critical section
+	// as every other field so a combined update is all-or-nothing.
+	SwimmerAccountsEnabled *bool `json:"swimmer_accounts_enabled,omitempty"`
 }
 
 // Service manages org settings with an in-memory write-through cache.
 type Service struct {
+	// updateMu serialises Update's read-modify-write so concurrent patches to
+	// different fields cannot overwrite each other with a stale snapshot.
+	updateMu sync.Mutex
 	mu       sync.RWMutex
 	repo     *Repository
 	settings map[string]*OrgSettings
+	// swimmerOff holds orgs with swimmer sign-in disabled (in-memory mode).
+	swimmerOff map[string]bool
 }
 
 // NewService returns an in-memory Service (no DB backing).
@@ -138,6 +149,9 @@ func (s *Service) Get(orgID string) (*OrgSettings, error) {
 
 // Update applies the provided field changes, creating the row if absent.
 func (s *Service) Update(orgID string, updates Updates, updatedBy string) (*OrgSettings, error) {
+	s.updateMu.Lock()
+	defer s.updateMu.Unlock()
+
 	current, err := s.Get(orgID)
 	if err != nil {
 		return nil, err
@@ -197,13 +211,29 @@ func (s *Service) Update(orgID string, updates Updates, updatedBy string) (*OrgS
 	current.UpdatedBy = updatedBy
 
 	if s.repo != nil {
-		if err := s.repo.Upsert(context.Background(), current); err != nil {
+		if err := s.repo.Upsert(context.Background(), current, updates.SwimmerAccountsEnabled); err != nil {
+			// Another instance can claim the slug between the check above and
+			// this write; the unique index is the real guard.
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+				return nil, ErrSlugTaken
+			}
 			return nil, err
 		}
 		return s.repo.Get(context.Background(), orgID)
 	}
 	s.mu.Lock()
 	s.settings[orgID] = current
+	if updates.SwimmerAccountsEnabled != nil {
+		if *updates.SwimmerAccountsEnabled {
+			delete(s.swimmerOff, orgID)
+		} else {
+			if s.swimmerOff == nil {
+				s.swimmerOff = make(map[string]bool)
+			}
+			s.swimmerOff[orgID] = true
+		}
+	}
 	s.mu.Unlock()
 	cp := *current
 	return &cp, nil

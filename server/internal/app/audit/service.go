@@ -236,9 +236,13 @@ func (s *Service) Query(f Filter) ([]AuditEvent, error) {
 	copy(all, s.events)
 	s.mu.RUnlock()
 
-	// In-memory Append calls append in insertion order; sort newest-first.
+	// Newest-first, ties broken by ID descending to match the Postgres
+	// ORDER BY so cursor pagination is deterministic when timestamps collide.
 	sort.Slice(all, func(i, j int) bool {
-		return all[i].OccurredAt.After(all[j].OccurredAt)
+		if !all[i].OccurredAt.Equal(all[j].OccurredAt) {
+			return all[i].OccurredAt.After(all[j].OccurredAt)
+		}
+		return all[i].ID > all[j].ID
 	})
 
 	var out []AuditEvent

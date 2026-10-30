@@ -47,20 +47,6 @@ var (
 // ─── Domain types ─────────────────────────────────────────────────────────────
 
 // Meet represents a swim meet within an org.
-// IsPubliclyListed reports whether the meet may appear on the unauthenticated
-// team website as of today (YYYY-MM-DD): same org, not a draft or archived, and
-// not already over.
-func (m Meet) IsPubliclyListed(orgID, today string) bool {
-	if m.OrgID != orgID || m.Status == "draft" || m.Status == "archived" {
-		return false
-	}
-	end := m.EndDate
-	if end == "" {
-		end = m.StartDate
-	}
-	return end != "" && end >= today
-}
-
 type Meet struct {
 	ID                   string     `json:"id"`
 	OrgID                string     `json:"org_id"`
@@ -83,6 +69,20 @@ type Meet struct {
 	UpdatedAt            time.Time  `json:"updated_at"`
 	CreatedBy            string     `json:"created_by"`
 	UpdatedBy            string     `json:"updated_by"`
+}
+
+// IsPubliclyListed reports whether the meet may appear on the unauthenticated
+// team website as of today (YYYY-MM-DD): same org, not a draft or archived, and
+// not already over.
+func (m Meet) IsPubliclyListed(orgID, today string) bool {
+	if m.OrgID != orgID || m.Status == "draft" || m.Status == "archived" {
+		return false
+	}
+	end := m.EndDate
+	if end == "" {
+		end = m.StartDate
+	}
+	return end != "" && end >= today
 }
 
 // MeetSession represents a single session within a meet.
@@ -164,6 +164,7 @@ type Entry struct {
 	IsRelay        bool      `json:"is_relay"`
 	Status         string    `json:"status"`
 	OverrideReason string    `json:"override_reason,omitempty"`
+	ScratchReason  string    `json:"scratch_reason,omitempty"`
 	ProposedBy     string    `json:"proposed_by,omitempty"`
 	ApprovedBy     string    `json:"approved_by,omitempty"`
 	CreatedAt      time.Time `json:"created_at"`
@@ -1019,12 +1020,12 @@ func (s *Service) SeedParentHousehold(parentUserID, householdID string) {
 
 // CreateMeet creates a new meet record.
 func (s *Service) CreateMeet(principal *appmiddleware.Principal, orgID string, input CreateMeetInput) (Meet, MeetAuditEvent, error) {
+	if !appmiddleware.HasAnyRole(principal, "admin", "coach") {
+		return Meet{}, MeetAuditEvent{}, ErrForbidden
+	}
 	// Pick up writes made through other API instances before acting on state.
 	if err := s.syncFromDB(context.Background()); err != nil {
 		return Meet{}, MeetAuditEvent{}, err
-	}
-	if !appmiddleware.HasAnyRole(principal, "admin", "coach") {
-		return Meet{}, MeetAuditEvent{}, ErrForbidden
 	}
 
 	name := strings.TrimSpace(input.Name)
@@ -1231,12 +1232,12 @@ func (s *Service) buildMeetEvents(principal *appmiddleware.Principal, orgID stri
 
 // ListMeets returns all meets in an org.
 func (s *Service) ListMeets(principal *appmiddleware.Principal, orgID string) ([]Meet, error) {
+	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
+		return nil, ErrForbidden
+	}
 	// Pick up writes made through other API instances before acting on state.
 	if err := s.syncFromDB(context.Background()); err != nil {
 		return nil, err
-	}
-	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
-		return nil, ErrForbidden
 	}
 
 	s.mu.RLock()
@@ -1260,12 +1261,12 @@ func (s *Service) ListMeets(principal *appmiddleware.Principal, orgID string) ([
 
 // GetMeet retrieves a single meet by ID.
 func (s *Service) GetMeet(principal *appmiddleware.Principal, orgID, meetID string) (Meet, error) {
+	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
+		return Meet{}, ErrForbidden
+	}
 	// Pick up writes made through other API instances before acting on state.
 	if err := s.syncFromDB(context.Background()); err != nil {
 		return Meet{}, err
-	}
-	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
-		return Meet{}, ErrForbidden
 	}
 
 	s.mu.RLock()
@@ -1280,12 +1281,12 @@ func (s *Service) GetMeet(principal *appmiddleware.Principal, orgID, meetID stri
 
 // TransitionMeetStatus moves a meet through its lifecycle state machine.
 func (s *Service) TransitionMeetStatus(principal *appmiddleware.Principal, orgID, meetID, toStatus string) (Meet, MeetAuditEvent, error) {
+	if !appmiddleware.HasAnyRole(principal, "admin", "coach") {
+		return Meet{}, MeetAuditEvent{}, ErrForbidden
+	}
 	// Pick up writes made through other API instances before acting on state.
 	if err := s.syncFromDB(context.Background()); err != nil {
 		return Meet{}, MeetAuditEvent{}, err
-	}
-	if !appmiddleware.HasAnyRole(principal, "admin", "coach") {
-		return Meet{}, MeetAuditEvent{}, ErrForbidden
 	}
 
 	toStatus = strings.TrimSpace(strings.ToLower(toStatus))
@@ -1344,12 +1345,12 @@ func (s *Service) TransitionMeetStatus(principal *appmiddleware.Principal, orgID
 
 // CreateMeetSession adds a session to a meet.
 func (s *Service) CreateMeetSession(principal *appmiddleware.Principal, orgID, meetID string, input CreateMeetSessionInput) (MeetSession, MeetAuditEvent, error) {
+	if !appmiddleware.HasAnyRole(principal, "admin", "coach") {
+		return MeetSession{}, MeetAuditEvent{}, ErrForbidden
+	}
 	// Pick up writes made through other API instances before acting on state.
 	if err := s.syncFromDB(context.Background()); err != nil {
 		return MeetSession{}, MeetAuditEvent{}, err
-	}
-	if !appmiddleware.HasAnyRole(principal, "admin", "coach") {
-		return MeetSession{}, MeetAuditEvent{}, ErrForbidden
 	}
 
 	name := strings.TrimSpace(input.Name)
@@ -1410,12 +1411,12 @@ func (s *Service) CreateMeetSession(principal *appmiddleware.Principal, orgID, m
 
 // ListMeetSessions returns all sessions for a meet.
 func (s *Service) ListMeetSessions(principal *appmiddleware.Principal, orgID, meetID string) ([]MeetSession, error) {
+	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
+		return nil, ErrForbidden
+	}
 	// Pick up writes made through other API instances before acting on state.
 	if err := s.syncFromDB(context.Background()); err != nil {
 		return nil, err
-	}
-	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
-		return nil, ErrForbidden
 	}
 
 	s.mu.RLock()
@@ -1440,12 +1441,12 @@ func (s *Service) ListMeetSessions(principal *appmiddleware.Principal, orgID, me
 
 // CreateMeetEvent adds an event to a meet.
 func (s *Service) CreateMeetEvent(principal *appmiddleware.Principal, orgID, meetID string, input CreateMeetEventInput) (MeetEvent, MeetAuditEvent, error) {
+	if !appmiddleware.HasAnyRole(principal, "admin", "coach") {
+		return MeetEvent{}, MeetAuditEvent{}, ErrForbidden
+	}
 	// Pick up writes made through other API instances before acting on state.
 	if err := s.syncFromDB(context.Background()); err != nil {
 		return MeetEvent{}, MeetAuditEvent{}, err
-	}
-	if !appmiddleware.HasAnyRole(principal, "admin", "coach") {
-		return MeetEvent{}, MeetAuditEvent{}, ErrForbidden
 	}
 
 	eventNumber := strings.TrimSpace(input.EventNumber)
@@ -1536,12 +1537,12 @@ func (s *Service) CreateMeetEvent(principal *appmiddleware.Principal, orgID, mee
 
 // ListMeetEvents returns all events for a meet.
 func (s *Service) ListMeetEvents(principal *appmiddleware.Principal, orgID, meetID string) ([]MeetEvent, error) {
+	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
+		return nil, ErrForbidden
+	}
 	// Pick up writes made through other API instances before acting on state.
 	if err := s.syncFromDB(context.Background()); err != nil {
 		return nil, err
-	}
-	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
-		return nil, ErrForbidden
 	}
 
 	s.mu.RLock()
@@ -1754,12 +1755,12 @@ func (s *Service) ListCommitments(principal *appmiddleware.Principal, orgID, mee
 
 // RespondToCommitment records a parent's yes/no commitment response.
 func (s *Service) RespondToCommitment(principal *appmiddleware.Principal, orgID, meetID, commitmentID string, input CommitmentRespondInput) (Commitment, MeetAuditEvent, error) {
+	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent") {
+		return Commitment{}, MeetAuditEvent{}, ErrForbidden
+	}
 	// Pick up writes made through other API instances before acting on state.
 	if err := s.syncFromDB(context.Background()); err != nil {
 		return Commitment{}, MeetAuditEvent{}, err
-	}
-	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent") {
-		return Commitment{}, MeetAuditEvent{}, ErrForbidden
 	}
 	// Coach role is not permitted to respond to commitments per RBAC table.
 	if appmiddleware.HasAnyRole(principal, "coach") && !appmiddleware.HasAnyRole(principal, "admin") {
@@ -1843,12 +1844,12 @@ func (s *Service) RespondToCommitment(principal *appmiddleware.Principal, orgID,
 // SelectCommitmentEvent adds an event selection for a parent-committed swimmer.
 // Only allowed when commitment status is committed_yes and meet is commitment_open.
 func (s *Service) SelectCommitmentEvent(principal *appmiddleware.Principal, orgID, meetID, commitmentID string, input SelectEventInput) (EventSelection, error) {
+	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent") {
+		return EventSelection{}, ErrForbidden
+	}
 	// Pick up writes made through other API instances before acting on state.
 	if err := s.syncFromDB(context.Background()); err != nil {
 		return EventSelection{}, err
-	}
-	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent") {
-		return EventSelection{}, ErrForbidden
 	}
 
 	meetEventID := strings.TrimSpace(input.MeetEventID)
@@ -1929,12 +1930,12 @@ func (s *Service) SelectCommitmentEvent(principal *appmiddleware.Principal, orgI
 
 // RemoveCommitmentEventSelection removes a parent's event selection before lock.
 func (s *Service) RemoveCommitmentEventSelection(principal *appmiddleware.Principal, orgID, meetID, commitmentID, selectionID string) error {
+	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent") {
+		return ErrForbidden
+	}
 	// Pick up writes made through other API instances before acting on state.
 	if err := s.syncFromDB(context.Background()); err != nil {
 		return err
-	}
-	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent") {
-		return ErrForbidden
 	}
 
 	s.mu.Lock()
@@ -1977,12 +1978,12 @@ func (s *Service) RemoveCommitmentEventSelection(principal *appmiddleware.Princi
 
 // ListCommitmentEventSelections returns the event selections for a commitment.
 func (s *Service) ListCommitmentEventSelections(principal *appmiddleware.Principal, orgID, meetID, commitmentID string) ([]EventSelection, error) {
+	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
+		return nil, ErrForbidden
+	}
 	// Pick up writes made through other API instances before acting on state.
 	if err := s.syncFromDB(context.Background()); err != nil {
 		return nil, err
-	}
-	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent", "swimmer") {
-		return nil, ErrForbidden
 	}
 
 	s.mu.RLock()
@@ -2074,6 +2075,7 @@ func (s *Service) LockCommitments(principal *appmiddleware.Principal, orgID, mee
 				SwimmerID:    cmt.SwimmerID,
 				MeetEventID:  sel.MeetEventID,
 				CommitmentID: cmt.ID,
+				SeedTimeMs:   sel.SeedTimeMs,
 				Status:       "submitted",
 				ProposedBy:   principal.UserID,
 				CreatedAt:    now,
@@ -2211,12 +2213,12 @@ func (s *Service) ListEntries(principal *appmiddleware.Principal, orgID, meetID 
 // ProposeEntry creates a new entry for a swimmer in a meet event.
 // Entries are created with status "submitted".
 func (s *Service) ProposeEntry(principal *appmiddleware.Principal, orgID, meetID string, input ProposeEntryInput) (Entry, MeetAuditEvent, error) {
+	if !appmiddleware.HasAnyRole(principal, "admin", "coach") {
+		return Entry{}, MeetAuditEvent{}, ErrForbidden
+	}
 	// Pick up writes made through other API instances before acting on state.
 	if err := s.syncFromDB(context.Background()); err != nil {
 		return Entry{}, MeetAuditEvent{}, err
-	}
-	if !appmiddleware.HasAnyRole(principal, "admin", "coach") {
-		return Entry{}, MeetAuditEvent{}, ErrForbidden
 	}
 
 	swimmerID := strings.TrimSpace(input.SwimmerID)
@@ -2319,12 +2321,12 @@ func (s *Service) ProposeEntry(principal *appmiddleware.Principal, orgID, meetID
 // OverrideEntry allows a coach to change the event on an existing entry.
 // Captures a full before/after audit event with a required reason.
 func (s *Service) OverrideEntry(principal *appmiddleware.Principal, orgID, meetID, entryID string, input OverrideEntryInput) (Entry, MeetAuditEvent, error) {
+	if !appmiddleware.HasAnyRole(principal, "admin", "coach") {
+		return Entry{}, MeetAuditEvent{}, ErrForbidden
+	}
 	// Pick up writes made through other API instances before acting on state.
 	if err := s.syncFromDB(context.Background()); err != nil {
 		return Entry{}, MeetAuditEvent{}, err
-	}
-	if !appmiddleware.HasAnyRole(principal, "admin", "coach") {
-		return Entry{}, MeetAuditEvent{}, ErrForbidden
 	}
 
 	newMeetEventID := strings.TrimSpace(input.NewMeetEventID)
@@ -2426,12 +2428,12 @@ func (s *Service) OverrideEntry(principal *appmiddleware.Principal, orgID, meetI
 // swimmer withdraws or a duplicate was created. Blocked once the meet is
 // finalized/closed or the entry has already been exported.
 func (s *Service) ScratchEntry(principal *appmiddleware.Principal, orgID, meetID, entryID, reason string) (Entry, MeetAuditEvent, error) {
+	if !appmiddleware.HasAnyRole(principal, "admin", "coach") {
+		return Entry{}, MeetAuditEvent{}, ErrForbidden
+	}
 	// Pick up writes made through other API instances before acting on state.
 	if err := s.syncFromDB(context.Background()); err != nil {
 		return Entry{}, MeetAuditEvent{}, err
-	}
-	if !appmiddleware.HasAnyRole(principal, "admin", "coach") {
-		return Entry{}, MeetAuditEvent{}, ErrForbidden
 	}
 	reason = strings.TrimSpace(reason)
 
@@ -2461,6 +2463,7 @@ func (s *Service) ScratchEntry(principal *appmiddleware.Principal, orgID, meetID
 
 	before := entrySnapshot(entry)
 	entry.Status = "scratched"
+	entry.ScratchReason = reason
 	entry.UpdatedAt = time.Now().UTC()
 	entry.UpdatedBy = principal.UserID
 	if s.repo != nil {
@@ -2488,12 +2491,12 @@ func (s *Service) ScratchEntry(principal *appmiddleware.Principal, orgID, meetID
 
 // ApproveEntry moves an entry from submitted to approved.
 func (s *Service) ApproveEntry(principal *appmiddleware.Principal, orgID, meetID, entryID string) (Entry, MeetAuditEvent, error) {
+	if !appmiddleware.HasAnyRole(principal, "admin", "coach") {
+		return Entry{}, MeetAuditEvent{}, ErrForbidden
+	}
 	// Pick up writes made through other API instances before acting on state.
 	if err := s.syncFromDB(context.Background()); err != nil {
 		return Entry{}, MeetAuditEvent{}, err
-	}
-	if !appmiddleware.HasAnyRole(principal, "admin", "coach") {
-		return Entry{}, MeetAuditEvent{}, ErrForbidden
 	}
 
 	s.mu.Lock()
@@ -2550,12 +2553,12 @@ func (s *Service) ApproveEntry(principal *appmiddleware.Principal, orgID, meetID
 // SD3 entry file has been generated for the host. Entries already exported are
 // left as-is so a re-download does not fail; any other status is skipped.
 func (s *Service) MarkEntriesExported(principal *appmiddleware.Principal, orgID, meetID string, entryIDs []string) (int, MeetAuditEvent, error) {
+	if !appmiddleware.HasAnyRole(principal, "admin", "coach") {
+		return 0, MeetAuditEvent{}, ErrForbidden
+	}
 	// Pick up writes made through other API instances before acting on state.
 	if err := s.syncFromDB(context.Background()); err != nil {
 		return 0, MeetAuditEvent{}, err
-	}
-	if !appmiddleware.HasAnyRole(principal, "admin", "coach") {
-		return 0, MeetAuditEvent{}, ErrForbidden
 	}
 
 	s.mu.Lock()
@@ -2796,5 +2799,6 @@ func entrySnapshot(e Entry) map[string]any {
 		"seed_time_ms":    e.SeedTimeMs,
 		"status":          e.Status,
 		"override_reason": e.OverrideReason,
+		"scratch_reason":  e.ScratchReason,
 	}
 }

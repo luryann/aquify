@@ -57,7 +57,7 @@ func step16Body(fields map[string]any) string {
 
 // ─── Audit endpoint tests ─────────────────────────────────────────────────────
 
-func TestAuditEvents_OwnerCanQuery(t *testing.T) {
+func TestAuditEvents_AdminCanQuery(t *testing.T) {
 	router := newStep16Router(t, nil, nil)
 	token := issueStep16Token(t, router, "admin-user", "org-demo", "admin", "")
 
@@ -69,16 +69,6 @@ func TestAuditEvents_OwnerCanQuery(t *testing.T) {
 	json.NewDecoder(rr.Body).Decode(&body)
 	if _, ok := body["events"]; !ok {
 		t.Errorf("response missing 'events' key: %v", body)
-	}
-}
-
-func TestAuditEvents_AdminCanQuery(t *testing.T) {
-	router := newStep16Router(t, nil, nil)
-	token := issueStep16Token(t, router, "admin-user", "org-demo", "admin", "")
-
-	rr := doStep16Req(router, http.MethodGet, "/api/v1/audit-events", token, "")
-	if rr.Code != http.StatusOK {
-		t.Fatalf("want 200, got %d: %s", rr.Code, rr.Body.String())
 	}
 }
 

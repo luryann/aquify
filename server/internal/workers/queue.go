@@ -17,6 +17,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -119,6 +120,24 @@ type TaskInfo struct {
 	LastErr     string     `json:"last_error,omitempty"`
 	CompletedAt *time.Time `json:"completed_at,omitempty"`
 	UniqueKey   string     `json:"unique_key,omitempty"`
+	// OrgID is the tenant the task belongs to, taken from the payload's
+	// top-level "org_id". Empty means the task carries no org metadata.
+	OrgID string `json:"org_id,omitempty"`
+}
+
+// TaskOrgID extracts the top-level "org_id" string from a task payload, or ""
+// when the payload is not a JSON object or carries none.
+func TaskOrgID(payload []byte) string {
+	if len(payload) == 0 {
+		return ""
+	}
+	var p struct {
+		OrgID string `json:"org_id"`
+	}
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(p.OrgID)
 }
 
 // QueueStats summarises the state of a single named queue.

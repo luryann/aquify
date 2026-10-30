@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
 	"github.com/dareaquatics/aquify/server/internal/testutil"
 )
 
@@ -371,5 +372,104 @@ func TestSnapshotRosterIsOrgScoped(t *testing.T) {
 	other, err := svc.SnapshotRoster("another-org")
 	if err != nil || len(other.Households) != 0 || len(other.Swimmers) != 0 {
 		t.Fatalf("snapshot leaked across orgs: %+v err=%v", other, err)
+	}
+}
+
+func TestAssignSwimmerToGroupPromotesExistingLinkToPrimary(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService()
+	admin := testutil.AdminPrincipal()
+	hh, err := svc.CreateHousehold(admin, CreateHouseholdInput{OrgID: testutil.DefaultOrgID, HouseholdName: "Group Family"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sw, _, err := svc.CreateSwimmer(admin, testutil.DefaultOrgID, CreateSwimmerInput{
+		HouseholdID: hh.ID, FirstName: "Gus", LastName: "Group", DateOfBirth: "2012-01-02", Gender: "male",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.AssignSwimmerToGroup(admin, testutil.DefaultOrgID, sw.ID, AssignSwimmerGroupInput{GroupCode: "age", IsPrimary: true}); err != nil {
+		t.Fatal(err)
+	}
+	second, err := svc.AssignSwimmerToGroup(admin, testutil.DefaultOrgID, sw.ID, AssignSwimmerGroupInput{GroupCode: "SENIOR"})
+	if err != nil || second.IsPrimary {
+		t.Fatalf("second group: %+v err=%v", second, err)
+	}
+
+	promoted, err := svc.AssignSwimmerToGroup(admin, testutil.DefaultOrgID, sw.ID, AssignSwimmerGroupInput{GroupCode: "SENIOR", IsPrimary: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if promoted.ID != second.ID || !promoted.IsPrimary {
+		t.Fatalf("existing link should be promoted in place, got %+v", promoted)
+	}
+	primaries := map[string]bool{}
+	links := svc.SnapshotSwimmerGroupLinks(testutil.DefaultOrgID)
+	if len(links) != 2 {
+		t.Fatalf("expected 2 links, got %d", len(links))
+	}
+	for _, l := range links {
+		primaries[l.GroupCode] = l.IsPrimary
+	}
+	if !primaries["SENIOR"] || primaries["AGE"] {
+		t.Fatalf("primary should have moved to SENIOR, got %v", primaries)
+	}
+}
+
+func TestAnonymizeHouseholdScrubsAuditNameSnapshots(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService()
+	admin := testutil.AdminPrincipal()
+	household, _ := svc.CreateHousehold(admin, CreateHouseholdInput{OrgID: testutil.DefaultOrgID, HouseholdName: "Lane Family"})
+	if _, _, err := svc.CreateSwimmer(admin, testutil.DefaultOrgID, CreateSwimmerInput{
+		HouseholdID: household.ID, FirstName: "Mia", LastName: "Lane", DateOfBirth: "2012-04-15", Gender: "female",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.AnonymizeHousehold(testutil.DefaultOrgID, household.ID); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := svc.ExportRuntimeSnapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, leak := range []string{"Mia", "Lane"} {
+		if strings.Contains(string(snap), leak) {
+			t.Fatalf("snapshot still contains %q after erasure: %s", leak, snap)
+		}
+	}
+}
+
+func TestAdminWhoIsAlsoParentIsNotHouseholdScoped(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService()
+	admin := testutil.AdminPrincipal()
+	other, err := svc.CreateHousehold(admin, CreateHouseholdInput{OrgID: testutil.DefaultOrgID, HouseholdName: "Other Family"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := svc.CreateSwimmer(admin, testutil.DefaultOrgID, CreateSwimmerInput{
+		HouseholdID: other.ID, FirstName: "Kai", LastName: "Other", DateOfBirth: "2012-04-15", Gender: "male",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	dual := &appmiddleware.Principal{UserID: "dual-1", OrgID: testutil.DefaultOrgID, Roles: []string{"admin", "parent"}}
+	hh, err := svc.ListHouseholds(dual, testutil.DefaultOrgID)
+	if err != nil || len(hh) != 1 {
+		t.Fatalf("ListHouseholds for admin+parent: %d households, err %v; want org-wide access", len(hh), err)
+	}
+	sw, err := svc.ListSwimmers(dual, testutil.DefaultOrgID, ListSwimmersInput{HouseholdID: other.ID})
+	if err != nil || len(sw) != 1 {
+		t.Fatalf("ListSwimmers for admin+parent: %d swimmers, err %v", len(sw), err)
+	}
+	// A pure parent is still limited to their own households.
+	parent := testutil.ParentPrincipal("parent-9", "")
+	if hh, _ := svc.ListHouseholds(parent, testutil.DefaultOrgID); len(hh) != 0 {
+		t.Fatalf("pure parent saw %d foreign households", len(hh))
 	}
 }

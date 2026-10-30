@@ -1,7 +1,10 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/dareaquatics/aquify/server/internal/app/attendance"
 	"github.com/dareaquatics/aquify/server/internal/app/httpx"
@@ -49,7 +52,25 @@ func (h *AttendanceSummaryHandlers) summary(w http.ResponseWriter, r *http.Reque
 	}
 	days := clampDays(r.URL.Query().Get("days"), attendanceDefaultDays, attendanceMaxDays)
 	from, to, _ := wellness.DateRange(h.today(), days)
+	// Optional explicit window; each bound defaults to the days-based range.
+	q := r.URL.Query()
+	if v := strings.TrimSpace(q.Get("from")); v != "" {
+		from = v
+	}
+	if v := strings.TrimSpace(q.Get("to")); v != "" {
+		to = v
+	}
+	if ft, e1 := time.Parse("2006-01-02", from); e1 == nil {
+		if tt, e2 := time.Parse("2006-01-02", to); e2 == nil && tt.Sub(ft) > attendanceMaxDays*24*time.Hour {
+			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_range", "The window may span at most 365 days.", nil)
+			return
+		}
+	}
 	summary, err := attendance.Summarize(h.source, h.directory, orgID, sw, from, to)
+	if errors.Is(err, attendance.ErrInvalidRange) {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_range", "from and to must be YYYY-MM-DD dates with from on or before to.", nil)
+		return
+	}
 	if err != nil {
 		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to aggregate attendance.", err)
 		return

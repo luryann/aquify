@@ -90,6 +90,11 @@ func (e *Event) RSVPOpen(now time.Time) bool {
 	end := e.StartsAt
 	if e.EndsAt != nil {
 		end = *e.EndsAt
+	} else if e.AllDay {
+		// All-day events carry UTC-midnight timestamps: stay open through the
+		// end of that UTC day.
+		y, m, d := e.StartsAt.UTC().Date()
+		end = time.Date(y, m, d, 23, 59, 59, int(time.Second-time.Nanosecond), time.UTC)
 	}
 	return !now.After(end)
 }
@@ -495,27 +500,40 @@ func (s *Service) Update(orgID, id, actorID string, in EventInput) (*Event, erro
 	if err != nil {
 		return nil, err
 	}
-	existing, err := s.Get(orgID, id)
-	if err != nil {
-		return nil, err
+	var (
+		existing *Event
+		rsvps    []*RSVP
+		updated  *Event
+	)
+	build := func(cur *Event, curRSVPs []*RSVP) (*Event, error) {
+		if len(curRSVPs) > 0 && cur.RSVPMode != in.RSVPMode {
+			return nil, ErrRSVPModeLocked
+		}
+		next := copyEvent(cur)
+		applyInput(next, in)
+		next.UpdatedAt = s.now()
+		next.UpdatedBy = actorID
+		return next, nil
 	}
-	rsvps, err := s.ListRSVPs(orgID, id)
-	if err != nil {
-		return nil, err
-	}
-	if len(rsvps) > 0 && existing.RSVPMode != in.RSVPMode {
-		return nil, ErrRSVPModeLocked
-	}
-	updated := copyEvent(existing)
-	applyInput(updated, in)
-	updated.UpdatedAt = s.now()
-	updated.UpdatedBy = actorID
 	if s.repo != nil {
-		if err := s.repo.UpsertEvent(context.Background(), updated); err != nil {
+		existing, rsvps, updated, err = s.repo.UpdateEventTx(context.Background(), orgID, id, build)
+		if err != nil {
 			return nil, err
 		}
 	} else {
 		s.mu.Lock()
+		cur, ok := s.events[strings.TrimSpace(id)]
+		if !ok || cur.OrgID != orgID {
+			s.mu.Unlock()
+			return nil, ErrNotFound
+		}
+		existing = copyEvent(cur)
+		rsvps = s.rsvpsLocked(orgID, id)
+		updated, err = build(existing, rsvps)
+		if err != nil {
+			s.mu.Unlock()
+			return nil, err
+		}
 		s.events[id] = copyEvent(updated)
 		s.mu.Unlock()
 	}
@@ -525,21 +543,38 @@ func (s *Service) Update(orgID, id, actorID string, in EventInput) (*Event, erro
 	return updated, nil
 }
 
+// rsvpsLocked returns copies of an event's RSVPs; s.mu must be held.
+func (s *Service) rsvpsLocked(orgID, eventID string) []*RSVP {
+	out := []*RSVP{}
+	for _, r := range s.rsvps {
+		if r.OrgID == orgID && r.EventID == eventID {
+			cp := *r
+			out = append(out, &cp)
+		}
+	}
+	sortRSVPs(out)
+	return out
+}
+
 // Delete removes an event (and its RSVPs), releasing unpaid fee invoices.
+// The event row is locked (DB) or the service mutex held (memory) while the
+// RSVPs are read and the event removed, so no RSVP can slip in between.
 func (s *Service) Delete(orgID, id, actorID string) error {
-	if _, err := s.Get(orgID, id); err != nil {
-		return err
-	}
-	rsvps, err := s.ListRSVPs(orgID, id)
-	if err != nil {
-		return err
-	}
+	var rsvps []*RSVP
 	if s.repo != nil {
-		if err := s.repo.DeleteEvent(context.Background(), orgID, id); err != nil {
+		var err error
+		rsvps, err = s.repo.DeleteEventTx(context.Background(), orgID, id)
+		if err != nil {
 			return err
 		}
 	} else {
 		s.mu.Lock()
+		e, ok := s.events[strings.TrimSpace(id)]
+		if !ok || e.OrgID != orgID {
+			s.mu.Unlock()
+			return ErrNotFound
+		}
+		rsvps = s.rsvpsLocked(orgID, id)
 		delete(s.events, id)
 		for rid, r := range s.rsvps {
 			if r.EventID == id {

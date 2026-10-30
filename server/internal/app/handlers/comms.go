@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -132,16 +133,21 @@ func (h *CommsHandlers) verifyPostmarkWebhook(r *http.Request) bool {
 	if !headerConfigured && !basicConfigured {
 		return h.allowInsecureWebhook
 	}
-	if headerConfigured && r.Header.Get(h.postmarkHeaderName) != h.postmarkHeaderValue {
+	if headerConfigured && !secretEqual(r.Header.Get(h.postmarkHeaderName), h.postmarkHeaderValue) {
 		return false
 	}
 	if basicConfigured {
 		user, pass, ok := r.BasicAuth()
-		if !ok || user != h.postmarkBasicUser || pass != h.postmarkBasicPass {
+		if !ok || !secretEqual(user, h.postmarkBasicUser) || !secretEqual(pass, h.postmarkBasicPass) {
 			return false
 		}
 	}
 	return true
+}
+
+// secretEqual compares webhook credentials without leaking length/prefix timing.
+func secretEqual(got, want string) bool {
+	return subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
 }
 
 func parseWebhookTime(raw string) time.Time {
@@ -357,7 +363,13 @@ func (h *CommsHandlers) swimmerHouseholdID(orgID, swimmerID string) string {
 // the org; parent/swimmer may only access their own household's threads.
 func (h *CommsHandlers) authorizeMessageThread(principal *appmiddleware.Principal, orgID, householdID, swimmerID string) bool {
 	if hasAnyRole(principal, "admin", "coach") {
-		return true
+		// Staff may reach any thread in the org, but only one that exists
+		// there: the household+swimmer pair must be a real org roster entry.
+		if h.membersService == nil {
+			return true
+		}
+		return strings.TrimSpace(householdID) != "" &&
+			h.swimmerHouseholdID(orgID, swimmerID) == strings.TrimSpace(householdID)
 	}
 	if !hasAnyRole(principal, "parent", "swimmer") {
 		return false
@@ -789,27 +801,98 @@ func (h *CommsHandlers) createAnnouncement(w http.ResponseWriter, r *http.Reques
 	httpx.WriteJSON(w, http.StatusCreated, ann)
 }
 
+// isStaffReader reports whether the principal may see unpublished
+// (draft/archived) announcements; parents and swimmers see published only.
+func isStaffReader(principal *appmiddleware.Principal) bool {
+	return hasAnyRole(principal, "admin", "coach")
+}
+
+// portalAnnouncementFilter returns a predicate for what a parent/swimmer may
+// see: audience "all" announcements, and group-audience ones only when a swimmer
+// in the caller's household is on that group's roster. If group membership
+// cannot be resolved (services not wired) group announcements are hidden.
+func (h *CommsHandlers) portalAnnouncementFilter(principal *appmiddleware.Principal, orgID string) (func(*comms.Announcement) bool, error) {
+	if h.membersService == nil || h.groupsService == nil {
+		return func(a *comms.Announcement) bool { return a.Audience != "group" }, nil
+	}
+	links, err := h.membersService.ListSwimmerGroupLinks(principal, orgID)
+	if err != nil {
+		return nil, err
+	}
+	groupList, err := h.groupsService.ListGroups(principal, orgID, false)
+	if err != nil {
+		return nil, err
+	}
+	myCodes := make(map[string]struct{}, len(links))
+	for _, l := range links {
+		myCodes[l.GroupCode] = struct{}{} // codes are canonical UPPERCASE; compare exactly
+	}
+	myGroupIDs := make(map[string]struct{}, len(groupList))
+	for _, g := range groupList {
+		if _, ok := myCodes[g.Code]; ok {
+			myGroupIDs[g.ID] = struct{}{}
+		}
+	}
+	return func(a *comms.Announcement) bool {
+		if a.Audience != "group" {
+			return true
+		}
+		_, ok := myGroupIDs[a.GroupID]
+		return ok
+	}, nil
+}
+
 func (h *CommsHandlers) listAnnouncements(w http.ResponseWriter, r *http.Request) {
-	_, orgID, ok := scopedRequestFromContext(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
 	statusFilter := r.URL.Query().Get("status")
+	if !isStaffReader(principal) {
+		statusFilter = "published"
+	}
 	announcements, err := h.service.ListAnnouncements(orgID, statusFilter)
 	if err != nil {
 		httpx.WriteError(w, r, http.StatusInternalServerError, "list_failed", "An internal error occurred.", err)
 		return
 	}
+	if !isStaffReader(principal) {
+		visible, err := h.portalAnnouncementFilter(principal, orgID)
+		if err != nil {
+			httpx.WriteError(w, r, http.StatusInternalServerError, "list_failed", "An internal error occurred.", err)
+			return
+		}
+		kept := announcements[:0:0]
+		for _, a := range announcements {
+			if visible(a) {
+				kept = append(kept, a)
+			}
+		}
+		announcements = kept
+	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{"announcements": announcements})
 }
 
 func (h *CommsHandlers) getAnnouncement(w http.ResponseWriter, r *http.Request) {
-	_, orgID, ok := scopedRequestFromContext(w, r)
+	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
 		return
 	}
 	id := chi.URLParam(r, "announcementID")
 	ann, err := h.service.GetAnnouncement(orgID, id)
+	if err == nil && ann.Status != "published" && !isStaffReader(principal) {
+		err = comms.ErrAnnouncementNotFound
+	}
+	if err == nil && !isStaffReader(principal) {
+		visible, ferr := h.portalAnnouncementFilter(principal, orgID)
+		if ferr != nil {
+			httpx.WriteError(w, r, http.StatusInternalServerError, "get_failed", "An internal error occurred.", ferr)
+			return
+		}
+		if !visible(ann) {
+			err = comms.ErrAnnouncementNotFound
+		}
+	}
 	if err != nil {
 		if errors.Is(err, comms.ErrAnnouncementNotFound) {
 			httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Announcement not found.", nil)

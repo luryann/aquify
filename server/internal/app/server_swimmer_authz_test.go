@@ -14,7 +14,7 @@ import (
 // TestSwimmerRoleCannotAccessHouseholdFinancialData verifies that a user with
 // only the "swimmer" role is denied access to all billing endpoints.
 // The billing service's requireBillingReadAccess helper permits only
-// admin/owner/billing/parent; the swimmer role must never appear in that list.
+// admin and parent; the swimmer role must never appear in that list.
 func TestSwimmerRoleCannotAccessHouseholdFinancialData(t *testing.T) {
 	t.Parallel()
 
@@ -78,7 +78,7 @@ func TestSwimmerRoleCannotAccessHouseholdFinancialData(t *testing.T) {
 }
 
 // TestSwimmerRoleCannotAccessLedger confirms the ledger endpoint requires at
-// least admin/owner/billing — a swimmer-only token must receive 403.
+// admin — a swimmer-only token must receive 403.
 func TestSwimmerRoleCannotAccessLedger(t *testing.T) {
 	t.Parallel()
 

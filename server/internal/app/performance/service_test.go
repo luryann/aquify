@@ -53,3 +53,26 @@ func TestBestTimeOverrideAndCutQualification(t *testing.T) {
 		t.Fatalf("EvaluateCutQualification() = %+v, want qualified by 2000ms", qualification)
 	}
 }
+
+func TestUpdateTimeStandardRejectsNonPositiveTimeAndBlankName(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService()
+	admin := &appmiddleware.Principal{UserID: "admin-1", Roles: []string{"admin"}}
+	std, err := svc.CreateTimeStandard("org-a", "admin-1", admin, CreateTimeStandardInput{
+		Name: "AAA", SeasonYear: 2026, StandardCode: "AAA", EventDistance: 100, Stroke: "free", Course: "SCY", Gender: "F", TimeMs: 60_000, IsActive: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	zero, blank := 0, "  "
+	if _, err := svc.UpdateTimeStandard("org-a", "admin-1", std.ID, admin, UpdateTimeStandardInput{TimeMs: &zero}); !errors.Is(err, ErrStandardInvalid) {
+		t.Fatalf("zero time: %v", err)
+	}
+	if _, err := svc.UpdateTimeStandard("org-a", "admin-1", std.ID, admin, UpdateTimeStandardInput{Name: &blank}); !errors.Is(err, ErrStandardInvalid) {
+		t.Fatalf("blank name: %v", err)
+	}
+	if got, _ := svc.GetTimeStandard("org-a", std.ID); got.TimeMs != 60_000 || got.Name != "AAA" {
+		t.Fatalf("rejected update must not change the standard: %+v", got)
+	}
+}

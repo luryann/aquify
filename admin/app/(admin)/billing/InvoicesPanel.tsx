@@ -12,6 +12,7 @@ import { formatDateOnly, parseBackendDate } from '@/lib/dates'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { Modal } from '@/components/ui/Modal'
 import { formatCents } from '@/lib/financeData'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 type InvoiceStatus = 'draft' | 'issued' | 'partially_paid' | 'paid' | 'refunded_partial' | 'refunded_full' | 'voided' | 'written_off'
 
@@ -201,7 +202,7 @@ export function InvoicesPanel() {
       </div>
 
       {loading ? (
-        <EmptyState icon="file-text" title="Loading invoices" description="Fetching invoice data." />
+        <PageSkeleton variant="table" noHeader rows={4} />
       ) : error ? (
         <EmptyState icon="alert-circle" title="Unable to load invoices" description={error} />
       ) : (

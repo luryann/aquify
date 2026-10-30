@@ -1,13 +1,13 @@
 package sdif
 
 import (
-	"bufio"
-	"bytes"
 	"fmt"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/dareaquatics/aquify/meetfiles"
 )
@@ -19,7 +19,7 @@ type ExportVariant string
 
 const (
 	// ExportVariantStandard generates Standard SD3 — required fields only;
-	// seed times are omitted (D0 seed field set to "NT      ").
+	// seed times are omitted (D0 seed field left blank).
 	ExportVariantStandard ExportVariant = "standard"
 	// ExportVariantExtended generates Extended SD3 — includes seed times and
 	// seed course in D0 records.
@@ -97,7 +97,7 @@ func (e ValidationError) Error() string {
 // ─── Public export functions ──────────────────────────────────────────────────
 
 // ExportStandardSD3 generates a Standard SD3 entries file.
-// Seed times are omitted from D0 records (set to "NT      ").
+// Seed times are omitted from D0 records (the seed field is left blank).
 func ExportStandardSD3(input ExportInput) ([]byte, error) {
 	return exportEntries(input, ExportVariantStandard)
 }
@@ -158,12 +158,47 @@ func ExportSDIFRoster(input RosterExportInput) ([]byte, error) {
 		Course:        input.Course,
 	}))
 
-	// C1: team
-	sb.WriteString(buildC1(input.TeamCode, input.TeamName))
-
-	// D1: one per swimmer
+	// C1 + D1: one C1 per team group (in order of first appearance), each
+	// followed by that team's swimmers.  Swimmers without their own team fall
+	// back to the input-level team.  With a single team (or no swimmers) the
+	// output is the classic A0/B1/C1/D1.../Z0 layout.
+	type teamGroup struct {
+		code, name string
+		swimmers   []RosterExportSwimmer
+	}
+	var groups []*teamGroup
+	byCode := map[string]*teamGroup{}
+	groupFor := func(code, name string) *teamGroup {
+		key := strings.ToUpper(strings.TrimSpace(code))
+		if g, ok := byCode[key]; ok {
+			if g.name == "" {
+				g.name = name
+			}
+			return g
+		}
+		g := &teamGroup{code: code, name: name}
+		byCode[key] = g
+		groups = append(groups, g)
+		return g
+	}
+	if len(input.Swimmers) == 0 {
+		groupFor(input.TeamCode, input.TeamName)
+	}
 	for _, sw := range input.Swimmers {
-		sb.WriteString(buildD1(sw))
+		code, name := sw.TeamCode, sw.TeamName
+		if strings.TrimSpace(code) == "" {
+			code, name = input.TeamCode, input.TeamName
+		} else if strings.TrimSpace(name) == "" && strings.EqualFold(strings.TrimSpace(code), strings.TrimSpace(input.TeamCode)) {
+			name = input.TeamName
+		}
+		g := groupFor(code, name)
+		g.swimmers = append(g.swimmers, sw)
+	}
+	for _, g := range groups {
+		sb.WriteString(buildC1(g.code, g.name))
+		for _, sw := range g.swimmers {
+			sb.WriteString(buildD1(sw))
+		}
 	}
 
 	// Z0: file terminator
@@ -178,15 +213,13 @@ func ExportSDIFRoster(input RosterExportInput) ([]byte, error) {
 func ImportSDIFRoster(data []byte) (*RosterImportResult, error) {
 	result := &RosterImportResult{}
 
-	scanner := bufio.NewScanner(bytes.NewReader(data))
 	lineNumber := 0
 
 	var currentTeamCode, currentTeamName string
 
-	for scanner.Scan() {
+	for _, raw := range splitRecordLines(data) {
 		lineNumber++
-		raw := scanner.Text()
-		line := strings.TrimRight(raw, "\r")
+		line := raw
 
 		if len(line) < 2 {
 			continue
@@ -231,7 +264,7 @@ func ImportSDIFRoster(data []byte) (*RosterImportResult, error) {
 		}
 	}
 
-	return result, scanner.Err()
+	return result, nil
 }
 
 // ─── Internal entry-file generator ───────────────────────────────────────────
@@ -244,19 +277,22 @@ func exportEntries(input ExportInput, variant ExportVariant) ([]byte, error) {
 	// Sort individual entries by event number then swimmer last name.
 	sorted := make([]ExportIndividualEntry, len(input.IndividualEntries))
 	copy(sorted, input.IndividualEntries)
-	sort.Slice(sorted, func(i, j int) bool {
+	sort.SliceStable(sorted, func(i, j int) bool {
 		ei := sorted[i].EventNumber
 		ej := sorted[j].EventNumber
 		if ei != ej {
 			return eventNumberLess(ei, ej)
 		}
-		return sorted[i].Swimmer.LastName < sorted[j].Swimmer.LastName
+		if li, lj := sorted[i].Swimmer.LastName, sorted[j].Swimmer.LastName; li != lj {
+			return li < lj
+		}
+		return sorted[i].Swimmer.FirstName < sorted[j].Swimmer.FirstName
 	})
 
 	// Sort relay entries by event number.
 	sortedRelays := make([]ExportRelayEntry, len(input.RelayEntries))
 	copy(sortedRelays, input.RelayEntries)
-	sort.Slice(sortedRelays, func(i, j int) bool {
+	sort.SliceStable(sortedRelays, func(i, j int) bool {
 		return eventNumberLess(sortedRelays[i].EventNumber, sortedRelays[j].EventNumber)
 	})
 
@@ -284,8 +320,13 @@ func exportEntries(input ExportInput, variant ExportVariant) ([]byte, error) {
 		// Sort legs by leg order
 		legs := make([]ExportRelayLeg, len(relay.Legs))
 		copy(legs, relay.Legs)
-		sort.Slice(legs, func(i, j int) bool {
-			return legs[i].LegOrder < legs[j].LegOrder
+		// Unassigned legs (LegOrder 0) go after the ordered legs 1-4.
+		sort.SliceStable(legs, func(i, j int) bool {
+			a, b := legs[i].LegOrder, legs[j].LegOrder
+			if (a == 0) != (b == 0) {
+				return b == 0
+			}
+			return a < b
 		})
 		for _, leg := range legs {
 			sb.WriteString(buildF0(relay, leg))
@@ -305,16 +346,41 @@ func validateExportInput(input ExportInput) error {
 	return nil
 }
 
-// eventNumberLess provides ordering for event number strings.
-// Pure numeric strings are compared numerically; otherwise lexicographic.
+// eventNumberLess provides ordering for event number strings.  A leading run
+// of digits is compared numerically, then the remaining suffix lexicographically
+// ("2" < "12" < "12A" < "12B"); numbered events sort before non-numeric ones.
 func eventNumberLess(a, b string) bool {
-	var ai, bi int
-	_, errA := fmt.Sscanf(strings.TrimSpace(a), "%d", &ai)
-	_, errB := fmt.Sscanf(strings.TrimSpace(b), "%d", &bi)
-	if errA == nil && errB == nil {
-		return ai < bi
+	na, sa, okA := splitEventNumber(a)
+	nb, sb, okB := splitEventNumber(b)
+	switch {
+	case okA && okB:
+		if na != nb {
+			return na < nb
+		}
+		return sa < sb
+	case okA != okB:
+		return okA
+	default:
+		return strings.TrimSpace(a) < strings.TrimSpace(b)
 	}
-	return a < b
+}
+
+// splitEventNumber splits "12A" into (12, "A", true).  ok is false when s has
+// no leading digits.
+func splitEventNumber(s string) (n int, suffix string, ok bool) {
+	s = strings.TrimSpace(s)
+	i := 0
+	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+		i++
+	}
+	if i == 0 {
+		return 0, s, false
+	}
+	n, err := strconv.Atoi(s[:i])
+	if err != nil {
+		return 0, s, false
+	}
+	return n, s[i:], true
 }
 
 // ─── Record buffer helpers ────────────────────────────────────────────────────
@@ -333,39 +399,39 @@ func newBuf(recordType string) []byte {
 }
 
 // place writes a left-justified, space-padded string at 1-indexed start for
-// the given width.  Values longer than width are truncated silently.
+// the given width.  Values longer than width are truncated silently (never
+// mid-rune); control characters become spaces so a value can't break the
+// fixed-width record or inject extra lines.
 func place(buf []byte, startOneBased, width int, value string) {
 	begin := startOneBased - 1
-	for i := 0; i < width; i++ {
-		if begin+i >= len(buf) {
-			break
+	if begin >= len(buf) {
+		return
+	}
+	width = min(width, len(buf)-begin)
+	if len(value) > width {
+		// Back off to a rune boundary so a multi-byte character isn't split.
+		for width > 0 && !utf8.RuneStart(value[width]) {
+			width--
 		}
-		if i < len(value) {
-			buf[begin+i] = value[i]
+		value = value[:width]
+	}
+	// positions beyond len(value) already hold the space from newBuf
+	for i := 0; i < len(value); i++ {
+		c := value[i]
+		if c < 0x20 || c == 0x7f {
+			c = ' '
 		}
-		// positions beyond len(value) already hold the space from newBuf
+		buf[begin+i] = c
 	}
 }
 
 // placeRight writes a right-justified, space-padded string at 1-indexed start.
 // Values longer than width are truncated to the rightmost characters.
 func placeRight(buf []byte, startOneBased, width int, value string) {
-	begin := startOneBased - 1
 	if len(value) > width {
 		value = value[len(value)-width:]
 	}
-	pad := width - len(value)
-	for i := 0; i < width; i++ {
-		if begin+i >= len(buf) {
-			break
-		}
-		if i < pad {
-			// leave the space from newBuf
-			_ = i
-		} else {
-			buf[begin+i] = value[i-pad]
-		}
-	}
+	place(buf, startOneBased+width-len(value), len(value), value)
 }
 
 // finalizeLine appends CRLF to the 160-byte buffer and returns the 162-byte
@@ -429,7 +495,7 @@ func encodeStroke(s meetfiles.Stroke) string {
 //   - 10+ minute times:     "mm:ss.hh" (exactly 8 chars, no trailing space)
 //   - Special/blank codes:  left-justified, right-padded to 8 chars ("NT      ")
 func encodeTime(t meetfiles.Time) string {
-	if !t.Valid {
+	if !t.Valid || math.IsNaN(t.Seconds) || math.IsInf(t.Seconds, 0) || t.Seconds < 0 {
 		raw := strings.TrimSpace(t.Raw)
 		if raw == "" {
 			raw = "NT"
@@ -437,6 +503,11 @@ func encodeTime(t meetfiles.Time) string {
 		return fmt.Sprintf("%-8s", raw)
 	}
 
+	// The 8-char field holds at most "99:59.99"; anything of 100 minutes or
+	// more cannot be represented and is written as "NT" rather than truncated.
+	if t.Seconds >= 100*60-0.005 {
+		return fmt.Sprintf("%-8s", "NT")
+	}
 	totalHundredths := int(math.Round(t.Seconds * 100)) // convert decimal seconds to integer hundredths
 	minutes := totalHundredths / 6000
 	remaining := totalHundredths % 6000

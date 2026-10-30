@@ -201,7 +201,7 @@ func (s *Service) CreateDataExportRequest(orgID, householdID, requestedBy string
 	}
 	if s.repo != nil {
 		if err := s.repo.UpsertDataExportRequest(context.Background(), req); err != nil {
-			slog.Error("compliance: persist data export request", "err", err)
+			return nil, fmt.Errorf("persist data export request: %w", err)
 		}
 	}
 	s.mu.Lock()
@@ -316,7 +316,7 @@ func (s *Service) CreateDataDeletionRequest(orgID, householdID, requestedBy, rea
 	}
 	if s.repo != nil {
 		if err := s.repo.UpsertDataDeletionRequest(context.Background(), req); err != nil {
-			slog.Error("compliance: persist data deletion request", "err", err)
+			return nil, fmt.Errorf("persist data deletion request: %w", err)
 		}
 	}
 	s.mu.Lock()

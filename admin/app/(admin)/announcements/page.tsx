@@ -19,6 +19,7 @@ import {
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { formatDateTime } from '@/lib/dates'
 import { FIELD_INPUT_STYLE } from '@/lib/form-styles'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 export default function AnnouncementsPage() {
   const toast = useToast()
@@ -197,7 +198,7 @@ export default function AnnouncementsPage() {
 
       <div className="card" style={{ overflow: 'hidden' }}>
         {loading ? (
-          <div className="u-p-20px" ><EmptyState icon="megaphone" title="Loading announcements" description="Fetching the club's announcement feed." /></div>
+          <div className="u-p-20px" ><PageSkeleton variant="table" noHeader rows={4} /></div>
         ) : visibleAnnouncements.length === 0 ? (
           <div className="u-p-20px" >
             <EmptyState

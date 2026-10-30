@@ -215,25 +215,7 @@ func createInvoiceForHouseholdWithDueDate(t *testing.T, router http.Handler, tok
 
 func createInvoice(t *testing.T, router http.Handler, token, orgID, number string) invoiceEnvelope {
 	t.Helper()
-	body := billingBody(map[string]any{
-		"household_id":   "hh-001",
-		"invoice_number": number,
-		"notes":          "test invoice",
-	})
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/invoices", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Org-Id", orgID)
-	req.Header.Set("Authorization", "Bearer "+token)
-	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, req)
-	if rr.Code != http.StatusCreated {
-		t.Fatalf("createInvoice: expected 201, got %d: %s", rr.Code, rr.Body.String())
-	}
-	var env invoiceEnvelope
-	if err := json.NewDecoder(rr.Body).Decode(&env); err != nil {
-		t.Fatalf("createInvoice decode: %v", err)
-	}
-	return env
+	return createInvoiceForHousehold(t, router, token, orgID, "hh-001", number)
 }
 
 func addItem(t *testing.T, router http.Handler, token, orgID, invoiceID string, unitCents int) invoiceItemEnvelope {

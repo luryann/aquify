@@ -14,6 +14,7 @@ import {
 } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { formatSwimTime } from '@/lib/performanceData'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 function eventKeyFor(record: ProgressionResultRecord): string {
   return `${record.distance} ${record.stroke} ${record.course}`
@@ -253,7 +254,7 @@ export default function PerformanceVisualizationPage() {
       ) : null}
 
       {loading ? (
-        <EmptyState icon="bar-chart-2" title="Loading analytics" description="Aggregating performance data across swimmers." />
+        <PageSkeleton variant="list" noHeader rows={4} />
       ) : snapshots.length === 0 ? (
         <EmptyState icon="bar-chart-2" title="No performance data yet" description="Add swimmers and results to populate this visualization." />
       ) : (

@@ -73,6 +73,15 @@ func deleteFixtures(t *testing.T, pool *pgxpool.Pool, orgID string, queries []st
 	t.Cleanup(func() { run(t.Errorf) })
 }
 
+// seedRow runs a fixture INSERT and fails the test if it errors, so a bad seed
+// surfaces here instead of as a confusing FK violation later.
+func seedRow(t *testing.T, pool *pgxpool.Pool, query string, args ...any) {
+	t.Helper()
+	if _, err := pool.Exec(context.Background(), query, args...); err != nil {
+		t.Fatalf("seed fixture (%s): %v", query, err)
+	}
+}
+
 // testOrgID is a valid UUID for integration tests.
 const testOrgID = "10000000-0000-0000-0000-000000000001"
 
@@ -1019,14 +1028,13 @@ func TestDBRepoPerformance_RoundTrip(t *testing.T) {
 
 func seedPerformancePrereqs(t *testing.T, pool *pgxpool.Pool, orgID, swimmerID, meetID string) {
 	t.Helper()
-	ctx := context.Background()
 	// Household
 	householdID := "20000000-0000-0000-0000-000000000003"
-	pool.Exec(ctx, `INSERT INTO households (id, org_id, household_name, status) VALUES ($1::uuid, $2::uuid, 'Perf Test', 'active') ON CONFLICT DO NOTHING`, householdID, orgID)
+	seedRow(t, pool, `INSERT INTO households (id, org_id, household_name, status) VALUES ($1::uuid, $2::uuid, 'Perf Test', 'active') ON CONFLICT DO NOTHING`, householdID, orgID)
 	// Swimmer
-	pool.Exec(ctx, `INSERT INTO swimmers (id, org_id, household_id, first_name, last_name, date_of_birth, gender, registration_status) VALUES ($1::uuid, $2::uuid, $3::uuid, 'Perf', 'Swimmer', '2010-01-01', 'female', 'active') ON CONFLICT DO NOTHING`, swimmerID, orgID, householdID)
+	seedRow(t, pool, `INSERT INTO swimmers (id, org_id, household_id, first_name, last_name, date_of_birth, gender, registration_status) VALUES ($1::uuid, $2::uuid, $3::uuid, 'Perf', 'Swimmer', '2010-01-01', 'female', 'active') ON CONFLICT DO NOTHING`, swimmerID, orgID, householdID)
 	// Meet
-	pool.Exec(ctx, `INSERT INTO meets (id, org_id, name, meet_type, course, status) VALUES ($1::uuid, $2::uuid, 'Perf Meet', 'invitational', 'SCY', 'draft') ON CONFLICT DO NOTHING`, meetID, orgID)
+	seedRow(t, pool, `INSERT INTO meets (id, org_id, name, meet_type, course, status) VALUES ($1::uuid, $2::uuid, 'Perf Meet', 'invitational', 'SCY', 'draft') ON CONFLICT DO NOTHING`, meetID, orgID)
 }
 
 func cleanupPerformanceFixtures(t *testing.T, pool *pgxpool.Pool, orgID string) {
@@ -1051,7 +1059,7 @@ func TestDBRepoBilling_RoundTrip(t *testing.T) {
 	// Need a household in DB for FK.
 	householdID := "30000000-0000-0000-0000-000000000001"
 	ctx := context.Background()
-	pool.Exec(ctx, `INSERT INTO households (id, org_id, household_name, status) VALUES ($1::uuid, $2::uuid, 'Billing Test', 'active') ON CONFLICT DO NOTHING`, householdID, testOrgID)
+	seedRow(t, pool, `INSERT INTO households (id, org_id, household_name, status) VALUES ($1::uuid, $2::uuid, 'Billing Test', 'active') ON CONFLICT DO NOTHING`, householdID, testOrgID)
 
 	svc := billing.NewServiceWithPool(pool)
 	inv, err := svc.CreateInvoice(testOrgID, admin.UserID, admin, billing.CreateInvoiceInput{
@@ -1166,7 +1174,7 @@ func TestDBRepoCompliance_RoundTrip(t *testing.T) {
 	// Need a household.
 	householdID := "40000000-0000-0000-0000-000000000001"
 	ctx := context.Background()
-	pool.Exec(ctx, `INSERT INTO households (id, org_id, household_name, status) VALUES ($1::uuid, $2::uuid, 'Compliance Test', 'active') ON CONFLICT DO NOTHING`, householdID, testOrgID)
+	seedRow(t, pool, `INSERT INTO households (id, org_id, household_name, status) VALUES ($1::uuid, $2::uuid, 'Compliance Test', 'active') ON CONFLICT DO NOTHING`, householdID, testOrgID)
 
 	svc := compliance.NewServiceWithPool(pool, 30, 14)
 	req, err := svc.CreateDataExportRequest(testOrgID, householdID, "admin-user")
@@ -1192,7 +1200,7 @@ func TestDBRepoCompliance_RoundTrip(t *testing.T) {
 
 	// Cleanup household
 	t.Cleanup(func() {
-		pool.Exec(ctx, "DELETE FROM households WHERE id = $1::uuid", householdID)
+		_, _ = pool.Exec(ctx, "DELETE FROM households WHERE id = $1::uuid", householdID)
 	})
 }
 
@@ -1217,7 +1225,7 @@ func TestDBRepoExports_RoundTrip(t *testing.T) {
 	// Need a meet in DB for FK.
 	meetID := "50000000-0000-0000-0000-000000000001"
 	ctx := context.Background()
-	pool.Exec(ctx, `INSERT INTO meets (id, org_id, name, meet_type, course, status) VALUES ($1::uuid, $2::uuid, 'Export Test Meet', 'invitational', 'SCY', 'published') ON CONFLICT DO NOTHING`, meetID, testOrgID)
+	seedRow(t, pool, `INSERT INTO meets (id, org_id, name, meet_type, course, status) VALUES ($1::uuid, $2::uuid, 'Export Test Meet', 'invitational', 'SCY', 'published') ON CONFLICT DO NOTHING`, meetID, testOrgID)
 
 	store := storage.NewStubStorage("")
 	svc := exports.NewServiceWithPool(pool, store)
@@ -1251,15 +1259,11 @@ func TestDBRepoExports_RoundTrip(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
-		pool.Exec(ctx, "DELETE FROM meets WHERE id = $1::uuid", meetID)
+		_, _ = pool.Exec(ctx, "DELETE FROM meets WHERE id = $1::uuid", meetID)
 	})
 }
 
 func cleanupExportsFixtures(t *testing.T, pool *pgxpool.Pool, orgID string) {
 	t.Helper()
-	ctx := context.Background()
-	pool.Exec(ctx, "DELETE FROM file_exports WHERE org_id = $1::uuid", orgID)
+	deleteFixtures(t, pool, orgID, []string{"DELETE FROM file_exports WHERE org_id = $1::uuid"})
 }
-
-// Placeholder to avoid import errors when DATABASE_URL is absent.
-var _ = time.Now

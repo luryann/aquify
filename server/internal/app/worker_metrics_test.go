@@ -53,3 +53,23 @@ func TestWithJobMetricsLeavesRegistrarAloneWithoutMetrics(t *testing.T) {
 		t.Fatal("registrar must be returned unchanged when metrics are nil")
 	}
 }
+
+func TestInstrumentHandlerCountsPanicAsFailure(t *testing.T) {
+	t.Parallel()
+	m := telemetry.NewMetrics()
+	h := instrumentHandler(m, "exports:panic", func(context.Context, *workers.Task) error { panic("boom") })
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Error("panic must keep propagating to the worker")
+			}
+		}()
+		_ = h(context.Background(), &workers.Task{})
+	}()
+
+	rec := httptest.NewRecorder()
+	m.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
+	if want := `dare_job_executions_total{status="failure",type="exports:panic"} 1`; !strings.Contains(rec.Body.String(), want) {
+		t.Errorf("metrics output missing %q", want)
+	}
+}

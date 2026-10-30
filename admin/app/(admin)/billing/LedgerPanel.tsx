@@ -8,6 +8,7 @@ import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
 import { fetchHouseholds, fetchInvoicesForHousehold, fetchLedgerEvents, type HouseholdRecord, type InvoiceRecord, type LedgerEventRecord } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 type LedgerEventRow = {
   id: string
@@ -150,7 +151,7 @@ export function LedgerPanel() {
       </div>
 
       {loading ? (
-        <EmptyState icon="book-open" title="Loading ledger events" description="Fetching ledger data from the API." />
+        <PageSkeleton variant="table" noHeader rows={4} />
       ) : error ? (
         <EmptyState icon="alert-circle" title="Unable to load ledger events" description={error} />
       ) : (

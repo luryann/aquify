@@ -135,9 +135,9 @@ func (r *Repository) UpsertSwimmer(ctx context.Context, sw Swimmer) error {
 		INSERT INTO swimmers (id, org_id, household_id, first_name, last_name, preferred_name,
 		                      date_of_birth, gender, swimmer_external_id, usa_swimming_id, registration_status,
 		                      medical_flags, notes, emergency_contact_name, emergency_contact_phone,
-		                      emergency_contact_relationship, allergies, keycloak_user_id, created_at, updated_at)
+		                      emergency_contact_relationship, allergies, keycloak_user_id, created_at, updated_at, portal_access_disabled)
 		VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7::date, $8, $9, $10, $11,
-		        $12::jsonb, $13, $14, $15, $16, $17, $18, $19, $20)
+		        $12::jsonb, $13, $14, $15, $16, $17, $18, $19, $20, $21)
 		ON CONFLICT (id) DO UPDATE SET
 		  first_name                     = EXCLUDED.first_name,
 		  last_name                      = EXCLUDED.last_name,
@@ -154,6 +154,7 @@ func (r *Repository) UpsertSwimmer(ctx context.Context, sw Swimmer) error {
 		  emergency_contact_relationship = EXCLUDED.emergency_contact_relationship,
 		  allergies                      = EXCLUDED.allergies,
 		  keycloak_user_id               = EXCLUDED.keycloak_user_id,
+		  portal_access_disabled         = EXCLUDED.portal_access_disabled,
 		  updated_at                     = EXCLUDED.updated_at`,
 		sw.ID, sw.OrgID, sw.HouseholdID,
 		sw.FirstName, sw.LastName, dbutil.NullableString(sw.PreferredName),
@@ -163,7 +164,7 @@ func (r *Repository) UpsertSwimmer(ctx context.Context, sw Swimmer) error {
 		dbutil.NullableString(sw.EmergencyContactName), dbutil.NullableString(sw.EmergencyContactPhone),
 		dbutil.NullableString(sw.EmergencyContactRelationship), dbutil.NullableString(sw.Allergies),
 		dbutil.NullableString(sw.KeycloakUserID),
-		sw.CreatedAt, sw.UpdatedAt,
+		sw.CreatedAt, sw.UpdatedAt, sw.PortalAccessDisabled,
 	)
 	return err
 }
@@ -413,7 +414,7 @@ func loadSwimmersInTx(ctx context.Context, tx pgx.Tx) ([]Swimmer, error) {
 		       medical_flags::text, COALESCE(notes, ''),
 		       COALESCE(emergency_contact_name, ''), COALESCE(emergency_contact_phone, ''),
 		       COALESCE(emergency_contact_relationship, ''), COALESCE(allergies, ''),
-		       COALESCE(keycloak_user_id, ''), created_at, updated_at
+		       COALESCE(keycloak_user_id, ''), created_at, updated_at, portal_access_disabled
 		FROM swimmers WHERE deleted_at IS NULL`)
 	if err != nil {
 		return nil, fmt.Errorf("members: load swimmers: %w", err)
@@ -430,7 +431,7 @@ func loadSwimmersInTx(ctx context.Context, tx pgx.Tx) ([]Swimmer, error) {
 			&sw.EmergencyContactName, &sw.EmergencyContactPhone,
 			&sw.EmergencyContactRelationship, &sw.Allergies,
 			&sw.KeycloakUserID,
-			&sw.CreatedAt, &sw.UpdatedAt,
+			&sw.CreatedAt, &sw.UpdatedAt, &sw.PortalAccessDisabled,
 		); err != nil {
 			return sw, err
 		}

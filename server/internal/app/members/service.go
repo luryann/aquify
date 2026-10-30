@@ -211,28 +211,31 @@ type AddContactInput struct {
 }
 
 type Swimmer struct {
-	ID                           string    `json:"id"`
-	OrgID                        string    `json:"org_id"`
-	HouseholdID                  string    `json:"household_id"`
-	FirstName                    string    `json:"first_name"`
-	LastName                     string    `json:"last_name"`
-	PreferredName                string    `json:"preferred_name,omitempty"`
-	DateOfBirth                  string    `json:"date_of_birth"`
-	Gender                       string    `json:"gender"`
-	SwimmerExternalID            string    `json:"swimmer_external_id,omitempty"`
-	USASwimmingID                string    `json:"usa_swimming_id,omitempty"`
-	RegistrationStatus           string    `json:"registration_status"`
-	MedicalFlags                 []string  `json:"medical_flags,omitempty"`
-	Notes                        string    `json:"notes,omitempty"`
-	EmergencyContactName         string    `json:"emergency_contact_name,omitempty"`
-	EmergencyContactPhone        string    `json:"emergency_contact_phone,omitempty"`
-	EmergencyContactRelationship string    `json:"emergency_contact_relationship,omitempty"`
-	Allergies                    string    `json:"allergies,omitempty"`
-	KeycloakUserID               string    `json:"keycloak_user_id,omitempty"`
-	CreatedAt                    time.Time `json:"created_at"`
-	UpdatedAt                    time.Time `json:"updated_at"`
-	CreatedBy                    string    `json:"created_by"`
-	UpdatedBy                    string    `json:"updated_by"`
+	ID                           string   `json:"id"`
+	OrgID                        string   `json:"org_id"`
+	HouseholdID                  string   `json:"household_id"`
+	FirstName                    string   `json:"first_name"`
+	LastName                     string   `json:"last_name"`
+	PreferredName                string   `json:"preferred_name,omitempty"`
+	DateOfBirth                  string   `json:"date_of_birth"`
+	Gender                       string   `json:"gender"`
+	SwimmerExternalID            string   `json:"swimmer_external_id,omitempty"`
+	USASwimmingID                string   `json:"usa_swimming_id,omitempty"`
+	RegistrationStatus           string   `json:"registration_status"`
+	MedicalFlags                 []string `json:"medical_flags,omitempty"`
+	Notes                        string   `json:"notes,omitempty"`
+	EmergencyContactName         string   `json:"emergency_contact_name,omitempty"`
+	EmergencyContactPhone        string   `json:"emergency_contact_phone,omitempty"`
+	EmergencyContactRelationship string   `json:"emergency_contact_relationship,omitempty"`
+	Allergies                    string   `json:"allergies,omitempty"`
+	KeycloakUserID               string   `json:"keycloak_user_id,omitempty"`
+	// PortalAccessDisabled blocks this swimmer's own sign-in (swimmer role).
+	// Records, registrations and household workflows are unaffected.
+	PortalAccessDisabled bool      `json:"portal_access_disabled"`
+	CreatedAt            time.Time `json:"created_at"`
+	UpdatedAt            time.Time `json:"updated_at"`
+	CreatedBy            string    `json:"created_by"`
+	UpdatedBy            string    `json:"updated_by"`
 }
 
 type SwimmerView struct {
@@ -269,6 +272,7 @@ type UpdateSwimmerInput struct {
 	EmergencyContactPhone        *string
 	EmergencyContactRelationship *string
 	Allergies                    *string
+	PortalAccessDisabled         *bool
 }
 
 type SwimmerGroupLink struct {
@@ -580,6 +584,7 @@ func (s *Service) AnonymizeHousehold(orgID, householdID string) error {
 		s.contacts[id] = contact
 	}
 
+	erasedSwimmers := map[string]struct{}{}
 	for id, swimmer := range s.swimmers {
 		if swimmer.OrgID != orgID || swimmer.HouseholdID != household.ID {
 			continue
@@ -604,9 +609,52 @@ func (s *Service) AnonymizeHousehold(orgID, householdID string) error {
 			}
 		}
 		s.swimmers[id] = swimmer
+		erasedSwimmers[id] = struct{}{}
+	}
+
+	// The in-memory audit trail (also carried in the runtime snapshot) holds
+	// full name/DOB/ID snapshots from earlier swimmer edits; scrub them so
+	// erasure does not leave PII behind. The events themselves are retained.
+	for i, ev := range s.auditEvents {
+		if _, ok := erasedSwimmers[ev.SwimmerID]; !ok || ev.OrgID != orgID {
+			continue
+		}
+		ev.Before = scrubAuditPII(ev.Before)
+		ev.After = scrubAuditPII(ev.After)
+		ev.Metadata = scrubAuditPII(ev.Metadata)
+		s.auditEvents[i] = ev
 	}
 
 	return nil
+}
+
+// auditPIIKeys are the snapshot/metadata keys that carry directly identifying
+// swimmer data.
+var auditPIIKeys = map[string]struct{}{
+	"first_name": {}, "last_name": {}, "preferred_name": {}, "name": {}, "full_name": {},
+	"date_of_birth": {}, "swimmer_external_id": {}, "usa_swimming_id": {},
+	"medical_flags": {}, "notes": {}, "allergies": {},
+	"emergency_contact_name": {}, "emergency_contact_phone": {}, "emergency_contact_relationship": {},
+}
+
+// scrubAuditPII returns a copy of m with identifying values blanked.
+func scrubAuditPII(m map[string]any) map[string]any {
+	if m == nil {
+		return nil
+	}
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		if _, pii := auditPIIKeys[k]; pii {
+			if _, isString := v.(string); isString {
+				out[k] = ""
+			} else {
+				out[k] = nil
+			}
+			continue
+		}
+		out[k] = v
+	}
+	return out
 }
 
 func (s *Service) GetHousehold(principal *appmiddleware.Principal, orgID, householdID string) (Household, error) {
@@ -653,7 +701,7 @@ func (s *Service) ListHouseholds(principal *appmiddleware.Principal, orgID strin
 	}
 
 	allowedHouseholds := map[string]struct{}{}
-	if appmiddleware.HasAnyRole(principal, "parent") {
+	if isParentScoped(principal) {
 		allowedHouseholds = s.parentAllowedHouseholdsLocked(principal)
 	}
 
@@ -665,7 +713,7 @@ func (s *Service) ListHouseholds(principal *appmiddleware.Principal, orgID strin
 		if swimmerScopedHouseholdID != "" && household.ID != swimmerScopedHouseholdID {
 			continue
 		}
-		if appmiddleware.HasAnyRole(principal, "parent") {
+		if isParentScoped(principal) {
 			if _, ok := allowedHouseholds[household.ID]; !ok {
 				continue
 			}
@@ -791,7 +839,7 @@ func (s *Service) createSwimmer(principal *appmiddleware.Principal, orgID string
 	if swimmer.FirstName == "" || swimmer.LastName == "" || swimmer.HouseholdID == "" {
 		return Swimmer{}, SwimmerAuditEvent{}, errors.New("household_id, first_name, and last_name are required")
 	}
-	if appmiddleware.HasAnyRole(principal, "parent") && len(swimmer.MedicalFlags) > 0 {
+	if isParentScoped(principal) && len(swimmer.MedicalFlags) > 0 {
 		return Swimmer{}, SwimmerAuditEvent{}, ErrMedicalFlagsRestricted
 	}
 
@@ -894,7 +942,7 @@ func (s *Service) UpdateSwimmer(principal *appmiddleware.Principal, orgID, swimm
 	}
 	if input.RegistrationStatus != nil {
 		nextStatus := strings.TrimSpace(strings.ToLower(*input.RegistrationStatus))
-		if appmiddleware.HasAnyRole(principal, "parent") {
+		if isParentScoped(principal) {
 			return Swimmer{}, SwimmerAuditEvent{}, ErrForbidden
 		}
 		swimmer.RegistrationStatus = nextStatus
@@ -927,6 +975,14 @@ func (s *Service) UpdateSwimmer(principal *appmiddleware.Principal, orgID, swimm
 			return Swimmer{}, SwimmerAuditEvent{}, ErrAllergiesTooLong
 		}
 		swimmer.Allergies = nextAllergies
+	}
+	if input.PortalAccessDisabled != nil {
+		// Only staff and the swimmer's own household (parent) may change this;
+		// the swimmer-only guard above already refuses it for swimmer sessions.
+		if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent") {
+			return Swimmer{}, SwimmerAuditEvent{}, ErrForbidden
+		}
+		swimmer.PortalAccessDisabled = *input.PortalAccessDisabled
 	}
 
 	if swimmer.FirstName == "" || swimmer.LastName == "" {
@@ -1092,36 +1148,50 @@ func (s *Service) AssignSwimmerToGroup(principal *appmiddleware.Principal, orgID
 		return SwimmerGroupLink{}, errors.New("group_code is required")
 	}
 
+	var existing *SwimmerGroupLink
 	for _, link := range s.swimmerGroupLinks {
 		if link.OrgID == orgID && link.SwimmerID == swimmer.ID && link.GroupCode == groupCode {
-			return link, nil
+			existing = &link
+			break
 		}
+	}
+	// Re-assigning an existing group is a no-op unless it promotes the link to primary.
+	if existing != nil && (!input.IsPrimary || existing.IsPrimary) {
+		return *existing, nil
 	}
 
 	now := time.Now().UTC()
-	// Making this link primary demotes the swimmer's current primary link. Both
-	// changes are persisted before memory changes, and the demotion is undone in
-	// the database if the new link cannot be saved.
-	var demoted []SwimmerGroupLink
-	if input.IsPrimary {
-		for _, link := range s.swimmerGroupLinks {
-			if link.OrgID == orgID && link.SwimmerID == swimmer.ID && link.IsPrimary {
-				demoted = append(demoted, link)
-			}
+	var link SwimmerGroupLink
+	if existing != nil {
+		link = *existing
+		link.IsPrimary = true
+		link.UpdatedAt = now
+		link.UpdatedBy = principal.UserID
+	} else {
+		link = SwimmerGroupLink{
+			ID:         s.newID("swg_"),
+			OrgID:      orgID,
+			SwimmerID:  swimmer.ID,
+			GroupCode:  groupCode,
+			IsPrimary:  input.IsPrimary,
+			AssignedAt: now,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+			CreatedBy:  principal.UserID,
+			UpdatedBy:  principal.UserID,
 		}
 	}
 
-	link := SwimmerGroupLink{
-		ID:         s.newID("swg_"),
-		OrgID:      orgID,
-		SwimmerID:  swimmer.ID,
-		GroupCode:  groupCode,
-		IsPrimary:  input.IsPrimary,
-		AssignedAt: now,
-		CreatedAt:  now,
-		UpdatedAt:  now,
-		CreatedBy:  principal.UserID,
-		UpdatedBy:  principal.UserID,
+	// Making this link primary demotes the swimmer's current primary link. Both
+	// changes are persisted before memory changes, and the demotion is undone in
+	// the database if the link cannot be saved.
+	var demoted []SwimmerGroupLink
+	if link.IsPrimary {
+		for _, other := range s.swimmerGroupLinks {
+			if other.OrgID == orgID && other.SwimmerID == swimmer.ID && other.IsPrimary && other.ID != link.ID {
+				demoted = append(demoted, other)
+			}
+		}
 	}
 	updatedLinks := make([]SwimmerGroupLink, 0, len(demoted))
 	for _, previous := range demoted {
@@ -1183,7 +1253,7 @@ func (s *Service) ListSwimmers(principal *appmiddleware.Principal, orgID string,
 		householdFilter = swimmerHouseholdID
 	}
 	allowedHouseholds := map[string]struct{}{}
-	if appmiddleware.HasAnyRole(principal, "parent") {
+	if isParentScoped(principal) {
 		allowedHouseholds = s.parentAllowedHouseholdsLocked(principal)
 		if householdFilter != "" {
 			if _, ok := allowedHouseholds[householdFilter]; !ok {
@@ -1206,7 +1276,7 @@ func (s *Service) ListSwimmers(principal *appmiddleware.Principal, orgID string,
 		if statusFilter != "" && swimmer.RegistrationStatus != statusFilter {
 			continue
 		}
-		if appmiddleware.HasAnyRole(principal, "parent") {
+		if isParentScoped(principal) {
 			if _, ok := allowedHouseholds[swimmer.HouseholdID]; !ok {
 				continue
 			}
@@ -1246,7 +1316,7 @@ func (s *Service) ListSwimmerGroupLinks(principal *appmiddleware.Principal, orgI
 	}
 
 	allowedHouseholds := map[string]struct{}{}
-	if appmiddleware.HasAnyRole(principal, "parent") {
+	if isParentScoped(principal) {
 		allowedHouseholds = s.parentAllowedHouseholdsLocked(principal)
 	}
 
@@ -1262,7 +1332,7 @@ func (s *Service) ListSwimmerGroupLinks(principal *appmiddleware.Principal, orgI
 		if swimmerScopedHouseholdID != "" && swimmer.HouseholdID != swimmerScopedHouseholdID {
 			continue
 		}
-		if appmiddleware.HasAnyRole(principal, "parent") {
+		if isParentScoped(principal) {
 			if _, ok := allowedHouseholds[swimmer.HouseholdID]; !ok {
 				continue
 			}
@@ -1302,11 +1372,18 @@ func (s *Service) parentAllowedHouseholdsLocked(principal *appmiddleware.Princip
 	return out
 }
 
+// isParentScoped reports whether household scoping applies to the principal.
+// Scoping follows the highest role (admin > coach > parent > swimmer): a user
+// who holds admin or coach in addition to parent keeps org-wide access.
+func isParentScoped(principal *appmiddleware.Principal) bool {
+	return appmiddleware.HasAnyRole(principal, "parent") && !appmiddleware.HasAnyRole(principal, "admin", "coach")
+}
+
 func (s *Service) enforceParentHouseholdAccess(principal *appmiddleware.Principal, householdID string) error {
 	if principal == nil {
 		return ErrForbidden
 	}
-	if !appmiddleware.HasAnyRole(principal, "parent") {
+	if !isParentScoped(principal) {
 		return nil
 	}
 	if _, ok := s.parentAllowedHouseholdsLocked(principal)[householdID]; !ok {
@@ -1738,6 +1815,8 @@ func swimmerSnapshot(swimmer Swimmer) map[string]any {
 		"medical_flags":       append([]string{}, swimmer.MedicalFlags...),
 		"notes":               swimmer.Notes,
 		"household_id":        swimmer.HouseholdID,
+
+		"portal_access_disabled": swimmer.PortalAccessDisabled,
 	}
 }
 
@@ -1764,4 +1843,16 @@ func randomToken(byteLen int) string {
 		panic(fmt.Errorf("secure random unavailable for member token generation: %w", err))
 	}
 	return hex.EncodeToString(raw)
+}
+
+// SwimmerPortalDisabled reports whether the swimmer's own sign-in has been
+// turned off. Unknown swimmers report false (the org-level switch still applies).
+func (s *Service) SwimmerPortalDisabled(orgID, swimmerID string) (bool, error) {
+	if err := s.syncFromDB(context.Background()); err != nil {
+		return false, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	swimmer, ok := s.swimmerLocked(orgID, strings.TrimSpace(swimmerID))
+	return ok && swimmer.PortalAccessDisabled, nil
 }

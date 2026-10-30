@@ -236,7 +236,8 @@ func TestCreateMeet_WithNestedSessionsEventsAndSignupSettings(t *testing.T) {
 		t.Fatalf("len(events) = %d, want 2", len(eventsPayload.Events))
 	}
 	for _, event := range eventsPayload.Events {
-		if event["event_number"] == "1" && event["session_id"] == "" {
+		// A missing session_id decodes to nil, so assert on the string value.
+		if sessionID, _ := event["session_id"].(string); event["event_number"] == "1" && sessionID == "" {
 			t.Fatalf("expected parsed session-bound event to retain session id: %#v", event)
 		}
 	}

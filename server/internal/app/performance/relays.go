@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
 )
@@ -559,7 +560,7 @@ func (s *Service) normalizeLineup(orgID string, in RelayLineupInput, dir directo
 	if err := (RelaySpec{RelayType: in.RelayType, Distance: in.Distance, Gender: in.Gender, Teams: 1}).validate(); err != nil {
 		return in, err
 	}
-	if len(in.Name) > 120 || len(in.Notes) > 1000 {
+	if utf8.RuneCountInString(in.Name) > 120 || utf8.RuneCountInString(in.Notes) > 1000 {
 		return in, fmt.Errorf("%w: name/notes too long", ErrRelayInvalid)
 	}
 	if len(in.Teams) == 0 || len(in.Teams) > maxRelayTeams {
@@ -615,8 +616,7 @@ func (s *Service) ListRelayLineups(orgID string, principal *appmiddleware.Princi
 	out := []*RelayLineup{}
 	for _, l := range s.lineups {
 		if l.OrgID == orgID && (meetID == "" || l.MeetID == meetID) {
-			cp := *l
-			out = append(out, &cp)
+			out = append(out, copyLineup(l))
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
@@ -648,7 +648,7 @@ func (s *Service) SaveRelayLineup(orgID, actorID string, principal *appmiddlewar
 		l.ID, l.CreatedAt, l.CreatedBy = existing.ID, existing.CreatedAt, existing.CreatedBy
 	}
 	l.MeetID, l.Name, l.Course, l.Gender, l.AgeGroup = norm.MeetID, norm.Name, norm.Course, norm.Gender, norm.AgeGroup
-	l.RelayType, l.Distance, l.Teams, l.Notes = norm.RelayType, norm.Distance, norm.Teams, norm.Notes
+	l.RelayType, l.Distance, l.Teams, l.Notes = norm.RelayType, norm.Distance, copyLineup(&RelayLineup{Teams: norm.Teams}).Teams, norm.Notes
 	l.UpdatedAt, l.UpdatedBy = now, actorID
 	if l.Name == "" {
 		gender := map[string]string{"M": "Men", "F": "Women", "X": "Mixed"}[l.Gender]
@@ -661,8 +661,18 @@ func (s *Service) SaveRelayLineup(orgID, actorID string, principal *appmiddlewar
 	}
 	s.lineups[l.ID] = l
 	s.appendAuditLocked(orgID, actorID, "relay_lineup.saved", "relay_lineup", l.ID, map[string]any{"meet_id": l.MeetID})
+	return copyLineup(l), nil
+}
+
+// copyLineup deep-copies a lineup so callers never alias the stored Teams/Legs.
+func copyLineup(l *RelayLineup) *RelayLineup {
 	cp := *l
-	return &cp, nil
+	cp.Teams = make([]RelayTeam, len(l.Teams))
+	for i, t := range l.Teams {
+		t.Legs = append([]RelayLeg(nil), t.Legs...)
+		cp.Teams[i] = t
+	}
+	return &cp
 }
 
 // DeleteRelayLineup removes a saved lineup. Staff only.

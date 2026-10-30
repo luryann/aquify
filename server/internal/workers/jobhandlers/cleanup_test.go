@@ -349,3 +349,52 @@ func TestProcessDataDeletionHandler_ErasesCrossDomainRecords(t *testing.T) {
 		t.Fatal("expected Keycloak user account to be deleted")
 	}
 }
+
+type flakyDeleteStore struct {
+	*storage.StubStorage
+	failures int
+}
+
+func (f *flakyDeleteStore) Delete(key string) error {
+	if f.failures > 0 {
+		f.failures--
+		return io.ErrUnexpectedEOF
+	}
+	return f.StubStorage.Delete(key)
+}
+
+// A failed object delete must leave the artifact pending (not marked expired)
+// so the next sweep retries it, instead of dropping the object.
+func TestPurgeExpiredFilesHandler_RetriesFailedStorageDelete(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	store := &flakyDeleteStore{StubStorage: storage.NewStubStorage(""), failures: 1}
+	exportsService := exports.NewServiceWithStorage(store)
+	principal := &appmiddleware.Principal{UserID: "admin-user", OrgID: "org-retry", Roles: []string{"admin"}}
+	exportsService.ConfigureArtifactTTL(time.Millisecond)
+	rec, _, err := exportsService.GenerateExport(principal, "org-retry", "meet-retry", exports.ReportInput{
+		ReportType: exports.ReportTypeEvent,
+		Meet:       exports.ReportMeet{Name: "Retry Meet", StartDate: "2026-03-15", EndDate: "2026-03-16", Course: "SCY"},
+	})
+	if err != nil {
+		t.Fatalf("GenerateExport: %v", err)
+	}
+	time.Sleep(5 * time.Millisecond)
+
+	task, _ := workers.NewTask(workers.TypePurgeExpiredFiles, PurgeExpiredFilesPayload{OrgID: "org-retry"})
+	handler := PurgeExpiredFilesHandler(logger, exportsService, nil)
+
+	if err := handler(context.Background(), task); err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+	if exists, _ := store.Exists(context.Background(), rec.StorageKey); !exists {
+		t.Fatal("object should still exist after failed delete")
+	}
+	if err := handler(context.Background(), task); err != nil {
+		t.Fatalf("retry run: %v", err)
+	}
+	if exists, _ := store.Exists(context.Background(), rec.StorageKey); exists {
+		t.Fatal("object should be deleted by the retry")
+	}
+}

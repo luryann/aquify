@@ -12,6 +12,7 @@ import { useApiClient } from '@/lib/api'
 import { fetchMeetCommitments, fetchMeetEntries, fetchMeetEvents, fetchMeets, type MeetRecord } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { COURSE_LABELS } from '@/lib/meet-events'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 type MeetStatus = 'draft' | 'published' | 'commitment_open' | 'commitment_closed' | 'entry_finalized' | 'completed' | 'archived'
 type MeetCourse = 'SCY' | 'SCM' | 'LCM'
@@ -224,7 +225,7 @@ function MeetsPageContent() {
       </div>
 
       {loading ? (
-        <EmptyState icon="calendar" title="Loading meets" description="Fetching your meets." />
+        <PageSkeleton variant="table" noHeader rows={4} />
       ) : error ? (
         <EmptyState icon="alert-circle" title="Unable to load meets" description={error} />
       ) : (

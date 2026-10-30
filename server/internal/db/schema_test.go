@@ -35,6 +35,7 @@ func TestMissingExpectedColumnsReturnsSortedMissingList(t *testing.T) {
 		"email_campaigns.deleted_at",
 		"entries.entry_time_ms",
 		"entries.notes",
+		"entries.scratch_reason",
 		"file_exports.expires_at",
 		"file_exports.last_error",
 		"ledger_events.household_id",

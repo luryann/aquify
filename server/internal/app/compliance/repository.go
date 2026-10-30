@@ -30,6 +30,7 @@ func (r *Repository) UpsertDataExportRequest(ctx context.Context, req *DataExpor
 		  status       = EXCLUDED.status,
 		  download_url = EXCLUDED.download_url,
 		  completed_at = EXCLUDED.completed_at,
+		  expires_at   = EXCLUDED.expires_at,
 		  updated_at   = EXCLUDED.updated_at`,
 		req.ID, req.OrgID, req.HouseholdID, req.RequestedBy, req.Status,
 		dbutil.NullableString(req.DownloadURL), req.RequestedAt, req.CompletedAt, req.ExpiresAt,

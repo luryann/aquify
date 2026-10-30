@@ -16,6 +16,7 @@ import { addDaysISO } from '@/lib/workout-format'
 import { WorkoutSheet } from '@/components/training/WorkoutSheet'
 import './page.inline.css'
 import { LoadErrorBanner } from '@/components/ui/LoadErrorBanner'
+import { Modal } from '@/components/ui/Modal'
 import { localToday } from '@/lib/dates'
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -329,6 +330,7 @@ export default function CalendarPage() {
   const [viewMonth, setViewMonth] = useState(today.getMonth())
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [view, setView] = useState<'month' | 'week'>('month')
+  const [shareOpen, setShareOpen] = useState(false)
   const [typeFilter, setTypeFilter] = useState<EventType | 'all'>('all')
 
   // Responsive: track viewport width to reflow sidebar below calendar on mobile.
@@ -414,10 +416,13 @@ export default function CalendarPage() {
       <div
         className="is-f7be90b"
       >
-        <div>
+        <div className="u-gap-12px" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
           <h1 className="page-title">
             Calendar
           </h1>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShareOpen(true)}>
+            <Icon name="calendar" size={13} /> Share
+          </button>
         </div>
 
         {/* View toggle */}
@@ -786,9 +791,13 @@ export default function CalendarPage() {
           )}
         </div>
 
+        {/* Calendar subscription lives behind the Share button so it is not always on screen */}
+        <Modal open={shareOpen} onClose={() => setShareOpen(false)} title="Add to your phone’s calendar">
+          <CalendarSubscribeCard api={api} orgId={orgId} />
+        </Modal>
+
         {/* ── SIDEBAR ──────────────────────────────────────────────── */}
         <div className="is-8ef476f">
-          <CalendarSubscribeCard api={api} orgId={orgId} />
           {/* Selected day detail */}
           {selectedDate && selectedEvents.length > 0 && (
             <div

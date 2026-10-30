@@ -109,7 +109,8 @@ func (s *Service) Create(orgID, name, startDate, endDate, status, goals, created
 	s.mu.Lock()
 	s.seasons[id] = season
 	s.mu.Unlock()
-	return season, nil
+	cp := *season
+	return &cp, nil
 }
 
 // List returns all seasons for an org, sorted newest-first by start date.
@@ -189,19 +190,14 @@ func applyUpdates(season *Season, updates SeasonUpdates) error {
 // Update applies SeasonUpdates to an existing season.
 func (s *Service) Update(orgID, id string, updates SeasonUpdates, updatedBy string) (*Season, error) {
 	if s.repo != nil {
-		season, err := s.repo.GetByID(context.Background(), orgID, id)
-		if err != nil {
-			return nil, err
-		}
-		if err := applyUpdates(season, updates); err != nil {
-			return nil, err
-		}
-		season.UpdatedAt = time.Now().UTC()
-		season.UpdatedBy = updatedBy
-		if err := s.repo.Upsert(context.Background(), season); err != nil {
-			return nil, err
-		}
-		return s.repo.GetByID(context.Background(), orgID, id)
+		return s.repo.UpdateTx(context.Background(), orgID, id, func(season *Season) error {
+			if err := applyUpdates(season, updates); err != nil {
+				return err
+			}
+			season.UpdatedAt = time.Now().UTC()
+			season.UpdatedBy = updatedBy
+			return nil
+		})
 	}
 
 	s.mu.Lock()
@@ -224,9 +220,6 @@ func (s *Service) Update(orgID, id string, updates SeasonUpdates, updatedBy stri
 // Delete permanently removes a season record.
 func (s *Service) Delete(orgID, id string) error {
 	if s.repo != nil {
-		if _, err := s.repo.GetByID(context.Background(), orgID, id); err != nil {
-			return err
-		}
 		return s.repo.Delete(context.Background(), orgID, id)
 	}
 

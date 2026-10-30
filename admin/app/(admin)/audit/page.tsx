@@ -7,6 +7,7 @@ import { useSession } from '@/lib/session'
 import { useApiClient } from '@/lib/api'
 import { displayNameForUser, fetchAuditEvents, fetchUsers, type AuditEventRecord } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 function formatDateTime(value: string) {
   return new Date(value).toLocaleString('en-US', {
@@ -175,7 +176,7 @@ export default function AuditLogPage() {
       ) : null}
 
       {loading ? (
-        <EmptyState icon="shield-check" title="Loading audit events" description="Querying the live audit log for this organisation." />
+        <PageSkeleton variant="table" noHeader rows={4} />
       ) : filtered.length === 0 ? (
         <EmptyState icon="shield-check" title="No audit events found" description="Try widening the filters or generate activity in the admin console." />
       ) : (

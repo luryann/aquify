@@ -337,3 +337,52 @@ func TestReportsSurfaceRosterErrors(t *testing.T) {
 		t.Fatalf("revenue: want roster error, got %v", err)
 	}
 }
+
+func TestRunScheduledBillingUsesUTCDay(t *testing.T) {
+	svc := NewService()
+	svc.SetRosterSource(func(string) (RosterSnapshot, error) { return finRoster(), nil })
+	if _, err := svc.CreateFeeSchedule(finOrg, "admin-1", finAdmin, FeeScheduleInput{
+		Name: "Silver dues", Kind: "dues", GroupCode: "SILVER", Frequency: "monthly", AmountCents: 15000,
+		StartDate: "2026-09-01", Proration: "daily", AutoBill: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := svc.UpdateBillingSettings(finOrg, "admin-1", finAdmin, BillingSettingsInput{
+		LateFeeType: LateFeeTypeFlat, AutoRunEnabled: true, AutoRunDay: 1, AutoRunInvoiceStatus: "draft", AutoRunDueDays: 10,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// 2026-11-01 01:00 at UTC+10 is still 2026-10-31 in UTC.
+	local := time.Date(2026, 11, 1, 1, 0, 0, 0, time.FixedZone("AEST", 10*3600))
+	res, err := svc.RunScheduledBilling(finOrg, local)
+	if err != nil || res == nil {
+		t.Fatalf("run: %v %v", res, err)
+	}
+	if res.Run.AsOf != "2026-10-31" {
+		t.Fatalf("as_of must be the UTC date, got %s", res.Run.AsOf)
+	}
+}
+
+func TestUpsertAutopayValidatesExpiryAndHousehold(t *testing.T) {
+	svc := NewService()
+	svc.SetRosterSource(func(string) (RosterSnapshot, error) { return finRoster(), nil })
+	base := UpsertHouseholdAutopayInput{PaymentMethodType: "card", PaymentMethodLabel: "Visa 4242", TriggerDaysBeforeDue: 3}
+
+	if _, err := svc.UpsertHouseholdAutopay(finOrg, "admin-1", finAdmin, "hh-missing", base); !errors.Is(err, ErrAutopayHouseholdNotFound) {
+		t.Fatalf("unknown household: %v", err)
+	}
+	bad := base
+	bad.PaymentMethodExpMonth, bad.PaymentMethodExpYear = 13, 2030
+	if _, err := svc.UpsertHouseholdAutopay(finOrg, "admin-1", finAdmin, "hh-a", bad); !errors.Is(err, ErrInvalidFinanceInput) {
+		t.Fatalf("bad month: %v", err)
+	}
+	bad.PaymentMethodExpMonth, bad.PaymentMethodExpYear = 1, 2020
+	if _, err := svc.UpsertHouseholdAutopay(finOrg, "admin-1", finAdmin, "hh-a", bad); !errors.Is(err, ErrInvalidFinanceInput) {
+		t.Fatalf("expired: %v", err)
+	}
+	ok := base
+	ok.PaymentMethodExpMonth, ok.PaymentMethodExpYear = 12, time.Now().Year()+2
+	if _, err := svc.UpsertHouseholdAutopay(finOrg, "admin-1", finAdmin, "hh-a", ok); err != nil {
+		t.Fatalf("valid: %v", err)
+	}
+}

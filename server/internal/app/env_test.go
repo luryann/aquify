@@ -1,6 +1,15 @@
 package app
 
-import "testing"
+import (
+	"encoding/json"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/dareaquatics/aquify/server/internal/app/authn"
+)
 
 // Every environment predicate must classify spelling variants identically, so
 // no path can fail open while another fails closed for the same APP_ENV.
@@ -79,5 +88,38 @@ func TestValidateDevAuthConfigRejectsInsecureSessionCookiesOutsideDevEnvs(t *tes
 	t.Setenv("SESSION_COOKIE_SECURE", "false")
 	if !LoadConfig().Auth.AllowInsecureSessionCookies {
 		t.Fatal("SESSION_COOKIE_SECURE=false must set AllowInsecureSessionCookies")
+	}
+}
+
+// The coach list must work with the default (non-injected) Keycloak client: the
+// public site wiring has to see the resolved stub, not the nil dependency.
+func TestPublicTeamSiteListsCoachesWithDefaultKeycloakClient(t *testing.T) {
+	t.Parallel()
+	const org = authn.LocalDevOrgID
+	router := NewRouter(Config{AppEnv: "test"}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	admin := issueSessionTokenForUser(t, router, "admin-user", org, []string{"admin"}, true)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/org-settings", encodeJSONBody(t, map[string]any{
+		"team_name": "DARE Aquatics", "public_slug": "dare", "public_site_enabled": true, "public_show_coaches": true,
+	}))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Org-Id", org)
+	req.Header.Set("Authorization", "Bearer "+admin)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("settings: %d %s", rr.Code, rr.Body.String())
+	}
+
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/v1/public/orgs/dare/site", nil))
+	var site struct {
+		Coaches []map[string]any `json:"coaches"`
+	}
+	if rr.Code != http.StatusOK || json.Unmarshal(rr.Body.Bytes(), &site) != nil {
+		t.Fatalf("site: %d %s", rr.Code, rr.Body.String())
+	}
+	if len(site.Coaches) == 0 {
+		t.Fatalf("public_show_coaches is on but no coaches were returned: %s", rr.Body.String())
 	}
 }

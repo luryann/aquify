@@ -85,6 +85,7 @@ func (h *PerformanceHandlers) RegisterRoutes(router chi.Router) {
 	// Time standards management
 	router.Get("/time-standards", h.listTimeStandards)
 	router.Post("/time-standards", h.createTimeStandard)
+	router.Post("/time-standards/import", h.importTimeStandards)
 	router.Get("/time-standards/{standardID}", h.getTimeStandard)
 	router.Put("/time-standards/{standardID}", h.updateTimeStandard)
 	router.Delete("/time-standards/{standardID}", h.deleteTimeStandard)
@@ -780,6 +781,10 @@ func (h *PerformanceHandlers) updateTimeStandard(w http.ResponseWriter, r *http.
 		}
 		if errors.Is(err, performance.ErrStandardNotFound) {
 			httpx.WriteError(w, r, http.StatusNotFound, "standard_not_found", "Time standard not found.", nil)
+			return
+		}
+		if errors.Is(err, performance.ErrStandardInvalid) {
+			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_time_standard", err.Error(), nil)
 			return
 		}
 		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "An internal error occurred.", err)

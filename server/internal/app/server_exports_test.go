@@ -114,6 +114,16 @@ func doGenerateExport(t *testing.T, router http.Handler, orgID, token, meetID, r
 	return env
 }
 
+// openMeetCommitments publishes the meet's commitment request so household
+// scoping for meet files has commitments to resolve against.
+func openMeetCommitments(t *testing.T, router http.Handler, orgID, token, meetID string) {
+	t.Helper()
+	rr := doOrgRequest(router, http.MethodPost, "/api/v1/meets/"+meetID+"/commitment-request", token, orgID, "")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("publish commitment request: expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 func TestGenerateReport_EventReport(t *testing.T) {
@@ -416,14 +426,7 @@ func TestListMeetExports_ParentHouseholdCanAccessMeetFiles(t *testing.T) {
 	meetID := createMeet(t, router, orgID, adminToken, "Family Files Meet")
 	publishMeet(t, router, orgID, adminToken, meetID)
 
-	publishCommitmentsReq := httptest.NewRequest(http.MethodPost, "/api/v1/meets/"+meetID+"/commitment-request", nil)
-	publishCommitmentsReq.Header.Set("X-Org-Id", orgID)
-	publishCommitmentsReq.Header.Set("Authorization", "Bearer "+adminToken)
-	publishCommitmentsRes := httptest.NewRecorder()
-	router.ServeHTTP(publishCommitmentsRes, publishCommitmentsReq)
-	if publishCommitmentsRes.Code != http.StatusOK {
-		t.Fatalf("publish commitment request: expected 200, got %d body=%s", publishCommitmentsRes.Code, publishCommitmentsRes.Body.String())
-	}
+	openMeetCommitments(t, router, orgID, adminToken, meetID)
 
 	doGenerateExport(t, router, orgID, adminToken, meetID, "event_report")
 
@@ -468,14 +471,7 @@ func TestListMeetExports_ParentCrossHouseholdForbidden(t *testing.T) {
 	meetID := createMeet(t, router, orgID, adminToken, "Restricted Meet")
 	publishMeet(t, router, orgID, adminToken, meetID)
 
-	publishCommitmentsReq := httptest.NewRequest(http.MethodPost, "/api/v1/meets/"+meetID+"/commitment-request", nil)
-	publishCommitmentsReq.Header.Set("X-Org-Id", orgID)
-	publishCommitmentsReq.Header.Set("Authorization", "Bearer "+adminToken)
-	publishCommitmentsRes := httptest.NewRecorder()
-	router.ServeHTTP(publishCommitmentsRes, publishCommitmentsReq)
-	if publishCommitmentsRes.Code != http.StatusOK {
-		t.Fatalf("publish commitment request: expected 200, got %d body=%s", publishCommitmentsRes.Code, publishCommitmentsRes.Body.String())
-	}
+	openMeetCommitments(t, router, orgID, adminToken, meetID)
 
 	doGenerateExport(t, router, orgID, adminToken, meetID, "event_report")
 
@@ -509,14 +505,7 @@ func TestListMeetExports_SwimmerHouseholdCanAccessMeetFiles(t *testing.T) {
 	meetID := createMeet(t, router, orgID, adminToken, "Swimmer Files Meet")
 	publishMeet(t, router, orgID, adminToken, meetID)
 
-	publishCommitmentsReq := httptest.NewRequest(http.MethodPost, "/api/v1/meets/"+meetID+"/commitment-request", nil)
-	publishCommitmentsReq.Header.Set("X-Org-Id", orgID)
-	publishCommitmentsReq.Header.Set("Authorization", "Bearer "+adminToken)
-	publishCommitmentsRes := httptest.NewRecorder()
-	router.ServeHTTP(publishCommitmentsRes, publishCommitmentsReq)
-	if publishCommitmentsRes.Code != http.StatusOK {
-		t.Fatalf("publish commitment request: expected 200, got %d body=%s", publishCommitmentsRes.Code, publishCommitmentsRes.Body.String())
-	}
+	openMeetCommitments(t, router, orgID, adminToken, meetID)
 
 	doGenerateExport(t, router, orgID, adminToken, meetID, "event_report")
 
@@ -550,14 +539,7 @@ func TestListMeetExports_SwimmerCrossHouseholdForbidden(t *testing.T) {
 	meetID := createMeet(t, router, orgID, adminToken, "Restricted Swimmer Meet")
 	publishMeet(t, router, orgID, adminToken, meetID)
 
-	publishCommitmentsReq := httptest.NewRequest(http.MethodPost, "/api/v1/meets/"+meetID+"/commitment-request", nil)
-	publishCommitmentsReq.Header.Set("X-Org-Id", orgID)
-	publishCommitmentsReq.Header.Set("Authorization", "Bearer "+adminToken)
-	publishCommitmentsRes := httptest.NewRecorder()
-	router.ServeHTTP(publishCommitmentsRes, publishCommitmentsReq)
-	if publishCommitmentsRes.Code != http.StatusOK {
-		t.Fatalf("publish commitment request: expected 200, got %d body=%s", publishCommitmentsRes.Code, publishCommitmentsRes.Body.String())
-	}
+	openMeetCommitments(t, router, orgID, adminToken, meetID)
 
 	doGenerateExport(t, router, orgID, adminToken, meetID, "event_report")
 

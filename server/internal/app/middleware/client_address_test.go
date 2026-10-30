@@ -27,6 +27,20 @@ func TestClientAddressResolverTrustsForwardedForOnlyFromTrustedPeers(t *testing.
 	}
 }
 
+func TestClientAddressResolverIgnoresClientSuppliedForwardedForEntries(t *testing.T) {
+	resolve := NewClientAddressResolver([]string{"10.0.0.0/8"})
+
+	// The client sent "1.2.3.4"; the proxy chain appended the real peer and
+	// an inner proxy. The leftmost entry must not become the rate-limit key.
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "10.1.2.3:4444"
+	req.Header.Add("X-Forwarded-For", "1.2.3.4, 203.0.113.9")
+	req.Header.Add("X-Forwarded-For", "10.9.9.9")
+	if got := resolve(req); got != "203.0.113.9" {
+		t.Fatalf("got %q, want the first untrusted hop from the right", got)
+	}
+}
+
 func TestTrustedProxyResolvesIPAndSchemeOnceForLoggingAndHSTS(t *testing.T) {
 	var gotIP string
 	var gotSecure bool
@@ -87,5 +101,27 @@ func TestStructuredLoggerRecordsResolvedClientIP(t *testing.T) {
 	h.ServeHTTP(httptest.NewRecorder(), req)
 	if !strings.Contains(buf.String(), `"remote_addr":"203.0.113.9"`) {
 		t.Fatalf("log = %s", buf.String())
+	}
+}
+
+// A client behind a trusted proxy can prepend its own X-Forwarded-Proto; only
+// the entry the nearest trusted proxy appended (the rightmost) counts.
+func TestTrustedProxyUsesRightmostForwardedProto(t *testing.T) {
+	var secure bool
+	h := TrustedProxy([]string{"10.0.0.0/8"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		secure = RequestIsSecure(r)
+	}))
+	run := func(proto string) bool {
+		req := httptest.NewRequest("GET", "/", nil)
+		req.RemoteAddr = "10.1.2.3:1"
+		req.Header.Set("X-Forwarded-Proto", proto)
+		h.ServeHTTP(httptest.NewRecorder(), req)
+		return secure
+	}
+	if run("https, http") {
+		t.Fatal("spoofed leading https must not make the request secure")
+	}
+	if !run("http, https") {
+		t.Fatal("rightmost https from the trusted proxy should be honoured")
 	}
 }

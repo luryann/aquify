@@ -28,6 +28,7 @@ import {
 import { ageFromDob, formatDateOnly } from '@/lib/dates'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { formatAgeRange } from '@/lib/group-format'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 const FIELD_STYLE: React.CSSProperties = { width: '100%' }
 const FIELD_LABEL_STYLE: React.CSSProperties = { display: 'block', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginBottom: '6px', fontFamily: 'var(--font-body)' }
@@ -376,7 +377,7 @@ export default function GroupDetailPage() {
   }
 
   if (loading) {
-    return <div className="page"><EmptyState icon="layers" title="Loading group" description="Fetching live group detail data from the API." /></div>
+    return <PageSkeleton variant="detail" />
   }
 
   if (error || !group) {

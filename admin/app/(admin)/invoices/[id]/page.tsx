@@ -39,6 +39,7 @@ import {
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { formatCents } from '@/lib/financeData'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 const formatDate = formatDateOnly
 
@@ -619,7 +620,7 @@ export default function InvoiceDetailPage() {
   } : null), [swimmerNameById, isDraft, api, session?.user.orgId, invoiceId, confirm])
 
   if (loading) {
-    return <div className="page"><EmptyState icon="credit-card" title="Loading invoice" description="Fetching live invoice detail data from the API." /></div>
+    return <PageSkeleton variant="detail" />
   }
 
   if (error || !invoice) {

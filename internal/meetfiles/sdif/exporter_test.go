@@ -2,11 +2,13 @@ package sdif_test
 
 import (
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/dareaquatics/aquify/meetfiles"
 	"github.com/dareaquatics/aquify/meetfiles/sdif"
@@ -513,5 +515,152 @@ func TestEncodeTime_NT(t *testing.T) {
 				t.Errorf("NT time: seed field trimmed = %q; want NT", seed)
 			}
 		}
+	}
+}
+
+// ─── Regression tests ─────────────────────────────────────────────────────────
+
+func TestExport_EventNumberSuffixOrderingDeterministic(t *testing.T) {
+	mk := func(evt, last string) sdif.ExportIndividualEntry {
+		return sdif.ExportIndividualEntry{
+			Swimmer:     sdif.ExportSwimmer{LastName: last, Gender: "M"},
+			EventNumber: evt, Distance: 50, Stroke: meetfiles.StrokeFreestyle, EventGender: "M",
+		}
+	}
+	input := baseInput()
+	input.IndividualEntries = []sdif.ExportIndividualEntry{
+		mk("12B", "Z"), mk("12A", "Y"), mk("9", "X"), mk("12", "W"), mk("2", "V"),
+	}
+	want := []string{"V", "X", "W", "Y", "Z"} // events 2, 9, 12, 12A, 12B
+	for run := 0; run < 20; run++ {
+		data, err := sdif.ExportStandardSD3(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for _, line := range strings.Split(string(data), "\r\n") {
+			if strings.HasPrefix(line, "D0") {
+				got = append(got, strings.TrimSpace(line[11:39]))
+			}
+		}
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Fatalf("order = %v; want %v", got, want)
+		}
+	}
+}
+
+func TestExport_ControlCharsAndMultibyteStayInRecord(t *testing.T) {
+	input := baseInput()
+	input.MeetName = "Spring\r\nZ0 injected"
+	input.IndividualEntries[0].Swimmer.LastName = strings.Repeat("é", 20) // 40 bytes > 28
+	data, err := sdif.ExportStandardSD3(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSuffix(string(data), "\r\n"), "\r\n")
+	if len(lines) != 6 {
+		t.Fatalf("got %d lines; want 6 (no injected records): %q", len(lines), lines)
+	}
+	for _, l := range lines {
+		if len(l) != 160 {
+			t.Errorf("line length %d; want 160", len(l))
+		}
+		if !utf8.ValidString(l) {
+			t.Errorf("record contains invalid UTF-8 from a split rune: %q", l)
+		}
+	}
+}
+
+func TestExportExtendedSD3_NonFiniteSeedTimeIsNT(t *testing.T) {
+	for _, secs := range []float64{math.NaN(), math.Inf(1), -5} {
+		input := baseInput()
+		input.IndividualEntries[0].SeedTime = validTime(secs)
+		data, err := sdif.ExportExtendedSD3(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, line := range strings.Split(string(data), "\r\n") {
+			if strings.HasPrefix(line, "D0") && strings.Contains(line, "Smith") {
+				if got := strings.TrimSpace(line[88:96]); got != "NT" {
+					t.Errorf("seconds=%v: seed field = %q; want NT", secs, got)
+				}
+			}
+		}
+	}
+}
+
+// ─── Review-pass regressions ─────────────────────────────────────────────────
+
+func TestExportSDIFRoster_MultiTeamEmitsC1PerTeam(t *testing.T) {
+	out, err := sdif.ExportSDIFRoster(sdif.RosterExportInput{
+		MeetName: "Roster", TeamCode: "AAA", TeamName: "Alpha",
+		Swimmers: []sdif.RosterExportSwimmer{
+			{LastName: "One", FirstName: "A", Gender: "F", TeamCode: "AAA", TeamName: "Alpha"},
+			{LastName: "Two", FirstName: "B", Gender: "M", TeamCode: "BBB", TeamName: "Bravo"},
+			{LastName: "Three", FirstName: "C", Gender: "M"}, // falls back to input team
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	back, err := sdif.ImportSDIFRoster(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, sw := range back.Swimmers {
+		got[sw.LastName] = sw.TeamCode
+	}
+	if got["One"] != "AAA" || got["Two"] != "BBB" || got["Three"] != "AAA" {
+		t.Fatalf("team assignment lost: %v", got)
+	}
+	if n := strings.Count(string(out), "C1"+"1"); n != 2 {
+		t.Fatalf("C1 records = %d, want 2", n)
+	}
+}
+
+func TestEncodeTime_100MinutesOrMoreIsNT(t *testing.T) {
+	out, err := sdif.ExportExtendedSD3(sdif.ExportInput{
+		MeetName: "M",
+		IndividualEntries: []sdif.ExportIndividualEntry{{
+			Swimmer:  sdif.ExportSwimmer{LastName: "A", FirstName: "B"},
+			Distance: 1650, Stroke: meetfiles.StrokeFreestyle, EventNumber: "1", EventGender: "M",
+			SeedTime: meetfiles.Time{Valid: true, Seconds: 100*60 + 5},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, l := range strings.Split(string(out), "\r\n") {
+		if strings.HasPrefix(l, "D0") {
+			if got := strings.TrimSpace(l[88:96]); got != "NT" {
+				t.Fatalf("seed field = %q, want NT", got)
+			}
+		}
+	}
+}
+
+func TestExport_UnassignedRelayLegsSortLast(t *testing.T) {
+	leg := func(name string, order int) sdif.ExportRelayLeg {
+		return sdif.ExportRelayLeg{Swimmer: sdif.ExportSwimmer{LastName: name}, LegOrder: order}
+	}
+	out, err := sdif.ExportStandardSD3(sdif.ExportInput{
+		MeetName: "M",
+		RelayEntries: []sdif.ExportRelayEntry{{
+			TeamCode: "AAA", EventNumber: "1", Distance: 200, Stroke: meetfiles.StrokeFreestyleRelay, EventGender: "M",
+			Legs: []sdif.ExportRelayLeg{leg("Zero", 0), leg("Two", 2), leg("One", 1)},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, l := range strings.Split(string(out), "\r\n") {
+		if strings.HasPrefix(l, "F0") {
+			names = append(names, strings.TrimSpace(l[22:50]))
+		}
+	}
+	if strings.Join(names, ",") != "One,Two,Zero" {
+		t.Fatalf("leg order = %v", names)
 	}
 }

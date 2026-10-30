@@ -184,6 +184,13 @@ func (s *Service) normalizeRunInput(orgID string, input RunInput) (normalizedRun
 		out.DueDate = fmtDate(asOf.AddDate(0, 0, days))
 	}
 	seen := map[string]bool{}
+	if len(input.ScheduleIDs) > 0 {
+		// Schedules may have been created by another instance; validate
+		// against freshly loaded state rather than a stale in-memory cache.
+		if err := s.refreshForRead(); err != nil {
+			return out, err
+		}
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, id := range input.ScheduleIDs {
@@ -986,6 +993,8 @@ func (s *Service) GetBillingRun(orgID string, principal *appmiddleware.Principal
 // auto-bill schedules. Re-running daily is safe (idempotent charge keys) and
 // picks up mid-period joiners with proration.
 func (s *Service) RunScheduledBilling(orgID string, today time.Time) (*RunResult, error) {
+	// Day-of-month gating and the as-of date must use the same (UTC) calendar day.
+	today = today.UTC()
 	principal := systemFinancePrincipal(orgID)
 	s.mu.Lock()
 	if err := s.refreshLocked(context.Background()); err != nil {
@@ -1000,7 +1009,7 @@ func (s *Service) RunScheduledBilling(orgID string, today time.Time) (*RunResult
 		}
 	}
 	s.mu.Unlock()
-	if !settings.AutoRunEnabled || today.UTC().Day() < settings.AutoRunDay || len(scheduleIDs) == 0 {
+	if !settings.AutoRunEnabled || today.Day() < settings.AutoRunDay || len(scheduleIDs) == 0 {
 		return nil, nil
 	}
 	dueDays := settings.AutoRunDueDays

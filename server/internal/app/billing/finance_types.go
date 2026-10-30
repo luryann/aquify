@@ -186,17 +186,22 @@ type AdjustmentInput struct {
 
 // BillingSettings holds the org's late-fee rule and billing automation.
 type BillingSettings struct {
-	OrgID                string    `json:"org_id"`
-	LateFeeEnabled       bool      `json:"late_fee_enabled"`
-	LateFeeGraceDays     int       `json:"late_fee_grace_days"`
-	LateFeeType          string    `json:"late_fee_type"`
-	LateFeeFlatCents     int       `json:"late_fee_flat_cents"`
-	LateFeePercentBps    int       `json:"late_fee_percent_bps"`
-	LateFeeMaxCents      int       `json:"late_fee_max_cents"`
-	AutoRunEnabled       bool      `json:"auto_run_enabled"`
-	AutoRunDay           int       `json:"auto_run_day"`
-	AutoRunInvoiceStatus string    `json:"auto_run_invoice_status"`
-	AutoRunDueDays       int       `json:"auto_run_due_days"`
+	OrgID                string `json:"org_id"`
+	LateFeeEnabled       bool   `json:"late_fee_enabled"`
+	LateFeeGraceDays     int    `json:"late_fee_grace_days"`
+	LateFeeType          string `json:"late_fee_type"`
+	LateFeeFlatCents     int    `json:"late_fee_flat_cents"`
+	LateFeePercentBps    int    `json:"late_fee_percent_bps"`
+	LateFeeMaxCents      int    `json:"late_fee_max_cents"`
+	AutoRunEnabled       bool   `json:"auto_run_enabled"`
+	AutoRunDay           int    `json:"auto_run_day"`
+	AutoRunInvoiceStatus string `json:"auto_run_invoice_status"`
+	AutoRunDueDays       int    `json:"auto_run_due_days"`
+	// Meet billing defaults: charged per swimmer entered in a meet.
+	MeetFeePerEventCents int       `json:"meet_fee_per_event_cents"`
+	MeetFeeFlatCents     int       `json:"meet_fee_flat_cents"`
+	MeetFeeInvoiceStatus string    `json:"meet_fee_invoice_status"`
+	MeetFeeDueDays       int       `json:"meet_fee_due_days"`
 	UpdatedAt            time.Time `json:"updated_at"`
 	UpdatedBy            string    `json:"updated_by,omitempty"`
 }
@@ -213,6 +218,10 @@ type BillingSettingsInput struct {
 	AutoRunDay           int    `json:"auto_run_day" validate:"gte=1,lte=28"`
 	AutoRunInvoiceStatus string `json:"auto_run_invoice_status" validate:"required,oneof=draft issued"`
 	AutoRunDueDays       int    `json:"auto_run_due_days" validate:"gte=0,lte=120"`
+	MeetFeePerEventCents int    `json:"meet_fee_per_event_cents" validate:"gte=0,lte=10000000"`
+	MeetFeeFlatCents     int    `json:"meet_fee_flat_cents" validate:"gte=0,lte=10000000"`
+	MeetFeeInvoiceStatus string `json:"meet_fee_invoice_status" validate:"omitempty,oneof=draft issued"`
+	MeetFeeDueDays       int    `json:"meet_fee_due_days" validate:"gte=0,lte=120"`
 }
 
 func defaultBillingSettings(orgID string) *BillingSettings {
@@ -223,6 +232,8 @@ func defaultBillingSettings(orgID string) *BillingSettings {
 		AutoRunDay:           1,
 		AutoRunInvoiceStatus: "draft",
 		AutoRunDueDays:       15,
+		MeetFeeInvoiceStatus: "draft",
+		MeetFeeDueDays:       15,
 	}
 }
 

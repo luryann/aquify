@@ -1,6 +1,7 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { SWIMMER_ACCESS_DISABLED_EVENT } from '@/lib/api'
 import { useSession } from '@/lib/session'
 import { useRouter } from 'next/navigation'
 import { SwimmerNav } from './SwimmerNav'
@@ -9,6 +10,13 @@ import './SwimmerShell.inline.css'
 export function SwimmerShell({ children }: { children: ReactNode }) {
   const { session } = useSession()
   const router = useRouter()
+  const [accessDisabled, setAccessDisabled] = useState(false)
+
+  useEffect(() => {
+    const onDisabled = () => setAccessDisabled(true)
+    window.addEventListener(SWIMMER_ACCESS_DISABLED_EVENT, onDisabled)
+    return () => window.removeEventListener(SWIMMER_ACCESS_DISABLED_EVENT, onDisabled)
+  }, [])
 
   if (!session) return null
 
@@ -61,7 +69,19 @@ export function SwimmerShell({ children }: { children: ReactNode }) {
       />
 
       <main className="portal-frame portal-main">
-        {children}
+        {accessDisabled ? (
+          <div className="page" role="alert">
+            <div className="page-heading">
+              <h1 className="page-title">Swimmer sign-in is off</h1>
+            </div>
+            <p className="prose u-fs-fs-lg" style={{ color: 'var(--text-subtle)' }}>
+              Your club has turned off swimmer sign-in. Ask a parent or coach.
+            </p>
+            <button type="button" className="btn btn-primary u-mt-16px" onClick={() => router.push('/logout')}>
+              Sign out
+            </button>
+          </div>
+        ) : children}
       </main>
     </div>
   )

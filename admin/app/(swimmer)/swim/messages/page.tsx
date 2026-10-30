@@ -8,6 +8,7 @@ import { UnlinkedSwimmerNotice } from '@/components/swimmer/UnlinkedSwimmerNotic
 import { useMessageThread } from '@/lib/useMessageThread'
 import './page.inline.css'
 import { QUICK_REACTIONS, formatMessageTime } from '@/lib/message-format'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 function senderLabel(role: string): string {
   if (role === 'parent') return 'Parent'
@@ -75,7 +76,7 @@ export default function SwimmerMessagesPage() {
             {loadError ? (
               <p className="is-de107ca">{loadError}</p>
             ) : loading ? (
-              <p className="is-8fb176a">Loading conversation…</p>
+              <PageSkeleton variant="list" noHeader rows={4} />
             ) : messages.length === 0 ? (
               <p className="is-8fb176a">
                 No messages yet. Send the first one below to reach your coach.

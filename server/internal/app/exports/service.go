@@ -341,6 +341,10 @@ func (s *Service) DownloadExport(principal *appmiddleware.Principal, orgID, expo
 		s.mu.RUnlock()
 		return nil, nil, ErrExportNotFound
 	}
+	if ex.Status == "expired" {
+		s.mu.RUnlock()
+		return nil, nil, ErrExportExpired
+	}
 	if ex.Status != "ready" {
 		s.mu.RUnlock()
 		return nil, nil, ErrExportNotReady
@@ -349,30 +353,53 @@ func (s *Service) DownloadExport(principal *appmiddleware.Principal, orgID, expo
 		s.mu.RUnlock()
 		return nil, nil, ErrExportExpired
 	}
-	storageKey := ex.StorageKey
+	// Clone while still holding the lock: ex is shared with ProcessExport and
+	// ExpireArtifacts, which mutate it under the write lock.
+	job := s.cloneForResponse(ex)
 	s.mu.RUnlock()
 
-	content, _, err := s.store.GetObject(context.Background(), storageKey)
+	content, _, err := s.store.GetObject(context.Background(), job.StorageKey)
 	if err != nil {
 		if errors.Is(err, storage.ErrObjectNotFound) {
 			return nil, nil, ErrExportNotFound
 		}
 		return nil, nil, fmt.Errorf("download export artifact: %w", err)
 	}
-	job := s.cloneForResponse(ex)
 	return job, content, nil
 }
 
+// ExpireArtifacts deletes the stored object of every export past cutoff and
+// marks the export expired only after that delete succeeded, so a failed
+// delete leaves the export "ready" and retryable on the next sweep. Object
+// storage I/O happens outside the service lock.
 func (s *Service) ExpireArtifacts(cutoff time.Time) []FileExport {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	var expired []FileExport
+	type candidate struct{ id, key string }
+	s.mu.RLock()
+	var cands []candidate
 	for _, ex := range s.exports {
 		if ex == nil || ex.StorageKey == "" || ex.Status == "expired" {
 			continue
 		}
 		if ex.ExpiresAt.IsZero() || ex.ExpiresAt.After(cutoff) {
+			continue
+		}
+		cands = append(cands, candidate{ex.ID, ex.StorageKey})
+	}
+	store := s.store
+	s.mu.RUnlock()
+
+	var expired []FileExport
+	for _, c := range cands {
+		if store != nil {
+			if err := store.Delete(c.key); err != nil {
+				slog.Error("exports: delete expired artifact; will retry", "export_id", c.id, "err", err)
+				continue
+			}
+		}
+		s.mu.Lock()
+		ex, ok := s.exports[c.id]
+		if !ok || ex == nil || ex.Status == "expired" {
+			s.mu.Unlock()
 			continue
 		}
 		ex.Status = "expired"
@@ -384,6 +411,7 @@ func (s *Service) ExpireArtifacts(cutoff time.Time) []FileExport {
 			}
 		}
 		expired = append(expired, *ex)
+		s.mu.Unlock()
 	}
 	return expired
 }

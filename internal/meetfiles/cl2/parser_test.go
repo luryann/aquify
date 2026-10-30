@@ -1,6 +1,7 @@
 package cl2_test
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -90,5 +91,32 @@ func TestParse_CL2MalformedLines(t *testing.T) {
 	}
 	if len(result.ParseErrors) != 3 {
 		t.Errorf("expected 3 parse errors, got %d: %+v", len(result.ParseErrors), result.ParseErrors)
+	}
+}
+
+func TestParse_CL2SDIFLayout(t *testing.T) {
+	data, err := os.ReadFile("../testdata/fixtures/valid.sd3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := cl2.Parse(data)
+	if err != nil {
+		t.Fatalf("cl2.Parse: %v", err)
+	}
+	if result.FileType != meetfiles.FileTypeCL2 {
+		t.Errorf("FileType = %v, want CL2", result.FileType)
+	}
+	if result.MeetName == "" {
+		t.Error("expected meet name parsed from SDIF-layout CL2")
+	}
+}
+
+func TestParse_CL2ScaffoldBOM(t *testing.T) {
+	result, err := cl2.Parse([]byte("\xef\xbb\xbfCL2 SAMPLE\nEVENT 001 50 FREE SCY\n"))
+	if err != nil {
+		t.Fatalf("cl2.Parse error: %v", err)
+	}
+	if len(result.ParseErrors) != 0 {
+		t.Errorf("BOM-prefixed header should be recognised, got %+v", result.ParseErrors)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strconv"
 	"strings"
@@ -94,7 +95,9 @@ func (s *Service) StoreCSVArtifact(orgID, kind string, generatedAt time.Time, do
 	s.mu.RUnlock()
 
 	id := fmt.Sprintf("report_%d", generatedAt.UnixNano())
-	storageKey := fmt.Sprintf("reports/%s/%s/%s", orgID, kind, doc.Filename)
+	// The id is part of the key: filenames only carry the date, and expiring an
+	// older artifact must not delete a newer one generated the same day.
+	storageKey := fmt.Sprintf("reports/%s/%s/%s/%s", orgID, kind, id, doc.Filename)
 	if err := store.PutObject(context.Background(), storageKey, "text/csv; charset=utf-8", doc.Data); err != nil {
 		return nil, fmt.Errorf("store report artifact: %w", err)
 	}
@@ -118,17 +121,32 @@ func (s *Service) StoreCSVArtifact(orgID, kind string, generatedAt time.Time, do
 	return &response, nil
 }
 
+// ExpireArtifacts removes each artifact past cutoff from the index only after
+// its stored object was deleted, so a failed delete stays retryable on the
+// next sweep. Object storage I/O happens outside the service lock.
 func (s *Service) ExpireArtifacts(cutoff time.Time) []StoredArtifact {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	cands := map[string]StoredArtifact{}
+	for id, artifact := range s.files {
+		if !artifact.ExpiresAt.After(cutoff) {
+			cands[id] = artifact
+		}
+	}
+	store := s.store
+	s.mu.RUnlock()
 
 	var expired []StoredArtifact
-	for id, artifact := range s.files {
-		if artifact.ExpiresAt.After(cutoff) {
-			continue
+	for id, artifact := range cands {
+		if store != nil && strings.TrimSpace(artifact.StorageKey) != "" {
+			if err := store.Delete(artifact.StorageKey); err != nil {
+				slog.Error("reports: delete expired artifact; will retry", "artifact_id", id, "err", err)
+				continue
+			}
 		}
-		expired = append(expired, artifact)
+		s.mu.Lock()
 		delete(s.files, id)
+		s.mu.Unlock()
+		expired = append(expired, artifact)
 	}
 	return expired
 }
@@ -258,7 +276,7 @@ func (s *Service) RunMembershipStatusReport(orgID string, principal *appmiddlewa
 		contact := primaryContact[swimmer.HouseholdID]
 		swimmerLinks := linksBySwimmer[swimmer.ID]
 		row := MembershipStatusRow{
-			HouseholdID:         household.ID,
+			HouseholdID:         swimmer.HouseholdID,
 			HouseholdName:       household.HouseholdName,
 			HouseholdStatus:     household.Status,
 			PrimaryEmail:        firstNonEmpty(contact.Email, household.PrimaryEmail),
@@ -427,7 +445,10 @@ func (s *Service) RunInvoiceAgingReport(orgID string, principal *appmiddleware.P
 	for _, invoice := range invoices {
 		daysPastDue := 0
 		bucket := "current"
-		if dueAt, ok := parseDate(invoice.DueDate); ok {
+		if invoice.Status == "voided" || invoice.Status == "written_off" {
+			// Cancelled debt is not receivable: never age it.
+			bucket = invoice.Status
+		} else if dueAt, ok := parseDate(invoice.DueDate); ok {
 			daysPastDue = int(asOf.Sub(dueAt).Hours() / 24)
 			if daysPastDue < 0 {
 				daysPastDue = 0
@@ -588,16 +609,19 @@ type PaymentReconciliationRow struct {
 }
 
 type PaymentReconciliationReport struct {
-	GeneratedAt          time.Time                  `json:"generated_at"`
-	RowCount             int                        `json:"row_count"`
-	PaymentTotalCents    int                        `json:"payment_total_cents"`
-	RefundTotalCents     int                        `json:"refund_total_cents"`
-	NetCollectedCents    int                        `json:"net_collected_cents"`
-	UnreconciledRowCount int                        `json:"unreconciled_row_count"`
-	StripeReportedCents  *int                       `json:"stripe_reported_cents,omitempty"`
-	StripeMismatchCents  *int                       `json:"stripe_mismatch_cents,omitempty"`
-	StripeAlertTriggered *bool                      `json:"stripe_alert_triggered,omitempty"`
-	Rows                 []PaymentReconciliationRow `json:"rows"`
+	GeneratedAt          time.Time `json:"generated_at"`
+	RowCount             int       `json:"row_count"`
+	PaymentTotalCents    int       `json:"payment_total_cents"`
+	RefundTotalCents     int       `json:"refund_total_cents"`
+	NetCollectedCents    int       `json:"net_collected_cents"`
+	UnreconciledRowCount int       `json:"unreconciled_row_count"`
+	// StripeReconciliationError is set when a Stripe comparison was requested
+	// but could not be computed; the stripe_* fields are then unavailable.
+	StripeReconciliationError string                     `json:"stripe_reconciliation_error,omitempty"`
+	StripeReportedCents       *int                       `json:"stripe_reported_cents,omitempty"`
+	StripeMismatchCents       *int                       `json:"stripe_mismatch_cents,omitempty"`
+	StripeAlertTriggered      *bool                      `json:"stripe_alert_triggered,omitempty"`
+	Rows                      []PaymentReconciliationRow `json:"rows"`
 }
 
 func (s *Service) RunPaymentReconciliationReport(orgID string, principal *appmiddleware.Principal, stripeReportedCents *int) (*PaymentReconciliationReport, error) {
@@ -698,7 +722,9 @@ func (s *Service) RunPaymentReconciliationReport(orgID string, principal *appmid
 
 	if stripeReportedCents != nil {
 		recon, err := s.billing.GetReconciliationReport(orgID, principal, *stripeReportedCents, 100)
-		if err == nil {
+		if err != nil {
+			report.StripeReconciliationError = "stripe reconciliation unavailable: " + err.Error()
+		} else {
 			report.StripeReportedCents = intPtr(recon.StripeReportedCents)
 			report.StripeMismatchCents = intPtr(recon.MismatchCents)
 			report.StripeAlertTriggered = boolPtr(recon.AlertTriggered)

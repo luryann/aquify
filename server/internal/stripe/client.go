@@ -206,7 +206,9 @@ func VerifyStripeSignature(payload []byte, sigHeader, webhookSecret string, tole
 	}
 
 	// Enforce replay-attack window.
-	if time.Since(time.Unix(timestamp, 0)) > tolerance {
+	// Reject both stale and future-dated timestamps: a far-future signature
+	// would otherwise stay "fresh" forever and be replayable.
+	if skew := time.Since(time.Unix(timestamp, 0)); skew > tolerance || skew < -tolerance {
 		return ErrExpiredTimestamp
 	}
 

@@ -11,6 +11,7 @@ import { fetchGroups, fetchHouseholds, fetchSwimmerGroups, fetchSwimmers, create
 import { parseBackendDate } from '@/lib/dates'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { Modal } from '@/components/ui/Modal'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 type SwimmerStatus = 'active' | 'inactive' | 'pending' | 'archived'
 
@@ -287,7 +288,7 @@ export function SwimmersPanel() {
       </div>
 
       {loading ? (
-        <EmptyState icon="users" title="Loading swimmers" description="Fetching your roster." />
+        <PageSkeleton variant="table" noHeader rows={4} />
       ) : error ? (
         <EmptyState icon="alert-circle" title="Unable to load swimmers" description={error} />
       ) : (

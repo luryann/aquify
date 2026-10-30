@@ -84,6 +84,10 @@ export function rawRequestAuthHeaders(token: string | undefined, method: string)
   return {}
 }
 
+/** Backend code returned when the club or a parent has turned off a swimmer's sign-in. */
+export const SWIMMER_ACCESS_DISABLED_CODE = 'swimmer_access_disabled'
+export const SWIMMER_ACCESS_DISABLED_EVENT = 'aquify:swimmer-access-disabled'
+
 // Core fetch function
 export async function apiFetch<T = unknown>(
   path: string,
@@ -117,7 +121,11 @@ export async function apiFetch<T = unknown>(
   })
 
   if (!res.ok) {
-    throw await parseResponseError(res)
+    const apiError = await parseResponseError(res)
+    if (res.status === 403 && apiError.code === SWIMMER_ACCESS_DISABLED_CODE && typeof window !== 'undefined') {
+      window.dispatchEvent(new Event(SWIMMER_ACCESS_DISABLED_EVENT))
+    }
+    throw apiError
   }
 
   // No content

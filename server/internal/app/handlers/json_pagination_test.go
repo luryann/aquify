@@ -115,3 +115,17 @@ func TestJSONDecodeErrorsAreClientSafeAndOversizedIs413(t *testing.T) {
 		t.Fatalf("decodeAndValidateJSON oversized: code=%d", rec.Code)
 	}
 }
+
+func TestParseListPaginationHugeValuesDoNotOverflow(t *testing.T) {
+	t.Parallel()
+
+	req := httptest.NewRequest("GET", "/items?limit=99999999999999999999999&offset=18446744073709551617", nil)
+	pagination := parseListPagination(req, listPaginationOptions{})
+	if pagination.Limit != maxListLimit || pagination.Offset < 0 {
+		t.Fatalf("parseListPagination() = %+v, want clamped limit and non-negative offset", pagination)
+	}
+	page, total := paginateSlice([]int{1, 2, 3}, pagination)
+	if total != 3 || len(page) != 0 {
+		t.Fatalf("paginateSlice() = %v total %d, want empty page past the end", page, total)
+	}
+}

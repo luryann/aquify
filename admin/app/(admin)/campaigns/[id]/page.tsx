@@ -17,6 +17,7 @@ import {
 } from '@/lib/adminData'
 import { uiErrorMessage } from '@/lib/frontend-telemetry'
 import { formatDateTime } from '@/lib/dates'
+import { PageSkeleton } from '@/components/ui/PageSkeleton'
 
 function campaignPreviewDocument(bodyHTML: string) {
   return `<!doctype html>
@@ -134,7 +135,7 @@ export default function CampaignDetailPage() {
   }
 
   if (loading) {
-    return <div className="u-p-32px" ><EmptyState icon="mail" title="Loading campaign" description="Fetching the live campaign and delivery rows." /></div>
+    return <PageSkeleton variant="detail" />
   }
 
   if (!campaign) {
