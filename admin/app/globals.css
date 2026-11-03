@@ -29,7 +29,7 @@
 @import '@fontsource/lexend/latin-700.css';
 
 /* ==========================================================
-   DARE ADMIN — GLOBAL DESIGN SYSTEM
+   aquify ADMIN — GLOBAL DESIGN SYSTEM
    ========================================================== */
 
 /* ── Design Tokens: Dark (admin default) ── */
@@ -1720,4 +1720,48 @@ input.input-search { padding-left: 34px; }
 @keyframes shimmerSweep {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
+}
+
+/* ==========================================================
+   BEVELED KEY BUTTONS — one-off accent buttons (login, MFA, landing,
+   public club site, 404) share the .btn-primary look: soft top light,
+   darker rim, tinted offset shadow. Each sets --key (its fill colour);
+   everything else is derived so teal/orange/club accents all match.
+   ========================================================== */
+.sl-btn.sl-btn,
+.auth-btn-accent.auth-btn-accent,
+.land-btn.land-btn,
+.cs-btn.cs-btn-primary {
+  --key: var(--accent-fill, #c9460f);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0) 60%),
+    var(--key);
+  color: #fff;
+  border: 1px solid color-mix(in srgb, var(--key) 78%, black);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.20),
+    0 1px 2px rgba(0, 0, 0, 0.22),
+    0 3px 8px -3px color-mix(in oklab, var(--key) 55%, transparent);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.12);
+}
+.cs-btn.cs-btn-primary { --key: var(--cs-accent); }
+.sl-btn.sl-btn:hover:not(:disabled),
+.auth-btn-accent.auth-btn-accent:hover:not(:disabled),
+.land-btn.land-btn:hover,
+.cs-btn.cs-btn-primary:hover {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 60%),
+    color-mix(in srgb, var(--key) 92%, black);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 1px 2px rgba(0, 0, 0, 0.22),
+    0 6px 14px -4px color-mix(in oklab, var(--key) 60%, transparent);
+}
+.sl-btn.sl-btn:active:not(:disabled),
+.auth-btn-accent.auth-btn-accent:active:not(:disabled),
+.land-btn.land-btn:active,
+.cs-btn.cs-btn-primary:active {
+  background: color-mix(in srgb, var(--key) 84%, black);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.28);
+  transform: translateY(1px);
 }

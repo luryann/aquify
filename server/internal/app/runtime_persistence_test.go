@@ -12,9 +12,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dareaquatics/aquify/server/internal/app/members"
-	"github.com/dareaquatics/aquify/server/internal/runtimepersist"
-	"github.com/dareaquatics/aquify/server/internal/testutil"
+	"github.com/luryann/aquify/server/internal/app/members"
+	"github.com/luryann/aquify/server/internal/runtimepersist"
+	"github.com/luryann/aquify/server/internal/testutil"
 )
 
 // The runtime-snapshot bridge is a backward-compat, best-effort mirror of state;

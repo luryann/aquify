@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 	"strings"
 	"sync"
@@ -18,6 +19,50 @@ import (
 )
 
 var ErrObjectNotFound = errors.New("object not found")
+
+// MaxPresignTTL is the longest lifetime S3 SigV4 allows for a presigned URL.
+const MaxPresignTTL = 7 * 24 * time.Hour
+
+// ErrPresignTTLTooLong is returned when a presign TTL exceeds MaxPresignTTL.
+var ErrPresignTTLTooLong = errors.New("presign ttl exceeds the 7 day SigV4 maximum")
+
+// IsUnavailable reports whether err looks like a storage connectivity failure
+// (network error, timeout, canceled context, or an HTTP 5xx from the backend)
+// rather than a definitive answer such as "object missing".
+func IsUnavailable(err error) bool {
+	if err == nil || errors.Is(err, ErrObjectNotFound) {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return true
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return true
+	}
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		return true
+	}
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return true
+	}
+	if errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	var resp minio.ErrorResponse
+	if errors.As(err, &resp) {
+		if resp.StatusCode >= 500 {
+			return true
+		}
+		switch resp.Code {
+		case "SlowDown", "ServiceUnavailable", "InternalError", "RequestTimeout":
+			return true
+		}
+	}
+	return false
+}
 
 // maxGetObjectBytes bounds GetObject, which loads the whole object into memory
 // (reports and exports are small; larger downloads should use a presigned URL).
@@ -211,6 +256,9 @@ func (s *S3Storage) ensureBucket(ctx context.Context, region string) error {
 }
 
 func (s *S3Storage) PresignedPutURL(key string, ttl time.Duration) (string, error) {
+	if ttl > MaxPresignTTL {
+		return "", fmt.Errorf("presign put %s: %w", key, ErrPresignTTLTooLong)
+	}
 	u, err := s.client.PresignedPutObject(context.Background(), s.bucket, key, ttl)
 	if err != nil {
 		return "", fmt.Errorf("presign put %s: %w", key, err)
@@ -219,6 +267,9 @@ func (s *S3Storage) PresignedPutURL(key string, ttl time.Duration) (string, erro
 }
 
 func (s *S3Storage) PresignedGetURL(key string, ttl time.Duration) (string, error) {
+	if ttl > MaxPresignTTL {
+		return "", fmt.Errorf("presign get %s: %w", key, ErrPresignTTLTooLong)
+	}
 	u, err := s.client.PresignedGetObject(context.Background(), s.bucket, key, ttl, nil)
 	if err != nil {
 		return "", fmt.Errorf("presign get %s: %w", key, err)

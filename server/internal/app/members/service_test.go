@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
-	"github.com/dareaquatics/aquify/server/internal/testutil"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/testutil"
 )
 
 func TestCreateHouseholdParentAssociatesAccessAndNormalizesFields(t *testing.T) {

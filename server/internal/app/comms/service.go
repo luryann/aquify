@@ -41,9 +41,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/dareaquatics/aquify/server/internal/dbutil"
-	"github.com/dareaquatics/aquify/server/internal/postmark"
-	"github.com/dareaquatics/aquify/server/internal/storage"
+	"github.com/luryann/aquify/server/internal/dbutil"
+	"github.com/luryann/aquify/server/internal/postmark"
+	"github.com/luryann/aquify/server/internal/storage"
 )
 
 // ─── Sentinel errors ──────────────────────────────────────────────────────────
@@ -332,6 +332,7 @@ type AddSuppressionInput struct {
 // PostmarkEventInput represents an inbound Postmark delivery-state webhook.
 type PostmarkEventInput struct {
 	OrgID             string
+	CampaignID        string // from webhook Metadata; fallback match when MessageID is unknown
 	MessageID         string
 	RecipientEmail    string
 	RecordType        string
@@ -448,21 +449,123 @@ func (s *Service) PostmarkClient() postmark.Client {
 // from Postgres into memory on startup.
 func NewServiceWithPool(pool *pgxpool.Pool) *Service {
 	s := NewService()
+	if pool == nil {
+		return s
+	}
 	s.repo = newRepository(pool)
-	if err := s.loadFromDB(context.Background()); err != nil {
+	if err := s.loadFromDB(context.Background(), ""); err != nil {
 		slog.Error("comms: failed to load from DB", "err", err)
 	}
 	return s
 }
 
-func (s *Service) loadFromDB(ctx context.Context) error {
+// Refresh merges current Postgres rows for every org into the cache (no-op in
+// in-memory mode) so reads and erasure observe records created by another
+// instance. Prefer RefreshOrg on request paths.
+func (s *Service) Refresh(ctx context.Context) error {
+	return s.loadFromDB(ctx, "")
+}
+
+// RefreshOrg is Refresh scoped to a single org.
+func (s *Service) RefreshOrg(ctx context.Context, orgID string) error {
+	return s.loadFromDB(ctx, orgID)
+}
+
+// loadFromDB replaces the cache with current Postgres state so rows created,
+// changed or deleted by another instance are observed. An empty orgID reloads
+// every org; otherwise only that org's rows are read and replaced. No-op
+// without a repo.
+func (s *Service) loadFromDB(ctx context.Context, orgID string) error {
+	if s.repo == nil {
+		return nil
+	}
+	// Load under the write lock so a concurrent write cannot be overwritten by
+	// an older snapshot.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.reloadLocked(ctx, orgID)
+}
+
+// reloadLocked replaces the cached collections (for orgID, or all orgs when
+// empty) from Postgres; caller holds s.mu (write).
+func (s *Service) reloadLocked(ctx context.Context, orgID string) error {
+	if s.repo == nil {
+		return nil
+	}
 	announcements, campaigns, deliveries, suppressions, preferences, messages,
-		messageEdits, messageReactions, messageAttachments, messageReads, err := s.repo.LoadAll(ctx)
+		messageEdits, messageReactions, messageAttachments, messageReads, err := s.repo.LoadAll(ctx, orgID)
 	if err != nil {
 		return err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	if orgID == "" {
+		s.announcements = make(map[string]*Announcement, len(announcements))
+		s.campaigns = make(map[string]*EmailCampaign, len(campaigns))
+		s.deliveries = make(map[string]*EmailDelivery, len(deliveries))
+		s.suppression = make(map[string]*SuppressionEntry, len(suppressions))
+		s.preferences = make(map[string]*NotificationPreference, len(preferences))
+		s.messages = make(map[string]*Message, len(messages))
+		s.messageEdits = make(map[string]*MessageEdit, len(messageEdits))
+		s.messageReactions = make(map[string]*MessageReaction, len(messageReactions))
+		s.messageAttachments = make(map[string]*MessageAttachment, len(messageAttachments))
+		s.messageReads = make(map[string]*MessageRead, len(messageReads))
+	} else {
+		// Drop only this org's cached rows. Message children carry no org id,
+		// so resolve it through the (still cached) parent message first.
+		inOrg := func(messageID string) bool {
+			m, ok := s.messages[messageID]
+			return ok && m.OrgID == orgID
+		}
+		for k, v := range s.messageEdits {
+			if inOrg(v.MessageID) {
+				delete(s.messageEdits, k)
+			}
+		}
+		for k, v := range s.messageReactions {
+			if inOrg(v.MessageID) {
+				delete(s.messageReactions, k)
+			}
+		}
+		for k, v := range s.messageAttachments {
+			if inOrg(v.MessageID) {
+				delete(s.messageAttachments, k)
+			}
+		}
+		for k, v := range s.messages {
+			if v.OrgID == orgID {
+				delete(s.messages, k)
+			}
+		}
+		for k, v := range s.announcements {
+			if v.OrgID == orgID {
+				delete(s.announcements, k)
+			}
+		}
+		for k, v := range s.campaigns {
+			if v.OrgID == orgID {
+				delete(s.campaigns, k)
+			}
+		}
+		for k, v := range s.deliveries {
+			if v.OrgID == orgID {
+				delete(s.deliveries, k)
+			}
+		}
+		for k, v := range s.suppression {
+			if v.OrgID == orgID {
+				delete(s.suppression, k)
+			}
+		}
+		for k, v := range s.preferences {
+			if v.OrgID == orgID {
+				delete(s.preferences, k)
+			}
+		}
+		for k, v := range s.messageReads {
+			if v.OrgID == orgID {
+				delete(s.messageReads, k)
+			}
+		}
+	}
 	for _, a := range announcements {
 		s.announcements[a.ID] = a
 	}
@@ -494,6 +597,34 @@ func (s *Service) loadFromDB(ctx context.Context) error {
 		s.messageReads[messageReadKey(read.OrgID, read.HouseholdID, read.SwimmerID, read.UserID)] = read
 	}
 	return nil
+}
+
+// reloadSuppressionLocked replaces one org's suppression cache; caller holds s.mu (write).
+func (s *Service) reloadSuppressionLocked(ctx context.Context, orgID string) error {
+	if s.repo == nil {
+		return nil
+	}
+	entries, err := s.repo.LoadSuppressionEntries(ctx, orgID)
+	if err != nil {
+		return err
+	}
+	for k, v := range s.suppression {
+		if orgID == "" || v.OrgID == orgID {
+			delete(s.suppression, k)
+		}
+	}
+	for _, e := range entries {
+		s.suppression[suppressionKey(e.OrgID, e.Email)] = e
+	}
+	return nil
+}
+
+// syncOrLog refreshes for read paths that cannot return an error; on failure it
+// logs and serves the last known state.
+func (s *Service) syncOrLog(orgID string) {
+	if err := s.loadFromDB(context.Background(), orgID); err != nil {
+		slog.Warn("comms: refresh from DB failed; serving cached state", "err", err)
+	}
 }
 
 func (s *Service) newID() string {
@@ -551,6 +682,7 @@ func (s *Service) listNotificationPreferencesLocked(orgID, userID string) []Noti
 
 // ListNotificationPreferences returns the caller's effective notification settings.
 func (s *Service) ListNotificationPreferences(orgID, userID string) []NotificationPreferenceView {
+	s.syncOrLog(orgID)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.listNotificationPreferencesLocked(orgID, userID)
@@ -560,6 +692,9 @@ func (s *Service) ListNotificationPreferences(orgID, userID string) []Notificati
 func (s *Service) ReplaceNotificationPreferences(orgID, userID, householdID, actorID string, settings []NotificationPreferenceSetting) ([]NotificationPreferenceView, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.reloadLocked(context.Background(), orgID); err != nil {
+		return nil, err
+	}
 
 	// Validate every setting before writing any, so a bad request changes nothing.
 	seen := make(map[string]struct{}, len(settings))
@@ -650,6 +785,9 @@ func (s *Service) CreateAnnouncement(inp CreateAnnouncementInput) (*Announcement
 func (s *Service) SetAnnouncementPublic(orgID, id, actorID string, public bool) (*Announcement, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.reloadLocked(context.Background(), orgID); err != nil {
+		return nil, err
+	}
 	a, ok := s.announcements[id]
 	if !ok || a.OrgID != orgID {
 		return nil, ErrAnnouncementNotFound
@@ -676,6 +814,7 @@ func (s *Service) SetAnnouncementPublic(orgID, id, actorID string, public bool) 
 // ListPublicAnnouncements returns published, explicitly public, all-club
 // announcements for an org, newest first.
 func (s *Service) ListPublicAnnouncements(orgID string) []Announcement {
+	s.syncOrLog(orgID)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := []Announcement{}
@@ -727,6 +866,9 @@ func (s *Service) transitionAnnouncement(
 ) (*Announcement, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.reloadLocked(context.Background(), orgID); err != nil {
+		return nil, err
+	}
 
 	a, ok := s.announcements[id]
 	if !ok || a.OrgID != orgID {
@@ -752,6 +894,9 @@ func (s *Service) transitionAnnouncement(
 
 // GetAnnouncement returns a single announcement.
 func (s *Service) GetAnnouncement(orgID, id string) (*Announcement, error) {
+	if err := s.loadFromDB(context.Background(), orgID); err != nil {
+		return nil, err
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -766,6 +911,9 @@ func (s *Service) GetAnnouncement(orgID, id string) (*Announcement, error) {
 // ListAnnouncements returns all announcements for an org, newest first.
 // status filter is optional (empty = all).
 func (s *Service) ListAnnouncements(orgID, statusFilter string) ([]*Announcement, error) {
+	if err := s.loadFromDB(context.Background(), orgID); err != nil {
+		return nil, err
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -792,6 +940,7 @@ func (s *Service) ListAnnouncements(orgID, statusFilter string) ([]*Announcement
 // message-ID-addressed endpoints (reactions) can run the same thread-scoped
 // authorization used everywhere else in the messages API.
 func (s *Service) MessageThread(orgID, messageID string) (householdID, swimmerID string, ok bool) {
+	s.syncOrLog(orgID)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -805,6 +954,9 @@ func (s *Service) MessageThread(orgID, messageID string) (householdID, swimmerID
 // SendMessage appends a message to a household+swimmer thread, optionally with
 // attachments that have already been uploaded and validated by the caller.
 func (s *Service) SendMessage(inp CreateMessageInput) (*Message, error) {
+	if err := s.loadFromDB(context.Background(), inp.OrgID); err != nil {
+		return nil, err
+	}
 	s.mu.Lock()
 
 	now := time.Now().UTC()
@@ -839,6 +991,14 @@ func (s *Service) SendMessage(inp CreateMessageInput) (*Message, error) {
 		}
 		if s.repo != nil {
 			if err := s.repo.InsertMessageAttachment(context.Background(), a); err != nil {
+				// Roll back the partially-written message so a retry can't duplicate it.
+				_ = s.repo.DeleteMessage(context.Background(), m.ID)
+				delete(s.messages, m.ID)
+				for id, att := range s.messageAttachments {
+					if att.MessageID == m.ID {
+						delete(s.messageAttachments, id)
+					}
+				}
 				s.mu.Unlock()
 				return nil, fmt.Errorf("persist message attachment: %w", err)
 			}
@@ -904,6 +1064,7 @@ func (s *Service) buildMessageView(m *Message, viewerUserID string) MessageView 
 // ListMessages returns every message in a household+swimmer thread, oldest first,
 // enriched with reactions/attachments and reacted-by-me flags for viewerUserID.
 func (s *Service) ListMessages(orgID, householdID, swimmerID, viewerUserID string) []MessageView {
+	s.syncOrLog(orgID)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -929,6 +1090,7 @@ func (s *Service) ListMessages(orgID, householdID, swimmerID, viewerUserID strin
 // org, most recently active first — used for a coach/admin inbox view. UnreadCount
 // is computed relative to viewerUserID's read watermark for each thread.
 func (s *Service) ListMessageThreads(orgID, viewerUserID string) []MessageThreadSummary {
+	s.syncOrLog(orgID)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -969,6 +1131,9 @@ func (s *Service) ListMessageThreads(orgID, viewerUserID string) []MessageThread
 // EditMessage updates a message's body, sender-only, keeping a history entry of
 // the prior body. Edits are unrestricted (no time window).
 func (s *Service) EditMessage(orgID, messageID, userID, newBody string) (*Message, error) {
+	if err := s.loadFromDB(context.Background(), orgID); err != nil {
+		return nil, err
+	}
 	s.mu.Lock()
 
 	current, ok := s.messages[messageID]
@@ -1015,6 +1180,9 @@ func (s *Service) EditMessage(orgID, messageID, userID, newBody string) (*Messag
 // AddReaction records userID's emoji reaction on a message. Adding the same
 // (message, user, emoji) twice is a no-op.
 func (s *Service) AddReaction(orgID, messageID, userID, emoji string) error {
+	if err := s.loadFromDB(context.Background(), orgID); err != nil {
+		return err
+	}
 	if !AllowedMessageReactions[emoji] {
 		return ErrInvalidReaction
 	}
@@ -1049,6 +1217,9 @@ func (s *Service) AddReaction(orgID, messageID, userID, emoji string) error {
 
 // RemoveReaction removes userID's own emoji reaction from a message, if present.
 func (s *Service) RemoveReaction(orgID, messageID, userID, emoji string) error {
+	if err := s.loadFromDB(context.Background(), orgID); err != nil {
+		return err
+	}
 	s.mu.Lock()
 
 	m, ok := s.messages[messageID]
@@ -1077,6 +1248,9 @@ func (s *Service) RemoveReaction(orgID, messageID, userID, emoji string) error {
 
 // MarkThreadRead records that userID has read a household+swimmer thread as of now.
 func (s *Service) MarkThreadRead(orgID, householdID, swimmerID, userID string) error {
+	if err := s.loadFromDB(context.Background(), orgID); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1143,6 +1317,9 @@ func (s *Service) CreateCampaign(inp CreateCampaignInput) (*EmailCampaign, error
 
 // GetCampaign returns a single email campaign.
 func (s *Service) GetCampaign(orgID, id string) (*EmailCampaign, error) {
+	if err := s.loadFromDB(context.Background(), orgID); err != nil {
+		return nil, err
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -1156,6 +1333,9 @@ func (s *Service) GetCampaign(orgID, id string) (*EmailCampaign, error) {
 
 // ListCampaigns returns all campaigns for an org, newest first.
 func (s *Service) ListCampaigns(orgID string) ([]*EmailCampaign, error) {
+	if err := s.loadFromDB(context.Background(), orgID); err != nil {
+		return nil, err
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -1172,43 +1352,147 @@ func (s *Service) ListCampaigns(orgID string) ([]*EmailCampaign, error) {
 	return out, nil
 }
 
+// updateCampaign applies fn to the cached campaign (re-inserting a copy
+// if a concurrent reload dropped it) and returns a snapshot for persistence.
+func (s *Service) updateCampaign(orgID, campaignID string, base EmailCampaign, fn func(c *EmailCampaign)) EmailCampaign {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, ok := s.campaigns[campaignID]
+	if !ok || c.OrgID != orgID {
+		cp := base
+		c = &cp
+		s.campaigns[campaignID] = c
+	}
+	fn(c)
+	return *c
+}
+
 // revertCampaignSendFailure moves a campaign that was flipped to "sending"
 // back to "draft" (so it can be retried) when a mid-send persistence error
 // prevents the send loop from reaching its normal terminal-status update.
-// Persistence of the reverted status is best-effort: if it also fails, the
-// original error is still returned to the caller rather than being masked.
-func (s *Service) revertCampaignSendFailure(c *EmailCampaign, actorID string, sendErr error) error {
-	s.mu.Lock()
-	c.Status = "draft"
-	c.UpdatedAt = time.Now().UTC()
-	c.UpdatedBy = actorID
-	snapshot := *c // persist a copy so the write does not race with readers of c
-	s.mu.Unlock()
-
+// If persisting the revert also fails the campaign stays "sending" in the
+// database; that is logged, included in the returned error, and recovered by
+// the stale-claim rule (see campaignSendStaleAfter).
+func (s *Service) revertCampaignSendFailure(base EmailCampaign, actorID string, sendErr error) error {
+	snapshot := s.updateCampaign(base.OrgID, base.ID, base, func(c *EmailCampaign) {
+		c.Status = "draft"
+		c.UpdatedAt = time.Now().UTC()
+		c.UpdatedBy = actorID
+	})
 	if s.repo != nil {
-		_ = s.repo.UpsertCampaign(context.Background(), &snapshot)
+		if err := s.repo.UpsertCampaign(context.Background(), &snapshot); err != nil {
+			slog.Error("comms: failed to revert campaign to draft after send failure; it stays 'sending' until the stale-claim window elapses",
+				"campaign_id", base.ID, "org_id", base.OrgID, "send_error", sendErr, "revert_error", err)
+			return fmt.Errorf("%w (reverting campaign status also failed: %v)", sendErr, err)
+		}
 	}
 	return sendErr
 }
 
-// SendCampaign sends a campaign to the provided recipient list, enforcing
-// the suppression list. The campaign must be in draft status.
-func (s *Service) SendCampaign(ctx context.Context, orgID, campaignID string, inp SendCampaignInput) (*EmailCampaign, error) {
+// sendBatchTimeout bounds one Postmark batch call.
+const sendBatchTimeout = 20 * time.Second
+
+// campaignSendStaleAfter is how long a campaign may sit in "sending" without a
+// heartbeat (updated_at is touched after every batch) before another sender
+// may re-claim it. Re-claiming is safe because the send skips recipients that
+// already have a non-failed delivery row.
+var campaignSendStaleAfter = 15 * time.Minute
+
+// ErrCampaignNotSending is returned by RunCampaignSend when the campaign is not
+// in the claimed "sending" state (never claimed, or already finished).
+var ErrCampaignNotSending = errors.New("campaign is not in sending status")
+
+// ClaimCampaign atomically moves a draft campaign (or one stuck in "sending"
+// past campaignSendStaleAfter) to "sending" so exactly one caller proceeds to
+// RunCampaignSend. It returns a copy of the claimed campaign.
+func (s *Service) ClaimCampaign(ctx context.Context, orgID, campaignID, actorID string) (*EmailCampaign, error) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
+	// Postgres is the source of truth: observe campaigns written by other
+	// instances before deciding anything.
+	if err := s.reloadLocked(ctx, orgID); err != nil {
+		return nil, err
+	}
 	c, ok := s.campaigns[campaignID]
 	if !ok || c.OrgID != orgID {
+		return nil, ErrCampaignNotFound
+	}
+	stale := c.Status == "sending" && time.Since(c.UpdatedAt) > campaignSendStaleAfter
+	if c.Status != "draft" && !stale {
+		return nil, ErrCampaignNotDraft
+	}
+	// Claim in the database so two replicas can never both send the same
+	// campaign; the cache is only a mirror.
+	if s.repo != nil {
+		claimed, err := s.repo.ClaimCampaignForSend(ctx, orgID, campaignID, campaignSendStaleAfter)
+		if err != nil {
+			return nil, fmt.Errorf("claim campaign for send: %w", err)
+		}
+		if !claimed {
+			return nil, ErrCampaignNotDraft
+		}
+	}
+	c.Status = "sending"
+	c.UpdatedAt = time.Now().UTC()
+	c.UpdatedBy = actorID
+	cp := *c
+	return &cp, nil
+}
+
+// ReleaseCampaignClaim returns a claimed campaign to draft (e.g. when the send
+// job could not be enqueued).
+func (s *Service) ReleaseCampaignClaim(orgID, campaignID, actorID string, cause error) error {
+	s.mu.RLock()
+	c, ok := s.campaigns[campaignID]
+	var base EmailCampaign
+	if ok {
+		base = *c
+	}
+	s.mu.RUnlock()
+	if !ok {
+		return cause
+	}
+	return s.revertCampaignSendFailure(base, actorID, cause)
+}
+
+// SendCampaign claims and sends a campaign synchronously. The HTTP layer uses
+// ClaimCampaign + RunCampaignSend (from a background job) instead.
+func (s *Service) SendCampaign(ctx context.Context, orgID, campaignID string, inp SendCampaignInput) (*EmailCampaign, error) {
+	if _, err := s.ClaimCampaign(ctx, orgID, campaignID, inp.ActorID); err != nil {
+		return nil, err
+	}
+	return s.RunCampaignSend(ctx, orgID, campaignID, inp)
+}
+
+// RunCampaignSend mails a claimed ("sending") campaign to the provided
+// recipients, enforcing the suppression list and skipping recipients that
+// already have a non-failed delivery row (so a re-claimed or retried send does
+// not double-mail). Deliveries are persisted after every batch.
+func (s *Service) RunCampaignSend(ctx context.Context, orgID, campaignID string, inp SendCampaignInput) (*EmailCampaign, error) {
+	s.mu.Lock()
+	if err := s.reloadLocked(ctx, orgID); err != nil {
+		s.mu.Unlock()
+		return nil, err
+	}
+	cached, ok := s.campaigns[campaignID]
+	if !ok || cached.OrgID != orgID {
 		s.mu.Unlock()
 		return nil, ErrCampaignNotFound
 	}
-	if c.Status != "draft" {
+	if cached.Status != "sending" {
 		s.mu.Unlock()
-		return nil, ErrCampaignNotDraft
+		return nil, ErrCampaignNotSending
 	}
-	// Mark as sending while we hold the lock so concurrent sends are rejected.
-	c.Status = "sending"
-	c.UpdatedAt = time.Now().UTC()
-	c.UpdatedBy = inp.ActorID
+	c := *cached // working copy; the cache entry may be replaced by reloads
 	client := s.postmarkClient
+	// A retry after a crash or mid-send failure must not re-mail recipients
+	// that already have a terminal delivery row for this campaign.
+	prior := map[string]string{}
+	for _, existing := range s.deliveries {
+		if existing.CampaignID == campaignID && existing.OrgID == orgID && existing.Status != "failed" {
+			prior[existing.RecipientEmail] = existing.Status
+		}
+	}
 	s.mu.Unlock()
 
 	var (
@@ -1218,16 +1502,27 @@ func (s *Service) SendCampaign(ctx context.Context, orgID, campaignID string, in
 		processedCount  int
 	)
 
-	// A retry after a mid-send persistence failure must not re-mail recipients
-	// that already have a terminal delivery row for this campaign.
-	prior := map[string]string{}
-	s.mu.RLock()
-	for _, existing := range s.deliveries {
-		if existing.CampaignID == campaignID && existing.OrgID == orgID && existing.Status != "failed" {
-			prior[existing.RecipientEmail] = existing.Status
-		}
+	// The send must outlive the caller: a slow campaign or a disconnected
+	// client must not cancel the remaining sends.
+	sendCtx := context.WithoutCancel(ctx)
+
+	type pendingSend struct {
+		d   *EmailDelivery
+		req postmark.SendEmailRequest
 	}
-	s.mu.RUnlock()
+	var pending []pendingSend
+
+	persist := func(d *EmailDelivery) error {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.deliveries[d.ID] = d
+		if s.repo != nil {
+			if err := s.repo.UpsertDelivery(context.Background(), d); err != nil {
+				return fmt.Errorf("persist email delivery: %w", err)
+			}
+		}
+		return nil
+	}
 
 	for _, r := range inp.Recipients {
 		email := strings.ToLower(strings.TrimSpace(r.Email))
@@ -1243,6 +1538,7 @@ func (s *Service) SendCampaign(ctx context.Context, orgID, campaignID string, in
 			}
 			continue
 		}
+		prior[email] = "pending" // de-duplicate repeated addresses in the list
 
 		d := &EmailDelivery{
 			ID:              s.newID(),
@@ -1261,64 +1557,124 @@ func (s *Service) SendCampaign(ctx context.Context, orgID, campaignID string, in
 		if suppressed {
 			d.Status = "suppressed"
 			suppressedCount++
-		} else {
-			resp, err := client.SendEmail(ctx, postmark.SendEmailRequest{
-				To:        email,
-				Subject:   c.Subject,
-				HTMLBody:  c.BodyHTML,
-				TextBody:  c.BodyText,
-				FromName:  c.FromName,
-				FromEmail: c.FromEmail,
-				Metadata: map[string]string{
-					"org_id":      orgID,
-					"campaign_id": campaignID,
-				},
-			})
+			if err := persist(d); err != nil {
+				return nil, s.revertCampaignSendFailure(c, inp.ActorID, err)
+			}
+			continue
+		}
+		pending = append(pending, pendingSend{d: d, req: postmark.SendEmailRequest{
+			To:        email,
+			Subject:   c.Subject,
+			HTMLBody:  c.BodyHTML,
+			TextBody:  c.BodyText,
+			FromName:  c.FromName,
+			FromEmail: c.FromEmail,
+			Metadata: map[string]string{
+				"org_id":      orgID,
+				"campaign_id": campaignID,
+			},
+		}})
+	}
+
+	for start := 0; start < len(pending); start += postmark.MaxBatchSize {
+		end := start + postmark.MaxBatchSize
+		if end > len(pending) {
+			end = len(pending)
+		}
+		chunk := pending[start:end]
+
+		// Re-read suppression from Postgres before every batch so a bounce
+		// webhook handled by another instance stops further mailing.
+		s.mu.Lock()
+		if err := s.reloadSuppressionLocked(context.Background(), orgID); err != nil {
+			s.mu.Unlock()
+			return nil, s.revertCampaignSendFailure(c, inp.ActorID, err)
+		}
+		kept := chunk[:0:0]
+		var nowSuppressed []pendingSend
+		for _, p := range chunk {
+			if s.isSuppressed(orgID, p.req.To) {
+				nowSuppressed = append(nowSuppressed, p)
+			} else {
+				kept = append(kept, p)
+			}
+		}
+		s.mu.Unlock()
+		for _, p := range nowSuppressed {
+			p.d.Status = "suppressed"
+			p.d.UpdatedAt = time.Now().UTC()
+			suppressedCount++
+			if err := persist(p.d); err != nil {
+				return nil, s.revertCampaignSendFailure(c, inp.ActorID, err)
+			}
+		}
+		chunk = kept
+		if len(chunk) == 0 {
+			continue
+		}
+		reqs := make([]postmark.SendEmailRequest, len(chunk))
+		for i, p := range chunk {
+			reqs[i] = p.req
+		}
+		batchCtx, cancel := context.WithTimeout(sendCtx, sendBatchTimeout)
+		results, batchErr := client.SendBatch(batchCtx, reqs)
+		cancel()
+		if batchErr == nil && len(results) != len(chunk) {
+			batchErr = fmt.Errorf("postmark: batch returned %d results for %d messages", len(results), len(chunk))
+		}
+		for i, p := range chunk {
 			now := time.Now().UTC()
-			if err != nil {
+			d := p.d
+			var sendErr error
+			if batchErr != nil {
+				sendErr = batchErr
+			} else {
+				sendErr = results[i].Err
+			}
+			if sendErr != nil {
 				d.Status = "failed"
-				d.ErrorMessage = err.Error()
+				d.ErrorMessage = sendErr.Error()
 				failedCount++
 			} else {
 				d.Status = "sent"
-				d.ProviderMessageID = resp.MessageID
+				d.ProviderMessageID = results[i].MessageID
 				d.SentAt = &now
 				sentCount++
 			}
 			d.UpdatedAt = now
-		}
-
-		s.mu.Lock()
-		s.deliveries[d.ID] = d
-		if s.repo != nil {
-			if err := s.repo.UpsertDelivery(context.Background(), d); err != nil {
-				s.mu.Unlock()
-				return nil, s.revertCampaignSendFailure(c, inp.ActorID, fmt.Errorf("persist email delivery: %w", err))
+			if err := persist(d); err != nil {
+				return nil, s.revertCampaignSendFailure(c, inp.ActorID, err)
 			}
 		}
-		s.mu.Unlock()
+		// Heartbeat so a long-running send is not mistaken for a stuck claim.
+		if s.repo != nil {
+			if err := s.repo.TouchSendingCampaign(context.Background(), orgID, campaignID); err != nil {
+				slog.Warn("comms: campaign send heartbeat failed", "campaign_id", campaignID, "err", err)
+			}
+		}
 	}
 
-	// Determine terminal status: "failed" when all non-suppressed sends failed
-	// (i.e. nothing was actually delivered and nothing was suppressed to account
-	// for the zero sent_count).
+	// Terminal status rule (no extra states): "failed" when nothing was
+	// delivered and at least one deliverable send failed, regardless of how
+	// many recipients were suppressed; "sent" when at least one send succeeded;
+	// and "sent" when everything was suppressed (sent 0, failed 0) since there
+	// is nothing to retry.
 	finalStatus := "sent"
-	if sentCount == 0 && suppressedCount == 0 && processedCount > 0 {
+	if sentCount == 0 && failedCount > 0 {
 		finalStatus = "failed"
 	}
 
 	now := time.Now().UTC()
-	s.mu.Lock()
-	c.Status = finalStatus
-	c.SentAt = &now
-	c.TotalRecipients = processedCount
-	c.SentCount = sentCount
-	c.FailedCount = failedCount
-	c.SuppressedCount = suppressedCount
-	c.UpdatedAt = now
-	c.UpdatedBy = inp.ActorID
-	result := *c // hand back a copy; the cached campaign stays under the service lock
-	s.mu.Unlock()
+	result := s.updateCampaign(orgID, campaignID, c, func(c *EmailCampaign) {
+		c.Status = finalStatus
+		c.SentAt = &now
+		c.TotalRecipients = processedCount
+		c.SentCount = sentCount
+		c.FailedCount = failedCount
+		c.SuppressedCount = suppressedCount
+		c.UpdatedAt = now
+		c.UpdatedBy = inp.ActorID
+	})
 
 	if s.repo != nil {
 		if err := s.repo.UpsertCampaign(context.Background(), &result); err != nil {
@@ -1330,6 +1686,9 @@ func (s *Service) SendCampaign(ctx context.Context, orgID, campaignID string, in
 
 // ListDeliveries returns all delivery records for a campaign.
 func (s *Service) ListDeliveries(orgID, campaignID string) ([]*EmailDelivery, error) {
+	if err := s.loadFromDB(context.Background(), orgID); err != nil {
+		return nil, err
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -1352,33 +1711,113 @@ func (s *Service) ListDeliveries(orgID, campaignID string) ([]*EmailDelivery, er
 	return out, nil
 }
 
-// ApplyPostmarkEvent updates delivery and suppression state from a Postmark webhook.
+// findDeliveryLocked locates the delivery a webhook refers to without a full
+// reload: by provider message id, else (when the batch response was lost, e.g.
+// timeout after Postmark accepted the batch) by campaign + recipient, in which
+// case the message id is recorded on the delivery. Caller holds s.mu (write).
+func (s *Service) findDeliveryLocked(ctx context.Context, orgID, campaignID, messageID, email string) (*EmailDelivery, error) {
+	match := func(candidates []*EmailDelivery, byMessage bool) *EmailDelivery {
+		var best *EmailDelivery
+		for _, c := range candidates {
+			if orgID != "" && c.OrgID != orgID {
+				continue // never let one org's event touch another org's delivery
+			}
+			if email != "" && !strings.EqualFold(c.RecipientEmail, email) {
+				continue
+			}
+			if byMessage {
+				if c.ProviderMessageID != messageID {
+					continue
+				}
+			} else {
+				if c.CampaignID != campaignID || (c.ProviderMessageID != "" && c.ProviderMessageID != messageID) {
+					continue
+				}
+			}
+			if best == nil || c.CreatedAt.After(best.CreatedAt) {
+				best = c
+			}
+		}
+		return best
+	}
+	// merge adopts a freshly loaded row into the cache (DB is canonical).
+	merge := func(rows []*EmailDelivery) []*EmailDelivery {
+		for _, d := range rows {
+			s.deliveries[d.ID] = d
+		}
+		return rows
+	}
+	cached := make([]*EmailDelivery, 0, len(s.deliveries))
+	if s.repo == nil {
+		for _, d := range s.deliveries {
+			cached = append(cached, d)
+		}
+	}
+	if strings.TrimSpace(messageID) != "" {
+		if s.repo != nil {
+			rows, err := s.repo.FindDeliveryByProviderMessageID(ctx, orgID, messageID)
+			if err != nil {
+				return nil, err
+			}
+			cached = merge(rows)
+		}
+		if d := match(cached, true); d != nil {
+			return d, nil
+		}
+	}
+	if campaignID != "" && orgID != "" && email != "" {
+		if s.repo != nil {
+			rows, err := s.repo.FindDeliveryByCampaignRecipient(ctx, orgID, campaignID, email)
+			if err != nil {
+				return nil, err
+			}
+			cached = merge(rows)
+		}
+		if d := match(cached, false); d != nil {
+			if strings.TrimSpace(messageID) != "" {
+				d.ProviderMessageID = messageID
+			}
+			return d, nil
+		}
+	}
+	return nil, nil
+}
+
+// loadSuppressionLocked pulls the single org+email suppression row into the
+// cache (or drops the cached copy if it no longer exists in Postgres).
+func (s *Service) loadSuppressionLocked(ctx context.Context, orgID, email string) error {
+	if s.repo == nil || orgID == "" || email == "" {
+		return nil
+	}
+	entry, err := s.repo.LoadSuppressionEntry(ctx, orgID, email)
+	if err != nil {
+		return err
+	}
+	if entry == nil {
+		delete(s.suppression, suppressionKey(orgID, email))
+		return nil
+	}
+	s.suppression[suppressionKey(orgID, email)] = entry
+	return nil
+}
+
+// ApplyPostmarkEvent updates delivery and suppression state from a Postmark
+// webhook using targeted single-row lookups (no full cache reload).
 func (s *Service) ApplyPostmarkEvent(inp PostmarkEventInput) error {
 	email := strings.ToLower(strings.TrimSpace(inp.RecipientEmail))
 	recordType := strings.TrimSpace(inp.RecordType)
 	orgID := strings.TrimSpace(inp.OrgID)
+	ctx := context.Background()
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	var delivery *EmailDelivery
-	if strings.TrimSpace(inp.MessageID) != "" {
-		for _, candidate := range s.deliveries {
-			if candidate.ProviderMessageID != inp.MessageID {
-				continue
-			}
-			if orgID != "" && candidate.OrgID != orgID {
-				continue // never let one org's event touch another org's delivery
-			}
-			if email != "" && !strings.EqualFold(candidate.RecipientEmail, email) {
-				continue
-			}
-			delivery = candidate
-			if orgID == "" {
-				orgID = candidate.OrgID
-			}
-			break
-		}
+	delivery, err := s.findDeliveryLocked(ctx, orgID, strings.TrimSpace(inp.CampaignID), strings.TrimSpace(inp.MessageID), email)
+	if err != nil {
+		return err
+	}
+	if delivery != nil && orgID == "" {
+		orgID = delivery.OrgID
 	}
 
 	switch recordType {
@@ -1386,13 +1825,17 @@ func (s *Service) ApplyPostmarkEvent(inp PostmarkEventInput) error {
 		if delivery == nil {
 			return ErrDeliveryNotFound
 		}
+		if delivery.Status == "bounced" {
+			// Out-of-order/retried Delivery must not erase a bounce.
+			return nil
+		}
 		now := occurredAtOrNow(inp.OccurredAt)
 		delivery.Status = "delivered"
 		delivery.DeliveredAt = &now
 		delivery.UpdatedAt = now
 		delivery.ErrorMessage = inp.Details
 		if s.repo != nil {
-			if err := s.repo.UpsertDelivery(context.Background(), delivery); err != nil {
+			if err := s.repo.UpsertDelivery(ctx, delivery); err != nil {
 				return fmt.Errorf("persist delivered email delivery: %w", err)
 			}
 		}
@@ -1412,12 +1855,16 @@ func (s *Service) ApplyPostmarkEvent(inp PostmarkEventInput) error {
 			delivery.UpdatedAt = now
 			delivery.ErrorMessage = inp.Details
 			if s.repo != nil {
-				if err := s.repo.UpsertDelivery(context.Background(), delivery); err != nil {
+				if err := s.repo.UpsertDelivery(ctx, delivery); err != nil {
 					return fmt.Errorf("persist %s email delivery: %w", label, err)
 				}
 			}
 		}
 		if orgID != "" && email != "" {
+			// Suppression applies from org+recipient even with no matching delivery.
+			if err := s.loadSuppressionLocked(ctx, orgID, email); err != nil {
+				return err
+			}
 			return s.upsertSuppressionLocked(orgID, email, reason, "postmark-webhook")
 		}
 		return nil
@@ -1426,6 +1873,9 @@ func (s *Service) ApplyPostmarkEvent(inp PostmarkEventInput) error {
 			return nil
 		}
 		if inp.SuppressSending {
+			if err := s.loadSuppressionLocked(ctx, orgID, email); err != nil {
+				return err
+			}
 			return s.upsertSuppressionLocked(orgID, email, normalizeSuppressionReason(inp.SuppressionReason), "postmark-webhook")
 		}
 		return s.removeSuppressionByEmailLocked(orgID, email)
@@ -1442,6 +1892,9 @@ func (s *Service) AddSuppression(inp AddSuppressionInput) (*SuppressionEntry, er
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.reloadLocked(context.Background(), inp.OrgID); err != nil {
+		return nil, err
+	}
 	return s.addSuppressionLocked(inp.OrgID, email, inp.Reason, inp.CreatedBy)
 }
 
@@ -1449,6 +1902,9 @@ func (s *Service) AddSuppression(inp AddSuppressionInput) (*SuppressionEntry, er
 func (s *Service) RemoveSuppression(orgID, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.reloadLocked(context.Background(), orgID); err != nil {
+		return err
+	}
 
 	for key, entry := range s.suppression {
 		if entry.ID == id && entry.OrgID == orgID {
@@ -1466,6 +1922,9 @@ func (s *Service) RemoveSuppression(orgID, id string) error {
 
 // ListSuppression returns all suppression entries for an org.
 func (s *Service) ListSuppression(orgID string) ([]*SuppressionEntry, error) {
+	if err := s.loadFromDB(context.Background(), orgID); err != nil {
+		return nil, err
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -1603,6 +2062,30 @@ func (s *Service) ExportHouseholdData(orgID, householdID string) HouseholdExport
 	return out
 }
 
+// HouseholdObjectKeys returns the message-attachment object keys for a
+// household without modifying anything, so callers can purge object storage
+// before the rows (and therefore the keys) are deleted.
+func (s *Service) HouseholdObjectKeys(ctx context.Context, orgID, householdID string) ([]string, error) {
+	if err := s.RefreshOrg(ctx, orgID); err != nil {
+		return nil, fmt.Errorf("list household comms keys: refresh: %w", err)
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	messageIDs := make(map[string]bool)
+	for id, m := range s.messages {
+		if m.OrgID == orgID && m.HouseholdID == householdID {
+			messageIDs[id] = true
+		}
+	}
+	var keys []string
+	for _, a := range s.messageAttachments {
+		if messageIDs[a.MessageID] && a.ObjectKey != "" {
+			keys = append(keys, a.ObjectKey)
+		}
+	}
+	return keys, nil
+}
+
 // EraseHouseholdData permanently deletes every comms record tied to a
 // household as part of an approved compliance right-to-erasure request:
 // message threads (and their edits/reactions/attachments), read watermarks,
@@ -1612,6 +2095,10 @@ func (s *Service) ExportHouseholdData(orgID, householdID string) HouseholdExport
 // message-attachment object keys so the caller can purge them from object
 // storage.
 func (s *Service) EraseHouseholdData(ctx context.Context, orgID, householdID string, contactEmails []string) ([]string, error) {
+	// Pick up messages/attachments (and object keys) created by another instance.
+	if err := s.RefreshOrg(ctx, orgID); err != nil {
+		return nil, fmt.Errorf("erase household comms data: refresh: %w", err)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

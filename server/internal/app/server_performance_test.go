@@ -12,13 +12,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/app/documents"
-	"github.com/dareaquatics/aquify/server/internal/app/groups"
-	"github.com/dareaquatics/aquify/server/internal/app/meets"
-	"github.com/dareaquatics/aquify/server/internal/app/members"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
-	"github.com/dareaquatics/aquify/server/internal/app/performance"
-	"github.com/dareaquatics/aquify/server/internal/testutil"
+	"github.com/luryann/aquify/server/internal/app/documents"
+	"github.com/luryann/aquify/server/internal/app/groups"
+	"github.com/luryann/aquify/server/internal/app/meets"
+	"github.com/luryann/aquify/server/internal/app/members"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/app/performance"
+	"github.com/luryann/aquify/server/internal/testutil"
 )
 
 // ─── Envelope helpers ─────────────────────────────────────────────────────────

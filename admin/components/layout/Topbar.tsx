@@ -64,7 +64,7 @@ function ThemeToggle() {
     const next = isDark ? 'light' : 'dark'
     document.documentElement.setAttribute('data-theme', next)
     setIsDark(!isDark)
-    try { localStorage.setItem('dare-theme', next) } catch { /* ignore */ }
+    try { localStorage.setItem('aquify-theme', next) } catch { /* ignore */ }
   }
 
   return (

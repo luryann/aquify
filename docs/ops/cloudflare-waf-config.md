@@ -1,8 +1,8 @@
-# DARE Platform — Cloudflare WAF and Security Configuration
+# aquify Platform — Cloudflare WAF and Security Configuration
 
 ## Overview
 
-All traffic to `dare.club` and its subdomains passes through Cloudflare. This document defines the WAF rules, rate limiting, caching, and security settings that form the platform's edge defense layer. These settings complement—but do not replace—the in-application rate limiter and security middleware described in `CLAUDE.md`.
+All traffic to `aquify.club` and its subdomains passes through Cloudflare. This document defines the WAF rules, rate limiting, caching, and security settings that form the platform's edge defense layer. These settings complement—but do not replace—the in-application rate limiter and security middleware described in `CLAUDE.md`.
 
 ---
 
@@ -50,7 +50,7 @@ Navigate to **Security → WAF → Custom Rules**. Create the rules below in the
 
 ```
 Expression:
-  (http.host eq "api.dare.club") and (http.user_agent eq "")
+  (http.host eq "api.aquify.club") and (http.user_agent eq "")
 
 Action: Block
 Priority: 1
@@ -61,7 +61,7 @@ Description: Reject API requests with no User-Agent header — characteristic of
 
 ```
 Expression:
-  (http.host eq "staging-api.dare.club") and (http.user_agent eq "")
+  (http.host eq "staging-api.aquify.club") and (http.user_agent eq "")
 
 Action: Block
 Priority: 2
@@ -72,7 +72,7 @@ Description: Same empty-UA block for staging API
 
 ```
 Expression:
-  (http.host eq "admin.dare.club") and
+  (http.host eq "admin.aquify.club") and
   not (http.user_agent contains "Mozilla") and
   not (cf.client.bot_score lt 30)
 
@@ -85,8 +85,8 @@ Description: Require browser challenge for non-browser clients hitting the admin
 
 ```
 Expression:
-  not (http.host in {"dare.club" "www.dare.club" "admin.dare.club" "api.dare.club"
-                      "status.dare.club" "staging-admin.dare.club" "staging-api.dare.club"})
+  not (http.host in {"aquify.club" "www.aquify.club" "admin.aquify.club" "api.aquify.club"
+                      "status.aquify.club" "staging-admin.aquify.club" "staging-api.aquify.club"})
   and ip.src ne 0.0.0.0/0
 
 Action: Block
@@ -146,7 +146,7 @@ Description: Limit import job submission to prevent queue flooding
 
 ```
 Name: Global API Rate Limit
-Expression: (http.host eq "api.dare.club") or (http.host eq "staging-api.dare.club")
+Expression: (http.host eq "api.aquify.club") or (http.host eq "staging-api.aquify.club")
 Characteristics: IP address
 Requests per period: 1200
 Period: 1 minute
@@ -160,10 +160,10 @@ Description: Matches APP global rate limit — SECURITY_RATE_LIMIT_GLOBAL_REQUES
 
 | Surface | Setting |
 |---|---|
-| `www.dare.club` | Super Bot Fight Mode: On — block definitely automated traffic |
-| `admin.dare.club` | Super Bot Fight Mode: On |
-| `api.dare.club` | Bot Fight Mode: Off — API clients may be non-browser scripts; rely on custom rules instead |
-| `status.dare.club` | Super Bot Fight Mode: On |
+| `www.aquify.club` | Super Bot Fight Mode: On — block definitely automated traffic |
+| `admin.aquify.club` | Super Bot Fight Mode: On |
+| `api.aquify.club` | Bot Fight Mode: Off — API clients may be non-browser scripts; rely on custom rules instead |
+| `status.aquify.club` | Super Bot Fight Mode: On |
 
 Configure under **Security → Bots**.
 
@@ -177,7 +177,7 @@ Cloudflare Page Rules are deprecated in favour of **Cache Rules** (Rules → Cac
 
 ```
 Name: Admin Static Assets Cache
-Expression: (http.host eq "admin.dare.club") and
+Expression: (http.host eq "admin.aquify.club") and
             (http.request.uri.path wildcard "/_next/static/*")
 Cache Eligibility: Eligible for cache
 Edge TTL: Respect origin + override to 31536000 seconds
@@ -189,7 +189,7 @@ Cache Key: Default
 
 ```
 Name: API No Cache
-Expression: (http.host eq "api.dare.club") or (http.host eq "staging-api.dare.club")
+Expression: (http.host eq "api.aquify.club") or (http.host eq "staging-api.aquify.club")
 Cache Eligibility: Bypass cache
 ```
 
@@ -197,7 +197,7 @@ Cache Eligibility: Bypass cache
 
 ```
 Name: Admin HTML No Cache
-Expression: (http.host eq "admin.dare.club") and
+Expression: (http.host eq "admin.aquify.club") and
             not (http.request.uri.path wildcard "/_next/static/*") and
             not (http.request.uri.path wildcard "/_next/image*")
 Cache Eligibility: Bypass cache
@@ -210,7 +210,7 @@ Description: Next.js app shell and data fetching should not be edge-cached
 
 Cloudflare's **Always Use HTTPS** setting (under SSL/TLS → Edge Certificates) handles this globally. No additional Transform Rule is needed. Confirm the toggle is enabled.
 
-For any subdomain that should NOT be forced to HTTPS (e.g., internal health-check endpoints — unlikely), you would add a Page Exception. For DARE, leave Always Use HTTPS on globally.
+For any subdomain that should NOT be forced to HTTPS (e.g., internal health-check endpoints — unlikely), you would add a Page Exception. For aquify, leave Always Use HTTPS on globally.
 
 ---
 
@@ -218,10 +218,10 @@ For any subdomain that should NOT be forced to HTTPS (e.g., internal health-chec
 
 | Zone / Subdomain | Security Level |
 |---|---|
-| `api.dare.club` | Medium |
-| `admin.dare.club` | High |
-| `www.dare.club` | Medium |
-| `status.dare.club` | Medium |
+| `api.aquify.club` | Medium |
+| `admin.aquify.club` | High |
+| `www.aquify.club` | Medium |
+| `status.aquify.club` | Medium |
 | Staging subdomains | Medium |
 
 Configure via **Security → Settings → Security Level** per zone, or use a Configuration Rule scoped by hostname expression if the entire zone shares a single setting.
@@ -254,7 +254,7 @@ Both are enabled by default on Pro and above plans — verify they are active.
 Turnstile provides a lightweight, privacy-preserving bot challenge for the login form. It is optional but recommended.
 
 1. Create a Turnstile widget in the Cloudflare dashboard (Turnstile → Add Widget).
-   - Hostname: `admin.dare.club`
+   - Hostname: `admin.aquify.club`
    - Widget Mode: Managed
    - Note the **Site Key** and **Secret Key**.
 2. In the admin Next.js app, add `@cloudflare/turnstile-web` to the login form.
@@ -276,10 +276,10 @@ resp, err := http.PostForm("https://challenges.cloudflare.com/turnstile/v0/sitev
 
 ## Cloudflare Access (Optional Hardening for Admin)
 
-For an additional layer of identity protection on `admin.dare.club`, consider enabling **Cloudflare Access** (Zero Trust → Access → Applications):
+For an additional layer of identity protection on `admin.aquify.club`, consider enabling **Cloudflare Access** (Zero Trust → Access → Applications):
 
 - Require Cloudflare Access authentication before the request reaches the origin.
-- Allow access only to users with `@dare.club` email addresses (or a specific identity provider group).
+- Allow access only to users with `@aquify.club` email addresses (or a specific identity provider group).
 - This adds a pre-auth gate before the OIDC/Keycloak login.
 
 This is optional and adds operational complexity. It is most valuable during early launch when the attack surface is large relative to the user base.
@@ -295,7 +295,7 @@ This is optional and adds operational complexity. It is most valuable during ear
 | Origin health degraded | Cloudflare → Notifications → Origin Error Rate |
 | Rate limit threshold reached | Cloudflare → Notifications → Advanced Rate Limiting |
 
-Route all Cloudflare notifications to the same Slack channel used for ops alerts (`#dare-alerts`).
+Route all Cloudflare notifications to the same Slack channel used for ops alerts (`#aquify-alerts`).
 
 ---
 

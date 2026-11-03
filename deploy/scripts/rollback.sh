@@ -15,15 +15,15 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 
 # Overridable for tests; production uses the defaults.
-DEPLOY_DIR="${DEPLOY_DIR:-/opt/dare}"
+DEPLOY_DIR="${DEPLOY_DIR:-/opt/aquify}"
 ENV_FILE="${DEPLOY_DIR}/.env.production"
 ENV_BACKUP="${ENV_FILE}.prev"
 COMPOSE_FILE="${DEPLOY_DIR}/docker-compose.production.yml"
 HEALTH_URL="${HEALTH_URL:-http://localhost:8080/api/v1/health/live}"
 HEALTH_TIMEOUT_SECONDS="${HEALTH_TIMEOUT_SECONDS:-60}"
 HEALTH_RETRY_INTERVAL="${HEALTH_RETRY_INTERVAL:-5}"
-DEPLOY_LOG="${DEPLOY_LOG:-/var/log/dare/deploys.log}"
-APP_SERVICES="dare-api dare-admin dare-worker"
+DEPLOY_LOG="${DEPLOY_LOG:-/var/log/aquify/deploys.log}"
+APP_SERVICES="aquify-api aquify-admin aquify-worker"
 
 # ---------------------------------------------------------------------------
 # Helpers

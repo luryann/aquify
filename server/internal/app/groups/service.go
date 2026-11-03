@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -27,6 +27,8 @@ var (
 	ErrInvalidTransition     = errors.New("invalid registration status transition")
 	ErrSwimmerNotFound       = errors.New("swimmer not found")
 	ErrHouseholdNotFound     = errors.New("household not found")
+	ErrGroupInactive         = errors.New("group is not active")
+	ErrNotEligible           = errors.New("swimmer is not eligible for this group")
 	ErrDuplicateRegistration = errors.New("swimmer already registered to this group for this season")
 )
 
@@ -180,8 +182,9 @@ type swimmerRef struct {
 
 // householdRef is a minimal household representation for scope checks.
 type householdRef struct {
-	ID    string
-	OrgID string
+	ID             string
+	OrgID          string
+	KeycloakUserID string
 }
 
 // Service is the in-memory groups/eligibility/registrations service.
@@ -240,6 +243,10 @@ func NewServiceWithPool(pool *pgxpool.Pool) *Service {
 // SetSyncHookForTest installs a hook run inside syncFromDB between reading
 // Postgres and replacing memory. Set it before the service is used concurrently.
 func (s *Service) SetSyncHookForTest(fn func()) { s.syncHook = fn }
+
+// Refresh reloads in-memory state from Postgres so cross-process readers (the
+// worker) observe writes made by another instance. No-op in in-memory mode.
+func (s *Service) Refresh(ctx context.Context) error { return s.syncFromDB(ctx) }
 
 // syncFromDB reloads the in-memory maps from the database (no-op without a repository).
 func (s *Service) syncFromDB(ctx context.Context) error {
@@ -317,7 +324,9 @@ func (s *Service) SeedSwimmer(orgID, swimmerID, householdID, dob, gender, regSta
 		Gender:             gender,
 		RegistrationStatus: regStatus,
 	}
-	s.households[householdID] = householdRef{ID: householdID, OrgID: orgID}
+	ref := s.households[householdID]
+	ref.ID, ref.OrgID = householdID, orgID
+	s.households[householdID] = ref
 }
 
 // SeedParentHousehold links a parent user to a household for scope enforcement.
@@ -376,7 +385,7 @@ func (s *Service) CreateGroup(principal *appmiddleware.Principal, orgID string, 
 		Type:        groupType,
 		MinAge:      input.MinAge,
 		MaxAge:      input.MaxAge,
-		CoachUserID: strings.TrimSpace(input.CoachUserID),
+		CoachUserID: createCoachUserID(principal, input.CoachUserID),
 		IsActive:    true,
 		CreatedAt:   now,
 		UpdatedAt:   now,
@@ -414,6 +423,14 @@ func (s *Service) UpdateGroup(principal *appmiddleware.Principal, orgID, groupID
 	group, ok := s.groupLocked(orgID, groupID)
 	if !ok {
 		return Group{}, GroupAuditEvent{}, ErrGroupNotFound
+	}
+	if coachScopedOnly(principal) {
+		if group.CoachUserID != principal.UserID {
+			return Group{}, GroupAuditEvent{}, ErrForbidden
+		}
+		if input.CoachUserID != nil && strings.TrimSpace(*input.CoachUserID) != group.CoachUserID {
+			return Group{}, GroupAuditEvent{}, ErrForbidden
+		}
 	}
 
 	before := groupSnapshot(group)
@@ -487,7 +504,16 @@ func (s *Service) GetGroup(principal *appmiddleware.Principal, orgID, groupID st
 	if !ok {
 		return Group{}, ErrGroupNotFound
 	}
+	if coachScopedOnly(principal) && group.CoachUserID != principal.UserID {
+		return Group{}, ErrForbidden
+	}
 	return group, nil
+}
+
+// coachScopedOnly reports whether the principal is a coach without admin (and
+// so limited to groups they coach).
+func coachScopedOnly(principal *appmiddleware.Principal) bool {
+	return appmiddleware.HasAnyRole(principal, "coach") && !appmiddleware.HasAnyRole(principal, "admin")
 }
 
 // ListGroups returns groups in an org. Coaches without admin access only see their own groups.
@@ -545,6 +571,9 @@ func (s *Service) AttachEligibilityRule(principal *appmiddleware.Principal, orgI
 	}
 	if input.Parameters == nil {
 		input.Parameters = map[string]any{}
+	}
+	if err := validateRuleParameters(ruleType, input.Parameters); err != nil {
+		return EligibilityRule{}, GroupAuditEvent{}, err
 	}
 
 	s.mu.Lock()
@@ -759,6 +788,9 @@ func (s *Service) CreateRegistration(principal *appmiddleware.Principal, orgID s
 	if !ok || group.OrgID != orgID {
 		return Registration{}, ErrGroupNotFound
 	}
+	if !group.IsActive {
+		return Registration{}, ErrGroupInactive
+	}
 
 	household, ok := s.households[householdID]
 	if !ok || household.OrgID != orgID {
@@ -782,9 +814,27 @@ func (s *Service) CreateRegistration(principal *appmiddleware.Principal, orgID s
 	}
 
 	// Duplicate check: swimmer+group+season must be unique per org.
+	var withdrawn *Registration
 	for _, reg := range s.registrations {
 		if reg.OrgID == orgID && reg.SwimmerID == swimmerID && reg.GroupID == groupID && reg.Season == season {
-			return Registration{}, ErrDuplicateRegistration
+			if reg.Status != "withdrawn" {
+				return Registration{}, ErrDuplicateRegistration
+			}
+			r := reg
+			withdrawn = &r
+		}
+	}
+
+	// Self-service registration must satisfy the group's eligibility rules;
+	// staff may override.
+	if appmiddleware.IsParentOnly(principal) {
+		for _, rule := range s.rules {
+			if rule.GroupID != group.ID || !rule.IsActive {
+				continue
+			}
+			if eval := s.evalRule(rule, swimmer); !eval.Passed {
+				return Registration{}, fmt.Errorf("%w: %s", ErrNotEligible, eval.Reason)
+			}
 		}
 	}
 
@@ -794,6 +844,23 @@ func (s *Service) CreateRegistration(principal *appmiddleware.Principal, orgID s
 	}
 
 	now := time.Now().UTC()
+	if withdrawn != nil {
+		// Re-registering after a withdrawal reopens the same row (the
+		// swimmer/group/season key is unique).
+		reg := *withdrawn
+		reg.Status = "pending"
+		reg.RegistrationDate = regDate
+		reg.Notes = strings.TrimSpace(input.Notes)
+		reg.UpdatedAt = now
+		reg.UpdatedBy = principal.UserID
+		if s.repo != nil {
+			if err := s.repo.UpsertRegistration(context.Background(), reg); err != nil {
+				return Registration{}, mapPersistenceError(err)
+			}
+		}
+		s.registrations[reg.ID] = reg
+		return reg, nil
+	}
 	reg := Registration{
 		ID:               s.newID("reg_"),
 		OrgID:            orgID,
@@ -955,13 +1022,31 @@ func (s *Service) groupLocked(orgID, groupID string) (Group, bool) {
 // principalOwnsHouseholdLocked reports whether the principal's login household or
 // an explicit parent link covers householdID.
 func (s *Service) principalOwnsHouseholdLocked(principal *appmiddleware.Principal, householdID string) bool {
-	return strings.TrimSpace(principal.HouseholdID) == householdID || s.parentOwnsHouseholdLocked(principal.UserID, householdID)
+	if strings.TrimSpace(principal.HouseholdID) == householdID || s.parentOwnsHouseholdLocked(principal.UserID, householdID) {
+		return true
+	}
+	// Durable link: households persist the creating/linked user's id.
+	if uid := strings.TrimSpace(principal.UserID); uid != "" {
+		if h, ok := s.households[householdID]; ok && h.KeycloakUserID == uid {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) parentOwnsHouseholdLocked(parentUserID, householdID string) bool {
 	households := s.parentHousehold[parentUserID]
 	_, ok := households[householdID]
 	return ok
+}
+
+// createCoachUserID keeps a non-admin coach's new group visible to them.
+func createCoachUserID(principal *appmiddleware.Principal, requested string) string {
+	requested = strings.TrimSpace(requested)
+	if coachScopedOnly(principal) {
+		return principal.UserID
+	}
+	return requested
 }
 
 func validateGroupType(t string) error {
@@ -972,6 +1057,41 @@ func validateGroupType(t string) error {
 	}
 	if !slices.Contains(allowed, t) {
 		return fmt.Errorf("type must be one of: %s", strings.Join(allowed, ", "))
+	}
+	return nil
+}
+
+// validateRuleParameters rejects wrongly typed parameters so rules never
+// silently fail open (e.g. a string "allowed") or closed (a string max_age).
+func validateRuleParameters(ruleType string, params map[string]any) error {
+	isNumber := func(v any) bool {
+		switch v.(type) {
+		case int, int64, float64, float32:
+			return true
+		}
+		return false
+	}
+	switch ruleType {
+	case "age_range":
+		for _, key := range []string{"min_age", "max_age"} {
+			if v, ok := params[key]; ok && !isNumber(v) {
+				return fmt.Errorf("parameters.%s must be a number", key)
+			}
+		}
+	case "gender", "registration_status":
+		if v, ok := params["allowed"]; ok {
+			switch list := v.(type) {
+			case []string:
+			case []any:
+				for _, item := range list {
+					if _, ok := item.(string); !ok {
+						return errors.New("parameters.allowed must be an array of strings")
+					}
+				}
+			default:
+				return errors.New("parameters.allowed must be an array of strings")
+			}
+		}
 	}
 	return nil
 }
@@ -1040,6 +1160,9 @@ func toInt(v any) int {
 func toStringSlice(v any) []string {
 	if v == nil {
 		return nil
+	}
+	if list, ok := v.([]string); ok {
+		return list
 	}
 	raw, ok := v.([]any)
 	if !ok {

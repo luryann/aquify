@@ -4,7 +4,7 @@ import (
 	"slices"
 	"strings"
 
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
 // principalOwnsHousehold is the single household-scope rule for parent and

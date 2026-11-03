@@ -1,8 +1,8 @@
 {
   "realm": "aquify",
   "enabled": true,
-  "displayName": "DARE Swim Club",
-  "displayNameHtml": "<div class=\"aq-wordmark\"><span class=\"aq-wordmark-name\">DARE</span><span class=\"aq-wordmark-sub\">Swim Club Operations</span></div>",
+  "displayName": "aquify Swim Club",
+  "displayNameHtml": "<div class=\"aq-wordmark\"><span class=\"aq-wordmark-name\">aquify</span><span class=\"aq-wordmark-sub\">Swim Club Operations</span></div>",
   "registrationAllowed": false,
   "resetPasswordAllowed": true,
   "rememberMe": true,
@@ -32,8 +32,8 @@
   "smtpServer": {
     "host": "localhost",
     "port": "1025",
-    "from": "noreply@dare.local",
-    "fromDisplayName": "DARE Swim Club",
+    "from": "noreply@aquify.local",
+    "fromDisplayName": "aquify Swim Club",
     "auth": "false",
     "ssl": "false",
     "starttls": "false"
@@ -62,7 +62,7 @@
   "clients": [
     {
       "clientId": "aquify-id",
-      "name": "DARE Platform (admin + portals)",
+      "name": "aquify Platform (admin + portals)",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": false,
@@ -118,7 +118,7 @@
     },
     {
       "clientId": "aquify-admin",
-      "name": "DARE Admin Service Account",
+      "name": "aquify Admin Service Account",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": false,
@@ -142,9 +142,9 @@
     },
     {
       "id": "00000000-0000-0000-0000-00000000a101",
-      "username": "owner@dare.local",
+      "username": "owner@aquify.local",
       "enabled": true,
-      "email": "owner@dare.local",
+      "email": "owner@aquify.local",
       "emailVerified": true,
       "firstName": "Dev",
       "lastName": "Owner",
@@ -156,9 +156,9 @@
     },
     {
       "id": "00000000-0000-0000-0000-00000000a102",
-      "username": "admin@dare.local",
+      "username": "admin@aquify.local",
       "enabled": true,
-      "email": "admin@dare.local",
+      "email": "admin@aquify.local",
       "emailVerified": true,
       "firstName": "Dev",
       "lastName": "Admin",
@@ -170,9 +170,9 @@
     },
     {
       "id": "00000000-0000-0000-0000-00000000a103",
-      "username": "coach@dare.local",
+      "username": "coach@aquify.local",
       "enabled": true,
-      "email": "coach@dare.local",
+      "email": "coach@aquify.local",
       "emailVerified": true,
       "firstName": "Dev",
       "lastName": "Coach",
@@ -184,9 +184,9 @@
     },
     {
       "id": "00000000-0000-0000-0000-00000000a104",
-      "username": "parent@dare.local",
+      "username": "parent@aquify.local",
       "enabled": true,
-      "email": "parent@dare.local",
+      "email": "parent@aquify.local",
       "emailVerified": true,
       "firstName": "Dev",
       "lastName": "Parent",
@@ -198,9 +198,9 @@
     },
     {
       "id": "00000000-0000-0000-0000-00000000a107",
-      "username": "swimmer@dare.local",
+      "username": "swimmer@aquify.local",
       "enabled": true,
-      "email": "swimmer@dare.local",
+      "email": "swimmer@aquify.local",
       "emailVerified": true,
       "firstName": "Emma",
       "lastName": "Chen",
@@ -212,9 +212,9 @@
     },
     {
       "id": "00000000-0000-0000-0000-00000000a105",
-      "username": "billing@dare.local",
+      "username": "billing@aquify.local",
       "enabled": true,
-      "email": "billing@dare.local",
+      "email": "billing@aquify.local",
       "emailVerified": true,
       "firstName": "Dev",
       "lastName": "Billing",

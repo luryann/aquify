@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/app/authn"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/app/authn"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
 func TestIssueSessionSetsSecureCookies(t *testing.T) {

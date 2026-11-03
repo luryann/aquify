@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 	"github.com/go-chi/chi/v5"
 )
 

@@ -11,11 +11,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dareaquatics/aquify/server/internal/app/comms"
-	"github.com/dareaquatics/aquify/server/internal/keycloak"
-	"github.com/dareaquatics/aquify/server/internal/postmark"
-	"github.com/dareaquatics/aquify/server/internal/storage"
-	stripelib "github.com/dareaquatics/aquify/server/internal/stripe"
+	"github.com/luryann/aquify/server/internal/app/comms"
+	"github.com/luryann/aquify/server/internal/keycloak"
+	"github.com/luryann/aquify/server/internal/postmark"
+	"github.com/luryann/aquify/server/internal/storage"
+	stripelib "github.com/luryann/aquify/server/internal/stripe"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 

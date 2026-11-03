@@ -1,5 +1,5 @@
 /**
- * Feature flags for the DARE platform frontend.
+ * Feature flags for the aquify platform frontend.
  *
  * Flags are read from environment variables at build/runtime.
  */

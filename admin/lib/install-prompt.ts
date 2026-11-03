@@ -1,3 +1,5 @@
+import { localToday } from './dates'
+
 export const INSTALL_DISMISS_KEY = 'aquify.install-prompt.dismissed-at'
 export const INSTALL_DISMISS_DAYS = 90
 export const INSTALL_VISITS_KEY = 'aquify.install-prompt.visit-days'
@@ -33,7 +35,7 @@ export function rememberInstallDismissed(storage: StorageLike | null, now: numbe
  */
 export function recordVisitDay(storage: StorageLike | null, now: number = Date.now()): number {
   try {
-    const today = new Date(now).toISOString().slice(0, 10)
+    const today = localToday(new Date(now))
     const raw = storage?.getItem(INSTALL_VISITS_KEY)
     const parsed: unknown = raw ? JSON.parse(raw) : []
     const days = Array.isArray(parsed) ? parsed.filter((d): d is string => typeof d === 'string') : []

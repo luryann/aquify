@@ -48,7 +48,7 @@ export function ServiceWorkerRegistrar() {
       <button
         type="button"
         onClick={() => waiting.postMessage({ type: 'SKIP_WAITING' })}
-        className="u-p-8px-16px u-fw-600 u-ff-inherit" style={{ background: 'var(--accent, #eb5d1e)', color: '#fff', border: 0, borderRadius: 8, cursor: 'pointer' }}
+        className="btn btn-primary btn-sm"
       >
         Reload
       </button>

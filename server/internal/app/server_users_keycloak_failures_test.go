@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dareaquatics/aquify/server/internal/keycloak"
+	"github.com/luryann/aquify/server/internal/keycloak"
 )
 
 // flakyKC wraps the stub and fails selected Keycloak calls.

@@ -3,13 +3,13 @@ package app
 import (
 	"context"
 
-	"github.com/dareaquatics/aquify/server/internal/app/comms"
-	"github.com/dareaquatics/aquify/server/internal/app/documents"
-	"github.com/dareaquatics/aquify/server/internal/app/events"
-	"github.com/dareaquatics/aquify/server/internal/app/meets"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
-	"github.com/dareaquatics/aquify/server/internal/app/volunteer"
-	"github.com/dareaquatics/aquify/server/internal/app/wellness"
+	"github.com/luryann/aquify/server/internal/app/comms"
+	"github.com/luryann/aquify/server/internal/app/documents"
+	"github.com/luryann/aquify/server/internal/app/events"
+	"github.com/luryann/aquify/server/internal/app/meets"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/app/volunteer"
+	"github.com/luryann/aquify/server/internal/app/wellness"
 )
 
 // householdExportSource contributes one domain's household records to a
@@ -47,6 +47,9 @@ func buildHouseholdExportSources(d householdExportDeps) []householdExportSource 
 		out = append(out, householdExportSource{
 			name: "meets", keys: []string{"meet_commitments", "meet_event_selections", "meet_entries"},
 			collect: func(orgID, householdID string, swimmerIDs map[string]bool) (map[string]any, error) {
+				if err := d.meets.Refresh(context.Background()); err != nil {
+					return nil, err
+				}
 				sys := exportSystemPrincipal(orgID)
 				commitments := []meets.Commitment{}
 				selections := []meets.EventSelection{}
@@ -186,6 +189,9 @@ func buildHouseholdExportSources(d householdExportDeps) []householdExportSource 
 		out = append(out, householdExportSource{
 			name: "communications", keys: []string{"messages", "message_edits", "message_attachments", "message_reads", "communication_preferences"},
 			collect: func(orgID, householdID string, _ map[string]bool) (map[string]any, error) {
+				if err := d.comms.Refresh(context.Background()); err != nil {
+					return nil, err
+				}
 				x := d.comms.ExportHouseholdData(orgID, householdID)
 				return map[string]any{
 					"messages": x.Messages, "message_edits": x.MessageEdits, "message_attachments": x.MessageAttachments,

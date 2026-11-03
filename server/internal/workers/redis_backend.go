@@ -268,7 +268,8 @@ func (b *RedisBackend) Start() error {
 		mux.HandleFunc(taskType, b.wrapHandler(taskType, handler))
 	}
 	b.server = asynq.NewServer(b.redisOpt, asynq.Config{
-		Concurrency: b.concurrency,
+		Concurrency:    b.concurrency,
+		RetryDelayFunc: retryDelay,
 		Queues: map[string]int{
 			QueueImports:   1,
 			QueueBilling:   1,
@@ -385,12 +386,54 @@ func (b *RedisBackend) wrapHandler(taskType string, handler Handler) func(contex
 		}
 		exec.Status = StatusFailed
 		exec.Err = err.Error()
+		b.logger.Error("job handler failed",
+			"task_type", taskType,
+			"task_id", taskID,
+			"queue", queueName,
+			"retry_count", retryCount,
+			"max_retry", maxRetry,
+			"duration_ms", exec.Duration,
+			"err", err,
+		)
 		b.metrics.RecordFailure(exec)
 		if retryCount >= maxRetry {
 			b.metrics.RecordDLQ(taskType)
 		}
-		return err
+		return &queueError{queue: queueName, err: err}
 	}
+}
+
+// queueError carries the queue a failed task ran on to asynq's RetryDelayFunc,
+// which otherwise only sees the error and a queue-less task.
+type queueError struct {
+	queue string
+	err   error
+}
+
+func (e *queueError) Error() string { return e.err.Error() }
+func (e *queueError) Unwrap() error { return e.err }
+
+// retryDelay applies the per-queue DefaultRetryPolicies backoff schedule.
+// n is the number of retries already performed.
+func retryDelay(n int, err error, _ *asynq.Task) time.Duration {
+	policies := DefaultRetryPolicies()
+	policy := policies[QueueDefault]
+	var qe *queueError
+	if errors.As(err, &qe) {
+		if p, ok := policies[qe.queue]; ok {
+			policy = p
+		}
+	}
+	if len(policy.Backoff) == 0 {
+		return 30 * time.Second
+	}
+	if n < 0 {
+		n = 0
+	}
+	if n >= len(policy.Backoff) {
+		return policy.Backoff[len(policy.Backoff)-1]
+	}
+	return policy.Backoff[n]
 }
 
 // taskLister is one of the asynq inspector's per-state list calls.
@@ -510,11 +553,17 @@ func convertAsynqTaskInfo(info *asynq.TaskInfo) *TaskInfo {
 		Type:       info.Type,
 		Queue:      info.Queue,
 		Status:     status,
-		ProcessAt:  info.NextProcessAt.UTC(),
 		MaxRetries: info.MaxRetry,
 		Retried:    info.Retried,
 		LastErr:    info.LastErr,
 		OrgID:      TaskOrgID(info.Payload),
+	}
+	if !info.NextProcessAt.IsZero() {
+		out.ProcessAt = info.NextProcessAt.UTC()
+	}
+	if !info.LastFailedAt.IsZero() {
+		failedAt := info.LastFailedAt.UTC()
+		out.LastFailedAt = &failedAt
 	}
 	out.CompletedAt = normalizeTimestamp(info.CompletedAt)
 	return out

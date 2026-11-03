@@ -18,9 +18,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
-	"github.com/dareaquatics/aquify/server/internal/storage"
-	"github.com/dareaquatics/aquify/server/internal/workers"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/storage"
+	"github.com/luryann/aquify/server/internal/workers"
 )
 
 var (
@@ -287,11 +287,21 @@ func (s *Service) ListExportsForViewer(principal *appmiddleware.Principal, orgID
 	if appmiddleware.HasAnyRole(principal, "admin", "coach") {
 		return list
 	}
+	now := s.nowFunc()
 	filtered := make([]FileExport, 0, len(list))
 	for _, ex := range list {
-		if !IsStaffOnlyExportType(ex.ExportType) {
-			filtered = append(filtered, ex)
+		if IsStaffOnlyExportType(ex.ExportType) || ex.Status != "ready" {
+			continue
 		}
+		if !ex.ExpiresAt.IsZero() && !ex.ExpiresAt.After(now) {
+			continue
+		}
+		// Hide internal fields from non-staff viewers.
+		ex.StorageKey = ""
+		ex.LastError = ""
+		ex.CreatedBy = ""
+		ex.UpdatedBy = ""
+		filtered = append(filtered, ex)
 	}
 	return filtered
 }

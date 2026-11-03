@@ -4,7 +4,7 @@
     { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" }
   ],
   "annotations": { "list": [] },
-  "description": "DARE Platform — background job queue depth, execution rates, and failures.",
+  "description": "aquify Platform — background job queue depth, execution rates, and failures.",
   "editable": true,
   "graphTooltip": 1,
   "id": null,
@@ -20,7 +20,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "sum by (type, status) (rate(dare_job_executions_total[5m]))",
+          "expr": "sum by (type, status) (rate(aquify_job_executions_total[5m]))",
           "legendFormat": "{{type}} / {{status}}"
         }
       ]
@@ -36,7 +36,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "dare_job_executions_total{status=\"failure\"}",
+          "expr": "aquify_job_executions_total{status=\"failure\"}",
           "legendFormat": "{{type}}"
         }
       ]
@@ -52,7 +52,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (le, type) (rate(dare_job_duration_seconds_bucket[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le, type) (rate(aquify_job_duration_seconds_bucket[5m])))",
           "legendFormat": "p95 {{type}}"
         }
       ]
@@ -79,7 +79,7 @@
       "type": "gauge",
       "targets": [
         {
-          "expr": "dare_job_executions_total{status=\"dlq\"}",
+          "expr": "aquify_job_executions_total{status=\"dlq\"}",
           "legendFormat": "{{type}}"
         }
       ]
@@ -87,7 +87,7 @@
   ],
   "refresh": "30s",
   "schemaVersion": 38,
-  "tags": ["dare", "jobs", "queues"],
+  "tags": ["aquify", "jobs", "queues"],
   "templating": {
     "list": [
       {
@@ -105,7 +105,7 @@
   "time": { "from": "now-1h", "to": "now" },
   "timepicker": {},
   "timezone": "browser",
-  "title": "DARE – Queue Depth & Job Failures",
-  "uid": "dare-jobs",
+  "title": "aquify – Queue Depth & Job Failures",
+  "uid": "aquify-jobs",
   "version": 1
 }

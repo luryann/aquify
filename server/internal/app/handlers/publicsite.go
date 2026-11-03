@@ -7,14 +7,14 @@ import (
 	"strings"
 	"time"
 
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 
-	"github.com/dareaquatics/aquify/server/internal/app/comms"
-	"github.com/dareaquatics/aquify/server/internal/app/events"
-	"github.com/dareaquatics/aquify/server/internal/app/httpx"
-	"github.com/dareaquatics/aquify/server/internal/app/meets"
-	"github.com/dareaquatics/aquify/server/internal/app/orgsettings"
-	"github.com/dareaquatics/aquify/server/internal/app/performance"
+	"github.com/luryann/aquify/server/internal/app/comms"
+	"github.com/luryann/aquify/server/internal/app/events"
+	"github.com/luryann/aquify/server/internal/app/httpx"
+	"github.com/luryann/aquify/server/internal/app/meets"
+	"github.com/luryann/aquify/server/internal/app/orgsettings"
+	"github.com/luryann/aquify/server/internal/app/performance"
 	"github.com/go-chi/chi/v5"
 )
 

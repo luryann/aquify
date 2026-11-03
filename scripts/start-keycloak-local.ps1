@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-  Starts local Keycloak (and Mailpit) for DARE platform development.
+  Starts local Keycloak (and Mailpit) for aquify platform development.
 
 .DESCRIPTION
   The Keycloak server distribution is managed under .tools/ (gitignored) and is

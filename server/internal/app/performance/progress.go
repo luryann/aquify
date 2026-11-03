@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
 // ProgressReportInput compares each swimmer's best times in a baseline period

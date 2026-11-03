@@ -1,9 +1,9 @@
 package app
 
 import (
-	"github.com/dareaquatics/aquify/server/internal/app/meets"
-	"github.com/dareaquatics/aquify/server/internal/app/members"
-	"github.com/dareaquatics/aquify/server/internal/app/performance"
+	"github.com/luryann/aquify/server/internal/app/meets"
+	"github.com/luryann/aquify/server/internal/app/members"
+	"github.com/luryann/aquify/server/internal/app/performance"
 )
 
 // performanceDirectory adapts the members and meets services to the

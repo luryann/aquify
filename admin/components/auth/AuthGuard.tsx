@@ -36,7 +36,7 @@ function LoadingSplash() {
         <span
           className="u-ff-font-display u-fw-display-weight u-fs-fs-2xl u-ls-display-tracking" style={{ fontStyle: 'italic', color: 'var(--text)', userSelect: 'none' }}
         >
-          DARE
+          aquify
         </span>
       </div>
 

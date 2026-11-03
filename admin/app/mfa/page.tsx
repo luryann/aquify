@@ -250,7 +250,7 @@ export default function MfaPage() {
 
   useEffect(() => {
     setMounted(true)
-    const id = 'dare-mfa-kf'
+    const id = 'aquify-mfa-kf'
     if (!document.getElementById(id)) {
       const s = document.createElement('style')
       s.id = id

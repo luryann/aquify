@@ -3,8 +3,8 @@ package handlers
 import (
 	"net/http"
 
-	"github.com/dareaquatics/aquify/server/internal/app/httpx"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/app/httpx"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 )
 

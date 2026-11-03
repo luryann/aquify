@@ -1,4 +1,4 @@
-# DARE Platform — Cutover Runbook
+# aquify Platform — Cutover Runbook
 
 **Last updated:** 2026-03-18
 **Owner:** Engineering + Operations
@@ -6,7 +6,7 @@
 
 ## Purpose
 
-This runbook turns Step 26 into an executable launch procedure for the DARE
+This runbook turns Step 26 into an executable launch procedure for the aquify
 Platform cutover from the legacy club operations system.
 
 ## Roles

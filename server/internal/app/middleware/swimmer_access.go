@@ -3,7 +3,7 @@ package middleware
 import (
 	"net/http"
 
-	"github.com/dareaquatics/aquify/server/internal/app/httpx"
+	"github.com/luryann/aquify/server/internal/app/httpx"
 )
 
 // SwimmerAccessChecker reports whether swimmer-role sign-in is blocked, either

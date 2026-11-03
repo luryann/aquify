@@ -1,4 +1,4 @@
-# Finance Operations Guide — DARE Platform
+# Finance Operations Guide — aquify Platform
 
 **Audience:** Finance staff, club treasurer, billing administrators
 **Version:** 1.0
@@ -8,7 +8,7 @@
 
 ## 1. Invoice Lifecycle
 
-Every invoice in DARE follows a defined state machine:
+Every invoice in aquify follows a defined state machine:
 
 ```
 draft → issued → paid
@@ -32,12 +32,12 @@ Invoices can be in the admin portal under **Billing → Invoices**. Use the stat
 
 ### 2.1 Stripe Payments (Online)
 
-Stripe payments are recorded automatically when the parent completes checkout on the portal. The webhook from Stripe fires `payment_intent.succeeded`, which DARE processes and records on the invoice. No manual action is required for normal Stripe payments.
+Stripe payments are recorded automatically when the parent completes checkout on the portal. The webhook from Stripe fires `payment_intent.succeeded`, which aquify processes and records on the invoice. No manual action is required for normal Stripe payments.
 
 To verify a Stripe payment was received:
-1. Open the invoice in DARE and check the **Payments** tab.
+1. Open the invoice in aquify and check the **Payments** tab.
 2. Cross-reference with the Stripe Dashboard (Payments → All Transactions).
-3. If the payment shows in Stripe but not in DARE, see Section 7 (Common Scenarios: Missing Stripe Payment).
+3. If the payment shows in Stripe but not in aquify, see Section 7 (Common Scenarios: Missing Stripe Payment).
 
 ### 2.2 Manual Payments (Check, Cash, ACH)
 
@@ -76,8 +76,8 @@ To record an external payment:
 
 | Payment Type | Refund Behavior |
 |---|---|
-| Stripe payment | DARE calls Stripe API automatically; the refund appears in the Stripe Dashboard within minutes; the cardholder sees the credit in 5–10 business days |
-| Manual payment (check/cash) | DARE records the refund in the ledger; you must issue the physical refund (write a check, return cash) independently |
+| Stripe payment | aquify calls Stripe API automatically; the refund appears in the Stripe Dashboard within minutes; the cardholder sees the credit in 5–10 business days |
+| Manual payment (check/cash) | aquify records the refund in the ledger; you must issue the physical refund (write a check, return cash) independently |
 
 After a refund, the invoice remains in the system with a `refund` ledger event. The invoice balance is updated.
 
@@ -85,7 +85,7 @@ After a refund, the invoice remains in the system with a `refund` ledger event. 
 
 ## 4. Monthly Reconciliation
 
-Reconciliation ensures that what DARE records matches what Stripe has processed.
+Reconciliation ensures that what aquify records matches what Stripe has processed.
 
 ### 4.1 Running the Reconciliation Report
 
@@ -93,7 +93,7 @@ Reconciliation ensures that what DARE records matches what Stripe has processed.
 2. Set the date range (first day to last day of the month).
 3. Click **Generate Report**.
 4. The report shows:
-   - Total payments recorded in DARE
+   - Total payments recorded in aquify
    - Total charges in Stripe for the same period
    - Discrepancy amount (if any)
    - Individual unreconciled rows
@@ -106,7 +106,7 @@ If unreconciled rows are present:
 1. Open the unreconciled row to see the Stripe charge ID.
 2. Look up the charge in the Stripe Dashboard.
 3. Determine if the payment was captured but the webhook failed (see Section 7).
-4. Manually record the payment in DARE if confirmed.
+4. Manually record the payment in aquify if confirmed.
 5. Re-run the report to verify the discrepancy is resolved.
 
 ### 4.3 When to Escalate
@@ -120,24 +120,24 @@ Escalate to engineering if:
 
 ## 5. Stripe Dashboard
 
-Use the Stripe Dashboard (`https://dashboard.stripe.com`) in parallel with DARE for the following tasks:
+Use the Stripe Dashboard (`https://dashboard.stripe.com`) in parallel with aquify for the following tasks:
 
 | Task | Where to Do It |
 |---|---|
 | View payment status | Stripe Dashboard → Payments |
-| Issue refund manually (emergency) | Stripe Dashboard (also record in DARE) |
+| Issue refund manually (emergency) | Stripe Dashboard (also record in aquify) |
 | View webhook delivery history | Stripe Dashboard → Developers → Webhooks |
 | Check for failed payments | Stripe Dashboard → Payments (filter `failed`) |
 | Download Stripe payout reports | Stripe Dashboard → Reporting → Payouts |
 | Tax reporting (1099-K) | Stripe Dashboard → Reporting → Tax |
 
-DARE is the system of record for invoices and line items. Stripe is the system of record for payment processing and payouts.
+aquify is the system of record for invoices and line items. Stripe is the system of record for payment processing and payouts.
 
 ---
 
 ## 6. Tax Considerations
 
-DARE does not provide tax advice. Consult your club's accountant. The following data is available for tax preparation:
+aquify does not provide tax advice. Consult your club's accountant. The following data is available for tax preparation:
 
 ### 6.1 Exporting Financial Data
 
@@ -151,7 +151,7 @@ Stripe generates a 1099-K if your club processes over the IRS threshold. Downloa
 
 ### 6.3 Relevant Data Fields
 
-For tax preparation, relevant DARE data includes:
+For tax preparation, relevant aquify data includes:
 - Household name and address (from household records)
 - Invoice date and amount (from invoice records)
 - Payment date and method (from payment records)
@@ -169,7 +169,7 @@ To export audit events for a period:
 ```bash
 curl -H "Authorization: Bearer $ADMIN_TOKEN" \
      -H "X-Org-Id: $ORG_ID" \
-     "https://api.dare.club/api/v1/orgs/$ORG_ID/audit?category=billing&from=2026-01-01&to=2026-01-31"
+     "https://api.aquify.club/api/v1/orgs/$ORG_ID/audit?category=billing&from=2026-01-01&to=2026-01-31"
 ```
 
 Or use the admin UI: **Audit → filter by Category: billing**.
@@ -224,12 +224,12 @@ If a parent reports they paid via Stripe but the invoice still shows `issued`:
 2. Find the payment intent by the parent's email or card last 4 digits.
 3. Verify the payment status is `succeeded`.
 4. Note the `payment_intent_id` (format: `pi_XXXX`).
-5. Check DARE audit log for any webhook event with that intent ID.
-6. If the webhook was missed: manually record the payment in DARE using the Stripe charge amount, method `stripe`, and the payment intent ID as the reference.
+5. Check aquify audit log for any webhook event with that intent ID.
+6. If the webhook was missed: manually record the payment in aquify using the Stripe charge amount, method `stripe`, and the payment intent ID as the reference.
 7. Notify engineering to investigate the webhook delivery failure.
 
 ### 8.5 Refund After Season Close
 
 Refunds can still be issued after the season is closed, as long as the Stripe charge has not expired (typically 180 days). For older charges:
 - If within 180 days: issue via Stripe refund.
-- If over 180 days: Stripe cannot refund. Issue a manual refund (check) and record as a manual refund in DARE.
+- If over 180 days: Stripe cannot refund. Issue a manual refund (check) and record as a manual refund in aquify.

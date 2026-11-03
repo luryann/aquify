@@ -28,6 +28,7 @@ var (
 	ErrEventFull        = errors.New("event is at capacity")
 	ErrInvalidRSVP      = errors.New("invalid rsvp")
 	ErrRSVPModeLocked   = errors.New("rsvp mode cannot change once responses exist")
+	ErrCapacityBelowYes = errors.New("capacity is below the confirmed headcount")
 	ErrFeedTokenMissing = errors.New("calendar feed token not found")
 )
 
@@ -336,6 +337,7 @@ type RSVPResult struct {
 // observe the same state).
 type Service struct {
 	mu      sync.Mutex
+	evLocks sync.Map // event ID -> *sync.Mutex; serialises RSVP billing vs event edits
 	repo    *Repository
 	biller  Biller
 	logger  *slog.Logger
@@ -453,7 +455,29 @@ func eventEnd(e *Event) time.Time {
 	if e.EndsAt != nil {
 		return *e.EndsAt
 	}
+	if e.AllDay {
+		// All-day events carry UTC-midnight timestamps with no end: they run
+		// through the end of that UTC day.
+		y, m, d := e.StartsAt.UTC().Date()
+		return time.Date(y, m, d, 23, 59, 59, int(time.Second-time.Nanosecond), time.UTC)
+	}
+	if e.AllDay {
+		// All-day events carry UTC-midnight timestamps with no end: they run
+		// through the end of that UTC day.
+		y, m, d := e.StartsAt.UTC().Date()
+		return time.Date(y, m, d, 23, 59, 59, int(time.Second-time.Nanosecond), time.UTC)
+	}
 	return e.StartsAt
+}
+
+// lockEvent serialises RSVP responses and event mutations for one event within
+// this process, so fee reconciliation never interleaves with edits or other
+// responses for the same event.
+func (s *Service) lockEvent(id string) func() {
+	v, _ := s.evLocks.LoadOrStore(strings.TrimSpace(id), &sync.Mutex{})
+	mu := v.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
 }
 
 // List returns events in org ordered by start time.
@@ -500,6 +524,7 @@ func (s *Service) Update(orgID, id, actorID string, in EventInput) (*Event, erro
 	if err != nil {
 		return nil, err
 	}
+	defer s.lockEvent(id)()
 	var (
 		existing *Event
 		rsvps    []*RSVP
@@ -508,6 +533,17 @@ func (s *Service) Update(orgID, id, actorID string, in EventInput) (*Event, erro
 	build := func(cur *Event, curRSVPs []*RSVP) (*Event, error) {
 		if len(curRSVPs) > 0 && cur.RSVPMode != in.RSVPMode {
 			return nil, ErrRSVPModeLocked
+		}
+		if in.Capacity != nil && cur.Status != "cancelled" {
+			yes := 0
+			for _, r := range curRSVPs {
+				if r.Response == "yes" {
+					yes += r.Headcount()
+				}
+			}
+			if yes > *in.Capacity {
+				return nil, ErrCapacityBelowYes
+			}
 		}
 		next := copyEvent(cur)
 		applyInput(next, in)
@@ -539,6 +575,17 @@ func (s *Service) Update(orgID, id, actorID string, in EventInput) (*Event, erro
 	}
 	if existing.Status != "cancelled" && updated.Status == "cancelled" {
 		s.releaseAll(orgID, actorID, rsvps)
+	} else if updated.Status != "cancelled" && s.biller != nil &&
+		((existing.Status == "cancelled") || existing.FeeCents != updated.FeeCents) {
+		// Un-cancelling or a price change: re-bill confirmed RSVPs.
+		force := existing.FeeCents != updated.FeeCents
+		if cur, err := s.ListRSVPs(orgID, id); err == nil {
+			for _, r := range cur {
+				if r.Response == "yes" {
+					s.reconcileFee(updated, r, actorID, force)
+				}
+			}
+		}
 	}
 	return updated, nil
 }
@@ -560,6 +607,7 @@ func (s *Service) rsvpsLocked(orgID, eventID string) []*RSVP {
 // The event row is locked (DB) or the service mutex held (memory) while the
 // RSVPs are read and the event removed, so no RSVP can slip in between.
 func (s *Service) Delete(orgID, id, actorID string) error {
+	defer s.lockEvent(id)()
 	var rsvps []*RSVP
 	if s.repo != nil {
 		var err error
@@ -731,6 +779,7 @@ func normalizeRSVPInput(event *Event, in RSVPInput) (RSVPInput, error) {
 // edits on behalf of a family bypass it). Fee billing runs after the RSVP is
 // stored; billing failures are reported in the result, never silently lost.
 func (s *Service) Respond(orgID, eventID, actorID string, in RSVPInput, enforceWindow bool) (*RSVPResult, error) {
+	defer s.lockEvent(eventID)()
 	event, err := s.Get(orgID, eventID)
 	if err != nil {
 		return nil, err
@@ -785,12 +834,12 @@ func (s *Service) Respond(orgID, eventID, actorID string, in RSVPInput, enforceW
 		}
 	}
 
-	outcome := s.reconcileFee(event, saved, actorID)
+	outcome := s.reconcileFee(event, saved, actorID, false)
 	return &RSVPResult{RSVP: saved, Billing: outcome}, nil
 }
 
 // reconcileFee keeps the RSVP's fee invoice aligned with its response.
-func (s *Service) reconcileFee(event *Event, r *RSVP, actorID string) BillingOutcome {
+func (s *Service) reconcileFee(event *Event, r *RSVP, actorID string, force bool) BillingOutcome {
 	if s.biller == nil || (event.FeeCents <= 0 && r.InvoiceID == "") {
 		return BillingNone
 	}
@@ -798,7 +847,7 @@ func (s *Service) reconcileFee(event *Event, r *RSVP, actorID string) BillingOut
 	if r.Response == "yes" && event.FeeCents > 0 {
 		wantQty = r.Headcount()
 	}
-	if r.InvoiceID != "" && r.BilledQuantity == wantQty {
+	if r.InvoiceID != "" && r.BilledQuantity == wantQty && !force {
 		return BillingUnchanged
 	}
 	if r.InvoiceID != "" {

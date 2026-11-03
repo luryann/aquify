@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/app/compliance"
+	"github.com/luryann/aquify/server/internal/app/compliance"
 )
 
 func TestComplianceRequestsAreProcessedByWorkers(t *testing.T) {

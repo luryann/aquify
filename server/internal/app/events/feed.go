@@ -204,7 +204,7 @@ func RenderICS(calendarName string, items []CalendarItem, now time.Time) string 
 	add := func(l string) { lines = append(lines, foldLine(l)) }
 	add("BEGIN:VCALENDAR")
 	add("VERSION:2.0")
-	add("PRODID:-//DARE Platform//Club Calendar//EN")
+	add("PRODID:-//aquify Platform//Club Calendar//EN")
 	add("CALSCALE:GREGORIAN")
 	add("METHOD:PUBLISH")
 	add("X-WR-CALNAME:" + icsEscape(calendarName))

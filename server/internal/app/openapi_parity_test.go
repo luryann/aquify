@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dareaquatics/aquify/server/internal/openapi"
+	"github.com/luryann/aquify/server/internal/openapi"
 	"github.com/go-chi/chi/v5"
 )
 

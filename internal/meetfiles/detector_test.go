@@ -3,7 +3,7 @@ package meetfiles_test
 import (
 	"testing"
 
-	"github.com/dareaquatics/aquify/meetfiles"
+	"github.com/luryann/aquify/meetfiles"
 )
 
 func TestDetectFileType_ByExtension(t *testing.T) {

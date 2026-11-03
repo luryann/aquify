@@ -1,4 +1,4 @@
-module github.com/dareaquatics/aquify/meetfiles
+module github.com/luryann/aquify/meetfiles
 
 go 1.24.4
 

@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/dareaquatics/aquify/server/internal/storage"
-	"github.com/dareaquatics/aquify/server/internal/workers"
+	"github.com/luryann/aquify/server/internal/storage"
+	"github.com/luryann/aquify/server/internal/workers"
 )
 
 func TestReadinessTypedNilWorkerServerIsDisabled(t *testing.T) {

@@ -7,8 +7,8 @@ import (
 	"log/slog"
 	"strings"
 
-	appopenapi "github.com/dareaquatics/aquify/server/internal/openapi"
-	"github.com/dareaquatics/aquify/server/internal/storage"
+	appopenapi "github.com/luryann/aquify/server/internal/openapi"
+	"github.com/luryann/aquify/server/internal/storage"
 )
 
 var newObjectStorageClient = func(cfg storage.Config) (storage.ObjectStorage, error) {

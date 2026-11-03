@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/dareaquatics/aquify/server/internal/app/httpx"
+	"github.com/luryann/aquify/server/internal/app/httpx"
 )
 
 // RejectImpersonationHeaders refuses any request carrying admin-impersonation

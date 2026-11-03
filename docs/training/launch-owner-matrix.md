@@ -1,4 +1,4 @@
-# Launch Owner Matrix — DARE Platform
+# Launch Owner Matrix — aquify Platform
 
 **Version:** 1.0
 **Last Updated:** 2026-03-23
@@ -9,21 +9,21 @@
 
 | Function | Primary Owner | Backup | Escalation Path | Contact Channel |
 |---|---|---|---|---|
-| Engineering — Deployment | Lead Engineer | Senior Engineer | CTO | `#dare-ops` Slack + PagerDuty |
-| Engineering — Incidents | On-call Engineer (rotating) | Lead Engineer | CTO | PagerDuty → `#dare-alerts` |
-| Engineering — DB/Infra | DevOps Engineer | Lead Engineer | Lead Engineer | `#dare-ops` Slack |
-| Product — Member Management | Product Manager | Club Admin Lead | Director of Operations | `#dare-ops` Slack |
-| Product — Training / Practices | Head Coach | Asst. Coach | Club Director | `#dare-ops` Slack |
-| Operations — Day-to-Day Admin | Club Admin Lead | Operations Staff | Director of Operations | `#dare-support` Slack |
-| Operations — Registration | Club Admin Lead | Product Manager | Director of Operations | `#dare-support` Slack |
-| Finance — Billing & Invoicing | Club Treasurer | Finance Admin | Executive Director | `#dare-finance` Slack |
-| Finance — Stripe Reconciliation | Finance Admin | Club Treasurer | Executive Director | `#dare-finance` Slack |
-| Support — Parent Issues | Club Admin Lead | Operations Staff | Director of Operations | `#dare-support` Slack |
-| Support — Swimmer Issues | Head Coach | Club Admin Lead | Director of Operations | `#dare-support` Slack |
-| Security — Data Incidents | Lead Engineer + CTO | — | Legal counsel | Direct call + `#dare-alerts` |
+| Engineering — Deployment | Lead Engineer | Senior Engineer | CTO | `#aquify-ops` Slack + PagerDuty |
+| Engineering — Incidents | On-call Engineer (rotating) | Lead Engineer | CTO | PagerDuty → `#aquify-alerts` |
+| Engineering — DB/Infra | DevOps Engineer | Lead Engineer | Lead Engineer | `#aquify-ops` Slack |
+| Product — Member Management | Product Manager | Club Admin Lead | Director of Operations | `#aquify-ops` Slack |
+| Product — Training / Practices | Head Coach | Asst. Coach | Club Director | `#aquify-ops` Slack |
+| Operations — Day-to-Day Admin | Club Admin Lead | Operations Staff | Director of Operations | `#aquify-support` Slack |
+| Operations — Registration | Club Admin Lead | Product Manager | Director of Operations | `#aquify-support` Slack |
+| Finance — Billing & Invoicing | Club Treasurer | Finance Admin | Executive Director | `#aquify-finance` Slack |
+| Finance — Stripe Reconciliation | Finance Admin | Club Treasurer | Executive Director | `#aquify-finance` Slack |
+| Support — Parent Issues | Club Admin Lead | Operations Staff | Director of Operations | `#aquify-support` Slack |
+| Support — Swimmer Issues | Head Coach | Club Admin Lead | Director of Operations | `#aquify-support` Slack |
+| Security — Data Incidents | Lead Engineer + CTO | — | Legal counsel | Direct call + `#aquify-alerts` |
 | Vendor — Stripe | Finance Admin | Lead Engineer | Stripe Support | Stripe Dashboard + email |
-| Vendor — Postmark | Lead Engineer | DevOps Engineer | Postmark Support | `#dare-ops` |
-| Vendor — Keycloak / OIDC | Lead Engineer | DevOps Engineer | Keycloak Support | `#dare-ops` |
+| Vendor — Postmark | Lead Engineer | DevOps Engineer | Postmark Support | `#aquify-ops` |
+| Vendor — Keycloak / OIDC | Lead Engineer | DevOps Engineer | Keycloak Support | `#aquify-ops` |
 
 ---
 
@@ -35,7 +35,7 @@ Engineering is on-call on a weekly rotation. The rotation schedule is maintained
 |---|---|---|
 | Current week | See PagerDuty | See PagerDuty |
 
-To view the current on-call engineer: `https://pagerduty.com` → DARE service.
+To view the current on-call engineer: `https://pagerduty.com` → aquify service.
 
 ### On-Call Expectations
 
@@ -70,11 +70,11 @@ Quick heuristic:
 
 | Channel | Purpose | Who Monitors |
 |---|---|---|
-| `#dare-ops` | Engineering ops, deployments, infra | Engineering team |
-| `#dare-alerts` | Automated alerts from Grafana/Prometheus/PagerDuty | Engineering + on-call |
-| `#dare-support` | Parent/swimmer support tickets and admin questions | Ops + support staff |
-| `#dare-finance` | Billing, reconciliation, Stripe issues | Finance + engineering |
-| `#dare-general` | General announcements, releases | All staff |
+| `#aquify-ops` | Engineering ops, deployments, infra | Engineering team |
+| `#aquify-alerts` | Automated alerts from Grafana/Prometheus/PagerDuty | Engineering + on-call |
+| `#aquify-support` | Parent/swimmer support tickets and admin questions | Ops + support staff |
+| `#aquify-finance` | Billing, reconciliation, Stripe issues | Finance + engineering |
+| `#aquify-general` | General announcements, releases | All staff |
 | PagerDuty | On-call incident escalation | On-call engineer |
 
 ---
@@ -83,15 +83,15 @@ Quick heuristic:
 
 ### For System Outages (P0)
 
-1. Immediately post in `#dare-alerts` with the incident start time and initial findings.
+1. Immediately post in `#aquify-alerts` with the incident start time and initial findings.
 2. Notify the Club Director and Executive Director directly (phone or Slack DM) if the outage exceeds 30 minutes.
 3. If parents are affected (portal down, payments failing): send an email via Postmark (or manually if email is down) with an estimated restoration time.
-4. Post updates in `#dare-alerts` every 30 minutes until resolved.
-5. After resolution: post a brief incident summary in `#dare-general` within 24 hours.
+4. Post updates in `#aquify-alerts` every 30 minutes until resolved.
+5. After resolution: post a brief incident summary in `#aquify-general` within 24 hours.
 
 ### For Billing Issues
 
-1. Notify Finance Admin and Club Treasurer in `#dare-finance`.
+1. Notify Finance Admin and Club Treasurer in `#aquify-finance`.
 2. If a discrepancy affects multiple households: notify the Club Director.
 3. If involving a data breach or unauthorized access: notify CTO and legal counsel immediately.
 
@@ -100,7 +100,7 @@ Quick heuristic:
 1. **Immediately** notify the CTO, Executive Director, and legal counsel.
 2. Do not communicate externally until legal counsel approves messaging.
 3. Follow the data incident response plan (to be linked when created).
-4. Log all actions in `#dare-alerts` with timestamps.
+4. Log all actions in `#aquify-alerts` with timestamps.
 
 ---
 

@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/app/audit"
-	"github.com/dareaquatics/aquify/server/internal/app/httpx"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
-	"github.com/dareaquatics/aquify/server/internal/app/volunteer"
+	"github.com/luryann/aquify/server/internal/app/audit"
+	"github.com/luryann/aquify/server/internal/app/httpx"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/app/volunteer"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
 )

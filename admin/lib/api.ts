@@ -1,4 +1,4 @@
-// API client for DARE backend — wraps fetch with auth, error handling, and token refresh
+// API client for aquify backend — wraps fetch with auth, error handling, and token refresh
 import { useMemo } from 'react'
 
 export class ApiError extends Error {

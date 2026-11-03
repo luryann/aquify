@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/app/roster"
+	"github.com/luryann/aquify/server/internal/app/roster"
 )
 
 // Practice is the practice projection this package needs.

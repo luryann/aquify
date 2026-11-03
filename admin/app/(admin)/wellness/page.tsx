@@ -140,9 +140,11 @@ export default function CoachWellnessPage() {
     if (!selected || !orgId) { setDetail(null); return }
     setDetail(null)
     setDetailError(null)
+    let cancelled = false
     fetchSwimmerWellness(api, orgId, selected, 30)
-      .then(setDetail)
-      .catch((err) => setDetailError(reportUIError('coach-wellness-swimmer', err, 'This swimmer’s trend could not be loaded.')))
+      .then((d) => { if (!cancelled) setDetail(d) })
+      .catch((err) => { if (!cancelled) setDetailError(reportUIError('coach-wellness-swimmer', err, 'This swimmer’s trend could not be loaded.')) })
+    return () => { cancelled = true }
   }, [api, orgId, selected])
 
   const trendDays = detail ? (() => {

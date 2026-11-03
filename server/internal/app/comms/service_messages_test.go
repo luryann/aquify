@@ -3,7 +3,7 @@ package comms
 import (
 	"context"
 
-	"github.com/dareaquatics/aquify/server/internal/postmark"
+	"github.com/luryann/aquify/server/internal/postmark"
 	"testing"
 	"time"
 )

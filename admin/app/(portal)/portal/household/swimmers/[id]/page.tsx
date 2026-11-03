@@ -50,9 +50,9 @@ function eventKey(distance: number, stroke: string): string {
 }
 
 function fmtTime(ms: number): string {
-  const totalSec = ms / 1000
-  const mins = Math.floor(totalSec / 60)
-  const secs = totalSec - mins * 60
+  const totalCs = Math.round(ms / 10)
+  const mins = Math.floor(totalCs / 6000)
+  const secs = (totalCs - mins * 6000) / 100
   const secStr = secs.toFixed(2).padStart(5, '0')
   return mins > 0 ? `${mins}:${secStr}` : secStr
 }

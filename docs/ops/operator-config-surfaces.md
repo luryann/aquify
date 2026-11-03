@@ -1,4 +1,4 @@
-# DARE Platform — Operator Configuration Surfaces
+# aquify Platform — Operator Configuration Surfaces
 
 This document describes which configuration settings can be changed and by whom, without requiring infrastructure access or a service restart.
 
@@ -69,11 +69,11 @@ The `auth_rate_limit_window` runtime setting allows the on-call engineer to temp
 
 ## Tier 2 — Require Environment Variable Change + Restart
 
-These settings are controlled by environment variables in `/opt/dare/.env.production` (or `.env.staging`). A change requires:
+These settings are controlled by environment variables in `/opt/aquify/.env.production` (or `.env.staging`). A change requires:
 
 1. SSH to VPS, update the `.env` file.
-2. Restart the affected container(s): `docker compose restart dare-api dare-worker` (or `dare-admin` for frontend vars).
-3. Verify health: `curl https://api.dare.club/healthz`.
+2. Restart the affected container(s): `docker compose restart aquify-api aquify-worker` (or `aquify-admin` for frontend vars).
+3. Verify health: `curl https://api.aquify.club/healthz`.
 
 ### Auth and Session
 
@@ -181,7 +181,7 @@ Changes here take effect at the Cloudflare edge within seconds but require Cloud
 |---|---|
 | Run schema migrations (`goose up/down`) | On-call engineer via SSH + `make db-up` |
 | Adjust PostgreSQL `max_connections` | Edit `postgresql.conf` on VPS + restart Postgres container |
-| Resize connection pool | Update `DB_POOL_MAX_CONNS` env var + restart dare-api |
+| Resize connection pool | Update `DB_POOL_MAX_CONNS` env var + restart aquify-api |
 | Add database indexes | Write migration file + deploy |
 | Run manual data repairs | DBA or engineering lead via `psql` — requires audit log entry |
 
@@ -198,7 +198,7 @@ Changes here take effect at the Cloudflare edge within seconds but require Cloud
 
 | Task | Who / Where |
 |---|---|
-| Change backup frequency | Edit `/etc/systemd/system/dare-backup.timer` on VPS + `systemctl daemon-reload` |
+| Change backup frequency | Edit `/etc/systemd/system/aquify-backup.timer` on VPS + `systemctl daemon-reload` |
 | Change backup retention policy | Edit `deploy/scripts/backup.sh` `RETENTION_*` variables + re-deploy script |
 | Change offsite backup target | Update `RCLONE_REMOTE` in backup script + re-configure rclone |
 | Test restore | Follow `restore-drill-checklist.md` — requires engineering lead sign-off |
@@ -207,7 +207,7 @@ Changes here take effect at the Cloudflare edge within seconds but require Cloud
 
 ## Configuration Change Log
 
-Any Tier 2 or Tier 3 change should be logged in the team Slack channel `#dare-ops` with:
+Any Tier 2 or Tier 3 change should be logged in the team Slack channel `#aquify-ops` with:
 
 - Who made the change
 - What was changed

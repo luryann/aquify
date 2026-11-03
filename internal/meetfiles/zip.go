@@ -35,7 +35,7 @@ func readZipEntriesWithExt(data []byte, exts ...string) ([]ZipEntry, error) {
 	var entries []ZipEntry
 	var budget int64
 	for _, f := range r.File {
-		if !hasAnySuffixFold(f.Name, exts) {
+		if isZipJunkEntry(f.Name) || !hasAnySuffixFold(f.Name, exts) {
 			continue
 		}
 		cleanName, safe := normalizeZipEntryName(f.Name)
@@ -50,6 +50,18 @@ func readZipEntriesWithExt(data []byte, exts ...string) ([]ZipEntry, error) {
 		entries = append(entries, ZipEntry{Name: cleanName, Content: content})
 	}
 	return entries, nil
+}
+
+// isZipJunkEntry reports macOS resource-fork metadata (__MACOSX/ folders and
+// AppleDouble "._" files) that archivers add alongside real content.
+func isZipJunkEntry(name string) bool {
+	n := strings.ReplaceAll(name, "\\", "/")
+	for _, seg := range strings.Split(n, "/") {
+		if seg == "__MACOSX" || strings.HasPrefix(seg, "._") {
+			return true
+		}
+	}
+	return false
 }
 
 func hasAnySuffixFold(name string, exts []string) bool {

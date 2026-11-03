@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/app/exports"
-	"github.com/dareaquatics/aquify/server/internal/app/meets"
-	"github.com/dareaquatics/aquify/server/internal/app/members"
+	"github.com/luryann/aquify/server/internal/app/exports"
+	"github.com/luryann/aquify/server/internal/app/meets"
+	"github.com/luryann/aquify/server/internal/app/members"
 )
 
 func TestPublicTeamSite(t *testing.T) {
@@ -54,9 +54,9 @@ func TestPublicTeamSite(t *testing.T) {
 	}
 
 	// Unconfigured and disabled sites are 404 without any credentials.
-	must(do("", http.MethodGet, "/api/v1/public/orgs/dare/site", nil), http.StatusNotFound, "unknown slug")
-	must(do(admin, http.MethodPut, "/api/v1/org-settings", map[string]any{"team_name": "DARE Aquatics", "public_slug": "dare"}), http.StatusOK, "set slug")
-	must(do("", http.MethodGet, "/api/v1/public/orgs/dare/site", nil), http.StatusNotFound, "disabled site")
+	must(do("", http.MethodGet, "/api/v1/public/orgs/aquify/site", nil), http.StatusNotFound, "unknown slug")
+	must(do(admin, http.MethodPut, "/api/v1/org-settings", map[string]any{"team_name": "aquify Aquatics", "public_slug": "aquify"}), http.StatusOK, "set slug")
+	must(do("", http.MethodGet, "/api/v1/public/orgs/aquify/site", nil), http.StatusNotFound, "disabled site")
 
 	// Only admins may configure; slugs are validated.
 	must(do(parent, http.MethodPut, "/api/v1/org-settings", map[string]any{"public_site_enabled": true}), http.StatusForbidden, "parent settings")
@@ -94,9 +94,9 @@ func TestPublicTeamSite(t *testing.T) {
 	mk("Spring Invitational", true)
 	mk("Hidden Draft Meet", false)
 
-	must(do(admin, http.MethodPut, "/api/v1/org-settings", map[string]any{"public_site_enabled": true, "public_contact_email": "hello@dare.example"}), http.StatusOK, "enable")
+	must(do(admin, http.MethodPut, "/api/v1/org-settings", map[string]any{"public_site_enabled": true, "public_contact_email": "hello@aquify.example"}), http.StatusOK, "enable")
 
-	rr := do("", http.MethodGet, "/api/v1/public/orgs/dare/site", nil)
+	rr := do("", http.MethodGet, "/api/v1/public/orgs/aquify/site", nil)
 	body := rr.Body.String()
 	site := must(rr, http.StatusOK, "public site")
 	for _, banned := range []string{"Private secret", "Draft public", "Private banquet", "Group-only public", "Hidden Draft Meet", "date_of_birth", "household", "created_by", "org_id", "parent-user", "admin-user"} {
@@ -106,7 +106,7 @@ func TestPublicTeamSite(t *testing.T) {
 	}
 	// Allowlist, not blacklist: every key at every depth must be a known public field.
 	assertPublicKeysAllowed(t, site)
-	for _, want := range []string{"Public news", "Open pool party", "Spring Invitational", "DARE Aquatics", "hello@dare.example", "/register"} {
+	for _, want := range []string{"Public news", "Open pool party", "Spring Invitational", "aquify Aquatics", "hello@aquify.example", "/register"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("public payload missing %q: %s", want, body)
 		}
@@ -120,12 +120,12 @@ func TestPublicTeamSite(t *testing.T) {
 
 	// Toggling an announcement private removes it; disabling the site 404s again.
 	must(do(admin, http.MethodPatch, "/api/v1/announcements/"+pubAnn["id"].(string), map[string]any{"public": false}), http.StatusOK, "untoggle")
-	site = must(do("", http.MethodGet, "/api/v1/public/orgs/dare/site", nil), http.StatusOK, "site again")
+	site = must(do("", http.MethodGet, "/api/v1/public/orgs/aquify/site", nil), http.StatusOK, "site again")
 	if n := len(site["announcements"].([]any)); n != 0 {
 		t.Fatalf("want 0 announcements after untoggle, got %d", n)
 	}
 	must(do(admin, http.MethodPut, "/api/v1/org-settings", map[string]any{"public_site_enabled": false}), http.StatusOK, "disable")
-	must(do("", http.MethodGet, "/api/v1/public/orgs/dare/site", nil), http.StatusNotFound, "disabled again")
+	must(do("", http.MethodGet, "/api/v1/public/orgs/aquify/site", nil), http.StatusNotFound, "disabled again")
 }
 
 // publicAllowedKeys mirrors the documented public payload; a new field must be

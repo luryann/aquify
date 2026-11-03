@@ -15,7 +15,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/dareaquatics/aquify/server/internal/keycloak"
+	"github.com/luryann/aquify/server/internal/keycloak"
 )
 
 // ─── Mock Keycloak server ─────────────────────────────────────────────────────

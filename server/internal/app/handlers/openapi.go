@@ -3,7 +3,7 @@ package handlers
 import (
 	"net/http"
 
-	appopenapi "github.com/dareaquatics/aquify/server/internal/openapi"
+	appopenapi "github.com/luryann/aquify/server/internal/openapi"
 )
 
 // OpenAPIStub serves the packaged OpenAPI 3.1 spec.

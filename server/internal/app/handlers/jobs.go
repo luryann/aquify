@@ -1,13 +1,19 @@
 package handlers
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
+	"io"
+	"net"
 	"net/http"
 	"strings"
+	"syscall"
 
-	"github.com/dareaquatics/aquify/server/internal/app/httpx"
-	"github.com/dareaquatics/aquify/server/internal/workers"
+	"github.com/luryann/aquify/server/internal/app/httpx"
+	"github.com/luryann/aquify/server/internal/workers"
 	"github.com/go-chi/chi/v5"
+	"github.com/redis/go-redis/v9"
 )
 
 // JobsHandlers exposes admin HTTP endpoints for background job visibility.
@@ -29,6 +35,53 @@ func (h *JobsHandlers) RegisterRoutes(router chi.Router) {
 	router.Get("/jobs/dlq", h.listDLQ)
 	router.Post("/jobs/dlq/{taskID}/retry", h.retryDLQTask)
 	router.Delete("/jobs/dlq/{taskID}", h.deleteDLQTask)
+}
+
+// isQueueUnavailable reports whether err is a connectivity failure talking to
+// the queue backend (Redis down, refused, reset, timed out, pool exhausted)
+// rather than an application error. It matches on error types and sentinels,
+// never on message text, so e.g. a payload decode "unexpected EOF" stays a 500.
+func isQueueUnavailable(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, net.ErrClosed) ||
+		errors.Is(err, redis.ErrClosed) || errors.Is(err, redis.ErrPoolTimeout) || errors.Is(err, redis.ErrPoolExhausted) {
+		return true
+	}
+	for _, errno := range []syscall.Errno{syscall.ECONNREFUSED, syscall.ECONNRESET, syscall.EPIPE, syscall.EHOSTUNREACH, syscall.ENETUNREACH} {
+		if errors.Is(err, errno) {
+			return true
+		}
+	}
+	// Dial/read/write failures on the redis socket, and DNS failures.
+	var opErr *net.OpError
+	var dnsErr *net.DNSError
+	if errors.As(err, &opErr) || errors.As(err, &dnsErr) {
+		return true
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	// go-redis surfaces a connection dropped mid-reply as a bare io.EOF.
+	// Decode errors that happen to wrap io.EOF are application errors.
+	if errors.Is(err, io.EOF) {
+		var syntaxErr *json.SyntaxError
+		var typeErr *json.UnmarshalTypeError
+		return !errors.As(err, &syntaxErr) && !errors.As(err, &typeErr)
+	}
+	return false
+}
+
+// writeQueueError maps a queue backend error to 503 queue_unavailable for
+// connectivity failures and 500 internal_error otherwise.
+func writeQueueError(w http.ResponseWriter, r *http.Request, err error, message string) {
+	if isQueueUnavailable(err) {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, "queue_unavailable", "The job queue backend is unavailable. Try again shortly.", err)
+		return
+	}
+	httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", message, err)
 }
 
 // requireAdmin writes 401/403 unless the caller is an authenticated admin.
@@ -74,7 +127,7 @@ func filterTasksByOrg(tasks []workers.TaskInfo, orgID string) []workers.TaskInfo
 func (h *JobsHandlers) dlqTaskInOrg(w http.ResponseWriter, r *http.Request, taskID, orgID string) bool {
 	tasks, err := h.server.DLQTasks()
 	if err != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load dead-letter queue.", err)
+		writeQueueError(w, r, err, "Failed to load dead-letter queue.")
 		return false
 	}
 	for _, t := range tasks {
@@ -103,7 +156,7 @@ func (h *JobsHandlers) listJobs(w http.ResponseWriter, r *http.Request) {
 
 	tasks, err := h.server.ListTasks(queue, status)
 	if err != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load jobs.", err)
+		writeQueueError(w, r, err, "Failed to load jobs.")
 		return
 	}
 	tasks = filterTasksByOrg(tasks, orgID)
@@ -121,7 +174,7 @@ func (h *JobsHandlers) queueStats(w http.ResponseWriter, r *http.Request) {
 
 	queues, err := h.server.QueueStats()
 	if err != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load queue stats.", err)
+		writeQueueError(w, r, err, "Failed to load queue stats.")
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
@@ -151,7 +204,7 @@ func (h *JobsHandlers) listDLQ(w http.ResponseWriter, r *http.Request) {
 
 	tasks, err := h.server.DLQTasks()
 	if err != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load dead-letter queue.", err)
+		writeQueueError(w, r, err, "Failed to load dead-letter queue.")
 		return
 	}
 	tasks = filterTasksByOrg(tasks, orgID)
@@ -182,7 +235,7 @@ func (h *JobsHandlers) retryDLQTask(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Task not found in DLQ.", nil)
 			return
 		}
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to retry task.", err)
+		writeQueueError(w, r, err, "Failed to retry task.")
 		return
 	}
 
@@ -213,7 +266,7 @@ func (h *JobsHandlers) deleteDLQTask(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Task not found in DLQ.", nil)
 			return
 		}
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to delete task.", err)
+		writeQueueError(w, r, err, "Failed to delete task.")
 		return
 	}
 

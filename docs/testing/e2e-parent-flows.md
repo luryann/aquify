@@ -18,7 +18,7 @@ These e2e tests verify that assertion at the UI level.
 test('parent can complete registration without swimmer account', async ({ page }) => {
   // 1. Authenticate as parent (no swimmer account exists)
   await page.goto('/login')
-  await page.evaluate(() => localStorage.setItem('dare_session', JSON.stringify({
+  await page.evaluate(() => localStorage.setItem('aquify_session', JSON.stringify({
     token: 'stub-parent',
     user: { id: 'usr-parent-001', name: 'Sarah Chen', role: 'parent', avatarInitials: 'SC' }
   })))

@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/app/comms"
-	"github.com/dareaquatics/aquify/server/internal/app/orgsettings"
+	"github.com/luryann/aquify/server/internal/app/comms"
+	"github.com/luryann/aquify/server/internal/app/orgsettings"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -67,7 +67,7 @@ func TestPublicSiteAnnouncementCapKeepsNewest(t *testing.T) {
 	r := chi.NewRouter()
 	h.RegisterPublicRoutes(r)
 	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/public/orgs/dare/site", nil))
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/public/orgs/aquify/site", nil))
 	var body struct {
 		Announcements []struct {
 			ID string `json:"id"`

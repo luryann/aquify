@@ -12,7 +12,7 @@ func TestUpdateConcurrentPatchesDoNotLoseFields(t *testing.T) {
 
 	for round := 0; round < 200; round++ {
 		svc := NewService()
-		code, name := "DARE", "Dare Aquatics"
+		code, name := "aquify", "aquify Aquatics"
 		var wg sync.WaitGroup
 		wg.Add(2)
 		go func() {
@@ -43,7 +43,7 @@ func TestUpdateRejectsDuplicateAndInvalidSlugs(t *testing.T) {
 	t.Parallel()
 
 	svc := NewService()
-	slug := "dare-aquatics"
+	slug := "aquify"
 	if _, err := svc.Update("org-1", Updates{PublicSlug: &slug}, "u"); err != nil {
 		t.Fatal(err)
 	}

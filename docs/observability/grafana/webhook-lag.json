@@ -4,7 +4,7 @@
     { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" }
   ],
   "annotations": { "list": [] },
-  "description": "DARE Platform — Stripe webhook receipt-to-processing latency.",
+  "description": "aquify Platform — Stripe webhook receipt-to-processing latency.",
   "editable": true,
   "graphTooltip": 1,
   "id": null,
@@ -20,15 +20,15 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum by (le, event_type) (rate(dare_webhook_processing_lag_seconds_bucket[5m])))",
+          "expr": "histogram_quantile(0.50, sum by (le, event_type) (rate(aquify_webhook_processing_lag_seconds_bucket[5m])))",
           "legendFormat": "p50 {{event_type}}"
         },
         {
-          "expr": "histogram_quantile(0.95, sum by (le, event_type) (rate(dare_webhook_processing_lag_seconds_bucket[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le, event_type) (rate(aquify_webhook_processing_lag_seconds_bucket[5m])))",
           "legendFormat": "p95 {{event_type}}"
         },
         {
-          "expr": "histogram_quantile(0.99, sum by (le, event_type) (rate(dare_webhook_processing_lag_seconds_bucket[5m])))",
+          "expr": "histogram_quantile(0.99, sum by (le, event_type) (rate(aquify_webhook_processing_lag_seconds_bucket[5m])))",
           "legendFormat": "p99 {{event_type}}"
         }
       ]
@@ -44,7 +44,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "sum by (event_type) (rate(dare_webhook_processing_lag_seconds_count[5m]))",
+          "expr": "sum by (event_type) (rate(aquify_webhook_processing_lag_seconds_count[5m]))",
           "legendFormat": "{{event_type}}"
         }
       ]
@@ -71,14 +71,14 @@
       "type": "gauge",
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(dare_webhook_processing_lag_seconds_bucket[5m])))"
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(aquify_webhook_processing_lag_seconds_bucket[5m])))"
         }
       ]
     }
   ],
   "refresh": "30s",
   "schemaVersion": 38,
-  "tags": ["dare", "webhooks", "stripe"],
+  "tags": ["aquify", "webhooks", "stripe"],
   "templating": {
     "list": [
       {
@@ -96,7 +96,7 @@
   "time": { "from": "now-1h", "to": "now" },
   "timepicker": {},
   "timezone": "browser",
-  "title": "DARE – Webhook Processing Lag",
-  "uid": "dare-webhook-lag",
+  "title": "aquify – Webhook Processing Lag",
+  "uid": "aquify-webhook-lag",
   "version": 1
 }

@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dareaquatics/aquify/server/internal/app/members"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/app/members"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
 func TestSwimmerSignInControls(t *testing.T) {

@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/dareaquatics/aquify/server/internal/app/audit"
-	"github.com/dareaquatics/aquify/server/internal/keycloak"
+	"github.com/luryann/aquify/server/internal/app/audit"
+	"github.com/luryann/aquify/server/internal/keycloak"
 )
 
 // ─── Router helpers ───────────────────────────────────────────────────────────
@@ -25,7 +25,7 @@ func TestSelfRegister_Success(t *testing.T) {
 	kc := keycloak.NewStubClient()
 	router := newStep30BRouter(t, kc)
 
-	body := `{"first_name":"Jane","last_name":"Doe","email":"jane@example.com","org_id":"org-1","requested_role":"coach","club_code":"dare2026","note":"Parent volunteer"}`
+	body := `{"first_name":"Jane","last_name":"Doe","email":"jane@example.com","org_id":"org-1","requested_role":"coach","club_code":"AQUIFY2026","note":"Parent volunteer"}`
 	rr := doRequest(router, http.MethodPost, "/api/v1/register", "", body, "")
 
 	if rr.Code != http.StatusCreated {
@@ -52,8 +52,8 @@ func TestSelfRegister_Success(t *testing.T) {
 	if got := u.Attributes["requested_role"][0]; got != "coach" {
 		t.Errorf("expected requested_role=coach, got %q", got)
 	}
-	if got := u.Attributes["registration_club_code"][0]; got != "DARE2026" {
-		t.Errorf("expected registration_club_code=DARE2026, got %q", got)
+	if got := u.Attributes["registration_club_code"][0]; got != "AQUIFY2026" {
+		t.Errorf("expected registration_club_code=AQUIFY2026, got %q", got)
 	}
 	if got := u.Attributes["registration_note"][0]; got != "Parent volunteer" {
 		t.Errorf("expected registration_note to persist, got %q", got)

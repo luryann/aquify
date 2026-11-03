@@ -18,7 +18,7 @@ func TestRuntimeSettingsEndpointReturnsSanitizedConfig(t *testing.T) {
 			EnableDevStubTokens:  true,
 			AllowDevSessionIssue: true,
 			OIDC: OIDCConfig{
-				ClientID:       "dare-admin",
+				ClientID:       "aquify-admin",
 				RedirectURL:    "http://localhost:3000/auth/callback",
 				ExpectedIssuer: "https://issuer.example.com",
 				ClientSecret:   "super-secret",
@@ -61,8 +61,8 @@ func TestRuntimeSettingsEndpointReturnsSanitizedConfig(t *testing.T) {
 	auth, _ := env.Settings["auth"].(map[string]any)
 	storage, _ := env.Settings["storage"].(map[string]any)
 	stripe, _ := env.Settings["stripe"].(map[string]any)
-	if auth["oidc_client_id"] != "dare-admin" {
-		t.Fatalf("expected oidc_client_id dare-admin, got %#v", auth["oidc_client_id"])
+	if auth["oidc_client_id"] != "aquify-admin" {
+		t.Fatalf("expected oidc_client_id aquify-admin, got %#v", auth["oidc_client_id"])
 	}
 	if _, ok := auth["client_secret"]; ok {
 		t.Fatal("did not expect client_secret in runtime settings payload")

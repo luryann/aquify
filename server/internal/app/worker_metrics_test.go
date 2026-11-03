@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dareaquatics/aquify/server/internal/telemetry"
-	"github.com/dareaquatics/aquify/server/internal/workers"
+	"github.com/luryann/aquify/server/internal/telemetry"
+	"github.com/luryann/aquify/server/internal/workers"
 )
 
 type captureRegistrar map[string]workers.Handler
@@ -36,9 +36,9 @@ func TestInstrumentedRegistrarRecordsJobExecutions(t *testing.T) {
 	body, _ := io.ReadAll(rec.Body)
 	text := string(body)
 	for _, want := range []string{
-		`dare_job_executions_total{status="success",type="billing:reconcile"} 1`,
-		`dare_job_executions_total{status="failure",type="exports:generate"} 1`,
-		`dare_job_duration_seconds_count{type="billing:reconcile"} 1`,
+		`aquify_job_executions_total{status="success",type="billing:reconcile"} 1`,
+		`aquify_job_executions_total{status="failure",type="exports:generate"} 1`,
+		`aquify_job_duration_seconds_count{type="billing:reconcile"} 1`,
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("metrics output missing %q", want)
@@ -69,7 +69,7 @@ func TestInstrumentHandlerCountsPanicAsFailure(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	m.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
-	if want := `dare_job_executions_total{status="failure",type="exports:panic"} 1`; !strings.Contains(rec.Body.String(), want) {
+	if want := `aquify_job_executions_total{status="failure",type="exports:panic"} 1`; !strings.Contains(rec.Body.String(), want) {
 		t.Errorf("metrics output missing %q", want)
 	}
 }

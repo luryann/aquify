@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 

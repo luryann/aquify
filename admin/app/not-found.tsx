@@ -106,20 +106,7 @@ export default function NotFound() {
         <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
           <Link
             href="/dashboard"
-            style={{
-              padding: '12px 24px',
-              background: 'var(--accent)',
-              border: 'none',
-              borderRadius: '8px',
-              color: '#fff',
-              fontSize: 'var(--fs-base)',
-              fontWeight: 600,
-              fontFamily: 'var(--font-body)',
-              textDecoration: 'none',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '8px',
-            }}
+            className="btn btn-primary"
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">

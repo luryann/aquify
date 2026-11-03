@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
-	"github.com/dareaquatics/aquify/server/internal/app/volunteer"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/app/volunteer"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )

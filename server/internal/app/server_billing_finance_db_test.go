@@ -9,8 +9,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/dareaquatics/aquify/server/internal/app/billing"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/app/billing"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
 // TestDBRepoBillingFinance proves the finance tables round-trip, and that two

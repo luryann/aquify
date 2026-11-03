@@ -5,10 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dareaquatics/aquify/server/internal/app/comms"
-	"github.com/dareaquatics/aquify/server/internal/app/groups"
-	"github.com/dareaquatics/aquify/server/internal/app/members"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/app/comms"
+	"github.com/luryann/aquify/server/internal/app/groups"
+	"github.com/luryann/aquify/server/internal/app/members"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
 type commsG2Fixture struct {

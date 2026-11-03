@@ -107,6 +107,26 @@ export default function CampaignDetailPage() {
     }
   }, [api, campaignId, session?.user.orgId])
 
+  // Poll while a background send is in progress, then report the final counts.
+  const isSending = campaign?.status === 'sending'
+  useEffect(() => {
+    const orgId = session?.user.orgId
+    if (!isSending || !orgId || !campaignId) return
+    const timer = setInterval(() => {
+      void fetchCampaign(api, orgId, campaignId).then((next) => {
+        setCampaign(next)
+        if (next.status !== 'sending') {
+          void loadDeliveries(api, orgId, campaignId).then((result) => {
+            setDeliveries(result.rows)
+            setDeliveriesError(result.error)
+          })
+          setNotice(`Sent campaign to ${next.total_recipients} eligible recipient${next.total_recipients === 1 ? '' : 's'}.`)
+        }
+      }).catch(() => undefined)
+    }, 3000)
+    return () => clearInterval(timer)
+  }, [api, campaignId, isSending, session?.user.orgId])
+
   async function handleSend() {
     if (!session?.user.orgId || !campaign) return
 
@@ -114,9 +134,10 @@ export default function CampaignDetailPage() {
     setError(null)
     setNotice(null)
     try {
-      const sentCampaign = await sendCampaign(api, session.user.orgId, campaign.id)
+      // The API answers 202 with status "sending"; delivery runs in a background job.
+      await sendCampaign(api, session.user.orgId, campaign.id)
       await loadCampaignState(session.user.orgId, campaign.id)
-      setNotice(`Sent campaign to ${sentCampaign.total_recipients} eligible recipient${sentCampaign.total_recipients === 1 ? '' : 's'}.`)
+      setNotice('Sending campaign…')
     } catch (err) {
       setError(uiErrorMessage(err, 'Couldn’t send campaign. Try again.'))
     } finally {

@@ -1,4 +1,4 @@
-# DARE Platform — Hypercare Runbook
+# aquify Platform — Hypercare Runbook
 
 **Last updated:** 2026-03-18
 **Window:** First 24 hours after production cutover

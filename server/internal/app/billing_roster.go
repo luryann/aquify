@@ -1,9 +1,9 @@
 package app
 
 import (
-	"github.com/dareaquatics/aquify/server/internal/app/billing"
-	"github.com/dareaquatics/aquify/server/internal/app/groups"
-	"github.com/dareaquatics/aquify/server/internal/app/members"
+	"github.com/luryann/aquify/server/internal/app/billing"
+	"github.com/luryann/aquify/server/internal/app/groups"
+	"github.com/luryann/aquify/server/internal/app/members"
 )
 
 // newBillingRosterSource projects the members/groups domains into the

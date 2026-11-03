@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/storage"
+	"github.com/luryann/aquify/server/internal/storage"
 	"github.com/go-chi/chi/v5"
 )
 

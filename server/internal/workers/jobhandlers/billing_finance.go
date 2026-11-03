@@ -7,8 +7,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/app/billing"
-	"github.com/dareaquatics/aquify/server/internal/workers"
+	"github.com/luryann/aquify/server/internal/app/billing"
+	"github.com/luryann/aquify/server/internal/workers"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"

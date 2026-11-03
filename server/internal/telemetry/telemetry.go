@@ -1,4 +1,4 @@
-// Package telemetry initialises OpenTelemetry tracing for the DARE platform.
+// Package telemetry initialises OpenTelemetry tracing for the aquify platform.
 // It is designed to be wired once in main() and then used throughout the
 // application via the global OTel tracer.
 //
@@ -24,7 +24,7 @@ import (
 
 // Config holds observability configuration loaded from environment variables.
 type Config struct {
-	// ServiceName is the OTel service.name attribute (default: "dare-api").
+	// ServiceName is the OTel service.name attribute (default: "aquify-api").
 	ServiceName string
 	// ServiceVersion is the deployed artifact version (default: "dev").
 	ServiceVersion string
@@ -46,7 +46,7 @@ func LoadConfig() Config {
 		}
 	}
 	return Config{
-		ServiceName:    envOrDefault("OTEL_SERVICE_NAME", "dare-api"),
+		ServiceName:    envOrDefault("OTEL_SERVICE_NAME", "aquify-api"),
 		ServiceVersion: envOrDefault("OTEL_SERVICE_VERSION", "dev"),
 		OTLPEndpoint:   strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")),
 		SampleRate:     sampleRate,

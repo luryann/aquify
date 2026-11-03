@@ -1,4 +1,4 @@
-# WCAG 2.2 AA Accessibility Audit — DARE Platform
+# WCAG 2.2 AA Accessibility Audit — aquify Platform
 
 **Version:** 1.0
 **Last Updated:** 2026-03-23
@@ -9,11 +9,11 @@
 
 ## Scope
 
-This audit covers the critical user flows in the DARE admin portal and parent portal. The swimmer portal is included for core read flows.
+This audit covers the critical user flows in the aquify admin portal and parent portal. The swimmer portal is included for core read flows.
 
 ### Critical Flows
 
-**Admin Portal (`admin.dare.club`)**
+**Admin Portal (`admin.aquify.club`)**
 1. Login and MFA
 2. Create meet (multi-step form)
 3. View household and swimmer detail
@@ -207,7 +207,7 @@ The following are common accessibility gaps in Next.js + shadcn/ui applications 
 
 8. **Skip link** — `admin/app/layout.tsx` and portal layout do not currently include a skip-to-main-content link. Add as first focusable element in each layout.
 
-9. **Page titles** — verify every Next.js route has a unique, descriptive `metadata.title`. Generic titles ("DARE" or "Dashboard") do not distinguish pages for screen reader users.
+9. **Page titles** — verify every Next.js route has a unique, descriptive `metadata.title`. Generic titles ("aquify" or "Dashboard") do not distinguish pages for screen reader users.
 
 10. **Sidebar resize drag handle** — new drag handle in `Sidebar.tsx` needs a keyboard alternative (e.g., arrow keys when focused) and `aria-label="Resize sidebar"`.
 

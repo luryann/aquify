@@ -9,13 +9,13 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/dareaquatics/aquify/meetfiles"
-	"github.com/dareaquatics/aquify/server/internal/app/audit"
-	"github.com/dareaquatics/aquify/server/internal/app/httpx"
-	"github.com/dareaquatics/aquify/server/internal/app/meets"
-	"github.com/dareaquatics/aquify/server/internal/app/members"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
-	"github.com/dareaquatics/aquify/server/internal/app/performance"
+	"github.com/luryann/aquify/meetfiles"
+	"github.com/luryann/aquify/server/internal/app/audit"
+	"github.com/luryann/aquify/server/internal/app/httpx"
+	"github.com/luryann/aquify/server/internal/app/meets"
+	"github.com/luryann/aquify/server/internal/app/members"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/app/performance"
 	"github.com/go-chi/chi/v5"
 )
 

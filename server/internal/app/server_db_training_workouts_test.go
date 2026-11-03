@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/dareaquatics/aquify/server/internal/app/seasons"
-	"github.com/dareaquatics/aquify/server/internal/app/training"
+	"github.com/luryann/aquify/server/internal/app/seasons"
+	"github.com/luryann/aquify/server/internal/app/training"
 	"github.com/google/uuid"
 )
 

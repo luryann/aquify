@@ -3,7 +3,7 @@ package billing
 import (
 	"testing"
 
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
 func billingAdminPrincipal() *appmiddleware.Principal {
@@ -231,5 +231,47 @@ func TestStripePendingPaymentCanFail(t *testing.T) {
 	}
 	if payment.Status != "failed" || payment.FailedAt == nil {
 		t.Fatalf("pending failure not recorded: %+v", payment)
+	}
+}
+
+func TestCreateRefund_DedupesOnStripeRefundID(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService()
+	principal := billingAdminPrincipal()
+	orgID := principal.OrgID
+
+	invoice, err := svc.CreateInvoice(orgID, principal.UserID, principal, CreateInvoiceInput{HouseholdID: "hh-200", InvoiceNumber: "INV-DEDUPE-1"})
+	if err != nil {
+		t.Fatalf("create invoice: %v", err)
+	}
+	if _, err := svc.AddInvoiceItem(orgID, principal.UserID, principal, invoice.ID, AddInvoiceItemInput{
+		Description: "Fee", Quantity: 1, UnitAmountCents: 5000, Category: "program_fee",
+	}); err != nil {
+		t.Fatalf("add item: %v", err)
+	}
+	issued, _, err := svc.IssueInvoice(orgID, principal.UserID, principal, invoice.ID)
+	if err != nil {
+		t.Fatalf("issue: %v", err)
+	}
+	payment, _, err := svc.RecordPayment(orgID, principal.UserID, principal, issued.ID, RecordPaymentInput{AmountCents: 5000, Method: "check"})
+	if err != nil {
+		t.Fatalf("payment: %v", err)
+	}
+	in := CreateRefundInput{PaymentID: payment.ID, AmountCents: 1000, Reason: "dup", StripeRefundID: "re_1"}
+	first, _, err := svc.CreateRefund(orgID, principal.UserID, principal, issued.ID, in)
+	if err != nil {
+		t.Fatalf("first refund: %v", err)
+	}
+	second, _, err := svc.CreateRefund(orgID, principal.UserID, principal, issued.ID, in)
+	if err != nil {
+		t.Fatalf("second refund: %v", err)
+	}
+	if first.ID != second.ID {
+		t.Fatalf("expected replay to return existing refund")
+	}
+	refunds, _ := svc.ListRefunds(orgID, principal, issued.ID)
+	if len(refunds) != 1 {
+		t.Fatalf("expected 1 refund, got %d", len(refunds))
 	}
 }

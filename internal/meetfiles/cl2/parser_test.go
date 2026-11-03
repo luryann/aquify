@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dareaquatics/aquify/meetfiles"
-	"github.com/dareaquatics/aquify/meetfiles/cl2"
+	"github.com/luryann/aquify/meetfiles"
+	"github.com/luryann/aquify/meetfiles/cl2"
 )
 
 // sampleCL2 is a minimal CL2 scaffold fixture that exercises the known-prefix

@@ -8,12 +8,13 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/app/audit"
-	"github.com/dareaquatics/aquify/server/internal/app/comms"
-	"github.com/dareaquatics/aquify/server/internal/app/groups"
-	"github.com/dareaquatics/aquify/server/internal/app/members"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/app/audit"
+	"github.com/luryann/aquify/server/internal/app/comms"
+	"github.com/luryann/aquify/server/internal/app/groups"
+	"github.com/luryann/aquify/server/internal/app/members"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
 // ─── Router helper ────────────────────────────────────────────────────────────
@@ -51,6 +52,27 @@ const commsOrgID = "org-demo"
 func commsBody(fields map[string]any) string {
 	b, _ := json.Marshal(fields)
 	return string(b)
+}
+
+// awaitCampaignSend polls until the asynchronously delivered campaign leaves
+// the "sending" state (POST .../send returns 202 and a worker job delivers).
+func awaitCampaignSend(t *testing.T, router http.Handler, token, campaignID string) map[string]any {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		rr := doCommsReq(router, http.MethodGet, "/api/v1/email-campaigns/"+campaignID, token, "")
+		var c map[string]any
+		if rr.Code == http.StatusOK {
+			_ = json.NewDecoder(rr.Body).Decode(&c)
+			if c["status"] != "sending" {
+				return c
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("campaign %s still sending after 5s: %d %v", campaignID, rr.Code, c)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 func doCommsReq(router http.Handler, method, path, token, body string) *httptest.ResponseRecorder {
@@ -365,8 +387,8 @@ func TestCampaigns_CreateListGet(t *testing.T) {
 		"name":       "Fall Newsletter",
 		"subject":    "Season Update",
 		"body_html":  "<p>Hello!</p>",
-		"from_name":  "DARE Aquatics",
-		"from_email": "noreply@dareaquatics.com",
+		"from_name":  "aquify Aquatics",
+		"from_email": "noreply@aquify.com",
 		"audience":   "all",
 	})
 	rr := doCommsReq(router, http.MethodPost, "/api/v1/email-campaigns", token, body)
@@ -419,8 +441,8 @@ func TestCampaigns_SendWithSuppression(t *testing.T) {
 		"name":       "Test Send",
 		"subject":    "Hello",
 		"body_html":  "<p>Hi</p>",
-		"from_name":  "DARE",
-		"from_email": "noreply@dare.swim",
+		"from_name":  "aquify",
+		"from_email": "noreply@aquify.swim",
 		"audience":   "all",
 	})
 	rr = doCommsReq(router, http.MethodPost, "/api/v1/email-campaigns", token, cBody)
@@ -434,11 +456,15 @@ func TestCampaigns_SendWithSuppression(t *testing.T) {
 	// Send to org-member recipients resolved server-side — 1 suppressed, 2 live.
 	sendBody := `{}`
 	rr = doCommsReq(router, http.MethodPost, "/api/v1/email-campaigns/"+campaignID+"/send", token, sendBody)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("send: want 200, got %d: %s", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("send: want 202, got %d: %s", rr.Code, rr.Body.String())
 	}
-	var sent map[string]any
-	json.NewDecoder(rr.Body).Decode(&sent)
+	var accepted map[string]any
+	json.NewDecoder(rr.Body).Decode(&accepted)
+	if accepted["status"] != "sending" {
+		t.Fatalf("want accepted status=sending, got %v", accepted["status"])
+	}
+	sent := awaitCampaignSend(t, router, token, campaignID)
 	if sent["status"] != "sent" {
 		t.Fatalf("want status=sent, got %v", sent["status"])
 	}
@@ -483,6 +509,7 @@ func TestCampaigns_ListDeliveries(t *testing.T) {
 
 	sendBody := `{}`
 	doCommsReq(router, http.MethodPost, "/api/v1/email-campaigns/"+campaignID+"/send", token, sendBody)
+	awaitCampaignSend(t, router, token, campaignID)
 
 	// List deliveries.
 	rr = doCommsReq(router, http.MethodGet, "/api/v1/email-campaigns/"+campaignID+"/deliveries", token, "")
@@ -508,8 +535,8 @@ func TestCampaigns_SendRejectsCallerSuppliedRecipientsPayload(t *testing.T) {
 		"name":       "Unsafe Send",
 		"subject":    "Hello",
 		"body_html":  "<p>Hi</p>",
-		"from_name":  "DARE",
-		"from_email": "noreply@dare.swim",
+		"from_name":  "aquify",
+		"from_email": "noreply@aquify.swim",
 		"audience":   "all",
 	})
 	rr := doCommsReq(router, http.MethodPost, "/api/v1/email-campaigns", token, cBody)
@@ -572,8 +599,8 @@ func TestCampaigns_GroupAudienceOnlyTargetsRegisteredHouseholds(t *testing.T) {
 		"name":       "Group Send",
 		"subject":    "Practice Update",
 		"body_html":  "<p>Hi team</p>",
-		"from_name":  "DARE",
-		"from_email": "noreply@dare.swim",
+		"from_name":  "aquify",
+		"from_email": "noreply@aquify.swim",
 		"audience":   "group",
 		"group_id":   group.ID,
 	})
@@ -586,9 +613,10 @@ func TestCampaigns_GroupAudienceOnlyTargetsRegisteredHouseholds(t *testing.T) {
 	campaignID := campaign["id"].(string)
 
 	rr = doCommsReq(router, http.MethodPost, "/api/v1/email-campaigns/"+campaignID+"/send", token, `{}`)
-	if rr.Code != http.StatusOK {
+	if rr.Code != http.StatusAccepted {
 		t.Fatalf("send group campaign: %d %s", rr.Code, rr.Body.String())
 	}
+	awaitCampaignSend(t, router, token, campaignID)
 
 	deliveries, err := svc.ListDeliveries(commsOrgID, campaignID)
 	if err != nil {
@@ -726,8 +754,8 @@ func TestPostmarkWebhookBounceUpdatesDeliveryAndSuppression(t *testing.T) {
 		"name":       "Webhook Test",
 		"subject":    "Hello",
 		"body_html":  "<p>Hi</p>",
-		"from_name":  "DARE",
-		"from_email": "noreply@dare.swim",
+		"from_name":  "aquify",
+		"from_email": "noreply@aquify.swim",
 		"audience":   "all",
 	})
 	rr := doCommsReq(router, http.MethodPost, "/api/v1/email-campaigns", token, cBody)
@@ -740,9 +768,10 @@ func TestPostmarkWebhookBounceUpdatesDeliveryAndSuppression(t *testing.T) {
 
 	sendBody := `{}`
 	rr = doCommsReq(router, http.MethodPost, "/api/v1/email-campaigns/"+campaignID+"/send", token, sendBody)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("send campaign: want 200, got %d: %s", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("send campaign: want 202, got %d: %s", rr.Code, rr.Body.String())
 	}
+	awaitCampaignSend(t, router, token, campaignID)
 
 	deliveries, err := svc.ListDeliveries(commsOrgID, campaignID)
 	if err != nil || len(deliveries) != 1 {
@@ -866,5 +895,98 @@ func TestPostmarkWebhookComplaintWithoutDeliveryStillSuppressesWhenScoped(t *tes
 	}
 	if len(suppression) != 1 || suppression[0].Email != "scoped-complaint@example.com" || suppression[0].Reason != "complaint" {
 		t.Fatalf("expected scoped complaint suppression entry, got %#v", suppression)
+	}
+}
+
+// Real Postmark webhook payloads carry many fields the handler does not model.
+func TestPostmarkWebhookAcceptsRealPayloadsAndBounceSuppressesNextCampaign(t *testing.T) {
+	svc := comms.NewService()
+	membersSvc := members.NewService()
+	seedCommsHousehold(t, membersSvc, "Household A", "john@example.com")
+	router := newCommsRouterWithServices(t, svc, membersSvc, nil, nil)
+	token := issueCommsToken(t, router, "admin")
+
+	newCampaign := func(name string) string {
+		rr := doCommsReq(router, http.MethodPost, "/api/v1/email-campaigns", token, commsBody(map[string]any{
+			"name": name, "subject": "Hello", "body_html": "<p>Hi</p>",
+			"from_name": "aquify", "from_email": "noreply@aquify.swim", "audience": "all",
+		}))
+		if rr.Code != http.StatusCreated {
+			t.Fatalf("create: %d %s", rr.Code, rr.Body.String())
+		}
+		var c map[string]any
+		json.NewDecoder(rr.Body).Decode(&c)
+		return c["id"].(string)
+	}
+	first := newCampaign("one")
+	if rr := doCommsReq(router, http.MethodPost, "/api/v1/email-campaigns/"+first+"/send", token, `{}`); rr.Code != http.StatusAccepted {
+		t.Fatalf("send: %d %s", rr.Code, rr.Body.String())
+	}
+	awaitCampaignSend(t, router, token, first)
+	deliveries, _ := svc.ListDeliveries(commsOrgID, first)
+	if len(deliveries) != 1 {
+		t.Fatalf("want 1 delivery, got %d", len(deliveries))
+	}
+	msgID := deliveries[0].ProviderMessageID
+	meta := `{"org_id":"` + commsOrgID + `","campaign_id":"` + first + `"}`
+
+	post := func(body string) {
+		t.Helper()
+		rr := doPublicCommsReq(router, http.MethodPost, "/api/v1/webhooks/postmark", body, nil)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("webhook want 200, got %d: %s (body %s)", rr.Code, rr.Body.String(), body)
+		}
+	}
+	post(`{"RecordType":"Delivery","ServerID":23,"MessageStream":"outbound","MessageID":"` + msgID + `","Recipient":"john@example.com","Tag":"","DeliveredAt":"2019-11-05T16:33:54.9070259Z","Details":"Test delivery webhook details","Metadata":` + meta + `}`)
+	if d, _ := svc.ListDeliveries(commsOrgID, first); d[0].Status != "delivered" {
+		t.Fatalf("want delivered, got %q", d[0].Status)
+	}
+	post(`{"RecordType":"Open","MessageID":"` + msgID + `","Recipient":"john@example.com","FirstOpen":true,"ReceivedAt":"2019-11-05T16:33:54Z","Platform":"WebMail","UserAgent":"x","Geo":{"CountryISOCode":"US"},"Metadata":` + meta + `}`)
+	post(`{"RecordType":"Click","MessageID":"` + msgID + `","Recipient":"john@example.com","OriginalLink":"https://x","ClickLocation":"HTML","Metadata":` + meta + `}`)
+	post(`{"RecordType":"Bounce","MessageStream":"outbound","ID":4323372036854775807,"Type":"HardBounce","TypeCode":1,"Name":"Hard bounce","Tag":"Test","MessageID":"` + msgID + `","Metadata":` + meta + `,"ServerID":1234,"Description":"The server was unable to deliver your message","Details":"Test bounce details","Email":"john@example.com","From":"sender@example.com","BouncedAt":"2019-11-05T16:33:54.9070259Z","DumpAvailable":true,"Inactive":true,"CanActivate":true,"Subject":"Test subject","Content":"<dump>"}`)
+
+	supp, _ := svc.ListSuppression(commsOrgID)
+	if len(supp) != 1 || supp[0].Reason != "bounce" || supp[0].Email != "john@example.com" {
+		t.Fatalf("want bounce suppression, got %#v", supp)
+	}
+
+	second := newCampaign("two")
+	rr := doCommsReq(router, http.MethodPost, "/api/v1/email-campaigns/"+second+"/send", token, `{}`)
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("second send: %d %s", rr.Code, rr.Body.String())
+	}
+	awaitCampaignSend(t, router, token, second)
+	d2, _ := svc.ListDeliveries(commsOrgID, second)
+	if len(d2) != 1 || d2[0].Status != "suppressed" {
+		t.Fatalf("want suppressed delivery, got %#v", d2)
+	}
+
+	// SpamComplaint for another address, and SubscriptionChange re-enabling it.
+	post(`{"RecordType":"SpamComplaint","MessageStream":"outbound","ID":1,"Type":"SpamComplaint","TypeCode":512,"Tag":"","MessageID":"nope","Metadata":` + meta + `,"ServerID":1,"Description":"d","Details":"d","Email":"spam@example.com","From":"s@example.com","BouncedAt":"2019-11-05T16:33:54Z","DumpAvailable":true,"Inactive":true,"CanActivate":false,"Subject":"s","Content":"c"}`)
+	post(`{"RecordType":"SubscriptionChange","MessageID":"nope","ServerID":23,"MessageStream":"outbound","ChangedAt":"2019-11-05T16:33:54Z","Recipient":"john@example.com","Origin":"Recipient","SuppressSending":false,"SuppressionReason":"","Tag":"","Metadata":` + meta + `}`)
+	supp, _ = svc.ListSuppression(commsOrgID)
+	if len(supp) != 1 || supp[0].Email != "spam@example.com" || supp[0].Reason != "complaint" {
+		t.Fatalf("want only complaint suppression, got %#v", supp)
+	}
+}
+
+func TestHouseholdPrimaryEmailValidated(t *testing.T) {
+	router := newCommsRouterWithServices(t, comms.NewService(), members.NewService(), nil, nil)
+	token := issueCommsToken(t, router, "admin")
+	rr := doCommsReq(router, http.MethodPost, "/api/v1/members/households", token,
+		commsBody(map[string]any{"org_id": commsOrgID, "household_name": "Bad", "primary_email": "broken@@example"}))
+	if rr.Code != http.StatusBadRequest && rr.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("bad email: want 4xx, got %d: %s", rr.Code, rr.Body.String())
+	}
+	rr = doCommsReq(router, http.MethodPost, "/api/v1/members/households", token,
+		commsBody(map[string]any{"org_id": commsOrgID, "household_name": "Ok"}))
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("omitted email: want 201, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var h map[string]any
+	json.NewDecoder(rr.Body).Decode(&h)
+	rr = doCommsReq(router, http.MethodPatch, "/api/v1/members/households/"+h["household"].(map[string]any)["id"].(string), token, `{"primary_email":"broken@@example"}`)
+	if rr.Code != http.StatusBadRequest && rr.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("update bad email: want 4xx, got %d: %s", rr.Code, rr.Body.String())
 	}
 }

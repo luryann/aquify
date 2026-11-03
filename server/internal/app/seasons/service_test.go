@@ -69,3 +69,15 @@ func TestUpdateAndDeleteAreOrgScoped(t *testing.T) {
 		t.Fatalf("get deleted: expected ErrNotFound, got %v", err)
 	}
 }
+
+func TestCreateRejectsInvalidDates(t *testing.T) {
+	svc := NewService()
+	for _, c := range [][2]string{{"2026-09-01", "2025-08-31"}, {"9/1/2026", "2027-05-01"}} {
+		if _, err := svc.Create("org-1", "S", c[0], c[1], "active", "", "a"); err != ErrInvalidDates {
+			t.Fatalf("%v: expected ErrInvalidDates, got %v", c, err)
+		}
+	}
+	if _, err := svc.Create("org-1", "S", "2026-09-01", "2027-05-01", "active", "", "a"); err != nil {
+		t.Fatal(err)
+	}
+}

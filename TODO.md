@@ -1,4 +1,4 @@
-# DARE Platform Implementation TODO (Atomic Task List)
+# aquify Platform Implementation TODO (Atomic Task List)
 
 ---
 
@@ -36,7 +36,7 @@
 
 This step builds full in-app user lifecycle management backed by the Keycloak
 Admin REST API. The goal: admins can invite, configure, and remove users entirely
-from the DARE dashboard without ever touching the Keycloak UI.
+from the aquify dashboard without ever touching the Keycloak UI.
 
 ### 30A) Keycloak Admin API client (Go backend)
 
@@ -62,12 +62,12 @@ from the DARE dashboard without ever touching the Keycloak UI.
 ### 30B) User management API endpoints (Go)
 
 - [x] Add `GET /api/v1/users` — list users in org, with `search`, `role`, `status` filters. Owner/admin only.
-- [x] Add `GET /api/v1/users/{id}` — get user detail (Keycloak profile + DARE roles + linked household).
+- [x] Add `GET /api/v1/users/{id}` — get user detail (Keycloak profile + aquify roles + linked household).
 - [x] Add `POST /api/v1/users/invite` — provision Keycloak user + send welcome email + optionally create linked household. Owner/admin only.
 - [x] Add `PUT /api/v1/users/{id}` — update display name / email. Owner/admin only.
 - [x] Add `POST /api/v1/users/{id}/disable` — disable Keycloak account. Owner/admin only.
 - [x] Add `POST /api/v1/users/{id}/enable` — re-enable Keycloak account. Owner/admin only.
-- [x] Add `DELETE /api/v1/users/{id}` — delete user from Keycloak and anonymize DARE records. Owner only, requires MFA.
+- [x] Add `DELETE /api/v1/users/{id}` — delete user from Keycloak and anonymize aquify records. Owner only, requires MFA.
 - [x] Add `GET /api/v1/users/{id}/roles` — list assigned roles.
 - [x] Add `POST /api/v1/users/{id}/roles` — assign role (`{role}` body). Owner/admin only.
 - [x] Add `DELETE /api/v1/users/{id}/roles/{role}` — remove role. Owner/admin only. Cannot remove last `owner` role.

@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/dareaquatics/aquify/server/internal/app/training"
+	"github.com/luryann/aquify/server/internal/app/training"
 )
 
 // ─── Router helpers ───────────────────────────────────────────────────────────

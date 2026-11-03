@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
 const stdHeader = "standard_name,standard_code,season_year,course,gender,age_group,event_distance,stroke,cut_time\n"

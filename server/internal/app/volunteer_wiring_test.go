@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/dareaquatics/aquify/server/internal/app/billing"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
-	"github.com/dareaquatics/aquify/server/internal/app/volunteer"
+	"github.com/luryann/aquify/server/internal/app/billing"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/app/volunteer"
 )
 
 func TestVolunteerBillerFailedIssueLeavesNoDraft(t *testing.T) {

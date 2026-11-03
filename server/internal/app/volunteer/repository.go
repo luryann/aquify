@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/dbutil"
+	"github.com/luryann/aquify/server/internal/dbutil"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"

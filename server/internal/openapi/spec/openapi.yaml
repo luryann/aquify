@@ -1,13 +1,13 @@
 openapi: 3.1.0
 info:
-  title: DARE Platform API
+  title: aquify Platform API
   description: |
     Full-stack swim club operations platform covering member/household management,
     meet scheduling and entries, file interoperability (CL2/SD3/ZIP/HY3/HYV/EV3),
     performance tracking, billing (Stripe), communications, and admin reporting.
   version: "1.0.0"
   contact:
-    name: DARE Aquatics Engineering
+    name: aquify Aquatics Engineering
 
 servers:
   - url: /api/v1
@@ -110,7 +110,7 @@ paths:
     post:
       tags: [Auth]
       summary: OIDC callback — exchange code for session
-      description: Exchanges an OIDC authorization code for a platform session. Validates state signature, nonce, and audience, then sets Secure/HttpOnly session cookies plus a Secure CSRF cookie.
+      description: Exchanges an OIDC authorization code for a platform session. Only the app roles admin/coach/parent/swimmer are placed on the session; tokens whose roles contain none of them are refused with 403 no_app_role. Validates state signature, nonce, and audience, and requires the aquify_oidc_state binding cookie set by /auth/oidc/authorize to match the state (401 invalid_oidc_state otherwise; the cookie is single use). Then sets Secure/HttpOnly session cookies plus a Secure CSRF cookie.
       security: []
       operationId: oidcCallback
       requestBody:
@@ -128,8 +128,10 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Account has no application role (code `no_app_role`)
         "503":
-          $ref: "#/components/responses/ServiceUnavailable"
+          description: OIDC not configured (`oidc_not_configured`) or provider unreachable/5xx (`oidc_provider_unavailable`)
 
   /auth/oidc/authorize:
     get:
@@ -5092,8 +5094,12 @@ paths:
       parameters:
         - $ref: "#/components/parameters/CampaignID"
       responses:
-        "200":
-          description: Campaign send initiated
+        "202":
+          description: >-
+            Campaign claimed (status "sending") and queued for delivery by a
+            background job on the email queue. Poll GET /email-campaigns/{campaignID}
+            for the final status and counts. A campaign stuck in "sending" with no
+            progress for 15 minutes may be re-sent.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/EmailCampaign" }
@@ -5101,8 +5107,13 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "422":
+          description: No eligible recipients resolved for the campaign
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
         "409":
-          description: Campaign is not in draft state
+          description: Campaign is not in draft state (or is actively sending)
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -5328,6 +5339,7 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "503": { description: "Backend dependency unavailable (code queue_unavailable, storage_unavailable or export_queue_unavailable)", content: { application/json: { schema: { type: object } } } }
 
   /compliance/data-export-requests/{requestID}:
     get:
@@ -5501,6 +5513,7 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "503": { description: "Backend dependency unavailable (code queue_unavailable, storage_unavailable or export_queue_unavailable)", content: { application/json: { schema: { type: object } } } }
 
   /jobs/queues:
     get:
@@ -5518,6 +5531,7 @@ paths:
                   queues: { type: object }
         "403":
           $ref: "#/components/responses/Forbidden"
+        "503": { description: "Backend dependency unavailable (code queue_unavailable, storage_unavailable or export_queue_unavailable)", content: { application/json: { schema: { type: object } } } }
 
   /jobs/metrics:
     get:
@@ -5554,6 +5568,7 @@ paths:
                   count: { type: integer }
         "403":
           $ref: "#/components/responses/Forbidden"
+        "503": { description: "Backend dependency unavailable (code queue_unavailable, storage_unavailable or export_queue_unavailable)", content: { application/json: { schema: { type: object } } } }
 
   /jobs/dlq/{taskID}/retry:
     post:
@@ -7742,6 +7757,7 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "503": { description: "Backend dependency unavailable (code queue_unavailable, storage_unavailable or export_queue_unavailable)", content: { application/json: { schema: { type: object } } } }
 
   /documents/{submissionID}/verify:
     post:

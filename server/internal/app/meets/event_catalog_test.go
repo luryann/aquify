@@ -3,7 +3,7 @@ package meets
 import (
 	"testing"
 
-	"github.com/dareaquatics/aquify/meetfiles"
+	"github.com/luryann/aquify/meetfiles"
 )
 
 func TestDeriveMeetEventsFromParseResult_DedupesAndParsesAgeGroups(t *testing.T) {

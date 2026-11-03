@@ -15,7 +15,7 @@ import {
   type SwimmerRecord,
   type GroupRecord,
 } from '@/lib/adminData'
-import { SWIMMER_BIO_MAX_LENGTH, normalizeSwimmerBio, validateSwimmerBio } from '@/lib/swimmer-bio'
+import { SWIMMER_BIO_MAX_LENGTH, swimmerBioLength, normalizeSwimmerBio, validateSwimmerBio } from '@/lib/swimmer-bio'
 import { ageFromDob, formatDateOnly } from '@/lib/dates'
 import './page.inline.css'
 import { SkeletonLine } from '@/components/ui/SkeletonLine'
@@ -404,7 +404,7 @@ export default function SwimmerProfilePage() {
 
               <div className="is-7d1aea8">
                 <span style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-body)', color: C.muted }}>
-                  {bio.length}/{SWIMMER_BIO_MAX_LENGTH}
+                  {swimmerBioLength(bio)}/{SWIMMER_BIO_MAX_LENGTH}
                 </span>
                 <div className="is-e2ff0fd">
                   {bioSaved && (

@@ -1,4 +1,4 @@
-# DARE Platform — On-Call Runbook
+# aquify Platform — On-Call Runbook
 
 **Last updated:** 2026-03-18
 **Owner:** Engineering Team
@@ -25,8 +25,8 @@ resolve them. All alerts are defined in
 | Jaeger / Tempo Traces | `https://tracing.<your-domain>` |
 | Kubernetes Cluster | `kubectl --context <prod-context>` |
 | Stripe Dashboard | `https://dashboard.stripe.com` |
-| PagerDuty | `https://dare.pagerduty.com` |
-| Slack Alert Channel | `#dare-alerts` |
+| PagerDuty | `https://aquify.pagerduty.com` |
+| Slack Alert Channel | `#aquify-alerts` |
 
 ---
 
@@ -52,10 +52,10 @@ files; parse workers returning errors.
 
 **Diagnosis:**
 
-1. Check the DARE import failure dashboard: `dare-imports` in Grafana.
+1. Check the aquify import failure dashboard: `aquify-imports` in Grafana.
 2. Look for correlated worker errors in Loki:
    ```
-   {app="dare-api"} |= "parse import: "
+   {app="aquify-api"} |= "parse import: "
    ```
 3. Check the `file_imports` table in PostgreSQL:
    ```sql
@@ -67,8 +67,8 @@ files; parse workers returning errors.
    ```
 4. Inspect object storage (MinIO/S3) for upload availability:
    ```bash
-   mc alias set dare https://s3.<domain> <access_key> <secret_key>
-   mc admin info dare
+   mc alias set aquify https://s3.<domain> <access_key> <secret_key>
+   mc admin info aquify
    ```
 5. Check if a recent deploy introduced a parser regression by reviewing the
    `parse_import` job handler and recent commits to `internal/meetfiles/`.
@@ -95,7 +95,7 @@ being processed; ledger mismatches reported by reconciliation.
 
 **Diagnosis:**
 
-1. Check Grafana webhook lag dashboard: `dare-webhook-lag`.
+1. Check Grafana webhook lag dashboard: `aquify-webhook-lag`.
 2. Inspect the `webhook_events` table for events stuck in `processing`:
    ```sql
    SELECT id, stripe_event_id, event_type, status, received_at, processed_at
@@ -107,7 +107,7 @@ being processed; ledger mismatches reported by reconciliation.
 3. Check Stripe Dashboard → Webhooks → Recent deliveries for failed attempts.
 4. Search Loki for billing handler errors:
    ```
-   {app="dare-api"} |= "billing reconcile" |= "error"
+   {app="aquify-api"} |= "billing reconcile" |= "error"
    ```
 5. Verify the `STRIPE_WEBHOOK_SECRET` environment variable is set correctly —
    signature verification failures will silently reject webhooks.
@@ -183,10 +183,10 @@ page loads in the admin portal.
 
 **Diagnosis:**
 
-1. Check the `dare-api-errors` dashboard for which routes are failing.
+1. Check the `aquify-api-errors` dashboard for which routes are failing.
 2. Search Loki for 5xx log lines:
    ```
-   {app="dare-api"} | json | status >= 500
+   {app="aquify-api"} | json | status >= 500
    ```
 3. Check for recent deploys that might have introduced a regression.
 4. If latency is high: check for slow queries using `pg_stat_statements`:
@@ -213,7 +213,7 @@ page loads in the admin portal.
 
 ```bash
 # Kubernetes
-kubectl rollout restart deployment/dare-api -n dare-production
+kubectl rollout restart deployment/aquify-api -n aquify-production
 
 # Docker Compose (local / staging)
 docker compose restart api
@@ -223,10 +223,10 @@ docker compose restart api
 
 ```bash
 # Kubernetes
-kubectl logs -n dare-production -l app=dare-api --tail=100 -f
+kubectl logs -n aquify-production -l app=aquify-api --tail=100 -f
 
 # Loki (Grafana Explore)
-{app="dare-api"} | json | level="error"
+{app="aquify-api"} | json | level="error"
 ```
 
 ### Emergency Database Backup
@@ -235,10 +235,10 @@ kubectl logs -n dare-production -l app=dare-api --tail=100 -f
 pg_dump \
   --host=<db-host> \
   --port=5432 \
-  --username=dare_api \
+  --username=aquify_api \
   --format=custom \
   --file=emergency_backup_$(date +%Y%m%d_%H%M%S).pgdump \
-  dare_production
+  aquify_production
 ```
 
 ### Triggering Manual Reconciliation
@@ -255,9 +255,9 @@ curl -s -X POST https://api.<domain>/api/v1/stripe/reconcile \
 
 | Scenario | Escalate To | Channel |
 |---|---|---|
-| Payments not recording | Finance + Lead Eng | `#dare-billing` |
+| Payments not recording | Finance + Lead Eng | `#aquify-billing` |
 | Data loss suspected | CTO + Lead Eng | Phone/PagerDuty P0 |
-| Auth service down | Lead Eng + Infra | `#dare-incidents` |
+| Auth service down | Lead Eng + Infra | `#aquify-incidents` |
 | Stripe outage | Monitor status.stripe.com | No internal escalation needed |
 | Personal data exposure | Security + CTO | Out-of-band encrypted message |
 

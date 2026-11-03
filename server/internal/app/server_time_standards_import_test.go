@@ -10,7 +10,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/dareaquatics/aquify/server/internal/app/performance"
+	"github.com/luryann/aquify/server/internal/app/performance"
 )
 
 func TestTimeStandardsImportRolesPreviewAndCommit(t *testing.T) {

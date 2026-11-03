@@ -12,12 +12,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/app/billing"
-	"github.com/dareaquatics/aquify/server/internal/app/groups"
-	"github.com/dareaquatics/aquify/server/internal/app/meets"
-	"github.com/dareaquatics/aquify/server/internal/app/members"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
-	"github.com/dareaquatics/aquify/server/internal/storage"
+	"github.com/luryann/aquify/server/internal/app/billing"
+	"github.com/luryann/aquify/server/internal/app/groups"
+	"github.com/luryann/aquify/server/internal/app/meets"
+	"github.com/luryann/aquify/server/internal/app/members"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/storage"
 )
 
 var (
@@ -445,8 +445,8 @@ func (s *Service) RunInvoiceAgingReport(orgID string, principal *appmiddleware.P
 	for _, invoice := range invoices {
 		daysPastDue := 0
 		bucket := "current"
-		if invoice.Status == "voided" || invoice.Status == "written_off" {
-			// Cancelled debt is not receivable: never age it.
+		if invoice.Status == "voided" || invoice.Status == "written_off" || invoice.Status == "draft" {
+			// Cancelled or not-yet-issued debt is not receivable: never age it.
 			bucket = invoice.Status
 		} else if dueAt, ok := parseDate(invoice.DueDate); ok {
 			daysPastDue = int(asOf.Sub(dueAt).Hours() / 24)
@@ -457,7 +457,7 @@ func (s *Service) RunInvoiceAgingReport(orgID string, principal *appmiddleware.P
 		} else if invoice.AmountDueCents > 0 {
 			bucket = "no_due_date"
 		}
-		outstanding := invoice.AmountDueCents > 0 && invoice.Status != "voided" && invoice.Status != "written_off"
+		outstanding := invoice.AmountDueCents > 0 && invoice.Status != "voided" && invoice.Status != "written_off" && invoice.Status != "draft"
 		if outstanding {
 			outstandingCount++
 			outstandingCents += invoice.AmountDueCents

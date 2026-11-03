@@ -21,7 +21,7 @@ export type LocalDevUser = {
 export const LOCAL_DEV_USERS: Record<string, LocalDevUser> = {
   'stub-admin': {
     id: '00000000-0000-0000-0000-00000000a102',
-    email: 'admin@dare.local',
+    email: 'admin@aquify.local',
     name: 'Dev Admin',
     role: 'admin',
     orgId: LOCAL_DEV_ORG_ID,
@@ -30,7 +30,7 @@ export const LOCAL_DEV_USERS: Record<string, LocalDevUser> = {
   },
   'stub-coach': {
     id: '00000000-0000-0000-0000-00000000a103',
-    email: 'coach@dare.local',
+    email: 'coach@aquify.local',
     name: 'Dev Coach',
     role: 'coach',
     orgId: LOCAL_DEV_ORG_ID,
@@ -39,7 +39,7 @@ export const LOCAL_DEV_USERS: Record<string, LocalDevUser> = {
   },
   'stub-parent': {
     id: '00000000-0000-0000-0000-00000000a104',
-    email: 'parent@dare.local',
+    email: 'parent@aquify.local',
     name: 'Dev Parent',
     role: 'parent',
     orgId: LOCAL_DEV_ORG_ID,
@@ -48,7 +48,7 @@ export const LOCAL_DEV_USERS: Record<string, LocalDevUser> = {
   },
   'stub-swimmer': {
     id: '00000000-0000-0000-0000-00000000a107',
-    email: 'swimmer@dare.local',
+    email: 'swimmer@aquify.local',
     name: 'Dev Swimmer',
     role: 'swimmer',
     orgId: LOCAL_DEV_ORG_ID,

@@ -342,3 +342,71 @@ func TestRSVPOpenAllDayStaysOpenThroughUTCDay(t *testing.T) {
 		t.Fatal("timed event without end closes at its start")
 	}
 }
+
+func TestUncancelRebillsAndFeeChangeRebills(t *testing.T) {
+	s := newTestService()
+	biller := &fakeBiller{paid: map[string]bool{}}
+	s.SetBiller(biller)
+	in := validInput()
+	in.FeeCents = 2000
+	e, _ := s.Create("org", "admin", in)
+	if _, err := s.Respond("org", e.ID, "p1", RSVPInput{HouseholdID: "h1", Response: "yes"}, true); err != nil {
+		t.Fatal(err)
+	}
+	in.Status = "cancelled"
+	if _, err := s.Update("org", e.ID, "admin", in); err != nil {
+		t.Fatal(err)
+	}
+	in.Status = "scheduled"
+	if _, err := s.Update("org", e.ID, "admin", in); err != nil {
+		t.Fatal(err)
+	}
+	rs, _ := s.ListRSVPs("org", e.ID)
+	if len(rs) != 1 || rs[0].InvoiceID == "" || rs[0].BilledQuantity != 1 {
+		t.Fatalf("expected re-billed rsvp, got %+v", rs[0])
+	}
+	in.FeeCents = 3500
+	if _, err := s.Update("org", e.ID, "admin", in); err != nil {
+		t.Fatal(err)
+	}
+	last := biller.charges[len(biller.charges)-1]
+	if last.UnitAmountCents != 3500 {
+		t.Fatalf("expected re-bill at new price, got %+v", last)
+	}
+}
+
+func TestCapacityCannotDropBelowHeadcount(t *testing.T) {
+	s := newTestService()
+	in := validInput()
+	in.Capacity = intPtr(50)
+	e, _ := s.Create("org", "admin", in)
+	if _, err := s.Respond("org", e.ID, "p1", RSVPInput{HouseholdID: "h1", Response: "yes", GuestCount: 3}, true); err != nil {
+		t.Fatal(err)
+	}
+	in.Capacity = intPtr(3)
+	if _, err := s.Update("org", e.ID, "admin", in); !errors.Is(err, ErrCapacityBelowYes) {
+		t.Fatalf("expected ErrCapacityBelowYes, got %v", err)
+	}
+	in.Capacity = intPtr(4)
+	if _, err := s.Update("org", e.ID, "admin", in); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAllDayEventListedThroughItsDay(t *testing.T) {
+	s := newTestService()
+	in := validInput()
+	in.AllDay = true
+	in.EndsAt = nil
+	in.RSVPEnabled = false
+	day := time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC)
+	in.StartsAt = day
+	if _, err := s.Create("org", "admin", in); err != nil {
+		t.Fatal(err)
+	}
+	from := day.Add(20 * time.Hour)
+	list, _ := s.List("org", ListFilter{From: &from})
+	if len(list) != 1 {
+		t.Fatalf("all-day event should still be listed, got %d", len(list))
+	}
+}

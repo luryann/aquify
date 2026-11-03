@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/dareaquatics/aquify/server/internal/app/httpx"
+	"github.com/luryann/aquify/server/internal/app/httpx"
 )
 
 type principalContextKey struct{}

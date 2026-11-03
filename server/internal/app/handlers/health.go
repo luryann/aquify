@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/app/httpx"
+	"github.com/luryann/aquify/server/internal/app/httpx"
 	"github.com/go-chi/chi/v5"
 )
 

@@ -10,13 +10,53 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/app/audit"
-	"github.com/dareaquatics/aquify/server/internal/app/httpx"
-	"github.com/dareaquatics/aquify/server/internal/app/members"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
-	"github.com/dareaquatics/aquify/server/internal/keycloak"
+	"github.com/luryann/aquify/server/internal/app/audit"
+	"github.com/luryann/aquify/server/internal/app/httpx"
+	"github.com/luryann/aquify/server/internal/app/members"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/keycloak"
 	"github.com/go-chi/chi/v5"
+	"github.com/go-playground/validator/v10"
 )
+
+var userFieldValidator = validator.New()
+
+// validEmail reports whether s is a syntactically valid email address.
+func validEmail(s string) bool {
+	return len(s) <= 254 && userFieldValidator.Var(s, "required,email") == nil
+}
+
+// validPersonName allows empty names but bounds length and rejects control characters.
+func validPersonName(s string) bool {
+	if len(s) > 100 {
+		return false
+	}
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f {
+			return false
+		}
+	}
+	return true
+}
+
+// requireValidUserFields writes a 400 and returns false when email (if
+// requireEmail or non-empty), first or last name are malformed.
+func requireValidUserFields(w http.ResponseWriter, r *http.Request, email, first, last string, requireEmail bool) bool {
+	if (requireEmail || email != "") && !validEmail(email) {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "email must be a valid email address.", nil)
+		return false
+	}
+	if !validPersonName(first) || !validPersonName(last) {
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "first_name and last_name must be at most 100 characters and contain no control characters.", nil)
+		return false
+	}
+	return true
+}
+
+// SessionRevoker revokes all API sessions of a user.
+type SessionRevoker interface {
+	RevokeUserSessions(ctx context.Context, userID string) (int, error)
+}
 
 // roleTier maps each role name to its numeric tier (higher = more privileged).
 // An actor may only assign/remove roles at or below their own tier.
@@ -182,6 +222,24 @@ type UserHandlers struct {
 	kc                keycloak.Client
 	auditService      *audit.Service
 	membershipService *members.Service
+	sessions          SessionRevoker
+}
+
+// SetSessionRevoker wires session revocation for disable/delete/reject.
+func (h *UserHandlers) SetSessionRevoker(sr SessionRevoker) { h.sessions = sr }
+
+// revokeSessions revokes the user's API sessions and audits the result.
+func (h *UserHandlers) revokeSessions(r *http.Request, principal *appmiddleware.Principal, userID, reason string) {
+	if h.sessions == nil {
+		return
+	}
+	n, err := h.sessions.RevokeUserSessions(r.Context(), userID)
+	meta := map[string]string{"reason": reason, "revoked_count": fmt.Sprint(n)}
+	if err != nil {
+		slog.Error("revoke user sessions failed", "user_id", userID, "reason", reason, "error", err)
+		meta["error"] = "revoke_failed"
+	}
+	h.emitAudit(principal, audit.ActionAuthSessionRevoke, userID, meta)
 }
 
 // NewUserHandlers returns a UserHandlers wired to the given Keycloak client and
@@ -258,6 +316,10 @@ func writeKeycloakAdminError(w http.ResponseWriter, r *http.Request, err error, 
 			"Keycloak admin client is not configured. Set KEYCLOAK_ADMIN_URL, KEYCLOAK_REALM, KEYCLOAK_ADMIN_CLIENT_ID, and KEYCLOAK_ADMIN_CLIENT_SECRET.",
 			nil,
 		)
+	case keycloak.IsBadRequest(err):
+		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "The identity provider rejected the request; check the submitted fields (for example the email address).", err)
+	case keycloak.IsUnavailable(err):
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, "keycloak_unavailable", "The identity provider is temporarily unavailable. Please try again shortly.", err)
 	case errors.Is(err, keycloak.ErrUnauthorized):
 		httpx.WriteError(
 			w,
@@ -419,7 +481,17 @@ func (h *UserHandlers) listUsers(w http.ResponseWriter, r *http.Request) {
 			writeKeycloakAdminError(w, r, err, "Failed to list users.")
 			return
 		}
-		total = pagination.Offset + len(users)
+		if len(users) < pagination.Limit {
+			total = pagination.Offset + len(users)
+		} else {
+			// A full page: the real count is only known by walking the org.
+			everyone, err := h.listAllUsers(r.Context(), orgID, search)
+			if err != nil {
+				writeKeycloakAdminError(w, r, err, "Failed to list users.")
+				return
+			}
+			total = len(everyone)
+		}
 	} else {
 		// Role/status are applied here, so they must run over the whole result
 		// set before slicing a page; otherwise each page is filtered on its own
@@ -600,6 +672,9 @@ func (h *UserHandlers) selfRegister(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "email is required.", nil)
 		return
 	}
+	if !requireValidUserFields(w, r, req.Email, req.FirstName, req.LastName, true) {
+		return
+	}
 	if req.OrgID == "" {
 		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "org_id is required.", nil)
 		return
@@ -706,6 +781,9 @@ func (h *UserHandlers) createUser(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "email is required.", nil)
 		return
 	}
+	if !requireValidUserFields(w, r, req.Email, req.FirstName, req.LastName, true) {
+		return
+	}
 	if req.Password == "" {
 		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "password is required.", nil)
 		return
@@ -794,6 +872,9 @@ func (h *UserHandlers) inviteUser(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_request", "email is required.", nil)
 		return
 	}
+	if !requireValidUserFields(w, r, req.Email, req.FirstName, req.LastName, true) {
+		return
+	}
 
 	// Tier guard: actor may only invite users with roles at or below their tier.
 	if req.Role != "" && !requireAssignableRole(w, r, principal, req.Role, "assign") {
@@ -867,6 +948,10 @@ func (h *UserHandlers) updateUser(w http.ResponseWriter, r *http.Request) {
 		Email:     strings.TrimSpace(strings.ToLower(req.Email)),
 	}
 
+	if !requireValidUserFields(w, r, fields.Email, fields.FirstName, fields.LastName, false) {
+		return
+	}
+
 	if err := h.kc.UpdateUser(r.Context(), userID, fields); err != nil {
 		writeKeycloakUserError(w, r, err, "Failed to update user.")
 		return
@@ -883,6 +968,32 @@ func (h *UserHandlers) updateUser(w http.ResponseWriter, r *http.Request) {
 
 // ── POST /users/{id}/disable ───────────────────────────────────────────────────
 
+// requireNotLastEnabledAdmin refuses (409) to disable/reject the last enabled
+// admin in the org: a disabled admin cannot sign in. verb fills the messages.
+func (h *UserHandlers) requireNotLastEnabledAdmin(w http.ResponseWriter, r *http.Request, userID, orgID, verb string) bool {
+	base := map[string]string{"disabled": "disable", "rejected": "reject"}[verb]
+	targetIsAdmin, err := h.userIsOrgAdmin(r.Context(), userID)
+	if err != nil {
+		writeKeycloakAdminError(w, r, err, "Could not verify the user's roles; nothing was "+verb+".")
+		return false
+	}
+	if !targetIsAdmin {
+		return true
+	}
+	admins, err := h.kc.ListUsersWithRealmRole(r.Context(), orgID, "admin")
+	if err != nil {
+		writeKeycloakAdminError(w, r, err, "Could not verify the org's admin count; nothing was "+verb+".")
+		return false
+	}
+	for _, a := range admins {
+		if a.ID != userID && a.Enabled {
+			return true
+		}
+	}
+	httpx.WriteError(w, r, http.StatusConflict, "last_admin", "Cannot "+base+" the last admin in this org.", nil)
+	return false
+}
+
 func (h *UserHandlers) disableUser(w http.ResponseWriter, r *http.Request) {
 	principal, orgID, ok := scopedRequestFromContext(w, r)
 	if !ok {
@@ -898,29 +1009,8 @@ func (h *UserHandlers) disableUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Last-admin guard, as on delete / admin role removal: a disabled admin
-	// cannot sign in, so it must not be the last enabled one.
-	targetIsAdmin, err := h.userIsOrgAdmin(r.Context(), userID)
-	if err != nil {
-		writeKeycloakAdminError(w, r, err, "Could not verify the user's roles; nothing was disabled.")
+	if !h.requireNotLastEnabledAdmin(w, r, userID, orgID, "disabled") {
 		return
-	}
-	if targetIsAdmin {
-		admins, err := h.kc.ListUsersWithRealmRole(r.Context(), orgID, "admin")
-		if err != nil {
-			writeKeycloakAdminError(w, r, err, "Could not verify the org's admin count; nothing was disabled.")
-			return
-		}
-		enabledOthers := 0
-		for _, a := range admins {
-			if a.ID != userID && a.Enabled {
-				enabledOthers++
-			}
-		}
-		if enabledOthers == 0 {
-			httpx.WriteError(w, r, http.StatusConflict, "last_admin", "Cannot disable the last admin in this org.", nil)
-			return
-		}
 	}
 
 	if err := h.kc.DisableUser(r.Context(), userID); err != nil {
@@ -929,6 +1019,7 @@ func (h *UserHandlers) disableUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.emitAudit(principal, audit.ActionAuthUserDisable, userID, nil)
+	h.revokeSessions(r, principal, userID, "user_disabled")
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": "disabled"})
 }
 
@@ -1004,7 +1095,16 @@ func (h *UserHandlers) approveUser(w http.ResponseWriter, r *http.Request) {
 		writeKeycloakAdminError(w, r, err, "User was enabled but their roles could not be checked. Approve again to retry.")
 		return
 	}
-	if len(existingRoles) == 0 {
+	// Keycloak auto-maps default-roles-<realm>, so "no roles" really means "no
+	// app role".
+	hasAppRole := false
+	for _, role := range existingRoles {
+		if _, ok := roleTier[normalizeUserRole(role.Name)]; ok {
+			hasAppRole = true
+			break
+		}
+	}
+	if !hasAppRole {
 		if err := h.kc.AssignRealmRole(r.Context(), userID, requestedRole); err != nil {
 			writeKeycloakAdminError(w, r, err, "User was enabled but the requested role could not be assigned. Approve again to retry.")
 			return
@@ -1039,8 +1139,15 @@ func (h *UserHandlers) rejectUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userID := chi.URLParam(r, "id")
+	if userID == principal.UserID {
+		httpx.WriteError(w, r, http.StatusConflict, "cannot_reject_self", "You cannot reject your own account.", nil)
+		return
+	}
 	user, ok := h.requireUserInOrg(w, r, userID, orgID)
 	if !ok {
+		return
+	}
+	if !h.requireNotLastEnabledAdmin(w, r, userID, orgID, "rejected") {
 		return
 	}
 
@@ -1067,6 +1174,7 @@ func (h *UserHandlers) rejectUser(w http.ResponseWriter, r *http.Request) {
 		meta["reason"] = req.Reason
 	}
 	h.emitAudit(principal, audit.ActionAuthUserReject, userID, meta)
+	h.revokeSessions(r, principal, userID, "user_rejected")
 
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": "rejected"})
 }
@@ -1115,6 +1223,7 @@ func (h *UserHandlers) deleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.emitAudit(principal, audit.ActionAuthUserDelete, userID, nil)
+	h.revokeSessions(r, principal, userID, "user_deleted")
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": "deleted"})
 }
 
@@ -1195,6 +1304,7 @@ func (h *UserHandlers) assignRole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.emitAudit(principal, audit.ActionAuthRoleAssign, userID, map[string]string{"role": req.Role})
+	h.revokeSessions(r, principal, userID, "role_changed")
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": "assigned"})
 }
 
@@ -1259,6 +1369,7 @@ func (h *UserHandlers) removeRole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.emitAudit(principal, audit.ActionAuthRoleRemove, userID, map[string]string{"role": roleName})
+	h.revokeSessions(r, principal, userID, "role_changed")
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": "removed"})
 }
 
@@ -1439,6 +1550,7 @@ func (h *UserHandlers) unlinkUserHousehold(w http.ResponseWriter, r *http.Reques
 	h.emitAudit(principal, "user.household.unlink", userID, map[string]string{
 		"household_id": householdID,
 	})
+	h.revokeSessions(r, principal, userID, "household_unlinked")
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":       "unlinked",
 		"household_id": householdID,
@@ -1540,6 +1652,7 @@ func (h *UserHandlers) unlinkUserSwimmer(w http.ResponseWriter, r *http.Request)
 	h.emitAudit(principal, "user.swimmer.unlink", userID, map[string]string{
 		"swimmer_id": swimmerID,
 	})
+	h.revokeSessions(r, principal, userID, "swimmer_unlinked")
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":     "unlinked",
 		"swimmer_id": swimmerID,

@@ -9,9 +9,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/dareaquatics/aquify/server/internal/app/audit"
-	"github.com/dareaquatics/aquify/server/internal/app/authn"
-	"github.com/dareaquatics/aquify/server/internal/keycloak"
+	"github.com/luryann/aquify/server/internal/app/audit"
+	"github.com/luryann/aquify/server/internal/app/authn"
+	"github.com/luryann/aquify/server/internal/keycloak"
 )
 
 // ─── Router helpers ───────────────────────────────────────────────────────────

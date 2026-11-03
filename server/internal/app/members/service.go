@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -50,6 +50,15 @@ type Service struct {
 	// is persisted, so other domains can react — e.g. meets inviting the new
 	// swimmer to meets whose commitment window is already open.
 	onSwimmerCreated func(Swimmer)
+	// onParentHouseholdLinked mirrors in-memory parent links into the groups
+	// scope index. It is called under the service lock; it must not call back in.
+	onParentHouseholdLinked func(parentUserID, householdID string)
+}
+
+// SetParentHouseholdLinkedHook registers a callback fired when a parent is linked
+// to a household. Wire it once at startup.
+func (s *Service) SetParentHouseholdLinkedHook(fn func(parentUserID, householdID string)) {
+	s.onParentHouseholdLinked = fn
 }
 
 // SetSwimmerCreatedHook registers a callback fired after each successful
@@ -88,6 +97,11 @@ func NewServiceWithPool(pool *pgxpool.Pool) *Service {
 // SetSyncHookForTest installs a hook run inside syncFromDB between reading
 // Postgres and replacing memory. Set it before the service is used concurrently.
 func (s *Service) SetSyncHookForTest(fn func()) { s.syncHook = fn }
+
+// Refresh reloads the in-memory state from Postgres so trusted in-process
+// readers (the worker-side data export) observe writes made by another
+// instance. No-op in in-memory mode.
+func (s *Service) Refresh(ctx context.Context) error { return s.syncFromDB(ctx) }
 
 // syncFromDB reloads the in-memory maps from the database (no-op without a repository).
 func (s *Service) syncFromDB(ctx context.Context) error {
@@ -349,6 +363,22 @@ func (s *Service) CreateHousehold(principal *appmiddleware.Principal, input Crea
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// A parent's first household is linked durably through keycloak_user_id
+	// (unique per user), so it survives restarts and is visible to other
+	// instances and to the groups domain. Later households rely on the index.
+	if appmiddleware.HasAnyRole(principal, "parent") && household.KeycloakUserID == "" && principal.UserID != "" {
+		linked := false
+		for _, existing := range s.households {
+			if existing.KeycloakUserID == principal.UserID {
+				linked = true
+				break
+			}
+		}
+		if !linked {
+			household.KeycloakUserID = principal.UserID
+		}
+	}
 
 	if s.repo != nil {
 		if err := s.repo.UpsertHousehold(context.Background(), household); err != nil {
@@ -1369,6 +1399,13 @@ func (s *Service) parentAllowedHouseholdsLocked(principal *appmiddleware.Princip
 	if hid := strings.TrimSpace(principal.HouseholdID); hid != "" {
 		out[hid] = struct{}{}
 	}
+	if uid := strings.TrimSpace(principal.UserID); uid != "" {
+		for id, h := range s.households {
+			if h.KeycloakUserID == uid && h.OrgID == principal.OrgID {
+				out[id] = struct{}{}
+			}
+		}
+	}
 	return out
 }
 
@@ -1442,10 +1479,17 @@ func (s *Service) associateParentHouseholdLocked(parentUserID, householdID strin
 		s.parentHouseholdIndex[parentUserID] = make(map[string]struct{})
 	}
 	s.parentHouseholdIndex[parentUserID][householdID] = struct{}{}
+	if s.onParentHouseholdLinked != nil {
+		s.onParentHouseholdLinked(parentUserID, householdID)
+	}
 }
 
 // HasPrimaryGroup reports whether the swimmer already has a primary group link.
 func (s *Service) HasPrimaryGroup(orgID, swimmerID string) bool {
+	if err := s.syncFromDB(context.Background()); err != nil {
+		// Fail safe: assume a primary exists so we never demote a real one.
+		return true
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, link := range s.swimmerGroupLinks {

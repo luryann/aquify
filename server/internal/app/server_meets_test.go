@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dareaquatics/aquify/server/internal/app/meets"
-	"github.com/dareaquatics/aquify/server/internal/app/members"
+	"github.com/luryann/aquify/server/internal/app/meets"
+	"github.com/luryann/aquify/server/internal/app/members"
 )
 
 // ─── Envelope helpers ─────────────────────────────────────────────────────────
@@ -1587,6 +1587,8 @@ func TestApproveEntryBlockedOnInvalidMeetState(t *testing.T) {
 	meetID := createMeet(t, router, "org-high3", adminToken, "HIGH-3 Test Meet")
 	publishMeet(t, router, "org-high3", adminToken, meetID)
 	eventID := createMeetEvent(t, router, "org-high3", adminToken, meetID, "1")
+	// Events cannot be added once commitments close, so create the second one up front.
+	eventID2 := createMeetEvent(t, router, "org-high3", adminToken, meetID, "2")
 
 	// Open and lock commitments.
 	pubReq := httptest.NewRequest(http.MethodPost, "/api/v1/meets/"+meetID+"/commitment-request", nil)
@@ -1624,7 +1626,6 @@ func TestApproveEntryBlockedOnInvalidMeetState(t *testing.T) {
 	}
 
 	// Propose a second entry (un-approved) to test the negative path.
-	eventID2 := createMeetEvent(t, router, "org-high3", adminToken, meetID, "2")
 	prop2Req := httptest.NewRequest(http.MethodPost, "/api/v1/meets/"+meetID+"/entries",
 		encodeJSONBody(t, map[string]any{"swimmer_id": "swm-high3-b", "meet_event_id": eventID2}))
 	prop2Req.Header.Set("Content-Type", "application/json")

@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/dareaquatics/aquify/server/internal/app/documents"
-	"github.com/dareaquatics/aquify/server/internal/storage"
+	"github.com/luryann/aquify/server/internal/app/documents"
+	"github.com/luryann/aquify/server/internal/storage"
 )
 
 // ─── Router helpers ───────────────────────────────────────────────────────────

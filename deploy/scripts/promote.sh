@@ -15,10 +15,10 @@
 #      bad tag can never overwrite the rollback state
 #   3. Updates IMAGE_TAG in .env.production
 #   4. Pulls new images
-#   5. Does a rolling restart of dare-api, dare-admin, dare-worker
+#   5. Does a rolling restart of aquify-api, aquify-admin, aquify-worker
 #   6. Waits for the health endpoint to respond 200
 #   7. If health fails: runs rollback.sh (one implementation for manual and automatic rollback)
-#   8. Logs all events to /var/log/dare/deploys.log
+#   8. Logs all events to /var/log/aquify/deploys.log
 
 set -euo pipefail
 
@@ -27,7 +27,7 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 
 # Overridable for tests; production uses the defaults.
-DEPLOY_DIR="${DEPLOY_DIR:-/opt/dare}"
+DEPLOY_DIR="${DEPLOY_DIR:-/opt/aquify}"
 ENV_FILE="${DEPLOY_DIR}/.env.production"
 ENV_BACKUP="${ENV_FILE}.prev"
 ENV_GOOD="${ENV_FILE}.good"
@@ -36,8 +36,8 @@ COMPOSE_FILE="${DEPLOY_DIR}/docker-compose.production.yml"
 HEALTH_URL="${HEALTH_URL:-http://localhost:8080/api/v1/health/live}"
 HEALTH_TIMEOUT_SECONDS="${HEALTH_TIMEOUT_SECONDS:-60}"
 HEALTH_RETRY_INTERVAL="${HEALTH_RETRY_INTERVAL:-5}"
-DEPLOY_LOG="${DEPLOY_LOG:-/var/log/dare/deploys.log}"
-APP_SERVICES="dare-api dare-admin dare-worker"
+DEPLOY_LOG="${DEPLOY_LOG:-/var/log/aquify/deploys.log}"
+APP_SERVICES="aquify-api aquify-admin aquify-worker"
 
 # ---------------------------------------------------------------------------
 # Helpers

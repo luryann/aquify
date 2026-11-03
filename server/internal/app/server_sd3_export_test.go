@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dareaquatics/aquify/server/internal/app/exports"
-	"github.com/dareaquatics/aquify/server/internal/app/meets"
-	"github.com/dareaquatics/aquify/server/internal/app/members"
+	"github.com/luryann/aquify/server/internal/app/exports"
+	"github.com/luryann/aquify/server/internal/app/meets"
+	"github.com/luryann/aquify/server/internal/app/members"
 )
 
 func TestMeetEntriesSD3ExportFlow(t *testing.T) {
@@ -107,7 +107,7 @@ func TestMeetEntriesSD3ExportFlow(t *testing.T) {
 	if rr := do(coachToken, http.MethodPost, "/api/v1/meets/"+meetID+"/entries/sd3", nil); rr.Code != http.StatusUnprocessableEntity || !strings.Contains(rr.Body.String(), "team_code_required") {
 		t.Fatalf("export without team code: want 422 team_code_required, got %d %s", rr.Code, rr.Body.String())
 	}
-	if rr := do(adminToken, http.MethodPut, "/api/v1/org-settings", map[string]any{"team_code": "DARE", "team_name": "DARE Aquatics"}); rr.Code != http.StatusOK {
+	if rr := do(adminToken, http.MethodPut, "/api/v1/org-settings", map[string]any{"team_code": "aquify", "team_name": "aquify Aquatics"}); rr.Code != http.StatusOK {
 		t.Fatalf("set team code: %d %s", rr.Code, rr.Body.String())
 	}
 
@@ -125,7 +125,7 @@ func TestMeetEntriesSD3ExportFlow(t *testing.T) {
 			d0 = line
 		}
 	}
-	if !strings.HasPrefix(body, "A0") || !strings.Contains(body, "\nC1") || !strings.Contains(body, "DARE Aquatics") ||
+	if !strings.HasPrefix(body, "A0") || !strings.Contains(body, "\nC1") || !strings.Contains(body, "aquify Aquatics") ||
 		d0 == "" || !strings.Contains(d0, "Jones, Casey") || !strings.Contains(d0, "040212CASJON") {
 		t.Fatalf("SD3 missing expected records:\n%s", body)
 	}

@@ -1,8 +1,8 @@
-# Load Testing — DARE Platform
+# Load Testing — aquify Platform
 
 ## Overview
 
-Load tests for the DARE platform are written using [k6](https://k6.io), a modern, developer-friendly load testing tool. Tests live under `tests/load/k6/` and are organized by scenario.
+Load tests for the aquify platform are written using [k6](https://k6.io), a modern, developer-friendly load testing tool. Tests live under `tests/load/k6/` and are organized by scenario.
 
 ---
 
@@ -35,7 +35,7 @@ k6 run tests/load/k6/<script>.js
 
 ```bash
 k6 run \
-  -e API_BASE_URL=https://api-staging.dare.club \
+  -e API_BASE_URL=https://api-staging.aquify.club \
   -e AUTH_TOKEN=your-token-here \
   -e ORG_ID=00000000-0000-0000-0000-00000000a001 \
   tests/load/k6/admin-browse.js
@@ -63,7 +63,7 @@ make load-test
 
 | Variable | Default | Description |
 |---|---|---|
-| `API_BASE_URL` | `http://localhost:8080` | Base URL for the DARE API |
+| `API_BASE_URL` | `http://localhost:8080` | Base URL for the aquify API |
 | `AUTH_TOKEN` | `stub-admin` | Bearer token for authentication |
 | `ORG_ID` | `00000000-0000-0000-0000-00000000a001` | Organization ID sent as `X-Org-Id` header |
 | `PARENT_TOKEN` | `stub-parent` | Bearer token for parent portal tests |

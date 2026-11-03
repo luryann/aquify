@@ -1,4 +1,4 @@
-# Support Incident Playbook — DARE Platform
+# Support Incident Playbook — aquify Platform
 
 **Audience:** Tier 1 support staff, club administrators, on-call engineers
 **Version:** 1.0
@@ -33,7 +33,7 @@ Use the incident number to reference in tickets and Slack threads (e.g., "follow
 - Wrong encoding (import expects UTF-8 or ASCII for SD3/CL2)
 - File extension does not match actual format (e.g., `.sd3` file that is actually a ZIP)
 - HY3 inner payload has conflicting SD3 and CL2 files
-- Meet file has swimmer IDs that do not exist in DARE
+- Meet file has swimmer IDs that do not exist in aquify
 
 ### Diagnostic Steps
 
@@ -45,7 +45,7 @@ Use the incident number to reference in tickets and Slack threads (e.g., "follow
    ```bash
    curl -H "Authorization: Bearer $ADMIN_TOKEN" \
         -H "X-Org-Id: $ORG_ID" \
-        https://api.dare.club/api/v1/orgs/$ORG_ID/imports/$IMPORT_ID
+        https://api.aquify.club/api/v1/orgs/$ORG_ID/imports/$IMPORT_ID
    ```
    Look for `"errors"` array in the response.
 
@@ -53,14 +53,14 @@ Use the incident number to reference in tickets and Slack threads (e.g., "follow
    ```bash
    curl -H "Authorization: Bearer $ADMIN_TOKEN" \
         -H "X-Org-Id: $ORG_ID" \
-        https://api.dare.club/api/v1/admin/jobs/dlq
+        https://api.aquify.club/api/v1/admin/jobs/dlq
    ```
    Look for a `parse_import` task with the import ID in the payload.
 
 4. **Check API logs for parser errors:**
    ```bash
-   docker compose logs dare-api | grep '"import_id":"<import_id>"'
-   docker compose logs dare-worker | grep '"import_id":"<import_id>"'
+   docker compose logs aquify-api | grep '"import_id":"<import_id>"'
+   docker compose logs aquify-worker | grep '"import_id":"<import_id>"'
    ```
 
 ### Resolution
@@ -74,8 +74,8 @@ Use the incident number to reference in tickets and Slack threads (e.g., "follow
 4. After uploading the corrected file, the new import should proceed normally.
 
 **For a stuck import (no error, no progress):**
-1. Check if a background worker is running: `docker compose ps dare-worker`
-2. If the worker is not running: `docker compose restart dare-worker`
+1. Check if a background worker is running: `docker compose ps aquify-worker`
+2. If the worker is not running: `docker compose restart aquify-worker`
 3. The stuck import should resume processing within 1–2 minutes.
 4. If it does not resume, the import may be orphaned. Escalate to engineering.
 
@@ -85,7 +85,7 @@ Use the incident number to reference in tickets and Slack threads (e.g., "follow
    curl -X POST \
         -H "Authorization: Bearer $ADMIN_TOKEN" \
         -H "X-Org-Id: $ORG_ID" \
-        https://api.dare.club/api/v1/admin/jobs/dlq/$TASK_ID/retry
+        https://api.aquify.club/api/v1/admin/jobs/dlq/$TASK_ID/retry
    ```
 2. Monitor the import status for the next 2 minutes.
 
@@ -122,7 +122,7 @@ Include in the escalation: the import ID, the file name, the error message (if a
    # Check audit log for recent login events for this user
    curl -H "Authorization: Bearer $ADMIN_TOKEN" \
         -H "X-Org-Id: $ORG_ID" \
-        "https://api.dare.club/api/v1/orgs/$ORG_ID/audit?user_id=<user_id>&limit=10"
+        "https://api.aquify.club/api/v1/orgs/$ORG_ID/audit?user_id=<user_id>&limit=10"
    ```
 
 **For MFA issues:**
@@ -132,12 +132,12 @@ Include in the escalation: the import ID, the file name, the error message (if a
 4. Check enrolled MFA factors:
    ```bash
    curl -H "Authorization: Bearer $PARENT_TOKEN" \
-        https://api.dare.club/api/v1/auth/mfa/factors
+        https://api.aquify.club/api/v1/auth/mfa/factors
    ```
 
 **For email not received:**
 1. Check the Postmark activity log for the email address.
-2. Check DARE suppression list: **Comms → Suppression** — search for the parent's email.
+2. Check aquify suppression list: **Comms → Suppression** — search for the parent's email.
 
 ### Resolution
 
@@ -176,7 +176,7 @@ Escalate to engineering if:
 
 - Parent reports payment went through on their credit card but invoice still shows `issued` in the portal.
 - Stripe Dashboard shows the payment as `succeeded` with a charge ID.
-- DARE ledger shows no payment record for the invoice.
+- aquify ledger shows no payment record for the invoice.
 
 ### Diagnostic Steps
 
@@ -188,28 +188,28 @@ Escalate to engineering if:
 
 2. **Check webhook delivery in Stripe:**
    - Navigate to Stripe Dashboard → Developers → Webhooks.
-   - Find your DARE webhook endpoint.
+   - Find your aquify webhook endpoint.
    - Under **Recent Deliveries**, look for a `payment_intent.succeeded` event for the payment intent ID.
    - If the delivery shows "Failed" or has no entry, the webhook was missed.
 
-3. **Check DARE audit log for the webhook event:**
+3. **Check aquify audit log for the webhook event:**
    ```bash
    curl -H "Authorization: Bearer $ADMIN_TOKEN" \
         -H "X-Org-Id: $ORG_ID" \
-        "https://api.dare.club/api/v1/orgs/$ORG_ID/audit?category=billing&limit=50"
+        "https://api.aquify.club/api/v1/orgs/$ORG_ID/audit?category=billing&limit=50"
    ```
    Search for the payment intent ID in the event metadata.
 
 4. **Check the webhook ingestion health:**
    ```bash
-   curl https://api.dare.club/health/ready
+   curl https://api.aquify.club/health/ready
    ```
    The API must be healthy for webhooks to be received.
 
 ### Resolution
 
 **For a single missed webhook:**
-1. Open the invoice in DARE.
+1. Open the invoice in aquify.
 2. Click **Record Payment**.
 3. Enter:
    - Amount: same as the Stripe charge amount
@@ -221,7 +221,7 @@ Escalate to engineering if:
 
 **To trigger a retry from Stripe:**
 - In Stripe Dashboard → Developers → Webhooks → Recent Deliveries, find the failed delivery and click **Resend**.
-- This replays the webhook. Verify DARE processes it without creating a duplicate (idempotency key check).
+- This replays the webhook. Verify aquify processes it without creating a duplicate (idempotency key check).
 
 ### Escalation
 
@@ -247,7 +247,7 @@ Escalate to engineering if:
    ```bash
    curl -H "Authorization: Bearer $ADMIN_TOKEN" \
         -H "X-Org-Id: $ORG_ID" \
-        "https://api.dare.club/api/v1/orgs/$ORG_ID/billing/ledger?household_id=<household_id>"
+        "https://api.aquify.club/api/v1/orgs/$ORG_ID/billing/ledger?household_id=<household_id>"
    ```
 
 2. **Compare ledger events with invoice line items:**
@@ -258,7 +258,7 @@ Escalate to engineering if:
 3. **Compare with Stripe charges:**
    - In Stripe Dashboard, search by parent email.
    - List all charges for the past 90 days.
-   - Compare with DARE payment records.
+   - Compare with aquify payment records.
 
 4. **Run the reconciliation report for the relevant period:**
    - Navigate to **Reports → Payment Reconciliation**.
@@ -274,14 +274,14 @@ Escalate to engineering if:
 **For a duplicate charge:**
 - See Section 8.2 of the Finance Guide (Duplicate Payment).
 
-**For a Stripe vs DARE discrepancy:**
+**For a Stripe vs aquify discrepancy:**
 - See INC-3 resolution or manually reconcile as described in Finance Guide Section 4.
 
 ### Escalation
 
 Involve Finance (treasurer/finance admin) if:
 - The discrepancy is greater than $10.
-- The discrepancy involves a refund that was processed in Stripe but not recorded in DARE.
+- The discrepancy involves a refund that was processed in Stripe but not recorded in aquify.
 - The parent is requesting a formal explanation or credit.
 
 Escalate to engineering if:
@@ -305,7 +305,7 @@ Escalate to engineering if:
    ```bash
    curl -H "Authorization: Bearer $ADMIN_TOKEN" \
         -H "X-Org-Id: $ORG_ID" \
-        "https://api.dare.club/api/v1/documents?household_id=<household_id>"
+        "https://api.aquify.club/api/v1/documents?household_id=<household_id>"
    ```
    Look for the submission and its `status` field.
 
@@ -317,13 +317,13 @@ Escalate to engineering if:
 3. **Check object storage connectivity:**
    ```bash
    # MinIO/S3 health check
-   curl https://minio.dare.club/minio/health/live
+   curl https://minio.aquify.club/minio/health/live
    ```
    If storage is down, file uploads will fail silently on the parent's side.
 
 4. **Check API logs for upload errors:**
    ```bash
-   docker compose logs dare-api | grep '"document_submission_id":"<submission_id>"'
+   docker compose logs aquify-api | grep '"document_submission_id":"<submission_id>"'
    ```
 
 ### Resolution

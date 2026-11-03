@@ -19,3 +19,8 @@ test('validateSwimmerBio accepts empty and max-length bios', () => {
 test('validateSwimmerBio rejects bios longer than the configured max length', () => {
   assert.equal(validateSwimmerBio('a'.repeat(SWIMMER_BIO_MAX_LENGTH + 1)), 'Bio must be 400 characters or fewer.')
 })
+
+test('validateSwimmerBio counts code points like the backend, not UTF-16 units', () => {
+  assert.equal(validateSwimmerBio('😀'.repeat(SWIMMER_BIO_MAX_LENGTH)), null)
+  assert.notEqual(validateSwimmerBio('😀'.repeat(SWIMMER_BIO_MAX_LENGTH + 1)), null)
+})

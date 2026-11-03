@@ -1,4 +1,4 @@
-# Browser and Device Compatibility Matrix — DARE Platform
+# Browser and Device Compatibility Matrix — aquify Platform
 
 **Version:** 1.0
 **Last Updated:** 2026-03-23

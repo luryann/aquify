@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/dareaquatics/aquify/server/internal/app/httpx"
+	"github.com/luryann/aquify/server/internal/app/httpx"
 	"github.com/go-playground/validator/v10"
 )
 
@@ -45,6 +45,10 @@ func writeJSONDecodeError(w http.ResponseWriter, r *http.Request, err error, cod
 type decodeJSONOptions struct {
 	AllowEmpty bool
 	MaxBytes   int64
+	// AllowUnknownFields tolerates fields the destination struct does not
+	// declare. Use only for third-party provider webhooks, whose payloads grow
+	// fields we do not control; first-party routes must stay strict.
+	AllowUnknownFields bool
 }
 
 type decodeAndValidateOptions struct {
@@ -62,6 +66,12 @@ func decodeJSONBody(w http.ResponseWriter, r *http.Request, dst any) error {
 	return decodeJSONBodyWithOptions(w, r, dst, decodeJSONOptions{})
 }
 
+// decodeLenientJSONBody is decodeJSONBody for third-party webhook payloads:
+// unknown fields are ignored, but the size cap and single-object rule hold.
+func decodeLenientJSONBody(w http.ResponseWriter, r *http.Request, dst any) error {
+	return decodeJSONBodyWithOptions(w, r, dst, decodeJSONOptions{AllowUnknownFields: true})
+}
+
 func decodeOptionalJSONBody(w http.ResponseWriter, r *http.Request, dst any) error {
 	return decodeJSONBodyWithOptions(w, r, dst, decodeJSONOptions{AllowEmpty: true})
 }
@@ -76,7 +86,9 @@ func decodeJSONBodyWithOptions(w http.ResponseWriter, r *http.Request, dst any, 
 	r.Body = http.MaxBytesReader(w, r.Body, limit)
 
 	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
+	if !opts.AllowUnknownFields {
+		decoder.DisallowUnknownFields()
+	}
 
 	if err := decoder.Decode(dst); err != nil {
 		if opts.AllowEmpty && errors.Is(err, io.EOF) {

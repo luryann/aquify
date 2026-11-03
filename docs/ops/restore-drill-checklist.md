@@ -1,8 +1,8 @@
-# DARE Platform — Quarterly Restore Drill Checklist
+# aquify Platform — Quarterly Restore Drill Checklist
 
 ## Purpose
 
-This checklist governs the quarterly restore drill, which validates that the backup and restore procedures work end-to-end before an actual incident forces a real restore under pressure. The drill simulates a complete VPS loss by restoring the DARE platform onto a clean staging VM from the latest offsite backup.
+This checklist governs the quarterly restore drill, which validates that the backup and restore procedures work end-to-end before an actual incident forces a real restore under pressure. The drill simulates a complete VPS loss by restoring the aquify platform onto a clean staging VM from the latest offsite backup.
 
 **Frequency:** Once per quarter (January, April, July, October)
 
@@ -18,24 +18,24 @@ Complete these items before starting the drill:
 
 - [ ] **Confirm a recent backup exists** and is accessible offsite.
   ```bash
-  rclone ls b2:dare-backups-offsite/daily/ | sort | tail -5
+  rclone ls b2:aquify-backups-offsite/daily/ | sort | tail -5
   ```
   Expected: at least one backup from within the past 26 hours.
 
 - [ ] **Confirm GPG private key is accessible** on the drill host for decryption.
   ```bash
-  gpg --list-secret-keys | grep -i dare
+  gpg --list-secret-keys | grep -i aquify
   ```
 
 - [ ] **Confirm rclone is configured** on the drill host.
   ```bash
   rclone listremotes
-  rclone lsd b2:dare-backups-offsite/
+  rclone lsd b2:aquify-backups-offsite/
   ```
 
 - [ ] **Confirm drill VM is available** (clean staging server or a new ephemeral VM). The drill should NOT be run against the production VPS or the live staging environment.
 
-- [ ] **Notify the team** in Slack `#dare-ops`:
+- [ ] **Notify the team** in Slack `#aquify-ops`:
   ```
   [RESTORE DRILL] Starting quarterly restore drill at <time UTC>.
   Drill target: <staging VM / ephemeral VM>.
@@ -52,9 +52,9 @@ Complete these items before starting the drill:
 ### Phase 1 — Provision Clean VM
 
 - [ ] Provision a clean VM (Ubuntu 24.04 LTS, minimum 4 vCPU, 8 GB RAM, 50 GB SSD).
-- [ ] SSH to the VM and confirm it is a fresh install with no DARE data.
+- [ ] SSH to the VM and confirm it is a fresh install with no aquify data.
   ```bash
-  ls /opt/dare 2>/dev/null && echo "NOT CLEAN" || echo "clean"
+  ls /opt/aquify 2>/dev/null && echo "NOT CLEAN" || echo "clean"
   ```
 - [ ] Install required dependencies:
   ```bash
@@ -75,18 +75,18 @@ Complete these items before starting the drill:
     -o /usr/local/bin/goose && chmod +x /usr/local/bin/goose
   ```
 - [ ] Copy configuration from 1Password:
-  - [ ] `.env.production` → `/opt/dare/.env.production`
-  - [ ] `.env.backup` → `/opt/dare/.env.backup`
+  - [ ] `.env.production` → `/opt/aquify/.env.production`
+  - [ ] `.env.backup` → `/opt/aquify/.env.backup`
   - [ ] rclone config → `~/.config/rclone/rclone.conf`
   - [ ] GPG private key → import with `gpg --import`
 - [ ] Clone repository:
   ```bash
-  mkdir -p /opt/dare
-  git clone git@github.com:your-org/aquify.git /opt/dare
+  mkdir -p /opt/aquify
+  git clone git@github.com:your-org/aquify.git /opt/aquify
   ```
 - [ ] Pull Docker images:
   ```bash
-  cd /opt/dare
+  cd /opt/aquify
   docker compose -f docker-compose.production.yml pull
   ```
 
@@ -98,15 +98,15 @@ Record Phase 1 duration: ___________
 
 - [ ] Download the latest daily backup from offsite:
   ```bash
-  mkdir -p /var/backups/dare
-  rclone copy b2:dare-backups-offsite/daily/ /var/backups/dare/ --max-age 26h
-  ls -lh /var/backups/dare/
+  mkdir -p /var/backups/aquify
+  rclone copy b2:aquify-backups-offsite/daily/ /var/backups/aquify/ --max-age 26h
+  ls -lh /var/backups/aquify/
   ```
   Note which timestamp was downloaded: ___________
 
 - [ ] Run the restore script:
   ```bash
-  /opt/dare/deploy/scripts/restore.sh <timestamp>
+  /opt/aquify/deploy/scripts/restore.sh <timestamp>
   ```
   Watch for errors. Record any issues encountered: ___________
 
@@ -123,13 +123,13 @@ Record Phase 2 duration: ___________
 
 - [ ] Confirm all containers are running:
   ```bash
-  docker compose -f /opt/dare/docker-compose.production.yml ps
+  docker compose -f /opt/aquify/docker-compose.production.yml ps
   ```
-  Expected: dare-api, dare-admin, dare-worker, dare-minio, dare-postgres, dare-redis all `Up`.
+  Expected: aquify-api, aquify-admin, aquify-worker, aquify-minio, aquify-postgres, aquify-redis all `Up`.
 
 - [ ] Tail API logs for 60 seconds and check for startup errors:
   ```bash
-  docker logs dare-production-dare-api-1 --follow &
+  docker logs aquify-production-aquify-api-1 --follow &
   sleep 60
   kill %1
   ```
@@ -184,7 +184,7 @@ Run the standard smoke test suite against the drill VM's local ports:
   curl -sf -X POST \
        -H "Authorization: Bearer stub-admin" \
        -H "X-Org-Id: org-demo" \
-       -F "file=@/opt/dare/server/internal/meetfiles/testdata/fixtures/sample.cl2" \
+       -F "file=@/opt/aquify/server/internal/meetfiles/testdata/fixtures/sample.cl2" \
        http://localhost:8080/api/v1/orgs/org-demo/imports | jq .id
   ```
   Expected: an import job ID.
@@ -258,7 +258,7 @@ If any criterion fails, record the failure details below and open a GitHub issue
   # Use your VPS provider CLI or dashboard to delete the drill VM
   ```
 
-- [ ] Post results to Slack `#dare-ops`:
+- [ ] Post results to Slack `#aquify-ops`:
   ```
   [RESTORE DRILL COMPLETE] Quarter: <Q1/Q2/Q3/Q4 YYYY>
   Duration: <X min>

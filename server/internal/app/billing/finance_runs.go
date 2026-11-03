@@ -14,7 +14,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
 // ErrNothingToBill is returned when a run commit finds no unbilled charges.
@@ -388,12 +388,21 @@ func (s *Service) buildRunPreviewLocked(orgID string, roster RosterSnapshot, in 
 
 	// Pending manual adjustments.
 	adjustmentsByHousehold := map[string][]*Adjustment{}
+	skippedInactive := map[string]bool{}
 	if in.IncludeAdjustments {
 		for _, a := range s.finance.adjustments {
 			if a.OrgID != orgID || a.Status != AdjustmentStatusPending {
 				continue
 			}
-			if _, ok := households[a.HouseholdID]; !ok {
+			h, ok := households[a.HouseholdID]
+			if !ok {
+				continue
+			}
+			if h.Status != "" && h.Status != "active" {
+				if !skippedInactive[a.HouseholdID] {
+					skippedInactive[a.HouseholdID] = true
+					skip(a.HouseholdID, "", nil, "", "household is "+h.Status+" (adjustments stay pending)")
+				}
 				continue
 			}
 			adjustmentsByHousehold[a.HouseholdID] = append(adjustmentsByHousehold[a.HouseholdID], a)
@@ -420,6 +429,14 @@ func (s *Service) buildRunPreviewLocked(orgID string, roster RosterSnapshot, in 
 		s.assignSiblingPositions(orgID, householdID, charges, considered, rules)
 
 		hh := buildHouseholdPreview(householdID, households[householdID].Name, charges, adjustmentsByHousehold[householdID], swimmers)
+		if hh.TotalCents <= 0 && len(hh.adjustments) > 0 && len(charges) > 0 {
+			// Adjustments outweigh the charges: still bill the charges and
+			// leave the adjustments pending rather than holding dues back.
+			if alt := buildHouseholdPreview(householdID, households[householdID].Name, charges, nil, swimmers); alt.TotalCents > 0 {
+				skip(householdID, "", nil, "", "adjustments exceed charges; billed charges only (adjustments stay pending)")
+				hh = alt
+			}
+		}
 		adjustments := hh.adjustments
 		if hh.TotalCents <= 0 {
 			reason := "net total is zero or negative; nothing invoiced"
@@ -760,7 +777,7 @@ func (s *Service) commitPreviewLocked(ctx context.Context, orgID, actorID, trigg
 		}
 		if err != nil {
 			slog.Error("billing run: household commit failed", "run_id", run.ID, "household_id", hh.HouseholdID, "err", err)
-			result.Skipped = append(result.Skipped, RunSkip{HouseholdID: hh.HouseholdID, HouseholdName: hh.HouseholdName, Reason: "commit failed: " + err.Error()})
+			result.Skipped = append(result.Skipped, RunSkip{HouseholdID: hh.HouseholdID, HouseholdName: hh.HouseholdName, Reason: "commit failed; see server logs"})
 			continue
 		}
 		applied := 0

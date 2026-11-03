@@ -794,7 +794,7 @@ export default function UserDetailPage() {
       {/* Delete Confirmation */}
       <Modal open={Boolean(showDeleteConfirm)} onClose={() => setShowDeleteConfirm(false)} title="Permanently delete user" width={460}>
 <p className="u-fs-fs-base u-mb-8px u-lh-1_5" style={{ color: 'var(--text-subtle)' }}>
-              This will permanently delete <strong style={{ color: 'var(--text)' }}>{user.email}</strong> from the identity provider and anonymize all associated DARE records. This action <strong style={{ color: 'var(--error)' }}>cannot be undone</strong>.
+              This will permanently delete <strong style={{ color: 'var(--text)' }}>{user.email}</strong> from the identity provider and anonymize all associated aquify records. This action <strong style={{ color: 'var(--error)' }}>cannot be undone</strong>.
             </p>
 <p className="u-fs-fs-sm u-mb-16px" style={{ color: 'var(--text-muted)' }}>
               Type the user&apos;s email address to confirm:

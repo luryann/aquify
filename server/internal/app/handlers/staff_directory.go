@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/keycloak"
+	"github.com/luryann/aquify/server/internal/keycloak"
 )
 
 // staffDirectoryLimit bounds the Keycloak page scanned for staff; clubs have

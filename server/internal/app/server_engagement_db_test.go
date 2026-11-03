@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/app/events"
-	"github.com/dareaquatics/aquify/server/internal/app/wellness"
+	"github.com/luryann/aquify/server/internal/app/events"
+	"github.com/luryann/aquify/server/internal/app/wellness"
 	"github.com/google/uuid"
 )
 

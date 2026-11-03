@@ -3,8 +3,8 @@ package handlers
 import (
 	"testing"
 
-	"github.com/dareaquatics/aquify/server/internal/app/members"
-	"github.com/dareaquatics/aquify/server/internal/app/usaswimming"
+	"github.com/luryann/aquify/server/internal/app/members"
+	"github.com/luryann/aquify/server/internal/app/usaswimming"
 )
 
 func TestCompareRoster(t *testing.T) {

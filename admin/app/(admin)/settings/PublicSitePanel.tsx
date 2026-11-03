@@ -80,7 +80,7 @@ export function PublicSitePanel({ canEdit }: { canEdit: boolean }) {
       <form onSubmit={save} className="u-mt-16px u-gap-16px" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', alignItems: 'end' }}>
         <div>
           <label style={LABEL} htmlFor="ps-slug">Web address name</label>
-          <input id="ps-slug" style={INPUT} value={form.public_slug} disabled={disabled} maxLength={40} onChange={(e) => setForm((f) => ({ ...f, public_slug: e.target.value.toLowerCase() }))} placeholder="dare-aquatics" />
+          <input id="ps-slug" style={INPUT} value={form.public_slug} disabled={disabled} maxLength={40} onChange={(e) => setForm((f) => ({ ...f, public_slug: e.target.value.toLowerCase() }))} placeholder="aquify" />
           <div className="u-fs-fs-xs u-mt-4px" style={{ color: 'var(--text-muted)' }}>
             {url ? <>Your site lives at <a href={url} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-text, var(--accent))' }}>{url}</a></> : 'Lowercase letters, digits and hyphens.'}
           </div>

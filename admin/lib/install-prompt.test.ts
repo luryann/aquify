@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { INSTALL_DISMISS_KEY, isInstallDismissed, rememberInstallDismissed, shouldOfferInstall } from './install-prompt'
+import { INSTALL_DISMISS_KEY, isInstallDismissed, recordVisitDay, rememberInstallDismissed, shouldOfferInstall } from './install-prompt'
 
 function mem(initial: Record<string, string> = {}) {
   const m = { ...initial }
@@ -35,4 +35,13 @@ test('garbage values and throwing storage are tolerated', () => {
   const bad = { getItem: () => { throw new Error('x') }, setItem: () => { throw new Error('x') } }
   assert.equal(isInstallDismissed(bad), false)
   assert.doesNotThrow(() => rememberInstallDismissed(bad))
+})
+
+test('recordVisitDay keys visits by local day, not UTC', () => {
+  const store = new Map<string, string>()
+  const storage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) }
+  const a = new Date(2026, 5, 10, 20, 0).getTime()
+  const b = new Date(2026, 5, 10, 23, 30).getTime()
+  assert.equal(recordVisitDay(storage, a), 1)
+  assert.equal(recordVisitDay(storage, b), 1)
 })

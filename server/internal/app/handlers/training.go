@@ -5,12 +5,12 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/dareaquatics/aquify/server/internal/app/audit"
-	"github.com/dareaquatics/aquify/server/internal/app/groups"
-	"github.com/dareaquatics/aquify/server/internal/app/httpx"
-	"github.com/dareaquatics/aquify/server/internal/app/members"
-	"github.com/dareaquatics/aquify/server/internal/app/seasons"
-	"github.com/dareaquatics/aquify/server/internal/app/training"
+	"github.com/luryann/aquify/server/internal/app/audit"
+	"github.com/luryann/aquify/server/internal/app/groups"
+	"github.com/luryann/aquify/server/internal/app/httpx"
+	"github.com/luryann/aquify/server/internal/app/members"
+	"github.com/luryann/aquify/server/internal/app/seasons"
+	"github.com/luryann/aquify/server/internal/app/training"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
 )
@@ -313,7 +313,7 @@ func (h *TrainingHandlers) getAttendance(w http.ResponseWriter, r *http.Request)
 	}
 
 	roster := []attendanceRosterEntry{}
-	if h.membersService != nil && groupCode != "" {
+	if h.membersService != nil {
 		links, err := h.membersService.ListSwimmerGroupLinks(principal, orgID)
 		if err != nil {
 			httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load group roster.", err)
@@ -328,14 +328,20 @@ func (h *TrainingHandlers) getAttendance(w http.ResponseWriter, r *http.Request)
 		for _, sw := range swimmers {
 			swimmersByID[sw.ID] = sw
 		}
+		seenRoster := map[string]bool{}
 		for _, link := range links {
-			if link.GroupCode != groupCode {
+			// Empty group means a team-wide practice: every grouped swimmer applies.
+			if groupCode != "" && !strings.EqualFold(link.GroupCode, groupCode) {
+				continue
+			}
+			if seenRoster[link.SwimmerID] {
 				continue
 			}
 			sw, ok := swimmersByID[link.SwimmerID]
 			if !ok {
 				continue
 			}
+			seenRoster[link.SwimmerID] = true
 			name := strings.TrimSpace(sw.PreferredName)
 			if name == "" {
 				name = strings.TrimSpace(sw.FirstName + " " + sw.LastName)

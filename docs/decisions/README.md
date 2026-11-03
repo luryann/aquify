@@ -1,6 +1,6 @@
 # Decision Log
 
-This directory stores architecture and product decisions for DARE Platform.
+This directory stores architecture and product decisions for aquify Platform.
 
 ## Format
 Each decision is one markdown file named:

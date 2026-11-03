@@ -1,4 +1,4 @@
-# Manual Workflows Validation Checklist — DARE Platform
+# Manual Workflows Validation Checklist — aquify Platform
 
 **Reference:** `docs/decisions/2026-03-15-manual-at-launch-workflows.md`
 **Version:** 1.0
@@ -122,7 +122,7 @@ A workflow is **validated** when the named owner has completed all steps and sig
 
 ### Steps to Validate
 
-1. [ ] Obtain a valid test HY3 file (can be a synthetic SD3 file in a ZIP renamed to `.hy3`). Ensure at least one swimmer in the file matches a DARE swimmer by name+DOB.
+1. [ ] Obtain a valid test HY3 file (can be a synthetic SD3 file in a ZIP renamed to `.hy3`). Ensure at least one swimmer in the file matches a aquify swimmer by name+DOB.
 2. [ ] Log in as admin.
 3. [ ] Navigate to **Imports → Upload File**.
 4. [ ] Upload the test HY3 file.

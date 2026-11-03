@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/dareaquatics/aquify/server/internal/dbutil"
+	"github.com/luryann/aquify/server/internal/dbutil"
 	"strings"
 
 	"github.com/jackc/pgx/v5"

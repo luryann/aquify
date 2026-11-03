@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/app/billing"
-	"github.com/dareaquatics/aquify/server/internal/app/httpx"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
-	stripelib "github.com/dareaquatics/aquify/server/internal/stripe"
-	"github.com/dareaquatics/aquify/server/internal/telemetry"
+	"github.com/luryann/aquify/server/internal/app/billing"
+	"github.com/luryann/aquify/server/internal/app/httpx"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
+	stripelib "github.com/luryann/aquify/server/internal/stripe"
+	"github.com/luryann/aquify/server/internal/telemetry"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
 )
@@ -42,7 +42,7 @@ type StripeHandlers struct {
 	metrics *telemetry.Metrics
 }
 
-// SetMetrics enables recording of dare_webhook_processing_lag_seconds.
+// SetMetrics enables recording of aquify_webhook_processing_lag_seconds.
 func (h *StripeHandlers) SetMetrics(m *telemetry.Metrics) { h.metrics = m }
 
 // NewStripeHandlers returns a new StripeHandlers.
@@ -186,6 +186,9 @@ func (h *StripeHandlers) authorizeCheckoutSessionPrincipal(principal *appmiddlew
 	if err != nil {
 		return nil, err
 	}
+	if invoice.Status != "issued" && invoice.Status != "partially_paid" {
+		return nil, errCheckoutDenied
+	}
 	if staff {
 		// Staff may pay down part of a balance, but never more than is due. This
 		// is a precheck only: invoice state can change before the session pays, and
@@ -235,6 +238,10 @@ func (h *StripeHandlers) createPaymentIntent(w http.ResponseWriter, r *http.Requ
 		}
 		return
 	}
+	if invoice.Status != "issued" && invoice.Status != "partially_paid" {
+		httpx.WriteError(w, r, http.StatusConflict, "invoice_not_payable", "Invoice is not open for payment.", nil)
+		return
+	}
 	if invoice.AmountDueCents <= 0 || req.AmountCents > invoice.AmountDueCents {
 		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_amount", "amount_cents cannot exceed the invoice's remaining balance.", nil)
 		return
@@ -252,7 +259,7 @@ func (h *StripeHandlers) createPaymentIntent(w http.ResponseWriter, r *http.Requ
 	})
 	if err != nil {
 		h.logger.Error("stripe: create payment intent failed", "error", err)
-		httpx.WriteError(w, r, http.StatusBadGateway, "stripe_error", "Failed to create payment intent.", nil)
+		writeStripeError(w, r, err, "Failed to create payment intent.")
 		return
 	}
 
@@ -316,7 +323,7 @@ func (h *StripeHandlers) createCheckoutSession(w http.ResponseWriter, r *http.Re
 	})
 	if err != nil {
 		h.logger.Error("stripe: create checkout session failed", "error", err)
-		httpx.WriteError(w, r, http.StatusBadGateway, "stripe_error", "Failed to create checkout session.", nil)
+		writeStripeError(w, r, err, "Failed to create checkout session.")
 		return
 	}
 
@@ -359,7 +366,7 @@ func (h *StripeHandlers) reconcile(w http.ResponseWriter, r *http.Request) {
 	stripeCents, err := h.client.FetchBalanceCents(r.Context())
 	if err != nil {
 		h.logger.Error("stripe: fetch balance failed", "error", err)
-		httpx.WriteError(w, r, http.StatusBadGateway, "stripe_error", "Failed to fetch Stripe balance.", nil)
+		writeStripeError(w, r, err, "Failed to fetch Stripe balance.")
 		return
 	}
 
@@ -633,4 +640,14 @@ func extractLatestRefundID(obj map[string]any) string {
 	}
 	id, _ := first["id"].(string)
 	return id
+}
+
+// writeStripeError maps a Stripe client failure to a response: transport
+// timeouts become 503 stripe_unavailable, everything else stays 502 stripe_error.
+func writeStripeError(w http.ResponseWriter, r *http.Request, err error, message string) {
+	if stripelib.IsTimeout(err) {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, "stripe_unavailable", "Payment provider is temporarily unavailable. Please retry.", err)
+		return
+	}
+	httpx.WriteError(w, r, http.StatusBadGateway, "stripe_error", message, nil)
 }

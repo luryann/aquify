@@ -98,19 +98,60 @@ func NewServiceWithPool(pool *pgxpool.Pool) *Service {
 		return s
 	}
 	s.repo = newRepository(pool)
-	if err := s.loadFromDB(context.Background()); err != nil {
+	if err := s.loadFromDB(context.Background(), ""); err != nil {
 		slog.Error("documents: failed to load from DB", "err", err)
 	}
 	return s
 }
 
-func (s *Service) loadFromDB(ctx context.Context) error {
-	types, subs, err := s.repo.LoadAll(ctx)
+// Refresh merges current Postgres rows into the cache (no-op in in-memory
+// mode) so reads and erasure observe submissions created by another instance.
+func (s *Service) Refresh(ctx context.Context, orgID string) error {
+	if s.repo == nil {
+		return nil
+	}
+	return s.loadFromDB(ctx, orgID)
+}
+
+// loadFromDB replaces the cache with current Postgres state (so rows created,
+// changed or deleted by another instance are observed). No-op without a repo.
+func (s *Service) loadFromDB(ctx context.Context, orgID string) error {
+	if s.repo == nil {
+		return nil
+	}
+	// Load under the write lock so a concurrent write cannot be overwritten by
+	// an older snapshot.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.reloadLocked(ctx, orgID)
+}
+
+// reloadLocked replaces the cached rows of orgID with the current Postgres
+// state (an empty orgID replaces every org); other orgs' cached rows are left
+// untouched so a read only pays for the org it serves. Caller holds s.mu (write).
+func (s *Service) reloadLocked(ctx context.Context, orgID string) error {
+	if s.repo == nil {
+		return nil
+	}
+	types, subs, err := s.repo.LoadAll(ctx, orgID)
 	if err != nil {
 		return err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	if orgID == "" {
+		s.docTypes = make(map[string]*DocumentType, len(types))
+		s.submissions = make(map[string]*DocumentSubmission, len(subs))
+	} else {
+		for id, t := range s.docTypes {
+			if t.OrgID == orgID {
+				delete(s.docTypes, id)
+			}
+		}
+		for id, sub := range s.submissions {
+			if sub.OrgID == orgID {
+				delete(s.submissions, id)
+			}
+		}
+	}
 	for _, t := range types {
 		s.docTypes[t.ID] = t
 	}
@@ -131,6 +172,9 @@ func (s *Service) CreateDocumentType(orgID, name, category, description, applies
 	// is the arbiter and its violation maps to ErrDuplicateName below.
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.reloadLocked(context.Background(), orgID); err != nil {
+		return nil, err
+	}
 	for _, dt := range s.docTypes {
 		if dt.OrgID == orgID && strings.EqualFold(dt.Name, trimmedName) {
 			return nil, ErrDuplicateName
@@ -176,6 +220,9 @@ func (s *Service) CreateDocumentType(orgID, name, category, description, applies
 func (s *Service) UpdateDocumentType(orgID, typeID string, updates map[string]interface{}, updatedBy string) (*DocumentType, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.reloadLocked(context.Background(), orgID); err != nil {
+		return nil, err
+	}
 
 	dt, ok := s.docTypes[typeID]
 	if !ok || dt.OrgID != orgID {
@@ -229,6 +276,9 @@ func (s *Service) UpdateDocumentType(orgID, typeID string, updates map[string]in
 func (s *Service) DeleteDocumentType(orgID, typeID, deletedBy string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.reloadLocked(context.Background(), orgID); err != nil {
+		return err
+	}
 
 	dt, ok := s.docTypes[typeID]
 	if !ok || dt.OrgID != orgID {
@@ -246,6 +296,9 @@ func (s *Service) DeleteDocumentType(orgID, typeID, deletedBy string) error {
 // ListDocumentTypes returns all (active) document types for an org.
 // Pass activeOnly=true to filter to is_active=true records.
 func (s *Service) ListDocumentTypes(orgID string, activeOnly bool) ([]DocumentType, error) {
+	if err := s.loadFromDB(context.Background(), orgID); err != nil {
+		return nil, err
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -272,10 +325,16 @@ func (s *Service) ListDocumentTypes(orgID string, activeOnly bool) ([]DocumentTy
 
 // CreateSubmission creates a pending document submission record.
 func (s *Service) CreateSubmission(orgID, docTypeID, householdID, swimmerID, createdBy string) (*DocumentSubmission, error) {
+	if err := s.loadFromDB(context.Background(), orgID); err != nil {
+		return nil, err
+	}
 	s.mu.RLock()
 	dt, ok := s.docTypes[docTypeID]
 	s.mu.RUnlock()
-	if !ok || dt.OrgID != orgID {
+	if !ok || dt.OrgID != orgID || !dt.IsActive {
+		return nil, ErrTypeNotFound
+	}
+	if swimmerID != "" && dt.AppliesTo == "household" {
 		return nil, ErrTypeNotFound
 	}
 
@@ -318,6 +377,9 @@ func (s *Service) CreateSubmission(orgID, docTypeID, householdID, swimmerID, cre
 func (s *Service) AttachFile(orgID, submissionID, fileObjectKey, fileName, fileMIME string, fileSizeBytes int64, updatedBy string) (*DocumentSubmission, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.reloadLocked(context.Background(), orgID); err != nil {
+		return nil, err
+	}
 
 	sub, ok := s.submissions[submissionID]
 	if !ok || sub.OrgID != orgID {
@@ -361,6 +423,9 @@ func (s *Service) RejectSubmission(orgID, submissionID, rejectedBy, reviewNotes 
 func (s *Service) reviewSubmission(orgID, submissionID, reviewer, status, reviewNotes string) (*DocumentSubmission, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.reloadLocked(context.Background(), orgID); err != nil {
+		return nil, err
+	}
 
 	sub, ok := s.submissions[submissionID]
 	if !ok || sub.OrgID != orgID {
@@ -391,6 +456,9 @@ func (s *Service) reviewSubmission(orgID, submissionID, reviewer, status, review
 
 // GetSubmission returns a single document submission.
 func (s *Service) GetSubmission(orgID, submissionID string) (*DocumentSubmission, error) {
+	if err := s.loadFromDB(context.Background(), orgID); err != nil {
+		return nil, err
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	sub, ok := s.submissions[submissionID]
@@ -407,6 +475,9 @@ func (s *Service) GetSubmission(orgID, submissionID string) (*DocumentSubmission
 
 // ListSubmissions returns submissions filtered by orgID and optionally householdID.
 func (s *Service) ListSubmissions(orgID, householdID string) ([]DocumentSubmission, error) {
+	if err := s.loadFromDB(context.Background(), orgID); err != nil {
+		return nil, err
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -433,12 +504,34 @@ func (s *Service) ListSubmissions(orgID, householdID string) ([]DocumentSubmissi
 	return out, nil
 }
 
+// HouseholdObjectKeys returns the non-empty file object keys for a household's
+// submissions without modifying anything, so callers can purge object storage
+// before the rows (and therefore the keys) are deleted.
+func (s *Service) HouseholdObjectKeys(ctx context.Context, orgID, householdID string) ([]string, error) {
+	if err := s.Refresh(ctx, orgID); err != nil {
+		return nil, fmt.Errorf("list household document keys: refresh: %w", err)
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var keys []string
+	for _, sub := range s.submissions {
+		if sub.OrgID == orgID && sub.HouseholdID == householdID && sub.FileObjectKey != "" {
+			keys = append(keys, sub.FileObjectKey)
+		}
+	}
+	return keys, nil
+}
+
 // EraseHouseholdData hard-deletes every document submission for a household
 // as part of an approved compliance right-to-erasure request (a soft delete
 // would leave file names/notes/reviewer notes queryable). Returns the
 // non-empty file object keys so the caller can purge them from object
 // storage.
 func (s *Service) EraseHouseholdData(ctx context.Context, orgID, householdID string) ([]string, error) {
+	// Pick up submissions (and object keys) created by another instance.
+	if err := s.Refresh(ctx, orgID); err != nil {
+		return nil, fmt.Errorf("erase household document submissions: refresh: %w", err)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/workers"
+	"github.com/luryann/aquify/server/internal/workers"
 )
 
 // TaskTypeShiftReminder is the background job that emails a volunteer the day

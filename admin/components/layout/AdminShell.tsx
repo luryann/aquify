@@ -19,7 +19,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
   // Restore saved theme preference on mount
   useEffect(() => {
     try {
-      const saved = localStorage.getItem('dare-theme')
+      const saved = localStorage.getItem('aquify-theme')
       if (saved) {
         document.documentElement.setAttribute('data-theme', saved)
       }

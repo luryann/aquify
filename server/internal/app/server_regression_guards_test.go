@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dareaquatics/aquify/server/internal/app/performance"
+	"github.com/luryann/aquify/server/internal/app/performance"
 )
 
 func TestUpdateTimeStandardRejectsInvalidValuesWith400(t *testing.T) {

@@ -2,12 +2,12 @@ package reports
 
 import (
 	"errors"
-	"github.com/dareaquatics/aquify/server/internal/storage"
+	"github.com/luryann/aquify/server/internal/storage"
 	"testing"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/app/billing"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/app/billing"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
 func TestAgingNeverBucketsVoidedInvoiceAsOverdue(t *testing.T) {

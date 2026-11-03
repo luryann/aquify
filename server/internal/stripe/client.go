@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -450,7 +451,35 @@ func NewSDKClient(secretKey string) (*SDKClient, error) {
 	if strings.TrimSpace(secretKey) == "" {
 		return nil, ErrInvalidConfig
 	}
-	return newSDKClientWithBackend(secretKey, stripeapi.GetBackend(stripeapi.APIBackend)), nil
+	return newSDKClientWithBackend(secretKey, newBoundedBackend(sdkHTTPTimeout, sdkMaxNetworkRetries)), nil
+}
+
+// A single API call must finish well inside the API server's 60s WriteTimeout:
+// worst case is (retries+1) attempts of sdkHTTPTimeout plus short backoff.
+// stripe-go reuses the same Idempotency-Key across retries of one call.
+const (
+	sdkHTTPTimeout       = 15 * time.Second
+	sdkMaxNetworkRetries = 1
+)
+
+func newBoundedBackend(timeout time.Duration, retries int64) stripeapi.Backend {
+	return stripeapi.GetBackendWithConfig(stripeapi.APIBackend, &stripeapi.BackendConfig{
+		HTTPClient:        &http.Client{Timeout: timeout},
+		MaxNetworkRetries: stripeapi.Int64(retries),
+	})
+}
+
+// IsTimeout reports whether err is a transport timeout or cancelled deadline
+// (Stripe unreachable or not answering) rather than a Stripe API error.
+func IsTimeout(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var ne net.Error
+	return errors.As(err, &ne) && ne.Timeout()
 }
 
 // newSDKClientWithBackend builds a client whose API calls all go through backend.

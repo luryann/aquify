@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dareaquatics/aquify/meetfiles"
+	"github.com/luryann/aquify/meetfiles"
 )
 
 // buildZIP is a test helper that creates an in-memory ZIP archive containing

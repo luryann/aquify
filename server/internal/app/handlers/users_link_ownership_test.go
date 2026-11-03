@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dareaquatics/aquify/server/internal/app/members"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
-	"github.com/dareaquatics/aquify/server/internal/keycloak"
+	"github.com/luryann/aquify/server/internal/app/members"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/keycloak"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -96,7 +96,8 @@ func TestGetUserFailsWhenRoleLookupFails(t *testing.T) {
 	req.Header.Set("X-Org-Id", "org-1")
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
-	if rec.Code != http.StatusInternalServerError {
+	// A timeout is an upstream outage: 503, never a 200 with an empty role list.
+	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("a role lookup failure must not render as an empty role list: got %d %s", rec.Code, rec.Body.String())
 	}
 }

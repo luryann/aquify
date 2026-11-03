@@ -61,7 +61,7 @@ export function InstallPrompt() {
       <button
         type="button"
         onClick={install}
-        className="u-p-8px-16px u-fw-600 u-ff-inherit" style={{ background: 'var(--accent)', color: '#fff', border: 0, borderRadius: 8, cursor: 'pointer' }}
+        className="btn btn-primary btn-sm"
       >
         Install app
       </button>

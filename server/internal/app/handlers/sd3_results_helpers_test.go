@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dareaquatics/aquify/meetfiles"
-	"github.com/dareaquatics/aquify/server/internal/app/members"
+	"github.com/luryann/aquify/meetfiles"
+	"github.com/luryann/aquify/server/internal/app/members"
 )
 
 func TestSD3EncodingHelpers(t *testing.T) {

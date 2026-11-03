@@ -1,12 +1,13 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
-	"github.com/dareaquatics/aquify/server/internal/app/billing"
-	"github.com/dareaquatics/aquify/server/internal/app/groups"
-	"github.com/dareaquatics/aquify/server/internal/app/members"
+	"github.com/luryann/aquify/server/internal/app/billing"
+	"github.com/luryann/aquify/server/internal/app/groups"
+	"github.com/luryann/aquify/server/internal/app/members"
 )
 
 // collectHouseholdExportData assembles everything the club holds about one
@@ -19,6 +20,18 @@ func collectHouseholdExportData(orgID, householdID string, membersSvc *members.S
 		return nil, errors.New("members service is not configured")
 	}
 	out := map[string]any{}
+
+	// The collector runs in the worker process, whose caches predate rows the
+	// API wrote since startup; reload from Postgres first (no-op in memory mode).
+	ctx := context.Background()
+	if err := membersSvc.Refresh(ctx); err != nil {
+		return nil, fmt.Errorf("refresh members: %w", err)
+	}
+	if billingSvc != nil {
+		if err := billingSvc.Refresh(ctx); err != nil {
+			return nil, fmt.Errorf("refresh billing: %w", err)
+		}
+	}
 
 	var household *members.Household
 	for _, h := range membersSvc.SnapshotHouseholds(orgID) {

@@ -12,17 +12,17 @@ import (
 	"time"
 
 	miniredis "github.com/alicebob/miniredis/v2"
-	"github.com/dareaquatics/aquify/server/internal/app/billing"
-	"github.com/dareaquatics/aquify/server/internal/app/comms"
-	"github.com/dareaquatics/aquify/server/internal/app/compliance"
-	"github.com/dareaquatics/aquify/server/internal/app/documents"
-	"github.com/dareaquatics/aquify/server/internal/app/exports"
-	"github.com/dareaquatics/aquify/server/internal/app/members"
-	"github.com/dareaquatics/aquify/server/internal/app/reports"
-	"github.com/dareaquatics/aquify/server/internal/keycloak"
-	"github.com/dareaquatics/aquify/server/internal/storage"
-	stripelib "github.com/dareaquatics/aquify/server/internal/stripe"
-	"github.com/dareaquatics/aquify/server/internal/workers"
+	"github.com/luryann/aquify/server/internal/app/billing"
+	"github.com/luryann/aquify/server/internal/app/comms"
+	"github.com/luryann/aquify/server/internal/app/compliance"
+	"github.com/luryann/aquify/server/internal/app/documents"
+	"github.com/luryann/aquify/server/internal/app/exports"
+	"github.com/luryann/aquify/server/internal/app/members"
+	"github.com/luryann/aquify/server/internal/app/reports"
+	"github.com/luryann/aquify/server/internal/keycloak"
+	"github.com/luryann/aquify/server/internal/storage"
+	stripelib "github.com/luryann/aquify/server/internal/stripe"
+	"github.com/luryann/aquify/server/internal/workers"
 )
 
 func TestDurableJobsSurviveAPIRestart(t *testing.T) {

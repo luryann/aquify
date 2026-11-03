@@ -6,9 +6,9 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/dareaquatics/aquify/server/internal/app/billing"
-	stripelib "github.com/dareaquatics/aquify/server/internal/stripe"
-	"github.com/dareaquatics/aquify/server/internal/workers"
+	"github.com/luryann/aquify/server/internal/app/billing"
+	stripelib "github.com/luryann/aquify/server/internal/stripe"
+	"github.com/luryann/aquify/server/internal/workers"
 )
 
 func TestBillingReconcileHandler_UsesBillingAndStripeServices(t *testing.T) {

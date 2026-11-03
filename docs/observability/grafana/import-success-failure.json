@@ -4,7 +4,7 @@
     { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" }
   ],
   "annotations": { "list": [] },
-  "description": "DARE Platform — file import pipeline success and failure rates.",
+  "description": "aquify Platform — file import pipeline success and failure rates.",
   "editable": true,
   "graphTooltip": 1,
   "id": null,
@@ -20,7 +20,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "sum by (status) (rate(dare_import_files_total[5m]))",
+          "expr": "sum by (status) (rate(aquify_import_files_total[5m]))",
           "legendFormat": "{{status}}"
         }
       ]
@@ -47,7 +47,7 @@
       "type": "gauge",
       "targets": [
         {
-          "expr": "sum(rate(dare_import_files_total{status=\"failure\"}[5m])) / sum(rate(dare_import_files_total[5m]))"
+          "expr": "sum(rate(aquify_import_files_total{status=\"failure\"}[5m])) / sum(rate(aquify_import_files_total[5m]))"
         }
       ]
     },
@@ -62,7 +62,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "sum(rate(dare_import_files_total{status=\"conflict\"}[5m]))",
+          "expr": "sum(rate(aquify_import_files_total{status=\"conflict\"}[5m]))",
           "legendFormat": "conflicts"
         }
       ]
@@ -78,7 +78,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(dare_job_duration_seconds_bucket{type=\"parse_import\"}[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(aquify_job_duration_seconds_bucket{type=\"parse_import\"}[5m])))",
           "legendFormat": "p95 parse_import"
         }
       ]
@@ -86,7 +86,7 @@
   ],
   "refresh": "30s",
   "schemaVersion": 38,
-  "tags": ["dare", "imports"],
+  "tags": ["aquify", "imports"],
   "templating": {
     "list": [
       {
@@ -104,7 +104,7 @@
   "time": { "from": "now-3h", "to": "now" },
   "timepicker": {},
   "timezone": "browser",
-  "title": "DARE – Import Success/Failure Rates",
-  "uid": "dare-imports",
+  "title": "aquify – Import Success/Failure Rates",
+  "uid": "aquify-imports",
   "version": 1
 }

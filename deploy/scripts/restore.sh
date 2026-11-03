@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# DARE Platform Restore Script
+# aquify Platform Restore Script
 #
 # Restores DB and MinIO objects from a backup snapshot.
 #
@@ -13,14 +13,14 @@
 # The script will:
 #   1. Locate the backup archive locally or download from offsite (rclone)
 #   2. GPG-decrypt the archive if encrypted
-#   3. Stop dare-api and dare-worker containers
+#   3. Stop aquify-api and aquify-worker containers
 #   4. Restore PostgreSQL from the custom-format dump
 #   5. Restore MinIO objects via mc mirror
 #   6. Restart services
 #   7. Run health check
-#   8. Log restore event to /var/log/dare/restores.log
+#   8. Log restore event to /var/log/aquify/restores.log
 #
-# Required environment (sourced from /opt/dare/.env.production or .env.backup):
+# Required environment (sourced from /opt/aquify/.env.production or .env.backup):
 #   DATABASE_URL         PostgreSQL connection DSN
 #   MINIO_ENDPOINT       MinIO server URL
 #   MINIO_ACCESS_KEY     MinIO access key
@@ -63,14 +63,14 @@ pg_env_from_url() {
 # Configuration
 # ---------------------------------------------------------------------------
 
-DEPLOY_DIR="/opt/dare"
-BACKUP_DIR="${BACKUP_DIR:-/var/backups/dare}"
-RESTORE_LOG="/var/log/dare/restores.log"
+DEPLOY_DIR="/opt/aquify"
+BACKUP_DIR="${BACKUP_DIR:-/var/backups/aquify}"
+RESTORE_LOG="/var/log/aquify/restores.log"
 HEALTH_URL="${HEALTH_URL:-http://localhost:8080/api/v1/health/live}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-120}"
 HEALTH_RETRY_INTERVAL=5
 COMPOSE_FILE="${DEPLOY_DIR}/docker-compose.production.yml"
-APP_SERVICES="dare-api dare-worker"
+APP_SERVICES="aquify-api aquify-worker"
 
 # Load production env
 # shellcheck source=/dev/null
@@ -82,7 +82,7 @@ DATABASE_URL="${DATABASE_URL:-}"
 MINIO_ENDPOINT="${MINIO_ENDPOINT:-http://localhost:9000}"
 MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-}"
 MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-}"
-MINIO_BUCKET="${MINIO_BUCKET:-dare-production}"
+MINIO_BUCKET="${MINIO_BUCKET:-aquify-production}"
 RCLONE_REMOTE="${RCLONE_REMOTE:-}"
 
 DRY_RUN=false
@@ -178,7 +178,7 @@ confirm() {
 
 mkdir -p "$(dirname "${RESTORE_LOG}")"
 touch "${RESTORE_LOG}"
-log "INFO" "=== DARE Restore started: timestamp=${BACKUP_TIMESTAMP} operator=${OPERATOR} dry_run=${DRY_RUN} ==="
+log "INFO" "=== aquify Restore started: timestamp=${BACKUP_TIMESTAMP} operator=${OPERATOR} dry_run=${DRY_RUN} ==="
 
 # ---------------------------------------------------------------------------
 # Step 1: Locate backup archive
@@ -190,8 +190,8 @@ log "INFO" "--- Step 1: Locating backup archive ---"
 ARCHIVE_FILE=""
 # Check for GPG-encrypted archive first, then plain tar.gz
 for candidate in \
-  "${BACKUP_DIR}/dare-backup-${BACKUP_TIMESTAMP}.tar.gz.gpg" \
-  "${BACKUP_DIR}/dare-backup-${BACKUP_TIMESTAMP}.tar.gz"; do
+  "${BACKUP_DIR}/aquify-backup-${BACKUP_TIMESTAMP}.tar.gz.gpg" \
+  "${BACKUP_DIR}/aquify-backup-${BACKUP_TIMESTAMP}.tar.gz"; do
   if [[ -f "${candidate}" ]]; then
     ARCHIVE_FILE="${candidate}"
     log "INFO" "Found local archive: ${ARCHIVE_FILE}"
@@ -220,10 +220,10 @@ if [[ -z "${ARCHIVE_FILE}" && ! -d "${SNAPSHOT_DIR}" ]]; then
     # Try all tiers (daily/weekly/monthly)
     found_offsite=false
     for tier in daily weekly monthly; do
-      remote_path="${RCLONE_REMOTE}/${tier}/dare-backup-${BACKUP_TIMESTAMP}.tar.gz.gpg"
+      remote_path="${RCLONE_REMOTE}/${tier}/aquify-backup-${BACKUP_TIMESTAMP}.tar.gz.gpg"
       log "INFO" "Trying: rclone copy '${remote_path}' ${BACKUP_DIR}/"
       if rclone copy "${remote_path}" "${BACKUP_DIR}/" 2>> "${RESTORE_LOG}"; then
-        ARCHIVE_FILE="${BACKUP_DIR}/dare-backup-${BACKUP_TIMESTAMP}.tar.gz.gpg"
+        ARCHIVE_FILE="${BACKUP_DIR}/aquify-backup-${BACKUP_TIMESTAMP}.tar.gz.gpg"
         [[ -f "${ARCHIVE_FILE}" ]] && { found_offsite=true; break; }
       fi
     done
@@ -295,7 +295,7 @@ fi
 
 echo ""
 echo "========================================================================"
-echo "  DARE RESTORE CONFIRMATION"
+echo "  aquify RESTORE CONFIRMATION"
 echo "  Backup timestamp : ${BACKUP_TIMESTAMP}"
 echo "  Target database  : $(redact_dsn "${DATABASE_URL}")"
 echo "  Target MinIO     : ${MINIO_ENDPOINT}/${MINIO_BUCKET}"
@@ -408,14 +408,14 @@ else
     log "WARN" "MINIO_ACCESS_KEY / MINIO_SECRET_KEY not set — skipping MinIO restore"
   else
     if [[ "${DRY_RUN}" == "true" ]]; then
-      log "INFO" "[dry-run] mc mirror ${MINIO_BACKUP_DIR} → dare-restore/${MINIO_BUCKET}"
+      log "INFO" "[dry-run] mc mirror ${MINIO_BACKUP_DIR} → aquify-restore/${MINIO_BUCKET}"
     else
-      mc alias set dare-restore "${MINIO_ENDPOINT}" "${MINIO_ACCESS_KEY}" "${MINIO_SECRET_KEY}" \
+      mc alias set aquify-restore "${MINIO_ENDPOINT}" "${MINIO_ACCESS_KEY}" "${MINIO_SECRET_KEY}" \
         --api S3v4 2>> "${RESTORE_LOG}" \
         || die "mc alias set failed"
 
-      log "INFO" "Mirroring ${MINIO_BACKUP_DIR} → dare-restore/${MINIO_BUCKET}..."
-      if mc mirror --overwrite --preserve "${MINIO_BACKUP_DIR}" "dare-restore/${MINIO_BUCKET}" \
+      log "INFO" "Mirroring ${MINIO_BACKUP_DIR} → aquify-restore/${MINIO_BUCKET}..."
+      if mc mirror --overwrite --preserve "${MINIO_BACKUP_DIR}" "aquify-restore/${MINIO_BUCKET}" \
           >> "${RESTORE_LOG}" 2>&1; then
         log "INFO" "MinIO restore complete"
       else
@@ -479,11 +479,11 @@ log "INFO" "Restore event recorded to ${RESTORE_LOG}"
 
 echo ""
 echo "========================================================================"
-echo "  DARE RESTORE COMPLETE"
+echo "  aquify RESTORE COMPLETE"
 echo "  Backup timestamp : ${BACKUP_TIMESTAMP}"
 echo "  Completed at     : ${RESTORE_END}"
 echo "  Log              : ${RESTORE_LOG}"
 echo "========================================================================"
 
-log "INFO" "=== DARE Restore completed successfully: ${BACKUP_TIMESTAMP} ==="
+log "INFO" "=== aquify Restore completed successfully: ${BACKUP_TIMESTAMP} ==="
 exit 0

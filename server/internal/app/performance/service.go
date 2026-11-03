@@ -16,8 +16,8 @@ import (
 	"sync"
 	"time"
 
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
-	"github.com/dareaquatics/aquify/server/internal/dbutil"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/dbutil"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -150,6 +150,8 @@ type CutQualification struct {
 	BestTimeMs    *int   `json:"best_time_ms"` // nil = NT
 	Qualified     bool   `json:"qualified"`
 	MarginMs      *int   `json:"margin_ms,omitempty"` // positive = under the cut (qualified); negative = over
+	// IneligibleReason is set when the swimmer's gender/age falls outside the standard.
+	IneligibleReason string `json:"ineligible_reason,omitempty"`
 }
 
 // ─── Input types ─────────────────────────────────────────────────────────────
@@ -175,6 +177,9 @@ type UpsertResultInput struct {
 	DQNote      string       `json:"dq_note"`
 	IsOfficial  bool         `json:"is_official"`
 	Splits      []SplitInput `json:"splits"`
+	// SwimDate backdates the result (server-side imports only). Best-time and
+	// team-record age/ordering derive from the result's CreatedAt.
+	SwimDate time.Time `json:"-"`
 }
 
 // SplitInput describes one split for a result.
@@ -572,6 +577,9 @@ func (s *Service) UpsertResultWithRecords(orgID, actorID string, principal *appm
 		CreatedBy:   actorID,
 		UpdatedBy:   actorID,
 	}
+	if !input.SwimDate.IsZero() && input.SwimDate.Before(now) {
+		result.CreatedAt = input.SwimDate.UTC()
+	}
 	// Postgres is canonical: an unpersisted result would vanish on restart and
 	// skew best times across instances, so surface the failure.
 	if s.repo != nil {
@@ -719,7 +727,9 @@ func (s *Service) recomputeBestTimeLocked(orgID, actorID, swimmerID string, dist
 
 	var next *BestTime
 	switch {
-	case existing != nil && existing.IsManualOverride:
+	case existing != nil && existing.IsManualOverride &&
+		(best == nil || existing.BestTimeMs == nil || *best.FinTimeMs >= *existing.BestTimeMs):
+		// Override stands until a strictly faster official swim supersedes it.
 		return nil
 	case best == nil && existing == nil:
 		return nil
@@ -744,6 +754,7 @@ func (s *Service) recomputeBestTimeLocked(orgID, actorID, swimmerID string, dist
 	} else {
 		recordedAt := best.CreatedAt
 		next.BestTimeMs, next.ResultID, next.RecordedAt = best.FinTimeMs, best.ID, &recordedAt
+		next.IsManualOverride = false
 	}
 	next.UpdatedAt = now
 	next.UpdatedBy = actorID
@@ -1215,12 +1226,30 @@ func (s *Service) EvaluateCutQualification(orgID string, principal *appmiddlewar
 		return nil, err
 	}
 
+	dir := s.snapshotDirectory(orgID)
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	ts, ok := s.standards[standardID]
 	if !ok || ts.OrgID != orgID || ts.DeletedAt != nil {
 		return nil, ErrStandardNotFound
+	}
+
+	ineligible := ""
+	if prof, known := dir.swimmers[swimmerID]; known {
+		if ts.Gender == "M" || ts.Gender == "F" {
+			if g := normalizeGender("", prof.Gender); g != "" && g != ts.Gender {
+				ineligible = "swimmer gender does not match the standard"
+			}
+		}
+		if ineligible == "" && (ts.AgeMin != nil || ts.AgeMax != nil) {
+			if age := AgeOn(prof.DateOfBirth, time.Now().UTC().Format("2006-01-02")); age != nil {
+				if (ts.AgeMin != nil && *age < *ts.AgeMin) || (ts.AgeMax != nil && *age > *ts.AgeMax) {
+					ineligible = "swimmer age is outside the standard's age range"
+				}
+			}
+		}
 	}
 
 	// O(1) lookup via secondary index.
@@ -1238,6 +1267,13 @@ func (s *Service) EvaluateCutQualification(orgID string, principal *appmiddlewar
 		CutTimeMs:     ts.TimeMs,
 	}
 
+	if ineligible != "" {
+		result.IneligibleReason = ineligible
+		if bt != nil {
+			result.BestTimeMs = bt.BestTimeMs
+		}
+		return result, nil
+	}
 	if bt != nil && bt.BestTimeMs != nil {
 		btMs := *bt.BestTimeMs
 		result.BestTimeMs = bt.BestTimeMs

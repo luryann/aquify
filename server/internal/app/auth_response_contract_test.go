@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
 func issuedAccessTokenFromResponse(t *testing.T, rr *httptest.ResponseRecorder) string {
@@ -275,6 +275,7 @@ func TestOIDCCallbackResponseOmitsTokenSecrets(t *testing.T) {
 		"state": state,
 	}))
 	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: "aquify_oidc_state", Value: nonce})
 	rr := httptest.NewRecorder()
 
 	router.ServeHTTP(rr, req)

@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dareaquatics/aquify/meetfiles"
-	"github.com/dareaquatics/aquify/meetfiles/cl2"
-	"github.com/dareaquatics/aquify/meetfiles/sdif"
+	"github.com/luryann/aquify/meetfiles"
+	"github.com/luryann/aquify/meetfiles/cl2"
+	"github.com/luryann/aquify/meetfiles/sdif"
 )
 
 func readFixture(t *testing.T, name string) []byte {

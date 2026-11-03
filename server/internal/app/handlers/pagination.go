@@ -3,7 +3,7 @@ package handlers
 import (
 	"net/http"
 
-	"github.com/dareaquatics/aquify/server/internal/app/httpx"
+	"github.com/luryann/aquify/server/internal/app/httpx"
 )
 
 const (

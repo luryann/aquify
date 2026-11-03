@@ -9,12 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/app/audit"
-	"github.com/dareaquatics/aquify/server/internal/app/httpx"
-	"github.com/dareaquatics/aquify/server/internal/app/members"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
-	"github.com/dareaquatics/aquify/server/internal/app/performance"
-	"github.com/dareaquatics/aquify/server/internal/app/usaswimming"
+	"github.com/luryann/aquify/server/internal/app/audit"
+	"github.com/luryann/aquify/server/internal/app/httpx"
+	"github.com/luryann/aquify/server/internal/app/members"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/app/performance"
+	"github.com/luryann/aquify/server/internal/app/usaswimming"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -240,7 +240,7 @@ func (h *USASwimmingHandlers) sync(w http.ResponseWriter, r *http.Request) {
 				ms := t.TimeMs
 				_, rb, err := h.perf.UpsertResultWithRecords(orgID, principal.UserID, principal, performance.UpsertResultInput{
 					SwimmerID: sw.ID, Distance: t.Distance, Stroke: stroke, Course: course,
-					Gender: resultGender("", sw.Gender), FinTimeMs: &ms, IsOfficial: true,
+					Gender: resultGender("", sw.Gender), FinTimeMs: &ms, IsOfficial: true, SwimDate: t.SwimDate,
 				})
 				if err != nil && !errors.Is(err, performance.ErrRecordDetection) {
 					res.Status, res.Error = "error", "could not record a time"

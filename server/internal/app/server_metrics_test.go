@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dareaquatics/aquify/server/internal/telemetry"
+	"github.com/luryann/aquify/server/internal/telemetry"
 )
 
 func TestPrometheusMetricsRouteDisabledByDefault(t *testing.T) {

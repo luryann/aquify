@@ -76,6 +76,7 @@ export default function MessagesInboxPage() {
 
   const selectedRef = useRef(selected)
   selectedRef.current = selected
+  const loadSeqRef = useRef(0)
 
   useEffect(() => {
     let cancelled = false
@@ -144,10 +145,13 @@ export default function MessagesInboxPage() {
     if (!orgId || !selected) return
     setThreadLoading(true)
     setThreadError(null)
+    const isCurrent = () =>
+      selectedRef.current?.householdId === selected.householdId && selectedRef.current?.swimmerId === selected.swimmerId
+    const seq = ++loadSeqRef.current
     fetchMessages(api, orgId, selected.householdId, selected.swimmerId)
-      .then(setMessages)
-      .catch((err) => setThreadError(uiErrorMessage(err, 'Couldn’t load this conversation. Try again.')))
-      .finally(() => setThreadLoading(false))
+      .then((m) => { if (seq === loadSeqRef.current && isCurrent()) setMessages(m) })
+      .catch((err) => { if (seq === loadSeqRef.current && isCurrent()) setThreadError(uiErrorMessage(err, 'Couldn’t load this conversation. Try again.')) })
+      .finally(() => { if (seq === loadSeqRef.current) setThreadLoading(false) })
   }, [api, orgId, selected])
 
   useEffect(() => {
@@ -250,7 +254,8 @@ export default function MessagesInboxPage() {
       // depend on it — refetch so the reaction shows immediately even
       // without Redis configured.
       const next = await fetchMessages(api, orgId, selected.householdId, selected.swimmerId)
-      setMessages(next)
+      const cur = selectedRef.current
+      if (cur && cur.householdId === selected.householdId && cur.swimmerId === selected.swimmerId) setMessages(next)
     } catch {
       // Leave state as-is; the user can retry.
     }

@@ -1,6 +1,6 @@
 # Keycloak Setup Operator Runbook
 
-This runbook covers Keycloak configuration for the DARE platform — from local
+This runbook covers Keycloak configuration for the aquify platform — from local
 development bootstrapping to production realm setup.
 
 ---
@@ -29,7 +29,7 @@ All local Keycloak configuration lives in `deploy/keycloak/`:
   service account with `realm-admin` rights, SMTP (Mailpit), password policy,
   brute-force protection, session timeouts, and audit event settings. There is
   no separate bootstrap script — the import file is the whole realm.
-- `themes/aquify/` — the branded login theme (DARE design language, bundled
+- `themes/aquify/` — the branded login theme (aquify design language, bundled
   fonts). Synced into the server's theme directory on every start.
 
 ### What is provisioned
@@ -48,14 +48,14 @@ All local Keycloak configuration lives in `deploy/keycloak/`:
 | Sessions | SSO idle 8h, max 24h; access tokens 15m; reset links valid 30m |
 
 Seed users (password: `ChangeMe123!`):
-- `owner@dare.local`, `admin@dare.local`, `billing@dare.local` — all three now
+- `owner@aquify.local`, `admin@aquify.local`, `billing@aquify.local` — all three now
   assigned the `admin` role (the `owner` and `billing` realm roles no longer
   exist)
-- `coach@dare.local`
-- `parent@dare.local`, `swimmer@dare.local`
+- `coach@aquify.local`
+- `parent@aquify.local`, `swimmer@aquify.local`
 
 Note: the legacy `owner`, `billing`, `read-only`, and `read_only_staff` roles
-have been removed. The former read-only staff seed user (`readonly@dare.local`)
+have been removed. The former read-only staff seed user (`readonly@aquify.local`)
 has been removed entirely.
 
 ### Start commands
@@ -122,13 +122,13 @@ contain dev secrets and permissive settings.
 
 2. **Create realm**:
    - Top-left dropdown → **Add realm**
-   - Name: `dare` (or `dare-staging` for staging)
+   - Name: `aquify` (or `aquify-staging` for staging)
    - Enabled: `ON`
    - Click **Create**
 
 3. **Realm settings**:
    - **General** tab:
-     - Display name: `DARE Swim Club`
+     - Display name: `aquify Swim Club`
      - Frontend URL: `https://auth.yourdomain.com` (must match public DNS)
    - **Login** tab:
      - User registration: `OFF`
@@ -163,9 +163,9 @@ correctly. Follow these steps to fix it.
 
 In the Keycloak admin console for your realm:
 
-1. Navigate to **Clients** → select your DARE client (e.g. `dare-api`)
+1. Navigate to **Clients** → select your aquify client (e.g. `aquify-api`)
 2. Click the **Client scopes** tab
-3. Click the dedicated scope for your client (e.g. `dare-api-dedicated`)
+3. Click the dedicated scope for your client (e.g. `aquify-api-dedicated`)
 4. Click **Add mapper** → **By configuration** → **User Attribute**
 5. Configure as follows:
 
@@ -185,14 +185,14 @@ In the Keycloak admin console for your realm:
 
 ### Set `org_id` on users
 
-Every Keycloak user in the DARE realm must have the `org_id` custom attribute
-set to the organization's ID. When the DARE API invites a user (via
+Every Keycloak user in the aquify realm must have the `org_id` custom attribute
+set to the organization's ID. When the aquify API invites a user (via
 `POST /api/v1/users/invite`), it sets this attribute automatically.
 
 To set it manually in the Keycloak UI:
 1. Navigate to **Users** → select user
 2. **Attributes** tab → click **Add attribute**
-3. Key: `org_id`, Value: `<your-org-id>` (e.g. `org-dare-aquatics`)
+3. Key: `org_id`, Value: `<your-org-id>` (e.g. `org-aquify`)
 4. Click **Save**
 
 ### Realm-level mapper (alternative: via realm scope)
@@ -208,7 +208,7 @@ If you want `org_id` included in tokens for all clients in the realm:
 
 ## 4. Realm Roles
 
-The DARE platform requires the following realm roles to exist. The API creates
+The aquify platform requires the following realm roles to exist. The API creates
 them automatically on startup via `EnsureRealmRolesExist` when Keycloak admin
 credentials are configured.
 
@@ -234,13 +234,13 @@ In the Keycloak admin console:
 
 ## 5. Client Configuration
 
-### Create the DARE API client
+### Create the aquify API client
 
 1. Navigate to **Clients** → **Create client**
 2. **General Settings**:
    - Client type: `OpenID Connect`
-   - Client ID: `dare-api` (use `dare-api-staging` for staging)
-   - Name: `DARE API`
+   - Client ID: `aquify-api` (use `aquify-api-staging` for staging)
+   - Name: `aquify API`
    - Click **Next**
 3. **Capability config**:
    - Client authentication: `ON` (confidential client)
@@ -258,10 +258,10 @@ In the Keycloak admin console:
 
 ### Create the admin service account client
 
-For the DARE Admin REST API client (used by `KEYCLOAK_ADMIN_CLIENT_ID`):
+For the aquify Admin REST API client (used by `KEYCLOAK_ADMIN_CLIENT_ID`):
 
 1. Navigate to **Clients** → **Create client**
-2. Client ID: `dare-admin` (use `dare-admin-staging` for staging)
+2. Client ID: `aquify-admin` (use `aquify-admin-staging` for staging)
 3. Client authentication: `ON`
 4. Authentication flow: enable **Service accounts roles** only (no standard flow)
 5. Click **Save**
@@ -275,7 +275,7 @@ For the DARE Admin REST API client (used by `KEYCLOAK_ADMIN_CLIENT_ID`):
 
 ## 6. Valid Redirect URIs
 
-Configure redirect URIs on the DARE API client (**Settings** tab → **Valid redirect URIs**):
+Configure redirect URIs on the aquify API client (**Settings** tab → **Valid redirect URIs**):
 
 ### Production
 ```
@@ -319,7 +319,7 @@ After realm creation, provision the first admin account:
 5. **Role mappings** tab → assign realm role `admin`
 6. Send a password reset email or provide the temp password out-of-band
 
-### Option B: Via DARE invite API
+### Option B: Via aquify invite API
 
 Once the Keycloak admin client is configured and the API is running:
 
@@ -348,21 +348,21 @@ Full set of Keycloak-related environment variables:
 
 ```env
 # OIDC (authentication)
-OIDC_AUTHORIZE_URL=https://auth.yourdomain.com/realms/dare/protocol/openid-connect/auth
-OIDC_TOKEN_URL=https://auth.yourdomain.com/realms/dare/protocol/openid-connect/token
-OIDC_JWKS_URL=https://auth.yourdomain.com/realms/dare/protocol/openid-connect/certs
-OIDC_END_SESSION_URL=https://auth.yourdomain.com/realms/dare/protocol/openid-connect/logout
+OIDC_AUTHORIZE_URL=https://auth.yourdomain.com/realms/aquify/protocol/openid-connect/auth
+OIDC_TOKEN_URL=https://auth.yourdomain.com/realms/aquify/protocol/openid-connect/token
+OIDC_JWKS_URL=https://auth.yourdomain.com/realms/aquify/protocol/openid-connect/certs
+OIDC_END_SESSION_URL=https://auth.yourdomain.com/realms/aquify/protocol/openid-connect/logout
 OIDC_REDIRECT_URL=https://app.yourdomain.com/auth/callback
 OIDC_POST_LOGOUT_REDIRECT_URL=https://app.yourdomain.com/login
-OIDC_CLIENT_ID=dare-api
+OIDC_CLIENT_ID=aquify-api
 OIDC_CLIENT_SECRET=<client-secret-from-keycloak>
-OIDC_EXPECTED_ISSUER=https://auth.yourdomain.com/realms/dare
+OIDC_EXPECTED_ISSUER=https://auth.yourdomain.com/realms/aquify
 OIDC_STATE_SIGNING_KEY=<random-32-byte-hex>
 
 # Keycloak Admin API (user management)
 KEYCLOAK_ADMIN_URL=https://auth.yourdomain.com
-KEYCLOAK_REALM=dare
-KEYCLOAK_ADMIN_CLIENT_ID=dare-admin
+KEYCLOAK_REALM=aquify
+KEYCLOAK_ADMIN_CLIENT_ID=aquify-admin
 KEYCLOAK_ADMIN_CLIENT_SECRET=<admin-client-secret-from-keycloak>
 
 # Security
@@ -450,14 +450,14 @@ set or the admin service account lacks `manage-realm` permission.
 **Fix**: Set `OIDC_EXPECTED_ISSUER` to exactly the value Keycloak uses for the
 realm issuer. You can find it at:
 ```
-curl https://auth.yourdomain.com/realms/dare/.well-known/openid-configuration | jq .issuer
+curl https://auth.yourdomain.com/realms/aquify/.well-known/openid-configuration | jq .issuer
 ```
 
 ---
 
 ### Token verification fails after Keycloak key rotation
 
-Keycloak rotates signing keys periodically. The DARE API caches JWKS for 5
+Keycloak rotates signing keys periodically. The aquify API caches JWKS for 5
 minutes. If tokens fail to verify immediately after a key rotation:
 1. Wait up to 5 minutes for the JWKS cache to expire
 2. Or restart the API server to force an immediate JWKS refresh

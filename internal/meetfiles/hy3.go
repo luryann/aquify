@@ -73,6 +73,9 @@ func ReadHY3(filename string, data []byte) HY3IngestResult {
 
 	var budget int64
 	for _, f := range r.File {
+		if isZipJunkEntry(f.Name) {
+			continue
+		}
 		lower := strings.ToLower(f.Name)
 		isParseable := strings.HasSuffix(lower, ".sd3") || strings.HasSuffix(lower, ".cl2")
 		if !isParseable {

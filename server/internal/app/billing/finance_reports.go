@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
 // ─── Report types ────────────────────────────────────────────────────────────
@@ -160,6 +160,37 @@ func isOpenInvoice(inv *Invoice) bool {
 	return (inv.Status == "issued" || inv.Status == "partially_paid") && inv.AmountDueCents > 0
 }
 
+// agingOutstandingAt returns the invoice balance as it stood at the end of
+// asOf: zero if not yet issued, and current due plus payments made later.
+func agingOutstandingAt(s *Service, inv *Invoice, asOf time.Time) int {
+	if inv.IssuedAt == nil {
+		return 0
+	}
+	if dateOnly(*inv.IssuedAt).After(asOf) {
+		return 0
+	}
+	switch inv.Status {
+	case "issued", "partially_paid":
+	case "paid":
+	default:
+		return 0
+	}
+	due := inv.AmountDueCents
+	if inv.Status == "paid" {
+		due = 0
+	}
+	cutoff := asOf.AddDate(0, 0, 1)
+	for _, p := range s.payments[inv.ID] {
+		if p.Status == "succeeded" && p.PaidAt != nil && !p.PaidAt.Before(cutoff) {
+			due += p.AmountCents
+		}
+	}
+	if due > inv.TotalCents {
+		due = inv.TotalCents
+	}
+	return due
+}
+
 // AgingReport ages open receivables as of asOf (admin only).
 func (s *Service) AgingReport(orgID string, principal *appmiddleware.Principal, asOf time.Time) (*AgingReport, error) {
 	if err := s.requireAdmin(principal); err != nil {
@@ -178,7 +209,11 @@ func (s *Service) AgingReport(orgID string, principal *appmiddleware.Principal, 
 	rows := map[string]*AgingRow{}
 	report := &AgingReport{AsOf: fmtDate(asOf), Rows: []AgingRow{}, GeneratedAt: time.Now().UTC()}
 	for _, inv := range s.invoices {
-		if inv.OrgID != orgID || !isOpenInvoice(inv) {
+		if inv.OrgID != orgID {
+			continue
+		}
+		outstanding := agingOutstandingAt(s, inv, asOf)
+		if outstanding <= 0 {
 			continue
 		}
 		ref := inv.DueDate
@@ -194,8 +229,8 @@ func (s *Service) AgingReport(orgID string, principal *appmiddleware.Principal, 
 			row = &AgingRow{HouseholdID: inv.HouseholdID, HouseholdName: nameOr(names, inv.HouseholdID)}
 			rows[inv.HouseholdID] = row
 		}
-		row.add(days, inv.AmountDueCents)
-		report.Totals.add(days, inv.AmountDueCents)
+		row.add(days, outstanding)
+		report.Totals.add(days, outstanding)
 		row.InvoiceCount++
 		if ref != "" && (row.OldestDueDate == "" || ref < row.OldestDueDate) {
 			row.OldestDueDate = ref

@@ -8,7 +8,7 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/dareaquatics/aquify/server/internal/migration"
+	"github.com/luryann/aquify/server/internal/migration"
 )
 
 func main() {

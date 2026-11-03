@@ -11,7 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
 // ManualCreditInput adds (credit) or removes (debit) household account credit.
@@ -230,6 +230,9 @@ func (s *Service) applyCreditAmountLocked(ctx context.Context, inv *Invoice, amo
 			if err := upsertPayment(ctx, tx, payment); err != nil {
 				return err
 			}
+			if err := lockInvoiceFresh(ctx, tx, inv); err != nil {
+				return err
+			}
 			if err := upsertInvoice(ctx, tx, &updated); err != nil {
 				return err
 			}
@@ -258,9 +261,11 @@ func (s *Service) applyCreditAmountLocked(ctx context.Context, inv *Invoice, amo
 }
 
 // refreshLocked re-reads canonical DB state for cross-instance finance reads.
+// No-op in in-memory mode and inside a staged transaction (which has already
+// loaded canonical state under the invoice row lock).
 // Must be called with s.mu held (write).
 func (s *Service) refreshLocked(ctx context.Context) error {
-	if s.repo == nil {
+	if s.repo == nil || s.repo.tx != nil {
 		return nil
 	}
 	if err := s.reloadLocked(ctx); err != nil {
@@ -375,13 +380,17 @@ func (s *Service) AddManualCredit(orgID, actorID string, principal *appmiddlewar
 // RefundToCredit refunds part of a payment into household account credit
 // (no money leaves the club). Admin only.
 func (s *Service) RefundToCredit(orgID, actorID string, principal *appmiddleware.Principal, invoiceID string, input CreateRefundInput) (*Refund, *LedgerEvent, error) {
-	s.mu.RLock()
+	s.mu.Lock()
+	if err := s.refreshLocked(context.Background()); err != nil {
+		s.mu.Unlock()
+		return nil, nil, err
+	}
 	inv, ok := s.invoices[invoiceID]
 	householdID := ""
 	if ok && inv.OrgID == orgID {
 		householdID = inv.HouseholdID
 	}
-	s.mu.RUnlock()
+	s.mu.Unlock()
 	if !ok {
 		if err := s.requireAdmin(principal); err != nil {
 			return nil, nil, err

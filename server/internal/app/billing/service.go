@@ -31,7 +31,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/dareaquatics/aquify/server/internal/dbutil"
+	"github.com/luryann/aquify/server/internal/dbutil"
 	"log/slog"
 	"slices"
 	"sort"
@@ -42,7 +42,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
 // ─── Sentinel errors ──────────────────────────────────────────────────────────
@@ -373,6 +373,14 @@ func NewServiceWithPool(pool *pgxpool.Pool) *Service {
 		slog.Error("billing: failed to load from DB", "err", err)
 	}
 	return s
+}
+
+// Refresh reloads the cache from Postgres (no-op in in-memory mode) so
+// snapshot readers observe invoices written by another instance.
+func (s *Service) Refresh(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.refreshLocked(ctx)
 }
 
 func (s *Service) loadFromDB(ctx context.Context) error {
@@ -747,6 +755,9 @@ func (s *Service) CreateInvoice(orgID, actorID string, principal *appmiddleware.
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.refreshLocked(context.Background()); err != nil {
+		return nil, err
+	}
 
 	key := invoiceNumKey(orgID, input.InvoiceNumber)
 	if s.invoiceNums[key] {
@@ -795,11 +806,11 @@ func (s *Service) InvoicesByExternalRef(orgID string, principal *appmiddleware.P
 	if ref == "" {
 		return nil, nil
 	}
-	if err := s.refreshForRead(); err != nil {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.refreshLocked(context.Background()); err != nil {
 		return nil, err
 	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
 	var out []*Invoice
 	for _, inv := range s.invoices {
 		if inv.OrgID == orgID && inv.ExternalRef == ref {
@@ -818,8 +829,11 @@ func (s *Service) GetInvoice(orgID string, principal *appmiddleware.Principal, i
 		return nil, err
 	}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.refreshLocked(context.Background()); err != nil {
+		return nil, err
+	}
 
 	inv, ok := s.invoices[invoiceID]
 	if !ok || inv.OrgID != orgID {
@@ -850,8 +864,11 @@ func (s *Service) ListInvoices(orgID string, principal *appmiddleware.Principal,
 		filters.HouseholdID = scopedHouseholdID
 	}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.refreshLocked(context.Background()); err != nil {
+		return nil, err
+	}
 
 	var out []*Invoice
 	for _, inv := range s.invoices {
@@ -886,6 +903,26 @@ func (s *Service) AddInvoiceItem(orgID, actorID string, principal *appmiddleware
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// Run against the invoice row lock so a concurrent instance cannot be
+	// overwritten by a stale cached copy.
+	if s.repo != nil && s.repo.tx == nil {
+		var added *InvoiceItem
+		err := s.stripeTransactionLocked(orgID, invoiceID, func(staged *Service) error {
+			var err error
+			added, err = staged.AddInvoiceItem(orgID, actorID, principal, invoiceID, input)
+			return err
+		})
+		if err != nil {
+			return nil, err
+		}
+		return added, nil
+	}
+	if s.repo == nil || s.repo.tx == nil {
+		if err := s.refreshLocked(context.Background()); err != nil {
+			return nil, err
+		}
+	}
 
 	inv, ok := s.invoices[invoiceID]
 	if !ok || inv.OrgID != orgID {
@@ -1002,8 +1039,11 @@ func (s *Service) ListInvoiceItems(orgID string, principal *appmiddleware.Princi
 		return nil, err
 	}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.refreshLocked(context.Background()); err != nil {
+		return nil, err
+	}
 
 	inv, ok := s.invoices[invoiceID]
 	if !ok || inv.OrgID != orgID {
@@ -1032,6 +1072,19 @@ func (s *Service) IssueInvoice(orgID, actorID string, principal *appmiddleware.P
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// With Postgres, mutate under the invoice row lock against freshly loaded
+	// state so a concurrent payment on another instance is never overwritten.
+	if s.repo != nil && s.repo.tx == nil {
+		return stripeTransactionResult(s, orgID, invoiceID, func(staged *Service) (*Invoice, *LedgerEvent, error) {
+			return staged.IssueInvoice(orgID, actorID, principal, invoiceID)
+		})
+	}
+	if s.repo == nil {
+		if err := s.refreshLocked(context.Background()); err != nil {
+			return nil, nil, err
+		}
+	}
 
 	inv, ok := s.invoices[invoiceID]
 	if !ok || inv.OrgID != orgID {
@@ -1080,6 +1133,19 @@ func (s *Service) VoidInvoice(orgID, actorID string, principal *appmiddleware.Pr
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// With Postgres, mutate under the invoice row lock against freshly loaded
+	// state so a concurrent payment on another instance is never overwritten.
+	if s.repo != nil && s.repo.tx == nil {
+		return stripeTransactionResult(s, orgID, invoiceID, func(staged *Service) (*Invoice, *LedgerEvent, error) {
+			return staged.VoidInvoice(orgID, actorID, principal, invoiceID)
+		})
+	}
+	if s.repo == nil {
+		if err := s.refreshLocked(context.Background()); err != nil {
+			return nil, nil, err
+		}
+	}
 
 	inv, ok := s.invoices[invoiceID]
 	if !ok || inv.OrgID != orgID {
@@ -1131,6 +1197,19 @@ func (s *Service) WriteOffInvoice(orgID, actorID string, principal *appmiddlewar
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// With Postgres, mutate under the invoice row lock against freshly loaded
+	// state so a concurrent payment on another instance is never overwritten.
+	if s.repo != nil && s.repo.tx == nil {
+		return stripeTransactionResult(s, orgID, invoiceID, func(staged *Service) (*Invoice, *LedgerEvent, error) {
+			return staged.WriteOffInvoice(orgID, actorID, principal, invoiceID)
+		})
+	}
+	if s.repo == nil {
+		if err := s.refreshLocked(context.Background()); err != nil {
+			return nil, nil, err
+		}
+	}
 
 	inv, ok := s.invoices[invoiceID]
 	if !ok || inv.OrgID != orgID {
@@ -1279,8 +1358,11 @@ func (s *Service) ListPayments(orgID string, principal *appmiddleware.Principal,
 		return nil, err
 	}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.refreshLocked(context.Background()); err != nil {
+		return nil, err
+	}
 
 	inv, ok := s.invoices[invoiceID]
 	if !ok || inv.OrgID != orgID {
@@ -1305,8 +1387,11 @@ func (s *Service) ListPaymentsForOrg(orgID string, principal *appmiddleware.Prin
 		return nil, err
 	}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.refreshLocked(context.Background()); err != nil {
+		return nil, err
+	}
 
 	scopedHouseholdID, parentScoped := s.parentHouseholdScope(principal)
 	if parentScoped && scopedHouseholdID == "" {
@@ -1354,8 +1439,11 @@ func (s *Service) GetPayment(orgID string, principal *appmiddleware.Principal, i
 		return nil, err
 	}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.refreshLocked(context.Background()); err != nil {
+		return nil, err
+	}
 
 	inv, ok := s.invoices[invoiceID]
 	if !ok || inv.OrgID != orgID {
@@ -1381,8 +1469,11 @@ func (s *Service) GetHouseholdAutopayStatus(orgID string, principal *appmiddlewa
 		return nil, err
 	}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.refreshLocked(context.Background()); err != nil {
+		return nil, err
+	}
 
 	return s.buildAutopayStatusLocked(orgID, householdID, s.autopayProfiles[autopayProfileKey(orgID, householdID)]), nil
 }
@@ -1401,8 +1492,11 @@ func (s *Service) ListHouseholdAutopayStatuses(orgID string, principal *appmiddl
 		householdIDs = []string{scopedHouseholdID}
 	}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.refreshLocked(context.Background()); err != nil {
+		return nil, err
+	}
 
 	seen := make(map[string]struct{}, len(householdIDs))
 	normalized := make([]string, 0, len(householdIDs))
@@ -1475,6 +1569,9 @@ func (s *Service) UpsertHouseholdAutopay(orgID, actorID string, principal *appmi
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.refreshLocked(context.Background()); err != nil {
+		return nil, err
+	}
 
 	now := time.Now().UTC()
 	key := autopayProfileKey(orgID, householdID)
@@ -1509,6 +1606,9 @@ func (s *Service) OptOutHouseholdAutopay(orgID, actorID string, principal *appmi
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.refreshLocked(context.Background()); err != nil {
+		return nil, err
+	}
 
 	now := time.Now().UTC()
 	key := autopayProfileKey(orgID, householdID)
@@ -1556,8 +1656,11 @@ func (s *Service) ValidateRefundPreflight(orgID string, principal *appmiddleware
 		return nil, ErrRefundRequiresReason
 	}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.refreshLocked(context.Background()); err != nil {
+		return nil, err
+	}
 
 	inv, ok := s.invoices[invoiceID]
 	if !ok || inv.OrgID != orgID {
@@ -1623,6 +1726,17 @@ func (s *Service) CreateRefund(orgID, actorID string, principal *appmiddleware.P
 	}
 	if payment.Status != "succeeded" {
 		return nil, nil, ErrInvalidTransition
+	}
+
+	// A Stripe refund ID is recorded at most once: replays of the same
+	// provider refund (double submit) return the existing local record.
+	if input.StripeRefundID != "" {
+		for _, existing := range s.refunds[invoiceID] {
+			if existing.StripeRefundID == input.StripeRefundID {
+				cp := *existing
+				return &cp, nil, nil
+			}
+		}
 	}
 
 	alreadyRefunded := s.refundedForPaymentLocked(invoiceID, input.PaymentID)
@@ -1711,8 +1825,11 @@ func (s *Service) ListRefunds(orgID string, principal *appmiddleware.Principal, 
 		return nil, err
 	}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.refreshLocked(context.Background()); err != nil {
+		return nil, err
+	}
 
 	inv, ok := s.invoices[invoiceID]
 	if !ok || inv.OrgID != orgID {
@@ -1739,8 +1856,11 @@ func (s *Service) ListLedgerEvents(orgID string, principal *appmiddleware.Princi
 		return nil, err
 	}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.refreshLocked(context.Background()); err != nil {
+		return nil, err
+	}
 
 	var out []*LedgerEvent
 	for _, ev := range s.ledger {
@@ -1769,6 +1889,50 @@ func (s *Service) LedgerEvents() []*LedgerEvent {
 	out := make([]*LedgerEvent, len(s.ledger))
 	copy(out, s.ledger)
 	return out
+}
+
+// IntegritySnapshot refreshes billing state from the database (when DB-backed)
+// and returns invoices, items, payments, refunds and ledger events for the org
+// taken under a single lock so they are mutually consistent.
+func (s *Service) IntegritySnapshot(ctx context.Context, orgID string) ([]Invoice, []InvoiceItem, []Payment, []Refund, []LedgerEvent, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.refreshLocked(ctx); err != nil {
+		return nil, nil, nil, nil, nil, err
+	}
+	var (
+		invs []Invoice
+		its  []InvoiceItem
+		pays []Payment
+		refs []Refund
+		led  []LedgerEvent
+	)
+	for _, v := range s.invoices {
+		if v.OrgID == orgID {
+			invs = append(invs, *v)
+		}
+	}
+	for _, v := range s.itemsByID {
+		if v.OrgID == orgID {
+			its = append(its, *v)
+		}
+	}
+	for _, v := range s.paymentsByID {
+		if v.OrgID == orgID {
+			pays = append(pays, *v)
+		}
+	}
+	for _, v := range s.refundsByID {
+		if v.OrgID == orgID {
+			refs = append(refs, *v)
+		}
+	}
+	for _, v := range s.ledger {
+		if v.OrgID == orgID {
+			led = append(led, *v)
+		}
+	}
+	return invs, its, pays, refs, led, nil
 }
 
 // SnapshotInvoices returns a copy of all invoices for the given org.
@@ -2188,6 +2352,9 @@ func (s *Service) rebuildStripeCreditIndexLocked() {
 func (s *Service) HandleStripePaymentIntentFailed(paymentIntentID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.refreshLocked(context.Background()); err != nil {
+		return err
+	}
 
 	payment, ok := s.stripeIntentIndex[paymentIntentID]
 	if !ok || payment.Status != "pending" {
@@ -2366,8 +2533,11 @@ func (s *Service) GetReconciliationReport(
 		return nil, err
 	}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.refreshLocked(context.Background()); err != nil {
+		return nil, err
+	}
 
 	// Sum ledger events: payment_succeeded events for Stripe method payments.
 	ledgerTotal := 0

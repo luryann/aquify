@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	appopenapi "github.com/dareaquatics/aquify/server/internal/openapi"
+	appopenapi "github.com/luryann/aquify/server/internal/openapi"
 	"go.yaml.in/yaml/v2"
 )
 

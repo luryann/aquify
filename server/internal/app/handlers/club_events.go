@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/app/audit"
-	"github.com/dareaquatics/aquify/server/internal/app/events"
-	"github.com/dareaquatics/aquify/server/internal/app/httpx"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
-	"github.com/dareaquatics/aquify/server/internal/app/roster"
+	"github.com/luryann/aquify/server/internal/app/audit"
+	"github.com/luryann/aquify/server/internal/app/events"
+	"github.com/luryann/aquify/server/internal/app/httpx"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/app/roster"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
 )
@@ -212,6 +212,8 @@ func (h *ClubEventsHandlers) writeServiceError(w http.ResponseWriter, r *http.Re
 		httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Event not found.", nil)
 	case errors.Is(err, events.ErrRSVPModeLocked):
 		httpx.WriteError(w, r, http.StatusConflict, "rsvp_mode_locked", "RSVP mode cannot change after families have responded.", nil)
+	case errors.Is(err, events.ErrCapacityBelowYes):
+		httpx.WriteError(w, r, http.StatusConflict, "capacity_below_headcount", "Capacity cannot be lower than the confirmed headcount.", nil)
 	case errors.Is(err, events.ErrEventFull):
 		httpx.WriteError(w, r, http.StatusConflict, "event_full", "This event is at capacity.", nil)
 	case errors.Is(err, events.ErrRSVPClosed):
@@ -876,7 +878,7 @@ func ClubEventCalendarItem(e *events.Event) events.CalendarItem {
 		desc = strings.TrimSpace(desc + "\n\n" + line)
 	}
 	item := events.CalendarItem{
-		UID:         "club-event-" + e.ID + "@dare",
+		UID:         "club-event-" + e.ID + "@aquify",
 		Title:       e.Title,
 		Description: desc,
 		Location:    e.Location,

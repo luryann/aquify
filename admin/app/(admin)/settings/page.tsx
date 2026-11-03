@@ -99,11 +99,11 @@ export default function SettingsPage() {
         <form className="cols-3 u-mt-16px u-gap-16px" onSubmit={handleSaveTeam} style={{ alignItems: 'end' }}>
           <div>
             <label style={TEAM_LABEL_STYLE}>Team code</label>
-            <input aria-label="DARE" style={TEAM_INPUT_STYLE} value={teamForm.team_code} disabled={!canEditTeam || !teamLoaded} onChange={(e) => setTeamForm((f) => ({ ...f, team_code: e.target.value.toUpperCase() }))} placeholder="DARE" />
+            <input aria-label="aquify" style={TEAM_INPUT_STYLE} value={teamForm.team_code} disabled={!canEditTeam || !teamLoaded} onChange={(e) => setTeamForm((f) => ({ ...f, team_code: e.target.value.toUpperCase() }))} placeholder="aquify" />
           </div>
           <div>
             <label style={TEAM_LABEL_STYLE}>Team name</label>
-            <input aria-label="DARE Aquatics" style={TEAM_INPUT_STYLE} value={teamForm.team_name} disabled={!canEditTeam || !teamLoaded} onChange={(e) => setTeamForm((f) => ({ ...f, team_name: e.target.value }))} placeholder="DARE Aquatics" />
+            <input aria-label="aquify Aquatics" style={TEAM_INPUT_STYLE} value={teamForm.team_name} disabled={!canEditTeam || !teamLoaded} onChange={(e) => setTeamForm((f) => ({ ...f, team_name: e.target.value }))} placeholder="aquify Aquatics" />
           </div>
           <div>
             <label style={TEAM_LABEL_STYLE}>LSC Code</label>

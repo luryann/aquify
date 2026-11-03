@@ -8,7 +8,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-// Metrics holds all Prometheus metric instruments for the DARE platform.
+// Metrics holds all Prometheus metric instruments for the aquify platform.
 // Register is called once at startup; all handlers share the same instance.
 type Metrics struct {
 	registry *prometheus.Registry
@@ -36,14 +36,14 @@ func NewMetrics() *Metrics {
 		registry: reg,
 
 		HTTPRequestsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "dare",
+			Namespace: "aquify",
 			Subsystem: "http",
 			Name:      "requests_total",
 			Help:      "Total number of HTTP requests handled, labelled by method, route, and status code.",
 		}, []string{"method", "route", "status"}),
 
 		HTTPRequestDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Namespace: "dare",
+			Namespace: "aquify",
 			Subsystem: "http",
 			Name:      "request_duration_seconds",
 			Help:      "Histogram of HTTP request latencies in seconds.",
@@ -51,14 +51,14 @@ func NewMetrics() *Metrics {
 		}, []string{"method", "route"}),
 
 		JobExecutionsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "dare",
+			Namespace: "aquify",
 			Subsystem: "job",
 			Name:      "executions_total",
 			Help:      "Total number of background job executions, labelled by type and status (success|failure|dlq).",
 		}, []string{"type", "status"}),
 
 		JobDurationSeconds: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Namespace: "dare",
+			Namespace: "aquify",
 			Subsystem: "job",
 			Name:      "duration_seconds",
 			Help:      "Histogram of background job execution durations in seconds.",
@@ -66,14 +66,14 @@ func NewMetrics() *Metrics {
 		}, []string{"type"}),
 
 		ImportFilesTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "dare",
+			Namespace: "aquify",
 			Subsystem: "import",
 			Name:      "files_total",
 			Help:      "Total number of import files processed, labelled by status (success|failure|conflict).",
 		}, []string{"status"}),
 
 		WebhookProcessingLag: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Namespace: "dare",
+			Namespace: "aquify",
 			Subsystem: "webhook",
 			Name:      "processing_lag_seconds",
 			Help:      "Lag between Stripe webhook receipt and processing completion in seconds.",

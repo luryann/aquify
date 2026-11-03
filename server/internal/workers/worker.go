@@ -481,7 +481,7 @@ func (s *Server) processTask(ctx context.Context, it *internalTask) {
 	exec.Status = StatusFailed
 	exec.Err = err.Error()
 	s.metrics.RecordFailure(exec)
-	s.logger.Warn("job failed", "id", it.ID, "type", it.Type, "error", err, "retried", currentRetry, "max_retries", it.MaxRetries)
+	s.logger.Error("job failed", "id", it.ID, "task_type", it.Type, "queue", it.Queue, "error", err, "retried", currentRetry, "max_retries", it.MaxRetries)
 
 	// Atomically update Retried and capture values for retry/DLQ decision.
 	s.mu.Lock()

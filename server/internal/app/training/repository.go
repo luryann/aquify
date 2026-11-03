@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/dareaquatics/aquify/server/internal/dbutil"
+	"github.com/luryann/aquify/server/internal/dbutil"
 	"time"
 
 	"github.com/google/uuid"

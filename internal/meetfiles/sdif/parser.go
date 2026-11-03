@@ -22,9 +22,11 @@
 package sdif
 
 import (
+	"bytes"
 	"fmt"
+	"strings"
 
-	"github.com/dareaquatics/aquify/meetfiles"
+	"github.com/luryann/aquify/meetfiles"
 )
 
 // Parse parses an SD3/SDIF v3 file and returns a normalized ParseResult.
@@ -43,6 +45,7 @@ func Parse(data []byte) (*meetfiles.ParseResult, error) {
 	}
 
 	lineNumber := 0
+	data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))
 
 	// pendingRelay holds the current E0 relay being built until the next
 	// non-F0 record signals its end.
@@ -59,7 +62,7 @@ func Parse(data []byte) (*meetfiles.ParseResult, error) {
 		lineNumber++
 		line := raw
 
-		if len(line) < 2 {
+		if len(strings.TrimSpace(line)) < 2 {
 			// Blank or too-short line — skip silently.
 			continue
 		}

@@ -77,8 +77,9 @@ func TestDataExportStatusTransitions(t *testing.T) {
 	if processing.Status != "processing" {
 		t.Fatalf("processing status = %q, want processing", processing.Status)
 	}
-	if _, err := svc.MarkDataExportProcessing("org-a", req.ID); !errors.Is(err, ErrInvalidTransition) {
-		t.Fatalf("second MarkDataExportProcessing() error = %v, want %v", err, ErrInvalidTransition)
+	// A crashed worker leaves "processing"; the retry must be able to re-enter it.
+	if _, err := svc.MarkDataExportProcessing("org-a", req.ID); err != nil {
+		t.Fatalf("retry MarkDataExportProcessing() error = %v, want nil", err)
 	}
 
 	expiresAt := time.Now().UTC().Add(24 * time.Hour)
@@ -129,8 +130,9 @@ func TestDataDeletionStatusTransitions(t *testing.T) {
 	if processing.Status != "processing" {
 		t.Fatalf("processing status = %q, want processing", processing.Status)
 	}
-	if _, err := svc.MarkDataDeletionProcessing("org-a", req.ID); !errors.Is(err, ErrInvalidTransition) {
-		t.Fatalf("second MarkDataDeletionProcessing() error = %v, want %v", err, ErrInvalidTransition)
+	// A crashed worker leaves "processing"; the retry must be able to re-enter it.
+	if _, err := svc.MarkDataDeletionProcessing("org-a", req.ID); err != nil {
+		t.Fatalf("retry MarkDataDeletionProcessing() error = %v, want nil", err)
 	}
 
 	completed, err := svc.CompleteDataDeletion("org-a", req.ID, "completed by worker")

@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/dareaquatics/aquify/server/internal/dbutil"
+	"github.com/luryann/aquify/server/internal/dbutil"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -237,7 +237,7 @@ func (r *Repository) LoadSwimmerRefs(ctx context.Context) ([]swimmerRef, error) 
 
 func (r *Repository) LoadHouseholdRefs(ctx context.Context) ([]householdRef, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id::text, org_id::text
+		SELECT id::text, org_id::text, COALESCE(keycloak_user_id::text, '')
 		FROM households
 		WHERE deleted_at IS NULL`)
 	if err != nil {
@@ -245,7 +245,7 @@ func (r *Repository) LoadHouseholdRefs(ctx context.Context) ([]householdRef, err
 	}
 	return dbutil.CollectRows(rows, "groups: scan household ref", func(rows pgx.Rows) (householdRef, error) {
 		var household householdRef
-		err := rows.Scan(&household.ID, &household.OrgID)
+		err := rows.Scan(&household.ID, &household.OrgID, &household.KeycloakUserID)
 		return household, err
 	})
 }

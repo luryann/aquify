@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/app/attendance"
-	"github.com/dareaquatics/aquify/server/internal/app/audit"
-	"github.com/dareaquatics/aquify/server/internal/app/events"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
-	"github.com/dareaquatics/aquify/server/internal/app/roster"
-	"github.com/dareaquatics/aquify/server/internal/app/wellness"
+	"github.com/luryann/aquify/server/internal/app/attendance"
+	"github.com/luryann/aquify/server/internal/app/audit"
+	"github.com/luryann/aquify/server/internal/app/events"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/app/roster"
+	"github.com/luryann/aquify/server/internal/app/wellness"
 	"github.com/go-chi/chi/v5"
 )
 

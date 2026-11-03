@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/dareaquatics/aquify/server/internal/app/authn"
-	"github.com/dareaquatics/aquify/server/internal/app/meets"
-	"github.com/dareaquatics/aquify/server/internal/app/members"
-	"github.com/dareaquatics/aquify/server/internal/testutil"
+	"github.com/luryann/aquify/server/internal/app/authn"
+	"github.com/luryann/aquify/server/internal/app/meets"
+	"github.com/luryann/aquify/server/internal/app/members"
+	"github.com/luryann/aquify/server/internal/testutil"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 

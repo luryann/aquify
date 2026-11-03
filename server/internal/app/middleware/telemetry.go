@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/telemetry"
+	"github.com/luryann/aquify/server/internal/telemetry"
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"

@@ -4,14 +4,14 @@ import (
 	"context"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/app/comms"
-	"github.com/dareaquatics/aquify/server/internal/app/events"
-	"github.com/dareaquatics/aquify/server/internal/app/handlers"
-	"github.com/dareaquatics/aquify/server/internal/app/meets"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
-	"github.com/dareaquatics/aquify/server/internal/app/orgsettings"
-	"github.com/dareaquatics/aquify/server/internal/app/performance"
-	"github.com/dareaquatics/aquify/server/internal/keycloak"
+	"github.com/luryann/aquify/server/internal/app/comms"
+	"github.com/luryann/aquify/server/internal/app/events"
+	"github.com/luryann/aquify/server/internal/app/handlers"
+	"github.com/luryann/aquify/server/internal/app/meets"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/app/orgsettings"
+	"github.com/luryann/aquify/server/internal/app/performance"
+	"github.com/luryann/aquify/server/internal/keycloak"
 )
 
 // buildPublicSiteHandlers wires the unauthenticated team-site feed to the

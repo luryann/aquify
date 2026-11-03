@@ -170,6 +170,71 @@ func (s *Service) loadFromDB(ctx context.Context) error {
 	return nil
 }
 
+// syncExport refreshes one export request from Postgres so reads and
+// transitions observe changes made by another process (API vs worker).
+// Caller must NOT hold s.mu. No-op in in-memory mode.
+func (s *Service) syncExport(requestID string) error {
+	if s.repo == nil {
+		return nil
+	}
+	fresh, err := s.repo.GetDataExportRequest(context.Background(), requestID)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.syncExportLocked(requestID, fresh)
+	return nil
+}
+
+func (s *Service) syncExportLocked(requestID string, fresh *DataExportRequest) {
+	if fresh == nil {
+		delete(s.exports, requestID)
+		return
+	}
+	s.exports[requestID] = fresh
+}
+
+func (s *Service) syncDeletion(requestID string) error {
+	if s.repo == nil {
+		return nil
+	}
+	fresh, err := s.repo.GetDataDeletionRequest(context.Background(), requestID)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if fresh == nil {
+		delete(s.deletions, requestID)
+		return nil
+	}
+	s.deletions[requestID] = fresh
+	return nil
+}
+
+// reloadAll replaces the caches with the current Postgres state.
+func (s *Service) reloadAll() error {
+	if s.repo == nil {
+		return nil
+	}
+	exports, deletions, err := s.repo.LoadAll(context.Background())
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.exports = make(map[string]*DataExportRequest, len(exports))
+	for _, e := range exports {
+		s.exports[e.ID] = e
+	}
+	s.deletions = make(map[string]*DataDeletionRequest, len(deletions))
+	for _, d := range deletions {
+		s.deletions[d.ID] = d
+	}
+	return nil
+}
+
 func (s *Service) genID() string {
 	if s.repo != nil {
 		return uuid.New().String()
@@ -213,6 +278,9 @@ func (s *Service) CreateDataExportRequest(orgID, householdID, requestedBy string
 // GetDataExportRequest returns the export request identified by requestID.
 // Callers must enforce org-scope and ownership checks before calling.
 func (s *Service) GetDataExportRequest(orgID, requestID string) (*DataExportRequest, error) {
+	if err := s.syncExport(requestID); err != nil {
+		return nil, err
+	}
 	s.mu.RLock()
 	req, ok := s.exports[requestID]
 	s.mu.RUnlock()
@@ -226,6 +294,9 @@ func (s *Service) GetDataExportRequest(orgID, requestID string) (*DataExportRequ
 // ListDataExportRequests returns all export requests for an org (or a specific household).
 // Pass householdID="" to list all requests for the org.
 func (s *Service) ListDataExportRequests(orgID, householdID string) ([]DataExportRequest, error) {
+	if err := s.reloadAll(); err != nil {
+		return nil, err
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -249,7 +320,7 @@ func (s *Service) ListDataExportRequests(orgID, householdID string) ([]DataExpor
 }
 
 func (s *Service) MarkDataExportProcessing(orgID, requestID string) (*DataExportRequest, error) {
-	return s.transitionExport(orgID, requestID, []string{"pending", "failed"}, func(req *DataExportRequest, _ time.Time) {
+	return s.transitionExport(orgID, requestID, []string{"pending", "failed", "processing"}, func(req *DataExportRequest, _ time.Time) {
 		req.Status = "processing"
 	})
 }
@@ -263,8 +334,10 @@ func (s *Service) CompleteDataExport(orgID, requestID, downloadURL string, expir
 	})
 }
 
+// FailDataExport marks an export failed. "pending" is allowed so a request whose
+// job could not be enqueued does not linger as a permanently pending orphan.
 func (s *Service) FailDataExport(orgID, requestID string) (*DataExportRequest, error) {
-	return s.transitionExport(orgID, requestID, []string{"processing"}, func(req *DataExportRequest, _ time.Time) {
+	return s.transitionExport(orgID, requestID, []string{"pending", "processing"}, func(req *DataExportRequest, _ time.Time) {
 		req.Status = "failed"
 	})
 }
@@ -272,6 +345,9 @@ func (s *Service) FailDataExport(orgID, requestID string) (*DataExportRequest, e
 // transitionExport moves a data export request out of one of the allowed
 // statuses: it applies the change to a copy, persists it, then updates the cache.
 func (s *Service) transitionExport(orgID, requestID string, from []string, apply func(req *DataExportRequest, now time.Time)) (*DataExportRequest, error) {
+	if err := s.syncExport(requestID); err != nil {
+		return nil, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -327,6 +403,9 @@ func (s *Service) CreateDataDeletionRequest(orgID, householdID, requestedBy, rea
 
 // GetDataDeletionRequest returns the deletion request identified by requestID.
 func (s *Service) GetDataDeletionRequest(orgID, requestID string) (*DataDeletionRequest, error) {
+	if err := s.syncDeletion(requestID); err != nil {
+		return nil, err
+	}
 	s.mu.RLock()
 	req, ok := s.deletions[requestID]
 	s.mu.RUnlock()
@@ -340,6 +419,9 @@ func (s *Service) GetDataDeletionRequest(orgID, requestID string) (*DataDeletion
 // ListDataDeletionRequests returns all deletion requests for an org.
 // Pass householdID="" to list all.
 func (s *Service) ListDataDeletionRequests(orgID, householdID string) ([]DataDeletionRequest, error) {
+	if err := s.reloadAll(); err != nil {
+		return nil, err
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -392,7 +474,7 @@ func (s *Service) reviewDataDeletion(orgID, requestID, toStatus, reviewNotes str
 }
 
 func (s *Service) MarkDataDeletionProcessing(orgID, requestID string) (*DataDeletionRequest, error) {
-	return s.transitionDeletion(orgID, requestID, []string{"pending", "approved", "failed"}, func(req *DataDeletionRequest, _ time.Time) {
+	return s.transitionDeletion(orgID, requestID, []string{"pending", "approved", "failed", "processing"}, func(req *DataDeletionRequest, _ time.Time) {
 		req.Status = "processing"
 	})
 }
@@ -414,6 +496,9 @@ func (s *Service) FailDataDeletion(orgID, requestID, reviewNotes string) (*DataD
 
 // transitionDeletion is the data deletion counterpart of transitionExport.
 func (s *Service) transitionDeletion(orgID, requestID string, from []string, apply func(req *DataDeletionRequest, now time.Time)) (*DataDeletionRequest, error) {
+	if err := s.syncDeletion(requestID); err != nil {
+		return nil, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

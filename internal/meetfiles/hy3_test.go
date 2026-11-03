@@ -5,7 +5,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/dareaquatics/aquify/meetfiles"
+	"github.com/luryann/aquify/meetfiles"
 )
 
 // ─── ReadHY3: valid SD3 payload ───────────────────────────────────────────────
@@ -297,5 +297,20 @@ func TestReadHY3_ReportsTooLargeAndCorruptEntriesDistinctly(t *testing.T) {
 	got := meetfiles.ReadHY3("meet.hy3", damaged)
 	if got.Error == nil || got.Error.Code != meetfiles.ErrCodeMalformedRecord {
 		t.Fatalf("corrupt entry: error = %+v, want code %q", got.Error, meetfiles.ErrCodeMalformedRecord)
+	}
+}
+
+func TestReadHY3_IgnoresMacOSResourceForks(t *testing.T) {
+	archive := buildZIP(t, map[string][]byte{
+		"meet.sd3":              []byte("A0 real"),
+		"__MACOSX/._meet.sd3":   {0x00, 0x05, 0x16},
+		"sub/._other.cl2":       {0x00},
+	})
+	got := meetfiles.ReadHY3("meet.hy3", archive)
+	if got.Error != nil {
+		t.Fatalf("unexpected error: %v", got.Error)
+	}
+	if got.SelectedPayload == nil || got.SelectedPayload.Name != "meet.sd3" {
+		t.Fatalf("SelectedPayload = %+v, want meet.sd3", got.SelectedPayload)
 	}
 }

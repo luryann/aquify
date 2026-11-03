@@ -102,7 +102,7 @@ async function renderPortalPage(
           status: 'ok',
           user: {
             user_id: 'test-parent',
-            email: 'parent@dare.local',
+            email: 'parent@aquify.local',
             name: 'Test Parent',
             org_id: '00000000-0000-0000-0000-00000000a001',
             household_id: 'household_123',
@@ -116,7 +116,7 @@ async function renderPortalPage(
   })
   console.error = () => {}
 
-  localStorage.removeItem('dare:dev_token')
+  localStorage.removeItem('aquify:dev_token')
 
   const container = document.createElement('div')
   document.body.appendChild(container)

@@ -6,11 +6,11 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/dareaquatics/aquify/server/internal/app/audit"
-	"github.com/dareaquatics/aquify/server/internal/app/billing"
-	"github.com/dareaquatics/aquify/server/internal/app/httpx"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
-	stripelib "github.com/dareaquatics/aquify/server/internal/stripe"
+	"github.com/luryann/aquify/server/internal/app/audit"
+	"github.com/luryann/aquify/server/internal/app/billing"
+	"github.com/luryann/aquify/server/internal/app/httpx"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
+	stripelib "github.com/luryann/aquify/server/internal/stripe"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
 )
@@ -416,6 +416,18 @@ func (h *BillingHandlers) createRefund(w http.ResponseWriter, r *http.Request) {
 
 	refund, ledgerEv, err := h.service.CreateRefund(orgID, principal.UserID, principal, invoiceID, input)
 	if err != nil {
+		if stripeRefundIssued && errors.Is(err, billing.ErrRefundExceedsPayment) {
+			// The charge.refunded webhook recorded this refund before the
+			// admin request did; state is already correct. Audit the action.
+			slog.Default().Warn("stripe refund already recorded by webhook",
+				"org_id", orgID, "invoice_id", invoiceID, "stripe_refund_id", input.StripeRefundID)
+			if h.auditService != nil {
+				recordAudit(h.auditService, principal, orgID, audit.ActionBillingRefundCreate, "refund", input.StripeRefundID, nil, input,
+					map[string]string{"invoice_id": invoiceID, "reason": input.Reason, "recorded_by": "webhook"})
+			}
+			httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": "refund_recorded_by_webhook", "stripe_refund_id": input.StripeRefundID})
+			return
+		}
 		if stripeRefundIssued {
 			slog.Default().Error("stripe refund succeeded but local persistence failed",
 				"org_id", orgID,

@@ -27,7 +27,7 @@ Interpret creatively and make unexpected choices that feel genuinely designed fo
 
 ## Project Overview
 
-**DARE Platform** — a full-stack swim club operations platform intended to replace TeamUnify/SportsEngine Motion. Covers member/household management, meet scheduling and entries, CL2/SD3/ZIP file interoperability, performance tracking, billing (Stripe), communications, and admin reporting.
+**aquify Platform** — a full-stack swim club operations platform intended to replace TeamUnify/SportsEngine Motion. Covers member/household management, meet scheduling and entries, CL2/SD3/ZIP file interoperability, performance tracking, billing (Stripe), communications, and admin reporting.
 
 ## Common Development Commands
 
@@ -52,6 +52,11 @@ Interpret creatively and make unexpected choices that feel genuinely designed fo
 | Capture provider validation evidence | `make provider-validation-evidence API_BASE_URL=<url> AUTH_TOKEN=<token> ORG_ID=<org> EXPECT_STRIPE_WEBHOOK_EVENT_ID=<evt> CONFIRM_STRIPE_REFUND=true REFUND_INVOICE_ID=<invoice> REFUND_PAYMENT_ID=<payment> REFUND_AMOUNT_CENTS=<cents> POSTMARK_CAMPAIGN_ID=<campaign> CONFIRM_POSTMARK_SEND=true` |
 | Capture two-meet-cycle evidence | `make parallel-meet-cycle-evidence API_BASE_URL=<url> AUTH_TOKEN=<token> ORG_ID=<org> MEET_IDS=<id1>,<id2> NO_MANUAL_PATCHING_ATTESTATION=true` |
 | Capture post-launch stability evidence | `make stability-report-evidence API_BASE_URL=<url> AUTH_TOKEN=<token> ORG_ID=<org> STABILITY_WINDOW_LABEL=+24h NO_OPEN_P0_P1_ATTESTATION=true SUPPORT_INCIDENTS_FILE=/path/to/incidents.csv` |
+| Install native integrations into `.tools/` (no Docker) | `make integrations-install` |
+| Start native Postgres/Redis/MinIO/Mailpit/Keycloak | `make integrations-up` |
+| Stop native integrations | `make integrations-down` |
+| Native integrations status table | `make integrations-status` |
+| Apply migrations to native Postgres (goose) | `make integrations-migrate` |
 | Start local infra (Docker) | `make infra-up` |
 | Destroy local infra + volumes | `make infra-reset` |
 | Start local Keycloak (Windows, native) | `powershell -ExecutionPolicy Bypass -File scripts/start-keycloak-local.ps1` (add `-Reset` to wipe data + re-import realm) |
@@ -72,6 +77,7 @@ Interpret creatively and make unexpected choices that feel genuinely designed fo
 - Override in `.env.local` via `DATABASE_URL` if local auth differs.
 - `server/cmd/api/main.go` only auto-loads `.env.local` when `APP_ENV` is already explicitly set in the process environment to `development` or `local`. Staging/production/test modes must not rely on repo-local env files for config resolution.
 - Check connectivity: `pg_isready -h 127.0.0.1 -p 5432`
+- Native `.tools/` mode (no Docker/Homebrew): `scripts/integrations-local.sh {install|up|down|status|migrate}` (via `make integrations-*`) installs and runs Postgres 5432 (trust auth, data in `.tools/run/pgdata`), Redis 6379, MinIO 9000/9001 (built from source with repo-local Go; dl.min.io is gone), Mailpit 1025/8025, Keycloak 8180 (realm `aquify`), plus the Stripe CLI and goose. Logs in `.tools/run/logs/`, PIDs in `.tools/run/pids/`; `up` skips any service whose port is already listening and `down` stops by PID file. The header of the script lists the env vars the API needs.
 - MFA schema compatibility: older DBs may have a legacy `mfa_factors` shape (UUID ids, `secret_encrypted`) while authn code expects `totp_secret` + `backup_codes`; run latest migrations to reconcile before debugging MFA load warnings.
 - API startup now runs a repo-column schema validation pass after opening the DB pool; if startup logs `database schema validation failed`, apply the latest migrations before debugging repository load errors.
 - `APP_ENV` must now be set explicitly to one of `development`, `local`, `test`, `staging`, or `production`; typoed or missing values fail startup before other config checks.
@@ -133,8 +139,8 @@ HTTP handlers live in `server/internal/app/handlers/<domain>.go` and are thin: v
 - Admin fonts are bundled from local `@fontsource/*` packages; do not reintroduce `next/font/google` or direct Google Fonts URLs. `npm run check:offline-build` and the production `build`/`lint` scripts enforce that offline-safe constraint.
 - JSON request parsing for handler bodies is centralized in `server/internal/app/handlers/json.go`. Use `decodeJSONBody`, `decodeOptionalJSONBody`, or `decodeAndValidateJSON` instead of ad hoc `json.NewDecoder(r.Body)` so every route keeps the same 1 MiB cap, `DisallowUnknownFields`, and single-object enforcement.
 - Stripe webhook mutations load canonical database state under an invoice row lock and commit payment/refund, invoice, credit, and ledger writes in one transaction (`billing/stripe_transaction.go`). Treat `charge.amount_refunded` as cumulative; refund invoice payments first, then overpayment credit. Active webhook leases require a retry response, not a successful acknowledgement.
-- Admin `/api/v1/*` requests use the streaming route proxy in `admin/lib/api-proxy.ts`. Set server-only `API_INTERNAL_URL` at runtime (Compose uses `http://dare-api:8080`); do not restore a build-time rewrite target. Preserve cookies, CSRF headers, redirects, and multiple Set-Cookie headers.
-- API container probes run `/dare-api healthcheck http://localhost:8080/api/v1/health/live` without shell dependencies. Admin health is `/api/health`; all API health paths include `/api/v1`.
+- Admin `/api/v1/*` requests use the streaming route proxy in `admin/lib/api-proxy.ts`. Set server-only `API_INTERNAL_URL` at runtime (Compose uses `http://aquify-api:8080`); do not restore a build-time rewrite target. Preserve cookies, CSRF headers, redirects, and multiple Set-Cookie headers.
+- API container probes run `/aquify-api healthcheck http://localhost:8080/api/v1/health/live` without shell dependencies. Admin health is `/api/health`; all API health paths include `/api/v1`.
 - Stripe payment creation writes (`POST /api/v1/stripe/payment-intents` and `POST /api/v1/stripe/checkout-sessions`) now require an `Idempotency-Key` header and pass it through to the Stripe client; preserve that contract on any future client/UI changes so retries stay exactly-once.
 - Prometheus `/metrics` is no longer mounted on the main API router by default. Use `METRICS_ADDR` to start a dedicated metrics listener from `server/cmd/api/main.go`, and treat wildcard/non-dev bindings as an operational risk that must remain explicit.
 - Communications campaign sends (`POST /api/v1/email-campaigns/{campaignID}/send`) no longer accept caller-supplied recipient lists. Recipients are resolved server-side from org membership data based on the campaign audience (`all` or eligible `group` registrations), and old payloads should fail loudly rather than bypassing that policy.

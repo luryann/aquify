@@ -10,7 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/dareaquatics/aquify/server/internal/db"
+	"github.com/luryann/aquify/server/internal/db"
 )
 
 func main() {

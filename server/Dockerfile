@@ -12,7 +12,7 @@ FROM golang:1.26.10-alpine AS builder
 RUN apk add --no-cache git ca-certificates tzdata
 
 # Build context is the repository root (see .github/workflows/deploy-staging.yml):
-# server/go.mod replaces github.com/dareaquatics/aquify/meetfiles with
+# server/go.mod replaces github.com/luryann/aquify/meetfiles with
 # ../internal/meetfiles, so both trees must be laid out as in the repo.
 # server/Dockerfile.dockerignore keeps the context to just those two trees.
 WORKDIR /src
@@ -36,7 +36,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -ldflags="-s -w \
       -X main.BuildSHA=${BUILD_SHA} \
       -X main.BuildRef=${BUILD_REF}" \
-    -o /dare-api \
+    -o /aquify-api \
     ./cmd/api
 
 # ---------------------------------------------------------------------------
@@ -50,7 +50,7 @@ FROM gcr.io/distroless/static-debian12
 COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
-COPY --from=builder /dare-api /dare-api
+COPY --from=builder /aquify-api /aquify-api
 
 # Run as the built-in nonroot user (uid 65532) — never root
 USER nonroot:nonroot
@@ -59,4 +59,4 @@ EXPOSE 8080
 
 # Default entrypoint: run the API server.
 # Pass "worker" as CMD to start the background worker process instead.
-ENTRYPOINT ["/dare-api"]
+ENTRYPOINT ["/aquify-api"]

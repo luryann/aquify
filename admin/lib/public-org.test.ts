@@ -6,7 +6,7 @@ import { resolvePublicOrg } from './public-org.ts'
 
 test('resolvePublicOrg prefers an explicit org_id query parameter', () => {
   const resolved = resolvePublicOrg({
-    searchParams: new URLSearchParams('org_id=org-query&club_code=dare2026'),
+    searchParams: new URLSearchParams('org_id=org-query&club_code=AQUIFY2026'),
     host: 'portal.example.com',
     clubCode: 'ignored',
   })
@@ -40,18 +40,18 @@ test('resolvePublicOrg does not resolve the local dev org in a production build'
 
 test('resolvePublicOrg resolves club code query parameters to tenant org ids', () => {
   const resolved = resolvePublicOrg({
-    searchParams: new URLSearchParams('club_code=dare2026'),
+    searchParams: new URLSearchParams('club_code=AQUIFY2026'),
     host: 'portal.example.com',
     config: {
       clubCodeOrgMap: {
-        dare2026: 'org-dare',
+        AQUIFY2026: 'org-aquify',
       },
     },
   })
 
   assert.deepEqual(resolved, {
-    orgId: 'org-dare',
-    clubCode: 'DARE2026',
+    orgId: 'org-aquify',
+    clubCode: 'AQUIFY2026',
     source: 'query_club_code',
   })
 })

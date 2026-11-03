@@ -204,7 +204,7 @@ export function RolesPanel() {
             <button type="button"
               onClick={handleAssignRole}
               disabled={submitting || !form.target_user_id.trim() || !form.reason.trim()}
-              className="u-p-8px-16px u-fs-fs-base u-fw-600 u-ff-font-body" style={{ background: submitting || !form.target_user_id.trim() || !form.reason.trim() ? 'var(--bg-elevated)' : 'var(--accent)', border: submitting || !form.target_user_id.trim() || !form.reason.trim() ? '1px solid var(--border)' : 'none', borderRadius: '8px', color: submitting || !form.target_user_id.trim() || !form.reason.trim() ? 'var(--text-muted)' : '#fff', cursor: submitting || !form.target_user_id.trim() || !form.reason.trim() ? 'not-allowed' : 'pointer' }}
+              className="btn btn-primary"
             >
               {submitting ? 'Assigning…' : 'Assign Role'}
             </button>

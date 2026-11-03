@@ -1,8 +1,8 @@
-# DARE Platform — Domain and DNS Plan
+# aquify Platform — Domain and DNS Plan
 
 ## Overview
 
-The DARE platform uses `dare.club` as its primary domain, fronted entirely by Cloudflare (proxied). All traffic terminates TLS at Cloudflare and is re-encrypted to the origin VPS using a Cloudflare Origin Certificate installed on the VPS nginx instance.
+The aquify platform uses `aquify.club` as its primary domain, fronted entirely by Cloudflare (proxied). All traffic terminates TLS at Cloudflare and is re-encrypted to the origin VPS using a Cloudflare Origin Certificate installed on the VPS nginx instance.
 
 ---
 
@@ -10,13 +10,13 @@ The DARE platform uses `dare.club` as its primary domain, fronted entirely by Cl
 
 | Subdomain | Purpose | Origin Target |
 |---|---|---|
-| `dare.club` | Root — 301 redirect to `www.dare.club` | Cloudflare redirect rule (no origin hit) |
-| `www.dare.club` | Marketing / landing page (static) | VPS nginx, port 80 (internal) |
-| `admin.dare.club` | Next.js admin portal | VPS nginx → container port 3000 |
-| `api.dare.club` | Go API backend | VPS nginx → container port 8080 |
-| `status.dare.club` | Uptime Kuma status page | VPS nginx → container port 3001 |
-| `staging-admin.dare.club` | Staging admin portal | VPS nginx → container port 3100 |
-| `staging-api.dare.club` | Staging API backend | VPS nginx → container port 8180 |
+| `aquify.club` | Root — 301 redirect to `www.aquify.club` | Cloudflare redirect rule (no origin hit) |
+| `www.aquify.club` | Marketing / landing page (static) | VPS nginx, port 80 (internal) |
+| `admin.aquify.club` | Next.js admin portal | VPS nginx → container port 3000 |
+| `api.aquify.club` | Go API backend | VPS nginx → container port 8080 |
+| `status.aquify.club` | Uptime Kuma status page | VPS nginx → container port 3001 |
+| `staging-admin.aquify.club` | Staging admin portal | VPS nginx → container port 3100 |
+| `staging-api.aquify.club` | Staging API backend | VPS nginx → container port 8180 |
 
 ---
 
@@ -26,20 +26,20 @@ All records use Cloudflare proxy (orange cloud). Replace `203.0.113.10` with the
 
 ```
 # Production
-dare.club           A       203.0.113.10    Proxied
-www.dare.club       A       203.0.113.10    Proxied
-admin.dare.club     A       203.0.113.10    Proxied
-api.dare.club       A       203.0.113.10    Proxied
-status.dare.club    A       203.0.113.10    Proxied
+aquify.club           A       203.0.113.10    Proxied
+www.aquify.club       A       203.0.113.10    Proxied
+admin.aquify.club     A       203.0.113.10    Proxied
+api.aquify.club       A       203.0.113.10    Proxied
+status.aquify.club    A       203.0.113.10    Proxied
 
 # Staging
-staging-admin.dare.club    A    203.0.113.10    Proxied
-staging-api.dare.club      A    203.0.113.10    Proxied
+staging-admin.aquify.club    A    203.0.113.10    Proxied
+staging-api.aquify.club      A    203.0.113.10    Proxied
 
-# Mail (if sending from dare.club domain — adjust to Postmark values)
+# Mail (if sending from aquify.club domain — adjust to Postmark values)
 # Postmark will provide SPF, DKIM, and DMARC values
 # Example:
-pm-bounces.dare.club       CNAME   pm.mtasv.net    DNS-only (not proxied)
+pm-bounces.aquify.club       CNAME   pm.mtasv.net    DNS-only (not proxied)
 ```
 
 > **Note:** MX and mail-related records must NOT be proxied through Cloudflare — set these to DNS-only.
@@ -57,13 +57,13 @@ Set **SSL/TLS encryption mode** to **Full (strict)** in the Cloudflare dashboard
 
 ### Origin Certificate
 
-Generate a Cloudflare-issued origin certificate covering `dare.club` and `*.dare.club` (15-year validity is fine for a self-managed VPS).
+Generate a Cloudflare-issued origin certificate covering `aquify.club` and `*.aquify.club` (15-year validity is fine for a self-managed VPS).
 
 Install the certificate on the VPS:
 
 ```
-/etc/ssl/certs/dare-club-cloudflare-origin.pem    # certificate
-/etc/ssl/private/dare-club-cloudflare-origin.key  # private key
+/etc/ssl/certs/aquify-club-cloudflare-origin.pem    # certificate
+/etc/ssl/private/aquify-club-cloudflare-origin.key  # private key
 ```
 
 Reference these paths in the nginx `ssl_certificate` and `ssl_certificate_key` directives. Because the Cloudflare Origin CA is only trusted by Cloudflare's edge, do NOT rely on it for non-proxied traffic.
@@ -78,7 +78,7 @@ includeSubDomains: yes
 preload: yes
 ```
 
-After enabling preload, submit `dare.club` to https://hstspreload.org once DNS is stable.
+After enabling preload, submit `aquify.club` to https://hstspreload.org once DNS is stable.
 
 ### Always Use HTTPS
 
@@ -132,15 +132,15 @@ if ($cloudflare_ip = 0) {
 }
 ```
 
-### Example: api.dare.club
+### Example: api.aquify.club
 
 ```nginx
 server {
     listen 443 ssl http2;
-    server_name api.dare.club;
+    server_name api.aquify.club;
 
-    ssl_certificate     /etc/ssl/certs/dare-club-cloudflare-origin.pem;
-    ssl_certificate_key /etc/ssl/private/dare-club-cloudflare-origin.key;
+    ssl_certificate     /etc/ssl/certs/aquify-club-cloudflare-origin.pem;
+    ssl_certificate_key /etc/ssl/private/aquify-club-cloudflare-origin.key;
     ssl_protocols       TLSv1.2 TLSv1.3;
 
     # Restore real client IP from Cloudflare header
@@ -157,7 +157,7 @@ server {
 }
 ```
 
-Apply the same pattern for `admin.dare.club` (→ 3000), `status.dare.club` (→ 3001), staging variants, etc.
+Apply the same pattern for `admin.aquify.club` (→ 3000), `status.aquify.club` (→ 3001), staging variants, etc.
 
 ---
 
@@ -166,8 +166,8 @@ Apply the same pattern for `admin.dare.club` (→ 3000), `status.dare.club` (→
 Configure a Cloudflare **Redirect Rule** (Rules → Redirect Rules):
 
 ```
-When: Hostname equals dare.club
-Then: Dynamic redirect → https://www.dare.club${uri}  (301)
+When: Hostname equals aquify.club
+Then: Dynamic redirect → https://www.aquify.club${uri}  (301)
 ```
 
 This avoids a DNS round-trip and works without an origin A record for the apex.
@@ -179,8 +179,8 @@ This avoids a DNS round-trip and works without an origin A record for the apex.
 Staging subdomains resolve to the same VPS IP but are routed to different container ports by nginx. See `staging-environment-guide.md` for full staging configuration.
 
 ```
-staging-api.dare.club   → VPS port 8180
-staging-admin.dare.club → VPS port 3100
+staging-api.aquify.club   → VPS port 8180
+staging-admin.aquify.club → VPS port 3100
 ```
 
 Staging records should be proxied through Cloudflare (orange cloud) so they also benefit from WAF protection.
@@ -199,7 +199,7 @@ For the current architecture (full Cloudflare proxy), the Cloudflare Origin Cert
 Certbot setup if needed:
 
 ```bash
-certbot certonly --nginx -d dare.club -d '*.dare.club' \
+certbot certonly --nginx -d aquify.club -d '*.aquify.club' \
     --dns-cloudflare --dns-cloudflare-credentials ~/.secrets/cloudflare.ini
 ```
 
@@ -207,9 +207,9 @@ certbot certonly --nginx -d dare.club -d '*.dare.club' \
 
 ## Checklist: Going Live
 
-- [ ] Register `dare.club` and delegate nameservers to Cloudflare
+- [ ] Register `aquify.club` and delegate nameservers to Cloudflare
 - [ ] Set all A records as proxied (orange cloud)
-- [ ] Generate Cloudflare Origin Certificate for `*.dare.club`
+- [ ] Generate Cloudflare Origin Certificate for `*.aquify.club`
 - [ ] Install origin cert on VPS nginx
 - [ ] Set SSL/TLS mode to Full (strict)
 - [ ] Enable Always Use HTTPS
@@ -217,6 +217,6 @@ certbot certonly --nginx -d dare.club -d '*.dare.club' \
 - [ ] Set minimum TLS version to 1.2
 - [ ] Configure Cloudflare IP restriction on nginx
 - [ ] Configure root domain redirect rule in Cloudflare
-- [ ] Verify `api.dare.club/healthz` returns 200
-- [ ] Verify `admin.dare.club` loads correctly
-- [ ] Submit `dare.club` to HSTS preload list
+- [ ] Verify `api.aquify.club/healthz` returns 200
+- [ ] Verify `admin.aquify.club` loads correctly
+- [ ] Submit `aquify.club` to HSTS preload list

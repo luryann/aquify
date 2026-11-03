@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
 // Swimmer is the minimal swimmer projection the engagement domains need.

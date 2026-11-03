@@ -10,17 +10,19 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/app/comms"
-	"github.com/dareaquatics/aquify/server/internal/app/compliance"
-	"github.com/dareaquatics/aquify/server/internal/app/documents"
-	"github.com/dareaquatics/aquify/server/internal/app/exports"
-	"github.com/dareaquatics/aquify/server/internal/app/members"
-	"github.com/dareaquatics/aquify/server/internal/app/reports"
-	"github.com/dareaquatics/aquify/server/internal/keycloak"
-	"github.com/dareaquatics/aquify/server/internal/storage"
-	"github.com/dareaquatics/aquify/server/internal/workers"
+	"github.com/luryann/aquify/server/internal/app/comms"
+	"github.com/luryann/aquify/server/internal/app/compliance"
+	"github.com/luryann/aquify/server/internal/app/documents"
+	"github.com/luryann/aquify/server/internal/app/exports"
+	"github.com/luryann/aquify/server/internal/app/members"
+	"github.com/luryann/aquify/server/internal/app/reports"
+	"github.com/luryann/aquify/server/internal/keycloak"
+	"github.com/luryann/aquify/server/internal/storage"
+	"github.com/luryann/aquify/server/internal/workers"
 )
 
+// complianceExportTTL is the retention window for the export object and request
+// record. It is deliberately NOT used as a presign TTL (S3 caps those at 7 days).
 const complianceExportTTL = 30 * 24 * time.Hour
 
 // PurgeExpiredFilesPayload is the JSON payload for the TypePurgeExpiredFiles task.
@@ -175,13 +177,11 @@ func ProcessDataExportHandler(logger *slog.Logger, complianceService *compliance
 		if err := store.PutObject(ctx, key, "application/json; charset=utf-8", data); err != nil {
 			return fail(fmt.Errorf("process data export: store artifact %s: %w", key, err))
 		}
-		downloadURL, err := store.PresignedGetURL(key, complianceExportTTL)
-		if err != nil {
-			return fail(fmt.Errorf("process data export: presign artifact %s: %w", key, err))
-		}
-
+		// Persist the object key, not a presigned URL: SigV4 URLs cap at 7 days
+		// while the export is retained for complianceExportTTL. The API mints a
+		// short-lived presigned URL from this key whenever the request is read.
 		expiresAt := generatedAt.Add(complianceExportTTL)
-		if _, err := complianceService.CompleteDataExport(p.OrgID, p.RequestID, downloadURL, expiresAt); err != nil {
+		if _, err := complianceService.CompleteDataExport(p.OrgID, p.RequestID, key, expiresAt); err != nil {
 			return fail(fmt.Errorf("process data export: complete request %s: %w", p.RequestID, err))
 		}
 
@@ -262,12 +262,60 @@ func ProcessDataDeletionHandler(
 			return fail("capture erasure context", err)
 		}
 
+		// Purge object storage BEFORE deleting the DB rows that hold the keys:
+		// if a storage delete fails the rows (and keys) survive for the retry.
+		// Deletes are idempotent, so repeating them on retry is safe.
 		var purgedObjectKeys []string
+		if commsService != nil {
+			keys, err := commsService.HouseholdObjectKeys(ctx, p.OrgID, p.HouseholdID)
+			if err != nil {
+				return fail("list comms object keys", err)
+			}
+			purgedObjectKeys = append(purgedObjectKeys, keys...)
+		}
+		if documentsService != nil {
+			keys, err := documentsService.HouseholdObjectKeys(ctx, p.OrgID, p.HouseholdID)
+			if err != nil {
+				return fail("list document object keys", err)
+			}
+			purgedObjectKeys = append(purgedObjectKeys, keys...)
+		}
+		// Previously generated data-export artifacts hold a full PII dump.
+		if exports, err := complianceService.ListDataExportRequests(p.OrgID, p.HouseholdID); err != nil {
+			return fail("list data export artifacts", err)
+		} else {
+			for _, ex := range exports {
+				if k := strings.TrimSpace(ex.DownloadURL); k != "" && !strings.Contains(k, "://") {
+					purgedObjectKeys = append(purgedObjectKeys, k)
+				}
+			}
+		}
+
+		purge := func(keys []string) error {
+			if objectStore == nil {
+				return nil
+			}
+			for _, key := range keys {
+				if key == "" {
+					continue
+				}
+				if err := objectStore.Delete(key); err != nil {
+					return fmt.Errorf("purge object storage key %s: %w", key, err)
+				}
+			}
+			return nil
+		}
+		if err := purge(purgedObjectKeys); err != nil {
+			return fail("purge object storage", err)
+		}
 
 		if commsService != nil {
 			keys, err := commsService.EraseHouseholdData(ctx, p.OrgID, p.HouseholdID, erasureCtx.ContactEmails)
 			if err != nil {
 				return fail("erase comms records", err)
+			}
+			if err := purge(keys); err != nil {
+				return fail("purge object storage", err)
 			}
 			purgedObjectKeys = append(purgedObjectKeys, keys...)
 		}
@@ -277,18 +325,10 @@ func ProcessDataDeletionHandler(
 			if err != nil {
 				return fail("erase document submissions", err)
 			}
-			purgedObjectKeys = append(purgedObjectKeys, keys...)
-		}
-
-		if objectStore != nil {
-			for _, key := range purgedObjectKeys {
-				if key == "" {
-					continue
-				}
-				if err := objectStore.Delete(key); err != nil {
-					return fail(fmt.Sprintf("purge object storage key %s", key), err)
-				}
+			if err := purge(keys); err != nil {
+				return fail("purge object storage", err)
 			}
+			purgedObjectKeys = append(purgedObjectKeys, keys...)
 		}
 
 		if kcClient != nil {

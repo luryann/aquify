@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dareaquatics/aquify/server/internal/app/audit"
-	"github.com/dareaquatics/aquify/server/internal/app/billing"
-	stripelib "github.com/dareaquatics/aquify/server/internal/stripe"
+	"github.com/luryann/aquify/server/internal/app/audit"
+	"github.com/luryann/aquify/server/internal/app/billing"
+	stripelib "github.com/luryann/aquify/server/internal/stripe"
 )
 
 // ─── Envelope helpers ─────────────────────────────────────────────────────────

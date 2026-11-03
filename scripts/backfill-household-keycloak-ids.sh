@@ -15,9 +15,9 @@
 # Usage:
 #   export DATABASE_URL="postgres://..."
 #   export KEYCLOAK_ADMIN_URL="https://keycloak.example.com"
-#   export KEYCLOAK_ADMIN_CLIENT_ID="dare-admin"
+#   export KEYCLOAK_ADMIN_CLIENT_ID="aquify-admin"
 #   export KEYCLOAK_ADMIN_CLIENT_SECRET="..."
-#   export KEYCLOAK_REALM="dare"
+#   export KEYCLOAK_REALM="aquify"
 #   ./scripts/backfill-household-keycloak-ids.sh
 
 set -euo pipefail

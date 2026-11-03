@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dareaquatics/aquify/server/internal/app/performance"
-	"github.com/dareaquatics/aquify/server/internal/testutil"
+	"github.com/luryann/aquify/server/internal/app/performance"
+	"github.com/luryann/aquify/server/internal/testutil"
 )
 
 func TestRunnerDryRunImportsPrimaryStep24Domains(t *testing.T) {

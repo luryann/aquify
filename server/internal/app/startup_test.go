@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/storage"
+	"github.com/luryann/aquify/server/internal/storage"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -285,7 +285,7 @@ func TestValidateOIDCLogoutConfigFailsOutsideDevelopmentWhenLogoutVarsMissing(t 
 		AppEnv: "production",
 		Auth: AuthConfig{
 			OIDC: OIDCConfig{
-				AuthorizeURL:          "https://auth.example.com/realms/dare/protocol/openid-connect/auth",
+				AuthorizeURL:          "https://auth.example.com/realms/aquify/protocol/openid-connect/auth",
 				RedirectURL:           "https://app.example.com/auth/callback",
 				ClientID:              "aquify-id",
 				StateSigningKey:       "state-signing-key",
@@ -311,8 +311,8 @@ func TestValidateOIDCLogoutConfigAllowsFullyConfiguredBrowserOIDC(t *testing.T) 
 		AppEnv: "production",
 		Auth: AuthConfig{
 			OIDC: OIDCConfig{
-				AuthorizeURL:          "https://auth.example.com/realms/dare/protocol/openid-connect/auth",
-				EndSessionURL:         "https://auth.example.com/realms/dare/protocol/openid-connect/logout",
+				AuthorizeURL:          "https://auth.example.com/realms/aquify/protocol/openid-connect/auth",
+				EndSessionURL:         "https://auth.example.com/realms/aquify/protocol/openid-connect/logout",
 				RedirectURL:           "https://app.example.com/auth/callback",
 				PostLogoutRedirectURL: "https://app.example.com/login",
 				ClientID:              "aquify-id",

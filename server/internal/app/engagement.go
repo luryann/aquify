@@ -14,18 +14,18 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/app/attendance"
-	"github.com/dareaquatics/aquify/server/internal/app/audit"
-	"github.com/dareaquatics/aquify/server/internal/app/billing"
-	"github.com/dareaquatics/aquify/server/internal/app/events"
-	"github.com/dareaquatics/aquify/server/internal/app/groups"
-	"github.com/dareaquatics/aquify/server/internal/app/handlers"
-	"github.com/dareaquatics/aquify/server/internal/app/meets"
-	"github.com/dareaquatics/aquify/server/internal/app/members"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
-	"github.com/dareaquatics/aquify/server/internal/app/roster"
-	"github.com/dareaquatics/aquify/server/internal/app/training"
-	"github.com/dareaquatics/aquify/server/internal/app/wellness"
+	"github.com/luryann/aquify/server/internal/app/attendance"
+	"github.com/luryann/aquify/server/internal/app/audit"
+	"github.com/luryann/aquify/server/internal/app/billing"
+	"github.com/luryann/aquify/server/internal/app/events"
+	"github.com/luryann/aquify/server/internal/app/groups"
+	"github.com/luryann/aquify/server/internal/app/handlers"
+	"github.com/luryann/aquify/server/internal/app/meets"
+	"github.com/luryann/aquify/server/internal/app/members"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/app/roster"
+	"github.com/luryann/aquify/server/internal/app/training"
+	"github.com/luryann/aquify/server/internal/app/wellness"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -246,7 +246,7 @@ func meetFeedItems(meetsService *meets.Service, actor *appmiddleware.Principal, 
 			desc = "Hosted by " + m.HostOrg
 		}
 		items = append(items, events.CalendarItem{
-			UID: "meet-" + m.ID + "@dare", Title: m.Name, Description: desc, Location: m.Location,
+			UID: "meet-" + m.ID + "@aquify", Title: m.Name, Description: desc, Location: m.Location,
 			Categories: "meet", AllDay: true, StartDate: m.StartDate, EndDate: end, Updated: m.UpdatedAt,
 		})
 		if m.Status == "commitment_open" && m.CommitmentDeadline != "" {
@@ -255,7 +255,7 @@ func meetFeedItems(meetsService *meets.Service, actor *appmiddleware.Principal, 
 				day = day[:10]
 			}
 			items = append(items, events.CalendarItem{
-				UID: "meet-deadline-" + m.ID + "@dare", Title: "Commitment deadline — " + m.Name,
+				UID: "meet-deadline-" + m.ID + "@aquify", Title: "Commitment deadline — " + m.Name,
 				Description: "Respond yes/no for each swimmer in the parent portal.",
 				Categories:  "deadline", AllDay: true, StartDate: day, EndDate: day, Updated: m.UpdatedAt,
 			})
@@ -306,7 +306,7 @@ func practiceFeedItems(trainingService *training.Service, groupsService *groups.
 			title = "Dryland — " + label
 		}
 		items = append(items, events.CalendarItem{
-			UID: "practice-" + p.ID + "@dare", Title: title, Description: p.Description,
+			UID: "practice-" + p.ID + "@aquify", Title: title, Description: p.Description,
 			Categories: "practice", AllDay: true, StartDate: p.Date, EndDate: p.Date, Updated: p.UpdatedAt,
 		})
 	}

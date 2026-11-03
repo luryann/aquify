@@ -4,7 +4,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/dareaquatics/aquify/server/internal/app/usaswimming"
+	"github.com/luryann/aquify/server/internal/app/usaswimming"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 

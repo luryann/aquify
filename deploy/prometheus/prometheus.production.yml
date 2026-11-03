@@ -9,12 +9,12 @@ rule_files:
   - /etc/prometheus/alerts.yaml
 
 scrape_configs:
-  - job_name: dare-api
+  - job_name: aquify-api
     static_configs:
-      - targets: ["dare-api:9091"]
-  - job_name: dare-worker
+      - targets: ["aquify-api:9091"]
+  - job_name: aquify-worker
     static_configs:
-      - targets: ["dare-worker:9091"]
+      - targets: ["aquify-worker:9091"]
   - job_name: prometheus
     static_configs:
       - targets: ["localhost:9090"]

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
 // The challenge no longer holds s.mu across I/O, so a valid TOTP code must

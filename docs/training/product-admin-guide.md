@@ -1,4 +1,4 @@
-# Product Admin Guide — DARE Platform
+# Product Admin Guide — aquify Platform
 
 **Audience:** Club administrators, operations staff, coaches
 **Version:** 1.0
@@ -8,7 +8,7 @@
 
 ## Overview
 
-DARE is your club's all-in-one operations platform. It replaces TeamUnify/SportsEngine Motion for member management, meet scheduling, billing, communications, and performance tracking. This guide covers the day-to-day tasks that admins and coaches perform.
+aquify is your club's all-in-one operations platform. It replaces TeamUnify/SportsEngine Motion for member management, meet scheduling, billing, communications, and performance tracking. This guide covers the day-to-day tasks that admins and coaches perform.
 
 ---
 
@@ -203,7 +203,7 @@ Navigate to **Reports**. Available reports:
 | Membership Status | Active, inactive, and pending members by group | CSV |
 | Meet Fees | Fees collected per meet, per swimmer | CSV |
 | Invoice Aging | Outstanding balances by age bucket (30/60/90+ days) | CSV |
-| Payment Reconciliation | Stripe vs DARE balance comparison | CSV |
+| Payment Reconciliation | Stripe vs aquify balance comparison | CSV |
 | Registration Status | Registration completion by season and group | CSV |
 
 To run a report:

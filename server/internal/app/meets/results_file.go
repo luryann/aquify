@@ -5,9 +5,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/dareaquatics/aquify/meetfiles"
-	"github.com/dareaquatics/aquify/meetfiles/cl2"
-	"github.com/dareaquatics/aquify/meetfiles/sdif"
+	"github.com/luryann/aquify/meetfiles"
+	"github.com/luryann/aquify/meetfiles/cl2"
+	"github.com/luryann/aquify/meetfiles/sdif"
 )
 
 // ParseResultsFile parses a meet results file (SD3/CL2, or an HY3/ZIP archive

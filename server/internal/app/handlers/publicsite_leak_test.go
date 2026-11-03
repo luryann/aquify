@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/app/comms"
-	"github.com/dareaquatics/aquify/server/internal/app/events"
-	"github.com/dareaquatics/aquify/server/internal/app/meets"
-	"github.com/dareaquatics/aquify/server/internal/app/orgsettings"
-	"github.com/dareaquatics/aquify/server/internal/app/performance"
+	"github.com/luryann/aquify/server/internal/app/comms"
+	"github.com/luryann/aquify/server/internal/app/events"
+	"github.com/luryann/aquify/server/internal/app/meets"
+	"github.com/luryann/aquify/server/internal/app/orgsettings"
+	"github.com/luryann/aquify/server/internal/app/performance"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -88,7 +88,7 @@ func TestPublicSitePayloadOnlyContainsAllowlistedKeys(t *testing.T) {
 	src := PublicSiteSources{
 		Now: func() time.Time { return now },
 		Settings: func(slug string) (*orgsettings.OrgSettings, error) {
-			return &orgsettings.OrgSettings{OrgID: org, TeamCode: "SECRETCODE", TeamName: "Dare", LSCCode: "PC", EmailSenderAddress: "internal@example.com",
+			return &orgsettings.OrgSettings{OrgID: org, TeamCode: "SECRETCODE", TeamName: "aquify", LSCCode: "PC", EmailSenderAddress: "internal@example.com",
 				PublicSlug: slug, PublicSiteEnabled: true, PublicShowCoaches: true, PublicAbout: "about",
 				PublicContactEmail: "hi@example.com", UpdatedBy: "admin-user"}, nil
 		},
@@ -119,7 +119,7 @@ func TestPublicSitePayloadOnlyContainsAllowlistedKeys(t *testing.T) {
 	r := chi.NewRouter()
 	h.RegisterPublicRoutes(r)
 	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/public/orgs/dare/site", nil))
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/public/orgs/aquify/site", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 	}

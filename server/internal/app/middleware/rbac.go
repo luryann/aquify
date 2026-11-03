@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"slices"
 
-	"github.com/dareaquatics/aquify/server/internal/app/httpx"
+	"github.com/luryann/aquify/server/internal/app/httpx"
 )
 
 func RBACStub(allowedRoles ...string) func(http.Handler) http.Handler {

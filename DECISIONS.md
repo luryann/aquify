@@ -1,4 +1,4 @@
-# DARE Platform - Locked Decisions
+# aquify Platform - Locked Decisions
 
 Last updated: 2026-10-27
 Purpose: remove ambiguity so a new engineer/AI can execute without additional context.

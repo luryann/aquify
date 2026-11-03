@@ -58,7 +58,7 @@ type CurrentSessionResponse = {
 }
 
 const SessionContext = createContext<SessionContextValue | null>(null)
-const DEV_TOKEN_KEY = 'dare:dev_token'
+const DEV_TOKEN_KEY = 'aquify:dev_token'
 
 export const DEV_SESSIONS: Record<string, Session> = {
   ...Object.fromEntries(

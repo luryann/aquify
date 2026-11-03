@@ -5,17 +5,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
-	"github.com/dareaquatics/aquify/server/internal/app/audit"
-	"github.com/dareaquatics/aquify/server/internal/app/documents"
-	"github.com/dareaquatics/aquify/server/internal/app/httpx"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
-	"github.com/dareaquatics/aquify/server/internal/storage"
+	"github.com/luryann/aquify/server/internal/app/audit"
+	"github.com/luryann/aquify/server/internal/app/documents"
+	"github.com/luryann/aquify/server/internal/app/httpx"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/storage"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
 )
@@ -26,6 +28,14 @@ type DocumentHandlers struct {
 	auditService *audit.Service
 	store        storage.ObjectStorage
 	validate     *validator.Validate
+	// swimmerHousehold resolves a swimmer's household (nil = no check).
+	swimmerHousehold func(orgID, swimmerID string) (string, bool)
+}
+
+// SetSwimmerHouseholdResolver wires swimmer->household lookup used to validate
+// swimmer_id on submission creation.
+func (h *DocumentHandlers) SetSwimmerHouseholdResolver(fn func(orgID, swimmerID string) (string, bool)) {
+	h.swimmerHousehold = fn
 }
 
 // NewDocumentHandlers returns a new DocumentHandlers.
@@ -308,6 +318,13 @@ func (h *DocumentHandlers) createSubmission(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	if sid := strings.TrimSpace(body.SwimmerID); sid != "" && h.swimmerHousehold != nil {
+		if hh, found := h.swimmerHousehold(orgID, sid); !found || hh != body.HouseholdID {
+			httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Swimmer does not belong to the household.", nil)
+			return
+		}
+	}
+
 	sub, err := h.service.CreateSubmission(orgID, body.DocumentTypeID, body.HouseholdID, body.SwimmerID, principal.UserID)
 	if err != nil {
 		if errors.Is(err, documents.ErrTypeNotFound) {
@@ -365,10 +382,30 @@ type documentUploadURLBody struct {
 	FileSizeBytes int64  `json:"file_size_bytes" validate:"required,gt=0"`
 }
 
+const maxDocumentFilenameBytes = 255
+
+// writeStorageError maps an object-storage failure to 503 storage_unavailable
+// for connectivity/timeout errors and 500 internal_error otherwise.
+func writeStorageError(w http.ResponseWriter, r *http.Request, err error, message string) {
+	if storage.IsUnavailable(err) {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, "storage_unavailable", "Object storage is temporarily unavailable. Try again shortly.", err)
+		return
+	}
+	httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", message, err)
+}
+
 func sanitizeDocumentFilename(name string) (string, error) {
 	trimmed := strings.TrimSpace(name)
 	if trimmed == "" {
 		return "", errors.New("filename is required")
+	}
+	if len(trimmed) > maxDocumentFilenameBytes {
+		return "", errors.New("filename must be at most 255 bytes")
+	}
+	for _, r := range trimmed {
+		if unicode.IsControl(r) {
+			return "", errors.New("filename must not contain control characters")
+		}
 	}
 	base := filepath.Base(trimmed)
 	if base == "." || base == "/" || base == `\` || base != trimmed {
@@ -533,7 +570,7 @@ func (h *DocumentHandlers) attachFile(w http.ResponseWriter, r *http.Request) {
 	}
 	exists, err := h.store.Exists(r.Context(), body.FileObjectKey)
 	if err != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to validate uploaded file.", err)
+		writeStorageError(w, r, err, "Failed to validate uploaded file.")
 		return
 	}
 	if !exists {
@@ -544,11 +581,18 @@ func (h *DocumentHandlers) attachFile(w http.ResponseWriter, r *http.Request) {
 	// metadata cannot be trusted. Enforce the actual stored object size
 	// before accepting the submission.
 	actualSize, err := h.store.ObjectSize(r.Context(), body.FileObjectKey)
-	if err != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to validate uploaded file.", err)
+	if errors.Is(err, storage.ErrObjectNotFound) {
+		httpx.WriteError(w, r, http.StatusConflict, "missing_uploaded_file", "Uploaded file was not found in object storage.", nil)
+		return
+	} else if err != nil {
+		writeStorageError(w, r, err, "Failed to validate uploaded file.")
 		return
 	}
 	if actualSize > maxDocumentUploadBytes {
+		// Do not leave the rejected oversized object in the bucket.
+		if delErr := h.store.Delete(body.FileObjectKey); delErr != nil {
+			slog.Error("documents: failed to delete oversized upload", "object_key", body.FileObjectKey, "err", delErr)
+		}
 		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "file_too_large", "Uploaded file exceeds the maximum allowed size.", nil)
 		return
 	}

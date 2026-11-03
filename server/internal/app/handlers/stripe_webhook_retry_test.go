@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/app/billing"
+	"github.com/luryann/aquify/server/internal/app/billing"
 )
 
 func TestNotFoundWebhookRetriesOnlyWithinLagGrace(t *testing.T) {

@@ -29,7 +29,7 @@ test('buildCreateMeetPayload preserves session numbering for sessions and events
   const draft: MeetCreateDraftState = {
     name: 'Spring Invite',
     course: 'SCY',
-    hostClub: 'DARE',
+    hostClub: 'aquify',
     location: 'Bellevue',
     startDate: '2026-05-01',
     endDate: '2026-05-02',

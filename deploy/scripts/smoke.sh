@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# smoke.sh — Post-deploy smoke tests for the DARE platform.
+# smoke.sh — Post-deploy smoke tests for the aquify platform.
 #
 # Verifies the most critical API endpoints respond correctly after a deploy.
 # Exits non-zero on any failure; intended to be run from CI after a deploy.
 #
 # Usage:
-#   API_BASE_URL=https://api.dare.club \
+#   API_BASE_URL=https://api.aquify.club \
 #   SMOKE_AUTH_TOKEN=<bearer_token> \
 #   SMOKE_ORG_ID=<org_id> \
 #     smoke.sh
@@ -25,10 +25,10 @@ API_BASE_URL="${API_BASE_URL:-http://localhost:8080}"
 SMOKE_AUTH_TOKEN="${SMOKE_AUTH_TOKEN:-}"
 SMOKE_ORG_ID="${SMOKE_ORG_ID:-}"
 # File logging is opt-in by environment: set SMOKE_LOG to a path, or leave it
-# unset to log to /var/log/dare/smoke.log when that directory is writable
+# unset to log to /var/log/aquify/smoke.log when that directory is writable
 # (the server). Elsewhere (CI, laptops) output goes to stdout only.
 if [ -z "${SMOKE_LOG+x}" ]; then
-  if [ -w /var/log/dare ]; then SMOKE_LOG="/var/log/dare/smoke.log"; else SMOKE_LOG=""; fi
+  if [ -w /var/log/aquify ]; then SMOKE_LOG="/var/log/aquify/smoke.log"; else SMOKE_LOG=""; fi
 fi
 PASS=0
 FAIL=0

@@ -1,4 +1,4 @@
-# DARE Platform — Rollback Procedure
+# aquify Platform — Rollback Procedure
 
 ## When to Rollback
 
@@ -9,7 +9,7 @@ Initiate a rollback when any of the following conditions are met:
 | HTTP 5xx error rate | > 5% of requests for 5 consecutive minutes | Grafana / Cloudflare analytics |
 | Health check failing | `/healthz` returning non-200 for > 2 minutes | Uptime Kuma / Prometheus alert |
 | P0 bug reported | Data loss, billing error, auth bypass, or PII exposure | Engineering / customer report |
-| Background job queue depth | > 500 unprocessed jobs for > 10 minutes | Prometheus `dare_job_queue_depth` |
+| Background job queue depth | > 500 unprocessed jobs for > 10 minutes | Prometheus `aquify_job_queue_depth` |
 | Smoke tests failing post-deploy | Smoke test gate returns non-zero | CI pipeline |
 
 **Do not rollback for:**
@@ -36,19 +36,19 @@ When in doubt, **rollback first and investigate after**. A brief outage during r
 
 The fastest rollback path uses `deploy/scripts/rollback.sh`, which:
 
-1. Reads the previous `IMAGE_TAG` from `/opt/dare/.rollback-state`.
+1. Reads the previous `IMAGE_TAG` from `/opt/aquify/.rollback-state`.
 2. Re-deploys production containers with the previous image tag.
 3. Confirms health check passes.
-4. Sends a Slack notification to `#dare-ops`.
+4. Sends a Slack notification to `#aquify-ops`.
 
 ```bash
 # On the VPS (or triggered by CI):
-/opt/dare/deploy/scripts/rollback.sh
+/opt/aquify/deploy/scripts/rollback.sh
 ```
 
 The rollback script does NOT touch the database. If a database migration is involved, see the database rollback section below.
 
-The previous image tag is written to `/opt/dare/.rollback-state` by the deploy script on every successful production deploy.
+The previous image tag is written to `/opt/aquify/.rollback-state` by the deploy script on every successful production deploy.
 
 ---
 
@@ -60,39 +60,39 @@ If the automated script is unavailable or the rollback state file is missing:
 
 ```bash
 # List recent images available in the registry
-docker images dare-api --format "{{.Tag}}" | head -20
+docker images aquify-api --format "{{.Tag}}" | head -20
 # Or check the deploy history in GitHub Actions → Deployments
 ```
 
 ### Step 2 — Update IMAGE_TAG and Re-deploy
 
 ```bash
-ssh deploy@vps.dare.club
-cd /opt/dare
+ssh deploy@vps.aquify.club
+cd /opt/aquify
 
 # Set to previous known-good tag
 export IMAGE_TAG=main-abc1234   # replace with actual tag
 
 docker compose \
   -f docker-compose.production.yml \
-  --project-name dare-production \
+  --project-name aquify-production \
   --env-file .env.production \
-  up -d --pull always dare-api dare-admin dare-worker
+  up -d --pull always aquify-api aquify-admin aquify-worker
 ```
 
 ### Step 3 — Verify
 
 ```bash
-curl -sf https://api.dare.club/healthz && echo "API healthy" || echo "API unhealthy"
-curl -sf https://admin.dare.club && echo "Admin healthy" || echo "Admin unhealthy"
+curl -sf https://api.aquify.club/healthz && echo "API healthy" || echo "API unhealthy"
+curl -sf https://admin.aquify.club && echo "Admin healthy" || echo "Admin unhealthy"
 ```
 
 ### Step 4 — Run Smoke Tests
 
 ```bash
 make cutover-smoke \
-  API_BASE_URL=https://api.dare.club \
-  AUTH_TOKEN=$(cat /opt/dare/.smoke-token) \
+  API_BASE_URL=https://api.aquify.club \
+  AUTH_TOKEN=$(cat /opt/aquify/.smoke-token) \
   ORG_ID=org-production
 ```
 
@@ -119,11 +119,11 @@ These situations require a forward-fix migration rather than a down migration.
 ### Goose Down Procedure
 
 ```bash
-ssh deploy@vps.dare.club
-cd /opt/dare
+ssh deploy@vps.aquify.club
+cd /opt/aquify
 
 # Stop API and worker to prevent writes during migration rollback
-docker compose -f docker-compose.production.yml stop dare-api dare-worker
+docker compose -f docker-compose.production.yml stop aquify-api aquify-worker
 
 # Roll back one migration
 DATABASE_URL=$(grep DATABASE_URL .env.production | cut -d= -f2-) \
@@ -136,7 +136,7 @@ DATABASE_URL=$(grep DATABASE_URL .env.production | cut -d= -f2-) \
 # Restart with previous image
 IMAGE_TAG=main-abc1234 docker compose \
   -f docker-compose.production.yml \
-  up -d dare-api dare-worker
+  up -d aquify-api aquify-worker
 ```
 
 ### When Migration Is Too Risky to Rollback
@@ -155,7 +155,7 @@ Document the situation in the incident report.
 
 ### Immediate (< 5 minutes after decision to rollback)
 
-- Post to Slack `#dare-ops`:
+- Post to Slack `#aquify-ops`:
   ```
   [ROLLBACK INITIATED] Deploying rollback for <brief description>.
   Trigger: <error rate / health check / bug report>
@@ -164,18 +164,18 @@ Document the situation in the incident report.
   On-call: @<your-name>
   ```
 
-- Update the status page (Uptime Kuma at `status.dare.club`):
+- Update the status page (Uptime Kuma at `status.aquify.club`):
   - Create a new maintenance/incident window.
-  - Set affected component: "DARE Platform API" or "Admin Portal" as appropriate.
+  - Set affected component: "aquify Platform API" or "Admin Portal" as appropriate.
   - Status: "Investigating" initially, then "Identified" once rollback is underway.
 
 ### During Rollback (every 10 minutes if not resolved)
 
-Post updates to `#dare-ops` with current status and next steps.
+Post updates to `#aquify-ops` with current status and next steps.
 
 ### On Restore
 
-- Post to `#dare-ops`: `[RESOLVED] Rollback complete. Platform healthy. Incident report to follow.`
+- Post to `#aquify-ops`: `[RESOLVED] Rollback complete. Platform healthy. Incident report to follow.`
 - Update status page: mark incident resolved.
 - If the outage exceeded 30 minutes: draft a brief email to affected organization contacts.
 
@@ -187,7 +187,7 @@ Post updates to `#dare-ops` with current status and next steps.
 
 1. Confirm smoke tests pass.
 2. Check Grafana dashboards: error rate, latency, job queue depth, and active sessions.
-3. Review logs for any residual errors: `docker logs dare-api --tail=200`.
+3. Review logs for any residual errors: `docker logs aquify-api --tail=200`.
 
 ### Within 24 Hours
 

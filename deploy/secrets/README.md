@@ -1,6 +1,6 @@
-# DARE Platform — Secrets Management
+# aquify Platform — Secrets Management
 
-This document describes how production secrets are managed for the DARE platform.
+This document describes how production secrets are managed for the aquify platform.
 
 ## Guiding Principle
 
@@ -17,22 +17,22 @@ live exclusively on production infrastructure, managed by the procedures below.
 All runtime secrets are stored in a single env file on the server:
 
 ```
-/opt/dare/.env.production
+/opt/aquify/.env.production
 ```
 
 Ownership and permissions:
 ```
-chown root:dare /opt/dare/.env.production
-chmod 640 /opt/dare/.env.production
+chown root:aquify /opt/aquify/.env.production
+chmod 640 /opt/aquify/.env.production
 ```
 
-Only `root` and members of the `dare` system group can read this file. The `dare`
+Only `root` and members of the `aquify` system group can read this file. The `aquify`
 service user (which runs the systemd unit) is a member of that group. The file is
 **never** committed to git and is **never** included in Docker images.
 
 ### Staging VPS
 
-Same pattern at `/opt/dare/.env.staging`, owned `root:dare`, mode `640`.
+Same pattern at `/opt/aquify/.env.staging`, owned `root:aquify`, mode `640`.
 
 ---
 
@@ -42,7 +42,7 @@ Same pattern at `/opt/dare/.env.staging`, owned `root:dare`, mode `640`.
 | Variable | Description |
 |---|---|
 | `POSTGRES_PASSWORD` | PostgreSQL superuser / application user password |
-| `DATABASE_URL` | Full DSN including credentials: `postgres://dare:<pw>@postgres:5432/dare?sslmode=disable` |
+| `DATABASE_URL` | Full DSN including credentials: `postgres://aquify:<pw>@postgres:5432/aquify?sslmode=disable` |
 
 ### Redis
 | Variable | Description |
@@ -79,8 +79,8 @@ Same pattern at `/opt/dare/.env.staging`, owned `root:dare`, mode `640`.
 | Variable | Description |
 |---|---|
 | `KEYCLOAK_ADMIN_PASSWORD` | Keycloak admin console password |
-| `OIDC_CLIENT_ID` | DARE app client ID in Keycloak realm |
-| `OIDC_CLIENT_SECRET` | DARE app client secret |
+| `OIDC_CLIENT_ID` | aquify app client ID in Keycloak realm |
+| `OIDC_CLIENT_SECRET` | aquify app client secret |
 | `OIDC_STATE_SIGNING_KEY` | HMAC key for signing OAuth2 state parameter (32+ random bytes, hex-encoded) |
 | `OIDC_AUTHORIZE_URL` | Authorization endpoint |
 | `OIDC_TOKEN_URL` | Token endpoint |
@@ -131,20 +131,20 @@ distinct credentials.
 
 2. **Update .env.production on the VPS**
    ```bash
-   sudo nano /opt/dare/.env.production
+   sudo nano /opt/aquify/.env.production
    # Edit the relevant variable, save and exit
    ```
 
 3. **Restart the affected service**
    ```bash
-   sudo systemctl reload dare        # for app secrets (triggers ExecReload)
+   sudo systemctl reload aquify        # for app secrets (triggers ExecReload)
    # or for a full restart:
-   sudo systemctl restart dare
+   sudo systemctl restart aquify
    ```
 
 4. **Verify health**
    ```bash
-   curl -sf https://api.dare.club/api/v1/health/live && echo OK
+   curl -sf https://api.aquify.club/api/v1/health/live && echo OK
    ```
 
 5. **Revoke the old secret** at the provider (Stripe dashboard, Postmark, etc.)
@@ -152,13 +152,13 @@ distinct credentials.
 6. **Log the rotation event** in the ops log:
    ```bash
    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) SECRET_ROTATION STRIPE_WEBHOOK_SECRET rotated by $(whoami)" \
-     >> /var/log/dare/ops.log
+     >> /var/log/aquify/ops.log
    ```
 
 For `POSTGRES_PASSWORD` rotation, also run:
 ```bash
-docker exec -it dare-production-postgres-1 \
-  psql -U dare -c "ALTER USER dare PASSWORD 'newpassword';"
+docker exec -it aquify-production-postgres-1 \
+  psql -U aquify -c "ALTER USER aquify PASSWORD 'newpassword';"
 ```
 Then update `DATABASE_URL` and `POSTGRES_PASSWORD` in `.env.production` and restart.
 
@@ -193,8 +193,8 @@ passed with the registry namespace (`GHCR_NAMESPACE`) at deploy time.
 When the team grows beyond 3 engineers, migrate to Vault with AppRole auth:
 
 1. **Deploy Vault** in HA mode with auto-unseal (AWS KMS or GCP Cloud KMS).
-2. **Create a `dare-production` AppRole** with a policy granting read-only access
-   to `secret/dare/production/*`.
+2. **Create a `aquify-production` AppRole** with a policy granting read-only access
+   to `secret/aquify/production/*`.
 3. **Replace `.env.production`** with a Vault Agent sidecar that writes a tempfs
    env file at container start using `vault agent -config=/etc/vault-agent.hcl`.
 4. **Rotate secrets automatically** using Vault's dynamic secrets for PostgreSQL

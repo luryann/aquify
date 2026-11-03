@@ -10,8 +10,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/dareaquatics/aquify/meetfiles"
-	"github.com/dareaquatics/aquify/meetfiles/sdif"
+	"github.com/luryann/aquify/meetfiles"
+	"github.com/luryann/aquify/meetfiles/sdif"
 )
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -44,8 +44,8 @@ func baseInput() sdif.ExportInput {
 		MeetStartDate: testMeetStart(),
 		MeetEndDate:   testMeetEnd(),
 		Course:        meetfiles.CourseShortCourseYards,
-		HostTeamCode:  "DARE",
-		HostTeamName:  "DARE Aquatics",
+		HostTeamCode:  "AQFY",
+		HostTeamName:  "aquify Aquatics",
 		IndividualEntries: []sdif.ExportIndividualEntry{
 			{
 				Swimmer: sdif.ExportSwimmer{
@@ -54,7 +54,7 @@ func baseInput() sdif.ExportInput {
 					USSNumber: "123456789012",
 					DOB:       testDOB(),
 					Gender:    "M",
-					TeamCode:  "DARE",
+					TeamCode:  "AQFY",
 				},
 				EventNumber: "1",
 				Distance:    100,
@@ -70,7 +70,7 @@ func baseInput() sdif.ExportInput {
 					FirstName: "Jane",
 					DOB:       ptr(time.Date(2008, 5, 10, 0, 0, 0, 0, time.UTC)),
 					Gender:    "F",
-					TeamCode:  "DARE",
+					TeamCode:  "AQFY",
 				},
 				EventNumber: "2",
 				Distance:    200,
@@ -225,7 +225,7 @@ func TestExportExtendedSD3_WithRelays(t *testing.T) {
 	input := baseInput()
 	input.RelayEntries = []sdif.ExportRelayEntry{
 		{
-			TeamCode:    "DARE",
+			TeamCode:    "AQFY",
 			EventNumber: "10",
 			Distance:    200,
 			Stroke:      meetfiles.StrokeMedleyRelay,
@@ -236,7 +236,7 @@ func TestExportExtendedSD3_WithRelays(t *testing.T) {
 				{
 					Swimmer: sdif.ExportSwimmer{
 						LastName: "Smith", FirstName: "John",
-						DOB: testDOB(), Gender: "M", TeamCode: "DARE",
+						DOB: testDOB(), Gender: "M", TeamCode: "AQFY",
 					},
 					LegOrder: 1,
 					LegTime:  validTime(58.12),
@@ -245,7 +245,7 @@ func TestExportExtendedSD3_WithRelays(t *testing.T) {
 					Swimmer: sdif.ExportSwimmer{
 						LastName: "Doe", FirstName: "Jane",
 						DOB:    ptr(time.Date(2008, 5, 10, 0, 0, 0, 0, time.UTC)),
-						Gender: "F", TeamCode: "DARE",
+						Gender: "F", TeamCode: "AQFY",
 					},
 					LegOrder: 2,
 					LegTime:  validTime(32.01),
@@ -283,20 +283,20 @@ func TestSDIFRoster_RoundTrip(t *testing.T) {
 		StartDate: testMeetStart(),
 		EndDate:   testMeetEnd(),
 		Course:    meetfiles.CourseShortCourseYards,
-		TeamCode:  "DARE",
-		TeamName:  "DARE Aquatics",
+		TeamCode:  "AQFY",
+		TeamName:  "aquify Aquatics",
 		Swimmers: []sdif.RosterExportSwimmer{
 			{
 				LastName: "Smith", FirstName: "John",
 				USSNumber: "123456789012",
 				DOB:       &dob1, Gender: "M",
-				TeamCode: "DARE", TeamName: "DARE Aquatics",
+				TeamCode: "AQFY", TeamName: "aquify Aquatics",
 			},
 			{
 				LastName: "Doe", FirstName: "Jane",
 				USSNumber: "987654321098",
 				DOB:       &dob2, Gender: "F",
-				TeamCode: "DARE", TeamName: "DARE Aquatics",
+				TeamCode: "AQFY", TeamName: "aquify Aquatics",
 			},
 		},
 	}
@@ -390,7 +390,7 @@ func TestExportLineOrdering_EventThenName(t *testing.T) {
 		Swimmer: sdif.ExportSwimmer{
 			LastName: "Adams", FirstName: "Alice",
 			DOB:    ptr(time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)),
-			Gender: "F", TeamCode: "DARE",
+			Gender: "F", TeamCode: "AQFY",
 		},
 		EventNumber: "1",
 		Distance:    100,

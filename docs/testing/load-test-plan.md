@@ -1,4 +1,4 @@
-# Load Test Plan — DARE Platform
+# Load Test Plan — aquify Platform
 
 **Version:** 1.0
 **Last Updated:** 2026-03-23
@@ -8,7 +8,7 @@
 
 ## 1. Purpose
 
-This document defines the load testing strategy for the DARE platform. It specifies the test environment, scenarios, pass/fail thresholds, how to interpret results, and known areas to monitor. Load tests must pass before any release candidate is promoted to production.
+This document defines the load testing strategy for the aquify platform. It specifies the test environment, scenarios, pass/fail thresholds, how to interpret results, and known areas to monitor. Load tests must pass before any release candidate is promoted to production.
 
 ---
 

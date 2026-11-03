@@ -10,34 +10,33 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/app/audit"
-	"github.com/dareaquatics/aquify/server/internal/app/authn"
-	"github.com/dareaquatics/aquify/server/internal/app/billing"
-	"github.com/dareaquatics/aquify/server/internal/app/comms"
-	"github.com/dareaquatics/aquify/server/internal/app/compliance"
-	"github.com/dareaquatics/aquify/server/internal/app/documents"
-	"github.com/dareaquatics/aquify/server/internal/app/exports"
-	"github.com/dareaquatics/aquify/server/internal/app/groups"
-	"github.com/dareaquatics/aquify/server/internal/app/handlers"
-	"github.com/dareaquatics/aquify/server/internal/app/meets"
-	"github.com/dareaquatics/aquify/server/internal/app/members"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
-	"github.com/dareaquatics/aquify/server/internal/app/orgsettings"
-	"github.com/dareaquatics/aquify/server/internal/app/performance"
-	"github.com/dareaquatics/aquify/server/internal/app/reports"
-	"github.com/dareaquatics/aquify/server/internal/app/seasons"
-	"github.com/dareaquatics/aquify/server/internal/app/training"
-	"github.com/dareaquatics/aquify/server/internal/db"
-	"github.com/dareaquatics/aquify/server/internal/keycloak"
-	"github.com/dareaquatics/aquify/server/internal/postmark"
-	"github.com/dareaquatics/aquify/server/internal/runtimepersist"
-	"github.com/dareaquatics/aquify/server/internal/storage"
-	stripelib "github.com/dareaquatics/aquify/server/internal/stripe"
-	"github.com/dareaquatics/aquify/server/internal/telemetry"
-	"github.com/dareaquatics/aquify/server/internal/workers"
-	"github.com/dareaquatics/aquify/server/internal/workers/jobhandlers"
+	"github.com/luryann/aquify/server/internal/app/audit"
+	"github.com/luryann/aquify/server/internal/app/authn"
+	"github.com/luryann/aquify/server/internal/app/billing"
+	"github.com/luryann/aquify/server/internal/app/comms"
+	"github.com/luryann/aquify/server/internal/app/compliance"
+	"github.com/luryann/aquify/server/internal/app/documents"
+	"github.com/luryann/aquify/server/internal/app/exports"
+	"github.com/luryann/aquify/server/internal/app/groups"
+	"github.com/luryann/aquify/server/internal/app/handlers"
+	"github.com/luryann/aquify/server/internal/app/meets"
+	"github.com/luryann/aquify/server/internal/app/members"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/app/orgsettings"
+	"github.com/luryann/aquify/server/internal/app/performance"
+	"github.com/luryann/aquify/server/internal/app/reports"
+	"github.com/luryann/aquify/server/internal/app/seasons"
+	"github.com/luryann/aquify/server/internal/app/training"
+	"github.com/luryann/aquify/server/internal/db"
+	"github.com/luryann/aquify/server/internal/keycloak"
+	"github.com/luryann/aquify/server/internal/postmark"
+	"github.com/luryann/aquify/server/internal/runtimepersist"
+	"github.com/luryann/aquify/server/internal/storage"
+	stripelib "github.com/luryann/aquify/server/internal/stripe"
+	"github.com/luryann/aquify/server/internal/telemetry"
+	"github.com/luryann/aquify/server/internal/workers"
+	"github.com/luryann/aquify/server/internal/workers/jobhandlers"
 	"github.com/go-chi/chi/v5"
-	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -236,11 +235,35 @@ func ValidateProviderConfig(cfg Config) error {
 // ValidateWorkerConfig enforces Redis-backed durable queues outside explicit
 // development/test environments.
 func ValidateWorkerConfig(cfg Config) error {
+	if err := validateWorkerIntervals(cfg); err != nil {
+		return err
+	}
 	if allowsProviderStubFallback(cfg.AppEnv) {
 		return nil
 	}
 	if strings.TrimSpace(cfg.Worker.RedisURL) == "" {
 		return fmt.Errorf("worker startup validation failed: REDIS_URL must be configured in non-development environments")
+	}
+	if len(scheduledOrgIDs(cfg)) == 0 {
+		return fmt.Errorf("worker startup validation failed: WORKER_SCHEDULED_ORG_IDS must list at least one org in non-development environments")
+	}
+	return nil
+}
+
+func validateWorkerIntervals(cfg Config) error {
+	for name, v := range map[string]string{
+		"WORKER_RECONCILE_INTERVAL":          cfg.Worker.ReconcileInterval,
+		"WORKER_INTEGRITY_INTERVAL":          cfg.Worker.IntegrityInterval,
+		"WORKER_CLEANUP_INTERVAL":            cfg.Worker.CleanupInterval,
+		"WORKER_BILLING_AUTOMATION_INTERVAL": cfg.Worker.BillingAutomationInterval,
+	} {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		if _, err := time.ParseDuration(v); err != nil {
+			return fmt.Errorf("worker startup validation failed: %s=%q is not a valid Go duration (e.g. 24h): %v", name, v, err)
+		}
 	}
 	return nil
 }
@@ -283,6 +306,10 @@ func (c unavailablePostmarkClient) Ready(_ context.Context) error {
 
 func (c unavailablePostmarkClient) SendEmail(_ context.Context, _ postmark.SendEmailRequest) (postmark.SendEmailResponse, error) {
 	return postmark.SendEmailResponse{}, c.err
+}
+
+func (c unavailablePostmarkClient) SendBatch(_ context.Context, reqs []postmark.SendEmailRequest) ([]postmark.BatchResult, error) {
+	return nil, c.err
 }
 
 var (
@@ -410,7 +437,7 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, deps RouterDeps) htt
 			ID:            authn.LocalDevHouseholdID,
 			OrgID:         authn.LocalDevOrgID,
 			HouseholdName: "Dev Household",
-			PrimaryEmail:  "parent@dare.local",
+			PrimaryEmail:  "parent@aquify.local",
 			CreatedBy:     authn.LocalDevAdminUserID,
 			UpdatedBy:     authn.LocalDevAdminUserID,
 		}, authn.LocalDevParentUserID); err != nil {
@@ -513,7 +540,11 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, deps RouterDeps) htt
 		complianceService = compliance.NewServiceWithPool(dbPool, cfg.Compliance.ExportTTLDays, cfg.Compliance.DeletionReviewDays)
 	}
 	complianceHandlers := handlers.NewComplianceHandlers(complianceService, auditService)
+	complianceHandlers.SetStorage(objectStore)
 	documentHandlers := handlers.NewDocumentHandlers(documentsService, auditService, objectStore)
+	if membershipService != nil {
+		documentHandlers.SetSwimmerHouseholdResolver(membershipService.SwimmerHouseholdID)
+	}
 	if trainingService == nil {
 		trainingService = training.NewServiceWithPool(dbPool)
 	}
@@ -533,6 +564,7 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, deps RouterDeps) htt
 	kcClient = resolveKeycloakClient(cfg, logger, kcClient)
 	publicSiteHandlers := buildPublicSiteHandlers(cfg, orgSettingsService, commsService, meetsService, engagement.eventsService, performanceService, kcClient, nil)
 	userHandlers := handlers.NewUserHandlersWithMembers(kcClient, auditService, membershipService)
+	userHandlers.SetSessionRevoker(authService)
 
 	wireCrossDomainHooks(logger, authService, membershipService, groupsService, meetsService)
 
@@ -573,6 +605,10 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, deps RouterDeps) htt
 	exportsService.SetQueue(workerBackend)
 	complianceHandlers.SetJobQueue(workerBackend)
 	jobsHandlers := handlers.NewJobsHandlers(workerBackend)
+	if !isNilWorkerBackend(workerBackend) {
+		workerBackend.RegisterHandler(handlers.TaskTypeCampaignSend, commsHandlers.CampaignSendJobHandler())
+		commsHandlers.SetJobQueue(workerBackend)
+	}
 	volunteerHandlers, volunteerService := wireVolunteer(volunteerDeps{
 		pool: dbPool, logger: logger, audit: auditService, members: membershipService, meets: meetsService,
 		seasons: seasonsService, billing: billingService, postmark: postmarkClient, workerBack: workerBackend,
@@ -587,7 +623,7 @@ func NewRouterWithServices(cfg Config, logger *slog.Logger, deps RouterDeps) htt
 		return collectHouseholdExportData(orgID, householdID, membershipService, groupsService, billingService, exportSources...)
 	})
 
-	router.Use(chimiddleware.RequestID)
+	router.Use(appmiddleware.RequestID)
 	router.Use(appmiddleware.TrustedProxy(cfg.Security.RateLimit.TrustedProxyCIDRs))
 	router.Use(appmiddleware.OTelTracing(cfg.Telemetry.ServiceName))
 	router.Use(appmiddleware.PrometheusMetrics(metrics))
@@ -1000,6 +1036,9 @@ func wireCrossDomainHooks(logger *slog.Logger, authService *authn.Service, membe
 				logger.Warn("add registered swimmer to group roster failed", "registration_id", reg.ID, "error", err)
 			}
 		})
+	}
+	if membershipService != nil && groupsService != nil {
+		membershipService.SetParentHouseholdLinkedHook(groupsService.SeedParentHousehold)
 	}
 	if membershipService != nil {
 		membershipService.SetSwimmerCreatedHook(func(swimmer members.Swimmer) {

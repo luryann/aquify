@@ -4,9 +4,9 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/dareaquatics/aquify/server/internal/app/audit"
-	"github.com/dareaquatics/aquify/server/internal/app/httpx"
-	"github.com/dareaquatics/aquify/server/internal/app/seasons"
+	"github.com/luryann/aquify/server/internal/app/audit"
+	"github.com/luryann/aquify/server/internal/app/httpx"
+	"github.com/luryann/aquify/server/internal/app/seasons"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
 )
@@ -83,6 +83,10 @@ func (h *SeasonsHandlers) createSeason(w http.ResponseWriter, r *http.Request) {
 
 	season, err := h.service.Create(orgID, body.Name, body.StartDate, body.EndDate, body.Status, body.Goals, principal.UserID)
 	if err != nil {
+		if errors.Is(err, seasons.ErrInvalidDates) {
+			httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", err.Error(), nil)
+			return
+		}
 		if errors.Is(err, seasons.ErrInvalidStatus) {
 			httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", "Invalid season status.", nil)
 			return
@@ -158,6 +162,10 @@ func (h *SeasonsHandlers) updateSeason(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, seasons.ErrNotFound) {
 			httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Season not found.", nil)
+			return
+		}
+		if errors.Is(err, seasons.ErrInvalidDates) {
+			httpx.WriteError(w, r, http.StatusBadRequest, "bad_request", err.Error(), nil)
 			return
 		}
 		if errors.Is(err, seasons.ErrInvalidStatus) {

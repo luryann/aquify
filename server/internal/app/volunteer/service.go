@@ -18,8 +18,8 @@ import (
 	"strings"
 	"time"
 
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
-	"github.com/dareaquatics/aquify/server/internal/workers"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/workers"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )

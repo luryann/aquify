@@ -299,7 +299,7 @@ func TestMFAEnrollContractAcceptsOnlyImplementedFactors(t *testing.T) {
 	t.Parallel()
 
 	router := NewRouter(Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
+	token := issueSessionToken(t, router, "org-demo", []string{"admin"}, true)
 
 	cases := []struct {
 		name           string
@@ -408,4 +408,37 @@ func encodeJSONBody(t *testing.T, payload any) *bytes.Reader {
 		t.Fatalf("failed to marshal request payload: %v", err)
 	}
 	return bytes.NewReader(raw)
+}
+
+func TestAuthRBACHardening(t *testing.T) {
+	t.Parallel()
+	router := NewRouter(Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	adminMFA := issueSessionToken(t, router, "org-demo", []string{"admin"}, true)
+
+	post := func(path, token string, body map[string]any) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, path, encodeJSONBody(t, body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Org-Id", "org-demo")
+		req.Header.Set("Authorization", "Bearer "+token)
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		return rr
+	}
+
+	// Unknown role names are not recorded as assignments.
+	rr := post("/api/v1/auth/roles/assign", adminMFA, map[string]any{
+		"org_id": "org-demo", "target_user_id": "u1", "role": "owner", "reason": "x",
+	})
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("unknown role: expected 400, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	// A non-MFA session cannot add a second factor once one exists.
+	plain := issueSessionToken(t, router, "org-demo", []string{"admin"}, false)
+	if rr := post("/api/v1/auth/mfa/enroll", plain, map[string]any{"factor_type": "backup_code"}); rr.Code != http.StatusCreated {
+		t.Fatalf("first enroll: expected 201, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if rr := post("/api/v1/auth/mfa/enroll", plain, map[string]any{"factor_type": "backup_code"}); rr.Code != http.StatusForbidden {
+		t.Fatalf("second enroll without MFA: expected 403, got %d: %s", rr.Code, rr.Body.String())
+	}
 }

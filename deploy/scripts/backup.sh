@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# DARE Platform Backup Script
+# aquify Platform Backup Script
 #
-# Runs daily via systemd timer (dare-backup.service / dare-backup.timer).
+# Runs daily via systemd timer (aquify-backup.service / aquify-backup.timer).
 # Backs up:
 #   1. PostgreSQL database (pg_dump --format=custom --compress=9)
 #   2. MinIO object storage (mc mirror to backup bucket)
 #   3. Keycloak realm export (partial-export via Admin REST API)
 #
-# Creates a timestamped directory: /var/backups/dare/YYYYMMDD-HHMMSS/
+# Creates a timestamped directory: /var/backups/aquify/YYYYMMDD-HHMMSS/
 # Archives and GPG-encrypts the snapshot, then uploads offsite via rclone.
 #
 # Retention:
@@ -15,12 +15,12 @@
 #   Offsite: 30 daily, 12 weekly (Sunday), 3 monthly (1st of month)
 #
 # Failure alerting: sends Slack message to ALERT_WEBHOOK on any step failure.
-# Prometheus: writes dare_backup_last_success_timestamp to node_exporter textfile.
+# Prometheus: writes aquify_backup_last_success_timestamp to node_exporter textfile.
 #
 # Usage:
 #   backup.sh [--dry-run]
 #
-# Required environment (sourced from /opt/dare/.env.production or .env.backup):
+# Required environment (sourced from /opt/aquify/.env.production or .env.backup):
 #   DATABASE_URL                  PostgreSQL connection DSN
 #   MINIO_ENDPOINT                MinIO server URL (e.g. http://localhost:9000)
 #   MINIO_ACCESS_KEY              MinIO access key
@@ -31,12 +31,12 @@
 #   KEYCLOAK_REALM                Realm name to export
 #   KEYCLOAK_ADMIN_USER           Keycloak admin username
 #   KEYCLOAK_ADMIN_PASS           Keycloak admin password
-#   RCLONE_REMOTE                 rclone remote:path (e.g. b2:dare-backups-offsite)
+#   RCLONE_REMOTE                 rclone remote:path (e.g. b2:aquify-backups-offsite)
 #   GPG_RECIPIENT                 GPG key fingerprint or email for encryption
 #   ALERT_WEBHOOK                 Slack incoming webhook URL for failure alerts
 #
 # Optional:
-#   BACKUP_DIR                    Base local backup path (default: /var/backups/dare)
+#   BACKUP_DIR                    Base local backup path (default: /var/backups/aquify)
 #   BACKUP_RETENTION_DAYS         Days to keep local archives (default: 30)
 #   NODE_EXPORTER_TEXTFILE_DIR    Path to node_exporter textfile dir (default: /var/lib/node_exporter)
 
@@ -70,9 +70,9 @@ pg_env_from_url() {
 # Configuration
 # ---------------------------------------------------------------------------
 
-DEPLOY_DIR="/opt/dare"
-BACKUP_DIR="${BACKUP_DIR:-/var/backups/dare}"
-BACKUP_LOG="/var/log/dare/backup.log"
+DEPLOY_DIR="/opt/aquify"
+BACKUP_DIR="${BACKUP_DIR:-/var/backups/aquify}"
+BACKUP_LOG="/var/log/aquify/backup.log"
 BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
 NODE_EXPORTER_TEXTFILE_DIR="${NODE_EXPORTER_TEXTFILE_DIR:-/var/lib/node_exporter}"
 
@@ -87,10 +87,10 @@ DATABASE_URL="${DATABASE_URL:-}"
 MINIO_ENDPOINT="${MINIO_ENDPOINT:-http://localhost:9000}"
 MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-}"
 MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-}"
-MINIO_BUCKET="${MINIO_BUCKET:-dare-production}"
-BACKUP_BUCKET="${BACKUP_BUCKET:-dare-backup-objects}"
+MINIO_BUCKET="${MINIO_BUCKET:-aquify-production}"
+BACKUP_BUCKET="${BACKUP_BUCKET:-aquify-backup-objects}"
 KEYCLOAK_URL="${KEYCLOAK_URL:-http://localhost:8443}"
-KEYCLOAK_REALM="${KEYCLOAK_REALM:-dare}"
+KEYCLOAK_REALM="${KEYCLOAK_REALM:-aquify}"
 KEYCLOAK_ADMIN_USER="${KEYCLOAK_ADMIN_USER:-admin}"
 KEYCLOAK_ADMIN_PASS="${KEYCLOAK_ADMIN_PASS:-}"
 RCLONE_REMOTE="${RCLONE_REMOTE:-}"
@@ -135,18 +135,18 @@ send_alert() {
   fi
   curl -s -X POST "${ALERT_WEBHOOK}" \
     -H "Content-Type: application/json" \
-    --data "{\"text\":\":rotating_light: *DARE Backup FAILED* [${TIMESTAMP}]\n${msg}\nCheck ${BACKUP_LOG}\"}" \
+    --data "{\"text\":\":rotating_light: *aquify Backup FAILED* [${TIMESTAMP}]\n${msg}\nCheck ${BACKUP_LOG}\"}" \
     --max-time 10 \
     2>/dev/null || log "WARN" "Failed to send Slack alert (curl error)"
 }
 
 write_prometheus_metric() {
-  local metric_file="${NODE_EXPORTER_TEXTFILE_DIR}/dare_backup.prom"
+  local metric_file="${NODE_EXPORTER_TEXTFILE_DIR}/aquify_backup.prom"
   if [[ -d "${NODE_EXPORTER_TEXTFILE_DIR}" ]]; then
     {
-      echo "# HELP dare_backup_last_success_timestamp Unix timestamp of last successful DARE backup"
-      echo "# TYPE dare_backup_last_success_timestamp gauge"
-      echo "dare_backup_last_success_timestamp $(date +%s)"
+      echo "# HELP aquify_backup_last_success_timestamp Unix timestamp of last successful aquify backup"
+      echo "# TYPE aquify_backup_last_success_timestamp gauge"
+      echo "aquify_backup_last_success_timestamp $(date +%s)"
     } > "${metric_file}.tmp" && mv "${metric_file}.tmp" "${metric_file}"
     log "INFO" "Prometheus metric written: ${metric_file}"
   fi
@@ -159,7 +159,7 @@ write_prometheus_metric() {
 setup() {
   mkdir -p "${SNAPSHOT_DIR}" "$(dirname "${BACKUP_LOG}")"
   touch "${BACKUP_LOG}"
-  log "INFO" "=== DARE Backup started: ${TIMESTAMP} ==="
+  log "INFO" "=== aquify Backup started: ${TIMESTAMP} ==="
   [[ "${DRY_RUN}" == "true" ]] && log "INFO" "DRY RUN MODE — no data will be written or uploaded"
 }
 
@@ -216,7 +216,7 @@ backup_minio() {
   fi
 
   # Register a temporary mc alias scoped to this run
-  mc alias set dare-src "${MINIO_ENDPOINT}" "${MINIO_ACCESS_KEY}" "${MINIO_SECRET_KEY}" \
+  mc alias set aquify-src "${MINIO_ENDPOINT}" "${MINIO_ACCESS_KEY}" "${MINIO_SECRET_KEY}" \
     --api S3v4 2>> "${BACKUP_LOG}" \
     || { record_failure "mc alias set failed"; return; }
 
@@ -224,12 +224,12 @@ backup_minio() {
   mkdir -p "${minio_dir}"
 
   if [[ "${DRY_RUN}" == "true" ]]; then
-    log "INFO" "[dry-run] mc mirror dare-src/${MINIO_BUCKET} → ${minio_dir}"
+    log "INFO" "[dry-run] mc mirror aquify-src/${MINIO_BUCKET} → ${minio_dir}"
     return
   fi
 
-  log "INFO" "Mirroring dare-src/${MINIO_BUCKET} → ${minio_dir}..."
-  if mc mirror --preserve "dare-src/${MINIO_BUCKET}" "${minio_dir}" >> "${BACKUP_LOG}" 2>&1; then
+  log "INFO" "Mirroring aquify-src/${MINIO_BUCKET} → ${minio_dir}..."
+  if mc mirror --preserve "aquify-src/${MINIO_BUCKET}" "${minio_dir}" >> "${BACKUP_LOG}" 2>&1; then
     local cnt
     cnt="$(find "${minio_dir}" -type f | wc -l | tr -d ' ')"
     log "INFO" "MinIO mirror complete: ${cnt} objects"
@@ -307,7 +307,7 @@ EOF
 create_archive() {
   log "INFO" "--- Step 4: Creating backup archive ---"
 
-  local archive_tar="${BACKUP_DIR}/dare-backup-${TIMESTAMP}.tar.gz"
+  local archive_tar="${BACKUP_DIR}/aquify-backup-${TIMESTAMP}.tar.gz"
   local archive_out
 
   if [[ "${DRY_RUN}" == "true" ]]; then
@@ -423,7 +423,7 @@ prune_old_backups() {
     rm -f "${f}"
     (( removed_files++ )) || true
     log "INFO" "Pruned archive: ${f}"
-  done < <(find "${BACKUP_DIR}" -maxdepth 1 \( -name "dare-backup-*.tar.gz" -o -name "dare-backup-*.tar.gz.gpg" \) \
+  done < <(find "${BACKUP_DIR}" -maxdepth 1 \( -name "aquify-backup-*.tar.gz" -o -name "aquify-backup-*.tar.gz.gpg" \) \
               -mtime "+${BACKUP_RETENTION_DAYS}" -print0 2>/dev/null)
 
   log "INFO" "Pruning complete: removed ${removed_dirs} snapshot dir(s), ${removed_files} archive file(s)"
@@ -454,7 +454,7 @@ main() {
     exit 1
   fi
 
-  log "INFO" "=== DARE Backup completed successfully: ${TIMESTAMP} ==="
+  log "INFO" "=== aquify Backup completed successfully: ${TIMESTAMP} ==="
   write_prometheus_metric
   exit 0
 }

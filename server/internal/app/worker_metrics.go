@@ -4,13 +4,13 @@ import (
 	"context"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/telemetry"
-	"github.com/dareaquatics/aquify/server/internal/workers"
+	"github.com/luryann/aquify/server/internal/telemetry"
+	"github.com/luryann/aquify/server/internal/workers"
 )
 
 // instrumentedRegistrar wraps every registered job handler so executions and
-// durations reach Prometheus (dare_job_executions_total and
-// dare_job_duration_seconds); without it those series, the job dashboards and
+// durations reach Prometheus (aquify_job_executions_total and
+// aquify_job_duration_seconds); without it those series, the job dashboards and
 // the billing-failure alert never receive data.
 type instrumentedRegistrar struct {
 	inner   workerHandlerRegistrar

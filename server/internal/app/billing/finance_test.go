@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
 const finOrg = "org-fin"
@@ -384,5 +384,48 @@ func TestUpsertAutopayValidatesExpiryAndHousehold(t *testing.T) {
 	ok.PaymentMethodExpMonth, ok.PaymentMethodExpYear = 12, time.Now().Year()+2
 	if _, err := svc.UpsertHouseholdAutopay(finOrg, "admin-1", finAdmin, "hh-a", ok); err != nil {
 		t.Fatalf("valid: %v", err)
+	}
+}
+
+func TestRunInactiveHouseholdAdjustmentsAndNegativeNet(t *testing.T) {
+	svc, _ := newFinService(t)
+	roster := finRoster()
+	roster.Households[1].Status = "inactive"
+	svc.SetRosterSource(func(string) (RosterSnapshot, error) { return roster, nil })
+	if _, err := svc.CreateAdjustment(finOrg, "admin-1", finAdmin, AdjustmentInput{HouseholdID: "hh-b", AmountCents: 2500, Reason: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	// hh-a: credit larger than its dues must not hold the dues back.
+	if _, err := svc.CreateAdjustment(finOrg, "admin-1", finAdmin, AdjustmentInput{HouseholdID: "hh-a", AmountCents: -10000000, Reason: "goodwill"}); err != nil {
+		t.Fatal(err)
+	}
+	p, err := svc.PreviewBillingRun(finOrg, finAdmin, RunInput{AsOf: "2026-11-20", InvoiceStatus: "issued", IncludeAdjustments: func() *bool { b := true; return &b }()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, h := range p.Households {
+		if h.HouseholdID == "hh-b" {
+			t.Fatal("inactive household must not be invoiced for adjustments")
+		}
+	}
+	var sawA bool
+	for _, h := range p.Households {
+		if h.HouseholdID == "hh-a" {
+			sawA = h.TotalCents > 0
+		}
+	}
+	if !sawA {
+		t.Fatal("hh-a dues must still be billed when adjustments exceed charges")
+	}
+}
+
+func TestAgingReportHonoursAsOf(t *testing.T) {
+	svc, _ := newFinService(t)
+	if _, err := svc.CommitBillingRun(finOrg, "admin-1", finAdmin, RunInput{AsOf: "2026-11-20", InvoiceStatus: "issued"}, RunTriggerManual); err != nil {
+		t.Fatal(err)
+	}
+	early, err := svc.AgingReport(finOrg, finAdmin, mustDate(t, "2020-01-01"))
+	if err != nil || early.Totals.TotalCents != 0 {
+		t.Fatalf("invoices issued after as_of must be excluded: %+v %v", early.Totals, err)
 	}
 }

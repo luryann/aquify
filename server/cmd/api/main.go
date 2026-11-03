@@ -10,7 +10,7 @@
 //  RELATED MATERIALS ARE CONFIDENTIAL AND PROPRIETARY INTELLECTUAL
 //  PROPERTY OF RYAN LU.
 //
-//  THIS SOFTWARE MAY BE LICENSED BY RYAN LU TO DARE AQUATICS AND TO
+//  THIS SOFTWARE MAY BE LICENSED BY RYAN LU TO aquify AQUATICS AND TO
 //  OTHER TEAMS, ORGANIZATIONS, OR AUTHORIZED USERS ONLY IF AND TO THE
 //  EXTENT EXPRESSLY APPROVED BY RYAN LU.
 //
@@ -26,7 +26,7 @@
 //  NON-EXCLUSIVE, NON-TRANSFERABLE, AND NON-SUBLICENSABLE UNLESS
 //  RYAN LU EXPRESSLY AGREES OTHERWISE IN A SEPARATE SIGNED WRITING.
 //
-//  DARE AQUATICS, IF AUTHORIZED, MAY USE THE SOFTWARE SOLELY WITHIN
+//  aquify AQUATICS, IF AUTHORIZED, MAY USE THE SOFTWARE SOLELY WITHIN
 //  THE SCOPE OF ITS LICENSE. NO MODIFICATION IS PERMITTED EXCEPT WITH
 //  RYAN LU'S PRIOR EXPRESS WRITTEN PERMISSION. THE SAME RULE APPLIES
 //  TO ANY OTHER LICENSEE UNLESS ITS LICENSE EXPRESSLY STATES
@@ -54,9 +54,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/app"
-	"github.com/dareaquatics/aquify/server/internal/telemetry"
-	"github.com/dareaquatics/aquify/server/internal/workers"
+	"github.com/luryann/aquify/server/internal/app"
+	"github.com/luryann/aquify/server/internal/telemetry"
+	"github.com/luryann/aquify/server/internal/workers"
 	"github.com/joho/godotenv"
 )
 
@@ -162,9 +162,11 @@ func main() {
 	var backend *workers.RedisBackend
 	if strings.TrimSpace(cfg.Worker.RedisURL) != "" {
 		backend, err = workers.NewRedisBackend(workers.RedisBackendConfig{
-			RedisURL:    cfg.Worker.RedisURL,
-			Logger:      logger,
-			Concurrency: cfg.Worker.ConcurrencyPerQueue,
+			RedisURL: cfg.Worker.RedisURL,
+			Logger:   logger,
+			// asynq's Concurrency is the total pool shared by all 5 queues
+			// (imports, billing, email, reconcile, default).
+			Concurrency: cfg.Worker.ConcurrencyPerQueue * 5,
 		})
 		if err != nil {
 			cfg, _, err = app.MaybeApplyDevelopmentRedisFallback(cfg, logger, err)
@@ -258,7 +260,10 @@ func main() {
 	logger.Info("api listening", "addr", cfg.Addr)
 	if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		logger.Error("server failed", "error", err)
-		return
+		if flushErr := telShutdown(context.Background()); flushErr != nil {
+			logger.Warn("telemetry shutdown error", "error", flushErr)
+		}
+		os.Exit(1)
 	}
 	<-shutdownDone
 }

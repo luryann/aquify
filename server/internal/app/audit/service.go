@@ -41,6 +41,7 @@ const (
 	ActionAuthUserInvite                     = "auth.user.invite"
 	ActionAuthUserUpdate                     = "auth.user.update"
 	ActionAuthUserDisable                    = "auth.user.disable"
+	ActionAuthSessionRevoke                  = "auth.session.revoke"
 	ActionAuthUserEnable                     = "auth.user.enable"
 	ActionAuthUserDelete                     = "auth.user.delete"
 	ActionAuthUserPasswordReset              = "auth.user.password_reset"

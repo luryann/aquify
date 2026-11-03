@@ -1,0 +1,47 @@
+[Unit]
+Description=aquify Platform (Docker Compose)
+Documentation=https://github.com/luryann/aquify
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=aquify
+Group=aquify
+WorkingDirectory=/opt/aquify
+
+# Pull latest images before starting
+ExecStartPre=/usr/bin/docker compose -f docker-compose.production.yml pull --quiet
+
+# Start all services, removing any orphaned containers
+ExecStart=/usr/bin/docker compose -f docker-compose.production.yml up --remove-orphans
+
+# Graceful shutdown: stop all containers
+ExecStop=/usr/bin/docker compose -f docker-compose.production.yml down
+
+# Reload: rolling restart of application services only
+ExecReload=/usr/bin/docker compose -f docker-compose.production.yml up -d --no-deps --remove-orphans aquify-api aquify-admin aquify-worker
+
+Restart=on-failure
+RestartSec=10s
+TimeoutStartSec=120s
+TimeoutStopSec=60s
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=aquify-platform
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/aquify /var/log/aquify
+ProtectHome=read-only
+
+# Environment
+EnvironmentFile=-/opt/aquify/.env.production
+
+[Install]
+WantedBy=multi-user.target

@@ -6,9 +6,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dareaquatics/aquify/server/internal/app/audit"
-	"github.com/dareaquatics/aquify/server/internal/app/httpx"
-	"github.com/dareaquatics/aquify/server/internal/app/members"
+	"github.com/luryann/aquify/server/internal/app/audit"
+	"github.com/luryann/aquify/server/internal/app/httpx"
+	"github.com/luryann/aquify/server/internal/app/members"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
 )
@@ -74,6 +75,11 @@ func (h *MembershipHandlers) createHousehold(w http.ResponseWriter, r *http.Requ
 	if !validateBodyOrgScope(w, r, orgID, req.OrgID) {
 		return
 	}
+	email, ok := h.normalizePrimaryEmail(w, r, req.PrimaryEmail)
+	if !ok {
+		return
+	}
+	req.PrimaryEmail = email
 
 	household, err := h.service.CreateHousehold(principal, members.CreateHouseholdInput{
 		OrgID:            req.OrgID,
@@ -150,6 +156,19 @@ func (h *MembershipHandlers) getHousehold(w http.ResponseWriter, r *http.Request
 	})
 }
 
+// normalizePrimaryEmail trims the address, allows empty (which clears it on
+// update), and answers 400 for a non-empty value that is not a valid email.
+// A pointer-to-"" would trip a struct-level omitempty,email tag, so this runs
+// after decoding instead.
+func (h *MembershipHandlers) normalizePrimaryEmail(w http.ResponseWriter, r *http.Request, raw string) (string, bool) {
+	email := strings.TrimSpace(raw)
+	if email != "" && h.validate.Var(email, "email") != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "validation_failed", "primary_email must be a valid email address.", nil)
+		return "", false
+	}
+	return email, true
+}
+
 type updateHouseholdRequest struct {
 	HouseholdName    *string `json:"household_name"`
 	PrimaryEmail     *string `json:"primary_email"`
@@ -167,6 +186,14 @@ func (h *MembershipHandlers) updateHousehold(w http.ResponseWriter, r *http.Requ
 	var req updateHouseholdRequest
 	if !h.decodeAndValidate(w, r, &req) {
 		return
+	}
+
+	if req.PrimaryEmail != nil {
+		email, ok := h.normalizePrimaryEmail(w, r, *req.PrimaryEmail)
+		if !ok {
+			return
+		}
+		req.PrimaryEmail = &email
 	}
 
 	householdID := strings.TrimSpace(chi.URLParam(r, "householdID"))
@@ -502,10 +529,22 @@ func (h *MembershipHandlers) updateSwimmer(w http.ResponseWriter, r *http.Reques
 
 	recordAudit(h.auditService, principal, orgID, audit.ActionMembersSwimmerUpdate, "swimmer", swimmerID, auditEvent.Before, swimmer, nil)
 
+	respSwimmer := any(swimmer)
+	respAudit := auditEvent
+	if !appmiddleware.HasAnyRole(principal, "admin", "coach", "parent") {
+		// Swimmer-role callers may edit notes but never see medical data.
+		redacted := swimmer
+		redacted.MedicalFlags = nil
+		redacted.Allergies = ""
+		respSwimmer = members.SwimmerView{Swimmer: redacted, MedicalFlagsRedacted: true}
+		respAudit.Before = withoutMedicalKeys(auditEvent.Before)
+		respAudit.After = withoutMedicalKeys(auditEvent.After)
+	}
+
 	_ = httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":      "updated",
-		"swimmer":     swimmer,
-		"audit_event": auditEvent,
+		"swimmer":     respSwimmer,
+		"audit_event": respAudit,
 	})
 }
 
@@ -662,4 +701,19 @@ func writeMembersNotFound(w http.ResponseWriter, r *http.Request, err error) boo
 
 func (h *MembershipHandlers) decodeAndValidate(w http.ResponseWriter, r *http.Request, dst any) bool {
 	return decodeAndValidateBadRequest(w, r, dst, h.validate)
+}
+
+// withoutMedicalKeys returns a copy of an audit snapshot without medical fields.
+func withoutMedicalKeys(in map[string]any) map[string]any {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		if k == "medical_flags" || k == "allergies" {
+			continue
+		}
+		out[k] = v
+	}
+	return out
 }

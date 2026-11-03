@@ -10,8 +10,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
-	"github.com/dareaquatics/aquify/server/internal/dbutil"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/dbutil"
 )
 
 // Team records.

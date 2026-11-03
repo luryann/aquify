@@ -1,4 +1,4 @@
-This app is a full-stack swim club operations platform for DARE, meant to replace TeamUnify/SportsEngine Motion.
+This app is a full-stack swim club operations platform for aquify, meant to replace TeamUnify/SportsEngine Motion.
 
 At a high level, it combines:
 

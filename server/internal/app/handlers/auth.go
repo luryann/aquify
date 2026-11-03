@@ -4,12 +4,13 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 
-	"github.com/dareaquatics/aquify/server/internal/app/audit"
-	"github.com/dareaquatics/aquify/server/internal/app/authn"
-	"github.com/dareaquatics/aquify/server/internal/app/httpx"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/app/audit"
+	"github.com/luryann/aquify/server/internal/app/authn"
+	"github.com/luryann/aquify/server/internal/app/httpx"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
 )
@@ -81,8 +82,26 @@ func (h *AuthHandlers) OIDCAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Bind the signed state to this browser so a state/code minted elsewhere
+	// cannot be replayed into a victim's session (login CSRF).
+	if parsed, perr := url.Parse(location); perr == nil {
+		if nonce, nerr := h.service.OIDCStateNonce(parsed.Query().Get("state")); nerr == nil {
+			http.SetCookie(w, &http.Cookie{
+				Name:     oidcStateCookieName,
+				Value:    nonce,
+				Path:     "/api/v1/auth/oidc",
+				HttpOnly: true,
+				Secure:   !h.cookies.Insecure,
+				SameSite: http.SameSiteLaxMode,
+				MaxAge:   600,
+			})
+		}
+	}
+
 	http.Redirect(w, r, location, http.StatusFound)
 }
+
+const oidcStateCookieName = "aquify_oidc_state"
 
 type oidcCallbackRequest struct {
 	Code  string `json:"code" validate:"required"`
@@ -120,19 +139,36 @@ func (h *AuthHandlers) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	bound := ""
+	if c, cerr := r.Cookie(oidcStateCookieName); cerr == nil {
+		bound = c.Value
+	}
+	// Single use: the binding cookie is cleared whatever the outcome.
+	http.SetCookie(w, &http.Cookie{Name: oidcStateCookieName, Value: "", Path: "/api/v1/auth/oidc", HttpOnly: true, Secure: !h.cookies.Insecure, SameSite: http.SameSiteLaxMode, MaxAge: -1})
+	if err := h.service.VerifyOIDCStateBinding(req.State, bound); err != nil {
+		slog.Warn("oidc callback: state binding failed", "error", err)
+		httpx.WriteError(w, r, http.StatusUnauthorized, "invalid_oidc_state", "Sign-in state is invalid or expired. Please start again.", nil)
+		return
+	}
+
 	result, err := h.service.OIDCCallback(req.Code, req.State, req.OrgID)
 	if err != nil {
-		status := http.StatusBadRequest
-		code := "invalid_oidc_callback"
 		switch {
 		case errors.Is(err, authn.ErrOIDCNotConfigured):
-			status = http.StatusServiceUnavailable
-			code = "oidc_not_configured"
+			httpx.WriteError(w, r, http.StatusServiceUnavailable, "oidc_not_configured", "Single sign-on is not configured.", nil)
+		case errors.Is(err, authn.ErrOIDCProviderUnavailable):
+			// Details (URLs, dial errors) are logged server-side only.
+			httpx.WriteError(w, r, http.StatusServiceUnavailable, "oidc_provider_unavailable", "The sign-in provider is temporarily unavailable. Please try again shortly.", err)
 		case errors.Is(err, authn.ErrOIDCStateInvalid):
-			status = http.StatusUnauthorized
-			code = "invalid_oidc_state"
+			slog.Warn("oidc callback: invalid state", "error", err)
+			httpx.WriteError(w, r, http.StatusUnauthorized, "invalid_oidc_state", "Sign-in state is invalid or expired. Please start again.", nil)
+		case errors.Is(err, authn.ErrNoAppRole):
+			slog.Warn("oidc callback: user has no application role", "error", err)
+			httpx.WriteError(w, r, http.StatusForbidden, "no_app_role", "Your account has no role assigned yet. Contact your club administrator.", nil)
+		default:
+			slog.Warn("oidc callback rejected", "error", err)
+			httpx.WriteError(w, r, http.StatusBadRequest, "invalid_oidc_callback", "Sign-in could not be completed. Please try again.", nil)
 		}
-		httpx.WriteError(w, r, status, code, err.Error(), nil)
 		return
 	}
 
@@ -354,6 +390,14 @@ func (h *AuthHandlers) enrollMFA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Once a factor exists, adding another is a security-sensitive step-up
+	// action: require a session that already passed MFA, otherwise a stolen
+	// plain session could mint its own factor and self-issue step-up.
+	if len(h.service.ListMFAFactors(principal.UserID)) > 0 && !principal.MFAAuthenticated {
+		httpx.WriteError(w, r, http.StatusForbidden, "mfa_required", "MFA authentication is required to enroll an additional factor.", nil)
+		return
+	}
+
 	factor, err := h.service.EnrollMFA(principal.UserID, principal.Email, principal.OrgID, req.FactorType, req.Label)
 	if err != nil {
 		httpx.WriteError(w, r, http.StatusBadRequest, "invalid_mfa_factor", err.Error(), nil)
@@ -454,6 +498,10 @@ func (h *AuthHandlers) assignRole(w http.ResponseWriter, r *http.Request) {
 			"header_org_id": orgID,
 			"body_org_id":   req.OrgID,
 		})
+		return
+	}
+
+	if !requireAssignableRole(w, r, principal, normalizeUserRole(req.Role), "assign") {
 		return
 	}
 

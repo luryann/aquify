@@ -3,7 +3,7 @@ package authn
 import (
 	"strings"
 
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
 const (
@@ -25,10 +25,10 @@ type LocalDevUser struct {
 }
 
 var localDevUsers = []LocalDevUser{
-	{Token: "stub-admin", UserID: LocalDevAdminUserID, Email: "admin@dare.local", Name: "Dev Admin", Roles: []string{"admin"}},
-	{Token: "stub-coach", UserID: LocalDevCoachUserID, Email: "coach@dare.local", Name: "Dev Coach", Roles: []string{"coach"}},
-	{Token: "stub-parent", UserID: LocalDevParentUserID, Email: "parent@dare.local", Name: "Dev Parent", Roles: []string{"parent"}},
-	{Token: "stub-swimmer", UserID: LocalDevSwimmerUserID, Email: "swimmer@dare.local", Name: "Dev Swimmer", Roles: []string{"swimmer"}},
+	{Token: "stub-admin", UserID: LocalDevAdminUserID, Email: "admin@aquify.local", Name: "Dev Admin", Roles: []string{"admin"}},
+	{Token: "stub-coach", UserID: LocalDevCoachUserID, Email: "coach@aquify.local", Name: "Dev Coach", Roles: []string{"coach"}},
+	{Token: "stub-parent", UserID: LocalDevParentUserID, Email: "parent@aquify.local", Name: "Dev Parent", Roles: []string{"parent"}},
+	{Token: "stub-swimmer", UserID: LocalDevSwimmerUserID, Email: "swimmer@aquify.local", Name: "Dev Swimmer", Roles: []string{"swimmer"}},
 }
 
 var localDevUserIDs = map[string]struct{}{
@@ -71,7 +71,7 @@ func localDevStaticPrincipals() map[string]*appmiddleware.Principal {
 	principals["stub-admin"].MFAAuthenticated = true
 	principals["stub-admin-mfa"] = &appmiddleware.Principal{
 		UserID:           LocalDevAdminUserID,
-		Email:            "admin@dare.local",
+		Email:            "admin@aquify.local",
 		Name:             "Dev Admin",
 		OrgID:            LocalDevOrgID,
 		Roles:            []string{"admin"},
@@ -89,7 +89,7 @@ func normalizeLocalDevOrgID(userID, email, orgID string) string {
 	if _, ok := localDevUserIDs[strings.TrimSpace(userID)]; ok {
 		return LocalDevOrgID
 	}
-	if strings.HasSuffix(strings.ToLower(strings.TrimSpace(email)), "@dare.local") {
+	if strings.HasSuffix(strings.ToLower(strings.TrimSpace(email)), "@aquify.local") {
 		return LocalDevOrgID
 	}
 

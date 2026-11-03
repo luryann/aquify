@@ -48,7 +48,7 @@ import (
 	"sync"
 	"time"
 
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -65,6 +65,11 @@ var (
 	ErrMFATooManyAttempts   = errors.New("too many failed mfa attempts; try again later")
 	ErrOIDCNotConfigured    = errors.New("oidc is not configured")
 	ErrOIDCStateInvalid     = errors.New("oidc state is invalid")
+	// ErrOIDCProviderUnavailable wraps transport failures and 5xx responses
+	// from the OIDC token endpoint or JWKS URL.
+	ErrOIDCProviderUnavailable = errors.New("oidc provider unavailable")
+	// ErrNoAppRole means the token carried roles but none is a known app role.
+	ErrNoAppRole = errors.New("user has no application role")
 )
 
 type Config struct {
@@ -602,6 +607,29 @@ func (s *Service) BeginOIDCLogin(loginHint, orgID string) (string, error) {
 	return base.String(), nil
 }
 
+// OIDCStateNonce returns the nonce carried by a valid signed OIDC state. The
+// handler binds it to the initiating browser with a short-lived cookie.
+func (s *Service) OIDCStateNonce(state string) (string, error) {
+	payload, err := validateOIDCState(state, s.cfg.OIDC.StateSigningKey, time.Now().UTC())
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", ErrOIDCStateInvalid, err)
+	}
+	return payload.Nonce, nil
+}
+
+// VerifyOIDCStateBinding checks that the state belongs to the browser that
+// started the login (its binding cookie value must equal the state nonce).
+func (s *Service) VerifyOIDCStateBinding(state, bound string) error {
+	nonce, err := s.OIDCStateNonce(state)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(bound) == "" || subtle.ConstantTimeCompare([]byte(strings.TrimSpace(bound)), []byte(nonce)) != 1 {
+		return fmt.Errorf("%w: state not bound to this browser", ErrOIDCStateInvalid)
+	}
+	return nil
+}
+
 func (s *Service) OIDCCallback(code, state, _ string) (OIDCCallbackResult, error) {
 	if strings.TrimSpace(code) == "" || strings.TrimSpace(state) == "" {
 		return OIDCCallbackResult{}, errors.New("code and state are required")
@@ -669,9 +697,15 @@ func (s *Service) OIDCCallback(code, state, _ string) (OIDCCallbackResult, error
 		resolvedOrgID = normalizedOrgID
 	}
 
-	roles := claims.Roles
-	if len(roles) == 0 {
+	roles := filterAppRoles(claims.Roles)
+	if len(claims.Roles) == 0 {
+		// Legacy: a token with no roles claim at all is treated as a parent.
 		roles = []string{"parent"}
+	} else if len(roles) == 0 {
+		// Roles were present but none is an app role (e.g. only Keycloak's
+		// default-roles-*, offline_access, uma_authorization): never default
+		// to a privileged role.
+		return OIDCCallbackResult{}, ErrNoAppRole
 	}
 
 	// Resolve linked household for this Keycloak user, if one exists.
@@ -796,6 +830,66 @@ func (s *Service) RefreshSession(refreshToken string) (SessionTokens, error) {
 		RefreshToken: nextRefresh,
 		ExpiresAt:    expiresAt,
 	}, nil
+}
+
+// appRoles are the only roles that may appear on an API session principal.
+var appRoles = []string{"admin", "coach", "parent", "swimmer"}
+
+// filterAppRoles keeps only known app roles (deduplicated, input order).
+func filterAppRoles(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, r := range in {
+		r = strings.ToLower(strings.TrimSpace(r))
+		if slices.Contains(appRoles, r) && !slices.Contains(out, r) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// RevokeUserSessions revokes every active session (DB rows and in-memory
+// records) belonging to userID and returns how many were revoked.
+func (s *Service) RevokeUserSessions(ctx context.Context, userID string) (int, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return 0, errors.New("user id is required")
+	}
+	now := time.Now().UTC()
+	count := 0
+
+	s.mu.Lock()
+	for _, rec := range s.sessionsByAccess {
+		if rec.Principal.UserID == userID && rec.RevokedAt == nil {
+			t := now
+			rec.RevokedAt = &t
+			count++
+		}
+	}
+	for _, rec := range s.byRefresh {
+		if rec.Principal.UserID == userID && rec.RevokedAt == nil {
+			t := now
+			rec.RevokedAt = &t
+		}
+	}
+	s.mu.Unlock()
+
+	if s.pool != nil {
+		uid, err := uuid.Parse(userID)
+		if err != nil {
+			return count, nil
+		}
+		tag, err := s.pool.Exec(ctx, `
+			UPDATE sessions
+			SET revoked_at = $2, updated_at = now()
+			WHERE user_id = $1 AND revoked_at IS NULL`,
+			uid, now,
+		)
+		if err != nil {
+			return count, fmt.Errorf("revoke user sessions: %w", err)
+		}
+		count = int(tag.RowsAffected())
+	}
+	return count, nil
 }
 
 func (s *Service) RevokeSession(refreshToken string) error {
@@ -1499,7 +1593,7 @@ func (s *Service) AssignRole(input RoleAssignmentInput) (RoleAssignment, error) 
 	assignment := RoleAssignment{
 		OrgID:        strings.TrimSpace(input.OrgID),
 		TargetUserID: strings.TrimSpace(input.TargetUserID),
-		Role:         strings.TrimSpace(input.Role),
+		Role:         strings.ToLower(strings.TrimSpace(input.Role)),
 		ScopeType:    scopeType,
 		ScopeID:      strings.TrimSpace(input.ScopeID),
 		Reason:       strings.TrimSpace(input.Reason),
@@ -1509,6 +1603,9 @@ func (s *Service) AssignRole(input RoleAssignmentInput) (RoleAssignment, error) 
 
 	if assignment.OrgID == "" || assignment.TargetUserID == "" || assignment.Role == "" || assignment.Reason == "" || assignment.ActorUserID == "" {
 		return RoleAssignment{}, errors.New("org_id, target_user_id, role, reason, and actor_user_id are required")
+	}
+	if !slices.Contains(appRoles, assignment.Role) {
+		return RoleAssignment{}, errors.New("unknown role")
 	}
 
 	s.mu.Lock()
@@ -1592,7 +1689,7 @@ func (s *Service) exchangeOIDCAuthorizationCode(code string) (oidcTokenResponse,
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return oidcTokenResponse{}, err
+		return oidcTokenResponse{}, fmt.Errorf("%w: token request: %v", ErrOIDCProviderUnavailable, err)
 	}
 	defer resp.Body.Close()
 
@@ -1601,6 +1698,9 @@ func (s *Service) exchangeOIDCAuthorizationCode(code string) (oidcTokenResponse,
 		return oidcTokenResponse{}, err
 	}
 
+	if resp.StatusCode >= 500 {
+		return oidcTokenResponse{}, fmt.Errorf("%w: token endpoint status %d", ErrOIDCProviderUnavailable, resp.StatusCode)
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return oidcTokenResponse{}, fmt.Errorf("oidc token exchange failed with status %d", resp.StatusCode)
 	}
@@ -1808,13 +1908,16 @@ func (s *Service) fetchOIDCJWKSInternal(forceRefresh bool) (oidcJWKSet, error) {
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return oidcJWKSet{}, err
+		return oidcJWKSet{}, fmt.Errorf("%w: jwks request: %v", ErrOIDCProviderUnavailable, err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return oidcJWKSet{}, err
+	}
+	if resp.StatusCode >= 500 {
+		return oidcJWKSet{}, fmt.Errorf("%w: jwks status %d", ErrOIDCProviderUnavailable, resp.StatusCode)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return oidcJWKSet{}, fmt.Errorf("oidc jwks fetch failed with status %d", resp.StatusCode)

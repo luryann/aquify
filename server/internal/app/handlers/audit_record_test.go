@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dareaquatics/aquify/server/internal/app/audit"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/app/audit"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
 func TestRecordAuditLogsAndReturnsAppendFailure(t *testing.T) {

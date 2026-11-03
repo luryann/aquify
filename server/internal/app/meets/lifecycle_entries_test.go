@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
 func openMeetForCommitments(t *testing.T, svc *Service, admin *appmiddleware.Principal) Meet {

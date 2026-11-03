@@ -7,16 +7,16 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/app/billing"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
-	stripelib "github.com/dareaquatics/aquify/server/internal/stripe"
-	"github.com/dareaquatics/aquify/server/internal/workers"
+	"github.com/luryann/aquify/server/internal/app/billing"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
+	stripelib "github.com/luryann/aquify/server/internal/stripe"
+	"github.com/luryann/aquify/server/internal/workers"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 )
 
-const tracerNameBilling = "github.com/dareaquatics/aquify/server/internal/workers/jobhandlers/billing"
+const tracerNameBilling = "github.com/luryann/aquify/server/internal/workers/jobhandlers/billing"
 
 // BillingReconcilePayload is the JSON payload for the TypeBillingReconcile task.
 type BillingReconcilePayload struct {
@@ -161,11 +161,10 @@ func validateBillingIntegrity(ctx context.Context, billingService *billing.Servi
 		return err
 	}
 
-	invoices := billingService.SnapshotInvoices(orgID)
-	items := billingService.SnapshotInvoiceItems(orgID)
-	payments := billingService.SnapshotPayments(orgID)
-	refunds := billingService.SnapshotRefunds(orgID)
-	ledger := billingService.SnapshotLedgerEvents(orgID)
+	invoices, items, payments, refunds, ledger, err := billingService.IntegritySnapshot(ctx, orgID)
+	if err != nil {
+		return fmt.Errorf("nightly integrity: load billing state: %w", err)
+	}
 
 	invoiceIDs := make(map[string]billing.Invoice, len(invoices))
 	for _, invoice := range invoices {

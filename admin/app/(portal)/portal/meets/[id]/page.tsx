@@ -816,19 +816,8 @@ export default function MeetDetailPage() {
                       type="button"
                       onClick={() => { void saveNote(swimmer.id) }}
                       disabled={submitting === swimmer.id + 'note'}
-                      style={{
-                        flexShrink: 0,
-                        padding: '6px 12px',
-                        borderRadius: '8px',
-                        border: 'none',
-                        background: 'var(--accent)',
-                        color: '#fff',
-                        fontSize: 'var(--fs-sm)',
-                        fontWeight: 600,
-                        fontFamily: 'var(--font-body)',
-                        cursor: 'pointer',
-                        opacity: submitting === swimmer.id + 'note' ? 0.6 : 1,
-                      }}
+                      className="btn btn-primary btn-sm"
+                      style={{ flexShrink: 0 }}
                     >
                       {submitting === swimmer.id + 'note' ? 'Saving…' : 'Save message'}
                     </button>

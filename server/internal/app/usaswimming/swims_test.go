@@ -26,7 +26,7 @@ func swimsServer(t *testing.T, tokens *int32) *httptest.Server {
 			w.WriteHeader(401)
 			return
 		}
-		_, _ = w.Write([]byte(`[{"clubId":"c1","clubName":"DARE","clubCode":"DARE"}]`))
+		_, _ = w.Write([]byte(`[{"clubId":"c1","clubName":"aquify","clubCode":"aquify"}]`))
 	})
 	mux.HandleFunc("/swims/SwimsThirdParty/MemberDetails/club/c1", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {

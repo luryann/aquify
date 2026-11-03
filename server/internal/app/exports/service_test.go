@@ -3,13 +3,13 @@ package exports
 import (
 	"bytes"
 	"errors"
-	"github.com/dareaquatics/aquify/server/internal/storage"
+	"github.com/luryann/aquify/server/internal/storage"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 	"github.com/go-pdf/fpdf"
 )
 
@@ -19,7 +19,7 @@ func sampleReportInput(reportType, grouping string) ReportInput {
 	return ReportInput{
 		ReportType: reportType,
 		Grouping:   grouping,
-		Team:       ReportTeam{TeamCode: "DARE", TeamName: "DARE Aquatics", LSCCode: "PC"},
+		Team:       ReportTeam{TeamCode: "aquify", TeamName: "aquify Aquatics", LSCCode: "PC"},
 		Meet: ReportMeet{
 			Name:      "Spring Invitational",
 			StartDate: "2026-03-15",
@@ -189,8 +189,9 @@ func TestListExportsForViewerAppliesPerTypeAudience(t *testing.T) {
 	t.Parallel()
 	svc := NewService()
 	for id, typ := range map[string]string{"e1": "eligibility_report", "e2": "entry_report", "e3": "event_report"} {
-		svc.exports[id] = &FileExport{ID: id, OrgID: "org-1", MeetID: "m1", ExportType: typ}
+		svc.exports[id] = &FileExport{ID: id, OrgID: "org-1", MeetID: "m1", ExportType: typ, Status: "ready", StorageKey: "k", CreatedBy: "u"}
 	}
+	svc.exports["e4"] = &FileExport{ID: "e4", OrgID: "org-1", MeetID: "m1", ExportType: "entry_report", Status: "failed", LastError: "boom"}
 	if !IsStaffOnlyExportType("eligibility_report") || IsStaffOnlyExportType("entry_report") {
 		t.Fatal("staff-only attribute wrong")
 	}
@@ -204,9 +205,12 @@ func TestListExportsForViewerAppliesPerTypeAudience(t *testing.T) {
 		if ex.ExportType == "eligibility_report" {
 			t.Fatal("staff-only report leaked to parent")
 		}
+		if ex.StorageKey != "" || ex.CreatedBy != "" || ex.LastError != "" {
+			t.Fatal("internal fields leaked to parent")
+		}
 	}
-	if n := len(svc.ListExportsForViewer(coach, "org-1", "m1")); n != 3 {
-		t.Fatalf("coach should see all 3, got %d", n)
+	if n := len(svc.ListExportsForViewer(coach, "org-1", "m1")); n != 4 {
+		t.Fatalf("coach should see all 4, got %d", n)
 	}
 }
 

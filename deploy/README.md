@@ -1,6 +1,6 @@
-# DARE Platform — Deployment Guide
+# aquify Platform — Deployment Guide
 
-This document covers deploying the DARE platform to a self-managed VPS behind
+This document covers deploying the aquify platform to a self-managed VPS behind
 Cloudflare, using Docker Compose and GitHub Actions CI/CD.
 
 ---
@@ -10,7 +10,7 @@ Cloudflare, using Docker Compose and GitHub Actions CI/CD.
 ### On the VPS
 - Ubuntu 22.04 LTS or Debian 12
 - Docker Engine 25+ and Docker Compose V2 (`docker compose`, not `docker-compose`)
-- SSH access as a non-root deploy user (`dare`)
+- SSH access as a non-root deploy user (`aquify`)
 - Ports 80/443 open to Cloudflare IP ranges only (via `ufw` or `iptables`)
 - Internal ports (8080, 8081, 3000, 3001, 9090, etc.) firewalled from public access
 
@@ -26,11 +26,11 @@ Cloudflare, using Docker Compose and GitHub Actions CI/CD.
 After first-time setup the server has the following layout:
 
 ```
-/opt/dare/
+/opt/aquify/
   docker-compose.production.yml   # Production compose file (pulled from repo)
   docker-compose.staging.yml      # Staging compose file
-  .env.production                 # Production secrets (root:dare 640, NOT in repo)
-  .env.staging                    # Staging secrets (root:dare 640, NOT in repo)
+  .env.production                 # Production secrets (root:aquify 640, NOT in repo)
+  .env.staging                    # Staging secrets (root:aquify 640, NOT in repo)
   scripts/
     promote.sh                    # Promote an image tag to production
     rollback.sh                   # Revert to previous image tag
@@ -40,14 +40,14 @@ After first-time setup the server has the following layout:
     production-realm.json         # Keycloak realm config
     staging-realm.json
 
-/var/log/dare/
+/var/log/aquify/
   deploys.log                     # Deploy history
   backup.log                      # Backup run log
   smoke.log                       # Smoke test log
   ops.log                         # Manual ops notes
 
-/var/backups/dare/
-  dare_backup_<timestamp>.tar.gz  # Daily local backup archives (7-day retention)
+/var/backups/aquify/
+  aquify_backup_<timestamp>.tar.gz  # Daily local backup archives (7-day retention)
 ```
 
 ---
@@ -58,63 +58,63 @@ After first-time setup the server has the following layout:
 
 ```bash
 curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker dare
+sudo usermod -aG docker aquify
 ```
 
-### 2. Create the dare system user
+### 2. Create the aquify system user
 
 ```bash
-sudo useradd -r -m -d /opt/dare -s /bin/bash dare
-sudo mkdir -p /opt/dare /var/log/dare /var/backups/dare
-sudo chown -R dare:dare /opt/dare /var/log/dare /var/backups/dare
+sudo useradd -r -m -d /opt/aquify -s /bin/bash aquify
+sudo mkdir -p /opt/aquify /var/log/aquify /var/backups/aquify
+sudo chown -R aquify:aquify /opt/aquify /var/log/aquify /var/backups/aquify
 ```
 
 ### 3. Copy compose files and scripts
 
 ```bash
 # From your workstation
-scp deploy/docker-compose.production.yml dare@your-vps:/opt/dare/
-scp deploy/docker-compose.staging.yml dare@your-vps:/opt/dare/
-scp -r deploy/scripts/ dare@your-vps:/opt/dare/scripts/
-scp -r deploy/prometheus/ dare@your-vps:/opt/dare/prometheus/
-scp -r deploy/grafana/ dare@your-vps:/opt/dare/grafana/
-scp -r deploy/loki/ dare@your-vps:/opt/dare/loki/
-chmod +x /opt/dare/scripts/*.sh
+scp deploy/docker-compose.production.yml aquify@your-vps:/opt/aquify/
+scp deploy/docker-compose.staging.yml aquify@your-vps:/opt/aquify/
+scp -r deploy/scripts/ aquify@your-vps:/opt/aquify/scripts/
+scp -r deploy/prometheus/ aquify@your-vps:/opt/aquify/prometheus/
+scp -r deploy/grafana/ aquify@your-vps:/opt/aquify/grafana/
+scp -r deploy/loki/ aquify@your-vps:/opt/aquify/loki/
+chmod +x /opt/aquify/scripts/*.sh
 ```
 
 ### 4. Create .env.production
 
 ```bash
-sudo nano /opt/dare/.env.production
+sudo nano /opt/aquify/.env.production
 # Fill in all secrets per deploy/secrets/README.md
 # Also set METRICS_ADDR=:9091 so Prometheus can scrape the API and worker
-# (deploy/prometheus/*.yml targets dare-api:9091 and dare-worker:9091).
-sudo chown root:dare /opt/dare/.env.production
-sudo chmod 640 /opt/dare/.env.production
+# (deploy/prometheus/*.yml targets aquify-api:9091 and aquify-worker:9091).
+sudo chown root:aquify /opt/aquify/.env.production
+sudo chmod 640 /opt/aquify/.env.production
 ```
 
 ### 5. Install the systemd units
 
 ```bash
-sudo cp deploy/systemd/dare.service /etc/systemd/system/
-sudo cp deploy/systemd/dare-backup.service /etc/systemd/system/
-sudo cp deploy/systemd/dare-backup.timer /etc/systemd/system/
+sudo cp deploy/systemd/aquify.service /etc/systemd/system/
+sudo cp deploy/systemd/aquify-backup.service /etc/systemd/system/
+sudo cp deploy/systemd/aquify-backup.timer /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable dare dare-backup.timer
+sudo systemctl enable aquify aquify-backup.timer
 ```
 
 ### 6. Run database migrations
 
 ```bash
 # Ensure the postgres container is up first
-sudo systemctl start dare
+sudo systemctl start aquify
 # Then run goose migrations
-docker exec dare-production-dare-api-1 /dare-api migrate up
+docker exec aquify-production-aquify-api-1 /aquify-api migrate up
 ```
 
 ### 7. Configure Cloudflare
 
-- Point DNS for `api.dare.club`, `app.dare.club`, `auth.dare.club` to the VPS IP.
+- Point DNS for `api.aquify.club`, `app.aquify.club`, `auth.aquify.club` to the VPS IP.
 - Enable Cloudflare proxy (orange cloud).
 - Create Page Rules or Transform Rules to proxy `/api/*` to port 8080 and `/` to port 3000.
 - Configure SSL/TLS to "Full (strict)" mode.
@@ -148,10 +148,10 @@ failed CI run deploys nothing. It can still be started by hand with
 `workflow_dispatch`.
 
 1. GitHub Actions (`.github/workflows/deploy-staging.yml`) builds and pushes
-   `ghcr.io/luryann/dare-api:sha-<short>` and `dare-admin:sha-<short>`.
+   `ghcr.io/luryann/aquify-api:sha-<short>` and `aquify-admin:sha-<short>`.
 2. SSH into the staging VPS and run `docker compose pull + up -d`.
 3. Wait up to 180s for `/api/v1/health/live` to return 200.
-4. Run `/opt/dare/scripts/smoke.sh`.
+4. Run `/opt/aquify/scripts/smoke.sh`.
 5. Notify Slack on success or failure when `SLACK_WEBHOOK` is configured.
 
 Images default to the repository owner namespace so `GITHUB_TOKEN` can publish
@@ -162,9 +162,9 @@ the workflow actor used for registry login. Private images require a registry
 login on each VPS with a token that can read those packages.
 
 Before the first deploy with this change, sync the updated Compose files to
-`/opt/dare` on both hosts. They use `${GHCR_NAMESPACE}` (required; compose fails if unset) for API, admin,
+`/opt/aquify` on both hosts. They use `${GHCR_NAMESPACE}` (required; compose fails if unset) for API, admin,
 and worker images. Workflows pass the selected namespace over SSH; manual
-deploys and rollbacks must export the same `GHCR_NAMESPACE`. To make manual `docker compose` and `scripts/rollback.sh` runs work, put `GHCR_NAMESPACE=<owner>` in `/opt/dare/.env` (compose reads it automatically).
+deploys and rollbacks must export the same `GHCR_NAMESPACE`. To make manual `docker compose` and `scripts/rollback.sh` runs work, put `GHCR_NAMESPACE=<owner>` in `/opt/aquify/.env` (compose reads it automatically).
 
 ### Manual production deploys
 
@@ -173,7 +173,7 @@ deploys and rollbacks must export the same `GHCR_NAMESPACE`. To make manual `doc
 3. Enter the `image_tag` (`sha-abc1234`) and type `DEPLOY` to confirm.
 4. GitHub requires a manual approval from an environment reviewer (configured in
    GitHub Settings → Environments → production).
-5. The workflow SSHes to the production VPS and runs `/opt/dare/scripts/promote.sh sha-abc1234`.
+5. The workflow SSHes to the production VPS and runs `/opt/aquify/scripts/promote.sh sha-abc1234`.
 6. `promote.sh` backs up `.env.production`, updates `IMAGE_TAG`, pulls images,
    does a rolling restart, and verifies health. Auto-rollback fires on failure.
 
@@ -184,8 +184,8 @@ deploys and rollbacks must export the same `GHCR_NAMESPACE`. To make manual `doc
 If CI is unavailable or you need to deploy manually:
 
 ```bash
-ssh dare@prod-vps
-cd /opt/dare
+ssh aquify@prod-vps
+cd /opt/aquify
 
 # Promote a specific tag
 ./scripts/promote.sh sha-abc1234
@@ -202,8 +202,8 @@ IMAGE_TAG=latest-staging docker compose -f docker-compose.production.yml up -d -
 To roll back to the previous version immediately:
 
 ```bash
-ssh dare@prod-vps
-/opt/dare/scripts/rollback.sh
+ssh aquify@prod-vps
+/opt/aquify/scripts/rollback.sh
 ```
 
 This restores `.env.production.prev`, pulls the old image, restarts app containers,
@@ -218,18 +218,18 @@ known-good image tag.
 
 | Service | URL | Notes |
 |---|---|---|
-| API liveness | `https://api.dare.club/api/v1/health/live` | Public |
-| API readiness | `https://api.dare.club/api/v1/health/ready` | Public |
+| API liveness | `https://api.aquify.club/api/v1/health/live` | Public |
+| API readiness | `https://api.aquify.club/api/v1/health/ready` | Public |
 | Prometheus | `http://vps-ip:9090` | Firewalled, VPN/SSH tunnel required |
-| Grafana | `https://grafana.dare.club` | Admin login required |
-| Keycloak Admin | `https://auth.dare.club/admin` | Admin login required |
-| MinIO Console | `https://minio.dare.club` | Admin login required |
+| Grafana | `https://grafana.aquify.club` | Admin login required |
+| Keycloak Admin | `https://auth.aquify.club/admin` | Admin login required |
+| MinIO Console | `https://minio.aquify.club` | Admin login required |
 
 ---
 
 ## Backup Schedule
 
-Backups run daily at 02:00 local time via the `dare-backup.timer` systemd unit.
+Backups run daily at 02:00 local time via the `aquify-backup.timer` systemd unit.
 
 Each backup includes:
 - PostgreSQL full dump (gzip-compressed)
@@ -241,13 +241,13 @@ Local retention: 7 days. Remote retention (restic/S3): 30 daily, 12 weekly,
 
 To verify backup health:
 ```bash
-sudo systemctl status dare-backup.timer
-journalctl -u dare-backup.service -n 50
+sudo systemctl status aquify-backup.timer
+journalctl -u aquify-backup.service -n 50
 ```
 
 To trigger a manual backup:
 ```bash
-sudo systemctl start dare-backup.service
+sudo systemctl start aquify-backup.service
 ```
 
 ---
@@ -256,27 +256,27 @@ sudo systemctl start dare-backup.service
 
 ```bash
 # Start / stop / restart the entire platform
-sudo systemctl start dare
-sudo systemctl stop dare
-sudo systemctl restart dare
+sudo systemctl start aquify
+sudo systemctl stop aquify
+sudo systemctl restart aquify
 
 # Rolling restart of app containers only (zero-downtime)
-sudo systemctl reload dare
+sudo systemctl reload aquify
 
 # View logs
-journalctl -u dare -f
-journalctl -u dare-backup -n 100
+journalctl -u aquify -f
+journalctl -u aquify-backup -n 100
 
 # Check container status
-cd /opt/dare && docker compose -f docker-compose.production.yml ps
+cd /opt/aquify && docker compose -f docker-compose.production.yml ps
 ```
 
 ### Application health and internal API routing
 
-API containers use `/dare-api healthcheck http://localhost:8080/api/v1/health/live`;
+API containers use `/aquify-api healthcheck http://localhost:8080/api/v1/health/live`;
 this works in the distroless image without a shell or wget. Admin containers
 serve `/api/health`. Public API health paths include the `/api/v1` prefix.
 
 The admin server proxies `/api/v1/*` using `API_INTERNAL_URL` at request time.
-Compose sets it to `http://dare-api:8080`; set it explicitly for other hosting
+Compose sets it to `http://aquify-api:8080`; set it explicitly for other hosting
 layouts. It is a server-only setting and can change when promoting an image.

@@ -1,4 +1,4 @@
-# DARE Platform Threat Model v1
+# aquify Platform Threat Model v1
 
 Date: 2026-03-18
 Status: Draft v1
@@ -6,7 +6,7 @@ Scope: Launch-blocking platform surfaces through STEP 22
 
 ## System summary
 
-DARE Platform is a swim club operations application with:
+aquify Platform is a swim club operations application with:
 
 - Go API at `/api/v1`
 - Next.js admin and portal clients

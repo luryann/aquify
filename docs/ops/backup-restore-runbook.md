@@ -1,8 +1,8 @@
-# DARE Platform — Backup and Restore Runbook
+# aquify Platform — Backup and Restore Runbook
 
 ## Overview
 
-This runbook covers the daily backup process, retention policy, offsite storage, and restore procedures for the DARE swim club platform. The backup system protects three data stores: the PostgreSQL relational database, the MinIO object storage (imported files, exported artifacts, document uploads), and the Keycloak identity realm.
+This runbook covers the daily backup process, retention policy, offsite storage, and restore procedures for the aquify swim club platform. The backup system protects three data stores: the PostgreSQL relational database, the MinIO object storage (imported files, exported artifacts, document uploads), and the Keycloak identity realm.
 
 ---
 
@@ -10,31 +10,31 @@ This runbook covers the daily backup process, retention policy, offsite storage,
 
 | Job | Schedule | Trigger |
 |---|---|---|
-| Full backup | Daily at **02:00 UTC** | `dare-backup.timer` systemd timer |
+| Full backup | Daily at **02:00 UTC** | `aquify-backup.timer` systemd timer |
 | Offsite sync (included) | Within each daily backup run | `rclone copy` step in `backup.sh` |
 | Backup health check alert | Within each run | Prometheus textfile metric + Slack webhook |
 
-The timer definition lives at `/etc/systemd/system/dare-backup.timer`. To check timer status:
+The timer definition lives at `/etc/systemd/system/aquify-backup.timer`. To check timer status:
 
 ```bash
-systemctl status dare-backup.timer
-systemctl status dare-backup.service
-journalctl -u dare-backup.service -n 100
+systemctl status aquify-backup.timer
+systemctl status aquify-backup.service
+journalctl -u aquify-backup.service -n 100
 ```
 
 ---
 
 ## Backup Contents
 
-Each backup snapshot in `/var/backups/dare/YYYYMMDD-HHMMSS/` contains:
+Each backup snapshot in `/var/backups/aquify/YYYYMMDD-HHMMSS/` contains:
 
 | File | Description |
 |---|---|
 | `postgres.dump` | pg_dump custom-format compressed dump (level 9). Use `pg_restore` to restore. |
 | `minio/` | mc mirror of the production MinIO bucket. Subdirectory structure mirrors bucket. |
-| `keycloak-realm-dare.json` | Keycloak partial-export: clients, groups, roles. Does not include user passwords (those are hashed in the Postgres DB). |
+| `keycloak-realm-aquify.json` | Keycloak partial-export: clients, groups, roles. Does not include user passwords (those are hashed in the Postgres DB). |
 
-The snapshot directory is archived to `dare-backup-YYYYMMDD-HHMMSS.tar.gz`, GPG-encrypted to `dare-backup-YYYYMMDD-HHMMSS.tar.gz.gpg`, then uploaded offsite.
+The snapshot directory is archived to `aquify-backup-YYYYMMDD-HHMMSS.tar.gz`, GPG-encrypted to `aquify-backup-YYYYMMDD-HHMMSS.tar.gz.gpg`, then uploaded offsite.
 
 ---
 
@@ -72,7 +72,7 @@ account = <B2_ACCOUNT_ID>
 key = <B2_APPLICATION_KEY>
 ```
 
-The rclone remote path in the backup script should be `b2:dare-backups-offsite`.
+The rclone remote path in the backup script should be `b2:aquify-backups-offsite`.
 
 Alternative: Any S3-compatible provider works with `rclone` — AWS S3, Cloudflare R2, Wasabi.
 
@@ -97,13 +97,13 @@ Run a monthly integrity check to confirm backups are valid and restorable before
 
 ```bash
 # Download latest backup from offsite to a temp location
-rclone copy b2:dare-backups-offsite/daily/ /tmp/dare-backup-verify/ --max-age 24h
+rclone copy b2:aquify-backups-offsite/daily/ /tmp/aquify-backup-verify/ --max-age 24h
 
 # List archives found
-ls -lh /tmp/dare-backup-verify/
+ls -lh /tmp/aquify-backup-verify/
 
 # Test GPG decryption (does not restore data)
-ARCHIVE="$(ls /tmp/dare-backup-verify/*.gpg | tail -1)"
+ARCHIVE="$(ls /tmp/aquify-backup-verify/*.gpg | tail -1)"
 gpg --batch --decrypt --output /tmp/test-restore.tar.gz "${ARCHIVE}"
 
 # Test tar extraction (does not restore data)
@@ -114,7 +114,7 @@ tar -xzf /tmp/test-restore.tar.gz -C /tmp/ --wildcards '*/postgres.dump'
 pg_restore --list /tmp/*/postgres.dump | head -20
 
 echo "Backup integrity OK"
-rm -rf /tmp/dare-backup-verify /tmp/test-restore.tar.gz /tmp/2*
+rm -rf /tmp/aquify-backup-verify /tmp/test-restore.tar.gz /tmp/2*
 ```
 
 The quarterly restore drill (see `restore-drill-checklist.md`) performs a full restore onto a clean staging VM, which is the strongest integrity guarantee.
@@ -126,24 +126,24 @@ The quarterly restore drill (see `restore-drill-checklist.md`) performs a full r
 The backup script writes a Prometheus node_exporter textfile metric on success:
 
 ```
-dare_backup_last_success_timestamp  <unix epoch>
+aquify_backup_last_success_timestamp  <unix epoch>
 ```
 
 Create a Prometheus alerting rule to fire if this metric is more than 26 hours old (allowing slack for timing variation):
 
 ```yaml
 # In docs/observability/prometheus/alerts.yaml
-- alert: DareBackupMissing
-  expr: time() - dare_backup_last_success_timestamp > 93600
+- alert: aquifyBackupMissing
+  expr: time() - aquify_backup_last_success_timestamp > 93600
   for: 5m
   labels:
     severity: critical
   annotations:
-    summary: "DARE backup has not succeeded in > 26 hours"
+    summary: "aquify backup has not succeeded in > 26 hours"
     runbook_url: "https://github.com/your-org/aquify/blob/main/docs/ops/backup-restore-runbook.md"
 ```
 
-The backup script also sends a Slack alert to `#dare-alerts` on any failure — configure `ALERT_WEBHOOK` in `.env.backup`.
+The backup script also sends a Slack alert to `#aquify-alerts` on any failure — configure `ALERT_WEBHOOK` in `.env.backup`.
 
 ---
 
@@ -170,13 +170,13 @@ Symptoms: PostgreSQL log errors, `pg_dump` failing, data integrity check failure
 
 ```bash
 # 1. Identify a clean backup timestamp
-ls -lt /var/backups/dare/ | head -10
+ls -lt /var/backups/aquify/ | head -10
 
 # 2. Stop application services
-docker compose -f /opt/dare/docker-compose.production.yml stop dare-api dare-worker
+docker compose -f /opt/aquify/docker-compose.production.yml stop aquify-api aquify-worker
 
 # 3. Run the restore script
-/opt/dare/deploy/scripts/restore.sh <backup-timestamp>
+/opt/aquify/deploy/scripts/restore.sh <backup-timestamp>
 
 # 4. Verify row counts post-restore (compare against pre-corruption metrics)
 psql "$DATABASE_URL" -c "SELECT COUNT(*) FROM members.households;"
@@ -202,19 +202,19 @@ The VPS is unreachable and cannot be recovered.
    ```
 4. **Clone repo and pull images:**
    ```bash
-   git clone git@github.com:your-org/aquify.git /opt/dare
-   cd /opt/dare
+   git clone git@github.com:your-org/aquify.git /opt/aquify
+   cd /opt/aquify
    docker compose -f docker-compose.production.yml pull
    ```
 5. **Restore database and object storage:**
    ```bash
    # Download latest backup from offsite
-   rclone copy b2:dare-backups-offsite/daily/ /var/backups/dare/ --max-age 26h
+   rclone copy b2:aquify-backups-offsite/daily/ /var/backups/aquify/ --max-age 26h
    # Run restore
-   /opt/dare/deploy/scripts/restore.sh <latest-timestamp>
+   /opt/aquify/deploy/scripts/restore.sh <latest-timestamp>
    ```
 6. **Update DNS** in Cloudflare A records to point to the new VPS IP.
-7. **Verify health:** `curl https://api.dare.club/healthz`
+7. **Verify health:** `curl https://api.aquify.club/healthz`
 8. **Notify stakeholders** of recovery completion and expected data age.
 
 DNS propagation through Cloudflare is typically < 1 minute.
@@ -226,20 +226,20 @@ To recover data for a specific table without overwriting the entire database:
 ```bash
 # 1. Extract the backup to a temporary working directory
 TIMESTAMP=20260323-020015
-tar -xzf /var/backups/dare/dare-backup-${TIMESTAMP}.tar.gz.gpg  # decrypt first if needed
+tar -xzf /var/backups/aquify/aquify-backup-${TIMESTAMP}.tar.gz.gpg  # decrypt first if needed
 # or if already decrypted:
-tar -xzf /var/backups/dare/dare-backup-${TIMESTAMP}.tar.gz -C /tmp/
+tar -xzf /var/backups/aquify/aquify-backup-${TIMESTAMP}.tar.gz -C /tmp/
 
 # 2. Restore ONLY the target table to a temporary database
-createdb -h localhost dare_recovery_tmp
+createdb -h localhost aquify_recovery_tmp
 pg_restore \
   --no-owner \
   --table=<target_table> \
-  --dbname=postgres://localhost/dare_recovery_tmp \
+  --dbname=postgres://localhost/aquify_recovery_tmp \
   /tmp/${TIMESTAMP}/postgres.dump
 
 # 3. Connect to the recovery DB and extract needed rows
-psql postgres://localhost/dare_recovery_tmp \
+psql postgres://localhost/aquify_recovery_tmp \
   -c "COPY (SELECT * FROM <target_table> WHERE ...) TO '/tmp/recovery_rows.csv' CSV HEADER;"
 
 # 4. Import rows into production within a transaction
@@ -249,7 +249,7 @@ psql "$DATABASE_URL" -c "\\COPY <target_table> FROM '/tmp/recovery_rows.csv' CSV
 psql "$DATABASE_URL" -c "COMMIT;"
 
 # 5. Clean up
-dropdb -h localhost dare_recovery_tmp
+dropdb -h localhost aquify_recovery_tmp
 rm -rf /tmp/${TIMESTAMP} /tmp/recovery_rows.csv
 ```
 
@@ -257,13 +257,13 @@ rm -rf /tmp/${TIMESTAMP} /tmp/recovery_rows.csv
 
 ## Backup Failure Response
 
-If a backup failure Slack alert fires in `#dare-alerts`:
+If a backup failure Slack alert fires in `#aquify-alerts`:
 
-1. SSH to VPS and check the backup log: `tail -100 /var/log/dare/backup.log`
+1. SSH to VPS and check the backup log: `tail -100 /var/log/aquify/backup.log`
 2. Identify the failing step (PostgreSQL, MinIO, Keycloak, upload, or prune).
 3. Fix the root cause (e.g., disk full, DB unreachable, rclone credentials expired).
-4. Run the backup script manually to verify the fix: `sudo /opt/dare/deploy/scripts/backup.sh`
-5. Confirm the Prometheus metric updates: `cat /var/lib/node_exporter/dare_backup.prom`
+4. Run the backup script manually to verify the fix: `sudo /opt/aquify/deploy/scripts/backup.sh`
+5. Confirm the Prometheus metric updates: `cat /var/lib/node_exporter/aquify_backup.prom`
 6. If the issue persists for > 24 hours (two missed backup windows), escalate to engineering lead.
 
 > **SLA reminder:** Two consecutive missed backups means the RPO guarantee is no longer met. Treat this as a P1 incident.

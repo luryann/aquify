@@ -3,7 +3,7 @@ package compliance
 import (
 	"encoding/json"
 
-	"github.com/dareaquatics/aquify/server/internal/runtimepersist"
+	"github.com/luryann/aquify/server/internal/runtimepersist"
 )
 
 type runtimeSnapshot struct {

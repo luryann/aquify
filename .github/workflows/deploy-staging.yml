@@ -41,8 +41,8 @@ jobs:
           NS="$(printf '%s' "$RAW_NAMESPACE" | tr '[:upper:]' '[:lower:]')"
           echo "SHORT_SHA=$(printf '%s' "$DEPLOY_SHA" | cut -c1-7)" >> "$GITHUB_ENV"
           echo "GHCR_NAMESPACE=${NS}" >> "$GITHUB_ENV"
-          echo "API_IMAGE=${REGISTRY}/${NS}/dare-api" >> "$GITHUB_ENV"
-          echo "ADMIN_IMAGE=${REGISTRY}/${NS}/dare-admin" >> "$GITHUB_ENV"
+          echo "API_IMAGE=${REGISTRY}/${NS}/aquify-api" >> "$GITHUB_ENV"
+          echo "ADMIN_IMAGE=${REGISTRY}/${NS}/aquify-admin" >> "$GITHUB_ENV"
 
       # -----------------------------------------------------------------------
       # Container Registry Login
@@ -135,25 +135,25 @@ jobs:
             set -euo pipefail
 
             IMAGE_TAG="sha-$(echo "${{ env.DEPLOY_SHA }}" | cut -c1-7)"
-            DEPLOY_DIR=/opt/dare
+            DEPLOY_DIR=/opt/aquify
 
             echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Deploying IMAGE_TAG=${IMAGE_TAG} to staging" \
-              >> /var/log/dare/deploys.log
+              >> /var/log/aquify/deploys.log
 
             cd "${DEPLOY_DIR}"
 
             # Pull new images
             IMAGE_TAG="${IMAGE_TAG}" docker compose \
-              -f docker-compose.staging.yml pull dare-api dare-admin dare-worker
+              -f docker-compose.staging.yml pull aquify-api aquify-admin aquify-worker
 
             # Rolling restart of application containers only
             IMAGE_TAG="${IMAGE_TAG}" docker compose \
               -f docker-compose.staging.yml up -d \
               --no-deps --remove-orphans \
-              dare-api dare-admin dare-worker
+              aquify-api aquify-admin aquify-worker
 
             echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Deploy complete IMAGE_TAG=${IMAGE_TAG}" \
-              >> /var/log/dare/deploys.log
+              >> /var/log/aquify/deploys.log
 
       # -----------------------------------------------------------------------
       # Health check — wait for API to come up
@@ -161,11 +161,11 @@ jobs:
 
       - name: Wait for API health
         run: |
-          echo "Waiting for API health at https://api-staging.dare.club/api/v1/health/live ..."
+          echo "Waiting for API health at https://api-staging.aquify.club/api/v1/health/live ..."
           for i in $(seq 1 18); do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
               --max-time 5 \
-              https://api-staging.dare.club/api/v1/health/live || echo "000")
+              https://api-staging.aquify.club/api/v1/health/live || echo "000")
             if [ "${STATUS}" = "200" ]; then
               echo "API healthy (attempt ${i})"
               exit 0
@@ -194,8 +194,8 @@ jobs:
             set -euo pipefail
             SMOKE_AUTH_TOKEN="${SMOKE_AUTH_TOKEN}" \
             SMOKE_ORG_ID="${SMOKE_ORG_ID}" \
-            API_BASE_URL="https://api-staging.dare.club" \
-              /opt/dare/scripts/smoke.sh
+            API_BASE_URL="https://api-staging.aquify.club" \
+              /opt/aquify/scripts/smoke.sh
 
       # -----------------------------------------------------------------------
       # Failure notification

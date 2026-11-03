@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
 // StatementLine is one row of a household statement. AmountCents is the

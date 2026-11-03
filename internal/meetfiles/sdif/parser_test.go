@@ -5,8 +5,8 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/dareaquatics/aquify/meetfiles"
-	"github.com/dareaquatics/aquify/meetfiles/sdif"
+	"github.com/luryann/aquify/meetfiles"
+	"github.com/luryann/aquify/meetfiles/sdif"
 )
 
 // ─── Fixture helpers ──────────────────────────────────────────────────────────
@@ -479,6 +479,19 @@ func TestParse_NonASCIINameNotSplit(t *testing.T) {
 	for _, r := range res.IndividualResults {
 		if !utf8.ValidString(r.Swimmer.LastName) || !utf8.ValidString(r.Swimmer.FirstName) {
 			t.Fatalf("invalid UTF-8 name: %q / %q", r.Swimmer.LastName, r.Swimmer.FirstName)
+		}
+	}
+}
+
+func TestParse_BOMAndWhitespaceLinesNoErrors(t *testing.T) {
+	data := []byte("\xef\xbb\xbfA01" + strings.Repeat(" ", 20) + "\n   \n\t\n")
+	res, err := sdif.Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, pe := range res.ParseErrors {
+		if strings.Contains(pe.Message, "unrecognised") {
+			t.Errorf("unexpected error: %+v", pe)
 		}
 	}
 }

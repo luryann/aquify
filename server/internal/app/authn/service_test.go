@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
 func TestResolvePrincipalDisablesStubTokensWhenNotConfigured(t *testing.T) {
@@ -48,7 +48,7 @@ func TestIssueSessionNormalizesLegacyLocalDevOrgID(t *testing.T) {
 	service := NewService(Config{})
 	session, err := service.IssueSession(SessionInput{
 		UserID: LocalDevAdminUserID,
-		Email:  "admin@dare.local",
+		Email:  "admin@aquify.local",
 		Name:   "Dev Admin",
 		OrgID:  "org-demo",
 		Roles:  []string{"admin"},
@@ -162,7 +162,7 @@ func TestChallengeMFARejectsStaticCodeAndAcceptsTOTP(t *testing.T) {
 	t.Parallel()
 
 	service := NewService(Config{EnableDevStubTokens: true})
-	factor, err := service.EnrollMFA(LocalDevAdminUserID, "admin@dare.local", LocalDevOrgID, "totp", "Primary authenticator")
+	factor, err := service.EnrollMFA(LocalDevAdminUserID, "admin@aquify.local", LocalDevOrgID, "totp", "Primary authenticator")
 	if err != nil {
 		t.Fatalf("failed to enroll mfa factor: %v", err)
 	}
@@ -241,7 +241,7 @@ func TestOIDCCallbackRejectsTamperedIDTokenPayload(t *testing.T) {
 	tokenClaims := map[string]any{
 		"sub":     "user-123",
 		"iss":     "https://issuer.example.com",
-		"aud":     []string{"dare-client"},
+		"aud":     []string{"aquify-client"},
 		"exp":     now.Add(10 * time.Minute).Unix(),
 		"iat":     now.Add(-1 * time.Minute).Unix(),
 		"nonce":   "nonce-123",
@@ -272,7 +272,7 @@ func TestOIDCCallbackRejectsTamperedIDTokenPayload(t *testing.T) {
 			TokenURL:        "https://oidc.test/token",
 			JWKSURL:         "https://oidc.test/jwks",
 			RedirectURL:     "http://localhost:3000/callback",
-			ClientID:        "dare-client",
+			ClientID:        "aquify-client",
 			ClientSecret:    "secret",
 			ExpectedIssuer:  "https://issuer.example.com",
 			StateSigningKey: "state-signing-key",
@@ -297,7 +297,7 @@ func TestOIDCCallbackRejectsUntrustedBodyOrgFallback(t *testing.T) {
 	idToken := signedIDToken(t, privateKey, "kid-2", map[string]any{
 		"sub":   "user-123",
 		"iss":   "https://issuer.example.com",
-		"aud":   []string{"dare-client"},
+		"aud":   []string{"aquify-client"},
 		"exp":   now.Add(10 * time.Minute).Unix(),
 		"iat":   now.Add(-1 * time.Minute).Unix(),
 		"nonce": "nonce-abc",
@@ -309,7 +309,7 @@ func TestOIDCCallbackRejectsUntrustedBodyOrgFallback(t *testing.T) {
 			TokenURL:        "https://oidc.test/token",
 			JWKSURL:         "https://oidc.test/jwks",
 			RedirectURL:     "http://localhost:3000/callback",
-			ClientID:        "dare-client",
+			ClientID:        "aquify-client",
 			ClientSecret:    "secret",
 			ExpectedIssuer:  "https://issuer.example.com",
 			StateSigningKey: "state-signing-key",
@@ -333,9 +333,9 @@ func TestOIDCCallbackNormalizesLegacyLocalDevOrgClaim(t *testing.T) {
 	now := time.Now().UTC()
 	idToken := signedIDToken(t, privateKey, "kid-localdev", map[string]any{
 		"sub":    LocalDevAdminUserID,
-		"email":  "admin@dare.local",
+		"email":  "admin@aquify.local",
 		"iss":    "https://issuer.example.com",
-		"aud":    []string{"dare-client"},
+		"aud":    []string{"aquify-client"},
 		"exp":    now.Add(10 * time.Minute).Unix(),
 		"iat":    now.Add(-1 * time.Minute).Unix(),
 		"nonce":  "nonce-localdev",
@@ -348,7 +348,7 @@ func TestOIDCCallbackNormalizesLegacyLocalDevOrgClaim(t *testing.T) {
 			TokenURL:        "https://oidc.test/token",
 			JWKSURL:         "https://oidc.test/jwks",
 			RedirectURL:     "http://localhost:3000/callback",
-			ClientID:        "dare-client",
+			ClientID:        "aquify-client",
 			ClientSecret:    "secret",
 			ExpectedIssuer:  "https://issuer.example.com",
 			StateSigningKey: "state-signing-key",
@@ -462,7 +462,7 @@ func TestOIDCCallbackLogoutAllowsDifferentSubsequentUser(t *testing.T) {
 		"code-admin": signedIDToken(t, privateKey, "kid-3", map[string]any{
 			"sub":    LocalDevAdminUserID,
 			"iss":    "https://issuer.example.com",
-			"aud":    []string{"dare-client"},
+			"aud":    []string{"aquify-client"},
 			"exp":    now.Add(10 * time.Minute).Unix(),
 			"iat":    now.Add(-1 * time.Minute).Unix(),
 			"nonce":  "nonce-admin",
@@ -472,7 +472,7 @@ func TestOIDCCallbackLogoutAllowsDifferentSubsequentUser(t *testing.T) {
 		"code-swimmer": signedIDToken(t, privateKey, "kid-3", map[string]any{
 			"sub":    LocalDevSwimmerUserID,
 			"iss":    "https://issuer.example.com",
-			"aud":    []string{"dare-client"},
+			"aud":    []string{"aquify-client"},
 			"exp":    now.Add(10 * time.Minute).Unix(),
 			"iat":    now.Add(-1 * time.Minute).Unix(),
 			"nonce":  "nonce-swimmer",
@@ -488,7 +488,7 @@ func TestOIDCCallbackLogoutAllowsDifferentSubsequentUser(t *testing.T) {
 			RedirectURL:           "http://localhost:3000/callback",
 			EndSessionURL:         "https://issuer.example.com/logout",
 			PostLogoutRedirectURL: "http://localhost:3000/login",
-			ClientID:              "dare-client",
+			ClientID:              "aquify-client",
 			ClientSecret:          "secret",
 			ExpectedIssuer:        "https://issuer.example.com",
 			StateSigningKey:       "state-signing-key",
@@ -702,7 +702,7 @@ func TestChallengeMFALocksOutAfterRepeatedFailures(t *testing.T) {
 	t.Parallel()
 
 	service := NewService(Config{EnableDevStubTokens: true})
-	factor, err := service.EnrollMFA(LocalDevAdminUserID, "admin@dare.local", LocalDevOrgID, "totp", "Primary authenticator")
+	factor, err := service.EnrollMFA(LocalDevAdminUserID, "admin@aquify.local", LocalDevOrgID, "totp", "Primary authenticator")
 	if err != nil {
 		t.Fatalf("failed to enroll mfa factor: %v", err)
 	}
@@ -725,10 +725,10 @@ func TestListMFAFactorsOmitsOneTimeSecrets(t *testing.T) {
 	t.Parallel()
 
 	service := NewService(Config{EnableDevStubTokens: true})
-	if _, err := service.EnrollMFA(LocalDevAdminUserID, "admin@dare.local", LocalDevOrgID, "totp", "Authenticator"); err != nil {
+	if _, err := service.EnrollMFA(LocalDevAdminUserID, "admin@aquify.local", LocalDevOrgID, "totp", "Authenticator"); err != nil {
 		t.Fatalf("enroll totp: %v", err)
 	}
-	if _, err := service.EnrollMFA(LocalDevAdminUserID, "admin@dare.local", LocalDevOrgID, "backup_code", "Backup"); err != nil {
+	if _, err := service.EnrollMFA(LocalDevAdminUserID, "admin@aquify.local", LocalDevOrgID, "backup_code", "Backup"); err != nil {
 		t.Fatalf("enroll backup: %v", err)
 	}
 

@@ -8,7 +8,7 @@
 
 ## Purpose
 
-This runbook defines the step-by-step process for detecting, containing, investigating, and notifying relevant parties in the event of a data security breach involving DARE Platform.
+This runbook defines the step-by-step process for detecting, containing, investigating, and notifying relevant parties in the event of a data security breach involving aquify Platform.
 
 ---
 
@@ -131,7 +131,7 @@ This runbook defines the step-by-step process for detecting, containing, investi
 
 ---
 
-## Relevant DARE Platform Resources
+## Relevant aquify Platform Resources
 
 | Resource | Location |
 |----------|----------|

@@ -12,13 +12,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/app/audit"
-	"github.com/dareaquatics/aquify/server/internal/app/comms"
-	"github.com/dareaquatics/aquify/server/internal/app/groups"
-	"github.com/dareaquatics/aquify/server/internal/app/httpx"
-	"github.com/dareaquatics/aquify/server/internal/app/members"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
-	"github.com/dareaquatics/aquify/server/internal/storage"
+	"github.com/luryann/aquify/server/internal/app/audit"
+	"github.com/luryann/aquify/server/internal/app/comms"
+	"github.com/luryann/aquify/server/internal/app/groups"
+	"github.com/luryann/aquify/server/internal/app/httpx"
+	"github.com/luryann/aquify/server/internal/app/members"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/storage"
+	"github.com/luryann/aquify/server/internal/workers"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
 )
@@ -36,6 +37,7 @@ type CommsHandlers struct {
 	postmarkBasicPass    string
 	allowInsecureWebhook bool
 	store                storage.ObjectStorage
+	queue                workers.Queue
 }
 
 // SetStorage attaches object storage used for message attachment upload URLs.
@@ -173,12 +175,22 @@ func metadataString(metadata map[string]any, key string) string {
 	return ""
 }
 
-func (h *CommsHandlers) resolveCampaignRecipients(orgID string, campaign *comms.EmailCampaign) ([]comms.Recipient, error) {
+func (h *CommsHandlers) resolveCampaignRecipients(ctx context.Context, orgID string, campaign *comms.EmailCampaign) ([]comms.Recipient, error) {
 	if campaign == nil {
 		return nil, comms.ErrCampaignNotFound
 	}
 	if h.membersService == nil {
 		return nil, errors.New("member recipient resolution is unavailable")
+	}
+	// The worker process holds stale caches; reload from Postgres (no-op in
+	// in-memory mode) and fail rather than resolve a partial list.
+	if err := h.membersService.Refresh(ctx); err != nil {
+		return nil, fmt.Errorf("refresh members: %w", err)
+	}
+	if strings.TrimSpace(strings.ToLower(campaign.Audience)) == "group" && h.groupsService != nil {
+		if err := h.groupsService.Refresh(ctx); err != nil {
+			return nil, fmt.Errorf("refresh groups: %w", err)
+		}
 	}
 
 	allowedHouseholds := map[string]struct{}{}
@@ -253,7 +265,7 @@ func (h *CommsHandlers) handlePostmarkWebhook(w http.ResponseWriter, r *http.Req
 		SuppressSending   bool           `json:"SuppressSending"`
 		SuppressionReason string         `json:"SuppressionReason"`
 	}
-	if err := decodeJSONBody(w, r, &body); err != nil {
+	if err := decodeLenientJSONBody(w, r, &body); err != nil {
 		writeJSONDecodeError(w, r, err, "invalid_body", "Could not parse request body.")
 		return
 	}
@@ -272,6 +284,7 @@ func (h *CommsHandlers) handlePostmarkWebhook(w http.ResponseWriter, r *http.Req
 
 	err := h.service.ApplyPostmarkEvent(comms.PostmarkEventInput{
 		OrgID:             metadataString(body.Metadata, "org_id"),
+		CampaignID:        metadataString(body.Metadata, "campaign_id"),
 		MessageID:         body.MessageID,
 		RecipientEmail:    recipient,
 		RecordType:        body.RecordType,
@@ -1103,7 +1116,7 @@ func (h *CommsHandlers) sendCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	recipients, err := h.resolveCampaignRecipients(orgID, campaignRecord)
+	recipients, err := h.resolveCampaignRecipients(r.Context(), orgID, campaignRecord)
 	if err != nil {
 		httpx.WriteError(w, r, http.StatusInternalServerError, "recipient_resolution_failed", "An internal error occurred.", err)
 		return
@@ -1113,10 +1126,10 @@ func (h *CommsHandlers) sendCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	campaign, err := h.service.SendCampaign(r.Context(), orgID, id, comms.SendCampaignInput{
-		Recipients: recipients,
-		ActorID:    principal.UserID,
-	})
+	// Claim synchronously (concurrent sends get 409), then deliver from a
+	// background job: a long campaign (N batches x provider latency) would
+	// otherwise outlive the HTTP write timeout.
+	campaign, err := h.service.ClaimCampaign(r.Context(), orgID, id, principal.UserID)
 	if err != nil {
 		if errors.Is(err, comms.ErrCampaignNotFound) {
 			httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Campaign not found.", nil)
@@ -1129,10 +1142,18 @@ func (h *CommsHandlers) sendCampaign(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, http.StatusInternalServerError, "send_failed", "An internal error occurred.", err)
 		return
 	}
+	payload := CampaignSendPayload{OrgID: orgID, CampaignID: id, ActorID: principal.UserID, ClaimedAtUnix: campaign.UpdatedAt.UnixNano()}
+	if err := h.dispatchCampaignSend(r.Context(), payload); err != nil {
+		if relErr := h.service.ReleaseCampaignClaim(orgID, id, principal.UserID, err); relErr != nil {
+			err = relErr
+		}
+		httpx.WriteError(w, r, http.StatusInternalServerError, "send_failed", "An internal error occurred.", err)
+		return
+	}
 	h.emitAudit(principal, audit.ActionCommsCampaignSend, "campaign", campaign.ID, map[string]string{
 		"recipient_count": strconv.Itoa(len(recipients)),
 	}, campaign)
-	httpx.WriteJSON(w, http.StatusOK, campaign)
+	httpx.WriteJSON(w, http.StatusAccepted, campaign)
 }
 
 func (h *CommsHandlers) listDeliveries(w http.ResponseWriter, r *http.Request) {

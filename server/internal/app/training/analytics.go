@@ -167,6 +167,9 @@ func (s *Service) GroupAnalytics(orgID, from, to, groupFilter string, canon func
 	}
 	practices := []*Practice{}
 	for _, p := range all {
+		if p.Type == "rest" {
+			continue
+		}
 		if groupFilter == "" || canon(p.GroupID) == groupFilter {
 			practices = append(practices, p)
 		}
@@ -316,6 +319,9 @@ func (s *Service) SwimmerAnalytics(orgID, swimmerID string, groups map[string]bo
 	out := &SwimmerAnalytics{SwimmerID: swimmerID, From: from, To: to, Weeks: []SwimmerWeek{}, ZoneYards: map[string]int{}}
 	weekRows := map[string]*SwimmerWeek{}
 	for _, p := range practices {
+		if p.Type == "rest" {
+			continue
+		}
 		st, marked := status[p.ID]
 		g := canon(p.GroupID)
 		inGroup := g == "" || groups[g]

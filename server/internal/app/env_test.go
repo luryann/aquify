@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/dareaquatics/aquify/server/internal/app/authn"
+	"github.com/luryann/aquify/server/internal/app/authn"
 )
 
 // Every environment predicate must classify spelling variants identically, so
@@ -100,7 +100,7 @@ func TestPublicTeamSiteListsCoachesWithDefaultKeycloakClient(t *testing.T) {
 	admin := issueSessionTokenForUser(t, router, "admin-user", org, []string{"admin"}, true)
 
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/org-settings", encodeJSONBody(t, map[string]any{
-		"team_name": "DARE Aquatics", "public_slug": "dare", "public_site_enabled": true, "public_show_coaches": true,
+		"team_name": "aquify Aquatics", "public_slug": "aquify", "public_site_enabled": true, "public_show_coaches": true,
 	}))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Org-Id", org)
@@ -112,7 +112,7 @@ func TestPublicTeamSiteListsCoachesWithDefaultKeycloakClient(t *testing.T) {
 	}
 
 	rr = httptest.NewRecorder()
-	router.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/v1/public/orgs/dare/site", nil))
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/v1/public/orgs/aquify/site", nil))
 	var site struct {
 		Coaches []map[string]any `json:"coaches"`
 	}
@@ -121,5 +121,26 @@ func TestPublicTeamSiteListsCoachesWithDefaultKeycloakClient(t *testing.T) {
 	}
 	if len(site.Coaches) == 0 {
 		t.Fatalf("public_show_coaches is on but no coaches were returned: %s", rr.Body.String())
+	}
+}
+
+func TestValidateWorkerConfigScheduledOrgsAndIntervals(t *testing.T) {
+	cfg := Config{AppEnv: "production"}
+	cfg.Worker.RedisURL = "redis://localhost:6379"
+	if err := ValidateWorkerConfig(cfg); err == nil {
+		t.Fatal("expected error when WORKER_SCHEDULED_ORG_IDS is empty in production")
+	}
+	cfg.Worker.ScheduledOrgIDs = []string{"org-1"}
+	if err := ValidateWorkerConfig(cfg); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	cfg.Worker.BillingAutomationInterval = "1d"
+	if err := ValidateWorkerConfig(cfg); err == nil {
+		t.Fatal("expected error for invalid interval")
+	}
+	dev := Config{AppEnv: "development"}
+	dev.Worker.CleanupInterval = "24"
+	if err := ValidateWorkerConfig(dev); err == nil {
+		t.Fatal("expected invalid interval error in development too")
 	}
 }

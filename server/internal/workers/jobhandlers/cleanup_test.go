@@ -8,16 +8,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/app/comms"
-	"github.com/dareaquatics/aquify/server/internal/app/compliance"
-	"github.com/dareaquatics/aquify/server/internal/app/documents"
-	"github.com/dareaquatics/aquify/server/internal/app/exports"
-	"github.com/dareaquatics/aquify/server/internal/app/members"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
-	"github.com/dareaquatics/aquify/server/internal/app/reports"
-	"github.com/dareaquatics/aquify/server/internal/keycloak"
-	"github.com/dareaquatics/aquify/server/internal/storage"
-	"github.com/dareaquatics/aquify/server/internal/workers"
+	"github.com/luryann/aquify/server/internal/app/comms"
+	"github.com/luryann/aquify/server/internal/app/compliance"
+	"github.com/luryann/aquify/server/internal/app/documents"
+	"github.com/luryann/aquify/server/internal/app/exports"
+	"github.com/luryann/aquify/server/internal/app/members"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/app/reports"
+	"github.com/luryann/aquify/server/internal/keycloak"
+	"github.com/luryann/aquify/server/internal/storage"
+	"github.com/luryann/aquify/server/internal/workers"
 )
 
 func TestPurgeExpiredFilesHandler_ExpiresExportsAndReports(t *testing.T) {
@@ -133,14 +133,14 @@ func TestProcessDataExportHandler_CompletesRequestAndStoresArtifact(t *testing.T
 	if after.Status != "ready" {
 		t.Fatalf("status = %q, want ready", after.Status)
 	}
-	if after.DownloadURL == "" {
-		t.Fatal("DownloadURL is empty")
-	}
 	if after.CompletedAt == nil {
 		t.Fatal("CompletedAt is nil")
 	}
 
 	key := complianceExportStorageKey("org-export", req.ID)
+	if after.DownloadURL != key {
+		t.Fatalf("DownloadURL = %q, want storage key %q (no long-lived presigned URL)", after.DownloadURL, key)
+	}
 	data, contentType, err := store.GetObject(context.Background(), key)
 	if err != nil {
 		t.Fatalf("GetObject(%q): %v", key, err)

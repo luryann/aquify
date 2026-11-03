@@ -1,5 +1,5 @@
 // Package workers provides the background job queue infrastructure for the
-// DARE platform. It defines a Queue interface and an in-memory Worker that
+// aquify platform. It defines a Queue interface and an in-memory Worker that
 // processes jobs using goroutine pools. The design mirrors Asynq semantics
 // so that the real Redis-backed Asynq client can be dropped in as a
 // replacement without changing callers.
@@ -119,10 +119,30 @@ type TaskInfo struct {
 	Retried     int        `json:"retried"`
 	LastErr     string     `json:"last_error,omitempty"`
 	CompletedAt *time.Time `json:"completed_at,omitempty"`
-	UniqueKey   string     `json:"unique_key,omitempty"`
+	// LastFailedAt is when the most recent attempt failed (retrying/archived tasks).
+	LastFailedAt *time.Time `json:"last_failed_at,omitempty"`
+	UniqueKey    string     `json:"unique_key,omitempty"`
 	// OrgID is the tenant the task belongs to, taken from the payload's
 	// top-level "org_id". Empty means the task carries no org metadata.
 	OrgID string `json:"org_id,omitempty"`
+}
+
+// MarshalJSON omits enqueued_at/process_at when they are unset instead of
+// emitting the misleading "0001-01-01T00:00:00Z" zero time.
+func (t TaskInfo) MarshalJSON() ([]byte, error) {
+	type plain TaskInfo
+	aux := struct {
+		plain
+		EnqueuedAt *time.Time `json:"enqueued_at,omitempty"`
+		ProcessAt  *time.Time `json:"process_at,omitempty"`
+	}{plain: plain(t)}
+	if !t.EnqueuedAt.IsZero() {
+		aux.EnqueuedAt = &t.EnqueuedAt
+	}
+	if !t.ProcessAt.IsZero() {
+		aux.ProcessAt = &t.ProcessAt
+	}
+	return json.Marshal(aux)
 }
 
 // TaskOrgID extracts the top-level "org_id" string from a task payload, or ""

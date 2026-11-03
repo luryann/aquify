@@ -14,10 +14,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dareaquatics/aquify/meetfiles"
-	"github.com/dareaquatics/aquify/meetfiles/cl2"
-	"github.com/dareaquatics/aquify/meetfiles/sdif"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/meetfiles"
+	"github.com/luryann/aquify/meetfiles/cl2"
+	"github.com/luryann/aquify/meetfiles/sdif"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -41,6 +41,7 @@ var (
 	ErrEntryAlreadyScratched = errors.New("entry is already scratched")
 	ErrDuplicateSelection    = errors.New("event already selected for this commitment")
 	ErrEventNumberConflict   = errors.New("event number already exists in this meet")
+	ErrMaxEntriesExceeded    = errors.New("swimmer has reached the maximum entries allowed for this meet")
 	ErrInvalidMeetFile       = errors.New("invalid meet file")
 )
 
@@ -478,6 +479,10 @@ func NewServiceWithPool(pool *pgxpool.Pool) *Service {
 // SetSyncHookForTest installs a hook run inside syncFromDB between reading
 // Postgres and replacing memory. Set it before the service is used concurrently.
 func (s *Service) SetSyncHookForTest(fn func()) { s.syncHook = fn }
+
+// Refresh reloads the in-memory state from Postgres (no-op in in-memory mode)
+// so snapshot readers observe meets created by another instance.
+func (s *Service) Refresh(ctx context.Context) error { return s.syncFromDB(ctx) }
 
 // syncFromDB reloads the in-memory maps from the database (no-op without a repository).
 func (s *Service) syncFromDB(ctx context.Context) error {
@@ -1245,7 +1250,7 @@ func (s *Service) ListMeets(principal *appmiddleware.Principal, orgID string) ([
 
 	var result []Meet
 	for _, m := range s.meets {
-		if m.OrgID == orgID {
+		if m.OrgID == orgID && meetVisibleToPrincipal(principal, m) {
 			result = append(result, m)
 		}
 	}
@@ -1273,10 +1278,23 @@ func (s *Service) GetMeet(principal *appmiddleware.Principal, orgID, meetID stri
 	defer s.mu.RUnlock()
 
 	meet, ok := s.meetLocked(orgID, meetID)
-	if !ok {
+	if !ok || !meetVisibleToPrincipal(principal, meet) {
 		return Meet{}, ErrMeetNotFound
 	}
 	return meet, nil
+}
+
+// meetVisibleToPrincipal hides unpublished draft meets from non-staff roles.
+func meetVisibleToPrincipal(principal *appmiddleware.Principal, m Meet) bool {
+	if m.Status != "draft" {
+		return true
+	}
+	return appmiddleware.HasAnyRole(principal, "admin", "coach")
+}
+
+// meetStructureClosed reports whether sessions/events can no longer be added.
+func meetStructureClosed(status string) bool {
+	return status == "commitment_closed" || entriesClosed(status)
 }
 
 // TransitionMeetStatus moves a meet through its lifecycle state machine.
@@ -1368,6 +1386,9 @@ func (s *Service) CreateMeetSession(principal *appmiddleware.Principal, orgID, m
 	if !ok {
 		return MeetSession{}, MeetAuditEvent{}, ErrMeetNotFound
 	}
+	if meetStructureClosed(meet.Status) {
+		return MeetSession{}, MeetAuditEvent{}, fmt.Errorf("%w: sessions cannot be added when meet status is %q", ErrInvalidTransition, meet.Status)
+	}
 
 	// Check for duplicate session number in this meet.
 	for _, sess := range s.sessions {
@@ -1423,7 +1444,7 @@ func (s *Service) ListMeetSessions(principal *appmiddleware.Principal, orgID, me
 	defer s.mu.RUnlock()
 
 	meet, ok := s.meetLocked(orgID, meetID)
-	if !ok {
+	if !ok || !meetVisibleToPrincipal(principal, meet) {
 		return nil, ErrMeetNotFound
 	}
 
@@ -1464,11 +1485,6 @@ func (s *Service) CreateMeetEvent(principal *appmiddleware.Principal, orgID, mee
 		return MeetEvent{}, MeetAuditEvent{}, errors.New("distance must be a positive integer")
 	}
 
-	course := normalizeChoice(input.Course, "SCY")
-	if err := validateCourse(course); err != nil {
-		return MeetEvent{}, MeetAuditEvent{}, err
-	}
-
 	gender := normalizeChoice(input.Gender, "O")
 	if err := validateGender(gender); err != nil {
 		return MeetEvent{}, MeetAuditEvent{}, err
@@ -1480,6 +1496,15 @@ func (s *Service) CreateMeetEvent(principal *appmiddleware.Principal, orgID, mee
 	meet, ok := s.meetLocked(orgID, meetID)
 	if !ok {
 		return MeetEvent{}, MeetAuditEvent{}, ErrMeetNotFound
+	}
+	if meetStructureClosed(meet.Status) {
+		return MeetEvent{}, MeetAuditEvent{}, fmt.Errorf("%w: events cannot be added when meet status is %q", ErrInvalidTransition, meet.Status)
+	}
+
+	// Default to the meet's own course (as buildMeetEvents does), not SCY.
+	course := normalizeChoice(input.Course, normalizeChoice(meet.Course, "SCY"))
+	if err := validateCourse(course); err != nil {
+		return MeetEvent{}, MeetAuditEvent{}, err
 	}
 
 	// Validate optional session_id.
@@ -1549,7 +1574,7 @@ func (s *Service) ListMeetEvents(principal *appmiddleware.Principal, orgID, meet
 	defer s.mu.RUnlock()
 
 	meet, ok := s.meetLocked(orgID, meetID)
-	if !ok {
+	if !ok || !meetVisibleToPrincipal(principal, meet) {
 		return nil, ErrMeetNotFound
 	}
 
@@ -1903,10 +1928,17 @@ func (s *Service) SelectCommitmentEvent(principal *appmiddleware.Principal, orgI
 	}
 
 	// Idempotency: one selection per commitment+event.
+	selected := 0
 	for _, sel := range s.selections {
 		if sel.CommitmentID == cmt.ID && sel.MeetEventID == meetEventID {
 			return EventSelection{}, ErrDuplicateSelection
 		}
+		if sel.CommitmentID == cmt.ID {
+			selected++
+		}
+	}
+	if !ev.IsRelay && meet.MaxEntriesPerSwimmer > 0 && selected >= meet.MaxEntriesPerSwimmer {
+		return EventSelection{}, fmt.Errorf("%w (%d)", ErrMaxEntriesExceeded, meet.MaxEntriesPerSwimmer)
 	}
 
 	now := time.Now().UTC()
@@ -2272,11 +2304,28 @@ func (s *Service) ProposeEntry(principal *appmiddleware.Principal, orgID, meetID
 		}
 	}
 
-	// Enforce unique entry per (meet, swimmer, event).
+	// Enforce unique entry per (meet, swimmer, event). A scratched entry is
+	// revived in place (the DB unique key forbids a second row).
+	var revive *Entry
+	activeCount := 0
 	for _, e := range s.entries {
-		if e.MeetID == meet.ID && e.SwimmerID == swimmerID && e.MeetEventID == meetEventID {
-			return Entry{}, MeetAuditEvent{}, ErrDuplicateEntry
+		if e.MeetID != meet.ID || e.SwimmerID != swimmerID {
+			continue
 		}
+		if e.MeetEventID == meetEventID {
+			if e.Status != "scratched" {
+				return Entry{}, MeetAuditEvent{}, ErrDuplicateEntry
+			}
+			cp := e
+			revive = &cp
+			continue
+		}
+		if e.Status != "scratched" && !e.IsRelay {
+			activeCount++
+		}
+	}
+	if !input.IsRelay && meet.MaxEntriesPerSwimmer > 0 && activeCount >= meet.MaxEntriesPerSwimmer {
+		return Entry{}, MeetAuditEvent{}, fmt.Errorf("%w (%d)", ErrMaxEntriesExceeded, meet.MaxEntriesPerSwimmer)
 	}
 
 	now := time.Now().UTC()
@@ -2295,6 +2344,11 @@ func (s *Service) ProposeEntry(principal *appmiddleware.Principal, orgID, meetID
 		UpdatedAt:    now,
 		CreatedBy:    principal.UserID,
 		UpdatedBy:    principal.UserID,
+	}
+	if revive != nil {
+		entry.ID = revive.ID
+		entry.CreatedAt = revive.CreatedAt
+		entry.CreatedBy = revive.CreatedBy
 	}
 	if s.repo != nil {
 		if err := s.repo.UpsertEntry(context.Background(), entry); err != nil {

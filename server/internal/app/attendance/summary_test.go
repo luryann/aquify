@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/dareaquatics/aquify/server/internal/app/roster"
+	"github.com/luryann/aquify/server/internal/app/roster"
 )
 
 type fakeSource struct {

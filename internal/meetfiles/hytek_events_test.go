@@ -3,7 +3,7 @@ package meetfiles_test
 import (
 	"testing"
 
-	"github.com/dareaquatics/aquify/meetfiles"
+	"github.com/luryann/aquify/meetfiles"
 )
 
 func TestParseHYVFixture(t *testing.T) {

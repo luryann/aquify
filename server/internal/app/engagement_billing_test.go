@@ -3,8 +3,8 @@ package app
 import (
 	"testing"
 
-	"github.com/dareaquatics/aquify/server/internal/app/billing"
-	"github.com/dareaquatics/aquify/server/internal/app/events"
+	"github.com/luryann/aquify/server/internal/app/billing"
+	"github.com/luryann/aquify/server/internal/app/events"
 )
 
 func rsvpCharge() events.Charge {

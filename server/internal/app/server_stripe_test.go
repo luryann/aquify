@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/app/billing"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
-	stripelib "github.com/dareaquatics/aquify/server/internal/stripe"
+	"github.com/luryann/aquify/server/internal/app/billing"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
+	stripelib "github.com/luryann/aquify/server/internal/stripe"
 )
 
 // ─── Router helpers ───────────────────────────────────────────────────────────

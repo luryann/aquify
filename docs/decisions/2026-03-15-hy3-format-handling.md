@@ -6,7 +6,7 @@
 ## Context
 
 HyTek Meet Manager exports swimmer entries and results in a `.hy3` file.  These
-files are used by many swim clubs and will appear in the DARE import flow.
+files are used by many swim clubs and will appear in the aquify import flow.
 
 Two implementation strategies were considered:
 1. **Container-only ZIP handling** — treat `.hy3` as a ZIP wrapper, extract the

@@ -35,8 +35,8 @@ jobs:
           # GHCR repository paths must be lowercase; owner logins may not be.
           NS="$(printf '%s' "$RAW_NAMESPACE" | tr '[:upper:]' '[:lower:]')"
           echo "GHCR_NAMESPACE=${NS}" >> "$GITHUB_ENV"
-          echo "API_IMAGE=${REGISTRY}/${NS}/dare-api" >> "$GITHUB_ENV"
-          echo "ADMIN_IMAGE=${REGISTRY}/${NS}/dare-admin" >> "$GITHUB_ENV"
+          echo "API_IMAGE=${REGISTRY}/${NS}/aquify-api" >> "$GITHUB_ENV"
+          echo "ADMIN_IMAGE=${REGISTRY}/${NS}/aquify-admin" >> "$GITHUB_ENV"
 
       - name: Verify confirmation string
         run: |
@@ -105,7 +105,7 @@ jobs:
           key: ${{ secrets.PRODUCTION_SSH_KEY }}
           script: |
             set -euo pipefail
-            /opt/dare/scripts/promote.sh "${{ github.event.inputs.image_tag }}"
+            /opt/aquify/scripts/promote.sh "${{ github.event.inputs.image_tag }}"
 
       # -----------------------------------------------------------------------
       # Health check
@@ -113,11 +113,11 @@ jobs:
 
       - name: Wait for production API health
         run: |
-          echo "Waiting for API health at https://api.dare.club/api/v1/health/live ..."
+          echo "Waiting for API health at https://api.aquify.club/api/v1/health/live ..."
           for i in $(seq 1 24); do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
               --max-time 5 \
-              https://api.dare.club/api/v1/health/live || echo "000")
+              https://api.aquify.club/api/v1/health/live || echo "000")
             if [ "${STATUS}" = "200" ]; then
               echo "Production API healthy (attempt ${i})"
               exit 0
@@ -146,8 +146,8 @@ jobs:
             set -euo pipefail
             SMOKE_AUTH_TOKEN="${SMOKE_AUTH_TOKEN}" \
             SMOKE_ORG_ID="${SMOKE_ORG_ID}" \
-            API_BASE_URL="https://api.dare.club" \
-              /opt/dare/scripts/smoke.sh
+            API_BASE_URL="https://api.aquify.club" \
+              /opt/aquify/scripts/smoke.sh
 
       # -----------------------------------------------------------------------
       # Notifications
@@ -185,7 +185,7 @@ jobs:
           script: |
             set -euo pipefail
             echo "Deploy failed — triggering automatic rollback..."
-            /opt/dare/scripts/rollback.sh
+            /opt/aquify/scripts/rollback.sh
 
       - name: Notify Slack on failure (with rollback)
         if: failure() && env.SLACK_WEBHOOK != ''

@@ -10,7 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
 // LateFeeAssessment is one late fee added to an overdue invoice.
@@ -33,6 +33,25 @@ type LateFeeSweepResult struct {
 }
 
 var errLateFeeExists = errors.New("late fee already applied")
+
+// errInvoiceStale means the invoice changed in the database after it was loaded.
+var errInvoiceStale = errors.New("invoice changed concurrently")
+
+// lockInvoiceFresh row-locks the invoice and verifies its money fields still
+// match the in-memory copy, so a full-row upsert cannot overwrite a payment
+// committed by another instance.
+func lockInvoiceFresh(ctx context.Context, tx pgx.Tx, inv *Invoice) error {
+	var status string
+	var paid, total, due int
+	err := tx.QueryRow(ctx, `SELECT status, amount_paid_cents, total_cents, amount_due_cents FROM invoices WHERE id = $1::uuid FOR UPDATE`, inv.ID).Scan(&status, &paid, &total, &due)
+	if err != nil {
+		return err
+	}
+	if status != inv.Status || paid != inv.AmountPaidCents || total != inv.TotalCents || due != inv.AmountDueCents {
+		return errInvoiceStale
+	}
+	return nil
+}
 
 func lateFeeFor(settings *BillingSettings, amountDue int) int {
 	fee := 0
@@ -156,6 +175,9 @@ func (s *Service) assessLateFeeLocked(ctx context.Context, inv *Invoice, fee int
 				return errLateFeeExists
 			}
 			if err := upsertInvoiceItem(ctx, tx, item); err != nil {
+				return err
+			}
+			if err := lockInvoiceFresh(ctx, tx, inv); err != nil {
 				return err
 			}
 			if err := upsertInvoice(ctx, tx, &updated); err != nil {

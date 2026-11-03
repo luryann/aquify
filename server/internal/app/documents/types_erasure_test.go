@@ -95,7 +95,11 @@ func TestEraseHouseholdDataKeepsCacheWhenDatabaseDeleteFails(t *testing.T) {
 	if _, err := svc.EraseHouseholdData(context.Background(), "org-a", "hh-1"); err == nil {
 		t.Fatal("expected an error when the database delete fails")
 	}
-	if _, err := svc.GetSubmission("org-a", "s1"); err != nil {
-		t.Fatalf("submission dropped from cache despite failed database delete: %v", err)
+	// Inspect the cache directly: GetSubmission refreshes from the (dead) database.
+	svc.mu.RLock()
+	_, cached := svc.submissions["s1"]
+	svc.mu.RUnlock()
+	if !cached {
+		t.Fatalf("submission dropped from cache despite failed database delete")
 	}
 }

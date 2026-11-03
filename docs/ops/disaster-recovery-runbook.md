@@ -1,8 +1,8 @@
-# DARE Platform — Disaster Recovery Runbook
+# aquify Platform — Disaster Recovery Runbook
 
 ## Scope
 
-This runbook covers disaster recovery for the DARE platform across scenarios ranging from single-component failure to complete datacenter loss. It is intended for use by on-call engineers and the engineering lead during active incidents.
+This runbook covers disaster recovery for the aquify platform across scenarios ranging from single-component failure to complete datacenter loss. It is intended for use by on-call engineers and the engineering lead during active incidents.
 
 For routine restore operations (accidental deletion, single-table recovery), refer to `backup-restore-runbook.md`.
 
@@ -29,7 +29,7 @@ For routine restore operations (accidental deletion, single-table recovery), ref
 | Product lead | Stakeholder notification decisions; external comms | After 30 min of active incident |
 | Billing contact | Coordinate with Stripe if billing data is affected | On billing/payment system impact |
 
-Contact information for each role is stored in the **DARE Emergency Contacts** item in the team 1Password vault.
+Contact information for each role is stored in the **aquify Emergency Contacts** item in the team 1Password vault.
 
 ---
 
@@ -37,7 +37,7 @@ Contact information for each role is stored in the **DARE Emergency Contacts** i
 
 ### During an Active Incident
 
-1. **Immediately** post to Slack `#dare-status`:
+1. **Immediately** post to Slack `#aquify-status`:
    ```
    [DR ACTIVE] <brief description of failure>
    Scope: <what is affected>
@@ -46,11 +46,11 @@ Contact information for each role is stored in the **DARE Emergency Contacts** i
    Started: <time UTC>
    ```
 
-2. **Update status page** (Uptime Kuma at `status.dare.club`):
+2. **Update status page** (Uptime Kuma at `status.aquify.club`):
    - Create an incident with affected components.
    - Status: Investigating → Identified → Recovering → Resolved.
 
-3. **Every 20 minutes** during active recovery: post an update to `#dare-status`.
+3. **Every 20 minutes** during active recovery: post an update to `#aquify-status`.
 
 4. **If outage > 30 minutes**: engineering lead or product lead drafts a stakeholder email.
 
@@ -71,20 +71,20 @@ Contact information for each role is stored in the **DARE Emergency Contacts** i
 
 ```bash
 # 1. SSH to VPS
-ssh deploy@vps.dare.club
+ssh deploy@vps.aquify.club
 
 # 2. Confirm the failure
-docker logs dare-production-postgres-1 --tail=50
+docker logs aquify-production-postgres-1 --tail=50
 psql "$DATABASE_URL" -c "SELECT 1;" || echo "DB unreachable"
 
 # 3. Stop application services (not the DB yet)
-docker compose -f /opt/dare/docker-compose.production.yml stop dare-api dare-worker
+docker compose -f /opt/aquify/docker-compose.production.yml stop aquify-api aquify-worker
 
 # 4. Identify the most recent clean backup
-ls -lt /var/backups/dare/ | head -5
+ls -lt /var/backups/aquify/ | head -5
 
 # 5. Run restore (includes stopping DB internally via pg_restore connection)
-/opt/dare/deploy/scripts/restore.sh <YYYYMMDD-HHMMSS>
+/opt/aquify/deploy/scripts/restore.sh <YYYYMMDD-HHMMSS>
 
 # 6. Verify row counts against expected values (from last known metrics)
 psql "$DATABASE_URL" -c "SELECT COUNT(*) FROM members.households;"
@@ -95,7 +95,7 @@ psql "$DATABASE_URL" -c "SELECT COUNT(*) FROM billing.invoices;"
 
 ### Validation
 
-- API health check: `curl https://api.dare.club/healthz`
+- API health check: `curl https://api.aquify.club/healthz`
 - Admin login works
 - Meet list loads
 - Invoice list loads
@@ -104,7 +104,7 @@ psql "$DATABASE_URL" -c "SELECT COUNT(*) FROM billing.invoices;"
 
 ## Recovery Scenario 2: VPS Failure (Server Down)
 
-**Symptoms:** All DARE services unreachable (API, admin portal, status page). VPS provider dashboard shows server in error state.
+**Symptoms:** All aquify services unreachable (API, admin portal, status page). VPS provider dashboard shows server in error state.
 
 **Decision:** Provision a new VPS and restore from latest offsite backup.
 
@@ -115,7 +115,7 @@ psql "$DATABASE_URL" -c "SELECT COUNT(*) FROM billing.invoices;"
 If the VPS provider offers a web console or rescue mode, attempt:
 - Hard reboot via provider control panel.
 - Mount rescue disk and check filesystem with `fsck`.
-- If data is intact, restart services: `docker compose -f /opt/dare/docker-compose.production.yml up -d`
+- If data is intact, restart services: `docker compose -f /opt/aquify/docker-compose.production.yml up -d`
 
 If the VPS cannot be recovered within 15 minutes, proceed to full reprovisioning.
 
@@ -133,7 +133,7 @@ ssh root@<new-ip>
 
 # Install Docker
 curl -fsSL https://get.docker.com | bash
-usermod -aG docker dare
+usermod -aG docker aquify
 
 # Install tools
 apt-get install -y nginx certbot python3-certbot-nginx gnupg2 git curl jq
@@ -153,23 +153,23 @@ go install github.com/pressly/goose/v3/cmd/goose@latest
 #### 2.4 — Copy Configuration from 1Password
 
 From the team 1Password vault, retrieve and install:
-- `.env.production` → `/opt/dare/.env.production`
-- `.env.backup` → `/opt/dare/.env.backup`
+- `.env.production` → `/opt/aquify/.env.production`
+- `.env.backup` → `/opt/aquify/.env.backup`
 - rclone config → `~/.config/rclone/rclone.conf`
 - GPG private key for backup decryption → import with `gpg --import`
 - nginx site configs → `/etc/nginx/sites-available/`
-- Cloudflare Origin Certificate → `/etc/ssl/certs/dare-club-cloudflare-origin.pem`
-- Cloudflare Origin Private Key → `/etc/ssl/private/dare-club-cloudflare-origin.key`
+- Cloudflare Origin Certificate → `/etc/ssl/certs/aquify-club-cloudflare-origin.pem`
+- Cloudflare Origin Private Key → `/etc/ssl/private/aquify-club-cloudflare-origin.key`
 
 ```bash
-mkdir -p /opt/dare /var/backups/dare /var/log/dare
-chmod 700 /opt/dare
+mkdir -p /opt/aquify /var/backups/aquify /var/log/aquify
+chmod 700 /opt/aquify
 ```
 
 #### 2.5 — Clone Repo and Pull Images
 
 ```bash
-cd /opt/dare
+cd /opt/aquify
 git clone git@github.com:your-org/aquify.git .
 docker compose -f docker-compose.production.yml pull
 ```
@@ -178,14 +178,14 @@ docker compose -f docker-compose.production.yml pull
 
 ```bash
 # Download the latest daily backup
-mkdir -p /var/backups/dare
-rclone copy b2:dare-backups-offsite/daily/ /var/backups/dare/ --max-age 26h
+mkdir -p /var/backups/aquify
+rclone copy b2:aquify-backups-offsite/daily/ /var/backups/aquify/ --max-age 26h
 
 # Identify the timestamp
-ls /var/backups/dare/
+ls /var/backups/aquify/
 
 # Run restore
-/opt/dare/deploy/scripts/restore.sh <latest-timestamp>
+/opt/aquify/deploy/scripts/restore.sh <latest-timestamp>
 ```
 
 #### 2.7 — Update DNS
@@ -193,13 +193,13 @@ ls /var/backups/dare/
 In the Cloudflare dashboard, update ALL A records from the old VPS IP to the new VPS IP:
 
 ```
-dare.club           A → <new-ip>
-www.dare.club       A → <new-ip>
-admin.dare.club     A → <new-ip>
-api.dare.club       A → <new-ip>
-status.dare.club    A → <new-ip>
-staging-admin.dare.club  A → <new-ip>
-staging-api.dare.club    A → <new-ip>
+aquify.club           A → <new-ip>
+www.aquify.club       A → <new-ip>
+admin.aquify.club     A → <new-ip>
+api.aquify.club       A → <new-ip>
+status.aquify.club    A → <new-ip>
+staging-admin.aquify.club  A → <new-ip>
+staging-api.aquify.club    A → <new-ip>
 ```
 
 DNS propagation via Cloudflare is typically < 1 minute.
@@ -207,8 +207,8 @@ DNS propagation via Cloudflare is typically < 1 minute.
 #### 2.8 — Verify
 
 ```bash
-curl https://api.dare.club/healthz
-curl https://admin.dare.club
+curl https://api.aquify.club/healthz
+curl https://admin.aquify.club
 ```
 
 ---
@@ -221,29 +221,29 @@ curl https://admin.dare.club
 
 ```bash
 # 1. Check MinIO container status
-docker compose -f /opt/dare/docker-compose.production.yml ps dare-minio
-docker logs dare-production-minio-1 --tail=50
+docker compose -f /opt/aquify/docker-compose.production.yml ps aquify-minio
+docker logs aquify-production-minio-1 --tail=50
 
 # 2. Attempt restart first
-docker compose -f /opt/dare/docker-compose.production.yml restart dare-minio
+docker compose -f /opt/aquify/docker-compose.production.yml restart aquify-minio
 sleep 10
 curl http://localhost:9000/minio/health/live && echo "MinIO healthy"
 
 # 3. If restart doesn't resolve (disk issue, corruption):
 #    Stop workers to prevent failed job retries
-docker compose -f /opt/dare/docker-compose.production.yml stop dare-worker
+docker compose -f /opt/aquify/docker-compose.production.yml stop aquify-worker
 
 # 4. Find the latest MinIO backup
-TIMESTAMP=$(ls -t /var/backups/dare/ | head -1)
+TIMESTAMP=$(ls -t /var/backups/aquify/ | head -1)
 
 # 5. Restore MinIO objects
-mc alias set dare-local http://localhost:9000 "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY"
+mc alias set aquify-local http://localhost:9000 "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY"
 mc mirror --overwrite --preserve \
-  "/var/backups/dare/${TIMESTAMP}/minio" \
-  "dare-local/${MINIO_BUCKET}"
+  "/var/backups/aquify/${TIMESTAMP}/minio" \
+  "aquify-local/${MINIO_BUCKET}"
 
 # 6. Restart worker
-docker compose -f /opt/dare/docker-compose.production.yml start dare-worker
+docker compose -f /opt/aquify/docker-compose.production.yml start aquify-worker
 ```
 
 ---
@@ -256,36 +256,36 @@ docker compose -f /opt/dare/docker-compose.production.yml start dare-worker
 
 ```bash
 # 1. Check Keycloak container
-docker compose -f /opt/dare/docker-compose.production.yml ps dare-keycloak
-docker logs dare-production-keycloak-1 --tail=100
+docker compose -f /opt/aquify/docker-compose.production.yml ps aquify-keycloak
+docker logs aquify-production-keycloak-1 --tail=100
 
 # 2. Attempt restart
-docker compose -f /opt/dare/docker-compose.production.yml restart dare-keycloak
+docker compose -f /opt/aquify/docker-compose.production.yml restart aquify-keycloak
 sleep 30
-curl http://localhost:8443/realms/dare/.well-known/openid-configuration | jq .issuer
+curl http://localhost:8443/realms/aquify/.well-known/openid-configuration | jq .issuer
 
 # 3. If Keycloak DB is corrupted (Keycloak uses its own embedded H2 or shared Postgres):
 #    Stop Keycloak
-docker compose -f /opt/dare/docker-compose.production.yml stop dare-keycloak
+docker compose -f /opt/aquify/docker-compose.production.yml stop aquify-keycloak
 
 #    Find realm export from latest backup
-TIMESTAMP=$(ls -t /var/backups/dare/ | head -1)
-ls "/var/backups/dare/${TIMESTAMP}/keycloak-realm-dare.json"
+TIMESTAMP=$(ls -t /var/backups/aquify/ | head -1)
+ls "/var/backups/aquify/${TIMESTAMP}/keycloak-realm-aquify.json"
 
 #    Start Keycloak with realm import
 # Option A — If Keycloak uses embedded H2: delete H2 data directory and re-import
-#    docker volume rm dare-production_keycloak-data
-#    docker compose up -d dare-keycloak
+#    docker volume rm aquify-production_keycloak-data
+#    docker compose up -d aquify-keycloak
 #    (Keycloak will re-initialize from scratch)
 #    Then import realm via admin UI or CLI:
 
-docker exec -it dare-production-keycloak-1 \
+docker exec -it aquify-production-keycloak-1 \
   /opt/keycloak/bin/kc.sh import \
-  --file /tmp/keycloak-realm-dare.json \
+  --file /tmp/keycloak-realm-aquify.json \
   --override true
 
 # 4. Verify OIDC discovery works
-curl https://auth.dare.club/realms/dare/.well-known/openid-configuration | jq .issuer
+curl https://auth.aquify.club/realms/aquify/.well-known/openid-configuration | jq .issuer
 
 # 5. Verify admin login works end-to-end
 ```
@@ -326,8 +326,8 @@ The staging restore drill procedure is documented in `restore-drill-checklist.md
 
 After any recovery scenario, verify the following before declaring the incident resolved:
 
-- [ ] `GET https://api.dare.club/healthz` returns HTTP 200
-- [ ] `GET https://admin.dare.club` loads the login page (HTTP 200 or 302)
+- [ ] `GET https://api.aquify.club/healthz` returns HTTP 200
+- [ ] `GET https://admin.aquify.club` loads the login page (HTTP 200 or 302)
 - [ ] Admin login via OIDC completes without error
 - [ ] Dashboard loads with member and meet counts
 - [ ] `GET /api/v1/orgs/{orgId}/members` returns non-empty list

@@ -2,7 +2,7 @@
 
 ## Scope
 
-This document defines how DARE Platform stores and uses sensitive credentials, including API keys, OAuth client secrets, webhook signing secrets, and encryption keys.
+This document defines how aquify Platform stores and uses sensitive credentials, including API keys, OAuth client secrets, webhook signing secrets, and encryption keys.
 
 ## Rules
 

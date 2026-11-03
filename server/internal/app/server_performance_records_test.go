@@ -11,9 +11,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/dareaquatics/aquify/server/internal/app/meets"
-	"github.com/dareaquatics/aquify/server/internal/app/members"
-	"github.com/dareaquatics/aquify/server/internal/app/performance"
+	"github.com/luryann/aquify/server/internal/app/meets"
+	"github.com/luryann/aquify/server/internal/app/members"
+	"github.com/luryann/aquify/server/internal/app/performance"
 )
 
 // TestPerformanceRecordsGoalsRelaysRoutes exercises the team records, top

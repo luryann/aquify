@@ -10,7 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
 var (

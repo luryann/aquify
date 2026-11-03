@@ -3,13 +3,16 @@ package handlers
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/app/audit"
-	"github.com/dareaquatics/aquify/server/internal/app/compliance"
-	"github.com/dareaquatics/aquify/server/internal/app/httpx"
-	"github.com/dareaquatics/aquify/server/internal/workers"
+	"github.com/luryann/aquify/server/internal/app/audit"
+	"github.com/luryann/aquify/server/internal/app/compliance"
+	"github.com/luryann/aquify/server/internal/app/httpx"
+	"github.com/luryann/aquify/server/internal/storage"
+	"github.com/luryann/aquify/server/internal/workers"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
 )
@@ -23,6 +26,43 @@ type ComplianceHandlers struct {
 	// queue runs the export/erasure work (compliance:data_export and
 	// compliance:data_deletion); without it requests never leave "pending".
 	queue workers.Queue
+	// store mints short-lived presigned download URLs for ready exports; the
+	// request record only persists the object key.
+	store storage.ObjectStorage
+}
+
+const complianceDownloadURLTTL = 15 * time.Minute
+
+// SetStorage wires object storage used to presign export downloads on read.
+func (h *ComplianceHandlers) SetStorage(store storage.ObjectStorage) {
+	h.store = store
+}
+
+// withDownloadURL returns a copy of req whose DownloadURL is a fresh presigned
+// URL when the stored value is an object key. Legacy absolute URLs pass through.
+func (h *ComplianceHandlers) withDownloadURL(req compliance.DataExportRequest) compliance.DataExportRequest {
+	key := strings.TrimSpace(req.DownloadURL)
+	if key == "" || strings.HasPrefix(key, "http://") || strings.HasPrefix(key, "https://") {
+		return req
+	}
+	req.DownloadURL = ""
+	if req.Status != "ready" || h.store == nil {
+		return req
+	}
+	if req.ExpiresAt != nil && time.Now().After(*req.ExpiresAt) {
+		return req
+	}
+	if url, err := h.store.PresignedGetURL(key, complianceDownloadURLTTL); err == nil {
+		req.DownloadURL = url
+	}
+	return req
+}
+
+func (h *ComplianceHandlers) withDownloadURLs(reqs []compliance.DataExportRequest) []compliance.DataExportRequest {
+	for i := range reqs {
+		reqs[i] = h.withDownloadURL(reqs[i])
+	}
+	return reqs
 }
 
 // SetJobQueue wires the worker queue used to process export and erasure jobs.
@@ -110,7 +150,12 @@ func (h *ComplianceHandlers) createDataExportRequest(w http.ResponseWriter, r *h
 	// the worker builds the archive, and if the enqueue fails an admin can retry.
 	recordAudit(h.auditService, principal, orgID, audit.ActionComplianceDataExportRequest, "data_export_request", req.ID, nil, req, map[string]string{"household_id": body.HouseholdID})
 	if err := h.enqueue(r.Context(), workers.TypeProcessDataExport, complianceJobPayload{RequestID: req.ID, OrgID: orgID, HouseholdID: req.HouseholdID}); err != nil {
-		httpx.WriteError(w, r, http.StatusServiceUnavailable, "export_queue_unavailable", "The export request was saved but could not be queued for processing. Try again shortly.", err)
+		// Never leave a permanently-pending orphan: nothing will ever process
+		// this row, so close it out as failed before telling the caller to retry.
+		if _, failErr := h.service.FailDataExport(orgID, req.ID); failErr != nil {
+			slog.Error("compliance: failed to mark unqueued export request failed", "request_id", req.ID, "err", failErr)
+		}
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, "export_queue_unavailable", "The export request could not be queued for processing and was marked failed. Submit a new request shortly.", err)
 		return
 	}
 
@@ -134,7 +179,7 @@ func (h *ComplianceHandlers) listDataExportRequests(w http.ResponseWriter, r *ht
 		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to list data export requests.", err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{"requests": reqs})
+	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{"requests": h.withDownloadURLs(reqs)})
 }
 
 // getDataExportRequest handles GET /api/v1/compliance/data-export-requests/{requestID}.
@@ -146,8 +191,11 @@ func (h *ComplianceHandlers) getDataExportRequest(w http.ResponseWriter, r *http
 	requestID := chi.URLParam(r, "requestID")
 
 	req, err := h.service.GetDataExportRequest(orgID, requestID)
-	if err != nil {
+	if errors.Is(err, compliance.ErrExportNotFound) {
 		httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Data export request not found.", nil)
+		return
+	} else if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load data export request.", err)
 		return
 	}
 
@@ -159,7 +207,8 @@ func (h *ComplianceHandlers) getDataExportRequest(w http.ResponseWriter, r *http
 		return
 	}
 
-	httpx.WriteJSON(w, http.StatusOK, req)
+	out := h.withDownloadURL(*req)
+	httpx.WriteJSON(w, http.StatusOK, &out)
 }
 
 // ─── Data deletion requests ───────────────────────────────────────────────────
@@ -231,8 +280,11 @@ func (h *ComplianceHandlers) getDataDeletionRequest(w http.ResponseWriter, r *ht
 	requestID := chi.URLParam(r, "requestID")
 
 	req, err := h.service.GetDataDeletionRequest(orgID, requestID)
-	if err != nil {
+	if errors.Is(err, compliance.ErrDeletionNotFound) {
 		httpx.WriteError(w, r, http.StatusNotFound, "not_found", "Data deletion request not found.", nil)
+		return
+	} else if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Failed to load data deletion request.", err)
 		return
 	}
 

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/storage"
+	"github.com/luryann/aquify/server/internal/storage"
 )
 
 const (
@@ -36,7 +36,7 @@ type Config struct {
 type KeycloakAdminConfig struct {
 	// AdminURL is the base URL of the Keycloak instance (e.g. "http://localhost:8180").
 	AdminURL string
-	// Realm is the target Keycloak realm name (e.g. "dare").
+	// Realm is the target Keycloak realm name (e.g. "aquify").
 	Realm string
 	// ClientID is the service-account OAuth2 client ID for admin operations.
 	ClientID string `json:"-"`
@@ -46,7 +46,7 @@ type KeycloakAdminConfig struct {
 
 // TelemetryConfig holds OpenTelemetry and Prometheus observability settings.
 type TelemetryConfig struct {
-	// ServiceName is the OTel service.name attribute. Default: "dare-api".
+	// ServiceName is the OTel service.name attribute. Default: "aquify-api".
 	ServiceName string
 	// ServiceVersion is the deployed artifact version. Default: "dev".
 	ServiceVersion string
@@ -313,7 +313,7 @@ func LoadConfig() Config {
 			},
 		},
 		Telemetry: TelemetryConfig{
-			ServiceName:    getEnvTrimmed("OTEL_SERVICE_NAME", "dare-api"),
+			ServiceName:    getEnvTrimmed("OTEL_SERVICE_NAME", "aquify-api"),
 			ServiceVersion: getEnvTrimmed("OTEL_SERVICE_VERSION", "dev"),
 			OTLPEndpoint:   getEnvTrimmed("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
 			SampleRate:     getEnvFloat64("OTEL_TRACES_SAMPLER_ARG", 1.0),

@@ -8,15 +8,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/app/audit"
-	"github.com/dareaquatics/aquify/server/internal/app/comms"
-	"github.com/dareaquatics/aquify/server/internal/app/documents"
-	"github.com/dareaquatics/aquify/server/internal/app/groups"
-	"github.com/dareaquatics/aquify/server/internal/app/httpx"
-	"github.com/dareaquatics/aquify/server/internal/app/meets"
-	"github.com/dareaquatics/aquify/server/internal/app/members"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
-	"github.com/dareaquatics/aquify/server/internal/app/performance"
+	"github.com/luryann/aquify/server/internal/app/audit"
+	"github.com/luryann/aquify/server/internal/app/comms"
+	"github.com/luryann/aquify/server/internal/app/documents"
+	"github.com/luryann/aquify/server/internal/app/groups"
+	"github.com/luryann/aquify/server/internal/app/httpx"
+	"github.com/luryann/aquify/server/internal/app/meets"
+	"github.com/luryann/aquify/server/internal/app/members"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/app/performance"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
 )
@@ -122,8 +122,8 @@ type upsertResultBody struct {
 	Heat        *int             `json:"heat"`
 	Lane        *int             `json:"lane"`
 	Place       *int             `json:"place"`
-	SeedTimeMs  *int             `json:"seed_time_ms"`
-	FinTimeMs   *int             `json:"fin_time_ms"`
+	SeedTimeMs  *int             `json:"seed_time_ms"   validate:"omitempty,gt=0"`
+	FinTimeMs   *int             `json:"fin_time_ms"    validate:"omitempty,gt=0"`
 	DQ          bool             `json:"dq"`
 	DQCode      string           `json:"dq_code"`
 	DQNote      string           `json:"dq_note"`
@@ -135,7 +135,7 @@ type overrideBestTimeBody struct {
 	EventDistance int    `json:"event_distance" validate:"required,gt=0"`
 	Stroke        string `json:"stroke"         validate:"required,oneof=free back breast fly im"`
 	Course        string `json:"course"         validate:"required,oneof=SCY SCM LCM"`
-	BestTimeMs    *int   `json:"best_time_ms"`
+	BestTimeMs    *int   `json:"best_time_ms"   validate:"omitempty,gt=0"`
 	Reason        string `json:"reason"         validate:"required"`
 	RecordedAt    string `json:"recorded_at"`
 }

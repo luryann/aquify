@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dareaquatics/aquify/server/internal/app/audit"
-	"github.com/dareaquatics/aquify/server/internal/app/billing"
+	"github.com/luryann/aquify/server/internal/app/audit"
+	"github.com/luryann/aquify/server/internal/app/billing"
 )
 
 func financeRequest(t *testing.T, router http.Handler, method, path, token, body string) *httptest.ResponseRecorder {

@@ -17,6 +17,7 @@ import (
 var (
 	ErrNotFound      = errors.New("season not found")
 	ErrInvalidStatus = errors.New("season status must be active, upcoming, or completed")
+	ErrInvalidDates  = errors.New("season dates must be YYYY-MM-DD with start_date on or before end_date")
 )
 
 var validStatuses = map[string]bool{
@@ -84,6 +85,9 @@ func NewServiceWithPool(pool *pgxpool.Pool) *Service {
 func (s *Service) Create(orgID, name, startDate, endDate, status, goals, createdBy string) (*Season, error) {
 	if !validStatuses[status] {
 		return nil, ErrInvalidStatus
+	}
+	if err := validateDates(startDate, endDate); err != nil {
+		return nil, err
 	}
 	id := uuid.NewString()
 	now := time.Now().UTC()
@@ -165,6 +169,26 @@ func (s *Service) Get(orgID, id string) (*Season, error) {
 	return &cp, nil
 }
 
+// validateDates requires empty or YYYY-MM-DD dates with start <= end.
+func validateDates(start, end string) error {
+	var st, en time.Time
+	var err error
+	if start != "" {
+		if st, err = time.Parse("2006-01-02", start); err != nil {
+			return ErrInvalidDates
+		}
+	}
+	if end != "" {
+		if en, err = time.Parse("2006-01-02", end); err != nil {
+			return ErrInvalidDates
+		}
+	}
+	if start != "" && end != "" && st.After(en) {
+		return ErrInvalidDates
+	}
+	return nil
+}
+
 func applyUpdates(season *Season, updates SeasonUpdates) error {
 	if updates.Name != nil {
 		season.Name = *updates.Name
@@ -184,7 +208,7 @@ func applyUpdates(season *Season, updates SeasonUpdates) error {
 	if updates.Goals != nil {
 		season.Goals = *updates.Goals
 	}
-	return nil
+	return validateDates(season.StartDate, season.EndDate)
 }
 
 // Update applies SeasonUpdates to an existing season.

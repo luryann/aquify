@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
 // TopTimesQuery selects the swims ranked on a top-N list. Age group is

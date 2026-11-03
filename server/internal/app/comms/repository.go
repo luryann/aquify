@@ -2,10 +2,12 @@ package comms
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/dbutil"
+	"github.com/luryann/aquify/server/internal/dbutil"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -42,12 +44,12 @@ func (r *Repository) UpsertAnnouncement(ctx context.Context, a *Announcement) er
 	return err
 }
 
-func (r *Repository) LoadAnnouncements(ctx context.Context) ([]*Announcement, error) {
+func (r *Repository) LoadAnnouncements(ctx context.Context, orgID string) ([]*Announcement, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id::text, org_id::text, title, body, status, audience,
 		       COALESCE(group_id::text, ''), published_at, archived_at,
 		       created_at, updated_at, is_public
-		FROM announcements WHERE deleted_at IS NULL`)
+		FROM announcements WHERE deleted_at IS NULL`+orgClause("org_id", orgID, true), orgArgs(orgID)...)
 	if err != nil {
 		return nil, fmt.Errorf("comms: load announcements: %w", err)
 	}
@@ -92,13 +94,39 @@ func (r *Repository) UpsertCampaign(ctx context.Context, c *EmailCampaign) error
 	return err
 }
 
-func (r *Repository) LoadCampaigns(ctx context.Context) ([]*EmailCampaign, error) {
+// ClaimCampaignForSend atomically moves a campaign draft -> sending (or
+// re-claims one stuck in 'sending' with no heartbeat for staleAfter) and
+// reports whether this caller won the claim.
+func (r *Repository) ClaimCampaignForSend(ctx context.Context, orgID, campaignID string, staleAfter time.Duration) (bool, error) {
+	var id string
+	err := r.pool.QueryRow(ctx, `
+		UPDATE email_campaigns SET status = 'sending', updated_at = now()
+		WHERE id = $1::uuid AND org_id = $2::uuid AND deleted_at IS NULL
+		  AND (status = 'draft'
+		       OR (status = 'sending' AND updated_at < now() - make_interval(secs => $3::double precision)))
+		RETURNING id::text`, campaignID, orgID, staleAfter.Seconds()).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+// TouchSendingCampaign refreshes updated_at on a campaign being sent so it is
+// not treated as a stuck claim.
+func (r *Repository) TouchSendingCampaign(ctx context.Context, orgID, campaignID string) error {
+	_, err := r.pool.Exec(ctx, `
+		UPDATE email_campaigns SET updated_at = now()
+		WHERE id = $1::uuid AND org_id = $2::uuid AND status = 'sending'`, campaignID, orgID)
+	return err
+}
+
+func (r *Repository) LoadCampaigns(ctx context.Context, orgID string) ([]*EmailCampaign, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id::text, org_id::text, name, subject, body_html, COALESCE(body_text, ''),
 		       from_name, from_email, audience, COALESCE(group_id::text, ''), status,
 		       sent_at, total_recipients, sent_count, failed_count, suppressed_count,
 		       created_at, updated_at
-		FROM email_campaigns WHERE deleted_at IS NULL`)
+		FROM email_campaigns WHERE deleted_at IS NULL`+orgClause("org_id", orgID, true), orgArgs(orgID)...)
 	if err != nil {
 		return nil, fmt.Errorf("comms: load campaigns: %w", err)
 	}
@@ -152,32 +180,28 @@ func (r *Repository) UpsertDelivery(ctx context.Context, d *EmailDelivery) error
 	return err
 }
 
-func (r *Repository) LoadDeliveries(ctx context.Context) ([]*EmailDelivery, error) {
-	rows, err := r.pool.Query(ctx, `
+const deliverySelect = `
 		SELECT id::text, org_id::text, COALESCE(campaign_id::text, ''),
 		       recipient_email, COALESCE(recipient_user_id::text, ''), status,
 		       COALESCE(provider_message_id, ''), COALESCE(error_message, ''),
 		       sent_at, delivered_at, bounced_at, created_at, updated_at
-		FROM email_deliveries`)
+		FROM email_deliveries`
+
+func (r *Repository) LoadDeliveries(ctx context.Context, orgID string) ([]*EmailDelivery, error) {
+	return r.queryDeliveries(ctx, deliverySelect+orgClause("org_id", orgID, false), orgArgs(orgID)...)
+}
+
+func (r *Repository) queryDeliveries(ctx context.Context, q string, args ...any) ([]*EmailDelivery, error) {
+	rows, err := r.pool.Query(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("comms: load email_deliveries: %w", err)
 	}
 	return dbutil.CollectRows(rows, "comms: scan email_delivery", func(rows pgx.Rows) (*EmailDelivery, error) {
 		d := &EmailDelivery{}
 		err := rows.Scan(
-			&d.ID,
-			&d.OrgID,
-			&d.CampaignID,
-			&d.RecipientEmail,
-			&d.RecipientUserID,
-			&d.Status,
-			&d.ProviderMessageID,
-			&d.ErrorMessage,
-			&d.SentAt,
-			&d.DeliveredAt,
-			&d.BouncedAt,
-			&d.CreatedAt,
-			&d.UpdatedAt,
+			&d.ID, &d.OrgID, &d.CampaignID, &d.RecipientEmail, &d.RecipientUserID, &d.Status,
+			&d.ProviderMessageID, &d.ErrorMessage, &d.SentAt, &d.DeliveredAt, &d.BouncedAt,
+			&d.CreatedAt, &d.UpdatedAt,
 		)
 		return d, err
 	})
@@ -190,7 +214,7 @@ func (r *Repository) UpsertSuppressionEntry(ctx context.Context, e *SuppressionE
 		ON CONFLICT (org_id, email) DO UPDATE SET
 		  reason     = EXCLUDED.reason`,
 		e.ID, e.OrgID, e.Email, e.Reason,
-		e.CreatedAt, dbutil.NullableString(e.CreatedBy),
+		e.CreatedAt, uuidOrNil(e.CreatedBy),
 	)
 	return err
 }
@@ -203,10 +227,10 @@ func (r *Repository) DeleteSuppressionEntry(ctx context.Context, orgID, email st
 	return err
 }
 
-func (r *Repository) LoadSuppressionEntries(ctx context.Context) ([]*SuppressionEntry, error) {
+func (r *Repository) LoadSuppressionEntries(ctx context.Context, orgID string) ([]*SuppressionEntry, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id::text, org_id::text, email, reason, created_at, COALESCE(created_by::text, '')
-		FROM suppression_list`)
+		FROM suppression_list`+orgClause("org_id", orgID, false), orgArgs(orgID)...)
 	if err != nil {
 		return nil, fmt.Errorf("comms: load suppression_list: %w", err)
 	}
@@ -268,11 +292,11 @@ func upsertNotificationPreference(ctx context.Context, db execer, preference *No
 	return err
 }
 
-func (r *Repository) LoadNotificationPreferences(ctx context.Context) ([]*NotificationPreference, error) {
+func (r *Repository) LoadNotificationPreferences(ctx context.Context, orgID string) ([]*NotificationPreference, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id::text, org_id::text, user_id, COALESCE(household_id, ''), event_id,
 		       email_enabled, push_enabled, created_at, updated_at, COALESCE(updated_by, '')
-		FROM notification_preferences`)
+		FROM notification_preferences`+orgClause("org_id", orgID, false), orgArgs(orgID)...)
 	if err != nil {
 		return nil, fmt.Errorf("comms: load notification_preferences: %w", err)
 	}
@@ -310,11 +334,11 @@ func (r *Repository) UpsertMessage(ctx context.Context, m *Message) error {
 	return err
 }
 
-func (r *Repository) LoadMessages(ctx context.Context) ([]*Message, error) {
+func (r *Repository) LoadMessages(ctx context.Context, orgID string) ([]*Message, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id::text, org_id::text, household_id::text, swimmer_id::text,
 		       sender_user_id::text, sender_role, body, edited_at, created_at, updated_at
-		FROM messages`)
+		FROM messages`+orgClause("org_id", orgID, false), orgArgs(orgID)...)
 	if err != nil {
 		return nil, fmt.Errorf("comms: load messages: %w", err)
 	}
@@ -372,10 +396,10 @@ func (r *Repository) UpdateMessageBody(ctx context.Context, messageID, body stri
 	return err
 }
 
-func (r *Repository) LoadMessageEdits(ctx context.Context) ([]*MessageEdit, error) {
+func (r *Repository) LoadMessageEdits(ctx context.Context, orgID string) ([]*MessageEdit, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id::text, message_id::text, previous_body, edited_at, edited_by::text
-		FROM message_edits`)
+		FROM message_edits`+messageOrgClause(orgID), orgArgs(orgID)...)
 	if err != nil {
 		return nil, fmt.Errorf("comms: load message_edits: %w", err)
 	}
@@ -398,6 +422,12 @@ func (r *Repository) UpsertMessageReaction(ctx context.Context, react *MessageRe
 	return err
 }
 
+// DeleteMessage removes a message (attachments/edits/reactions cascade via FK).
+func (r *Repository) DeleteMessage(ctx context.Context, messageID string) error {
+	_, err := r.pool.Exec(ctx, `DELETE FROM messages WHERE id = $1::uuid`, messageID)
+	return err
+}
+
 func (r *Repository) DeleteMessageReaction(ctx context.Context, messageID, userID, emoji string) error {
 	_, err := r.pool.Exec(ctx, `
 		DELETE FROM message_reactions WHERE message_id = $1::uuid AND user_id = $2::uuid AND emoji = $3`,
@@ -406,10 +436,10 @@ func (r *Repository) DeleteMessageReaction(ctx context.Context, messageID, userI
 	return err
 }
 
-func (r *Repository) LoadMessageReactions(ctx context.Context) ([]*MessageReaction, error) {
+func (r *Repository) LoadMessageReactions(ctx context.Context, orgID string) ([]*MessageReaction, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id::text, message_id::text, user_id::text, emoji, created_at
-		FROM message_reactions`)
+		FROM message_reactions`+messageOrgClause(orgID), orgArgs(orgID)...)
 	if err != nil {
 		return nil, fmt.Errorf("comms: load message_reactions: %w", err)
 	}
@@ -432,10 +462,10 @@ func (r *Repository) InsertMessageAttachment(ctx context.Context, a *MessageAtta
 	return err
 }
 
-func (r *Repository) LoadMessageAttachments(ctx context.Context) ([]*MessageAttachment, error) {
+func (r *Repository) LoadMessageAttachments(ctx context.Context, orgID string) ([]*MessageAttachment, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id::text, message_id::text, object_key, filename, mime_type, size_bytes, created_at
-		FROM message_attachments`)
+		FROM message_attachments`+messageOrgClause(orgID), orgArgs(orgID)...)
 	if err != nil {
 		return nil, fmt.Errorf("comms: load message_attachments: %w", err)
 	}
@@ -459,10 +489,10 @@ func (r *Repository) UpsertMessageRead(ctx context.Context, read *MessageRead) e
 	return err
 }
 
-func (r *Repository) LoadMessageReads(ctx context.Context) ([]*MessageRead, error) {
+func (r *Repository) LoadMessageReads(ctx context.Context, orgID string) ([]*MessageRead, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id::text, org_id::text, household_id::text, swimmer_id::text, user_id::text, last_read_at
-		FROM message_reads`)
+		FROM message_reads`+orgClause("org_id", orgID, false), orgArgs(orgID)...)
 	if err != nil {
 		return nil, fmt.Errorf("comms: load message_reads: %w", err)
 	}
@@ -514,7 +544,7 @@ func (r *Repository) EraseHousehold(ctx context.Context, orgID, householdID stri
 
 // ─── Batch load ───────────────────────────────────────────────────────────────
 
-func (r *Repository) LoadAll(ctx context.Context) (
+func (r *Repository) LoadAll(ctx context.Context, orgID string) (
 	announcements []*Announcement,
 	campaigns []*EmailCampaign,
 	deliveries []*EmailDelivery,
@@ -527,33 +557,106 @@ func (r *Repository) LoadAll(ctx context.Context) (
 	messageReads []*MessageRead,
 	err error,
 ) {
-	if announcements, err = r.LoadAnnouncements(ctx); err != nil {
+	if announcements, err = r.LoadAnnouncements(ctx, orgID); err != nil {
 		return
 	}
-	if campaigns, err = r.LoadCampaigns(ctx); err != nil {
+	if campaigns, err = r.LoadCampaigns(ctx, orgID); err != nil {
 		return
 	}
-	if deliveries, err = r.LoadDeliveries(ctx); err != nil {
+	if deliveries, err = r.LoadDeliveries(ctx, orgID); err != nil {
 		return
 	}
-	if suppressions, err = r.LoadSuppressionEntries(ctx); err != nil {
+	if suppressions, err = r.LoadSuppressionEntries(ctx, orgID); err != nil {
 		return
 	}
-	if preferences, err = r.LoadNotificationPreferences(ctx); err != nil {
+	if preferences, err = r.LoadNotificationPreferences(ctx, orgID); err != nil {
 		return
 	}
-	if messages, err = r.LoadMessages(ctx); err != nil {
+	if messages, err = r.LoadMessages(ctx, orgID); err != nil {
 		return
 	}
-	if messageEdits, err = r.LoadMessageEdits(ctx); err != nil {
+	if messageEdits, err = r.LoadMessageEdits(ctx, orgID); err != nil {
 		return
 	}
-	if messageReactions, err = r.LoadMessageReactions(ctx); err != nil {
+	if messageReactions, err = r.LoadMessageReactions(ctx, orgID); err != nil {
 		return
 	}
-	if messageAttachments, err = r.LoadMessageAttachments(ctx); err != nil {
+	if messageAttachments, err = r.LoadMessageAttachments(ctx, orgID); err != nil {
 		return
 	}
-	messageReads, err = r.LoadMessageReads(ctx)
+	messageReads, err = r.LoadMessageReads(ctx, orgID)
 	return
+}
+
+// uuidOrNil returns the value only when it is a valid UUID. System actors such
+// as "postmark-webhook" are not user IDs and are stored as NULL.
+func uuidOrNil(s string) any {
+	if _, err := uuid.Parse(s); err != nil {
+		return nil
+	}
+	return s
+}
+
+// orgClause returns a WHERE/AND fragment restricting col to the org, or "" for
+// an unscoped (all orgs) load. Pair with orgArgs.
+func orgClause(col, orgID string, hasWhere bool) string {
+	if orgID == "" {
+		return ""
+	}
+	kw := " WHERE "
+	if hasWhere {
+		kw = " AND "
+	}
+	return kw + col + " = $1::uuid"
+}
+
+func orgArgs(orgID string) []any {
+	if orgID == "" {
+		return nil
+	}
+	return []any{orgID}
+}
+
+// messageOrgClause scopes message child tables (no org_id column) via messages.
+func messageOrgClause(orgID string) string {
+	if orgID == "" {
+		return ""
+	}
+	return " WHERE message_id IN (SELECT id FROM messages WHERE org_id = $1::uuid)"
+}
+
+// FindDeliveryByProviderMessageID returns the delivery with the given provider
+// message id (optionally scoped to an org), or nil.
+func (r *Repository) FindDeliveryByProviderMessageID(ctx context.Context, orgID, messageID string) ([]*EmailDelivery, error) {
+	q := deliverySelect + ` WHERE provider_message_id = $1`
+	args := []any{messageID}
+	if orgID != "" {
+		q += ` AND org_id = $2::uuid`
+		args = append(args, orgID)
+	}
+	return r.queryDeliveries(ctx, q, args...)
+}
+
+// FindDeliveryByCampaignRecipient returns deliveries for a campaign+recipient.
+func (r *Repository) FindDeliveryByCampaignRecipient(ctx context.Context, orgID, campaignID, email string) ([]*EmailDelivery, error) {
+	return r.queryDeliveries(ctx, deliverySelect+` WHERE org_id = $1::uuid AND campaign_id = $2::uuid AND recipient_email = $3 ORDER BY created_at DESC`, orgID, campaignID, email)
+}
+
+// LoadSuppressionEntry returns the single suppression row for org+email, or nil.
+func (r *Repository) LoadSuppressionEntry(ctx context.Context, orgID, email string) (*SuppressionEntry, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, org_id::text, email, reason, created_at, COALESCE(created_by::text, '')
+		FROM suppression_list WHERE org_id = $1::uuid AND email = $2`, orgID, email)
+	if err != nil {
+		return nil, fmt.Errorf("comms: load suppression entry: %w", err)
+	}
+	list, err := dbutil.CollectRows(rows, "comms: scan suppression_entry", func(rows pgx.Rows) (*SuppressionEntry, error) {
+		e := &SuppressionEntry{}
+		err := rows.Scan(&e.ID, &e.OrgID, &e.Email, &e.Reason, &e.CreatedAt, &e.CreatedBy)
+		return e, err
+	})
+	if err != nil || len(list) == 0 {
+		return nil, err
+	}
+	return list[0], nil
 }

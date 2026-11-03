@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dareaquatics/aquify/server/internal/keycloak"
+	"github.com/luryann/aquify/server/internal/keycloak"
 )
 
 func usersG2Setup(t *testing.T) (*keycloak.StubClient, http.Handler) {

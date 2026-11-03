@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/dareaquatics/aquify/server/internal/testutil"
+	"github.com/luryann/aquify/server/internal/testutil"
 	"github.com/google/uuid"
 )
 

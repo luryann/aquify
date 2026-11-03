@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dareaquatics/aquify/server/internal/workers"
+	"github.com/luryann/aquify/server/internal/workers"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 

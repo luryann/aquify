@@ -1,4 +1,4 @@
-# Operator Guide — DARE Platform
+# Operator Guide — aquify Platform
 
 **Audience:** Technical operators, DevOps engineers, on-call engineers
 **Version:** 1.0
@@ -8,7 +8,7 @@
 
 ## 1. System Overview
 
-DARE is a full-stack swim club operations platform. The following diagram shows the major components and their relationships:
+aquify is a full-stack swim club operations platform. The following diagram shows the major components and their relationships:
 
 ```
                             ┌─────────────────────────────────┐
@@ -25,7 +25,7 @@ DARE is a full-stack swim club operations platform. The following diagram shows 
               └──────────────────────────┼───────────────────────────┘
                                          │ HTTP/REST (/api/v1/)
                                 ┌────────▼────────┐
-                                │   DARE API       │
+                                │   aquify API       │
                                 │   (Go, Chi)      │
                                 └────┬───────┬────┘
                                      │       │
@@ -67,23 +67,23 @@ DARE is a full-stack swim club operations platform. The following diagram shows 
 
 **Liveness probe** (is the process running?):
 ```bash
-curl https://api.dare.club/health/live
+curl https://api.aquify.club/health/live
 # Expected: 200 OK {"status":"ok"}
 ```
 
 **Readiness probe** (is the system ready to handle traffic?):
 ```bash
-curl https://api.dare.club/health/ready
+curl https://api.aquify.club/health/ready
 # Expected: 200 OK {"status":"ready","db":"ok","redis":"ok","storage":"ok"}
 ```
 
-**Grafana dashboards:** Navigate to `https://grafana.dare.club`. Key dashboards:
-- **DARE API Overview** — request rate, error rate, p95 latency
+**Grafana dashboards:** Navigate to `https://grafana.aquify.club`. Key dashboards:
+- **aquify API Overview** — request rate, error rate, p95 latency
 - **DB Connections** — pool utilization, query duration
 - **Background Jobs** — queue depths, DLQ count, job failure rate
 - **Runtime Metrics** — Go GC, goroutine count, memory
 
-**Prometheus alerts:** Check `https://grafana.dare.club/alerting` for active alerts. Critical alerts also page via PagerDuty (see `docs/runbooks/on-call.md`).
+**Prometheus alerts:** Check `https://grafana.aquify.club/alerting` for active alerts. Critical alerts also page via PagerDuty (see `docs/runbooks/on-call.md`).
 
 ### 2.2 Monitoring Background Job Queues
 
@@ -93,7 +93,7 @@ The admin API exposes queue metrics:
 # List all queues and their depths
 curl -H "Authorization: Bearer $ADMIN_TOKEN" \
      -H "X-Org-Id: $ORG_ID" \
-     https://api.dare.club/api/v1/admin/jobs
+     https://api.aquify.club/api/v1/admin/jobs
 
 # Sample response
 {
@@ -113,19 +113,19 @@ Expected healthy state: all queues have `pending < 20` and `failed = 0`. If `fai
 # List dead-letter queue entries
 curl -H "Authorization: Bearer $ADMIN_TOKEN" \
      -H "X-Org-Id: $ORG_ID" \
-     https://api.dare.club/api/v1/admin/jobs/dlq
+     https://api.aquify.club/api/v1/admin/jobs/dlq
 
 # Retry a specific DLQ entry
 curl -X POST \
      -H "Authorization: Bearer $ADMIN_TOKEN" \
      -H "X-Org-Id: $ORG_ID" \
-     https://api.dare.club/api/v1/admin/jobs/dlq/{taskId}/retry
+     https://api.aquify.club/api/v1/admin/jobs/dlq/{taskId}/retry
 
 # Delete a DLQ entry
 curl -X DELETE \
      -H "Authorization: Bearer $ADMIN_TOKEN" \
      -H "X-Org-Id: $ORG_ID" \
-     https://api.dare.club/api/v1/admin/jobs/dlq/{taskId}
+     https://api.aquify.club/api/v1/admin/jobs/dlq/{taskId}
 ```
 
 ### 2.4 Reviewing the Audit Log
@@ -134,7 +134,7 @@ curl -X DELETE \
 # Fetch recent audit events (last 50)
 curl -H "Authorization: Bearer $ADMIN_TOKEN" \
      -H "X-Org-Id: $ORG_ID" \
-     "https://api.dare.club/api/v1/orgs/$ORG_ID/audit?limit=50&order=desc"
+     "https://api.aquify.club/api/v1/orgs/$ORG_ID/audit?limit=50&order=desc"
 ```
 
 The admin UI also provides a filterable audit log at `/audit`.
@@ -161,7 +161,7 @@ The admin UI also provides a filterable audit log at `/audit`.
 # 2. Runs pending DB migrations (make db-up)
 # 3. Performs a rolling restart (zero-downtime via container orchestrator)
 # 4. Runs smoke checks against /health/ready
-# 5. Notifies #dare-ops Slack on success or failure
+# 5. Notifies #aquify-ops Slack on success or failure
 ```
 
 ### 3.3 Rolling Back
@@ -188,13 +188,13 @@ make db-down  # runs one step of goose down
 
 ```bash
 # API container logs
-docker compose logs -f dare-api
+docker compose logs -f aquify-api
 
 # Filter for errors only
-docker compose logs dare-api | grep '"level":"error"'
+docker compose logs aquify-api | grep '"level":"error"'
 
 # Worker logs
-docker compose logs -f dare-worker
+docker compose logs -f aquify-worker
 
 # All services
 docker compose logs -f
@@ -275,7 +275,7 @@ All secrets are stored in the deployment environment (`.env` on the host, or sec
 
 1. Generate a new 64-byte random key: `openssl rand -hex 64`
 2. Update the environment variable on all API instances.
-3. Restart the API: `docker compose restart dare-api`
+3. Restart the API: `docker compose restart aquify-api`
 4. All existing sessions will be invalidated. Users must log in again.
 
 ### 5.2 Stripe API Key (`STRIPE_SECRET_KEY`)
@@ -301,13 +301,13 @@ All secrets are stored in the deployment environment (`.env` on the host, or sec
 
 ### 5.5 Database Password
 
-1. Update the PostgreSQL user password: `ALTER USER dare_api WITH PASSWORD 'new-password';`
+1. Update the PostgreSQL user password: `ALTER USER aquify_api WITH PASSWORD 'new-password';`
 2. Update `DATABASE_URL` in the deployment environment.
 3. Restart the API.
 
 ### 5.6 Keycloak Client Secret (`OIDC_CLIENT_SECRET`)
 
-1. In Keycloak admin, regenerate the client secret for the DARE client.
+1. In Keycloak admin, regenerate the client secret for the aquify client.
 2. Update `OIDC_CLIENT_SECRET` in the deployment environment.
 3. Restart the API.
 4. Test login via browser SSO flow.
@@ -330,11 +330,11 @@ All secrets are stored in the deployment environment (`.env` on the host, or sec
 In `docker-compose.yml` (or Kubernetes deployment), increase the replica count:
 ```yaml
 services:
-  dare-api:
+  aquify-api:
     replicas: 4  # increase from 2
 ```
 
-Then run: `docker compose up -d --scale dare-api=4`
+Then run: `docker compose up -d --scale aquify-api=4`
 
 ### Increasing DB Connection Pool
 

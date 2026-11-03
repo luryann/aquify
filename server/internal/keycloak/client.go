@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"sort"
@@ -20,6 +21,48 @@ import (
 )
 
 // ─── Errors ───────────────────────────────────────────────────────────────────
+
+// StatusError is an unexpected HTTP status returned by Keycloak.
+type StatusError struct {
+	Op     string
+	Status int
+	Body   string
+}
+
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("keycloak: %s returned %d: %s", e.Op, e.Status, e.Body)
+}
+
+func newStatusError(op string, status int, body any) error {
+	return &StatusError{Op: op, Status: status, Body: strings.TrimSpace(fmt.Sprintf("%s", body))}
+}
+
+// IsUnavailable reports whether err is a transport failure (connection refused,
+// DNS, timeout) or a Keycloak 5xx response.
+func IsUnavailable(err error) bool {
+	if err == nil {
+		return false
+	}
+	var se *StatusError
+	if errors.As(err, &se) {
+		return se.Status >= 500
+	}
+	var ne net.Error
+	if errors.As(err, &ne) {
+		return true
+	}
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		return true
+	}
+	return errors.Is(err, context.DeadlineExceeded) || errors.Is(err, io.ErrUnexpectedEOF)
+}
+
+// IsBadRequest reports whether Keycloak rejected the request as a 400.
+func IsBadRequest(err error) bool {
+	var se *StatusError
+	return errors.As(err, &se) && se.Status == http.StatusBadRequest
+}
 
 var (
 	ErrInvalidConfig = errors.New("keycloak: missing required configuration")
@@ -158,7 +201,7 @@ type Client interface {
 
 // ─── Default realm roles ──────────────────────────────────────────────────────
 
-// DefaultRealmRoles is the canonical set of DARE platform realm roles that
+// DefaultRealmRoles is the canonical set of aquify platform realm roles that
 // must exist in the Keycloak realm. Pass this to EnsureRealmRolesExist on
 // startup.
 var DefaultRealmRoles = []string{
@@ -174,7 +217,7 @@ var DefaultRealmRoles = []string{
 type AdminConfig struct {
 	// AdminURL is the base URL of the Keycloak instance (e.g. "http://localhost:8180").
 	AdminURL string
-	// Realm is the target Keycloak realm name (e.g. "dare").
+	// Realm is the target Keycloak realm name (e.g. "aquify").
 	Realm string
 	// ClientID is the service-account OAuth2 client ID.
 	ClientID string
@@ -303,9 +346,13 @@ func (c *UnavailableClient) SetUserPassword(_ context.Context, _, _ string, _ bo
 	return c.failure()
 }
 
-// Ready verifies that the admin client can obtain a service-account token.
+// Ready performs a real network probe (a fresh service-account token fetch)
+// on every call so readiness reflects whether Keycloak is reachable now.
+//
+// It deliberately neither holds c.mu nor touches the cached token, so a slow
+// or down Keycloak cannot make admin calls queue behind readiness probes.
 func (c *AdminClient) Ready(ctx context.Context) error {
-	_, err := c.getToken(ctx)
+	_, _, err := c.requestToken(ctx)
 	return err
 }
 
@@ -325,6 +372,18 @@ func (c *AdminClient) getToken(ctx context.Context) (string, error) {
 // refreshToken fetches a new admin token via client_credentials grant.
 // Must be called with c.mu held.
 func (c *AdminClient) refreshToken(ctx context.Context) (string, error) {
+	token, expiry, err := c.requestToken(ctx)
+	if err != nil {
+		return "", err
+	}
+	c.token = token
+	c.expiry = expiry
+	return token, nil
+}
+
+// requestToken performs the client_credentials grant without reading or
+// writing any client state, so it is safe to call without c.mu.
+func (c *AdminClient) requestToken(ctx context.Context) (string, time.Time, error) {
 	tokenURL := fmt.Sprintf("%s/realms/%s/protocol/openid-connect/token",
 		c.cfg.AdminURL, c.cfg.Realm)
 
@@ -337,22 +396,22 @@ func (c *AdminClient) refreshToken(ctx context.Context) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL,
 		strings.NewReader(form.Encode()))
 	if err != nil {
-		return "", fmt.Errorf("keycloak: build token request: %w", err)
+		return "", time.Time{}, fmt.Errorf("keycloak: build token request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("keycloak: token request: %w", err)
+		return "", time.Time{}, fmt.Errorf("keycloak: token request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusUnauthorized {
-		return "", ErrUnauthorized
+		return "", time.Time{}, ErrUnauthorized
 	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return "", fmt.Errorf("keycloak: token request returned %d: %s", resp.StatusCode, body)
+		return "", time.Time{}, newStatusError("token request", resp.StatusCode, body)
 	}
 
 	var tokenResp struct {
@@ -360,16 +419,13 @@ func (c *AdminClient) refreshToken(ctx context.Context) (string, error) {
 		ExpiresIn   int    `json:"expires_in"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
-		return "", fmt.Errorf("keycloak: decode token response: %w", err)
+		return "", time.Time{}, fmt.Errorf("keycloak: decode token response: %w", err)
 	}
 	if tokenResp.AccessToken == "" {
-		return "", fmt.Errorf("keycloak: empty access_token in response")
+		return "", time.Time{}, fmt.Errorf("keycloak: empty access_token in response")
 	}
 
-	expiry := time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
-	c.token = tokenResp.AccessToken
-	c.expiry = expiry
-	return c.token, nil
+	return tokenResp.AccessToken, time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second), nil
 }
 
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
@@ -590,7 +646,7 @@ func (c *AdminClient) listUsersPage(ctx context.Context, search string, limit, o
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("keycloak: list users returned %d: %s", resp.StatusCode, body)
+		return nil, newStatusError("list users", resp.StatusCode, body)
 	}
 
 	var users []User
@@ -619,7 +675,7 @@ func (c *AdminClient) GetUser(ctx context.Context, userID string) (*User, error)
 		return nil, ErrUserNotFound
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("keycloak: get user returned %d: %s", resp.StatusCode, body)
+		return nil, newStatusError("get user", resp.StatusCode, body)
 	}
 	var u User
 	if err := json.Unmarshal(body, &u); err != nil {
@@ -665,7 +721,7 @@ func (c *AdminClient) CreateUser(ctx context.Context, email, firstName, lastName
 	case http.StatusConflict:
 		return "", ErrConflict
 	default:
-		return "", fmt.Errorf("keycloak: create user returned %d: %s", resp.StatusCode, body)
+		return "", newStatusError("create user", resp.StatusCode, body)
 	}
 }
 
@@ -697,7 +753,7 @@ func (c *AdminClient) sendActionsEmail(ctx context.Context, userID string, actio
 		return ErrUserNotFound
 	}
 	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("keycloak: send actions email returned %d: %s", resp.StatusCode, body)
+		return newStatusError("send actions email", resp.StatusCode, body)
 	}
 	return nil
 }
@@ -728,7 +784,7 @@ func (c *AdminClient) SetUserPassword(ctx context.Context, userID, password stri
 		return ErrUserNotFound
 	}
 	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("keycloak: set password returned %d: %s", resp.StatusCode, body)
+		return newStatusError("set password", resp.StatusCode, body)
 	}
 	return nil
 }
@@ -774,7 +830,7 @@ func (c *AdminClient) UpdateUser(ctx context.Context, userID string, fields Upda
 		return ErrUserNotFound
 	}
 	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("keycloak: update user returned %d: %s", resp.StatusCode, body)
+		return newStatusError("update user", resp.StatusCode, body)
 	}
 	return nil
 }
@@ -798,7 +854,7 @@ func (c *AdminClient) DeleteUser(ctx context.Context, userID string) error {
 		return ErrUserNotFound
 	}
 	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("keycloak: delete user returned %d: %s", resp.StatusCode, body)
+		return newStatusError("delete user", resp.StatusCode, body)
 	}
 	return nil
 }
@@ -835,7 +891,7 @@ func (c *AdminClient) GetUserRealmRoles(ctx context.Context, userID string) ([]R
 		return nil, ErrUserNotFound
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("keycloak: get user roles returned %d: %s", resp.StatusCode, body)
+		return nil, newStatusError("get user roles", resp.StatusCode, body)
 	}
 	var roles []Role
 	if err := json.Unmarshal(body, &roles); err != nil {
@@ -867,7 +923,7 @@ func (c *AdminClient) ListUsersWithRealmRole(ctx context.Context, orgID, roleNam
 			return []User{}, nil
 		}
 		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("keycloak: list role members returned %d: %s", resp.StatusCode, body)
+			return nil, newStatusError("list role members", resp.StatusCode, body)
 		}
 		var batch []User
 		if err := json.Unmarshal(body, &batch); err != nil {
@@ -900,7 +956,7 @@ func (c *AdminClient) getRoleByName(ctx context.Context, roleName string) (*Role
 		return nil, ErrRoleNotFound
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("keycloak: get role returned %d: %s", resp.StatusCode, body)
+		return nil, newStatusError("get role", resp.StatusCode, body)
 	}
 	var role Role
 	if err := json.Unmarshal(body, &role); err != nil {
@@ -931,7 +987,7 @@ func (c *AdminClient) AssignRealmRole(ctx context.Context, userID, roleName stri
 		return ErrUserNotFound
 	}
 	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("keycloak: assign role returned %d: %s", resp.StatusCode, body)
+		return newStatusError("assign role", resp.StatusCode, body)
 	}
 	return nil
 }
@@ -958,7 +1014,7 @@ func (c *AdminClient) RemoveRealmRole(ctx context.Context, userID, roleName stri
 		return ErrUserNotFound
 	}
 	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("keycloak: remove role returned %d: %s", resp.StatusCode, body)
+		return newStatusError("remove role", resp.StatusCode, body)
 	}
 	return nil
 }
@@ -995,7 +1051,7 @@ func (c *AdminClient) ensureRole(ctx context.Context, name string) error {
 		return nil // race: created between check and create
 	}
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("keycloak: create role returned %d: %s", resp.StatusCode, body)
+		return newStatusError("create role", resp.StatusCode, body)
 	}
 	return nil
 }

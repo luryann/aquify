@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dareaquatics/aquify/server/internal/storage"
+	"github.com/luryann/aquify/server/internal/storage"
 )
 
 // blockingStore stalls PutObject until released.

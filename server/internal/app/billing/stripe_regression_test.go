@@ -3,7 +3,7 @@ package billing
 import (
 	"testing"
 
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
 // Staff-recorded Stripe payments must not be credited a second time when the

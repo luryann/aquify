@@ -22,8 +22,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dareaquatics/aquify/meetfiles"
-	"github.com/dareaquatics/aquify/meetfiles/sdif"
+	"github.com/luryann/aquify/meetfiles"
+	"github.com/luryann/aquify/meetfiles/sdif"
 )
 
 var utf8BOM = []byte("\xef\xbb\xbf")

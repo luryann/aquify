@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
 type fakeDirectory struct {

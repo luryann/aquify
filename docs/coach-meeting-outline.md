@@ -1,4 +1,4 @@
-# Coach Meeting — DARE Platform Overview
+# Coach Meeting — aquify Platform Overview
 
 ## 1. What Is aquify?
 - Full-stack swim club operations platform

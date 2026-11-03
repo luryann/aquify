@@ -45,3 +45,20 @@ func TestSendEmailHTTPStatus(t *testing.T) {
 		})
 	}
 }
+
+func TestSendBatchMapsPerMessageResults(t *testing.T) {
+	c, _ := NewHTTPClient(Config{ServerToken: "test", FromEmail: "sender@example.com"})
+	var gotPath string
+	c.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		gotPath = r.URL.Path
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(
+			`[{"To":"a@example.com","MessageID":"m1","ErrorCode":0,"Message":"OK"},{"To":"b@@x","ErrorCode":300,"Message":"Illegal email address"}]`))}, nil
+	})
+	res, err := c.SendBatch(context.Background(), []SendEmailRequest{{To: "a@example.com", TextBody: "x"}, {To: "b@@x", TextBody: "x"}})
+	if err != nil || len(res) != 2 {
+		t.Fatalf("res=%v err=%v", res, err)
+	}
+	if gotPath != "/email/batch" || res[0].MessageID != "m1" || res[0].Err != nil || !errors.Is(res[1].Err, ErrSendFailed) {
+		t.Fatalf("path=%s res=%+v", gotPath, res)
+	}
+}

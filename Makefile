@@ -1,6 +1,6 @@
 SHELL := /bin/zsh
 
-.PHONY: dev dev-full dev-api dev-admin test test-p0 lint lint-openapi infra-up infra-down infra-reset db-up db-down db-status cutover-rehearsal cutover-smoke cutover-certify cutover-billing-check provider-validation-evidence parallel-meet-cycle-evidence stability-report-evidence launch-evidence-bundle verify-launch-evidence keycloak-dist keycloak-local-up keycloak-local-reset
+.PHONY: dev dev-full dev-api dev-admin test test-p0 lint lint-openapi infra-up infra-down infra-reset db-up db-down db-status cutover-rehearsal cutover-smoke cutover-certify cutover-billing-check provider-validation-evidence parallel-meet-cycle-evidence stability-report-evidence launch-evidence-bundle verify-launch-evidence keycloak-dist keycloak-local-up keycloak-local-reset integrations-install integrations-up integrations-down integrations-status integrations-migrate
 
 COMPOSE_FILE ?= docker-compose.yml
 DOCKER_COMPOSE ?= docker compose
@@ -143,6 +143,23 @@ keycloak-local-up: keycloak-dist
 keycloak-local-reset:
 	@rm -rf $(KEYCLOAK_DIR)/data
 	@echo "Keycloak data wiped — next 'make keycloak-local-up' re-imports the realm"
+
+# Native third-party integrations (Postgres, Redis, MinIO, Mailpit, Keycloak) run from
+# the gitignored .tools/ folder: no Docker, no Homebrew. See scripts/integrations-local.sh.
+integrations-install:
+	@./scripts/integrations-local.sh install
+
+integrations-up:
+	@./scripts/integrations-local.sh up
+
+integrations-down:
+	@./scripts/integrations-local.sh down
+
+integrations-status:
+	@./scripts/integrations-local.sh status
+
+integrations-migrate:
+	@./scripts/integrations-local.sh migrate
 
 infra-down:
 	@$(DOCKER_COMPOSE) --env-file $(DOCKER_ENV_FILE) -f $(COMPOSE_FILE) down

@@ -3,8 +3,8 @@ package handlers
 import (
 	"log/slog"
 
-	"github.com/dareaquatics/aquify/server/internal/app/audit"
-	appmiddleware "github.com/dareaquatics/aquify/server/internal/app/middleware"
+	"github.com/luryann/aquify/server/internal/app/audit"
+	appmiddleware "github.com/luryann/aquify/server/internal/app/middleware"
 )
 
 // recordAudit appends an audit event on behalf of the acting principal. It is

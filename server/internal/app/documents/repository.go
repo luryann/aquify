@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/dareaquatics/aquify/server/internal/dbutil"
+	"github.com/luryann/aquify/server/internal/dbutil"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -61,13 +61,13 @@ func (r *Repository) SoftDeleteDocumentType(ctx context.Context, typeID, deleted
 	return nil
 }
 
-func (r *Repository) LoadDocumentTypes(ctx context.Context) ([]*DocumentType, error) {
+func (r *Repository) LoadDocumentTypes(ctx context.Context, orgID string) ([]*DocumentType, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id::text, org_id::text, name, category,
 		       COALESCE(description, ''), is_required, applies_to,
 		       expiry_months, is_active, created_at, updated_at,
 		       COALESCE(created_by, ''), COALESCE(updated_by, '')
-		FROM document_types WHERE deleted_at IS NULL`)
+		FROM document_types WHERE deleted_at IS NULL AND ($1 = '' OR org_id = NULLIF($1, '')::uuid)`, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("documents: load document_types: %w", err)
 	}
@@ -121,7 +121,7 @@ func (r *Repository) UpsertSubmission(ctx context.Context, sub *DocumentSubmissi
 	return err
 }
 
-func (r *Repository) LoadSubmissions(ctx context.Context) ([]*DocumentSubmission, error) {
+func (r *Repository) LoadSubmissions(ctx context.Context, orgID string) ([]*DocumentSubmission, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id::text, org_id::text, document_type_id::text, household_id::text,
 		       COALESCE(swimmer_id::text, ''), status,
@@ -132,7 +132,7 @@ func (r *Repository) LoadSubmissions(ctx context.Context) ([]*DocumentSubmission
 		       expires_at, reminder_sent_at,
 		       created_at, updated_at,
 		       COALESCE(created_by, ''), COALESCE(updated_by, '')
-		FROM document_submissions WHERE deleted_at IS NULL`)
+		FROM document_submissions WHERE deleted_at IS NULL AND ($1 = '' OR org_id = NULLIF($1, '')::uuid)`, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("documents: load document_submissions: %w", err)
 	}
@@ -166,15 +166,15 @@ func (r *Repository) DeleteSubmissionsByHousehold(ctx context.Context, orgID, ho
 
 // ─── Batch load ───────────────────────────────────────────────────────────────
 
-func (r *Repository) LoadAll(ctx context.Context) (
+func (r *Repository) LoadAll(ctx context.Context, orgID string) (
 	types []*DocumentType,
 	subs []*DocumentSubmission,
 	err error,
 ) {
-	if types, err = r.LoadDocumentTypes(ctx); err != nil {
+	if types, err = r.LoadDocumentTypes(ctx, orgID); err != nil {
 		return
 	}
-	subs, err = r.LoadSubmissions(ctx)
+	subs, err = r.LoadSubmissions(ctx, orgID)
 	return
 }
 

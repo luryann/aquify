@@ -4,7 +4,7 @@
     { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" }
   ],
   "annotations": { "list": [] },
-  "description": "DARE Platform — API error rates by route, method, and status code.",
+  "description": "aquify Platform — API error rates by route, method, and status code.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -27,7 +27,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "sum by (route) (rate(dare_http_requests_total{status=~\"4..\"}[5m]))",
+          "expr": "sum by (route) (rate(aquify_http_requests_total{status=~\"4..\"}[5m]))",
           "legendFormat": "{{route}}"
         }
       ]
@@ -47,7 +47,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "sum by (route) (rate(dare_http_requests_total{status=~\"5..\"}[5m]))",
+          "expr": "sum by (route) (rate(aquify_http_requests_total{status=~\"5..\"}[5m]))",
           "legendFormat": "{{route}}"
         }
       ]
@@ -74,7 +74,7 @@
       "type": "gauge",
       "targets": [
         {
-          "expr": "sum(rate(dare_http_requests_total{status=~\"5..\"}[5m])) / sum(rate(dare_http_requests_total[5m]))"
+          "expr": "sum(rate(aquify_http_requests_total{status=~\"5..\"}[5m])) / sum(rate(aquify_http_requests_total[5m]))"
         }
       ]
     },
@@ -89,7 +89,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (le, route) (rate(dare_http_request_duration_seconds_bucket[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le, route) (rate(aquify_http_request_duration_seconds_bucket[5m])))",
           "legendFormat": "p95 {{route}}"
         }
       ]
@@ -97,7 +97,7 @@
   ],
   "refresh": "30s",
   "schemaVersion": 38,
-  "tags": ["dare", "api", "errors"],
+  "tags": ["aquify", "api", "errors"],
   "templating": {
     "list": [
       {
@@ -115,7 +115,7 @@
   "time": { "from": "now-1h", "to": "now" },
   "timepicker": {},
   "timezone": "browser",
-  "title": "DARE – API Error Rates",
-  "uid": "dare-api-errors",
+  "title": "aquify – API Error Rates",
+  "uid": "aquify-api-errors",
   "version": 1
 }

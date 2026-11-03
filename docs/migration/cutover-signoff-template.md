@@ -1,4 +1,4 @@
-# DARE Platform — Cutover Signoff Template
+# aquify Platform — Cutover Signoff Template
 
 Date: ____________________
 Cutover Window: ____________________
